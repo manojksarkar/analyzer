@@ -1,0 +1,42 @@
+{
+  "basePath": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src",
+  "components": [
+    {
+      "name": "module1",
+      "incoming": [
+        "module2",
+        "module3"
+      ],
+      "outgoing": [],
+      "functions": [
+        "add",
+        "subtract"
+      ]
+    },
+    {
+      "name": "module2",
+      "incoming": [
+        "module3"
+      ],
+      "outgoing": [
+        "module1"
+      ],
+      "functions": [
+        "multiply",
+        "divide"
+      ]
+    },
+    {
+      "name": "module3",
+      "incoming": [],
+      "outgoing": [
+        "module1",
+        "module2"
+      ],
+      "functions": [
+        "calculate",
+        "main"
+      ]
+    }
+  ]
+}

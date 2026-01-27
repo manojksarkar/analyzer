@@ -1,0 +1,101 @@
+{
+  "basePath": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src",
+  "modules": [
+    {
+      "moduleName": "module1",
+      "modulePath": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src\\module1",
+      "callerModules": [
+        "module2",
+        "module3"
+      ],
+      "calleeModules": [],
+      "functions": [
+        {
+          "functionName": "add",
+          "qualifiedName": "add",
+          "functionId": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src\\module1\\utils.cpp:3",
+          "moduleName": "utils.cpp",
+          "callersFunctionNames": [
+            "calculate",
+            "multiply"
+          ],
+          "calleesFunctionNames": []
+        },
+        {
+          "functionName": "subtract",
+          "qualifiedName": "subtract",
+          "functionId": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src\\module1\\utils.cpp:7",
+          "moduleName": "utils.cpp",
+          "callersFunctionNames": [],
+          "calleesFunctionNames": []
+        }
+      ]
+    },
+    {
+      "moduleName": "module2",
+      "modulePath": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src\\module2",
+      "callerModules": [
+        "module3"
+      ],
+      "calleeModules": [
+        "module1"
+      ],
+      "functions": [
+        {
+          "functionName": "multiply",
+          "qualifiedName": "multiply",
+          "functionId": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src\\module2\\calculator.cpp:4",
+          "moduleName": "calculator.cpp",
+          "callersFunctionNames": [
+            "calculate"
+          ],
+          "calleesFunctionNames": [
+            "add"
+          ]
+        },
+        {
+          "functionName": "divide",
+          "qualifiedName": "divide",
+          "functionId": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src\\module2\\calculator.cpp:12",
+          "moduleName": "calculator.cpp",
+          "callersFunctionNames": [],
+          "calleesFunctionNames": []
+        }
+      ]
+    },
+    {
+      "moduleName": "module3",
+      "modulePath": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src\\module3",
+      "callerModules": [],
+      "calleeModules": [
+        "module1",
+        "module2"
+      ],
+      "functions": [
+        {
+          "functionName": "calculate",
+          "qualifiedName": "calculate",
+          "functionId": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src\\module3\\main.cpp:4",
+          "moduleName": "main.cpp",
+          "callersFunctionNames": [
+            "main"
+          ],
+          "calleesFunctionNames": [
+            "add",
+            "multiply"
+          ]
+        },
+        {
+          "functionName": "main",
+          "qualifiedName": "main",
+          "functionId": "C:\\Users\\User\\Desktop\\Tests\\cpp_projects\\cpp_project_module_based\\src\\module3\\main.cpp:10",
+          "moduleName": "main.cpp",
+          "callersFunctionNames": [],
+          "calleesFunctionNames": [
+            "calculate"
+          ]
+        }
+      ]
+    }
+  ]
+}
