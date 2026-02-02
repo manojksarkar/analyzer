@@ -1,37 +1,27 @@
 # C++ Call Graph Analysis Project
 
-This project contains tools for analyzing C++ codebases to extract function call graphs and module dependencies.
+This project contains a tool for analyzing C++ codebases to extract function call graphs and module dependencies.
 
 ## Project Structure
 
 ```
 Tests/
-├── analyzer/              # Analysis tools and outputs
-│   ├── function_analyzer.py  # Function-level call graph analyzer
-│   ├── module_analyzer.py    # Module-based call graph analyzer
-│   ├── functions.json        # Output: function-level analysis
-│   ├── modules.json          # Output: module-based analysis
-│   ├── component.json        # Output: component diagram structure
-│   └── README.md             # Analyzer documentation
+├── analyzer.py              # Call graph analyzer (functions, files, modules)
+├── modules.json             # Output: functions, files, modules
+├── component.json          # Output: component diagram structure
 │
-└── cpp_projects/         # C++ test projects
-    ├── cpp_project/      # Simple test project
+└── test_cpp_projects/      # C++ test projects
+    ├── cpp_project/        # Simple test project
     └── cpp_project_module_based/  # Module-based test project
 ```
 
 ## Quick Start
 
-### Function-level Analysis
 ```bash
-cd analyzer
-python function_analyzer.py
+python analyzer.py
 ```
 
-### Module-based Analysis
-```bash
-cd analyzer
-python module_analyzer.py
-```
+Generates `modules.json` (functions, files, modules) and `component.json` (component diagram).
 
 ## Features
 
@@ -46,5 +36,8 @@ python module_analyzer.py
 - libclang (LLVM)
 - clang Python bindings
 
-See `analyzer/README.md` for detailed documentation.
+## Configuration
 
+Paths are relative to the script location. The analyzer uses `test_cpp_projects/cpp_project_module_based/src` (first-level subfolders = modules).
+
+Update `cindex.Config.set_library_file(...)` if your LLVM/libclang install path differs.
