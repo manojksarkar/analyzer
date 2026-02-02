@@ -81,8 +81,8 @@
             "main"
           ],
           "calleesFunctionNames": [
-            "add",
-            "multiply"
+            "multiply",
+            "add"
           ]
         },
         {

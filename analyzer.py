@@ -322,6 +322,75 @@ with open(os.path.join(SCRIPT_DIR, "files.json"), "w", encoding="utf-8") as f:
     json.dump({"basePath": base_path, "files": files_data}, f, indent=2)
 print(f"Generated: files.json ({len(files_data)} files)")
 
+# Build units list (one unit per file)
+# Map function qualifiedName -> file(s) it is defined in (handles duplicates conservatively)
+qualified_name_to_file_paths = defaultdict(set)
+for f in functions_list:
+    f_path = f["functionId"].rsplit(":", 1)[0]
+    qualified_name_to_file_paths[f["qualifiedName"]].add(f_path)
+
+# Map file -> unitName (module/fileName)
+unit_name_by_file_path = {}
+for file_path in file_paths:
+    unit_name_by_file_path[file_path] = f"{get_module_name(file_path)}/{os.path.basename(file_path)}"
+
+units_data = []
+for file_path in file_paths:
+    funcs_in_file = [f for f in functions_list if f["functionId"].rsplit(":", 1)[0] == file_path]
+
+    unit_module_name = get_module_name(file_path)
+    unit_file_name = os.path.basename(file_path)
+    unit_name = f"{unit_module_name}/{unit_file_name}"
+
+    # Keep function-level callers/callees
+    caller_functions = set()
+    callee_functions = set()
+    for func in funcs_in_file:
+        caller_functions.update(func.get("callersFunctionNames", []))
+        callee_functions.update(func.get("calleesFunctionNames", []))
+
+    # Derive unit-level callers/callees from function-level relationships
+    caller_unit_to_functions = defaultdict(set)
+    callee_unit_to_functions = defaultdict(set)
+
+    for caller_fn in caller_functions:
+        for caller_fp in qualified_name_to_file_paths.get(caller_fn, set()):
+            caller_unit = unit_name_by_file_path.get(
+                caller_fp,
+                f"{get_module_name(caller_fp)}/{os.path.basename(caller_fp)}",
+            )
+            if caller_unit != unit_name:
+                caller_unit_to_functions[caller_unit].add(caller_fn)
+
+    for callee_fn in callee_functions:
+        for callee_fp in qualified_name_to_file_paths.get(callee_fn, set()):
+            callee_unit = unit_name_by_file_path.get(
+                callee_fp,
+                f"{get_module_name(callee_fp)}/{os.path.basename(callee_fp)}",
+            )
+            if callee_unit != unit_name:
+                callee_unit_to_functions[callee_unit].add(callee_fn)
+
+    units_data.append({
+        "unitName": unit_name,
+        "fileName": unit_file_name,
+        "moduleName": unit_module_name,
+        "functionNames": sorted(set(f["qualifiedName"] for f in funcs_in_file)),
+        "callerUnits": [
+            {"unitName": u, "functionNames": sorted(fns)}
+            for u, fns in sorted(caller_unit_to_functions.items(), key=lambda kv: kv[0])
+        ],
+        "calleesUnits": [
+            {"unitName": u, "functionNames": sorted(fns)}
+            for u, fns in sorted(callee_unit_to_functions.items(), key=lambda kv: kv[0])
+        ],
+    })
+
+# Output units.json
+with open(os.path.join(SCRIPT_DIR, "units.json"), "w", encoding="utf-8") as f:
+    json.dump({"basePath": base_path, "units": units_data}, f, indent=2)
+print(f"Generated: units.json ({len(units_data)} units)")
+
 # Output modules.json
 with open(os.path.join(SCRIPT_DIR, "modules.json"), "w", encoding="utf-8") as f:
     json.dump({"basePath": base_path, "modules": modules_data}, f, indent=2)

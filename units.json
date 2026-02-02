@@ -1,0 +1,78 @@
+{
+  "basePath": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src",
+  "units": [
+    {
+      "unitName": "module1/utils.cpp",
+      "fileName": "utils.cpp",
+      "moduleName": "module1",
+      "functionNames": [
+        "add",
+        "subtract"
+      ],
+      "callerUnits": [
+        {
+          "unitName": "module2/calculator.cpp",
+          "functionNames": [
+            "multiply"
+          ]
+        },
+        {
+          "unitName": "module3/main.cpp",
+          "functionNames": [
+            "calculate"
+          ]
+        }
+      ],
+      "calleesUnits": []
+    },
+    {
+      "unitName": "module2/calculator.cpp",
+      "fileName": "calculator.cpp",
+      "moduleName": "module2",
+      "functionNames": [
+        "divide",
+        "multiply"
+      ],
+      "callerUnits": [
+        {
+          "unitName": "module3/main.cpp",
+          "functionNames": [
+            "calculate"
+          ]
+        }
+      ],
+      "calleesUnits": [
+        {
+          "unitName": "module1/utils.cpp",
+          "functionNames": [
+            "add"
+          ]
+        }
+      ]
+    },
+    {
+      "unitName": "module3/main.cpp",
+      "fileName": "main.cpp",
+      "moduleName": "module3",
+      "functionNames": [
+        "calculate",
+        "main"
+      ],
+      "callerUnits": [],
+      "calleesUnits": [
+        {
+          "unitName": "module1/utils.cpp",
+          "functionNames": [
+            "add"
+          ]
+        },
+        {
+          "unitName": "module2/calculator.cpp",
+          "functionNames": [
+            "multiply"
+          ]
+        }
+      ]
+    }
+  ]
+}
