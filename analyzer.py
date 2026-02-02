@@ -287,26 +287,45 @@ for module_name in sorted(module_functions.keys()):
     }
     modules_data.append(module_info)
 
-# Build flat functions list and unique files list
+# Build flat functions list
 functions_list = list(functions.values())
-files_list = sorted(set(
+base_path = os.path.abspath(MODULE_BASE_PATH)
+
+# Build files list with extra info per file
+file_paths = sorted(set(
     f["functionId"].rsplit(":", 1)[0]
     for f in functions_list
 ))
+files_data = []
+for file_path in file_paths:
+    funcs_in_file = [f for f in functions_list if f["functionId"].rsplit(":", 1)[0] == file_path]
+    try:
+        rel_path = os.path.relpath(file_path, base_path)
+    except ValueError:
+        rel_path = file_path
+    files_data.append({
+        "path": file_path,
+        "relativePath": rel_path,
+        "moduleName": get_module_name(file_path),
+        "fileName": os.path.basename(file_path),
+        "functionCount": len(funcs_in_file),
+        "functionNames": sorted(set(f["qualifiedName"] for f in funcs_in_file)),
+    })
 
-# Output modules.json: functions first, then files, then modules
-output_data = {
-    "basePath": os.path.abspath(MODULE_BASE_PATH),
-    "functions": functions_list,
-    "files": files_list,
-    "modules": modules_data
-}
+# Output functions.json
+with open(os.path.join(SCRIPT_DIR, "functions.json"), "w", encoding="utf-8") as f:
+    json.dump({"basePath": base_path, "functions": functions_list}, f, indent=2)
+print(f"Generated: functions.json ({len(functions_list)} functions)")
 
+# Output files.json
+with open(os.path.join(SCRIPT_DIR, "files.json"), "w", encoding="utf-8") as f:
+    json.dump({"basePath": base_path, "files": files_data}, f, indent=2)
+print(f"Generated: files.json ({len(files_data)} files)")
+
+# Output modules.json
 with open(os.path.join(SCRIPT_DIR, "modules.json"), "w", encoding="utf-8") as f:
-    json.dump(output_data, f, indent=2)
-
-print(f"Module table generated: modules.json")
-print(f"Found {len(modules_data)} modules")
+    json.dump({"basePath": base_path, "modules": modules_data}, f, indent=2)
+print(f"Generated: modules.json ({len(modules_data)} modules)")
 
 # Build component diagram structure
 components_data = []
