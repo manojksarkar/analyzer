@@ -6,13 +6,17 @@
       "fileName": "utils.cpp",
       "moduleName": "module1",
       "functionNames": [
+        "a::testA",
+        "a::testB",
         "add",
-        "subtract"
+        "subtract",
+        "testC"
       ],
       "callerUnits": [
         {
           "unitName": "module2/calculator.cpp",
           "functionNames": [
+            "AddOperation::apply",
             "multiply"
           ]
         },
@@ -30,6 +34,10 @@
       "fileName": "calculator.cpp",
       "moduleName": "module2",
       "functionNames": [
+        "AddOperation::apply",
+        "MultiplyOperation::apply",
+        "applyWithCallback",
+        "applyWithOperation",
         "divide",
         "multiply"
       ],
@@ -37,7 +45,9 @@
         {
           "unitName": "module3/main.cpp",
           "functionNames": [
-            "calculate"
+            "calculate",
+            "calculateWithCallback",
+            "calculateWithPolymorphism"
           ]
         }
       ],
@@ -56,6 +66,8 @@
       "moduleName": "module3",
       "functionNames": [
         "calculate",
+        "calculateWithCallback",
+        "calculateWithPolymorphism",
         "main"
       ],
       "callerUnits": [],
@@ -69,6 +81,8 @@
         {
           "unitName": "module2/calculator.cpp",
           "functionNames": [
+            "applyWithCallback",
+            "applyWithOperation",
             "multiply"
           ]
         }

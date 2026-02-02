@@ -10,7 +10,10 @@
       "outgoing": [],
       "functions": [
         "add",
-        "subtract"
+        "subtract",
+        "testA",
+        "testB",
+        "testC"
       ]
     },
     {
@@ -23,7 +26,11 @@
       ],
       "functions": [
         "multiply",
-        "divide"
+        "divide",
+        "applyWithCallback",
+        "apply",
+        "apply",
+        "applyWithOperation"
       ]
     },
     {
@@ -35,6 +42,8 @@
       ],
       "functions": [
         "calculate",
+        "calculateWithCallback",
+        "calculateWithPolymorphism",
         "main"
       ]
     }

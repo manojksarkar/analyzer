@@ -8,7 +8,9 @@
       "moduleName": "utils.cpp",
       "callersFunctionNames": [
         "calculate",
-        "multiply"
+        "multiply",
+        "AddOperation::apply",
+        "a::testA"
       ],
       "calleesFunctionNames": []
     },
@@ -21,12 +23,49 @@
       "calleesFunctionNames": []
     },
     {
+      "functionName": "testA",
+      "qualifiedName": "a::testA",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module1\\utils.cpp:14",
+      "moduleName": "utils.cpp",
+      "callersFunctionNames": [
+        "a::testB",
+        "testC"
+      ],
+      "calleesFunctionNames": [
+        "add"
+      ]
+    },
+    {
+      "functionName": "testB",
+      "qualifiedName": "a::testB",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module1\\utils.cpp:19",
+      "moduleName": "utils.cpp",
+      "callersFunctionNames": [
+        "testC"
+      ],
+      "calleesFunctionNames": [
+        "a::testA"
+      ]
+    },
+    {
+      "functionName": "testC",
+      "qualifiedName": "testC",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module1\\utils.cpp:27",
+      "moduleName": "utils.cpp",
+      "callersFunctionNames": [],
+      "calleesFunctionNames": [
+        "a::testB",
+        "a::testA"
+      ]
+    },
+    {
       "functionName": "multiply",
       "qualifiedName": "multiply",
       "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module2\\calculator.cpp:4",
       "moduleName": "calculator.cpp",
       "callersFunctionNames": [
-        "calculate"
+        "calculate",
+        "MultiplyOperation::apply"
       ],
       "calleesFunctionNames": [
         "add"
@@ -39,6 +78,50 @@
       "moduleName": "calculator.cpp",
       "callersFunctionNames": [],
       "calleesFunctionNames": []
+    },
+    {
+      "functionName": "applyWithCallback",
+      "qualifiedName": "applyWithCallback",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module2\\calculator.cpp:18",
+      "moduleName": "calculator.cpp",
+      "callersFunctionNames": [
+        "calculateWithCallback"
+      ],
+      "calleesFunctionNames": []
+    },
+    {
+      "functionName": "apply",
+      "qualifiedName": "AddOperation::apply",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module2\\calculator.cpp:23",
+      "moduleName": "calculator.cpp",
+      "callersFunctionNames": [
+        "applyWithOperation"
+      ],
+      "calleesFunctionNames": [
+        "add"
+      ]
+    },
+    {
+      "functionName": "apply",
+      "qualifiedName": "MultiplyOperation::apply",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module2\\calculator.cpp:28",
+      "moduleName": "calculator.cpp",
+      "callersFunctionNames": [],
+      "calleesFunctionNames": [
+        "multiply"
+      ]
+    },
+    {
+      "functionName": "applyWithOperation",
+      "qualifiedName": "applyWithOperation",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module2\\calculator.cpp:34",
+      "moduleName": "calculator.cpp",
+      "callersFunctionNames": [
+        "calculateWithPolymorphism"
+      ],
+      "calleesFunctionNames": [
+        "AddOperation::apply"
+      ]
     },
     {
       "functionName": "calculate",
@@ -54,13 +137,39 @@
       ]
     },
     {
+      "functionName": "calculateWithCallback",
+      "qualifiedName": "calculateWithCallback",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module3\\main.cpp:11",
+      "moduleName": "main.cpp",
+      "callersFunctionNames": [
+        "main"
+      ],
+      "calleesFunctionNames": [
+        "applyWithCallback"
+      ]
+    },
+    {
+      "functionName": "calculateWithPolymorphism",
+      "qualifiedName": "calculateWithPolymorphism",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module3\\main.cpp:20",
+      "moduleName": "main.cpp",
+      "callersFunctionNames": [
+        "main"
+      ],
+      "calleesFunctionNames": [
+        "applyWithOperation"
+      ]
+    },
+    {
       "functionName": "main",
       "qualifiedName": "main",
-      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module3\\main.cpp:10",
+      "functionId": "C:\\Users\\User\\Desktop\\Tests\\test_cpp_projects\\cpp_project_module_based\\src\\module3\\main.cpp:34",
       "moduleName": "main.cpp",
       "callersFunctionNames": [],
       "calleesFunctionNames": [
-        "calculate"
+        "calculateWithCallback",
+        "calculate",
+        "calculateWithPolymorphism"
       ]
     }
   ]
