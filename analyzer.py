@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 from collections import defaultdict
 from clang import cindex
@@ -9,8 +10,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Base path where modules are located (first-level child folders will be modules)
-MODULE_BASE_PATH = os.path.join(SCRIPT_DIR, "test_cpp_project")
+# Base path where modules are located (first-level child folders will be modules).
+# A relative path (from this script directory) MUST be passed as the first CLI argument.
+if len(sys.argv) < 2:
+    print("Usage: python analyzer.py <relative_project_path_from_this_directory>")
+    sys.exit(1)
+
+MODULE_BASE_PATH = os.path.abspath(os.path.join(SCRIPT_DIR, sys.argv[1]))
 
 # Derive project code automatically from the LAST path segment of base path, e.g. "src" -> "SRC"
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
