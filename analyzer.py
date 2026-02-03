@@ -6,8 +6,15 @@ from clang import cindex
 # ================= CONFIG =================
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 # Base path where modules are located (first-level child folders will be modules)
-MODULE_BASE_PATH = os.path.join(SCRIPT_DIR, "test_cpp_projects", "cpp_project_module_based", "src")
+MODULE_BASE_PATH = os.path.join(SCRIPT_DIR, "test_cpp_project")
+
+# Derive project code automatically from the LAST path segment of base path, e.g. "src" -> "SRC"
+PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
+PROJECT_CODE = PROJECT_NAME.upper()
 
 # Update if your LLVM version is different
 cindex.Config.set_library_file(
@@ -25,6 +32,7 @@ CLANG_ARGS = [
 index = cindex.Index.create()
 
 functions = {}  # Key: mangled name or unique ID, Value: function info
+globals = {}    # Key: unique ID, Value: global variable info
 call_graph = defaultdict(set)
 reverse_call_graph = defaultdict(set)
 module_functions = defaultdict(list)  # Key: module name, Value: list of function keys
@@ -97,11 +105,21 @@ def get_function_key(cursor):
 
 
 def visit_definitions(cursor):
-    """First pass: collect all function definitions"""
+    """First pass: collect all function definitions and global variables"""
     # Handle both free functions and member functions
     is_function = (
         cursor.kind == cindex.CursorKind.FUNCTION_DECL
         or cursor.kind == cindex.CursorKind.CXX_METHOD
+    )
+    is_global_var = (
+        cursor.kind == cindex.CursorKind.VAR_DECL
+        and cursor.location.file
+        and is_project_file(cursor.location.file.name)
+        and cursor.semantic_parent is not None
+        and cursor.semantic_parent.kind in (
+            cindex.CursorKind.TRANSLATION_UNIT,
+            cindex.CursorKind.NAMESPACE,
+        )
     )
     
     if (
@@ -121,11 +139,26 @@ def visit_definitions(cursor):
         # Determine which module this function belongs to
         module_name = get_module_name(cursor.location.file.name)
 
+        # Collect basic parameter info for interface reporting
+        params = []
+        try:
+            for arg in cursor.get_arguments():
+                arg_type = arg.type.spelling if arg.type is not None else ""
+                params.append({
+                    "name": arg.spelling or "",
+                    "type": arg_type,
+                })
+        except Exception:
+            # Be defensive: parameter collection is nice-to-have, not critical
+            params = []
+
         functions[func_key] = {
             "functionName": func_name,
             "qualifiedName": qualified_name,
             "functionId": func_id,
             "moduleName": module,
+            "parameters": params,
+            "parameterCount": len(params),
             "callersFunctionNames": [],
             "calleesFunctionNames": []
         }
@@ -133,6 +166,23 @@ def visit_definitions(cursor):
         # Group by module and track function-to-module mapping
         module_functions[module_name].append(func_key)
         function_to_module[func_key] = module_name
+
+    elif is_global_var:
+        var_name = cursor.spelling
+        if cursor.location.file and var_name:
+            var_id = f"{cursor.location.file.name}:{cursor.location.line}"
+            module = os.path.basename(cursor.location.file.name)
+            qualified_name = get_qualified_name(cursor)
+            module_name = get_module_name(cursor.location.file.name)
+            var_type = cursor.type.spelling if cursor.type is not None else ""
+
+            globals[var_id] = {
+                "variableName": var_name,
+                "qualifiedName": qualified_name,
+                "variableId": var_id,
+                "moduleName": module,
+                "type": var_type,
+            }
 
     # Recurse
     for child in cursor.get_children():
@@ -287,8 +337,9 @@ for module_name in sorted(module_functions.keys()):
     }
     modules_data.append(module_info)
 
-# Build flat functions list
+# Build flat functions and globals lists
 functions_list = list(functions.values())
+globals_list = list(globals.values())
 base_path = os.path.abspath(MODULE_BASE_PATH)
 
 # Build files list with extra info per file
@@ -313,12 +364,12 @@ for file_path in file_paths:
     })
 
 # Output functions.json
-with open(os.path.join(SCRIPT_DIR, "functions.json"), "w", encoding="utf-8") as f:
+with open(os.path.join(OUTPUT_DIR, "functions.json"), "w", encoding="utf-8") as f:
     json.dump({"basePath": base_path, "functions": functions_list}, f, indent=2)
 print(f"Generated: functions.json ({len(functions_list)} functions)")
 
 # Output files.json
-with open(os.path.join(SCRIPT_DIR, "files.json"), "w", encoding="utf-8") as f:
+with open(os.path.join(OUTPUT_DIR, "files.json"), "w", encoding="utf-8") as f:
     json.dump({"basePath": base_path, "files": files_data}, f, indent=2)
 print(f"Generated: files.json ({len(files_data)} files)")
 
@@ -387,12 +438,129 @@ for file_path in file_paths:
     })
 
 # Output units.json
-with open(os.path.join(SCRIPT_DIR, "units.json"), "w", encoding="utf-8") as f:
+with open(os.path.join(OUTPUT_DIR, "units.json"), "w", encoding="utf-8") as f:
     json.dump({"basePath": base_path, "units": units_data}, f, indent=2)
 print(f"Generated: units.json ({len(units_data)} units)")
 
+# Build interface table (functions as interfaces)
+
+# Map interface (function/global) -> position index within its file (based on source line)
+interfaces_by_file_path = defaultdict(list)
+for f in functions_list:
+    f_path = f["functionId"].rsplit(":", 1)[0]
+    interfaces_by_file_path[f_path].append(("function", f["functionId"], f))
+
+for g in globals_list:
+    g_path = g["variableId"].rsplit(":", 1)[0]
+    interfaces_by_file_path[g_path].append(("globalVariable", g["variableId"], g))
+
+interface_index_by_id = {}
+for f_path, entries in interfaces_by_file_path.items():
+    sorted_entries = sorted(
+        entries,
+        key=lambda e: int(e[1].rsplit(":", 1)[1]),
+    )
+    for idx, (_, iid, _) in enumerate(sorted_entries, start=1):
+        interface_index_by_id[iid] = idx
+
+interfaces_data = []
+
+# Function interfaces
+for func in functions_list:
+    func_id = func["functionId"]
+
+    # Derive module and file info from functionId
+    file_path = func_id.rsplit(":", 1)[0]
+    module_name = get_module_name(file_path)
+    module_code = module_name.upper() if module_name else "UNKNOWN_MODULE"
+
+    file_name = os.path.basename(file_path)
+    file_code = os.path.splitext(file_name)[0].upper()
+
+    func_index = interface_index_by_id.get(func_id, 0)
+    func_code = f"{func_index:02d}" if func_index > 0 else "00"
+
+    # Build interface ID like: IF_SRC_MODULE3_MAIN_03
+    formatted_interface_id = f"IF_{PROJECT_CODE}_{module_code}_{file_code}_{func_code}"
+
+    # Interface name like: DLM_functionName
+    base_func_name = func.get("functionName", "")
+    interface_name = f"{file_code}_{base_func_name}" if base_func_name else file_code
+
+    # Map callers/callees to units via their qualified names
+    caller_units = set()
+    callee_units = set()
+
+    for caller_name in func.get("callersFunctionNames", []):
+        for caller_fp in qualified_name_to_file_paths.get(caller_name, set()):
+            caller_units.add(unit_name_by_file_path.get(
+                caller_fp,
+                f"{get_module_name(caller_fp)}/{os.path.basename(caller_fp)}",
+            ))
+
+    for callee_name in func.get("calleesFunctionNames", []):
+        for callee_fp in qualified_name_to_file_paths.get(callee_name, set()):
+            callee_units.add(unit_name_by_file_path.get(
+                callee_fp,
+                f"{get_module_name(callee_fp)}/{os.path.basename(callee_fp)}",
+            ))
+
+    params = func.get("parameters", [])
+    param_ranges = []
+    for idx, p in enumerate(params):
+        param_ranges.append({
+            "name": p.get("name", ""),
+            "type": p.get("type", ""),
+            "index": idx,
+            "minIndex": idx,
+            "maxIndex": idx,
+        })
+
+    interfaces_data.append({
+        "interfaceId": formatted_interface_id,
+        "interfaceName": interface_name,
+        "interfaceType": "function",
+        "parameters": params,
+        "usedParametersRange": param_ranges,
+        "callerUnits": sorted(caller_units),
+        "calleesUnits": sorted(callee_units),
+    })
+
+# Global variable interfaces
+for var in globals_list:
+    var_id = var["variableId"]
+    file_path = var_id.rsplit(":", 1)[0]
+    module_name = get_module_name(file_path)
+    module_code = module_name.upper() if module_name else "UNKNOWN_MODULE"
+
+    file_name = os.path.basename(file_path)
+    file_code = os.path.splitext(file_name)[0].upper()
+
+    var_index = interface_index_by_id.get(var_id, 0)
+    var_code = f"{var_index:02d}" if var_index > 0 else "00"
+
+    formatted_interface_id = f"IF_{PROJECT_CODE}_{module_code}_{file_code}_{var_code}"
+
+    base_var_name = var.get("variableName", "")
+    interface_name = f"{file_code}_{base_var_name}" if base_var_name else file_code
+
+    interfaces_data.append({
+        "interfaceId": formatted_interface_id,
+        "interfaceName": interface_name,
+        "interfaceType": "globalVariable",
+        "parameters": [],
+        "usedParametersRange": [],
+        "callerUnits": [],
+        "calleesUnits": [],
+    })
+
+# Output interfaces.json
+with open(os.path.join(OUTPUT_DIR, "interfaces.json"), "w", encoding="utf-8") as f:
+    json.dump({"basePath": base_path, "interfaces": interfaces_data}, f, indent=2)
+print(f"Generated: interfaces.json ({len(interfaces_data)} interfaces)")
+
 # Output modules.json
-with open(os.path.join(SCRIPT_DIR, "modules.json"), "w", encoding="utf-8") as f:
+with open(os.path.join(OUTPUT_DIR, "modules.json"), "w", encoding="utf-8") as f:
     json.dump({"basePath": base_path, "modules": modules_data}, f, indent=2)
 print(f"Generated: modules.json ({len(modules_data)} modules)")
 
@@ -416,7 +584,7 @@ component_output = {
     "components": components_data
 }
 
-with open(os.path.join(SCRIPT_DIR, "component.json"), "w", encoding="utf-8") as f:
+with open(os.path.join(OUTPUT_DIR, "component.json"), "w", encoding="utf-8") as f:
     json.dump(component_output, f, indent=2)
 
 print(f"Component diagram generated: component.json")

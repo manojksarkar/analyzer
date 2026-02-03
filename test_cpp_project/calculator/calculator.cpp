@@ -1,12 +1,15 @@
 #include "calculator.h"
-#include "../module1/utils.h"
+#include "../math_utils/utils.h"
+
+// Global variable in module2
+int g_calibrationFactor = 1;
 
 int multiply(int a, int b) {
     int result = 0;
     for (int i = 0; i < b; i++) {
         result = add(result, a);
     }
-    return result;
+    return result * g_calibrationFactor;
 }
 
 int divide(int a, int b) {

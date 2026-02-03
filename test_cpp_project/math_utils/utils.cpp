@@ -1,10 +1,15 @@
 #include "utils.h"
 
+// Global variable in module1
+int g_utilsCounter = 0;
+
 int add(int a, int b) {
+    ++g_utilsCounter;
     return a + b;
 }
 
 int subtract(int a, int b) {
+    ++g_utilsCounter;
     return a - b;
 }
 

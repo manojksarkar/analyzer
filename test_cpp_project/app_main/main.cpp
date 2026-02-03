@@ -1,5 +1,8 @@
-#include "../module2/calculator.h"
-#include "../module1/utils.h"
+#include "../calculator/calculator.h"
+#include "../math_utils/utils.h"
+
+// Global variable in module3
+int g_globalResult = 0;
 
 int calculate() {
     int sum = add(10, 5);
@@ -35,5 +38,6 @@ int main() {
     int result1 = calculate();
     int result2 = calculateWithCallback();
     int result3 = calculateWithPolymorphism();
-    return result1 + result2 + result3;
+    g_globalResult = result1 + result2 + result3;
+    return g_globalResult;
 }
