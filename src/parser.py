@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from clang import cindex
 
-from utils import get_module_name as _get_module
+from utils import get_module_name as _get_module, load_config as _load_config_file
 
 # ================= CONFIG =================
 if len(sys.argv) < 2:
@@ -24,68 +24,13 @@ MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
 
 
-def _strip_json_comments(text):
-    """Remove // and /* */ comments so JSON-with-comments parses."""
-    result = []
-    i = 0
-    in_string = False
-    escape = False
-    while i < len(text):
-        c = text[i]
-        if escape:
-            result.append(c)
-            escape = False
-            i += 1
-            continue
-        if c == "\\" and in_string:
-            escape = True
-            result.append(c)
-            i += 1
-            continue
-        if c == '"' and not escape:
-            in_string = not in_string
-            result.append(c)
-            i += 1
-            continue
-        if in_string:
-            result.append(c)
-            i += 1
-            continue
-        if c == "/" and i + 1 < len(text):
-            if text[i + 1] == "/":
-                i += 2
-                while i < len(text) and text[i] != "\n":
-                    i += 1
-                continue
-            if text[i + 1] == "*":
-                i += 2
-                while i + 1 < len(text) and (text[i] != "*" or text[i + 1] != "/"):
-                    i += 1
-                i += 2
-                continue
-        result.append(c)
-        i += 1
-    return "".join(result)
-
-
 def _load_config():
     """Load config from config/, then config.local.json overrides."""
     defaults = {
         "llvmLibPath": r"C:\Program Files\LLVM\bin\libclang.dll",
         "clangIncludePath": r"C:\Program Files\LLVM\lib\clang\17\include",
     }
-    config_dir = os.path.join(PROJECT_ROOT, "config")
-    for name in ("config.json", "config.local.json"):
-        path = os.path.join(config_dir, name)
-        if not os.path.isfile(path):
-            path = os.path.join(PROJECT_ROOT, name)  # fallback to root
-        if os.path.isfile(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    text = _strip_json_comments(f.read())
-                    defaults.update(json.loads(text))
-            except (json.JSONDecodeError, IOError):
-                pass
+    defaults.update(_load_config_file(PROJECT_ROOT))
     return defaults
 
 
@@ -163,6 +108,13 @@ def visit_definitions(cursor):
         except Exception:
             pass
 
+        end_line = cursor.location.line
+        try:
+            if cursor.extent.end.file and cursor.extent.end.file.name == cursor.location.file.name:
+                end_line = cursor.extent.end.line
+        except Exception:
+            pass
+
         functions[get_function_key(cursor)] = {
             "functionId": func_id,
             "functionName": cursor.spelling,
@@ -170,6 +122,7 @@ def visit_definitions(cursor):
             "mangledName": cursor.mangled_name or "",
             "moduleName": module_name,
             "parameters": params,
+            "endLine": end_line,
         }
         module_functions[module_name].append(get_function_key(cursor))
         function_to_module[get_function_key(cursor)] = module_name
@@ -252,7 +205,11 @@ def build_metadata():
             "id": f["functionId"],
             "name": f["functionName"],
             "qualifiedName": f["qualifiedName"],
-            "location": {"file": rel_file.replace("\\", "/"), "line": int(f["functionId"].rsplit(":", 1)[1])},
+            "location": {
+                "file": rel_file.replace("\\", "/"),
+                "line": int(f["functionId"].rsplit(":", 1)[1]),
+                "endLine": f.get("endLine", int(f["functionId"].rsplit(":", 1)[1])),
+            },
             "module": f["moduleName"],
             "params": f["parameters"],
             "callersFunctionNames": f["callersFunctionNames"],

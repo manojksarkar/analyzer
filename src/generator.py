@@ -1,12 +1,13 @@
 """
 Generator: metadata.json -> interfaces, component, units
+Optionally enriches with LLM-generated descriptions and flowcharts (Ollama).
 """
 import os
 import sys
 import json
 from collections import defaultdict
 
-from utils import get_module_name, norm_path, get_range_for_type
+from utils import get_module_name, norm_path, get_range_for_type, load_config
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -24,6 +25,7 @@ def main():
     with open(METADATA_PATH, "r", encoding="utf-8") as f:
         meta = json.load(f)
 
+    config = load_config(PROJECT_ROOT)
     base_path = meta["basePath"]
     project_name = meta.get("projectName", os.path.basename(base_path))
     project_code = project_name.upper()
@@ -154,6 +156,23 @@ def main():
         for idx, (_, iid, _) in enumerate(entries, 1):
             interface_index[iid] = idx
 
+    llm_data = {}
+    if config.get("enableDescriptions") or config.get("enableFlowcharts"):
+        try:
+            from llm_client import enrich_functions_with_llm
+            funcs_only = [f for f in functions_data if "location" in f and f.get("location")]
+            if funcs_only:
+                print("Enriching with LLM (Ollama)...", file=sys.stderr)
+                llm_data = enrich_functions_with_llm(
+                    funcs_only,
+                    base_path,
+                    config,
+                    descriptions=config.get("enableDescriptions", False),
+                    flowcharts=config.get("enableFlowcharts", False),
+                )
+        except ImportError as e:
+            print(f"LLM disabled: {e}", file=sys.stderr)
+
     interfaces_data = []
     for kind, iid, data in ordered:
         fp = iid.rsplit(":", 1)[0]
@@ -187,14 +206,20 @@ def main():
                 {"name": p.get("name", ""), "type": p.get("type", ""), "range": get_range_for_type(p.get("type", ""))}
                 for p in params
             ]
-            interfaces_data.append({
+            entry = {
                 "interfaceId": interface_id,
                 "interfaceName": interface_name,
                 "interfaceType": "function",
                 "parameters": params_with_range,
                 "callerUnits": sorted(caller_units_set),
                 "calleesUnits": sorted(callee_units_set),
-            })
+            }
+            llm_info = llm_data.get(data["id"], {})
+            if llm_info.get("description"):
+                entry["description"] = llm_info["description"]
+            if llm_info.get("flowchart"):
+                entry["flowchart"] = llm_info["flowchart"]
+            interfaces_data.append(entry)
         else:
             base_name = data["name"]
             interface_name = f"{file_code}_{base_name}" if base_name else file_code
