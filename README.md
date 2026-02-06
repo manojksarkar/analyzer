@@ -1,13 +1,19 @@
 # C++ Codebase Analyzer
 
-Parse -> metadata -> 3 outputs + flowchart (future).
+Parse C++ source → raw model (model/) → design views (output/).
 
-## Structure
+## Structure (Option A)
 
 ```
 ├── config/           config.json, schema.json
 ├── src/              parser.py, generator.py, llm_client.py, utils.py
-├── output/           metadata.json, interfaces.json, modules.json, units.json
+├── model/            raw model (single source of truth)
+│   ├── functions.json
+│   ├── globalVariables.json
+│   ├── units.json
+│   └── modules.json
+├── output/           design views
+│   └── interface_tables.json
 ├── run.py
 └── test_cpp_project/
 ```
@@ -40,7 +46,10 @@ Edit `config/config.json` or create `config/config.local.json` (gitignored) to o
 
 | Output | Purpose |
 |--------|---------|
-| metadata.json | functions dict, globalVariables dict (keyed by file:line) |
-| interfaces.json | interfaces dict (keyed by interfaceId, references metadata via functionId/variableId) |
-| modules.json | modules dict (units list per module, references units in units.json) |
-| units.json | units dict (functions list = ids in metadata.functions, callerUnits/calleesUnits reference other units) |
+| **model/** | Raw model (parser + generator) |
+| model/functions.json | functions dict; basePath, projectName, location, params, callersFunctionNames, calleesFunctionNames |
+| model/globalVariables.json | globalVariables dict |
+| model/units.json | units dict; functions, globalVariables, callerUnits, calleesUnits per file |
+| model/modules.json | modules dict; units grouped by module |
+| **output/** | Design views |
+| output/interface_tables.json | { unit_name: [{ interfaceId, type, interfaceName, ... }] } grouped by unit |

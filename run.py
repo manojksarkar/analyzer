@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Entry point: parse C++ project → metadata → generate outputs
+Entry point: parse C++ project → model/ (raw model) → output/ (design views)
 Usage: python run.py <project_path>
 Example: python run.py test_cpp_project
 """
@@ -23,16 +23,14 @@ if not os.path.isdir(resolved):
     print(f"Error: Project path not found: {resolved}")
     sys.exit(1)
 
-# Phase 1: Parse → metadata
-print("=== Phase 1: Parser -> metadata ===")
+print("=== Phase 1: Parse C++ source ===", flush=True)
 r1 = subprocess.run([sys.executable, os.path.join("src", "parser.py"), resolved], cwd=SCRIPT_DIR)
 if r1.returncode != 0:
     sys.exit(r1.returncode)
 
-# Phase 2: metadata → outputs
-print("\n=== Phase 2: metadata -> outputs ===")
+print("\n=== Phase 2: Derive model & generate views ===", flush=True)
 r2 = subprocess.run([sys.executable, os.path.join("src", "generator.py")], cwd=SCRIPT_DIR)
 if r2.returncode != 0:
     sys.exit(r2.returncode)
 
-print("\nDone.")
+print("\nDone.", flush=True)

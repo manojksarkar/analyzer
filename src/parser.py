@@ -1,5 +1,5 @@
 """
-Parser: C++ source -> metadata.json
+Parser: C++ source -> model/functions.json, model/globalVariables.json
 Call graph in function properties (callers/callees).
 """
 import os
@@ -255,15 +255,29 @@ def main():
                 parse_calls(os.path.join(root, f))
 
     metadata = build_metadata()
-    output_dir = os.path.join(PROJECT_ROOT, "output")
-    os.makedirs(output_dir, exist_ok=True)
-    metadata_path = os.path.join(output_dir, "metadata.json")
-    with open(metadata_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+    model_dir = os.path.join(PROJECT_ROOT, "model")
+    os.makedirs(model_dir, exist_ok=True)
+
+    base_path = metadata["basePath"]
+    meta_header = {
+        "basePath": base_path,
+        "projectName": metadata["projectName"],
+        "generatedAt": metadata["generatedAt"],
+        "version": metadata["version"],
+    }
+    with open(os.path.join(model_dir, "metadata.json"), "w", encoding="utf-8") as f:
+        json.dump(meta_header, f, indent=2)
+
+    with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as f:
+        json.dump(metadata["functions"], f, indent=2)
+    with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as f:
+        json.dump(metadata["globalVariables"], f, indent=2)
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
-    print(f"Generated: output/metadata.json ({n_funcs} functions, {n_vars} globals)")
+    print("  model/metadata.json")
+    print(f"  model/functions.json ({n_funcs})")
+    print(f"  model/globalVariables.json ({n_vars})")
 
 
 if __name__ == "__main__":

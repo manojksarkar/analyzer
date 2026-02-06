@@ -20,7 +20,8 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Analyzer output directory
+# Analyzer output
+model/
 output/
 
 # Local config overrides (optional)
