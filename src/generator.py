@@ -1,5 +1,5 @@
 """
-Generator: metadata.json -> interfaces, component, units
+Generator: metadata.json -> interfaces, modules, units
 Optionally enriches with LLM-generated descriptions and flowcharts (Ollama).
 """
 import os
@@ -29,28 +29,39 @@ def main():
     base_path = meta["basePath"]
     project_name = meta.get("projectName", os.path.basename(base_path))
     project_code = project_name.upper()
-    functions_data = meta.get("functions", [])
-    global_variables_data = meta.get("globalVariables", [])
 
-    functions_list = []
-    for f in functions_data:
+    # Support both dict (new) and list (legacy) format
+    _raw_functions = meta.get("functions", {})
+    if isinstance(_raw_functions, list):
+        functions_data = {f["location"]["file"] + ":" + str(f["location"]["line"]): f for f in _raw_functions}
+    else:
+        functions_data = _raw_functions
+
+    _raw_globals = meta.get("globalVariables", {})
+    if isinstance(_raw_globals, list):
+        global_variables_data = {g["location"]["file"] + ":" + str(g["location"]["line"]): g for g in _raw_globals}
+    else:
+        global_variables_data = _raw_globals
+
+    def _func_entry(fid, f):
         loc = f["location"]
-        full_path = norm_path(loc["file"], base_path)
-        functions_list.append({
+        return {
+            "functionId": fid,
             "functionName": f["name"],
             "qualifiedName": f.get("qualifiedName", f["name"]),
-            "functionId": f"{full_path}:{loc['line']}",
             "moduleName": f.get("module", ""),
             "parameters": f.get("params", []),
             "callersFunctionNames": f.get("callersFunctionNames", []),
             "calleesFunctionNames": f.get("calleesFunctionNames", []),
-        })
+        }
 
-    file_paths = sorted(set(norm_path(f["functionId"].rsplit(":", 1)[0], base_path) for f in functions_list))
+    functions_list = [_func_entry(fid, f) for fid, f in functions_data.items()]
+
+    file_paths = sorted(set(norm_path(fid.rsplit(":", 1)[0], base_path) for fid in functions_data.keys()))
     qualified_to_file = defaultdict(set)
-    for f in functions_list:
-        fp = norm_path(f["functionId"].rsplit(":", 1)[0], base_path)
-        qualified_to_file[f["qualifiedName"]].add(fp)
+    for fid, f in functions_data.items():
+        fp = norm_path(fid.rsplit(":", 1)[0], base_path)
+        qualified_to_file[f.get("qualifiedName", f["name"])].add(fp)
 
     unit_by_file = {}
     for fp in file_paths:
@@ -61,74 +72,43 @@ def main():
         unit_module = get_module_name(rel.replace("\\", "/"), base_path)
         unit_by_file[fp] = f"{unit_module}/{os.path.basename(fp)}"
 
-    # --- Component diagram ---
-    module_to_funcs = defaultdict(list)
-    for f in functions_list:
-        module_to_funcs[f["moduleName"]].append(f)
-    module_names = sorted(module_to_funcs.keys())
-    caller_sets = defaultdict(set)
-    callee_sets = defaultdict(set)
+    module_names = sorted({f.get("module", "") for f in functions_data.values() if f.get("module")})
 
+    modules_data = {}
     for mod in module_names:
-        for f in module_to_funcs[mod]:
-            for c in f["callersFunctionNames"]:
-                for cf in qualified_to_file.get(c, []):
-                    try:
-                        rel_cf = os.path.relpath(cf, base_path)
-                    except ValueError:
-                        rel_cf = cf
-                    um = get_module_name(rel_cf.replace("\\", "/"), base_path)
-                    if um != mod:
-                        caller_sets[mod].add(um)
-            for c in f["calleesFunctionNames"]:
-                for cf in qualified_to_file.get(c, []):
-                    try:
-                        rel_cf = os.path.relpath(cf, base_path)
-                    except ValueError:
-                        rel_cf = cf
-                    um = get_module_name(rel_cf.replace("\\", "/"), base_path)
-                    if um != mod:
-                        callee_sets[mod].add(um)
+        mod_units = sorted({unit_by_file[fp] for fp in file_paths
+            if unit_by_file.get(fp, "").split("/")[0] == mod})
+        modules_data[mod] = {"units": mod_units}
 
-    components_data = []
-    for mod in module_names:
-        components_data.append({
-            "name": mod,
-            "incoming": sorted(caller_sets[mod]),
-            "outgoing": sorted(callee_sets[mod]),
-            "functions": [f["functionName"] for f in module_to_funcs[mod]],
-        })
-
-    with open(os.path.join(OUTPUT_DIR, "component.json"), "w", encoding="utf-8") as f:
-        json.dump({"basePath": base_path, "components": components_data}, f, indent=2)
-    print(f"Generated: output/component.json ({len(components_data)} components)")
+    with open(os.path.join(OUTPUT_DIR, "modules.json"), "w", encoding="utf-8") as f:
+        json.dump({"basePath": base_path, "modules": modules_data}, f, indent=2)
+    print(f"Generated: output/modules.json ({len(modules_data)} modules)")
 
     # --- Unit design ---
-    units_data = []
+    units_data = {}
     for fp in file_paths:
-        funcs_in = [f for f in functions_list if norm_path(f["functionId"].rsplit(":", 1)[0], base_path) == fp]
         unit_name = unit_by_file.get(fp) or f"{get_module_name(fp, base_path)}/{os.path.basename(fp)}"
-        caller_units = defaultdict(set)
-        callee_units = defaultdict(set)
-        for f in funcs_in:
-            for cn in f["callersFunctionNames"]:
+        func_ids = sorted([fid for fid in functions_data if norm_path(fid.rsplit(":", 1)[0], base_path) == fp])
+        caller_unit_names = set()
+        callee_unit_names = set()
+        for fid in func_ids:
+            f = functions_data.get(fid, {})
+            for cn in f.get("callersFunctionNames", []):
                 for cf in qualified_to_file.get(cn, []):
                     u = unit_by_file.get(cf)
                     if u and u != unit_name:
-                        caller_units[u].add(cn)
-            for cn in f["calleesFunctionNames"]:
+                        caller_unit_names.add(u)
+            for cn in f.get("calleesFunctionNames", []):
                 for cf in qualified_to_file.get(cn, []):
                     u = unit_by_file.get(cf)
                     if u and u != unit_name:
-                        callee_units[u].add(cn)
-        units_data.append({
-            "unitName": unit_name,
+                        callee_unit_names.add(u)
+        units_data[unit_name] = {
             "fileName": os.path.basename(fp),
-            "moduleName": unit_name.split("/")[0],
-            "functionNames": sorted(set(f["qualifiedName"] for f in funcs_in)),
-            "callerUnits": [{"unitName": u, "functionNames": sorted(fns)} for u, fns in sorted(caller_units.items())],
-            "calleesUnits": [{"unitName": u, "functionNames": sorted(fns)} for u, fns in sorted(callee_units.items())],
-        })
+            "functions": func_ids,
+            "callerUnits": sorted(caller_unit_names),
+            "calleesUnits": sorted(callee_unit_names),
+        }
 
     with open(os.path.join(OUTPUT_DIR, "units.json"), "w", encoding="utf-8") as f:
         json.dump({"basePath": base_path, "units": units_data}, f, indent=2)
@@ -136,10 +116,10 @@ def main():
 
     # --- Interface table ---
     all_entries = []
-    for f in functions_data:
-        all_entries.append(("function", f["id"], f))
-    for g in global_variables_data:
-        all_entries.append(("globalVariable", g["id"], g))
+    for fid, f in functions_data.items():
+        all_entries.append(("function", fid, {**f, "id": fid}))
+    for vid, g in global_variables_data.items():
+        all_entries.append(("globalVariable", vid, {**g, "id": vid}))
 
     by_file = defaultdict(list)
     for kind, iid, data in all_entries:
@@ -160,9 +140,9 @@ def main():
     if config.get("enableDescriptions") or config.get("enableFlowcharts"):
         try:
             from llm_client import enrich_functions_with_llm
-            funcs_only = [f for f in functions_data if "location" in f and f.get("location")]
+            funcs_only = [f for f in functions_data.values() if f.get("location")]
             if funcs_only:
-                print("Enriching with LLM (Ollama)...", file=sys.stderr)
+                print("Enriching with LLM (Ollama)...")
                 llm_data = enrich_functions_with_llm(
                     funcs_only,
                     base_path,
@@ -170,10 +150,13 @@ def main():
                     descriptions=config.get("enableDescriptions", False),
                     flowcharts=config.get("enableFlowcharts", False),
                 )
+                has_any = any(v.get("description") or v.get("flowchart") for v in llm_data.values())
+                if not has_any:
+                    print("  Warning: No descriptions/flowcharts received. Is Ollama running? (ollama serve)")
         except ImportError as e:
-            print(f"LLM disabled: {e}", file=sys.stderr)
+            print(f"LLM disabled: {e}")
 
-    interfaces_data = []
+    interfaces_data = {}
     for kind, iid, data in ordered:
         fp = iid.rsplit(":", 1)[0]
         abs_fp = norm_path(fp, base_path)
@@ -207,30 +190,32 @@ def main():
                 for p in params
             ]
             entry = {
-                "interfaceId": interface_id,
                 "interfaceName": interface_name,
                 "interfaceType": "function",
+                "functionId": iid,
                 "parameters": params_with_range,
                 "callerUnits": sorted(caller_units_set),
                 "calleesUnits": sorted(callee_units_set),
             }
-            llm_info = llm_data.get(data["id"], {})
+            loc = data.get("location", {})
+            lookup_key = f"{loc.get('file', '')}:{loc.get('line', '')}" if loc else ""
+            llm_info = llm_data.get(lookup_key, {}) if lookup_key else {}
             if llm_info.get("description"):
                 entry["description"] = llm_info["description"]
             if llm_info.get("flowchart"):
                 entry["flowchart"] = llm_info["flowchart"]
-            interfaces_data.append(entry)
+            interfaces_data[interface_id] = entry
         else:
             base_name = data["name"]
             interface_name = f"{file_code}_{base_name}" if base_name else file_code
-            interfaces_data.append({
-                "interfaceId": interface_id,
+            interfaces_data[interface_id] = {
                 "interfaceName": interface_name,
                 "interfaceType": "globalVariable",
+                "variableId": iid,
                 "parameters": [],
                 "callerUnits": [],
                 "calleesUnits": [],
-            })
+            }
 
     with open(os.path.join(OUTPUT_DIR, "interfaces.json"), "w", encoding="utf-8") as f:
         json.dump({"basePath": base_path, "interfaces": interfaces_data}, f, indent=2)

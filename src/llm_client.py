@@ -35,6 +35,18 @@ def extract_source(base_path: str, loc: dict) -> str:
     return "".join(lines[start_idx:end_idx]).strip()
 
 
+def _ollama_available(config: dict) -> bool:
+    """Quick check if Ollama is reachable."""
+    if not HAS_REQUESTS:
+        return False
+    base_url = (config.get("ollamaBaseUrl") or "http://localhost:11434").rstrip("/")
+    try:
+        r = requests.get(f"{base_url}/api/tags", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
 def _call_ollama(prompt: str, config: dict) -> str:
     """Call Ollama API (generate endpoint). Returns response text or empty on failure."""
     if not HAS_REQUESTS:
@@ -54,6 +66,7 @@ def _call_ollama(prompt: str, config: dict) -> str:
         return (data.get("response") or "").strip()
     except Exception as e:
         print(f"Ollama error: {e}", file=sys.stderr)
+        print("  -> Is Ollama running? Start with: ollama serve", file=sys.stderr)
         return ""
 
 
@@ -95,6 +108,12 @@ Mermaid flowchart:"""
     return out
 
 
+def _make_canonical_key(f: dict) -> str:
+    """Use location file:line as stable key (avoids path separator issues)."""
+    loc = f.get("location", {})
+    return f"{loc.get('file', '')}:{loc.get('line', '')}"
+
+
 def enrich_functions_with_llm(
     functions_data: list,
     base_path: str,
@@ -104,27 +123,30 @@ def enrich_functions_with_llm(
     flowcharts: bool = False,
 ) -> dict:
     """
-    Add description and/or flowchart to each function. Returns dict function_id -> {description, flowchart}.
+    Add description and/or flowchart to each function.
+    Returns dict canonical_key -> {description, flowchart}. Use _make_canonical_key for lookup.
     """
+    if not _ollama_available(config):
+        print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
+        return {}
+
     result = {}
     total = len(functions_data)
     for idx, f in enumerate(functions_data):
-        fid = f.get("id", "")
-        if ":" not in fid:
-            continue
         loc = f.get("location", {})
         if not loc:
             continue
+        key = _make_canonical_key(f)
         source = extract_source(base_path, loc)
         desc = ""
         fc = ""
         if descriptions:
             desc = get_description(source, config)
-            result[fid] = {"description": desc, "flowchart": ""}
+            result[key] = {"description": desc, "flowchart": ""}
         if flowcharts:
             fc = get_flowchart(source, config)
-            if fid not in result:
-                result[fid] = {"description": "", "flowchart": ""}
-            result[fid]["flowchart"] = fc
+            if key not in result:
+                result[key] = {"description": "", "flowchart": ""}
+            result[key]["flowchart"] = fc
         print(f"  LLM [{idx + 1}/{total}] {f.get('name', '?')}", file=sys.stderr)
     return result

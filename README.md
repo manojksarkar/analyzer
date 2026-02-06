@@ -7,7 +7,7 @@ Parse -> metadata -> 3 outputs + flowchart (future).
 ```
 ├── config/           config.json, schema.json
 ├── src/              parser.py, generator.py, llm_client.py, utils.py
-├── output/           metadata.json, interfaces.json, component.json, units.json
+├── output/           metadata.json, interfaces.json, modules.json, units.json
 ├── run.py
 └── test_cpp_project/
 ```
@@ -40,6 +40,7 @@ Edit `config/config.json` or create `config/config.local.json` (gitignored) to o
 
 | Output | Purpose |
 |--------|---------|
-| interfaces.json | Interface table |
-| component.json | Component diagram |
-| units.json | Unit design |
+| metadata.json | functions dict, globalVariables dict (keyed by file:line) |
+| interfaces.json | interfaces dict (keyed by interfaceId, references metadata via functionId/variableId) |
+| modules.json | modules dict (units list per module, references units in units.json) |
+| units.json | units dict (functions list = ids in metadata.functions, callerUnits/calleesUnits reference other units) |

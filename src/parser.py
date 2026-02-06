@@ -192,21 +192,21 @@ def build_metadata():
         ]
 
     base_path = os.path.abspath(MODULE_BASE_PATH)
-    functions_list = []
-    global_variables_list = []
+    functions_dict = {}
+    global_variables_dict = {}
 
     for func_key, f in functions.items():
         file_path = f["functionId"].rsplit(":", 1)[0]
         try:
-            rel_file = os.path.relpath(file_path, base_path)
+            rel_file = os.path.relpath(file_path, base_path).replace("\\", "/")
         except ValueError:
-            rel_file = file_path
-        functions_list.append({
-            "id": f["functionId"],
+            rel_file = file_path.replace("\\", "/")
+        fid = f"{rel_file}:{f['functionId'].rsplit(':', 1)[1]}"
+        functions_dict[fid] = {
             "name": f["functionName"],
             "qualifiedName": f["qualifiedName"],
             "location": {
-                "file": rel_file.replace("\\", "/"),
+                "file": rel_file,
                 "line": int(f["functionId"].rsplit(":", 1)[1]),
                 "endLine": f.get("endLine", int(f["functionId"].rsplit(":", 1)[1])),
             },
@@ -214,30 +214,30 @@ def build_metadata():
             "params": f["parameters"],
             "callersFunctionNames": f["callersFunctionNames"],
             "calleesFunctionNames": f["calleesFunctionNames"],
-        })
+        }
 
     for var_id, g in globals_data.items():
         file_path = var_id.rsplit(":", 1)[0]
         try:
-            rel_file = os.path.relpath(file_path, base_path)
+            rel_file = os.path.relpath(file_path, base_path).replace("\\", "/")
         except ValueError:
-            rel_file = file_path
-        global_variables_list.append({
-            "id": var_id,
+            rel_file = file_path.replace("\\", "/")
+        vid = f"{rel_file}:{var_id.rsplit(':', 1)[1]}"
+        global_variables_dict[vid] = {
             "name": g["variableName"],
             "qualifiedName": g["qualifiedName"],
-            "location": {"file": rel_file.replace("\\", "/"), "line": int(var_id.rsplit(":", 1)[1])},
+            "location": {"file": rel_file, "line": int(var_id.rsplit(":", 1)[1])},
             "module": g["moduleName"],
             "type": g["type"],
-        })
+        }
 
     return {
         "version": 1,
         "basePath": base_path,
         "projectName": PROJECT_NAME,
         "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "functions": functions_list,
-        "globalVariables": global_variables_list,
+        "functions": functions_dict,
+        "globalVariables": global_variables_dict,
     }
 
 
@@ -261,7 +261,9 @@ def main():
     with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"Generated: output/metadata.json ({len(metadata['functions'])} functions, {len(metadata['globalVariables'])} globals)")
+    n_funcs = len(metadata["functions"])
+    n_vars = len(metadata["globalVariables"])
+    print(f"Generated: output/metadata.json ({n_funcs} functions, {n_vars} globals)")
 
 
 if __name__ == "__main__":

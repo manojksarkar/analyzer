@@ -23,92 +23,45 @@
             "type": "string"
         },
         "functions": {
-            "type": "array",
-            "items": {
+            "type": "object",
+            "additionalProperties": {
                 "type": "object",
-                "required": [
-                    "id",
-                    "name",
-                    "location",
-                    "module",
-                    "params",
-                    "callersFunctionNames",
-                    "calleesFunctionNames"
-                ],
+                "required": ["name", "location", "module", "params", "callersFunctionNames", "calleesFunctionNames"],
                 "properties": {
-                    "id": {
-                        "type": "string"
-                    },
-                    "name": {
-                        "type": "string"
-                    },
-                    "qualifiedName": {
-                        "type": "string"
-                    },
+                    "name": {"type": "string"},
+                    "qualifiedName": {"type": "string"},
                     "location": {
                         "type": "object",
                         "properties": {
-                            "file": {
-                                "type": "string"
-                            },
-                            "line": {
-                                "type": "integer"
-                            }
+                            "file": {"type": "string"},
+                            "line": {"type": "integer"},
+                            "endLine": {"type": "integer"}
                         }
                     },
-                    "module": {
-                        "type": "string"
-                    },
-                    "params": {
-                        "type": "array"
-                    },
-                    "callersFunctionNames": {
-                        "type": "array"
-                    },
-                    "calleesFunctionNames": {
-                        "type": "array"
-                    }
+                    "module": {"type": "string"},
+                    "params": {"type": "array"},
+                    "callersFunctionNames": {"type": "array"},
+                    "calleesFunctionNames": {"type": "array"}
                 }
             }
         },
         "globalVariables": {
-            "type": "array",
-            "items": {
+            "type": "object",
+            "additionalProperties": {
                 "type": "object",
-                "required": [
-                    "id",
-                    "name",
-                    "location",
-                    "module",
-                    "type"
-                ],
+                "required": ["name", "location", "module", "type"],
                 "properties": {
-                    "id": {
-                        "type": "string"
-                    },
-                    "name": {
-                        "type": "string"
-                    },
-                    "qualifiedName": {
-                        "type": "string"
-                    },
+                    "name": {"type": "string"},
+                    "qualifiedName": {"type": "string"},
                     "location": {
                         "type": "object",
                         "properties": {
-                            "file": {
-                                "type": "string"
-                            },
-                            "line": {
-                                "type": "integer"
-                            }
+                            "file": {"type": "string"},
+                            "line": {"type": "integer"}
                         }
                     },
-                    "module": {
-                        "type": "string"
-                    },
-                    "type": {
-                        "type": "string"
-                    }
+                    "module": {"type": "string"},
+                    "type": {"type": "string"}
                 }
             }
         }
