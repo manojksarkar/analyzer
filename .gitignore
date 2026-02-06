@@ -23,6 +23,9 @@ Thumbs.db
 # Analyzer output directory
 output/
 
+# Local config overrides (optional)
+config/config.local.json
+
 # Build artifacts
 build/
 dist/

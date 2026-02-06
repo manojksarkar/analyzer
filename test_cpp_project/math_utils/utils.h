@@ -1,13 +1,5 @@
 #pragma once
 
+// Shared math utilities used by other test modules
 int add(int a, int b);
 int subtract(int a, int b);
-
-// Simple namespace-based test functions to exercise analyzer
-namespace a {
-    void testA();
-    void testB();
-}
-
-// Function that calls into the namespace with qualified calls
-void testC();

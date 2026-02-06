@@ -1,0 +1,116 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Metadata",
+    "type": "object",
+    "required": [
+        "version",
+        "basePath",
+        "functions",
+        "globalVariables"
+    ],
+    "properties": {
+        "version": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "basePath": {
+            "type": "string"
+        },
+        "projectName": {
+            "type": "string"
+        },
+        "generatedAt": {
+            "type": "string"
+        },
+        "functions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "location",
+                    "module",
+                    "params",
+                    "callersFunctionNames",
+                    "calleesFunctionNames"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "qualifiedName": {
+                        "type": "string"
+                    },
+                    "location": {
+                        "type": "object",
+                        "properties": {
+                            "file": {
+                                "type": "string"
+                            },
+                            "line": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "module": {
+                        "type": "string"
+                    },
+                    "params": {
+                        "type": "array"
+                    },
+                    "callersFunctionNames": {
+                        "type": "array"
+                    },
+                    "calleesFunctionNames": {
+                        "type": "array"
+                    }
+                }
+            }
+        },
+        "globalVariables": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "location",
+                    "module",
+                    "type"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "qualifiedName": {
+                        "type": "string"
+                    },
+                    "location": {
+                        "type": "object",
+                        "properties": {
+                            "file": {
+                                "type": "string"
+                            },
+                            "line": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "module": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}

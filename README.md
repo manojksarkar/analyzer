@@ -1,43 +1,39 @@
-# C++ Call Graph Analysis Project
+# C++ Codebase Analyzer
 
-This project contains a tool for analyzing C++ codebases to extract function call graphs and module dependencies.
+Parse -> metadata -> 3 outputs + flowchart (future).
 
-## Project Structure
+## Structure
 
 ```
-Tests/
-├── analyzer.py              # Call graph analyzer (functions, files, modules)
-├── modules.json             # Output: functions, files, modules
-├── component.json          # Output: component diagram structure
-│
-└── test_cpp_projects/      # C++ test projects
-    ├── cpp_project/        # Simple test project
-    └── cpp_project_module_based/  # Module-based test project
+├── config/           config.json, schema.json
+├── src/              parser.py, generator.py, utils.py
+├── output/           metadata.json, interfaces.json, component.json, units.json
+├── run.py
+└── test_cpp_project/
 ```
 
-## Quick Start
+## Usage
 
 ```bash
-python analyzer.py
+python run.py test_cpp_project
+```
+(project_path is relative to script dir or absolute)
+
+## Config
+
+Edit `config/config.json` or create `config/config.local.json` (gitignored) to override:
+
+```json
+{
+  "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
+  "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
+}
 ```
 
-Generates `modules.json` (functions, files, modules) and `component.json` (component diagram).
+## Outputs
 
-## Features
-
-- **Function-level analysis**: Extract all functions with their callers and callees
-- **Module-based analysis**: Group functions by module and track inter-module dependencies
-- **Namespace and class support**: Handles C++ namespaces, classes, and overloads
-- **Cross-module tracking**: Identifies which modules call which other modules
-
-## Requirements
-
-- Python 3.x
-- libclang (LLVM)
-- clang Python bindings
-
-## Configuration
-
-Paths are relative to the script location. The analyzer uses `test_cpp_projects/cpp_project_module_based/src` (first-level subfolders = modules).
-
-Update `cindex.Config.set_library_file(...)` if your LLVM/libclang install path differs.
+| Output | Purpose |
+|--------|---------|
+| interfaces.json | Interface table |
+| component.json | Component diagram |
+| units.json | Unit design |
