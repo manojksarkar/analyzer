@@ -1,5 +1,5 @@
 """
-LLM client for Ollama: function descriptions and flowcharts.
+LLM client for Ollama: function descriptions.
 Extracts source on-demand from file:line:endLine (no body in metadata).
 """
 import os
@@ -39,7 +39,7 @@ def _ollama_available(config: dict) -> bool:
     """Quick check if Ollama is reachable."""
     if not HAS_REQUESTS:
         return False
-    base_url = (config.get("ollamaBaseUrl") or "http://localhost:11434").rstrip("/")
+    base_url = config["ollamaBaseUrl"].rstrip("/")
     try:
         r = requests.get(f"{base_url}/api/tags", timeout=3)
         return r.status_code == 200
@@ -52,14 +52,13 @@ def _call_ollama(prompt: str, config: dict) -> str:
     if not HAS_REQUESTS:
         print("Warning: requests not installed. pip install requests", file=sys.stderr)
         return ""
-    base_url = (config.get("ollamaBaseUrl") or "http://localhost:11434").rstrip("/")
-    model = config.get("ollamaModel") or "llama3.2"
+    base_url = config["ollamaBaseUrl"].rstrip("/")
     url = f"{base_url}/api/generate"
     try:
         r = requests.post(
             url,
-            json={"model": model, "prompt": prompt, "stream": False},
-            timeout=config.get("ollamaTimeout", 60),
+            json={"model": config["ollamaModel"], "prompt": prompt, "stream": False},
+            timeout=config["ollamaTimeout"],
         )
         r.raise_for_status()
         data = r.json()
@@ -84,47 +83,20 @@ One-line description:"""
     return _call_ollama(prompt, config)
 
 
-def get_flowchart(source: str, config: dict) -> str:
-    """Get Mermaid flowchart from Ollama for the function logic."""
-    if not source:
-        return ""
-    prompt = f"""Generate a Mermaid flowchart for this C++ function. Use flowchart TD or graph TD.
-Show control flow: conditionals, loops, function calls. Output ONLY valid Mermaid code, no extra text.
-
-```cpp
-{source}
-```
-
-Mermaid flowchart:"""
-    out = _call_ollama(prompt, config)
-    # Try to extract ```mermaid ... ``` block if LLM wrapped it
-    if "```" in out:
-        parts = out.split("```")
-        for i, p in enumerate(parts):
-            if "mermaid" in p.lower() and i + 1 < len(parts):
-                return parts[i + 1].strip()
-            if p.strip().startswith(("flowchart", "graph")):
-                return p.strip()
-    return out
-
-
 def _make_canonical_key(f: dict) -> str:
     """Use location file:line as stable key (avoids path separator issues)."""
     loc = f.get("location", {})
     return f"{loc.get('file', '')}:{loc.get('line', '')}"
 
 
-def enrich_functions_with_llm(
+def enrich_functions_with_descriptions(
     functions_data: list,
     base_path: str,
     config: dict,
-    *,
-    descriptions: bool = True,
-    flowcharts: bool = False,
 ) -> dict:
     """
-    Add description and/or flowchart to each function.
-    Returns dict canonical_key -> {description, flowchart}. Use _make_canonical_key for lookup.
+    Add description to each function via Ollama.
+    Returns dict canonical_key -> {description}. Use _make_canonical_key for lookup.
     """
     if not _ollama_available(config):
         print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
@@ -138,15 +110,7 @@ def enrich_functions_with_llm(
             continue
         key = _make_canonical_key(f)
         source = extract_source(base_path, loc)
-        desc = ""
-        fc = ""
-        if descriptions:
-            desc = get_description(source, config)
-            result[key] = {"description": desc, "flowchart": ""}
-        if flowcharts:
-            fc = get_flowchart(source, config)
-            if key not in result:
-                result[key] = {"description": "", "flowchart": ""}
-            result[key]["flowchart"] = fc
+        desc = get_description(source, config)
+        result[key] = {"description": desc}
         print(f"  LLM [{idx + 1}/{total}] {f.get('name', '?')}", file=sys.stderr)
     return result

@@ -41,8 +41,7 @@ def main():
     else:
         print("Error: metadata.json not found. Run parser first.")
         sys.exit(1)
-    meta = {"basePath": base_path, "projectName": project_name}
-    config = load_config(PROJECT_ROOT) or {}
+    config = load_config(PROJECT_ROOT)
 
     if isinstance(functions_data, list):
         functions_data = {f["location"]["file"] + ":" + str(f["location"]["line"]): f for f in functions_data}
@@ -50,20 +49,6 @@ def main():
         global_variables_data = {g["location"]["file"] + ":" + str(g["location"]["line"]): g for g in global_variables_data}
 
     project_code = project_name.upper()
-
-    def _func_entry(fid, f):
-        loc = f["location"]
-        return {
-            "functionId": fid,
-            "functionName": f["name"],
-            "qualifiedName": f.get("qualifiedName", f["name"]),
-            "moduleName": f.get("module", ""),
-            "parameters": f.get("params", []),
-            "callersFunctionNames": f.get("callersFunctionNames", []),
-            "calleesFunctionNames": f.get("calleesFunctionNames", []),
-        }
-
-    functions_list = [_func_entry(fid, f) for fid, f in functions_data.items()]
 
     all_file_paths = set(norm_path(fid.rsplit(":", 1)[0], base_path) for fid in functions_data.keys())
     all_file_paths.update(norm_path(vid.rsplit(":", 1)[0], base_path) for vid in global_variables_data.keys())
@@ -84,36 +69,6 @@ def main():
 
     module_names = sorted({f.get("module", "") for f in functions_data.values() if f.get("module")} |
                         {g.get("module", "") for g in global_variables_data.values() if g.get("module")})
-
-    # --- Component design: modules with units and incoming/outgoing for diagram ---
-    caller_sets = defaultdict(set)
-    callee_sets = defaultdict(set)
-    for mod in module_names:
-        for f in functions_data.values():
-            if f.get("module") != mod:
-                continue
-            for cn in f.get("callersFunctionNames", []):
-                for cf in qualified_to_file.get(cn, []):
-                    u = unit_by_file.get(cf, "")
-                    um = u.split("/")[0] if u else ""
-                    if um and um != mod:
-                        caller_sets[mod].add(um)
-            for cn in f.get("calleesFunctionNames", []):
-                for cf in qualified_to_file.get(cn, []):
-                    u = unit_by_file.get(cf, "")
-                    um = u.split("/")[0] if u else ""
-                    if um and um != mod:
-                        callee_sets[mod].add(um)
-
-    components_data = {}
-    for mod in module_names:
-        mod_units = sorted({unit_by_file[fp] for fp in file_paths
-            if unit_by_file.get(fp, "").split("/")[0] == mod})
-        components_data[mod] = {
-            "units": mod_units,
-            "incoming": sorted(caller_sets[mod]),
-            "outgoing": sorted(callee_sets[mod]),
-        }
 
     # --- Raw model: units ---
     units_data = {}
@@ -175,22 +130,15 @@ def main():
             interface_index[iid] = idx
 
     llm_data = {}
-    if config.get("enableDescriptions") or config.get("enableFlowcharts"):
+    if config.get("enableDescriptions"):
         try:
-            from llm_client import enrich_functions_with_llm
+            from llm_client import enrich_functions_with_descriptions
             funcs_only = [f for f in functions_data.values() if f.get("location")]
             if funcs_only:
                 print("Enriching with LLM (Ollama)...")
-                llm_data = enrich_functions_with_llm(
-                    funcs_only,
-                    base_path,
-                    config,
-                    descriptions=config.get("enableDescriptions", False),
-                    flowcharts=config.get("enableFlowcharts", False),
-                )
-                has_any = any(v.get("description") or v.get("flowchart") for v in llm_data.values())
-                if not has_any:
-                    print("  Warning: No descriptions/flowcharts received. Is Ollama running? (ollama serve)")
+                llm_data = enrich_functions_with_descriptions(funcs_only, base_path, config)
+                if not any(v.get("description") for v in llm_data.values()):
+                    print("  Warning: No descriptions received. Is Ollama running? (ollama serve)")
         except ImportError as e:
             print(f"LLM disabled: {e}")
 
@@ -233,13 +181,10 @@ def main():
                 "calleesUnits": sorted(callee_units_set),
                 "parameters": params_with_range,
             })
-            loc = data.get("location", {})
-            lookup_key = f"{loc.get('file', '')}:{loc.get('line', '')}" if loc else ""
-            llm_info = llm_data.get(lookup_key, {}) if lookup_key else {}
+            # Use iid (file:line) to match llm_client's canonical key
+            llm_info = llm_data.get(iid, {}) if kind == "function" else {}
             if llm_info.get("description"):
                 functions_data[iid]["description"] = llm_info["description"]
-            if llm_info.get("flowchart"):
-                functions_data[iid]["flowchart"] = llm_info["flowchart"]
         else:
             base_name = data["name"]
             interface_name = f"{file_code}_{base_name}" if base_name else file_code
@@ -271,8 +216,6 @@ def main():
             }
             if f.get("description"):
                 e["description"] = f["description"]
-            if f.get("flowchart"):
-                e["flowchart"] = f["flowchart"]
             entries.append(e)
         for vid in sorted(unit_info["globalVariables"], key=lambda x: int(x.rsplit(":", 1)[1])):
             if vid not in global_variables_data:

@@ -48,8 +48,8 @@ def _strip_json_comments(text: str) -> str:
 
 
 def load_config(project_root: str) -> dict:
-    """Load config from config/, then config.local.json overrides."""
-    defaults = {}
+    """Load config from config/config.json, then config.local.json overrides."""
+    config = {}
     config_dir = os.path.join(project_root, "config")
     for name in ("config.json", "config.local.json"):
         path = os.path.join(config_dir, name)
@@ -58,10 +58,10 @@ def load_config(project_root: str) -> dict:
         if os.path.isfile(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    defaults.update(json.loads(_strip_json_comments(f.read())))
+                    config.update(json.loads(_strip_json_comments(f.read())))
             except (json.JSONDecodeError, IOError):
                 pass
-    return defaults
+    return config
 
 
 def get_module_name(file_path: str, base_path: str) -> str:

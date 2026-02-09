@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from clang import cindex
 
-from utils import get_module_name as _get_module, load_config as _load_config_file
+from utils import get_module_name as _get_module, load_config
 
 # ================= CONFIG =================
 if len(sys.argv) < 2:
@@ -23,26 +23,14 @@ proj_arg = sys.argv[1]
 MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.path.join(PROJECT_ROOT, proj_arg)
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
 
-
-def _load_config():
-    """Load config from config/, then config.local.json overrides."""
-    defaults = {
-        "llvmLibPath": r"C:\Program Files\LLVM\bin\libclang.dll",
-        "clangIncludePath": r"C:\Program Files\LLVM\lib\clang\17\include",
-    }
-    defaults.update(_load_config_file(PROJECT_ROOT))
-    return defaults
-
-
-_config = _load_config()
-llvm_path = _config.get("llvmLibPath", "")
-if llvm_path and os.path.isfile(llvm_path):
-    cindex.Config.set_library_file(llvm_path)
+_config = load_config(PROJECT_ROOT)
+if _config.get("llvmLibPath") and os.path.isfile(_config["llvmLibPath"]):
+    cindex.Config.set_library_file(_config["llvmLibPath"])
 
 CLANG_ARGS = [
     "-std=c++17",
     f"-I{MODULE_BASE_PATH}",
-    f"-I{_config.get('clangIncludePath', r'C:\Program Files\LLVM\lib\clang\17\include')}",
+    f"-I{_config['clangIncludePath']}",
 ]
 
 

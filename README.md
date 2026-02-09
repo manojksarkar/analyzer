@@ -34,13 +34,12 @@ Edit `config/config.json` or create `config/config.local.json` (gitignored) to o
   "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
   "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
   "enableDescriptions": false,
-  "enableFlowcharts": false,
   "ollamaBaseUrl": "http://localhost:11434",
   "ollamaModel": "llama3.2"
 }
 ```
 
-**LLM (Ollama):** Set `enableDescriptions` and/or `enableFlowcharts` to `true` to add function descriptions and Mermaid flowcharts to interfaces. Requires Ollama running locally and `pip install requests`.
+**LLM (Ollama):** Set `enableDescriptions` to `true` to add function descriptions to the interface table. Requires Ollama running locally and `pip install requests`.
 
 ## Outputs
 
