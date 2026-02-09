@@ -1,7 +1,7 @@
 {
   "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
   "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
-  "enableDescriptions": true,
+  "enableDescriptions": false,
   "ollamaBaseUrl": "http://localhost:11434",
   "ollamaModel": "llama3.2",
   "ollamaTimeout": 60

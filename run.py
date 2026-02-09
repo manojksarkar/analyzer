@@ -33,4 +33,9 @@ r2 = subprocess.run([sys.executable, os.path.join("src", "generator.py")], cwd=S
 if r2.returncode != 0:
     sys.exit(r2.returncode)
 
+print("\n=== Phase 3: Export interface tables to DOCX ===", flush=True)
+r3 = subprocess.run([sys.executable, os.path.join("src", "docx_exporter.py")], cwd=SCRIPT_DIR)
+if r3.returncode != 0:
+    sys.exit(r3.returncode)
+
 print("\nDone.", flush=True)

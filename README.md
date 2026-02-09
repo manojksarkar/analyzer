@@ -13,7 +13,8 @@ Parse C++ source → raw model (model/) → design views (output/).
 │   ├── units.json
 │   └── modules.json
 ├── output/           design views
-│   └── interface_tables.json
+│   ├── interface_tables.json
+│   └── interface_tables.docx
 ├── run.py
 └── test_cpp_project/
 ```
@@ -41,6 +42,8 @@ Edit `config/config.json` or create `config/config.local.json` (gitignored) to o
 
 **LLM (Ollama):** Set `enableDescriptions` to `true` to add function descriptions to the interface table. Requires Ollama running locally and `pip install requests`.
 
+**DOCX export:** Phase 3 exports `output/interface_tables.docx` from the JSON. Requires `pip install python-docx`.
+
 ## Outputs
 
 | Output | Purpose |
@@ -52,3 +55,4 @@ Edit `config/config.json` or create `config/config.local.json` (gitignored) to o
 | model/modules.json | modules dict; units grouped by module |
 | **output/** | Design views |
 | output/interface_tables.json | { unit_name: [{ interfaceId, type, interfaceName, ... }] } grouped by unit |
+| output/interface_tables.docx | Word document with interface tables per unit |
