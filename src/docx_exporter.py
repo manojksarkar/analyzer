@@ -12,10 +12,14 @@ OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 JSON_PATH = os.path.join(OUTPUT_DIR, "interface_tables.json")
 DOCX_PATH = os.path.join(OUTPUT_DIR, "interface_tables.docx")
 
+COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
 
-def _param_str(p):
-    """Format parameter as 'name: type'."""
-    return f"{p.get('name', '')}: {p.get('type', '')}"
+
+def _set_cell_font(cell, font_pt, bold=False):
+    for p in cell.paragraphs:
+        for r in p.runs:
+            r.font.size = font_pt
+            r.font.bold = bold
 
 
 def export_docx(json_path: str = JSON_PATH, docx_path: str = DOCX_PATH) -> bool:
@@ -27,6 +31,7 @@ def export_docx(json_path: str = JSON_PATH, docx_path: str = DOCX_PATH) -> bool:
     try:
         from docx import Document
         from docx.shared import Pt
+        font_small = Pt(8)
     except ImportError:
         print("Error: python-docx not installed. pip install python-docx")
         return False
@@ -37,8 +42,6 @@ def export_docx(json_path: str = JSON_PATH, docx_path: str = DOCX_PATH) -> bool:
     doc = Document()
     doc.add_heading("Interface Tables", 0)
 
-    cols = ("Interface ID", "Type", "Name", "Qualified Name", "Parameters", "Caller Units", "Callee Units", "Description")
-
     for unit_name in sorted(data.keys()):
         if unit_name in ("basePath", "projectName"):
             continue
@@ -46,34 +49,57 @@ def export_docx(json_path: str = JSON_PATH, docx_path: str = DOCX_PATH) -> bool:
         if not isinstance(interfaces, list):
             continue
 
-        doc.add_heading(unit_name, level=2)
-        table = doc.add_table(rows=1, cols=len(cols))
+        parts = unit_name.split("/", 1)
+        module_name = parts[0]
+        file_name = parts[1] if len(parts) > 1 else unit_name
+
+        doc.add_heading(module_name, level=1)
+        doc.add_heading(file_name, level=2)
+
+        table = doc.add_table(rows=1, cols=len(COLS))
         table.style = "Table Grid"
         hdr = table.rows[0].cells
-        for i, c in enumerate(cols):
+        for i, c in enumerate(COLS):
             hdr[i].text = c
+            _set_cell_font(hdr[i], font_small, bold=True)
 
         for iface in interfaces:
-            if iface.get("type") == "globalVariable":
-                params_str = iface.get("variableType", "-") or "-"
+            iface_type = iface.get("type", "") or "-"
+            if iface_type == "globalVariable":
+                data_type = iface.get("variableType", "-") or "-"
+                data_range = "-"
             else:
                 params = iface.get("parameters", [])
-                params_str = "; ".join(_param_str(p) for p in params) if params else "-"
-            caller = ", ".join(iface.get("callerUnits", [])) or "-"
-            callee = ", ".join(iface.get("calleesUnits", [])) or "-"
-            desc = iface.get("description", "") or "-"
+                data_type = "; ".join(p.get("type", "") for p in params) if params else "-"
+                data_range = "; ".join(p.get("range", "") for p in params) if params else "-"
+
+            callers = iface.get("callerUnits", [])
+            callees = iface.get("calleesUnits", [])
+            dirs = []
+            if callers:
+                dirs.append("In")
+            if callees:
+                dirs.append("Out")
+            direction = "/".join(dirs) if dirs else "-"
+            src_dest = f"Source: {', '.join(callers)}; Dest: {', '.join(callees)}" if (callers or callees) else "-"
+            info = iface.get("description", "") or "-"
 
             row = table.add_row().cells
-            row[0].text = str(iface.get("interfaceId", ""))
-            row[1].text = str(iface.get("type", ""))
-            row[2].text = str(iface.get("name", ""))
-            row[3].text = str(iface.get("qualifiedName", ""))
-            row[4].text = params_str
-            row[5].text = caller
-            row[6].text = callee
-            row[7].text = desc
+            cells_text = (
+                str(iface.get("interfaceId", "")),
+                str(iface.get("interfaceName", "")),
+                info,
+                data_type,
+                data_range,
+                direction,
+                src_dest,
+                iface_type,
+            )
+            for i, txt in enumerate(cells_text):
+                row[i].text = str(txt)
+                _set_cell_font(row[i], font_small)
 
-    os.makedirs(os.path.dirname(docx_path), exist_ok=True)
+    os.makedirs(os.path.dirname(docx_path) or ".", exist_ok=True)
     doc.save(docx_path)
     return True
 
