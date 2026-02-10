@@ -8,6 +8,7 @@ Option A: Raw model -> Design views
 import os
 import sys
 import json
+import re
 from collections import defaultdict
 
 from utils import get_module_name, norm_path, get_range_for_type, load_config
@@ -43,6 +44,12 @@ def main():
         print("Error: metadata.json not found. Run parser first.")
         sys.exit(1)
     config = load_config(PROJECT_ROOT)
+
+    try:
+        # Reuse the same source extraction logic as the LLM client.
+        from llm_client import extract_source as _extract_source
+    except Exception:
+        _extract_source = None
 
     if isinstance(functions_data, list):
         functions_data = {f["location"]["file"] + ":" + str(f["location"]["line"]): f for f in functions_data}
@@ -195,6 +202,114 @@ def main():
                 "callerUnits": [],
                 "calleesUnits": [],
             })
+
+    # --- Infer interface direction (In/Out) from code usage ---
+    # Heuristics:
+    # - globals: write => Out, read => In, both => In/Out
+    # - functions: getter-like => Out, setter-like or writes globals => In,
+    #   reads globals => Out, both read+write => In/Out, otherwise based on signature.
+    getter_prefixes = ("get", "is", "has", "read", "fetch", "load")
+    setter_prefixes = ("set", "add", "update", "write", "save", "put", "push", "insert", "remove", "delete", "clear")
+
+    global_names = []
+    for g in global_variables_data.values():
+        n = (g.get("name") or "").strip()
+        if n:
+            global_names.append(n)
+    global_names = sorted(set(global_names))
+
+    patterns = {}
+    for name in global_names:
+        word = re.compile(r"\b" + re.escape(name) + r"\b")
+        assign = re.compile(r"\b" + re.escape(name) + r"\b\s*([+\-*/%&|^]?=)")
+        incdec = re.compile(r"(\+\+\s*\b" + re.escape(name) + r"\b|\b" + re.escape(name) + r"\b\s*\+\+|--\s*\b" + re.escape(name) + r"\b|\b" + re.escape(name) + r"\b\s*--)")
+        patterns[name] = (word, assign, incdec)
+
+    func_sources = {}
+    if _extract_source and global_names:
+        for fid, f in functions_data.items():
+            loc = f.get("location") or {}
+            if loc:
+                func_sources[fid] = _extract_source(base_path, loc) or ""
+
+    # Aggregate global read/write across all function bodies
+    global_rw = {name: {"read": False, "write": False} for name in global_names}
+    for src in func_sources.values():
+        for name in global_names:
+            word, assign, incdec = patterns[name]
+            if assign.search(src) or incdec.search(src):
+                global_rw[name]["write"] = True
+            if word.search(src):
+                global_rw[name]["read"] = True
+
+    def _rw_to_dir(read_flag: bool, write_flag: bool) -> str:
+        if read_flag and write_flag:
+            return "In/Out"
+        if write_flag:
+            return "Out"
+        if read_flag:
+            return "In"
+        return "-"
+
+    # Set direction for globals (declared in their unit)
+    for gid, g in global_variables_data.items():
+        name = (g.get("name") or "").strip()
+        rw = global_rw.get(name, {"read": False, "write": False})
+        g["direction"] = _rw_to_dir(rw["read"], rw["write"])
+
+    # Set direction for functions
+    for fid, f in functions_data.items():
+        fname = (f.get("name") or "").strip()
+        lname = fname.lower()
+        src = func_sources.get(fid, "")
+
+        read_any = False
+        write_any = False
+        if src and global_names:
+            for name in global_names:
+                word, assign, incdec = patterns[name]
+                if assign.search(src) or incdec.search(src):
+                    write_any = True
+                if word.search(src):
+                    read_any = True
+                if read_any and write_any:
+                    break
+
+        has_in = False
+        has_out = False
+
+        if lname.startswith(getter_prefixes):
+            has_out = True
+        if lname.startswith(setter_prefixes):
+            has_in = True
+
+        # Global interactions
+        if write_any:
+            has_in = True
+        if read_any and not write_any and not has_in:
+            has_out = True
+        if read_any and write_any:
+            has_in = True
+            has_out = True
+
+        # Signature heuristics (no return type available)
+        params = f.get("params", []) or []
+        if params and not has_out:
+            has_in = True
+        # output params (non-const ref/pointer) imply Out
+        for p in params:
+            t = (p.get("type") or "")
+            tl = t.lower()
+            if "&" in t and "const" not in tl:
+                has_out = True
+            if "*" in t and "const" not in tl:
+                has_out = True
+
+        if not has_in and not has_out:
+            # default: unknown, keep bidirectional for safety
+            f["direction"] = "In/Out" if params else "Out"
+        else:
+            f["direction"] = "In/Out" if (has_in and has_out) else ("In" if has_in else "Out")
 
     interface_tables = build_interface_tables(units_data, functions_data, global_variables_data)
     with open(os.path.join(OUTPUT_DIR, "interface_tables.json"), "w", encoding="utf-8") as f:

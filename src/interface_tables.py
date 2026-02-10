@@ -40,6 +40,7 @@ def build_interface_tables(units_data, functions_data, global_variables_data):
                 "qualifiedName": f.get("qualifiedName", ""),
                 "location": loc,
                 "parameters": f.get("parameters", []),
+                "direction": f.get("direction", "-"),
                 "callerUnits": [_strip_ext(u) for u in f.get("callerUnits", [])],
                 "calleesUnits": [_strip_ext(u) for u in f.get("calleesUnits", [])],
             }
@@ -61,6 +62,7 @@ def build_interface_tables(units_data, functions_data, global_variables_data):
                 "qualifiedName": g.get("qualifiedName", ""),
                 "location": loc,
                 "variableType": g.get("type", ""),
+                "direction": g.get("direction", "-"),
                 "callerUnits": [_strip_ext(u) for u in g.get("callerUnits", [])],
                 "calleesUnits": [_strip_ext(u) for u in g.get("calleesUnits", [])],
             })

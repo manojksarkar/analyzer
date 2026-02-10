@@ -84,12 +84,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
 
                 callers = iface.get("callerUnits", [])
                 callees = iface.get("calleesUnits", [])
-                dirs = []
-                if callers:
-                    dirs.append("In")
-                if callees:
-                    dirs.append("Out")
-                direction = "/".join(dirs) if dirs else "-"
+                direction = iface.get("direction", "-") or "-"
                 src_dest = f"Source: {', '.join(callers)}; Dest: {', '.join(callees)}" if (callers or callees) else "-"
                 info = iface.get("description", "") or "-"
 
