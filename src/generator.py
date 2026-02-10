@@ -242,9 +242,11 @@ def _enrich_interfaces(
 def _infer_direction_from_code(base_path: str, functions_data: dict, global_variables_data: dict, config: dict):
     """
     Populate functions_data[*]['direction'] and global_variables_data[*]['direction'].
-    Step 1: infer from code (global reads/writes) for globals and functions.
-    Step 2: for functions with no clear global interaction, optionally refine via LLM
-            when config['enableDirectionLLM'] is true.
+    - Globals: direction from global read/write (In / Out / In/Out / -).
+    - Functions: prefer simple In / Out:
+        * Out if the function writes any global, or calls an Out function.
+        * In if it only reads globals, or is called from another unit.
+        * Remaining "internal" helpers default to In, with optional LLM override.
     """
     try:
         # Reuse the same source extraction logic as the LLM client.
@@ -280,7 +282,7 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
             if loc:
                 func_sources[fid] = _extract_source(base_path, loc) or ""
 
-    # Aggregate global read/write across all function bodies
+    # Aggregate global read/write across all function bodies (for globals)
     global_rw = {name: {"read": False, "write": False} for name in global_names}
     for src in func_sources.values():
         for name in global_names:
@@ -299,12 +301,14 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
             return "In"
         return "-"
 
+    # 1) Assign directions for globals from aggregated read/write usage
     for gid, g in global_variables_data.items():
         name = (g.get("name") or "").strip()
         rw = global_rw.get(name, {"read": False, "write": False}) if global_names else {"read": False, "write": False}
         g["direction"] = _rw_to_dir(rw["read"], rw["write"])
 
-    undecided_fids = []
+    # 2) Code-based first guess for functions: only globals, no call graph yet
+    func_dir = {fid: None for fid in functions_data.keys()}
     for fid, f in functions_data.items():
         src = func_sources.get(fid, "")
 
@@ -320,18 +324,55 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
                 if read_any and write_any:
                     break
 
-        if write_any and not read_any:
-            f["direction"] = "Out"
-        elif read_any and not write_any:
-            f["direction"] = "In"
-        elif read_any and write_any:
-            f["direction"] = "In/Out"
-        else:
-            # No clear global interaction from code: mark for optional LLM refinement
-            f["direction"] = "In/Out"
+        if write_any:
+            func_dir[fid] = "Out"
+        elif read_any:
+            func_dir[fid] = "In"
+
+    # 3) Single-layer call-graph propagation: if a function calls any Out function, mark it Out
+    #    We resolve callees by their (qualified) names stored in 'calleesFunctionNames'.
+    name_to_ids = {}
+    for fid, f in functions_data.items():
+        qn = (f.get("qualifiedName") or f.get("name") or "").strip()
+        if not qn:
+            continue
+        name_to_ids.setdefault(qn, set()).add(fid)
+
+    for fid, f in functions_data.items():
+        if func_dir[fid] is not None:
+            continue  # already decided from direct global usage
+        callees = f.get("calleesFunctionNames", []) or []
+        called_out = False
+        for cn in callees:
+            for target_id in name_to_ids.get(cn, ()):
+                if func_dir.get(target_id) == "Out":
+                    called_out = True
+                    break
+            if called_out:
+                break
+        if called_out:
+            func_dir[fid] = "Out"
+
+    # 4) Cross-unit callers: if still undecided and called from another unit, treat as In
+    for fid, f in functions_data.items():
+        if func_dir[fid] is not None:
+            continue
+        caller_units = f.get("callerUnits") or []
+        if caller_units:
+            func_dir[fid] = "In"
+
+    # 5) Remaining helpers: default to In, but mark them as undecided for optional LLM refinement
+    undecided_fids = []
+    for fid in functions_data.keys():
+        if func_dir[fid] is None:
+            func_dir[fid] = "In"
             undecided_fids.append(fid)
 
-    # Optional LLM refinement for undecided functions
+    # Persist directions back onto function entries
+    for fid, direction in func_dir.items():
+        functions_data[fid]["direction"] = direction
+
+    # 6) Optional LLM refinement for "internal" functions that we defaulted to In
     if not config.get("enableDirectionLLM"):
         return
     try:
