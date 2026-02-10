@@ -35,6 +35,11 @@ Edit `config/config.json` or create `config/config.local.json` (gitignored) to o
   "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
   "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
   "enableDescriptions": false,
+  "export": {
+    "enableDocx": true,
+    "docxPath": "output/interface_tables.docx",
+    "docxFontSize": 8
+  },
   "ollamaBaseUrl": "http://localhost:11434",
   "ollamaModel": "llama3.2"
 }
@@ -42,7 +47,7 @@ Edit `config/config.json` or create `config/config.local.json` (gitignored) to o
 
 **LLM (Ollama):** Set `enableDescriptions` to `true` to add function descriptions to the interface table. Requires Ollama running locally and `pip install requests`.
 
-**DOCX export:** Phase 3 exports `output/interface_tables.docx` from the JSON. Requires `pip install python-docx`.
+**DOCX export:** Phase 3 exports to DOCX when `export.enableDocx` is true. Config: `export.docxPath`, `export.docxFontSize`. Requires `pip install python-docx`.
 
 ## Outputs
 

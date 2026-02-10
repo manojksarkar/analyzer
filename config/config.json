@@ -4,7 +4,12 @@
   "enableDescriptions": false,
   "ollamaBaseUrl": "http://localhost:11434",
   "ollamaModel": "llama3.2",
-  "ollamaTimeout": 60
+  "ollamaTimeout": 60,
+  "export": {
+    "enableDocx": true,
+    "docxPath": "output/interface_tables.docx",
+    "docxFontSize": 8
+  }
   // Linux (uncomment and replace above, or use config.local.json):
   // "llvmLibPath": "/usr/lib/llvm-17/lib/libclang.so",
   // "clangIncludePath": "/usr/lib/llvm-17/include"

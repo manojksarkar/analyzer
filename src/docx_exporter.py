@@ -10,8 +10,6 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 JSON_PATH = os.path.join(OUTPUT_DIR, "interface_tables.json")
-DOCX_PATH = os.path.join(OUTPUT_DIR, "interface_tables.docx")
-
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
 
 
@@ -22,19 +20,26 @@ def _set_cell_font(cell, font_pt, bold=False):
             r.font.bold = bold
 
 
-def export_docx(json_path: str = JSON_PATH, docx_path: str = DOCX_PATH) -> bool:
+def export_docx(json_path: str = None, docx_path: str = None) -> bool:
     """Generate interface_tables.docx from interface_tables.json."""
+    from utils import load_config
+    config = load_config(PROJECT_ROOT)
+    export_cfg = config.get("export", {})
+    json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
+    docx_path = docx_path or os.path.join(PROJECT_ROOT, export_cfg.get("docxPath", "output/interface_tables.docx"))
+    font_size = int(export_cfg.get("docxFontSize", 8))
+
     if not os.path.isfile(json_path):
         print(f"Error: {json_path} not found. Run pipeline first.")
-        return False
+        return (False, None)
 
     try:
         from docx import Document
         from docx.shared import Pt
-        font_small = Pt(8)
+        font_small = Pt(font_size)
     except ImportError:
         print("Error: python-docx not installed. pip install python-docx")
-        return False
+        return (False, None)
 
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -105,18 +110,15 @@ def export_docx(json_path: str = JSON_PATH, docx_path: str = DOCX_PATH) -> bool:
 
     os.makedirs(os.path.dirname(docx_path) or ".", exist_ok=True)
     doc.save(docx_path)
-    return True
+    return (True, docx_path)
 
 
 def main():
-    if len(sys.argv) >= 2:
-        json_path = sys.argv[1]
-    else:
-        json_path = JSON_PATH
-    docx_path = sys.argv[2] if len(sys.argv) >= 3 else DOCX_PATH
-    ok = export_docx(json_path, docx_path)
+    json_path = sys.argv[1] if len(sys.argv) >= 2 else None
+    docx_path = sys.argv[2] if len(sys.argv) >= 3 else None
+    ok, out_path = export_docx(json_path, docx_path)
     if ok:
-        print(f"Exported: {docx_path}")
+        print(f"Exported: {out_path}")
     sys.exit(0 if ok else 1)
 
 
