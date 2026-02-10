@@ -21,10 +21,6 @@ OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-GETTER_PREFIXES = ("get", "is", "has", "read", "fetch", "load")
-SETTER_PREFIXES = ("set", "add", "update", "write", "save", "put", "push", "insert", "remove", "delete", "clear")
-
-
 def _load_model_inputs():
     funcs_path = os.path.join(MODEL_DIR, "functions.json")
     globals_path = os.path.join(MODEL_DIR, "globalVariables.json")
@@ -243,17 +239,22 @@ def _enrich_interfaces(
             )
 
 
-def _infer_direction_from_code(base_path: str, functions_data: dict, global_variables_data: dict):
-    """Populate functions_data[*]['direction'] and global_variables_data[*]['direction']."""
+def _infer_direction_from_code(base_path: str, functions_data: dict, global_variables_data: dict, config: dict):
+    """
+    Populate functions_data[*]['direction'] and global_variables_data[*]['direction'].
+    Step 1: infer from code (global reads/writes) for globals and functions.
+    Step 2: for functions with no clear global interaction, optionally refine via LLM
+            when config['enableDirectionLLM'] is true.
+    """
     try:
         # Reuse the same source extraction logic as the LLM client.
         from llm_client import extract_source as _extract_source
     except Exception:
         _extract_source = None
 
-    global_names = sorted({(g.get("name") or "").strip() for g in global_variables_data.values() if (g.get("name") or "").strip()})
-    if not global_names:
-        return
+    global_names = sorted(
+        {(g.get("name") or "").strip() for g in global_variables_data.values() if (g.get("name") or "").strip()}
+    )
 
     patterns = {}
     for name in global_names:
@@ -273,7 +274,7 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
         patterns[name] = (word, assign, incdec)
 
     func_sources = {}
-    if _extract_source:
+    if _extract_source and global_names:
         for fid, f in functions_data.items():
             loc = f.get("location") or {}
             if loc:
@@ -300,17 +301,16 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
 
     for gid, g in global_variables_data.items():
         name = (g.get("name") or "").strip()
-        rw = global_rw.get(name, {"read": False, "write": False})
+        rw = global_rw.get(name, {"read": False, "write": False}) if global_names else {"read": False, "write": False}
         g["direction"] = _rw_to_dir(rw["read"], rw["write"])
 
+    undecided_fids = []
     for fid, f in functions_data.items():
-        fname = (f.get("name") or "").strip()
-        lname = fname.lower()
         src = func_sources.get(fid, "")
 
         read_any = False
         write_any = False
-        if src:
+        if src and global_names:
             for name in global_names:
                 word, assign, incdec = patterns[name]
                 if assign.search(src) or incdec.search(src):
@@ -320,37 +320,39 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
                 if read_any and write_any:
                     break
 
-        has_in = False
-        has_out = False
-
-        if lname.startswith(GETTER_PREFIXES):
-            has_out = True
-        if lname.startswith(SETTER_PREFIXES):
-            has_in = True
-
-        if write_any:
-            has_in = True
-        if read_any and not write_any and not has_in:
-            has_out = True
-        if read_any and write_any:
-            has_in = True
-            has_out = True
-
-        params = f.get("params", []) or []
-        if params and not has_out:
-            has_in = True
-        for p in params:
-            t = (p.get("type") or "")
-            tl = t.lower()
-            if "&" in t and "const" not in tl:
-                has_out = True
-            if "*" in t and "const" not in tl:
-                has_out = True
-
-        if not has_in and not has_out:
-            f["direction"] = "In/Out" if params else "Out"
+        if write_any and not read_any:
+            f["direction"] = "Out"
+        elif read_any and not write_any:
+            f["direction"] = "In"
+        elif read_any and write_any:
+            f["direction"] = "In/Out"
         else:
-            f["direction"] = "In/Out" if (has_in and has_out) else ("In" if has_in else "Out")
+            # No clear global interaction from code: mark for optional LLM refinement
+            f["direction"] = "In/Out"
+            undecided_fids.append(fid)
+
+    # Optional LLM refinement for undecided functions
+    if not config.get("enableDirectionLLM"):
+        return
+    try:
+        from llm_client import enrich_functions_with_direction as _enrich_dir
+    except Exception:
+        return
+
+    funcs_for_llm = [functions_data[fid] for fid in undecided_fids if functions_data[fid].get("location")]
+    if not funcs_for_llm:
+        return
+
+    print("Enriching function directions with LLM (Ollama)...")
+    dir_data = _enrich_dir(funcs_for_llm, base_path, config)
+    for fid in undecided_fids:
+        f = functions_data[fid]
+        loc = f.get("location") or {}
+        key = f"{loc.get('file', '')}:{loc.get('line', '')}" if loc else ""
+        info = dir_data.get(key, {}) if key else {}
+        label = info.get("direction")
+        if label in ("In", "Out", "In/Out"):
+            f["direction"] = label
 
 
 def _write_interface_tables_json(output_dir: str, units_data: dict, functions_data: dict, global_variables_data: dict):
@@ -384,7 +386,7 @@ def main():
         unit_by_file=unit_by_file,
         llm_data=llm_data,
     )
-    _infer_direction_from_code(base_path, functions_data, global_variables_data)
+    _infer_direction_from_code(base_path, functions_data, global_variables_data, config)
     _write_interface_tables_json(OUTPUT_DIR, units_data, functions_data, global_variables_data)
 
 
