@@ -1,8 +1,4 @@
-"""
-Parser: C++ source -> model/functions.json, model/globalVariables.json, model/dataDictionary.json
-Call graph in function properties (callers/callees).
-Data dictionary: structs, enums, typedefs extracted from code.
-"""
+"""Parse C++ source -> model/."""
 import os
 import sys
 import json
@@ -13,7 +9,6 @@ from clang import cindex
 
 from utils import get_module_name as _get_module, load_config
 
-# ================= CONFIG =================
 if len(sys.argv) < 2:
     print("Usage: python parser.py <project_path>")
     sys.exit(1)
@@ -38,13 +33,12 @@ CLANG_ARGS = [
 def get_module_name(file_path: str) -> str:
     return _get_module(file_path, MODULE_BASE_PATH)
 
-# =========================================
 index = cindex.Index.create()
 functions = {}
 globals_data = {}
 data_dictionary = {"structs": {}, "enums": {}, "typedefs": {}}
-call_graph = defaultdict(set)
-reverse_call_graph = defaultdict(set)
+call_graph = defaultdict(set)  # caller -> {callees}
+reverse_call_graph = defaultdict(set)  # callee -> {callers}
 module_functions = defaultdict(list)
 function_to_module = {}
 
@@ -69,6 +63,7 @@ def get_qualified_name(cursor):
 
 
 def get_function_key(cursor):
+    # Mangled disambiguates overloads; fallback to qualified@file:line for templates/extern C
     mangled = cursor.mangled_name
     if mangled:
         return mangled
@@ -79,7 +74,6 @@ def get_function_key(cursor):
 
 
 def _get_type_key(cursor):
-    """Stable key for a type definition (normalized path to avoid duplicates)."""
     if cursor.location.file and cursor.location.file.name:
         try:
             rel = os.path.relpath(cursor.location.file.name, MODULE_BASE_PATH).replace("\\", "/")
@@ -90,7 +84,6 @@ def _get_type_key(cursor):
 
 
 def visit_type_definitions(cursor):
-    """Collect structs, enums, typedefs into data_dictionary."""
     if not cursor.location.file or not is_project_file(cursor.location.file.name):
         for child in cursor.get_children():
             visit_type_definitions(child)
@@ -104,42 +97,17 @@ def visit_type_definitions(cursor):
 
     loc = {"file": rel_file, "line": cursor.location.line}
 
-    if cursor.kind == cindex.CursorKind.STRUCT_DECL:
+    if cursor.kind in (cindex.CursorKind.STRUCT_DECL, cindex.CursorKind.CLASS_DECL):
         if cursor.spelling or cursor.is_definition():
             key = _get_type_key(cursor)
-            fields = []
-            for child in cursor.get_children():
-                if child.kind == cindex.CursorKind.FIELD_DECL and child.spelling:
-                    fields.append({
-                        "name": child.spelling,
-                        "type": child.type.spelling if child.type else "",
-                    })
+            fields = [{"name": c.spelling, "type": c.type.spelling if c.type else ""}
+                      for c in cursor.get_children() if c.kind == cindex.CursorKind.FIELD_DECL and c.spelling]
             name = cursor.spelling or "(anonymous)"
             qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
             data_dictionary["structs"][key] = {
                 "name": name,
                 "qualifiedName": qn,
-                "kind": "struct",
-                "fields": fields,
-                "location": loc,
-            }
-
-    elif cursor.kind == cindex.CursorKind.CLASS_DECL:
-        if cursor.spelling or cursor.is_definition():
-            key = _get_type_key(cursor)
-            fields = []
-            for child in cursor.get_children():
-                if child.kind == cindex.CursorKind.FIELD_DECL and child.spelling:
-                    fields.append({
-                        "name": child.spelling,
-                        "type": child.type.spelling if child.type else "",
-                    })
-            name = cursor.spelling or "(anonymous)"
-            qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
-            data_dictionary["structs"][key] = {
-                "name": name,
-                "qualifiedName": qn,
-                "kind": "class",
+                "kind": "struct" if cursor.kind == cindex.CursorKind.STRUCT_DECL else "class",
                 "fields": fields,
                 "location": loc,
             }
@@ -276,6 +244,7 @@ def parse_calls(path):
 
 
 def build_metadata():
+    # Convert internal keys to rel_path:line for output; add callers/callees by qualifiedName
     for k in functions:
         functions[k]["callersFunctionNames"] = [
             functions[c]["qualifiedName"] for c in reverse_call_graph.get(k, []) if c in functions

@@ -4,7 +4,7 @@ import json
 
 
 def _strip_json_comments(text: str) -> str:
-    """Remove // and /* */ comments so JSON-with-comments parses."""
+    """Strip // and /* */ so config files can use comments."""
     result = []
     i = 0
     in_string = False
@@ -87,11 +87,11 @@ def norm_path(path: str, base_path: str) -> str:
 
 
 def get_range_for_type(type_str: str) -> str:
+    """Map C++ type to range string for interface tables (VOID, 0-0xFF, NA, etc.)."""
     t = (type_str or "").strip().lower()
     if t == "void" or (t.startswith("void ") and "*" not in t):
         return "VOID"
     base = t.replace("const ", "").replace("volatile ", "").strip().lower()
-    # Fixed-width unsigned (stdint or param_* typedefs)
     if base in ("uint8_t", "std::uint8_t", "param_uint8_t"):
         return "0-0xFF"
     if base in ("uint16_t", "std::uint16_t", "param_uint16_t"):
@@ -113,7 +113,6 @@ def get_range_for_type(type_str: str) -> str:
         return "-9223372036854775808-9223372036854775807"
     if base in ("intptr_t", "std::intptr_t", "param_intptr_t"):
         return "-9223372036854775808-9223372036854775807"
-    # Built-in types
     if base in ("int", "signed int"):
         return "-2147483648-2147483647"
     if base in ("short", "short int", "signed short"):

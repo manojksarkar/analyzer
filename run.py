@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""
-Entry point: parse C++ project → model/ (raw model) → output/ (design views)
-Usage: python run.py <project_path>
-Example: python run.py test_cpp_project
-"""
+"""Entry: python run.py <project_path>"""
 import os
 import sys
 import subprocess
@@ -23,6 +19,7 @@ if not os.path.isdir(resolved):
     print(f"Error: Project path not found: {resolved}")
     sys.exit(1)
 
+# Phase 1: Parse -> model/; Phase 2: Derive & views; Phase 3: DOCX (if enabled)
 print("=== Phase 1: Parse C++ source ===", flush=True)
 r1 = subprocess.run([sys.executable, os.path.join("src", "parser.py"), resolved], cwd=SCRIPT_DIR)
 if r1.returncode != 0:

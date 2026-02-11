@@ -1,10 +1,4 @@
-"""
-Generator: model/ (raw model) -> output/ (design views)
-
-Option A: Raw model -> Design views
-- model/: functions.json, globalVariables.json, units.json, modules.json (single source of truth)
-- output/: interface_tables.json { unit_name: [{ interfaceId, type, ... }] }
-"""
+"""Model -> views."""
 import os
 import sys
 import json
@@ -42,6 +36,7 @@ def _load_model_inputs():
     base_path = meta_info["basePath"]
     project_name = meta_info.get("projectName", os.path.basename(base_path))
 
+    # Normalize to dict keyed by file:line (support list input from older model)
     if isinstance(functions_data, list):
         functions_data = {f["location"]["file"] + ":" + str(f["location"]["line"]): f for f in functions_data}
     if isinstance(global_variables_data, list):
@@ -52,12 +47,11 @@ def _load_model_inputs():
 
 
 def _compute_unit_maps(base_path: str, functions_data: dict, global_variables_data: dict):
-    """Compute file list, qualified name mapping, and unit names per file."""
     all_file_paths = set(norm_path(fid.rsplit(":", 1)[0], base_path) for fid in functions_data.keys())
     all_file_paths.update(norm_path(vid.rsplit(":", 1)[0], base_path) for vid in global_variables_data.keys())
     file_paths = sorted(all_file_paths)
 
-    qualified_to_file = defaultdict(set)
+    qualified_to_file = defaultdict(set)  # qualifiedName -> files (overloads may span files)
     for fid, f in functions_data.items():
         fp = norm_path(fid.rsplit(":", 1)[0], base_path)
         qualified_to_file[f.get("qualifiedName", f["name"])].add(fp)
@@ -75,7 +69,6 @@ def _compute_unit_maps(base_path: str, functions_data: dict, global_variables_da
 
 
 def _build_units_modules(base_path: str, file_paths: list, functions_data: dict, global_variables_data: dict, qualified_to_file: dict, unit_by_file: dict):
-    """Build units_data and modules_data and persist to model/."""
     module_names = sorted(
         {f.get("module", "") for f in functions_data.values() if f.get("module")}
         | {g.get("module", "") for g in global_variables_data.values() if g.get("module")}
@@ -131,7 +124,7 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
 
 
 def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict):
-    """Stable per-file index: file -> (sorted by line) => 01, 02, ..."""
+    # Per-file index 01, 02, ... for stable interfaceId suffix
     all_entries = []
     for fid, f in functions_data.items():
         all_entries.append(("function", fid, f))
@@ -241,14 +234,6 @@ def _enrich_interfaces(
 
 
 def _infer_direction_from_code(base_path: str, functions_data: dict, global_variables_data: dict, config: dict):
-    """
-    Populate functions_data[*]['direction'] and global_variables_data[*]['direction'].
-    - Globals: direction from global read/write (In / Out / In/Out / -).
-    - Functions: prefer simple In / Out:
-        * Out if the function writes any global, or calls an Out function.
-        * In if it only reads globals, or is called from another unit.
-        * Remaining "internal" helpers default to In, with optional LLM override.
-    """
     try:
         # Reuse the same source extraction logic as the LLM client.
         from llm_client import extract_source as _extract_source
@@ -283,7 +268,6 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
             if loc:
                 func_sources[fid] = _extract_source(base_path, loc) or ""
 
-    # Aggregate global read/write across all function bodies (for globals)
     global_rw = {name: {"read": False, "write": False} for name in global_names}
     for src in func_sources.values():
         for name in global_names:
@@ -302,13 +286,11 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
             return "In"
         return "-"
 
-    # 1) Assign directions for globals from aggregated read/write usage
     for gid, g in global_variables_data.items():
         name = (g.get("name") or "").strip()
         rw = global_rw.get(name, {"read": False, "write": False}) if global_names else {"read": False, "write": False}
         g["direction"] = _rw_to_dir(rw["read"], rw["write"])
 
-    # 2) Code-based first guess for functions: only globals, no call graph yet
     func_dir = {fid: None for fid in functions_data.keys()}
     for fid, f in functions_data.items():
         src = func_sources.get(fid, "")
@@ -330,8 +312,7 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
         elif read_any:
             func_dir[fid] = "In"
 
-    # 3) Single-layer call-graph propagation: if a function calls any Out function, mark it Out
-    #    We resolve callees by their (qualified) names stored in 'calleesFunctionNames'.
+    # Map qualifiedName -> {fid} for callee lookup (overloads share name)
     name_to_ids = {}
     for fid, f in functions_data.items():
         qn = (f.get("qualifiedName") or f.get("name") or "").strip()
@@ -339,9 +320,10 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
             continue
         name_to_ids.setdefault(qn, set()).add(fid)
 
+    # Single-layer call-graph: if calls Out function, mark Out
     for fid, f in functions_data.items():
         if func_dir[fid] is not None:
-            continue  # already decided from direct global usage
+            continue
         callees = f.get("calleesFunctionNames", []) or []
         called_out = False
         for cn in callees:
@@ -354,7 +336,6 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
         if called_out:
             func_dir[fid] = "Out"
 
-    # 4) Cross-unit callers: if still undecided and called from another unit, treat as In
     for fid, f in functions_data.items():
         if func_dir[fid] is not None:
             continue
@@ -362,18 +343,15 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
         if caller_units:
             func_dir[fid] = "In"
 
-    # 5) Remaining helpers: default to In, but mark them as undecided for optional LLM refinement
     undecided_fids = []
     for fid in functions_data.keys():
         if func_dir[fid] is None:
             func_dir[fid] = "In"
             undecided_fids.append(fid)
 
-    # Persist directions back onto function entries
     for fid, direction in func_dir.items():
         functions_data[fid]["direction"] = direction
 
-    # 6) Optional LLM refinement for "internal" functions that we defaulted to In
     if not config.get("enableDirectionLLM"):
         return
     try:
@@ -414,7 +392,6 @@ def main():
         base_path, file_paths, functions_data, global_variables_data, qualified_to_file, unit_by_file
     )
 
-    # View generation (interface tables)
     all_entries, interface_index = _build_interface_index(base_path, functions_data, global_variables_data)
     llm_data = _maybe_enrich_descriptions(base_path, functions_data, config)
     _enrich_interfaces(
@@ -430,9 +407,7 @@ def main():
     )
     _infer_direction_from_code(base_path, functions_data, global_variables_data, config)
 
-    # Persist enriched interface metadata back into the model layer so that
-    # functions.json / globalVariables.json contain (almost) everything
-    # needed by all views (JSON and DOCX) – single source of truth.
+    # Persist enriched model (single source of truth for views)
     with open(os.path.join(MODEL_DIR, "functions.json"), "w", encoding="utf-8") as f:
         json.dump(functions_data, f, indent=2)
     with open(os.path.join(MODEL_DIR, "globalVariables.json"), "w", encoding="utf-8") as f:

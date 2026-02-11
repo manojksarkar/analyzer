@@ -1,7 +1,4 @@
-"""
-LLM client for Ollama: function descriptions.
-Extracts source on-demand from file:line:endLine (no body in metadata).
-"""
+"""Ollama LLM: descriptions, direction."""
 import os
 import sys
 
@@ -16,7 +13,7 @@ except ImportError:
 
 
 def extract_source(base_path: str, loc: dict) -> str:
-    """Extract function body from source file using location line/endLine."""
+    """Extract function body from file using location line/endLine."""
     file_path = norm_path(loc["file"], base_path)
     if not os.path.isfile(file_path):
         return ""
@@ -36,10 +33,7 @@ def extract_source(base_path: str, loc: dict) -> str:
 
 
 def _get_llm_config(config: dict) -> dict:
-    """
-    Normalize LLM config into a single dict, supporting both new-style
-    config['llm'] and legacy top-level ollama* keys.
-    """
+    """Normalize llm block or legacy ollama* keys into single config dict."""
     llm = config.get("llm") or {}
     if llm:
         base_url = (llm.get("baseUrl") or "http://localhost:11434").rstrip("/")
@@ -67,7 +61,6 @@ def _get_llm_config(config: dict) -> dict:
 
 
 def _ollama_available(config: dict) -> bool:
-    """Quick check if Ollama is reachable."""
     if not HAS_REQUESTS:
         return False
     cfg = _get_llm_config(config)
@@ -80,10 +73,6 @@ def _ollama_available(config: dict) -> bool:
 
 
 def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
-    """Call Ollama API (generate endpoint). Returns response text or empty on failure.
-
-    kind: 'description', 'direction', 'flowchart', or 'default' to select model.
-    """
     if not HAS_REQUESTS:
         print("Warning: requests not installed. pip install requests", file=sys.stderr)
         return ""
@@ -114,7 +103,6 @@ def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
 
 
 def get_description(source: str, config: dict) -> str:
-    """Get one-line function description from Ollama."""
     if not source:
         return ""
     prompt = f"""Describe this C++ function in one short sentence (what it does, not how):
@@ -128,10 +116,6 @@ One-line description:"""
 
 
 def get_direction_label(source: str, config: dict) -> str:
-    """
-    Infer interface direction for a function using LLM.
-    Returns one of: "In", "Out", "In/Out", "-".
-    """
     if not source:
         return "-"
     prompt = f"""You are classifying the external interface *direction* of this C++ function
@@ -175,60 +159,35 @@ Answer with exactly one of: In, Out, In/Out, -.
     return "-"
 
 def _make_canonical_key(f: dict) -> str:
-    """Use location file:line as stable key (avoids path separator issues)."""
+    """Stable key file:line for LLM result lookup."""
     loc = f.get("location", {})
     return f"{loc.get('file', '')}:{loc.get('line', '')}"
 
 
-def enrich_functions_with_descriptions(
-    functions_data: list,
-    base_path: str,
-    config: dict,
-) -> dict:
-    """
-    Add description to each function via Ollama.
-    Returns dict canonical_key -> {description}. Use _make_canonical_key for lookup.
-    """
-    if not _ollama_available(config):
-        print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
-        return {}
-
+def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_fn, result_key: str, label: str, show_val: bool = False) -> dict:
     result = {}
-    total = len(functions_data)
-    for idx, f in enumerate(functions_data):
+    for idx, f in enumerate(funcs):
         loc = f.get("location", {})
         if not loc:
             continue
         key = _make_canonical_key(f)
         source = extract_source(base_path, loc)
-        desc = get_description(source, config)
-        result[key] = {"description": desc}
-        print(f"  LLM [{idx + 1}/{total}] {f.get('name', '?')}", file=sys.stderr)
+        val = processor_fn(source, config)
+        result[key] = {result_key: val}
+        suffix = f" -> {val}" if show_val else ""
+        print(f"  {label} [{idx + 1}/{len(funcs)}] {f.get('name', '?')}{suffix}", file=sys.stderr)
     return result
 
 
-def enrich_functions_with_direction(
-    functions_data: list,
-    base_path: str,
-    config: dict,
-) -> dict:
-    """
-    Add direction label to each function via Ollama.
-    Returns dict canonical_key -> {direction}. Use _make_canonical_key for lookup.
-    """
+def enrich_functions_with_descriptions(functions_data: list, base_path: str, config: dict) -> dict:
     if not _ollama_available(config):
         print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
         return {}
+    return _enrich_functions_loop(functions_data, base_path, config, get_description, "description", "LLM")
 
-    result = {}
-    total = len(functions_data)
-    for idx, f in enumerate(functions_data):
-        loc = f.get("location", {})
-        if not loc:
-            continue
-        key = _make_canonical_key(f)
-        source = extract_source(base_path, loc)
-        direction = get_direction_label(source, config)
-        result[key] = {"direction": direction}
-        print(f"  LLM-dir [{idx + 1}/{total}] {f.get('name', '?')} -> {direction}", file=sys.stderr)
-    return result
+
+def enrich_functions_with_direction(functions_data: list, base_path: str, config: dict) -> dict:
+    if not _ollama_available(config):
+        print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
+        return {}
+    return _enrich_functions_loop(functions_data, base_path, config, get_direction_label, "direction", "LLM-dir", show_val=True)

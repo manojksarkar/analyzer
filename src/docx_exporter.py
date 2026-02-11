@@ -1,7 +1,4 @@
-"""
-Export interface_tables.json to interface_tables.docx.
-Reads output/interface_tables.json, writes output/interface_tables.docx.
-"""
+"""Export interface_tables.json -> DOCX."""
 import os
 import sys
 import json
@@ -21,7 +18,6 @@ def _set_cell_font(cell, font_pt, bold=False):
 
 
 def export_docx(json_path: str = None, docx_path: str = None) -> bool:
-    """Generate interface_tables.docx from interface_tables.json."""
     from utils import load_config
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
@@ -47,7 +43,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
     doc = Document()
     doc.add_heading("Interface Tables", 0)
 
-    # Group units by module: module_name -> [(unit_name, interfaces), ...]
+    # Group by module; skip metadata keys if present
     by_module = {}
     for unit_name in data.keys():
         if unit_name in ("basePath", "projectName"):

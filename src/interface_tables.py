@@ -1,12 +1,8 @@
-"""
-Build interface tables: { unit_name: [ { interfaceId, type, interfaceName, ... }, ... ] }.
-Include only .cpp units; all names stored without file extensions.
-"""
+"""Build interface tables from units and enriched functions/globals."""
 import os
 
 
 def _strip_ext(name):
-    """Remove file extension (e.g. main.cpp -> main, path/to/foo.cpp -> path/to/foo)."""
     if not name:
         return name
     base, ext = os.path.splitext(name)
@@ -14,11 +10,7 @@ def _strip_ext(name):
 
 
 def build_interface_tables(units_data, functions_data, global_variables_data):
-    """
-    Build interface tables from units and enriched functions/globalVariables.
-    Only includes .cpp units. Unit keys and location/caller/callee names have no file extension.
-    Returns dict: unit_name (no ext) -> list of interface entries.
-    """
+    # Only .cpp units; entries sorted by line; file names without extension
     interface_tables = {}
     for unit_name, unit_info in units_data.items():
         if not unit_name.endswith(".cpp"):
