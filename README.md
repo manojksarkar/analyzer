@@ -10,6 +10,7 @@ Parse C++ source → raw model (model/) → design views (output/).
 ├── model/            raw model (single source of truth)
 │   ├── functions.json
 │   ├── globalVariables.json
+│   ├── dataDictionary.json
 │   ├── units.json
 │   └── modules.json
 ├── output/           design views
@@ -54,8 +55,9 @@ Edit `config/config.json` or create `config/config.local.json` (gitignored) to o
 | Output | Purpose |
 |--------|---------|
 | **model/** | Raw model (parser + generator) |
-| model/functions.json | functions dict; basePath, projectName, location, params, callersFunctionNames, calleesFunctionNames |
+| model/functions.json | functions dict; location, params, callersFunctionNames, calleesFunctionNames |
 | model/globalVariables.json | globalVariables dict |
+| model/dataDictionary.json | structs, enums, typedefs (name, qualifiedName, fields/enumerators/underlyingType, location) |
 | model/units.json | units dict; functions, globalVariables, callerUnits, calleesUnits per file |
 | model/modules.json | modules dict; units grouped by module |
 | **output/** | Design views |

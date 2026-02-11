@@ -3,6 +3,9 @@
 #include "../namespace_tests/namespace_tests.h"
 #include "../nested_class_tests/nested_class_tests.h"
 #include "../polymorphism_tests/polymorphism_tests.h"
+#include "../enum_tests/enum_tests.h"
+#include "../type_tests/type_tests.h"
+#include "../direction_tests/direction_tests.h"
 
 int g_globalResult = 0;
 
@@ -29,6 +32,17 @@ int runParamTypeTests() {
     int v = 0;
     (void)testPointerParams(&v);
     (void)testFunctionPtrParams(&add, 1, 2);
+    (void)testUint8(1, 2);
+    (void)testUint16(1, 2);
+    (void)testUint32(1u, 2u);
+    (void)testUint64(1u, 2u);
+    (void)testInt8(1, 2);
+    (void)testInt16(1, 2);
+    (void)testInt32(1, 2);
+    (void)testInt64(1, 2);
+    (void)testMixedFixed(1u, 2, 3);
+    (void)testUintptr(1u, 2u);
+    (void)testIntptr(1, 2);
     return static_cast<int>(x + u + s);
 }
 
@@ -55,6 +69,36 @@ int calculateWithPolymorphism() {
     return v1 + v2;
 }
 
+int runEnumTests() {
+    Status s = getDefaultStatus();
+    Color c = nextColor(getDefaultColor());
+    Mode_t m = setMode(MODE_ACTIVE);
+    (void)m;
+    return static_cast<int>(s) + static_cast<int>(c);
+}
+
+int runTypeTests() {
+    Point p = {1, 2};
+    int sum = pointSum(p);
+    getPointX(p);
+    scalePoint(p, 2);
+    Rect r = {{0, 0}, {10, 10}};
+    int area = rectArea(&r);
+    Data d;
+    d.i = 42;
+    int vi = getDataAsInt(d);
+    noop();
+    return sum + area + vi;
+}
+
+int runDirectionTests() {
+    int v = readGlobal();
+    writeGlobal(10);
+    int rw = readWriteGlobal(5);
+    indirectWrite(20);
+    return v + rw;
+}
+
 int main() {
     int result1 = calculate();
     int result2 = calculateWithCallback();
@@ -62,6 +106,9 @@ int main() {
     int result4 = runParamTypeTests();
     int result5 = runNamespaceTests();
     int result6 = runNestedClassTests();
-    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6;
+    int result7 = runEnumTests();
+    int result8 = runTypeTests();
+    int result9 = runDirectionTests();
+    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9;
     return g_globalResult;
 }

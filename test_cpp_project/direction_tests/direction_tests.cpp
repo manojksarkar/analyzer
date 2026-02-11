@@ -1,0 +1,22 @@
+#include "direction_tests.h"
+
+int g_readOnly = 42;   // read-only: never written
+int g_writeOnly = 0;   // write-only: only written
+int g_readWrite = 0;   // both read and written
+
+int readGlobal() {
+    return g_readOnly;
+}
+
+void writeGlobal(int v) {
+    g_writeOnly = v;
+}
+
+int readWriteGlobal(int delta) {
+    g_readWrite += delta;
+    return g_readWrite;
+}
+
+void indirectWrite(int v) {
+    writeGlobal(v);
+}

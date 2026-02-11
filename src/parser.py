@@ -1,6 +1,7 @@
 """
-Parser: C++ source -> model/functions.json, model/globalVariables.json
+Parser: C++ source -> model/functions.json, model/globalVariables.json, model/dataDictionary.json
 Call graph in function properties (callers/callees).
+Data dictionary: structs, enums, typedefs extracted from code.
 """
 import os
 import sys
@@ -41,6 +42,7 @@ def get_module_name(file_path: str) -> str:
 index = cindex.Index.create()
 functions = {}
 globals_data = {}
+data_dictionary = {"structs": {}, "enums": {}, "typedefs": {}}
 call_graph = defaultdict(set)
 reverse_call_graph = defaultdict(set)
 module_functions = defaultdict(list)
@@ -74,6 +76,108 @@ def get_function_key(cursor):
     if cursor.location.file:
         return f"{qualified}@{cursor.location.file.name}:{cursor.location.line}"
     return qualified
+
+
+def _get_type_key(cursor):
+    """Stable key for a type definition (normalized path to avoid duplicates)."""
+    if cursor.location.file and cursor.location.file.name:
+        try:
+            rel = os.path.relpath(cursor.location.file.name, MODULE_BASE_PATH).replace("\\", "/")
+        except ValueError:
+            rel = os.path.normpath(cursor.location.file.name).replace("\\", "/")
+        return f"{rel}:{cursor.location.line}"
+    return get_qualified_name(cursor)
+
+
+def visit_type_definitions(cursor):
+    """Collect structs, enums, typedefs into data_dictionary."""
+    if not cursor.location.file or not is_project_file(cursor.location.file.name):
+        for child in cursor.get_children():
+            visit_type_definitions(child)
+        return
+
+    rel_file = None
+    try:
+        rel_file = os.path.relpath(cursor.location.file.name, MODULE_BASE_PATH).replace("\\", "/")
+    except ValueError:
+        rel_file = cursor.location.file.name.replace("\\", "/")
+
+    loc = {"file": rel_file, "line": cursor.location.line}
+
+    if cursor.kind == cindex.CursorKind.STRUCT_DECL:
+        if cursor.spelling or cursor.is_definition():
+            key = _get_type_key(cursor)
+            fields = []
+            for child in cursor.get_children():
+                if child.kind == cindex.CursorKind.FIELD_DECL and child.spelling:
+                    fields.append({
+                        "name": child.spelling,
+                        "type": child.type.spelling if child.type else "",
+                    })
+            name = cursor.spelling or "(anonymous)"
+            qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
+            data_dictionary["structs"][key] = {
+                "name": name,
+                "qualifiedName": qn,
+                "kind": "struct",
+                "fields": fields,
+                "location": loc,
+            }
+
+    elif cursor.kind == cindex.CursorKind.CLASS_DECL:
+        if cursor.spelling or cursor.is_definition():
+            key = _get_type_key(cursor)
+            fields = []
+            for child in cursor.get_children():
+                if child.kind == cindex.CursorKind.FIELD_DECL and child.spelling:
+                    fields.append({
+                        "name": child.spelling,
+                        "type": child.type.spelling if child.type else "",
+                    })
+            name = cursor.spelling or "(anonymous)"
+            qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
+            data_dictionary["structs"][key] = {
+                "name": name,
+                "qualifiedName": qn,
+                "kind": "class",
+                "fields": fields,
+                "location": loc,
+            }
+
+    elif cursor.kind == cindex.CursorKind.ENUM_DECL:
+        key = _get_type_key(cursor)
+        enumerators = []
+        for child in cursor.get_children():
+            if child.kind == cindex.CursorKind.ENUM_CONSTANT_DECL:
+                val = child.enum_value if hasattr(child, "enum_value") else None
+                enumerators.append({
+                    "name": child.spelling,
+                    "value": val,
+                })
+        name = cursor.spelling or "(anonymous)"
+        qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
+        underlying = cursor.type.spelling if cursor.type else ""
+        data_dictionary["enums"][key] = {
+            "name": name,
+            "qualifiedName": qn,
+            "underlyingType": underlying,
+            "enumerators": enumerators,
+            "location": loc,
+        }
+
+    elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
+        key = _get_type_key(cursor)
+        if cursor.spelling:
+            underlying = cursor.type.spelling if cursor.type else ""
+            data_dictionary["typedefs"][key] = {
+                "name": cursor.spelling,
+                "qualifiedName": get_qualified_name(cursor),
+                "underlyingType": underlying or "(opaque)",
+                "location": loc,
+            }
+
+    for child in cursor.get_children():
+        visit_type_definitions(child)
 
 
 def visit_definitions(cursor):
@@ -158,6 +262,7 @@ def parse_file(path):
         for d in tu.diagnostics:
             print(d)
         visit_definitions(tu.cursor)
+        visit_type_definitions(tu.cursor)
     except cindex.TranslationUnitLoadError as e:
         print(f"Failed: {path}: {e}")
 
@@ -260,12 +365,18 @@ def main():
         json.dump(metadata["functions"], f, indent=2)
     with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as f:
         json.dump(metadata["globalVariables"], f, indent=2)
+    with open(os.path.join(model_dir, "dataDictionary.json"), "w", encoding="utf-8") as f:
+        json.dump(data_dictionary, f, indent=2)
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
+    n_structs = len(data_dictionary["structs"])
+    n_enums = len(data_dictionary["enums"])
+    n_typedefs = len(data_dictionary["typedefs"])
     print("  model/metadata.json")
     print(f"  model/functions.json ({n_funcs})")
     print(f"  model/globalVariables.json ({n_vars})")
+    print(f"  model/dataDictionary.json ({n_structs} structs, {n_enums} enums, {n_typedefs} typedefs)")
 
 
 if __name__ == "__main__":
