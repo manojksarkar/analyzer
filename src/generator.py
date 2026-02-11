@@ -428,6 +428,15 @@ def main():
         llm_data=llm_data,
     )
     _infer_direction_from_code(base_path, functions_data, global_variables_data, config)
+
+    # Persist enriched interface metadata back into the model layer so that
+    # functions.json / globalVariables.json contain (almost) everything
+    # needed by all views (JSON and DOCX) – single source of truth.
+    with open(os.path.join(MODEL_DIR, "functions.json"), "w", encoding="utf-8") as f:
+        json.dump(functions_data, f, indent=2)
+    with open(os.path.join(MODEL_DIR, "globalVariables.json"), "w", encoding="utf-8") as f:
+        json.dump(global_variables_data, f, indent=2)
+
     _write_interface_tables_json(OUTPUT_DIR, units_data, functions_data, global_variables_data)
 
 
