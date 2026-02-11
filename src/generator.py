@@ -210,10 +210,10 @@ def _enrich_interfaces(
                     callee_units_set.add(unit_by_file.get(cf, ""))
             caller_units_set.discard("")
             callee_units_set.discard("")
-            params = data.get("params", [])
-            params_with_range = [
+            raw_params = data.get("params", [])
+            parameters = [
                 {"name": p.get("name", ""), "type": p.get("type", ""), "range": get_range_for_type(p.get("type", ""))}
-                for p in params
+                for p in raw_params
             ]
             functions_data[iid].update(
                 {
@@ -221,9 +221,10 @@ def _enrich_interfaces(
                     "interfaceName": interface_name,
                     "callerUnits": sorted(caller_units_set),
                     "calleesUnits": sorted(callee_units_set),
-                    "parameters": params_with_range,
+                    "parameters": parameters,
                 }
             )
+            functions_data[iid].pop("params", None)
             if llm_data.get(iid, {}).get("description"):
                 functions_data[iid]["description"] = llm_data[iid]["description"]
         else:
