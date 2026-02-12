@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from clang import cindex
 
-from utils import get_module_name as _get_module, load_config, make_function_key
+from utils import get_module_name as _get_module, get_range_for_type, load_config, make_function_key, make_global_key, PRIMITIVES
 
 if len(sys.argv) < 2:
     print("Usage: python parser.py <project_path>")
@@ -36,7 +36,7 @@ def get_module_name(file_path: str) -> str:
 index = cindex.Index.create()
 functions = {}
 globals_data = {}
-data_dictionary = {"structs": {}, "enums": {}, "typedefs": {}}
+data_dictionary = {}
 call_graph = defaultdict(set)  # caller -> {callees}
 reverse_call_graph = defaultdict(set)  # callee -> {callers}
 module_functions = defaultdict(list)
@@ -100,15 +100,23 @@ def visit_type_definitions(cursor):
     if cursor.kind in (cindex.CursorKind.STRUCT_DECL, cindex.CursorKind.CLASS_DECL):
         if cursor.spelling or cursor.is_definition():
             key = _get_type_key(cursor)
-            fields = [{"name": c.spelling, "type": c.type.spelling if c.type else ""}
-                      for c in cursor.get_children() if c.kind == cindex.CursorKind.FIELD_DECL and c.spelling]
+            fields = [
+                {
+                    "name": c.spelling,
+                    "type": c.type.spelling if c.type else "",
+                    "range": get_range_for_type(c.type.spelling if c.type else ""),
+                }
+                for c in cursor.get_children()
+                if c.kind == cindex.CursorKind.FIELD_DECL and c.spelling
+            ]
             name = cursor.spelling or "(anonymous)"
             qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
-            data_dictionary["structs"][key] = {
+            data_dictionary[qn] = {
+                "kind": "struct" if cursor.kind == cindex.CursorKind.STRUCT_DECL else "class",
                 "name": name,
                 "qualifiedName": qn,
-                "kind": "struct" if cursor.kind == cindex.CursorKind.STRUCT_DECL else "class",
                 "fields": fields,
+                "range": "NA",
                 "location": loc,
             }
 
@@ -125,24 +133,32 @@ def visit_type_definitions(cursor):
         name = cursor.spelling or "(anonymous)"
         qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
         underlying = cursor.type.spelling if cursor.type else ""
-        data_dictionary["enums"][key] = {
+        vals = [e["value"] for e in enumerators if e["value"] is not None]
+        enum_range = f"{min(vals)}-{max(vals)}" if vals else "NA"
+        data_dictionary[qn] = {
+            "kind": "enum",
             "name": name,
             "qualifiedName": qn,
             "underlyingType": underlying,
             "enumerators": enumerators,
+            "range": enum_range,
             "location": loc,
         }
 
     elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
-        key = _get_type_key(cursor)
         if cursor.spelling:
+            qn = get_qualified_name(cursor)
             underlying = cursor.type.spelling if cursor.type else ""
-            data_dictionary["typedefs"][key] = {
-                "name": cursor.spelling,
-                "qualifiedName": get_qualified_name(cursor),
-                "underlyingType": underlying or "(opaque)",
-                "location": loc,
-            }
+            # Don't overwrite enum with typedef when same name (enum has range)
+            if qn not in data_dictionary or data_dictionary[qn].get("kind") != "enum":
+                data_dictionary[qn] = {
+                    "kind": "typedef",
+                    "name": cursor.spelling,
+                    "qualifiedName": qn,
+                    "underlyingType": underlying or "(opaque)",
+                    "range": get_range_for_type(underlying or ""),
+                    "location": loc,
+                }
 
     for child in cursor.get_children():
         visit_type_definitions(child)
@@ -271,7 +287,6 @@ def build_metadata():
                 "line": int(f["functionId"].rsplit(":", 1)[1]),
                 "endLine": f.get("endLine", int(f["functionId"].rsplit(":", 1)[1])),
             },
-            "module": f["moduleName"],
             "params": f["parameters"],
             "calledBy": f["calledBy"],
             "calls": f["calls"],
@@ -283,12 +298,10 @@ def build_metadata():
             rel_file = os.path.relpath(file_path, base_path).replace("\\", "/")
         except ValueError:
             rel_file = file_path.replace("\\", "/")
-        vid = f"{rel_file}:{var_id.rsplit(':', 1)[1]}"
+        vid = make_global_key(rel_file, g["qualifiedName"])
         global_variables_dict[vid] = {
-            "name": g["variableName"],
             "qualifiedName": g["qualifiedName"],
             "location": {"file": rel_file, "line": int(var_id.rsplit(":", 1)[1])},
-            "module": g["moduleName"],
             "type": g["type"],
         }
 
@@ -333,18 +346,25 @@ def main():
         json.dump(metadata["functions"], f, indent=2)
     with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as f:
         json.dump(metadata["globalVariables"], f, indent=2)
+    # Add primitives (name as key)
+    for name, info in PRIMITIVES.items():
+        data_dictionary[name] = {"kind": "primitive", "range": info["range"]}
     with open(os.path.join(model_dir, "dataDictionary.json"), "w", encoding="utf-8") as f:
         json.dump(data_dictionary, f, indent=2)
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
-    n_structs = len(data_dictionary["structs"])
-    n_enums = len(data_dictionary["enums"])
-    n_typedefs = len(data_dictionary["typedefs"])
+    n_types = len(data_dictionary)
     print("  model/metadata.json")
     print(f"  model/functions.json ({n_funcs})")
     print(f"  model/globalVariables.json ({n_vars})")
-    print(f"  model/dataDictionary.json ({n_structs} structs, {n_enums} enums, {n_typedefs} typedefs)")
+    kinds = {}
+    for t in data_dictionary.values():
+        k = t.get("kind", "?")
+        kinds[k] = kinds.get(k, 0) + 1
+    plural = lambda k: "classes" if k == "class" else k + "s"
+    parts = [f"{v} {plural(k)}" for k, v in sorted(kinds.items())]
+    print(f"  model/dataDictionary.json ({n_types} types: {', '.join(parts)})")
 
 
 if __name__ == "__main__":

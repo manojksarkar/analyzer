@@ -14,7 +14,7 @@ Parse C++ → model (single source of truth) → views (interface tables, DOCX).
 | **generator.py** | Phase 2: Derive & views | Model → units, modules, enriched functions/globals, interface_tables.json |
 | **docx_exporter.py** | Phase 3: Export | interface_tables.json → interface_tables.docx |
 
-**Model (single source of truth, non-redundant for DB):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json. Keys: `unit/qualifiedName/paramTypes` (e.g. app_main/main/calculate/int,int). Stored: qualifiedName, calledBy, calls; name/interfaceName/callerUnits derived in views.
+**Model (single source of truth, non-redundant for DB):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json. Function keys: `module/unit/qualifiedName/paramTypes`. Global keys: `module/unit/qualifiedName`. Unit = filestem (no .cpp). Stored: qualifiedName, calledBy, calls; name/interfaceName/module/callerUnits derived. interfaceId: IF_project_unit_index.
 
 **Views (read-only projections):** interface_tables.json, interface_tables.docx. Recomputable from model.
 
@@ -24,7 +24,7 @@ Parse C++ → model (single source of truth) → views (interface tables, DOCX).
 
 ### Phase 1 – Parse (parser.py)
 1. Walk project dir for `.cpp`, `.h`, `.hpp`, etc.
-2. For each file: libclang parse → `visit_definitions`, `visit_type_definitions` → collect functions, globals, structs/enums/typedefs.
+2. For each file: libclang parse → `visit_definitions`, `visit_type_definitions` → collect functions, globals, types (structs, enums, typedefs, primitives in dataDictionary keyed by name/qualifiedName with kind).
 3. Second pass: `visit_calls` → build call graph (call_graph, reverse_call_graph).
 4. Write metadata.json, functions.json, globalVariables.json, dataDictionary.json.
 
@@ -62,7 +62,7 @@ Parse C++ → model (single source of truth) → views (interface tables, DOCX).
 | Call graph | parser.py | `visit_calls` builds call_graph, reverse_call_graph; stored in functions.calledBy, calls |
 | Direction propagation | generator.py `_infer_direction_from_code` | Traverse calleesFunctionNames; if callee is Out, mark caller Out |
 | Unit/module build | generator.py `_build_units_modules` | Iterate file_paths; map qualified names → files → units; aggregate caller/callee units per unit |
-| View build | interface_tables.py `build_interface_tables` | Iterate units_data; derive callerUnits/calleesUnits from calledBy/calls; produce { unit: [interfaces] } |
+| View build | interface_tables.py `build_interface_tables` | Iterate units_data; derive callerUnits/calleesUnits from calledBy/calls; resolve param range via get_range(type, dataDictionary); produce { unit: [interfaces] }. Units use functionIds, globalVariableIds. |
 
 ---
 

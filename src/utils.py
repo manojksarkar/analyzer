@@ -64,8 +64,14 @@ def load_config(project_root: str) -> dict:
     return config
 
 
+def make_global_key(rel_file: str, qualified_name: str) -> str:
+    """Unique key: module/unit/qualifiedName (e.g. app_main/main/g_globalResult). Unit = filestem, no .cpp."""
+    unit = os.path.splitext(rel_file.replace("\\", "/"))[0] if rel_file else ""
+    return f"{unit}/{qualified_name}"
+
+
 def make_function_key(module: str, rel_file: str, qualified_name: str, parameters: list) -> str:
-    """Unique key: unit/qualifiedName/paramTypes. Unit = rel_file without ext (e.g. app_main/main)."""
+    """Unique key: module/unit/qualifiedName/paramTypes (e.g. app_main/main/calculate/int,int). Unit = filestem."""
     unit = os.path.splitext(rel_file.replace("\\", "/"))[0] if rel_file else ""
     param_types = ",".join((p.get("type") or "").strip() for p in (parameters or []))
     return f"{unit}/{qualified_name}/{param_types}"
@@ -96,6 +102,52 @@ def norm_path(path: str, base_path: str) -> str:
     if os.path.isabs(path):
         return os.path.normpath(path)
     return os.path.normpath(os.path.join(base_path, path))
+
+
+PRIMITIVES = {
+    "void": {"range": "VOID"},
+    "bool": {"range": "0-1"},
+    "char": {"range": "-128-127"},
+    "unsigned char": {"range": "0-0xFF"},
+    "signed char": {"range": "-128-127"},
+    "short": {"range": "-32768-32767"},
+    "short int": {"range": "-32768-32767"},
+    "signed short": {"range": "-32768-32767"},
+    "unsigned short": {"range": "0-0xFFFF"},
+    "int": {"range": "-2147483648-2147483647"},
+    "signed int": {"range": "-2147483648-2147483647"},
+    "unsigned": {"range": "0-0xFFFFFFFF"},
+    "unsigned int": {"range": "0-0xFFFFFFFF"},
+    "long": {"range": "-2147483648-2147483647"},
+    "long int": {"range": "-2147483648-2147483647"},
+    "unsigned long": {"range": "0-0xFFFFFFFF"},
+    "long long": {"range": "-9223372036854775808-9223372036854775807"},
+    "long long int": {"range": "-9223372036854775808-9223372036854775807"},
+    "unsigned long long": {"range": "0-0xFFFFFFFFFFFFFFFF"},
+    "float": {"range": "IEEE 754"},
+    "double": {"range": "IEEE 754"},
+    "long double": {"range": "IEEE 754"},
+    "int8_t": {"range": "-128-127"},
+    "uint8_t": {"range": "0-0xFF"},
+    "int16_t": {"range": "-32768-32767"},
+    "uint16_t": {"range": "0-0xFFFF"},
+    "int32_t": {"range": "-2147483648-2147483647"},
+    "uint32_t": {"range": "0-0xFFFFFFFF"},
+    "int64_t": {"range": "-9223372036854775808-9223372036854775807"},
+    "uint64_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
+    "intptr_t": {"range": "-9223372036854775808-9223372036854775807"},
+    "uintptr_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
+    "size_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
+    "std::int8_t": {"range": "-128-127"},
+    "std::uint8_t": {"range": "0-0xFF"},
+    "std::int16_t": {"range": "-32768-32767"},
+    "std::uint16_t": {"range": "0-0xFFFF"},
+    "std::int32_t": {"range": "-2147483648-2147483647"},
+    "std::uint32_t": {"range": "0-0xFFFFFFFF"},
+    "std::int64_t": {"range": "-9223372036854775808-9223372036854775807"},
+    "std::uint64_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
+    "std::size_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
+}
 
 
 def get_range_for_type(type_str: str) -> str:
@@ -144,3 +196,37 @@ def get_range_for_type(type_str: str) -> str:
     if "size_t" in base and "*" not in base or base == "param_size_t":
         return "0-0xFFFFFFFFFFFFFFFF"
     return "NA"
+
+
+def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
+    """Look up range from data dictionary (keyed by name); fallback to get_range_for_type."""
+    t = (type_str or "").strip()
+    if not t:
+        return "NA"
+    dd = data_dictionary or {}
+    # Normalize: strip const, volatile, pointers for base type
+    base = t.replace("const ", "").replace("volatile ", "").strip()
+    if "*" in base:
+        base = base.split("*")[0].strip()
+    if "&" in base:
+        base = base.split("&")[0].strip()
+    base_lower = base.lower()
+    # Direct lookup (name/qualifiedName as key)
+    entry = dd.get(base) or dd.get(base_lower)
+    if entry:
+        r = entry.get("range")
+        if r:
+            return r
+        if entry.get("kind") == "typedef" and _depth < 10:
+            underlying = entry.get("underlyingType", "")
+            return get_range(underlying, dd, _depth + 1) if underlying else "NA"
+    # Search by qualifiedName
+    for ent in dd.values():
+        if ent.get("qualifiedName") == base or ent.get("qualifiedName", "").lower() == base_lower:
+            r = ent.get("range")
+            if r:
+                return r
+            if ent.get("kind") == "typedef" and _depth < 10:
+                underlying = ent.get("underlyingType", "")
+                return get_range(underlying, dd, _depth + 1) if underlying else "NA"
+    return get_range_for_type(type_str)

@@ -5,7 +5,7 @@ import json
 import re
 from collections import defaultdict
 
-from utils import get_module_name, norm_path, get_range_for_type, load_config, short_name, make_function_key
+from utils import get_module_name, norm_path, load_config, short_name, make_function_key, make_global_key
 from interface_tables import build_interface_tables
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +38,7 @@ def _load_model_inputs():
 
     # Normalize to dict (support list input from older model)
     if isinstance(functions_data, list):
-        functions_data = {make_function_key(f.get("module",""), f.get("location",{}).get("file",""),
+        functions_data = {make_function_key("", f.get("location",{}).get("file",""),
                          f.get("qualifiedName",""), f.get("parameters",f.get("params",[]))): f
                          for f in functions_data}
     if isinstance(global_variables_data, list):
@@ -71,20 +71,21 @@ def _compute_unit_maps(base_path: str, functions_data: dict, global_variables_da
         except ValueError:
             rel = fp
         unit_module = get_module_name(rel.replace("\\", "/"), base_path)
-        unit_by_file[fp] = f"{unit_module}/{os.path.basename(fp)}"
+        filestem = os.path.splitext(os.path.basename(fp))[0]
+        unit_by_file[fp] = f"{unit_module}/{filestem}"
 
     return file_paths, qualified_to_file, unit_by_file
 
 
 def _build_units_modules(base_path: str, file_paths: list, functions_data: dict, global_variables_data: dict, qualified_to_file: dict, unit_by_file: dict):
-    module_names = sorted(
-        {f.get("module", "") for f in functions_data.values() if f.get("module")}
-        | {g.get("module", "") for g in global_variables_data.values() if g.get("module")}
-    )
+    module_names = sorted({u.split("/")[0] for u in unit_by_file.values() if u and "/" in u})
 
     units_data = {}
     for fp in file_paths:
-        unit_name = unit_by_file.get(fp) or f"{get_module_name(fp, base_path)}/{os.path.basename(fp)}"
+        base = os.path.basename(fp)
+        if not base.lower().endswith((".cpp", ".cc", ".cxx")):
+            continue
+        unit_name = unit_by_file.get(fp) or f"{get_module_name(fp, base_path)}/{os.path.splitext(base)[0]}"
 
         func_ids = sorted([fid for fid, f in functions_data.items() if _file_path(f, base_path) == fp],
                          key=lambda x: functions_data[x].get("location", {}).get("line", 0))
@@ -108,18 +109,14 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
 
         units_data[unit_name] = {
             "fileName": os.path.basename(fp),
-            "functions": func_ids,
-            "globalVariables": var_ids,
+            "functionIds": func_ids,
+            "globalVariableIds": var_ids,
             "callerUnits": sorted(caller_unit_names),
             "calleesUnits": sorted(callee_unit_names),
         }
 
     modules_data = {
-        mod: {
-            "units": sorted(
-                {unit_by_file[fp] for fp in file_paths if unit_by_file.get(fp, "").split("/")[0] == mod}
-            )
-        }
+        mod: {"units": sorted(un for un in units_data if un.split("/")[0] == mod)}
         for mod in module_names
     }
 
@@ -192,17 +189,14 @@ def _enrich_interfaces(
             rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
         except ValueError:
             rel = fp
-        module_name = get_module_name(rel, base_path)
-        file_code = os.path.splitext(os.path.basename(fp))[0].upper() if fp else ""
+        unit = os.path.splitext(rel)[0] if rel else ""
+        unit_code = unit.replace("/", "_").upper()
         idx_code = f"{interface_index.get(iid, 0):02d}"
-        interface_id = f"IF_{project_code}_{module_name.upper()}_{file_code}_{idx_code}"
+        interface_id = f"IF_{project_code}_{unit_code}_{idx_code}"
 
         if kind == "function":
-            raw_params = data.get("params", [])
-            parameters = [
-                {"name": p.get("name", ""), "type": p.get("type", ""), "range": get_range_for_type(p.get("type", ""))}
-                for p in raw_params
-            ]
+            raw_params = data.get("params", data.get("parameters", []))
+            parameters = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]
             functions_data[iid].update({"interfaceId": interface_id, "parameters": parameters})
             functions_data[iid].pop("params", None)
             llm_key = f"{loc.get('file', '')}:{loc.get('line', '')}"
@@ -375,7 +369,12 @@ def _infer_direction_from_code(
 
 
 def _write_interface_tables_json(output_dir: str, units_data: dict, functions_data: dict, global_variables_data: dict):
-    interface_tables = build_interface_tables(units_data, functions_data, global_variables_data)
+    data_dict = {}
+    dd_path = os.path.join(MODEL_DIR, "dataDictionary.json")
+    if os.path.exists(dd_path):
+        with open(dd_path, "r", encoding="utf-8") as f:
+            data_dict = json.load(f)
+    interface_tables = build_interface_tables(units_data, functions_data, global_variables_data, data_dict)
     with open(os.path.join(output_dir, "interface_tables.json"), "w", encoding="utf-8") as f:
         json.dump(interface_tables, f, indent=2)
     print(
@@ -412,9 +411,11 @@ def main():
     for f in functions_data.values():
         f.pop("name", None)
         f.pop("interfaceName", None)
+        f.pop("module", None)
     for g in global_variables_data.values():
         g.pop("name", None)
         g.pop("interfaceName", None)
+        g.pop("module", None)
     with open(os.path.join(MODEL_DIR, "functions.json"), "w", encoding="utf-8") as f:
         json.dump(functions_data, f, indent=2)
     with open(os.path.join(MODEL_DIR, "globalVariables.json"), "w", encoding="utf-8") as f:

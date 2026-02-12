@@ -1,7 +1,7 @@
 """Build interface tables from units and enriched functions/globals."""
 import os
 
-from utils import short_name
+from utils import get_range, short_name
 
 
 def _strip_ext(name):
@@ -15,7 +15,7 @@ def _qualified_to_unit(units_data, functions_data):
     """qualifiedName -> set of unit names (derived from model, not stored)."""
     out = {}
     for unit_name, unit_info in units_data.items():
-        for fid in unit_info.get("functions", []):
+        for fid in unit_info.get("functionIds", unit_info.get("functions", [])):
             f = functions_data.get(fid, {})
             qn = f.get("qualifiedName", "")
             if qn:
@@ -23,17 +23,19 @@ def _qualified_to_unit(units_data, functions_data):
     return out
 
 
-def build_interface_tables(units_data, functions_data, global_variables_data):
+def build_interface_tables(units_data, functions_data, global_variables_data, data_dictionary=None):
     # Only .cpp units; entries sorted by line; caller/callee units derived from calledBy/calls
     qualified_to_unit = _qualified_to_unit(units_data, functions_data)
+    dd = data_dictionary or {}
 
     interface_tables = {}
     for unit_name, unit_info in units_data.items():
-        if not unit_name.endswith(".cpp"):
+        if not (unit_info.get("fileName") or "").endswith(".cpp"):
             continue
-        unit_key = _strip_ext(unit_name)
+        unit_key = unit_name
         entries = []
-        for fid in sorted(unit_info["functions"], key=lambda x: functions_data.get(x, {}).get("location", {}).get("line", 0)):
+        for fid in sorted(unit_info.get("functionIds", unit_info.get("functions", [])),
+                         key=lambda x: functions_data.get(x, {}).get("location", {}).get("line", 0)):
             if fid not in functions_data:
                 continue
             f = functions_data[fid]
@@ -44,10 +46,15 @@ def build_interface_tables(units_data, functions_data, global_variables_data):
                 loc["file"] = _strip_ext(loc["file"])
             file_code = os.path.splitext(os.path.basename(loc.get("file", "") or ""))[0].upper()
             interface_name = f"{file_code}_{name}" if (file_code and name) else (name or file_code or "")
-            caller_units = {_strip_ext(u) for cn in f.get("calledBy", [])
+            caller_units = {u for cn in f.get("calledBy", [])
                            for u in qualified_to_unit.get(cn, []) if u}
-            callee_units = {_strip_ext(u) for cn in f.get("calls", [])
+            callee_units = {u for cn in f.get("calls", [])
                             for u in qualified_to_unit.get(cn, []) if u}
+            raw_params = f.get("parameters", [])
+            params = [
+                {**p, "range": get_range(p.get("type", ""), dd)}
+                for p in raw_params
+            ]
             e = {
                 "interfaceId": f.get("interfaceId", ""),
                 "type": "function",
@@ -55,7 +62,7 @@ def build_interface_tables(units_data, functions_data, global_variables_data):
                 "name": name,
                 "qualifiedName": qn,
                 "location": loc,
-                "parameters": f.get("parameters", []),
+                "parameters": params,
                 "direction": f.get("direction", "-"),
                 "callerUnits": sorted(caller_units),
                 "calleesUnits": sorted(callee_units),
@@ -63,7 +70,8 @@ def build_interface_tables(units_data, functions_data, global_variables_data):
             if f.get("description"):
                 e["description"] = f["description"]
             entries.append(e)
-        for vid in sorted(unit_info["globalVariables"], key=lambda x: global_variables_data.get(x, {}).get("location", {}).get("line", 0)):
+        for vid in sorted(unit_info.get("globalVariableIds", unit_info.get("globalVariables", [])),
+                         key=lambda x: global_variables_data.get(x, {}).get("location", {}).get("line", 0)):
             if vid not in global_variables_data:
                 continue
             g = global_variables_data[vid]
