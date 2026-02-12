@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from clang import cindex
 
-from utils import get_module_name as _get_module, load_config
+from utils import get_module_name as _get_module, load_config, make_function_key
 
 if len(sys.argv) < 2:
     print("Usage: python parser.py <project_path>")
@@ -263,9 +263,8 @@ def build_metadata():
             rel_file = os.path.relpath(file_path, base_path).replace("\\", "/")
         except ValueError:
             rel_file = file_path.replace("\\", "/")
-        fid = f"{rel_file}:{f['functionId'].rsplit(':', 1)[1]}"
+        fid = make_function_key(f["moduleName"], rel_file, f["qualifiedName"], f["parameters"])
         functions_dict[fid] = {
-            "name": f["functionName"],
             "qualifiedName": f["qualifiedName"],
             "location": {
                 "file": rel_file,

@@ -5,7 +5,7 @@ import json
 import re
 from collections import defaultdict
 
-from utils import get_module_name, norm_path, get_range_for_type, load_config, short_name
+from utils import get_module_name, norm_path, get_range_for_type, load_config, short_name, make_function_key
 from interface_tables import build_interface_tables
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,9 +36,11 @@ def _load_model_inputs():
     base_path = meta_info["basePath"]
     project_name = meta_info.get("projectName", os.path.basename(base_path))
 
-    # Normalize to dict keyed by file:line (support list input from older model)
+    # Normalize to dict (support list input from older model)
     if isinstance(functions_data, list):
-        functions_data = {f["location"]["file"] + ":" + str(f["location"]["line"]): f for f in functions_data}
+        functions_data = {make_function_key(f.get("module",""), f.get("location",{}).get("file",""),
+                         f.get("qualifiedName",""), f.get("parameters",f.get("params",[]))): f
+                         for f in functions_data}
     if isinstance(global_variables_data, list):
         global_variables_data = {g["location"]["file"] + ":" + str(g["location"]["line"]): g for g in global_variables_data}
 
@@ -46,15 +48,21 @@ def _load_model_inputs():
     return base_path, project_name, functions_data, global_variables_data, config
 
 
+def _file_path(data: dict, base_path: str) -> str:
+    """Get normalized file path from location.file."""
+    return norm_path((data.get("location") or {}).get("file", ""), base_path)
+
+
 def _compute_unit_maps(base_path: str, functions_data: dict, global_variables_data: dict):
-    all_file_paths = set(norm_path(fid.rsplit(":", 1)[0], base_path) for fid in functions_data.keys())
-    all_file_paths.update(norm_path(vid.rsplit(":", 1)[0], base_path) for vid in global_variables_data.keys())
-    file_paths = sorted(all_file_paths)
+    all_file_paths = set(_file_path(f, base_path) for f in functions_data.values())
+    all_file_paths.update(_file_path(g, base_path) for g in global_variables_data.values())
+    file_paths = sorted(fp for fp in all_file_paths if fp)
 
     qualified_to_file = defaultdict(set)  # qualifiedName -> files (overloads may span files)
     for fid, f in functions_data.items():
-        fp = norm_path(fid.rsplit(":", 1)[0], base_path)
-        qualified_to_file[f.get("qualifiedName", "")].add(fp)
+        fp = _file_path(f, base_path)
+        if fp:
+            qualified_to_file[f.get("qualifiedName", "")].add(fp)
 
     unit_by_file = {}
     for fp in file_paths:
@@ -78,8 +86,10 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
     for fp in file_paths:
         unit_name = unit_by_file.get(fp) or f"{get_module_name(fp, base_path)}/{os.path.basename(fp)}"
 
-        func_ids = sorted([fid for fid in functions_data if norm_path(fid.rsplit(":", 1)[0], base_path) == fp])
-        var_ids = sorted([vid for vid in global_variables_data if norm_path(vid.rsplit(":", 1)[0], base_path) == fp])
+        func_ids = sorted([fid for fid, f in functions_data.items() if _file_path(f, base_path) == fp],
+                         key=lambda x: functions_data[x].get("location", {}).get("line", 0))
+        var_ids = sorted([vid for vid, g in global_variables_data.items() if _file_path(g, base_path) == fp],
+                        key=lambda x: (global_variables_data[x].get("location") or {}).get("line", 0))
 
         caller_unit_names = set()
         callee_unit_names = set()
@@ -90,7 +100,7 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
                     u = unit_by_file.get(cf)
                     if u and u != unit_name:
                         caller_unit_names.add(u)
-            for cn in f.get("calleesFunctionNames", []):
+            for cn in f.get("calls", []):
                 for cf in qualified_to_file.get(cn, []):
                     u = unit_by_file.get(cf)
                     if u and u != unit_name:
@@ -133,12 +143,13 @@ def _build_interface_index(base_path: str, functions_data: dict, global_variable
 
     by_file = defaultdict(list)
     for kind, iid, data in all_entries:
-        fp = norm_path(iid.rsplit(":", 1)[0], base_path)
-        by_file[fp].append((kind, iid, data))
+        fp = _file_path(data, base_path)
+        if fp:
+            by_file[fp].append((kind, iid, data))
 
     interface_index = {}
     for fp in sorted(by_file.keys()):
-        entries = sorted(by_file[fp], key=lambda x: int(x[1].rsplit(":", 1)[1]))
+        entries = sorted(by_file[fp], key=lambda x: (x[2].get("location") or {}).get("line", 0))
         for idx, (_, iid, _) in enumerate(entries, 1):
             interface_index[iid] = idx
     return all_entries, interface_index
@@ -175,35 +186,28 @@ def _enrich_interfaces(
     project_code = project_name.upper()
 
     for kind, iid, data in all_entries:
-        fp = iid.rsplit(":", 1)[0]
-        abs_fp = norm_path(fp, base_path)
+        loc = data.get("location") or {}
+        fp = loc.get("file", "")
         try:
-            rel = os.path.relpath(abs_fp, base_path).replace("\\", "/")
+            rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
         except ValueError:
             rel = fp
         module_name = get_module_name(rel, base_path)
-        file_code = os.path.splitext(os.path.basename(fp))[0].upper()
+        file_code = os.path.splitext(os.path.basename(fp))[0].upper() if fp else ""
         idx_code = f"{interface_index.get(iid, 0):02d}"
         interface_id = f"IF_{project_code}_{module_name.upper()}_{file_code}_{idx_code}"
 
         if kind == "function":
-            base_name = data["name"]
-            interface_name = f"{file_code}_{base_name}" if base_name else file_code
             raw_params = data.get("params", [])
             parameters = [
                 {"name": p.get("name", ""), "type": p.get("type", ""), "range": get_range_for_type(p.get("type", ""))}
                 for p in raw_params
             ]
-            functions_data[iid].update(
-                {
-                    "interfaceId": interface_id,
-                    "interfaceName": interface_name,
-                    "parameters": parameters,
-                }
-            )
+            functions_data[iid].update({"interfaceId": interface_id, "parameters": parameters})
             functions_data[iid].pop("params", None)
-            if llm_data.get(iid, {}).get("description"):
-                functions_data[iid]["description"] = llm_data[iid]["description"]
+            llm_key = f"{loc.get('file', '')}:{loc.get('line', '')}"
+            if llm_data.get(llm_key, {}).get("description"):
+                functions_data[iid]["description"] = llm_data[llm_key]["description"]
         else:
             global_variables_data[iid].update({"interfaceId": interface_id})
 
@@ -327,7 +331,7 @@ def _infer_direction_from_code(
             continue
         if not qualified_to_file or not unit_by_file:
             continue
-        own_fp = norm_path(fid.rsplit(":", 1)[0], base_path)
+        own_fp = _file_path(f, base_path)
         own_unit = unit_by_file.get(own_fp, "")
         caller_units = set()
         for cn in f.get("calledBy", []) or []:

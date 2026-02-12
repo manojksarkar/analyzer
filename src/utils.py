@@ -64,6 +64,13 @@ def load_config(project_root: str) -> dict:
     return config
 
 
+def make_function_key(module: str, rel_file: str, qualified_name: str, parameters: list) -> str:
+    """Unique key: unit/qualifiedName/paramTypes. Unit = rel_file without ext (e.g. app_main/main)."""
+    unit = os.path.splitext(rel_file.replace("\\", "/"))[0] if rel_file else ""
+    param_types = ",".join((p.get("type") or "").strip() for p in (parameters or []))
+    return f"{unit}/{qualified_name}/{param_types}"
+
+
 def short_name(qualified_name: str) -> str:
     """Last segment after :: (e.g. MyClass::foo -> foo)."""
     return ((qualified_name or "").split("::")[-1]).strip()

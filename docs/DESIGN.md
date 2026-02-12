@@ -14,7 +14,7 @@ Parse C++ → model (single source of truth) → views (interface tables, DOCX).
 | **generator.py** | Phase 2: Derive & views | Model → units, modules, enriched functions/globals, interface_tables.json |
 | **docx_exporter.py** | Phase 3: Export | interface_tables.json → interface_tables.docx |
 
-**Model (single source of truth, non-redundant for DB):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json. Keys: `file:line` (unique; qualifiedName can duplicate for overloads). Stored: qualifiedName, calledBy, calls; name/interfaceName/callerUnits derived in views.
+**Model (single source of truth, non-redundant for DB):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json. Keys: `unit/qualifiedName/paramTypes` (e.g. app_main/main/calculate/int,int). Stored: qualifiedName, calledBy, calls; name/interfaceName/callerUnits derived in views.
 
 **Views (read-only projections):** interface_tables.json, interface_tables.docx. Recomputable from model.
 

@@ -33,7 +33,7 @@ def build_interface_tables(units_data, functions_data, global_variables_data):
             continue
         unit_key = _strip_ext(unit_name)
         entries = []
-        for fid in sorted(unit_info["functions"], key=lambda x: int(x.rsplit(":", 1)[1])):
+        for fid in sorted(unit_info["functions"], key=lambda x: functions_data.get(x, {}).get("location", {}).get("line", 0)):
             if fid not in functions_data:
                 continue
             f = functions_data[fid]
@@ -42,7 +42,7 @@ def build_interface_tables(units_data, functions_data, global_variables_data):
             loc = dict(f.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            file_code = os.path.splitext(os.path.basename(loc.get("file", "") or fid.rsplit(":", 1)[0]))[0].upper()
+            file_code = os.path.splitext(os.path.basename(loc.get("file", "") or ""))[0].upper()
             interface_name = f"{file_code}_{name}" if (file_code and name) else (name or file_code or "")
             caller_units = {_strip_ext(u) for cn in f.get("calledBy", [])
                            for u in qualified_to_unit.get(cn, []) if u}
@@ -63,7 +63,7 @@ def build_interface_tables(units_data, functions_data, global_variables_data):
             if f.get("description"):
                 e["description"] = f["description"]
             entries.append(e)
-        for vid in sorted(unit_info["globalVariables"], key=lambda x: int(x.rsplit(":", 1)[1])):
+        for vid in sorted(unit_info["globalVariables"], key=lambda x: global_variables_data.get(x, {}).get("location", {}).get("line", 0)):
             if vid not in global_variables_data:
                 continue
             g = global_variables_data[vid]
@@ -72,7 +72,7 @@ def build_interface_tables(units_data, functions_data, global_variables_data):
             loc = dict(g.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            file_code = os.path.splitext(os.path.basename(loc.get("file", "") or vid.rsplit(":", 1)[0]))[0].upper()
+            file_code = os.path.splitext(os.path.basename(loc.get("file", "") or ""))[0].upper()
             interface_name = f"{file_code}_{name}" if (file_code and name) else (name or file_code or "")
             entries.append({
                 "interfaceId": g.get("interfaceId", ""),
