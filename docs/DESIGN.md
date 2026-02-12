@@ -14,7 +14,7 @@ Parse C++ → model (single source of truth) → views (interface tables, DOCX).
 | **generator.py** | Phase 2: Derive & views | Model → units, modules, enriched functions/globals, interface_tables.json |
 | **docx_exporter.py** | Phase 3: Export | interface_tables.json → interface_tables.docx |
 
-**Model (single source of truth):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json.
+**Model (single source of truth, non-redundant for DB):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json. Keys: `file:line` (unique; qualifiedName can duplicate for overloads). Stored: qualifiedName, calledBy, calls; name/interfaceName/callerUnits derived in views.
 
 **Views (read-only projections):** interface_tables.json, interface_tables.docx. Recomputable from model.
 
@@ -59,10 +59,10 @@ Parse C++ → model (single source of truth) → views (interface tables, DOCX).
 
 | What | Where | How |
 |------|-------|-----|
-| Call graph | parser.py | `visit_calls` builds call_graph, reverse_call_graph; stored in functions.callersFunctionNames, calleesFunctionNames |
+| Call graph | parser.py | `visit_calls` builds call_graph, reverse_call_graph; stored in functions.calledBy, calls |
 | Direction propagation | generator.py `_infer_direction_from_code` | Traverse calleesFunctionNames; if callee is Out, mark caller Out |
 | Unit/module build | generator.py `_build_units_modules` | Iterate file_paths; map qualified names → files → units; aggregate caller/callee units per unit |
-| View build | interface_tables.py `build_interface_tables` | Iterate units_data; for each unit, iterate functions and globalVariables (sorted by line); produce { unit: [interfaces] } |
+| View build | interface_tables.py `build_interface_tables` | Iterate units_data; derive callerUnits/calleesUnits from calledBy/calls; produce { unit: [interfaces] } |
 
 ---
 

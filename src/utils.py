@@ -64,6 +64,11 @@ def load_config(project_root: str) -> dict:
     return config
 
 
+def short_name(qualified_name: str) -> str:
+    """Last segment after :: (e.g. MyClass::foo -> foo)."""
+    return ((qualified_name or "").split("::")[-1]).strip()
+
+
 def get_module_name(file_path: str, base_path: str) -> str:
     if not file_path:
         return "unknown"

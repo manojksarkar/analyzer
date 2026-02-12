@@ -26,7 +26,7 @@
             "type": "object",
             "additionalProperties": {
                 "type": "object",
-                "required": ["name", "location", "module", "params", "callersFunctionNames", "calleesFunctionNames"],
+                "required": ["qualifiedName", "location", "module", "parameters", "calledBy", "calls"],
                 "properties": {
                     "name": {"type": "string"},
                     "qualifiedName": {"type": "string"},
@@ -40,8 +40,8 @@
                     },
                     "module": {"type": "string"},
                     "params": {"type": "array"},
-                    "callersFunctionNames": {"type": "array"},
-                    "calleesFunctionNames": {"type": "array"}
+                    "calledBy": {"type": "array"},
+                    "calls": {"type": "array"}
                 }
             }
         },

@@ -5,7 +5,7 @@ import json
 import re
 from collections import defaultdict
 
-from utils import get_module_name, norm_path, get_range_for_type, load_config
+from utils import get_module_name, norm_path, get_range_for_type, load_config, short_name
 from interface_tables import build_interface_tables
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -54,7 +54,7 @@ def _compute_unit_maps(base_path: str, functions_data: dict, global_variables_da
     qualified_to_file = defaultdict(set)  # qualifiedName -> files (overloads may span files)
     for fid, f in functions_data.items():
         fp = norm_path(fid.rsplit(":", 1)[0], base_path)
-        qualified_to_file[f.get("qualifiedName", f["name"])].add(fp)
+        qualified_to_file[f.get("qualifiedName", "")].add(fp)
 
     unit_by_file = {}
     for fp in file_paths:
@@ -85,7 +85,7 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
         callee_unit_names = set()
         for fid in func_ids:
             f = functions_data.get(fid, {})
-            for cn in f.get("callersFunctionNames", []):
+            for cn in f.get("calledBy", []):
                 for cf in qualified_to_file.get(cn, []):
                     u = unit_by_file.get(cf)
                     if u and u != unit_name:
@@ -170,8 +170,6 @@ def _enrich_interfaces(
     interface_index: dict,
     functions_data: dict,
     global_variables_data: dict,
-    qualified_to_file: dict,
-    unit_by_file: dict,
     llm_data: dict,
 ):
     project_code = project_name.upper()
@@ -191,18 +189,6 @@ def _enrich_interfaces(
         if kind == "function":
             base_name = data["name"]
             interface_name = f"{file_code}_{base_name}" if base_name else file_code
-            callers = data.get("callersFunctionNames", [])
-            callees = data.get("calleesFunctionNames", [])
-            caller_units_set = set()
-            callee_units_set = set()
-            for cn in callers:
-                for cf in qualified_to_file.get(cn, []):
-                    caller_units_set.add(unit_by_file.get(cf, ""))
-            for cn in callees:
-                for cf in qualified_to_file.get(cn, []):
-                    callee_units_set.add(unit_by_file.get(cf, ""))
-            caller_units_set.discard("")
-            callee_units_set.discard("")
             raw_params = data.get("params", [])
             parameters = [
                 {"name": p.get("name", ""), "type": p.get("type", ""), "range": get_range_for_type(p.get("type", ""))}
@@ -212,8 +198,6 @@ def _enrich_interfaces(
                 {
                     "interfaceId": interface_id,
                     "interfaceName": interface_name,
-                    "callerUnits": sorted(caller_units_set),
-                    "calleesUnits": sorted(callee_units_set),
                     "parameters": parameters,
                 }
             )
@@ -221,19 +205,18 @@ def _enrich_interfaces(
             if llm_data.get(iid, {}).get("description"):
                 functions_data[iid]["description"] = llm_data[iid]["description"]
         else:
-            base_name = data["name"]
-            interface_name = f"{file_code}_{base_name}" if base_name else file_code
-            global_variables_data[iid].update(
-                {
-                    "interfaceId": interface_id,
-                    "interfaceName": interface_name,
-                    "callerUnits": [],
-                    "calleesUnits": [],
-                }
-            )
+            global_variables_data[iid].update({"interfaceId": interface_id})
 
 
-def _infer_direction_from_code(base_path: str, functions_data: dict, global_variables_data: dict, config: dict):
+def _infer_direction_from_code(
+    base_path: str,
+    functions_data: dict,
+    global_variables_data: dict,
+    config: dict,
+    *,
+    qualified_to_file: dict = None,
+    unit_by_file: dict = None,
+):
     try:
         # Reuse the same source extraction logic as the LLM client.
         from llm_client import extract_source as _extract_source
@@ -241,8 +224,10 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
         _extract_source = None
 
     global_names = sorted(
-        {(g.get("name") or "").strip() for g in global_variables_data.values() if (g.get("name") or "").strip()}
+        {(short_name(g.get("qualifiedName", "")) or g.get("name", "") or "").strip()
+         for g in global_variables_data.values()}
     )
+    global_names = [n for n in global_names if n]
 
     patterns = {}
     for name in global_names:
@@ -287,7 +272,7 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
         return "-"
 
     for gid, g in global_variables_data.items():
-        name = (g.get("name") or "").strip()
+        name = (short_name(g.get("qualifiedName", "")) or g.get("name", "") or "").strip()
         rw = global_rw.get(name, {"read": False, "write": False}) if global_names else {"read": False, "write": False}
         g["direction"] = _rw_to_dir(rw["read"], rw["write"])
 
@@ -315,7 +300,7 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
     # Map qualifiedName -> {fid} for callee lookup (overloads share name)
     name_to_ids = {}
     for fid, f in functions_data.items():
-        qn = (f.get("qualifiedName") or f.get("name") or "").strip()
+        qn = (f.get("qualifiedName") or "").strip()
         if not qn:
             continue
         name_to_ids.setdefault(qn, set()).add(fid)
@@ -324,7 +309,7 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
     for fid, f in functions_data.items():
         if func_dir[fid] is not None:
             continue
-        callees = f.get("calleesFunctionNames", []) or []
+        callees = f.get("calls", []) or []
         called_out = False
         for cn in callees:
             for target_id in name_to_ids.get(cn, ()):
@@ -336,10 +321,20 @@ def _infer_direction_from_code(base_path: str, functions_data: dict, global_vari
         if called_out:
             func_dir[fid] = "Out"
 
+    # Derive caller_units from callersFunctionNames (not stored in model)
     for fid, f in functions_data.items():
         if func_dir[fid] is not None:
             continue
-        caller_units = f.get("callerUnits") or []
+        if not qualified_to_file or not unit_by_file:
+            continue
+        own_fp = norm_path(fid.rsplit(":", 1)[0], base_path)
+        own_unit = unit_by_file.get(own_fp, "")
+        caller_units = set()
+        for cn in f.get("calledBy", []) or []:
+            for cf in qualified_to_file.get(cn, []):
+                u = unit_by_file.get(cf, "")
+                if u and u != own_unit:
+                    caller_units.add(u)
         if caller_units:
             func_dir[fid] = "In"
 
@@ -401,13 +396,21 @@ def main():
         interface_index=interface_index,
         functions_data=functions_data,
         global_variables_data=global_variables_data,
-        qualified_to_file=qualified_to_file,
-        unit_by_file=unit_by_file,
         llm_data=llm_data,
     )
-    _infer_direction_from_code(base_path, functions_data, global_variables_data, config)
+    _infer_direction_from_code(
+        base_path, functions_data, global_variables_data, config,
+        qualified_to_file=qualified_to_file,
+        unit_by_file=unit_by_file,
+    )
 
-    # Persist enriched model (single source of truth for views)
+    # Persist enriched model (single source of truth, non-redundant)
+    for f in functions_data.values():
+        f.pop("name", None)
+        f.pop("interfaceName", None)
+    for g in global_variables_data.values():
+        g.pop("name", None)
+        g.pop("interfaceName", None)
     with open(os.path.join(MODEL_DIR, "functions.json"), "w", encoding="utf-8") as f:
         json.dump(functions_data, f, indent=2)
     with open(os.path.join(MODEL_DIR, "globalVariables.json"), "w", encoding="utf-8") as f:
