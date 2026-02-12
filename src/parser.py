@@ -273,6 +273,9 @@ def build_metadata():
     functions_dict = {}
     global_variables_dict = {}
 
+    # Map internal function keys -> final functionIds (model keys) so we can expose precise call relationships
+    func_key_to_fid = {}
+
     for func_key, f in functions.items():
         file_path = f["functionId"].rsplit(":", 1)[0]
         try:
@@ -280,6 +283,7 @@ def build_metadata():
         except ValueError:
             rel_file = file_path.replace("\\", "/")
         fid = make_function_key(f["moduleName"], rel_file, f["qualifiedName"], f["parameters"])
+        func_key_to_fid[func_key] = fid
         functions_dict[fid] = {
             "qualifiedName": f["qualifiedName"],
             "location": {
@@ -291,6 +295,24 @@ def build_metadata():
             "calledBy": f["calledBy"],
             "calls": f["calls"],
         }
+
+    # Add precise caller/callee ids using the final function keys (includes overloads, same-name functions, etc.)
+    for func_key, f in functions.items():
+        fid = func_key_to_fid.get(func_key)
+        if not fid:
+            continue
+        called_ids = [
+            func_key_to_fid[c]
+            for c in reverse_call_graph.get(func_key, [])
+            if c in func_key_to_fid
+        ]
+        calls_ids = [
+            func_key_to_fid[c]
+            for c in call_graph.get(func_key, [])
+            if c in func_key_to_fid
+        ]
+        functions_dict[fid]["calledByIds"] = sorted(called_ids)
+        functions_dict[fid]["callsIds"] = sorted(calls_ids)
 
     for var_id, g in globals_data.items():
         file_path = var_id.rsplit(":", 1)[0]
