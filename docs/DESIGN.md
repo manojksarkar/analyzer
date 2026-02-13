@@ -14,9 +14,130 @@ Parse C++ → model (single source of truth) → views (interface tables, DOCX).
 | **generator.py** | Phase 2: Derive & views | Model → units, modules, enriched functions/globals, interface_tables.json |
 | **docx_exporter.py** | Phase 3: Export | interface_tables.json → interface_tables.docx |
 
-**Model (single source of truth, non-redundant for DB):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json. Function keys/IDs: `module/unit/qualifiedName/paramTypes` where unit = full subpath (e.g. `tests/structs/point_rect`). Global keys: `module/unit/qualifiedName`. Units have `key` (subpath) and `name` (filestem for display). Call graph uses `calledByIds` and `callsIds` (function IDs). interfaceId: IF_project_unit_index.
+**Model (single source of truth):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json, metadata.json. See [Model Format](#model-format) below.
 
 **Views (read-only projections):** interface_tables.json, interface_tables.docx. Recomputable from model.
+
+---
+
+## Model Format
+
+All keys use `|` (KEY_SEP) as separator. Paths use `/`.
+
+### metadata.json
+```json
+{
+  "basePath": "absolute/path/to/project",
+  "projectName": "project_name",
+  "generatedAt": "ISO8601",
+  "version": 1
+}
+```
+
+### functions.json
+**Key format:** `module|unitname|qualifiedName|paramTypes` (e.g. `app|main|calculate|`, `math|utils|add|int,int`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| qualifiedName | string | C++ full/scoped name |
+| location | object | file, line, endLine |
+| calledByIds | string[] | Function IDs that call this |
+| callsIds | string[] | Function IDs this calls |
+| interfaceId | string | IF_project_unit_index |
+| parameters | array | name, type; range resolved at view time |
+| direction | string | In, Out |
+| description | string | (optional) LLM-enriched |
+
+### globalVariables.json
+**Key format:** `module|unitname|qualifiedName` (e.g. `app|main|g_globalResult`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| qualifiedName | string | Variable full name |
+| location | object | file, line |
+| type | string | C++ type |
+| interfaceId | string | IF_project_unit_index |
+| direction | string | In, Out, In/Out, - |
+
+### units.json
+**Key format:** `module|unitname` (e.g. `app|main`, `tests|types`). Unitname = filename without extension. Multiple .cpp files with the same `module|unitname` merge into one unit (e.g. `tests/enum/types.cpp` and `tests/param/types.cpp` → `tests|types`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| name | string | Display name (unitname) |
+| path | string \| string[] | Path(s) without extension; single string for one-file unit, array when merged |
+| fileName | string | Basename of first contributing file (e.g. `types.cpp`) |
+| functionIds | string[] | Function IDs (`module\|unitname\|qualifiedName\|paramTypes`) in this unit |
+| globalVariableIds | string[] | Global variable IDs (`module\|unitname\|qualifiedName`) in this unit |
+| callerUnits | string[] | Unit keys that call functions in this unit (derived from calledByIds) |
+| calleesUnits | string[] | Unit keys that functions in this unit call (derived from callsIds) |
+
+**Example (single-file unit):**
+```json
+"app|main": {
+  "name": "main",
+  "path": "app/main",
+  "fileName": "main.cpp",
+  "functionIds": ["app|main|main|", "app|main|calculate|", ...],
+  "globalVariableIds": ["app|main|g_globalResult"],
+  "callerUnits": [],
+  "calleesUnits": ["math|utils", "tests|types", ...]
+}
+```
+
+**Example (merged unit):**
+```json
+"tests|types": {
+  "name": "types",
+  "path": ["tests/enum/types", "tests/param/types"],
+  "fileName": "types.cpp",
+  "functionIds": ["tests|types|checkStatus|Status", "tests|types|testInt32|param_int32_t,param_int32_t", ...],
+  "globalVariableIds": [],
+  "callerUnits": ["app|main"],
+  "calleesUnits": []
+}
+```
+
+### modules.json
+**Key format:** Module name (first path segment, e.g. `app`, `math`, `outer`, `tests`). Groups units by top-level directory.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| units | string[] | Unit keys (`module|unitname`) belonging to this module; ordered by discovery |
+
+**Example:**
+```json
+{
+  "app": { "units": ["app|main"] },
+  "math": { "units": ["math|utils"] },
+  "outer": { "units": ["outer|helper"] },
+  "tests": {
+    "units": [
+      "tests|classes",
+      "tests|dispatch",
+      "tests|namespaces",
+      "tests|point_rect",
+      "tests|read_write",
+      "tests|types"
+    ]
+  }
+}
+```
+
+### dataDictionary.json
+**Key:** type name (e.g. `param_uint8_t`, `Status`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| kind | string | struct, class, enum, typedef, primitive |
+| name | string | Type name |
+| qualifiedName | string | Fully qualified name |
+| range | string | Value range (e.g. 0-0xFF, NA) |
+| underlyingType | string | (typedef) underlying type |
+| location | object | file, line |
+
+### interface_tables.json (view)
+Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ name, entries }`. Each entry has interfaceId, type (function/globalVariable), interfaceName, qualifiedName, parameters, direction, callerUnits, calleesUnits.
 
 ---
 
@@ -59,10 +180,10 @@ Parse C++ → model (single source of truth) → views (interface tables, DOCX).
 
 | What | Where | How |
 |------|-------|-----|
-| Call graph | parser.py | `visit_calls` builds call_graph, reverse_call_graph; stored in functions.calledBy, calls |
-| Direction propagation | generator.py `_infer_direction_from_code` | Traverse calleesFunctionNames; if callee is Out, mark caller Out |
-| Unit/module build | generator.py `_build_units_modules` | Iterate file_paths; map qualified names → files → units; aggregate caller/callee units per unit |
-| View build | interface_tables.py `build_interface_tables` | Iterate units_data; derive callerUnits/calleesUnits from calledBy/calls; resolve param range via get_range(type, dataDictionary); produce { unit: [interfaces] }. Units use functionIds, globalVariableIds. |
+| Call graph | parser.py | `visit_calls` builds call_graph, reverse_call_graph; stored in functions.calledByIds, callsIds |
+| Direction propagation | generator.py `_infer_direction_from_code` | If callee is Out, mark caller Out |
+| Unit/module build | generator.py `_build_units_modules` | Iterate file_paths; map to unit keys (module\|unitname); aggregate caller/callee units |
+| View build | interface_tables.py `build_interface_tables` | Derive callerUnits/calleesUnits from calledByIds/callsIds; resolve param range via get_range(); produce { unitKey: { name, entries } } |
 
 ---
 

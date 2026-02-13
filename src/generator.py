@@ -64,7 +64,7 @@ def _compute_unit_maps(base_path: str, functions_data: dict, global_variables_da
         if fp:
             qualified_to_file[f.get("qualifiedName", "")].add(fp)
 
-    # Unit key: always module|filestem (single-name units; multiple files merge into one)
+    # Unit key: always module|unitname (single-name units; multiple files merge into one)
     unit_by_file = {}
     for fp in file_paths:
         try:
@@ -115,9 +115,9 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
                 if u and u != unit_key:
                     callee_unit_names.add(u)
 
-        filestem = os.path.splitext(base)[0]
+        unitname = os.path.splitext(base)[0]
         if unit_key in units_data:
-            # Merge: same module|filestem from multiple files
+            # Merge: same module|unitname from multiple files
             u = units_data[unit_key]
             u["functionIds"] = u["functionIds"] + func_ids
             u["globalVariableIds"] = u["globalVariableIds"] + var_ids
@@ -131,7 +131,7 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
                 u["path"] = [paths, path_no_ext]
         else:
             units_data[unit_key] = {
-                "name": filestem,
+                "name": unitname,
                 "path": path_no_ext,
                 "fileName": os.path.basename(fp),
                 "functionIds": func_ids,

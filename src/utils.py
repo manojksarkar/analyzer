@@ -68,20 +68,20 @@ def load_config(project_root: str) -> dict:
 
 
 def _path_to_module_unit(rel_file: str) -> tuple:
-    """Return (module, unit) from rel_file. Unit = filestem only (no subpath)."""
+    """Return (module, unitname) from rel_file. Unitname = filename without extension (no subpath)."""
     path = rel_file.replace("\\", "/") if rel_file else ""
     parts = path.split("/")
     if not parts:
         return "unknown", ""
     module = parts[0]
-    unit = os.path.splitext(parts[-1])[0]
-    return module, unit
+    unitname = os.path.splitext(parts[-1])[0]
+    return module, unitname
 
 
 def make_unit_key(rel_file: str) -> str:
-    """Unit unique key: module|filestem (assumes single-name units, no path in key)."""
-    module, filestem = _path_to_module_unit(rel_file)
-    return f"{module}{KEY_SEP}{filestem}"
+    """Unit unique key: module|unitname (assumes single-name units, no path in key)."""
+    module, unitname = _path_to_module_unit(rel_file)
+    return f"{module}{KEY_SEP}{unitname}"
 
 
 def path_from_unit_rel(rel_file: str) -> str:
@@ -90,26 +90,26 @@ def path_from_unit_rel(rel_file: str) -> str:
     return os.path.splitext(path)[0]
 
 
-def make_global_key(rel_file: str, qualified_name: str) -> str:
-    """Unique key: module|unit|qualifiedName. Unit=filestem only."""
+def make_global_key(rel_file: str, full_name: str) -> str:
+    """Unique key: module|unitname|qualifiedName."""
     module, unit = _path_to_module_unit(rel_file)
-    return f"{module}{KEY_SEP}{unit}{KEY_SEP}{qualified_name}"
+    return f"{module}{KEY_SEP}{unit}{KEY_SEP}{full_name}"
 
 
-def make_function_key(module: str, rel_file: str, qualified_name: str, parameters: list) -> str:
-    """Unique key: module|unit|qualifiedName|paramTypes. Unit=filestem only."""
+def make_function_key(module: str, rel_file: str, full_name: str, parameters: list) -> str:
+    """Unique key: module|unitname|qualifiedName|paramTypes."""
     path = rel_file.replace("\\", "/") if rel_file else ""
     parts = path.split("/")
     if not module and parts:
         module = parts[0]
     _, unit = _path_to_module_unit(rel_file)
     param_types = ",".join((p.get("type") or "").strip() for p in (parameters or []))
-    return f"{module}{KEY_SEP}{unit}{KEY_SEP}{qualified_name}{KEY_SEP}{param_types}"
+    return f"{module}{KEY_SEP}{unit}{KEY_SEP}{full_name}{KEY_SEP}{param_types}"
 
 
-def short_name(qualified_name: str) -> str:
+def short_name(full_name: str) -> str:
     """Last segment after :: (e.g. MyClass::foo -> foo)."""
-    return ((qualified_name or "").split("::")[-1]).strip()
+    return ((full_name or "").split("::")[-1]).strip()
 
 
 def get_module_name(file_path: str, base_path: str) -> str:
