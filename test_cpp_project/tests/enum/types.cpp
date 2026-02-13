@@ -1,4 +1,4 @@
-#include "enum_tests.h"
+#include "types.h"
 
 Status checkStatus(Status s) {
     return s == STATUS_OK ? STATUS_OK : STATUS_ERR;

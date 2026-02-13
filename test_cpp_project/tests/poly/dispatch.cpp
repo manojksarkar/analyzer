@@ -1,5 +1,5 @@
-#include "polymorphism_tests.h"
-#include "../math_utils/utils.h"
+#include "dispatch.h"
+#include "../../math/utils.h"
 
 int g_polymorphismFactor = 1;
 

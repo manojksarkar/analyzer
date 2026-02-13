@@ -1,4 +1,4 @@
-#include "param_tests.h"
+#include "types.h"
 
 int testIntParams(int a, int b) {
     return a + b;

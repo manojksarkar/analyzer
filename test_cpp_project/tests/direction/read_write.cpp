@@ -1,4 +1,4 @@
-#include "direction_tests.h"
+#include "read_write.h"
 
 int g_readOnly = 42;   // read-only: never written
 int g_writeOnly = 0;   // write-only: only written

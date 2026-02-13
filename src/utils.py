@@ -2,6 +2,9 @@
 import os
 import json
 
+# Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
+KEY_SEP = "|"
+
 
 def _strip_json_comments(text: str) -> str:
     """Strip // and /* */ so config files can use comments."""
@@ -64,17 +67,44 @@ def load_config(project_root: str) -> dict:
     return config
 
 
+def _path_to_module_unit(rel_file: str) -> tuple:
+    """Return (module, unit) from rel_file. Unit = filestem only (no subpath)."""
+    path = rel_file.replace("\\", "/") if rel_file else ""
+    parts = path.split("/")
+    if not parts:
+        return "unknown", ""
+    module = parts[0]
+    unit = os.path.splitext(parts[-1])[0]
+    return module, unit
+
+
+def make_unit_key(rel_file: str) -> str:
+    """Unit unique key: module|filestem (assumes single-name units, no path in key)."""
+    module, filestem = _path_to_module_unit(rel_file)
+    return f"{module}{KEY_SEP}{filestem}"
+
+
+def path_from_unit_rel(rel_file: str) -> str:
+    """Path without extension (for storing in unit info)."""
+    path = (rel_file or "").replace("\\", "/")
+    return os.path.splitext(path)[0]
+
+
 def make_global_key(rel_file: str, qualified_name: str) -> str:
-    """Unique key: module/unit/qualifiedName (e.g. app_main/main/g_globalResult). Unit = filestem, no .cpp."""
-    unit = os.path.splitext(rel_file.replace("\\", "/"))[0] if rel_file else ""
-    return f"{unit}/{qualified_name}"
+    """Unique key: module|unit|qualifiedName. Unit=filestem only."""
+    module, unit = _path_to_module_unit(rel_file)
+    return f"{module}{KEY_SEP}{unit}{KEY_SEP}{qualified_name}"
 
 
 def make_function_key(module: str, rel_file: str, qualified_name: str, parameters: list) -> str:
-    """Unique key: module/unit/qualifiedName/paramTypes (e.g. app_main/main/calculate/int,int). Unit = filestem."""
-    unit = os.path.splitext(rel_file.replace("\\", "/"))[0] if rel_file else ""
+    """Unique key: module|unit|qualifiedName|paramTypes. Unit=filestem only."""
+    path = rel_file.replace("\\", "/") if rel_file else ""
+    parts = path.split("/")
+    if not module and parts:
+        module = parts[0]
+    _, unit = _path_to_module_unit(rel_file)
     param_types = ",".join((p.get("type") or "").strip() for p in (parameters or []))
-    return f"{unit}/{qualified_name}/{param_types}"
+    return f"{module}{KEY_SEP}{unit}{KEY_SEP}{qualified_name}{KEY_SEP}{param_types}"
 
 
 def short_name(qualified_name: str) -> str:

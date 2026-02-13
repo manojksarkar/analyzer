@@ -18,7 +18,7 @@ def _set_cell_font(cell, font_pt, bold=False):
 
 
 def export_docx(json_path: str = None, docx_path: str = None) -> bool:
-    from utils import load_config
+    from utils import load_config, KEY_SEP
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
@@ -43,23 +43,30 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
     doc = Document()
     doc.add_heading("Interface Tables", 0)
 
+    unit_names = data.get("unitNames", {})
+
     # Group by module; skip metadata keys if present
     by_module = {}
-    for unit_name in data.keys():
-        if unit_name in ("basePath", "projectName"):
+    for unit_key in data.keys():
+        if unit_key in ("basePath", "projectName", "unitNames"):
             continue
-        interfaces = data[unit_name]
-        if not isinstance(interfaces, list):
+        unit_data = data[unit_key]
+        if isinstance(unit_data, dict) and "entries" in unit_data:
+            unit_name_display = unit_data.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
+            interfaces = unit_data["entries"]
+        elif isinstance(unit_data, list):
+            unit_name_display = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key
+            interfaces = unit_data
+        else:
             continue
-        parts = unit_name.split("/", 1)
+        parts = unit_key.split(KEY_SEP, 1)
         module_name = parts[0]
-        by_module.setdefault(module_name, []).append((unit_name, interfaces))
+        by_module.setdefault(module_name, []).append((unit_key, unit_name_display, interfaces))
 
     for module_name in sorted(by_module.keys()):
         doc.add_heading(module_name, level=1)
-        for unit_name, interfaces in sorted(by_module[module_name]):
-            file_name = unit_name.split("/", 1)[1] if "/" in unit_name else unit_name
-            doc.add_heading(file_name, level=2)
+        for unit_key, unit_name_display, interfaces in sorted(by_module[module_name]):
+            doc.add_heading(unit_name_display, level=2)
 
             table = doc.add_table(rows=1, cols=len(COLS))
             table.style = "Table Grid"
@@ -80,8 +87,10 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
 
                 callers = iface.get("callerUnits", [])
                 callees = iface.get("calleesUnits", [])
+                callers_display = [unit_names.get(c, c) for c in callers]
+                callees_display = [unit_names.get(c, c) for c in callees]
                 direction = iface.get("direction", "-") or "-"
-                src_dest = f"Source: {', '.join(callers)}; Dest: {', '.join(callees)}" if (callers or callees) else "-"
+                src_dest = f"Source: {', '.join(callers_display)}; Dest: {', '.join(callees_display)}" if (callers or callees) else "-"
                 info = iface.get("description", "") or "-"
 
                 row = table.add_row().cells

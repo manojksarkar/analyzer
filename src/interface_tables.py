@@ -1,7 +1,7 @@
 """Build interface tables from units and enriched functions/globals."""
 import os
 
-from utils import get_range, short_name
+from utils import get_range, short_name, KEY_SEP
 
 
 def _strip_ext(name):
@@ -11,28 +11,26 @@ def _strip_ext(name):
     return base if ext else name
 
 
-def _qualified_to_unit(units_data, functions_data):
-    """qualifiedName -> set of unit names (derived from model, not stored)."""
+def _fid_to_unit(units_data):
+    """functionId -> set of unit names (derived from model, not stored)."""
     out = {}
     for unit_name, unit_info in units_data.items():
         for fid in unit_info.get("functionIds", unit_info.get("functions", [])):
-            f = functions_data.get(fid, {})
-            qn = f.get("qualifiedName", "")
-            if qn:
-                out.setdefault(qn, set()).add(unit_name)
+            out.setdefault(fid, set()).add(unit_name)
     return out
 
 
 def build_interface_tables(units_data, functions_data, global_variables_data, data_dictionary=None):
-    # Only .cpp units; entries sorted by line; caller/callee units derived from calledBy/calls
-    qualified_to_unit = _qualified_to_unit(units_data, functions_data)
+    # Only .cpp units; entries sorted by line; caller/callee units derived from calledByIds/callsIds
+    fid_to_unit = _fid_to_unit(units_data)
     dd = data_dictionary or {}
+    unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk) for uk, u in units_data.items()}
 
-    interface_tables = {}
-    for unit_name, unit_info in units_data.items():
+    interface_tables = {"unitNames": unit_names}
+    for unit_key, unit_info in units_data.items():
         if not (unit_info.get("fileName") or "").endswith(".cpp"):
             continue
-        unit_key = unit_name
+        unit_name_display = unit_info.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
         entries = []
         for fid in sorted(unit_info.get("functionIds", unit_info.get("functions", [])),
                          key=lambda x: functions_data.get(x, {}).get("location", {}).get("line", 0)):
@@ -46,10 +44,16 @@ def build_interface_tables(units_data, functions_data, global_variables_data, da
                 loc["file"] = _strip_ext(loc["file"])
             file_code = os.path.splitext(os.path.basename(loc.get("file", "") or ""))[0].upper()
             interface_name = f"{file_code}_{name}" if (file_code and name) else (name or file_code or "")
-            caller_units = {u for cn in f.get("calledBy", [])
-                           for u in qualified_to_unit.get(cn, []) if u}
-            callee_units = {u for cn in f.get("calls", [])
-                            for u in qualified_to_unit.get(cn, []) if u}
+            caller_units = {
+                u
+                for cid in f.get("calledByIds", []) or []
+                for u in fid_to_unit.get(cid, []) if u
+            }
+            callee_units = {
+                u
+                for cid in f.get("callsIds", []) or []
+                for u in fid_to_unit.get(cid, []) if u
+            }
             raw_params = f.get("parameters", [])
             params = [
                 {**p, "range": get_range(p.get("type", ""), dd)}
@@ -61,6 +65,8 @@ def build_interface_tables(units_data, functions_data, global_variables_data, da
                 "interfaceName": interface_name,
                 "name": name,
                 "qualifiedName": qn,
+                "unitKey": unit_key,
+                "unitName": unit_name_display,
                 "location": loc,
                 "parameters": params,
                 "direction": f.get("direction", "-"),
@@ -88,11 +94,13 @@ def build_interface_tables(units_data, functions_data, global_variables_data, da
                 "interfaceName": interface_name,
                 "name": name,
                 "qualifiedName": qn,
+                "unitKey": unit_key,
+                "unitName": unit_name_display,
                 "location": loc,
                 "variableType": g.get("type", ""),
                 "direction": g.get("direction", "-"),
                 "callerUnits": [],
                 "calleesUnits": [],
             })
-        interface_tables[unit_key] = entries
+        interface_tables[unit_key] = {"name": unit_name_display, "entries": entries}
     return interface_tables

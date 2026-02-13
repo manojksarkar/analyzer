@@ -1,5 +1,5 @@
-#include "namespace_tests.h"
-#include "../math_utils/utils.h"
+#include "namespaces.h"
+#include "../../math/utils.h"
 
 namespace outer {
 

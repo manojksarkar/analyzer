@@ -1,4 +1,4 @@
-#include "type_tests.h"
+#include "point_rect.h"
 
 int pointSum(Point p) {
     return p.x + p.y;

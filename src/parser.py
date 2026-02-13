@@ -260,15 +260,6 @@ def parse_calls(path):
 
 
 def build_metadata():
-    # Convert internal keys to rel_path:line for output; add callers/callees by qualifiedName
-    for k in functions:
-        functions[k]["calledBy"] = [
-            functions[c]["qualifiedName"] for c in reverse_call_graph.get(k, []) if c in functions
-        ]
-        functions[k]["calls"] = [
-            functions[c]["qualifiedName"] for c in call_graph.get(k, []) if c in functions
-        ]
-
     base_path = os.path.abspath(MODULE_BASE_PATH)
     functions_dict = {}
     global_variables_dict = {}
@@ -292,8 +283,6 @@ def build_metadata():
                 "endLine": f.get("endLine", int(f["functionId"].rsplit(":", 1)[1])),
             },
             "params": f["parameters"],
-            "calledBy": f["calledBy"],
-            "calls": f["calls"],
         }
 
     # Add precise caller/callee ids using the final function keys (includes overloads, same-name functions, etc.)

@@ -5,7 +5,7 @@ import json
 import re
 from collections import defaultdict
 
-from utils import get_module_name, norm_path, load_config, short_name, make_function_key, make_global_key
+from utils import get_module_name, norm_path, load_config, short_name, make_function_key, make_global_key, make_unit_key, path_from_unit_rel, KEY_SEP
 from interface_tables import build_interface_tables
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -64,28 +64,44 @@ def _compute_unit_maps(base_path: str, functions_data: dict, global_variables_da
         if fp:
             qualified_to_file[f.get("qualifiedName", "")].add(fp)
 
+    # Unit key: module|filestem (preferred); use module|path when collision
     unit_by_file = {}
+    key_to_fp = {}  # unit_key -> fp (to detect collisions)
     for fp in file_paths:
         try:
             rel = os.path.relpath(fp, base_path)
         except ValueError:
             rel = fp
-        unit_module = get_module_name(rel.replace("\\", "/"), base_path)
-        filestem = os.path.splitext(os.path.basename(fp))[0]
-        unit_by_file[fp] = f"{unit_module}/{filestem}"
+        rel_norm = rel.replace("\\", "/")
+        path_no_ext = path_from_unit_rel(rel_norm)
+        base = os.path.basename(fp)
+        filestem = os.path.splitext(base)[0]
+        module = get_module_name(fp, base_path)
+        preferred_key = make_unit_key(rel_norm)
+        if preferred_key in key_to_fp and key_to_fp[preferred_key] != fp:
+            unit_key = path_no_ext.replace("/", KEY_SEP)
+        else:
+            unit_key = preferred_key
+        key_to_fp[unit_key] = fp
+        unit_by_file[fp] = unit_key
 
     return file_paths, qualified_to_file, unit_by_file
 
 
 def _build_units_modules(base_path: str, file_paths: list, functions_data: dict, global_variables_data: dict, qualified_to_file: dict, unit_by_file: dict):
-    module_names = sorted({u.split("/")[0] for u in unit_by_file.values() if u and "/" in u})
+    module_names = sorted({u.split(KEY_SEP)[0] for u in unit_by_file.values() if u and KEY_SEP in u})
 
     units_data = {}
     for fp in file_paths:
         base = os.path.basename(fp)
         if not base.lower().endswith((".cpp", ".cc", ".cxx")):
             continue
-        unit_name = unit_by_file.get(fp) or f"{get_module_name(fp, base_path)}/{os.path.splitext(base)[0]}"
+        unit_key = unit_by_file.get(fp) or make_unit_key(os.path.relpath(fp, base_path).replace("\\", "/") if fp else "")
+        try:
+            rel = os.path.relpath(fp, base_path)
+        except ValueError:
+            rel = fp
+        path_no_ext = path_from_unit_rel(rel.replace("\\", "/"))
 
         func_ids = sorted([fid for fid, f in functions_data.items() if _file_path(f, base_path) == fp],
                          key=lambda x: functions_data[x].get("location", {}).get("line", 0))
@@ -96,18 +112,25 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
         callee_unit_names = set()
         for fid in func_ids:
             f = functions_data.get(fid, {})
-            for cn in f.get("calledBy", []):
-                for cf in qualified_to_file.get(cn, []):
-                    u = unit_by_file.get(cf)
-                    if u and u != unit_name:
-                        caller_unit_names.add(u)
-            for cn in f.get("calls", []):
-                for cf in qualified_to_file.get(cn, []):
-                    u = unit_by_file.get(cf)
-                    if u and u != unit_name:
-                        callee_unit_names.add(u)
+            # Caller units from calledByIds
+            for caller_id in f.get("calledByIds", []) or []:
+                caller_func = functions_data.get(caller_id, {})
+                cf = _file_path(caller_func, base_path)
+                u = unit_by_file.get(cf)
+                if u and u != unit_key:
+                    caller_unit_names.add(u)
+            # Callee units from callsIds
+            for callee_id in f.get("callsIds", []) or []:
+                callee_func = functions_data.get(callee_id, {})
+                cf = _file_path(callee_func, base_path)
+                u = unit_by_file.get(cf)
+                if u and u != unit_key:
+                    callee_unit_names.add(u)
 
-        units_data[unit_name] = {
+        filestem = os.path.splitext(base)[0]
+        units_data[unit_key] = {
+            "name": filestem,
+            "path": path_no_ext,
             "fileName": os.path.basename(fp),
             "functionIds": func_ids,
             "globalVariableIds": var_ids,
@@ -116,7 +139,7 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
         }
 
     modules_data = {
-        mod: {"units": sorted(un for un in units_data if un.split("/")[0] == mod)}
+        mod: {"units": sorted(un for un in units_data if un.split(KEY_SEP)[0] == mod)}
         for mod in module_names
     }
 
@@ -261,12 +284,13 @@ def _infer_direction_from_code(
                 global_rw[name]["read"] = True
 
     def _rw_to_dir(read_flag: bool, write_flag: bool) -> str:
+        # Set (written) → In; not set (read-only) → Out; both → In/Out
         if read_flag and write_flag:
             return "In/Out"
         if write_flag:
-            return "Out"
-        if read_flag:
             return "In"
+        if read_flag:
+            return "Out"
         return "-"
 
     for gid, g in global_variables_data.items():
@@ -295,44 +319,33 @@ def _infer_direction_from_code(
         elif read_any:
             func_dir[fid] = "In"
 
-    # Map qualifiedName -> {fid} for callee lookup (overloads share name)
-    name_to_ids = {}
-    for fid, f in functions_data.items():
-        qn = (f.get("qualifiedName") or "").strip()
-        if not qn:
-            continue
-        name_to_ids.setdefault(qn, set()).add(fid)
-
-    # Single-layer call-graph: if calls Out function, mark Out
+    # Single-layer call-graph: if calls Out function (via precise ids), mark Out
     for fid, f in functions_data.items():
         if func_dir[fid] is not None:
             continue
-        callees = f.get("calls", []) or []
+        callees = f.get("callsIds", []) or []
         called_out = False
-        for cn in callees:
-            for target_id in name_to_ids.get(cn, ()):
-                if func_dir.get(target_id) == "Out":
-                    called_out = True
-                    break
-            if called_out:
+        for target_id in callees:
+            if func_dir.get(target_id) == "Out":
+                called_out = True
                 break
         if called_out:
             func_dir[fid] = "Out"
 
-    # Derive caller_units from callersFunctionNames (not stored in model)
+    # If called from another unit → In (function is an input to this unit)
     for fid, f in functions_data.items():
         if func_dir[fid] is not None:
             continue
-        if not qualified_to_file or not unit_by_file:
+        if not unit_by_file:
             continue
         own_fp = _file_path(f, base_path)
         own_unit = unit_by_file.get(own_fp, "")
         caller_units = set()
-        for cn in f.get("calledBy", []) or []:
-            for cf in qualified_to_file.get(cn, []):
-                u = unit_by_file.get(cf, "")
-                if u and u != own_unit:
-                    caller_units.add(u)
+        for caller_id in f.get("calledByIds", []) or []:
+            cf = _file_path(functions_data.get(caller_id, {}), base_path)
+            u = unit_by_file.get(cf, "")
+            if u and u != own_unit:
+                caller_units.add(u)
         if caller_units:
             func_dir[fid] = "In"
 

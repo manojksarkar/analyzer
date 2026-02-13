@@ -1,4 +1,4 @@
-#include "nested_class_tests.h"
+#include "classes.h"
 
 int Outer::outerValue(int x) {
     Inner i;

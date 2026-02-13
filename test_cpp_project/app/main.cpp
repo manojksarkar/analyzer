@@ -1,11 +1,12 @@
-#include "../math_utils/utils.h"
-#include "../param_tests/param_tests.h"
-#include "../namespace_tests/namespace_tests.h"
-#include "../nested_class_tests/nested_class_tests.h"
-#include "../polymorphism_tests/polymorphism_tests.h"
-#include "../enum_tests/enum_tests.h"
-#include "../type_tests/type_tests.h"
-#include "../direction_tests/direction_tests.h"
+#include "../math/utils.h"
+#include "../tests/param/types.h"
+#include "../tests/ns/namespaces.h"
+#include "../tests/nested/classes.h"
+#include "../tests/poly/dispatch.h"
+#include "../tests/enum/types.h"
+#include "../tests/structs/point_rect.h"
+#include "../tests/direction/read_write.h"
+#include "../outer/inner/helper.h"
 
 int g_globalResult = 0;
 
@@ -91,6 +92,10 @@ int runTypeTests() {
     return sum + area + vi;
 }
 
+int runNestedFolderTests() {
+    return nestedHelper(21);
+}
+
 int runDirectionTests() {
     int v = readGlobal();
     writeGlobal(10);
@@ -108,7 +113,8 @@ int main() {
     int result6 = runNestedClassTests();
     int result7 = runEnumTests();
     int result8 = runTypeTests();
-    int result9 = runDirectionTests();
-    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9;
+    int result9 = runNestedFolderTests();
+    int result10 = runDirectionTests();
+    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9 + result10;
     return g_globalResult;
 }

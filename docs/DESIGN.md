@@ -14,7 +14,7 @@ Parse C++ → model (single source of truth) → views (interface tables, DOCX).
 | **generator.py** | Phase 2: Derive & views | Model → units, modules, enriched functions/globals, interface_tables.json |
 | **docx_exporter.py** | Phase 3: Export | interface_tables.json → interface_tables.docx |
 
-**Model (single source of truth, non-redundant for DB):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json. Function keys: `module/unit/qualifiedName/paramTypes`. Global keys: `module/unit/qualifiedName`. Unit = filestem (no .cpp). Stored: qualifiedName, calledBy, calls; name/interfaceName/module/callerUnits derived. interfaceId: IF_project_unit_index.
+**Model (single source of truth, non-redundant for DB):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json. Function keys/IDs: `module/unit/qualifiedName/paramTypes` where unit = full subpath (e.g. `tests/structs/point_rect`). Global keys: `module/unit/qualifiedName`. Units have `key` (subpath) and `name` (filestem for display). Call graph uses `calledByIds` and `callsIds` (function IDs). interfaceId: IF_project_unit_index.
 
 **Views (read-only projections):** interface_tables.json, interface_tables.docx. Recomputable from model.
 
