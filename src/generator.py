@@ -64,25 +64,15 @@ def _compute_unit_maps(base_path: str, functions_data: dict, global_variables_da
         if fp:
             qualified_to_file[f.get("qualifiedName", "")].add(fp)
 
-    # Unit key: module|filestem (preferred); use module|path when collision
+    # Unit key: always module|filestem (single-name units; multiple files merge into one)
     unit_by_file = {}
-    key_to_fp = {}  # unit_key -> fp (to detect collisions)
     for fp in file_paths:
         try:
             rel = os.path.relpath(fp, base_path)
         except ValueError:
             rel = fp
         rel_norm = rel.replace("\\", "/")
-        path_no_ext = path_from_unit_rel(rel_norm)
-        base = os.path.basename(fp)
-        filestem = os.path.splitext(base)[0]
-        module = get_module_name(fp, base_path)
-        preferred_key = make_unit_key(rel_norm)
-        if preferred_key in key_to_fp and key_to_fp[preferred_key] != fp:
-            unit_key = path_no_ext.replace("/", KEY_SEP)
-        else:
-            unit_key = preferred_key
-        key_to_fp[unit_key] = fp
+        unit_key = make_unit_key(rel_norm)
         unit_by_file[fp] = unit_key
 
     return file_paths, qualified_to_file, unit_by_file
@@ -112,14 +102,12 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
         callee_unit_names = set()
         for fid in func_ids:
             f = functions_data.get(fid, {})
-            # Caller units from calledByIds
             for caller_id in f.get("calledByIds", []) or []:
                 caller_func = functions_data.get(caller_id, {})
                 cf = _file_path(caller_func, base_path)
                 u = unit_by_file.get(cf)
                 if u and u != unit_key:
                     caller_unit_names.add(u)
-            # Callee units from callsIds
             for callee_id in f.get("callsIds", []) or []:
                 callee_func = functions_data.get(callee_id, {})
                 cf = _file_path(callee_func, base_path)
@@ -128,15 +116,29 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
                     callee_unit_names.add(u)
 
         filestem = os.path.splitext(base)[0]
-        units_data[unit_key] = {
-            "name": filestem,
-            "path": path_no_ext,
-            "fileName": os.path.basename(fp),
-            "functionIds": func_ids,
-            "globalVariableIds": var_ids,
-            "callerUnits": sorted(caller_unit_names),
-            "calleesUnits": sorted(callee_unit_names),
-        }
+        if unit_key in units_data:
+            # Merge: same module|filestem from multiple files
+            u = units_data[unit_key]
+            u["functionIds"] = u["functionIds"] + func_ids
+            u["globalVariableIds"] = u["globalVariableIds"] + var_ids
+            u["callerUnits"] = sorted(set(u["callerUnits"]) | caller_unit_names)
+            u["calleesUnits"] = sorted(set(u["calleesUnits"]) | callee_unit_names)
+            paths = u.get("path")
+            if isinstance(paths, list):
+                if path_no_ext not in paths:
+                    u["path"] = paths + [path_no_ext]
+            elif path_no_ext != paths:
+                u["path"] = [paths, path_no_ext]
+        else:
+            units_data[unit_key] = {
+                "name": filestem,
+                "path": path_no_ext,
+                "fileName": os.path.basename(fp),
+                "functionIds": func_ids,
+                "globalVariableIds": var_ids,
+                "callerUnits": sorted(caller_unit_names),
+                "calleesUnits": sorted(callee_unit_names),
+            }
 
     modules_data = {
         mod: {"units": sorted(un for un in units_data if un.split(KEY_SEP)[0] == mod)}
