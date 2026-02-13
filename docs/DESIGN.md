@@ -48,6 +48,19 @@ All keys use `|` (KEY_SEP) as separator. Paths use `/`.
 | direction | string | In, Out |
 | description | string | (optional) LLM-enriched |
 
+**Example:**
+```json
+"app|main|calculate|": {
+  "qualifiedName": "calculate",
+  "location": { "file": "app/main.cpp", "line": 13, "endLine": 17 },
+  "calledByIds": ["app|main|main|"],
+  "callsIds": ["math|utils|add|int,int", "tests|dispatch|multiply|int,int"],
+  "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_02",
+  "parameters": [],
+  "direction": "Out"
+}
+```
+
 ### globalVariables.json
 **Key format:** `module|unitname|qualifiedName` (e.g. `app|main|g_globalResult`)
 
@@ -58,6 +71,17 @@ All keys use `|` (KEY_SEP) as separator. Paths use `/`.
 | type | string | C++ type |
 | interfaceId | string | IF_project_unit_index |
 | direction | string | In, Out, In/Out, - |
+
+**Example:**
+```json
+"tests|read_write|g_readWrite": {
+  "qualifiedName": "g_readWrite",
+  "location": { "file": "tests/direction/read_write.cpp", "line": 5 },
+  "type": "int",
+  "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_03",
+  "direction": "In/Out"
+}
+```
 
 ### units.json
 **Key format:** `module|unitname` (e.g. `app|main`, `tests|types`). Unitname = filename without extension. Multiple .cpp files with the same `module|unitname` merge into one unit (e.g. `tests/enum/types.cpp` and `tests/param/types.cpp` → `tests|types`).
