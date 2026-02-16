@@ -31,9 +31,9 @@ def _add_interface_table(doc, interfaces, unit_names, font_small):
 
     for iface in interfaces:
         iface_type = iface.get("type", "") or "-"
-        if iface_type == "globalVariable":
+        if "variableType" in iface:
             data_type = iface.get("variableType", "-") or "-"
-            data_range = "-"
+            data_range = iface.get("range", "-") or "-"
         else:
             params = iface.get("parameters", [])
             data_type = "; ".join(p.get("type", "") for p in params) if params else "-"

@@ -169,8 +169,11 @@ def _build_interface_index(base_path: str, functions_data: dict, global_variable
 
 
 def _get_description_overrides(base_path: str, functions_data: dict, config: dict) -> dict:
-    """Return description overrides from LLM."""
+    """Return description overrides from LLM (file:line -> {description})."""
     return {}
+    from llm_client import enrich_functions_with_descriptions
+    funcs_list = list(functions_data.values())
+    return enrich_functions_with_descriptions(funcs_list, base_path, config)
 
 
 def _enrich_interfaces(
@@ -197,7 +200,7 @@ def _enrich_interfaces(
         interface_id = f"IF_{project_code}_{unit_code}_{idx_code}"
 
         if kind == "function":
-            raw_params = data.get("parameters", [])
+            raw_params = data.get("parameters", data.get("params", []))
             parameters = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]
             functions_data[iid].update({"interfaceId": interface_id, "parameters": parameters})
             llm_key = f"{loc.get('file', '')}:{loc.get('line', '')}"

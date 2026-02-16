@@ -63,7 +63,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
             ]
             e = {
                 "interfaceId": f.get("interfaceId", ""),
-                "type": "function",
+                "type": "Function",
                 "interfaceName": interface_name,
                 "name": name,
                 "qualifiedName": qn,
@@ -92,7 +92,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
             interface_name = f"{file_code}_{name}" if (file_code and name) else (name or file_code or "")
             entries.append({
                 "interfaceId": g.get("interfaceId", ""),
-                "type": "globalVariable",
+                "type": "Global Variable",
                 "interfaceName": interface_name,
                 "name": name,
                 "qualifiedName": qn,
@@ -100,6 +100,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
                 "unitName": unit_name_display,
                 "location": loc,
                 "variableType": g.get("type", ""),
+                "range": get_range(g.get("type", ""), dd),
                 "direction": g.get("direction", "-"),
                 "callerUnits": [],
                 "calleesUnits": [],

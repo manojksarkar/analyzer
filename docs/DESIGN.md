@@ -182,7 +182,7 @@ All keys use `|` (KEY_SEP) as separator. Paths use `/`.
 | location | object | file, line |
 
 ### interface_tables.json (view)
-Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ name, entries }`. Each entry has interfaceId, type (function/globalVariable), interfaceName, qualifiedName, parameters, direction, callerUnits, calleesUnits.
+Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ name, entries }`. Each entry has interfaceId, type (Function/Global Variable), interfaceName, qualifiedName, parameters, direction, callerUnits, calleesUnits.
 
 ---
 
