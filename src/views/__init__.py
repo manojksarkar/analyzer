@@ -15,3 +15,4 @@ from . import interface_tables  # noqa: F401
 from . import sequence_diagrams  # noqa: F401
 from . import flowcharts  # noqa: F401
 from . import component_diagram  # noqa: F401
+from . import behaviour_diagram  # noqa: F401

@@ -3,7 +3,8 @@
     "interfaceTables": true,
     "sequenceDiagrams": false,
     "flowcharts": false,
-    "componentDiagram": false
+    "componentDiagram": false,
+    "behaviourDiagram": true
   },
   "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
   "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
@@ -15,6 +16,12 @@
   "export": {
     "docxPath": "output/software_detailed_design.docx",
     "docxFontSize": 8
+  },
+  "behaviourDiagram": {
+    "scriptPath": "fake_behaviour_diagram_generator.py",
+    // "mmdcPath": "mmdc",
+    "mmdcPath": "C:\\Users\\User\\AppData\\Roaming\\npm\\mmdc.cmd",
+    "skipPngRender": false
   }
   // Linux (uncomment and replace above, or use config.local.json):
   // "llvmLibPath": "/usr/lib/llvm-17/lib/libclang.so",

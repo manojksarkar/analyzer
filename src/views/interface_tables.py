@@ -63,6 +63,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
             ]
             e = {
                 "interfaceId": f.get("interfaceId", ""),
+                "functionId": fid,
                 "type": "Function",
                 "interfaceName": interface_name,
                 "name": name,

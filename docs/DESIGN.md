@@ -23,7 +23,7 @@ Parse C++ → model (single source of truth) → views → software_detailed_des
 
 **LLM:** `llm_client.py` integrates with Ollama for function descriptions and direction labels. Model_deriver uses it to enrich functions (via `_get_description_overrides`). The flowcharts view (stub) uses LLM for diagram generation. Config provides `llm.baseUrl`, `llm.defaultModel`, `llm.timeoutSeconds`.
 
-**Views (read-only projections):** Each view reads the model and writes output. Configurable via `config.views`. Implemented: interfaceTables → interface_tables.json. Stubs: sequenceDiagrams, flowcharts, componentDiagram.
+**Views (read-only projections):** Each view reads the model and writes output. Configurable via `config.views`. Implemented: interfaceTables → interface_tables.json; behaviourDiagram → output/behaviour_diagrams/ (calls external behaviour_diagram.py per function). Stubs: sequenceDiagrams, flowcharts, componentDiagram.
 
 **Output:** software_detailed_design.docx — structure spec in [software_detailed_design.json](software_detailed_design.json): 1 Introduction, 2..N Modules (Static Design with unit interface tables, Dynamic Behaviour), Code Metrics, Appendix A.
 
@@ -33,7 +33,9 @@ Parse C++ → model (single source of truth) → views → software_detailed_des
 
 | Key | Description |
 |-----|-------------|
-| views | interfaceTables, sequenceDiagrams, flowcharts, componentDiagram (true/false) |
+| views | interfaceTables, sequenceDiagrams, flowcharts, componentDiagram, behaviourDiagram (true/false) |
+| behaviourDiagram.scriptPath | Path to behaviour_diagram.py (absolute or relative to project); required for behaviourDiagram view |
+| behaviourDiagram.mmdcPath | Path to mermaid-cli mmdc (default: mmdc from PATH); converts .mmd to .png for DOCX |
 | llvmLibPath | Path to libclang |
 | clangIncludePath | Path to clang headers |
 | llm | baseUrl, defaultModel, timeoutSeconds |
@@ -212,7 +214,7 @@ Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ n
 1. Load interface_tables.json.
 2. Build Software Detailed Design structure ([spec](software_detailed_design.json)):
    - 1 Introduction (Purpose, Scope, Terms)
-   - 2..N Modules (Static Design: unit header, unit interface table, per-interface sections; Dynamic Behaviour)
+   - 2..N Modules (Static Design: unit header, unit interface table, per-interface sections; Dynamic Behaviour: 2.2.x per function with behaviour diagram PNG from mermaid-cli)
    - Code Metrics, Coding Rule, Test Coverage
    - Appendix A. Design Guideline
 3. Table columns: Interface ID, Interface Name, Information, Data Type, Data Range, Direction, Source/Destination, Interface Type.

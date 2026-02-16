@@ -1,5 +1,6 @@
 """Export interface_tables.json -> Software Detailed Design DOCX."""
 import os
+import re
 import sys
 import json
 
@@ -7,6 +8,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
+
+
+def _safe_function_key(key: str) -> str:
+    """Convert function key to filesystem-safe name (matches behaviour_diagram output)."""
+    return re.sub(r'[<>:"/\\|?*]', "_", key)
 
 
 def _set_cell_font(cell, font_pt, bold=False):
@@ -77,7 +83,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
 
     try:
         from docx import Document
-        from docx.shared import Pt
+        from docx.shared import Pt, Inches
         font_small = Pt(font_size)
     except ImportError:
         print("Error: python-docx not installed. pip install python-docx")
@@ -144,12 +150,30 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{iface_id}", level=4)
                 _add_para(doc, f"{iface_name} ({iface.get('type', '-')}). {iface.get('description', '') or '-'}")
 
-        # 2.2 Dynamic Behaviour
+        # 2.2 Dynamic Behaviour (per function, with behaviour diagram)
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)
-        doc.add_heading(f"{sec_num}.2.1 behaviour1", level=3)
-        _add_para(doc, "[Behaviour description placeholder.]")
-        doc.add_heading(f"{sec_num}.2.2 behaviour2", level=3)
-        _add_para(doc, "[Behaviour description placeholder.]")
+        beh_dir = os.path.join(OUTPUT_DIR, "behaviour_diagrams")
+        beh_idx = 0
+        for _unit_key, _unit_name, unit_interfaces in sorted(by_module[module_name]):
+            for iface in unit_interfaces:
+                if iface.get("type") != "Function":
+                    continue
+                beh_idx += 1
+                iface_name = iface.get("interfaceName", "") or iface.get("name", "?")
+                doc.add_heading(f"{sec_num}.2.{beh_idx} {iface_name}", level=3)
+                fid = iface.get("functionId", "")
+                if fid:
+                    safe = _safe_function_key(fid)
+                    png_path = os.path.join(beh_dir, f"{safe}.png")
+                    if os.path.isfile(png_path):
+                        try:
+                            doc.add_picture(png_path, width=Inches(6))
+                        except Exception:
+                            _add_para(doc, f"[Behaviour diagram: {png_path}]")
+                    else:
+                        _add_para(doc, "[Behaviour diagram not available.]")
+                else:
+                    _add_para(doc, "[Behaviour diagram not available.]")
 
     # N Code Metrics, Coding rule, test coverage
     metrics_sec = len(sorted_modules) + 2
