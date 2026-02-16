@@ -1,19 +1,19 @@
 {
+  "views": {
+    "interfaceTables": true,
+    "sequenceDiagrams": false,
+    "flowcharts": false,
+    "componentDiagram": false
+  },
   "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
   "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
-  "enableDescriptions": false,
-  "enableDirectionLLM": false,
   "llm": {
     "baseUrl": "http://localhost:11434",
     "defaultModel": "llama3.2",
-    "descriptionModel": "llama3.2",
-    "directionModel": "llama3.2",
-    "flowchartModel": "llama3.2",
     "timeoutSeconds": 60
   },
   "export": {
-    "enableDocx": true,
-    "docxPath": "output/interface_tables.docx",
+    "docxPath": "output/software_detailed_design.docx",
     "docxFontSize": 8
   }
   // Linux (uncomment and replace above, or use config.local.json):

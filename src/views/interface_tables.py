@@ -1,6 +1,8 @@
-"""Build interface tables from units and enriched functions/globals."""
+"""Interface tables view: model -> output/interface_tables.json."""
 import os
+import json
 
+from .registry import register
 from utils import get_range, short_name, KEY_SEP
 
 
@@ -15,24 +17,24 @@ def _fid_to_unit(units_data):
     """functionId -> set of unit names (derived from model, not stored)."""
     out = {}
     for unit_name, unit_info in units_data.items():
-        for fid in unit_info.get("functionIds", unit_info.get("functions", [])):
+        for fid in unit_info.get("functionIds", []):
             out.setdefault(fid, set()).add(unit_name)
     return out
 
 
-def build_interface_tables(units_data, functions_data, global_variables_data, data_dictionary=None):
+def _build_interface_tables(units_data, functions_data, global_variables_data, data_dictionary=None):
     # Only .cpp units; entries sorted by line; caller/callee units derived from calledByIds/callsIds
     fid_to_unit = _fid_to_unit(units_data)
     dd = data_dictionary or {}
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk) for uk, u in units_data.items()}
 
-    interface_tables = {"unitNames": unit_names}
+    result = {"unitNames": unit_names}
     for unit_key, unit_info in units_data.items():
         if not (unit_info.get("fileName") or "").endswith(".cpp"):
             continue
         unit_name_display = unit_info.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
         entries = []
-        for fid in sorted(unit_info.get("functionIds", unit_info.get("functions", [])),
+        for fid in sorted(unit_info.get("functionIds", []),
                          key=lambda x: functions_data.get(x, {}).get("location", {}).get("line", 0)):
             if fid not in functions_data:
                 continue
@@ -76,7 +78,7 @@ def build_interface_tables(units_data, functions_data, global_variables_data, da
             if f.get("description"):
                 e["description"] = f["description"]
             entries.append(e)
-        for vid in sorted(unit_info.get("globalVariableIds", unit_info.get("globalVariables", [])),
+        for vid in sorted(unit_info.get("globalVariableIds", []),
                          key=lambda x: global_variables_data.get(x, {}).get("location", {}).get("line", 0)):
             if vid not in global_variables_data:
                 continue
@@ -102,5 +104,25 @@ def build_interface_tables(units_data, functions_data, global_variables_data, da
                 "callerUnits": [],
                 "calleesUnits": [],
             })
-        interface_tables[unit_key] = {"name": unit_name_display, "entries": entries}
-    return interface_tables
+        result[unit_key] = {"name": unit_name_display, "entries": entries}
+    return result
+
+
+@register("interfaceTables")
+def run(model, output_dir, model_dir, config):
+    units_data = model.get("units", {})
+    functions_data = model.get("functions", {})
+    global_variables_data = model.get("globalVariables", {})
+    data_dict = model.get("dataDictionary", {})
+
+    interface_tables = _build_interface_tables(
+        units_data, functions_data, global_variables_data, data_dict
+    )
+    out_path = os.path.join(output_dir, "interface_tables.json")
+    os.makedirs(output_dir, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(interface_tables, f, indent=2)
+    unit_count = len([k for k in interface_tables if k != "unitNames"])
+    print("  output/interface_tables.json (%d units, %d functions, %d globals)" % (
+        unit_count, len(functions_data), len(global_variables_data)
+    ))

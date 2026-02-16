@@ -1,46 +1,67 @@
-<mxfile host="app.diagrams.net">
+<mxfile host="app.diagrams.net" modified="2025-01-01T00:00:00.000Z" agent="5.0" version="22.0.0" etag="arch" type="device">
   <diagram name="Architecture" id="arch">
-    <mxGraphModel dx="800" dy="500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="520" math="0" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="input" value="Input&#xa;C++ files (.cpp, .h)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
-          <mxGeometry x="300" y="40" width="140" height="50" as="geometry"/>
+        <mxCell id="input" value="C++&#xa;files" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="150" width="80" height="60" as="geometry"/>
         </mxCell>
-        <mxCell id="phase1" value="Phase 1: Parse&#xa;parser.py (libclang)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-          <mxGeometry x="290" y="140" width="160" height="60" as="geometry"/>
+        <mxCell id="phase1" value="1. Parse&#xa;parser.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="160" y="140" width="140" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="p1out" value="metadata.json, functions.json,&#xa;globalVariables.json, dataDictionary.json" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="240" y="240" width="260" height="40" as="geometry"/>
+        <mxCell id="phase2" value="2. Derive&#xa;model_deriver.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="340" y="140" width="140" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="phase2" value="Phase 2: Derive &amp; Views&#xa;generator.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-          <mxGeometry x="290" y="320" width="160" height="60" as="geometry"/>
+        <mxCell id="phase3" value="3. Views&#xa;run_views.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="520" y="140" width="140" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="p2out" value="units.json, modules.json, enriched&#xa;functions/globals, interface_tables.json" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="220" y="420" width="300" height="40" as="geometry"/>
+        <mxCell id="phase4" value="4. Export&#xa;docx_exporter.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="700" y="140" width="140" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="phase3" value="Phase 3: Export&#xa;docx_exporter.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
-          <mxGeometry x="290" y="500" width="160" height="60" as="geometry"/>
+        <mxCell id="output" value="software_&#xa;detailed_&#xa;design.docx" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="880" y="140" width="100" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="output" value="interface_tables.docx" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
-          <mxGeometry x="300" y="600" width="140" height="40" as="geometry"/>
+        <mxCell id="model" value="model/&#xa;metadata, functions,&#xa;globals, units, modules" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=9;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="355" y="260" width="110" height="60" as="geometry"/>
         </mxCell>
-        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="input" target="phase1">
+        <mxCell id="viewsout" value="output/&#xa;interface_tables.json&#xa;(+ other view files)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=9;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="545" y="260" width="90" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="docxout" value="output/&#xa;software_detailed_&#xa;design.docx only" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=9;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="725" y="260" width="90" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="1" source="input" target="phase1">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="phase1" target="p1out">
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="phase1" target="phase2">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1out" target="phase2">
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="phase2" target="phase3">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="phase2" target="p2out">
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="phase3" target="phase4">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2out" target="phase3">
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="phase4" target="output">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="phase3" target="output">
+        <mxCell id="llm-box" value="LLM (Ollama)&#xa;llm_client.py&#xa;descriptions, direction" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="340" width="140" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="llm-edge" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=1;strokeColor=#9673a6;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="llm-box" target="phase2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="dag-box" value="Call graph (DAG)&#xa;parser: call_graph, reverse_call_graph&#xa;→ calledByIds, callsIds in model&#xa;used by: model_deriver, interface_tables" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;dashed=1;align=left;spacingLeft=4;" vertex="1" parent="1">
+          <mxGeometry x="160" y="340" width="280" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="dag-e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=1;strokeColor=#82b366;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="phase1" target="dag-box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="dag-e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=1;strokeColor=#82b366;dashed=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="dag-box" target="phase2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="dag-e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=1;strokeColor=#82b366;dashed=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="dag-box" target="phase3">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>

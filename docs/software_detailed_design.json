@@ -1,0 +1,54 @@
+{
+  "documentTitle": "Software Detailed Design",
+  "sections": [
+    {
+      "id": "1",
+      "title": "Introduction",
+      "children": [
+        { "id": "1.1", "title": "Purpose", "content": "[Purpose of this document.]" },
+        { "id": "1.2", "title": "Scope", "content": "[Scope of the software detailed design.]" },
+        { "id": "1.3", "title": "Terms, Abbreviations and Definitions", "content": "[Terms, abbreviations and definitions.]" }
+      ]
+    },
+    {
+      "id": "2+",
+      "title": "{{module}}",
+      "repeat": "modules",
+      "children": [
+        {
+          "id": "{{sec}}.1",
+          "title": "Static Design",
+          "children": [
+            {
+              "id": "{{sec}}.1.{{unitIdx}}",
+              "title": "{{unit}}",
+              "repeat": "units",
+              "children": [
+                { "id": "{{sec}}.1.{{unitIdx}}.1", "title": "unit header", "content": "Unit: {{unit}}, Path: {{path}}" },
+                { "id": "{{sec}}.1.{{unitIdx}}.2", "title": "unit interface", "view": "interfaceTables" },
+                { "id": "{{sec}}.1.{{unitIdx}}.3+", "title": "{{unit}}-{{interfaceId}}", "repeat": "interfaces", "view": "interfaceTables", "content": "{{interfaceName}} ({{type}}). {{description}}" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "{{sec}}.2",
+          "title": "Dynamic Behaviour",
+          "children": [
+            { "id": "{{sec}}.2.1", "title": "behaviour1", "content": "[Behaviour description placeholder.]" },
+            { "id": "{{sec}}.2.2", "title": "behaviour2", "content": "[Behaviour description placeholder.]" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N",
+      "title": "Code Metrics, Coding Rule, Test Coverage",
+      "content": "[Code metrics, coding rules and test coverage.]",
+      "note": "N = number of modules + 2"
+    }
+  ],
+  "appendices": [
+    { "id": "A", "title": "Design Guideline", "content": "[Design guidelines.]" }
+  ]
+}

@@ -1,4 +1,4 @@
-"""Model -> views."""
+"""Derive model: units, modules, enrichment. Phase 2."""
 import os
 import sys
 import json
@@ -6,7 +6,6 @@ import re
 from collections import defaultdict
 
 from utils import get_module_name, norm_path, load_config, short_name, make_function_key, make_global_key, make_unit_key, path_from_unit_rel, KEY_SEP
-from interface_tables import build_interface_tables
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -35,14 +34,6 @@ def _load_model_inputs():
         meta_info = json.load(f)
     base_path = meta_info["basePath"]
     project_name = meta_info.get("projectName", os.path.basename(base_path))
-
-    # Normalize to dict (support list input from older model)
-    if isinstance(functions_data, list):
-        functions_data = {make_function_key("", f.get("location",{}).get("file",""),
-                         f.get("qualifiedName",""), f.get("parameters",f.get("params",[]))): f
-                         for f in functions_data}
-    if isinstance(global_variables_data, list):
-        global_variables_data = {g["location"]["file"] + ":" + str(g["location"]["line"]): g for g in global_variables_data}
 
     config = load_config(PROJECT_ROOT)
     return base_path, project_name, functions_data, global_variables_data, config
@@ -177,23 +168,9 @@ def _build_interface_index(base_path: str, functions_data: dict, global_variable
     return all_entries, interface_index
 
 
-def _maybe_enrich_descriptions(base_path: str, functions_data: dict, config: dict) -> dict:
-    if not config.get("enableDescriptions"):
-        return {}
-    try:
-        from llm_client import enrich_functions_with_descriptions
-    except ImportError as e:
-        print(f"LLM disabled: {e}")
-        return {}
-
-    funcs_only = [f for f in functions_data.values() if f.get("location")]
-    if not funcs_only:
-        return {}
-    print("Enriching with LLM (Ollama)...")
-    llm_data = enrich_functions_with_descriptions(funcs_only, base_path, config)
-    if not any(v.get("description") for v in llm_data.values()):
-        print("  Warning: No descriptions received. Is Ollama running? (ollama serve)")
-    return llm_data
+def _get_description_overrides(base_path: str, functions_data: dict, config: dict) -> dict:
+    """Return description overrides from LLM."""
+    return {}
 
 
 def _enrich_interfaces(
@@ -203,7 +180,7 @@ def _enrich_interfaces(
     interface_index: dict,
     functions_data: dict,
     global_variables_data: dict,
-    llm_data: dict,
+    description_overrides: dict,
 ):
     project_code = project_name.upper()
 
@@ -220,13 +197,12 @@ def _enrich_interfaces(
         interface_id = f"IF_{project_code}_{unit_code}_{idx_code}"
 
         if kind == "function":
-            raw_params = data.get("params", data.get("parameters", []))
+            raw_params = data.get("parameters", [])
             parameters = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]
             functions_data[iid].update({"interfaceId": interface_id, "parameters": parameters})
-            functions_data[iid].pop("params", None)
             llm_key = f"{loc.get('file', '')}:{loc.get('line', '')}"
-            if llm_data.get(llm_key, {}).get("description"):
-                functions_data[iid]["description"] = llm_data[llm_key]["description"]
+            if description_overrides.get(llm_key, {}).get("description"):
+                functions_data[iid]["description"] = description_overrides[llm_key]["description"]
         else:
             global_variables_data[iid].update({"interfaceId": interface_id})
 
@@ -360,42 +336,14 @@ def _infer_direction_from_code(
     for fid, direction in func_dir.items():
         functions_data[fid]["direction"] = direction
 
-    if not config.get("enableDirectionLLM"):
-        return
-    try:
-        from llm_client import enrich_functions_with_direction as _enrich_dir
-    except Exception:
-        return
 
-    funcs_for_llm = [functions_data[fid] for fid in undecided_fids if functions_data[fid].get("location")]
-    if not funcs_for_llm:
-        return
-
-    print("Enriching function directions with LLM (Ollama)...")
-    dir_data = _enrich_dir(funcs_for_llm, base_path, config)
-    for fid in undecided_fids:
-        f = functions_data[fid]
-        loc = f.get("location") or {}
-        key = f"{loc.get('file', '')}:{loc.get('line', '')}" if loc else ""
-        info = dir_data.get(key, {}) if key else {}
-        label = info.get("direction")
-        if label in ("In", "Out", "In/Out"):
-            f["direction"] = label
-
-
-def _write_interface_tables_json(output_dir: str, units_data: dict, functions_data: dict, global_variables_data: dict):
+def _load_data_dictionary():
     data_dict = {}
     dd_path = os.path.join(MODEL_DIR, "dataDictionary.json")
     if os.path.exists(dd_path):
         with open(dd_path, "r", encoding="utf-8") as f:
             data_dict = json.load(f)
-    interface_tables = build_interface_tables(units_data, functions_data, global_variables_data, data_dict)
-    with open(os.path.join(output_dir, "interface_tables.json"), "w", encoding="utf-8") as f:
-        json.dump(interface_tables, f, indent=2)
-    print(
-        "  output/interface_tables.json (%d units, %d functions, %d globals)"
-        % (len(interface_tables), len(functions_data), len(global_variables_data))
-    )
+    return data_dict
 
 
 def main():
@@ -406,7 +354,7 @@ def main():
     )
 
     all_entries, interface_index = _build_interface_index(base_path, functions_data, global_variables_data)
-    llm_data = _maybe_enrich_descriptions(base_path, functions_data, config)
+    description_overrides = _get_description_overrides(base_path, functions_data, config)
     _enrich_interfaces(
         base_path=base_path,
         project_name=project_name,
@@ -414,7 +362,7 @@ def main():
         interface_index=interface_index,
         functions_data=functions_data,
         global_variables_data=global_variables_data,
-        llm_data=llm_data,
+        description_overrides=description_overrides,
     )
     _infer_direction_from_code(
         base_path, functions_data, global_variables_data, config,
@@ -435,8 +383,6 @@ def main():
         json.dump(functions_data, f, indent=2)
     with open(os.path.join(MODEL_DIR, "globalVariables.json"), "w", encoding="utf-8") as f:
         json.dump(global_variables_data, f, indent=2)
-
-    _write_interface_tables_json(OUTPUT_DIR, units_data, functions_data, global_variables_data)
 
 
 if __name__ == "__main__":

@@ -33,30 +33,12 @@ def extract_source(base_path: str, loc: dict) -> str:
 
 
 def _get_llm_config(config: dict) -> dict:
-    """Normalize llm block or legacy ollama* keys into single config dict."""
+    """Read llm block from config (baseUrl, defaultModel, timeoutSeconds)."""
     llm = config.get("llm") or {}
-    if llm:
-        base_url = (llm.get("baseUrl") or "http://localhost:11434").rstrip("/")
-        default_model = llm.get("defaultModel") or "llama3.2"
-        cfg = {
-            "baseUrl": base_url,
-            "defaultModel": default_model,
-            "descriptionModel": llm.get("descriptionModel") or default_model,
-            "directionModel": llm.get("directionModel") or default_model,
-            "flowchartModel": llm.get("flowchartModel") or default_model,
-            "timeoutSeconds": int(llm.get("timeoutSeconds", 60)),
-        }
-        return cfg
-    # Legacy fallback
-    base_url = (config.get("ollamaBaseUrl") or "http://localhost:11434").rstrip("/")
-    default_model = config.get("ollamaModel") or "llama3.2"
     return {
-        "baseUrl": base_url,
-        "defaultModel": default_model,
-        "descriptionModel": default_model,
-        "directionModel": default_model,
-        "flowchartModel": default_model,
-        "timeoutSeconds": int(config.get("ollamaTimeout", 60)),
+        "baseUrl": (llm.get("baseUrl") or "http://localhost:11434").rstrip("/"),
+        "defaultModel": llm.get("defaultModel") or "llama3.2",
+        "timeoutSeconds": int(llm.get("timeoutSeconds", 60)),
     }
 
 
@@ -78,14 +60,7 @@ def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
         return ""
     cfg = _get_llm_config(config)
     base_url = cfg["baseUrl"]
-    if kind == "description":
-        model = cfg["descriptionModel"]
-    elif kind == "direction":
-        model = cfg["directionModel"]
-    elif kind == "flowchart":
-        model = cfg["flowchartModel"]
-    else:
-        model = cfg["defaultModel"]
+    model = cfg["defaultModel"]
     url = f"{base_url}/api/generate"
     try:
         r = requests.post(
