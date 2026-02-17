@@ -34,7 +34,7 @@ Parse C++ → model (single source of truth) → views → software_detailed_des
 | Key | Description |
 |-----|-------------|
 | views | interfaceTables, sequenceDiagrams, flowcharts, componentDiagram (true/false), behaviourDiagram (object with scriptPath) |
-| views.behaviourDiagram | { scriptPath } — scriptPath to behaviour_diagram.py; .mmd→.png via node_modules/.bin/mmdc (run npm install) |
+| views.behaviourDiagram | { scriptCmd } — full CLI argv; {fid} replaced per function; cwd=project root; .mmd→.png via mmdc |
 | clang | llvmLibPath, clangIncludePath |
 | llm | baseUrl, defaultModel, timeoutSeconds |
 | export | docxPath, docxFontSize |

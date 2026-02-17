@@ -14,20 +14,19 @@ def _safe_filename(key: str) -> str:
 
 @register("behaviourDiagram")
 def run(model, output_dir, model_dir, config):
-    """For each function, run: python behaviour_diagram.py <functionKey> --model <modelPath>. Write Mermaid to output/behaviour_diagrams/."""
+    """For each function, run scriptCmd with {fid} replaced. Write Mermaid to output/behaviour_diagrams/."""
     beh_cfg = config.get("views", {}).get("behaviourDiagram") or {}
     if not isinstance(beh_cfg, dict):
         beh_cfg = {}
-    script_path = beh_cfg.get("scriptPath") or beh_cfg.get("script")
-    if not script_path:
-        print("  behaviourDiagram: skipped (config.behaviourDiagram.scriptPath not set)")
+    script_cmd = beh_cfg.get("scriptCmd")
+    if not script_cmd or not isinstance(script_cmd, list) or "{fid}" not in str(script_cmd):
+        print("  behaviourDiagram: skipped (config.views.behaviourDiagram.scriptCmd required, list with {fid})")
         return
 
-    project_root = os.path.dirname(output_dir)  # output_dir is <project>/output
-    abs_script = script_path if os.path.isabs(script_path) else os.path.join(project_root, script_path)
-    if not os.path.isfile(abs_script):
-        print(f"  behaviourDiagram: skipped (script not found: {abs_script})")
-        return
+    project_root = os.path.dirname(output_dir)  # output_dir is <project>/output; cwd for relative paths
+
+    def _expand_cmd(fid: str) -> list:
+        return [fid if str(t) == "{fid}" else str(t) for t in script_cmd]
 
     functions_data = model.get("functions", {})
     out_dir = os.path.join(output_dir, "behaviour_diagrams")
@@ -36,12 +35,13 @@ def run(model, output_dir, model_dir, config):
     count = 0
     for fid in functions_data:
         try:
+            cmd = _expand_cmd(fid)
             result = subprocess.run(
-                [sys.executable, abs_script, fid, "--model", model_dir],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=60,
-                cwd=os.path.dirname(abs_script),
+                cwd=project_root,
             )
         except subprocess.TimeoutExpired:
             print(f"  behaviourDiagram: timeout for {fid}", file=sys.stderr)

@@ -5,7 +5,7 @@
     "flowcharts": false,
     "componentDiagram": false,
     "behaviourDiagram": {
-      "scriptPath": "fake_behaviour_diagram_generator.py"
+      "scriptCmd": ["python", "fake_behaviour_diagram_generator.py", "{fid}", "--model", "model"]
     }
   },
   "clang": {
