@@ -329,18 +329,29 @@ def build_metadata():
     }
 
 
-def main():
-    print("Parsing...")
-    for root, _, files in os.walk(MODULE_BASE_PATH):
-        for f in files:
+def _collect_source_files():
+    files = []
+    for root, _, fnames in os.walk(MODULE_BASE_PATH):
+        for f in fnames:
             if f.endswith((".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx")):
-                parse_file(os.path.join(root, f))
+                files.append(os.path.join(root, f))
+    return files
 
-    print("Collecting calls...")
-    for root, _, files in os.walk(MODULE_BASE_PATH):
-        for f in files:
-            if f.endswith((".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx")):
-                parse_calls(os.path.join(root, f))
+
+def main():
+    source_files = _collect_source_files()
+    total = len(source_files)
+    print(f"Parsing {total} files...")
+    for i, path in enumerate(source_files, 1):
+        print(f"  parser: {i}/{total} files...", end="\r", flush=True)
+        parse_file(path)
+    print()
+
+    print(f"Collecting calls ({total} files)...")
+    for i, path in enumerate(source_files, 1):
+        print(f"  parser: {i}/{total} files...", end="\r", flush=True)
+        parse_calls(path)
+    print()
 
     metadata = build_metadata()
     model_dir = os.path.join(PROJECT_ROOT, "model")

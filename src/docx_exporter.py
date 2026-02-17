@@ -1,6 +1,5 @@
 """Export interface_tables.json -> Software Detailed Design DOCX."""
 import os
-import re
 import sys
 import json
 
@@ -8,11 +7,6 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
-
-
-def _safe_function_key(key: str) -> str:
-    """Convert function key to filesystem-safe name (matches behaviour_diagram output)."""
-    return re.sub(r'[<>:"/\\|?*]', "_", key)
 
 
 def _set_cell_font(cell, font_pt, bold=False):
@@ -70,7 +64,7 @@ def _add_interface_table(doc, interfaces, unit_names, font_small):
 
 
 def export_docx(json_path: str = None, docx_path: str = None) -> bool:
-    from utils import load_config, KEY_SEP
+    from utils import load_config, KEY_SEP, safe_filename
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
@@ -123,7 +117,10 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
     _add_para(doc, "[Terms, abbreviations and definitions.]")
 
     # 2, 3, ... Modules
-    for sec_num, module_name in enumerate(sorted_modules, start=2):
+    n_modules = len(sorted_modules)
+    for sec_idx, module_name in enumerate(sorted_modules, start=0):
+        sec_num = sec_idx + 2
+        print(f"  docx_exporter: {sec_idx + 1}/{n_modules} modules...", end="\r", flush=True)
         doc.add_heading(f"{sec_num} {module_name}", level=1)
 
         # 2.1 Static Design
@@ -163,7 +160,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
                 doc.add_heading(f"{sec_num}.2.{beh_idx} {iface_name}", level=3)
                 fid = iface.get("functionId", "")
                 if fid:
-                    safe = _safe_function_key(fid)
+                    safe = safe_filename(fid)
                     png_path = os.path.join(beh_dir, f"{safe}.png")
                     if os.path.isfile(png_path):
                         try:
@@ -175,6 +172,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
                 else:
                     _add_para(doc, "[Behaviour diagram not available.]")
 
+    print()  # newline after progress
     # N Code Metrics, Coding rule, test coverage
     metrics_sec = len(sorted_modules) + 2
     doc.add_heading(f"{metrics_sec} Code Metrics, Coding Rule, Test Coverage", level=1)

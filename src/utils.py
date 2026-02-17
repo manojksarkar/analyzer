@@ -1,9 +1,16 @@
 """Shared helpers."""
 import os
+import re
 import json
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
 KEY_SEP = "|"
+
+
+def safe_filename(s: str) -> str:
+    """Filesystem-safe name (| and other unsafe chars -> _)."""
+    return re.sub(r'[<>:"/\\|?*]', "_", s or "")
+
 
 
 def _strip_json_comments(text: str) -> str:

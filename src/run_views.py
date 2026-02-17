@@ -11,30 +11,21 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 def _load_model():
-    """Load model from model/ directory."""
-    required = ["functions.json", "globalVariables.json", "units.json", "modules.json"]
-    for name in required:
-        path = os.path.join(MODEL_DIR, name)
-        if not os.path.exists(path):
+    required = ["functions", "globalVariables", "units", "modules"]
+    model = {}
+    for key in required:
+        path = os.path.join(MODEL_DIR, f"{key}.json")
+        if not os.path.isfile(path):
             print(f"Error: {path} not found. Run Phase 2 (model_deriver) first.")
             raise SystemExit(1)
-
-    model = {}
-    with open(os.path.join(MODEL_DIR, "functions.json"), "r", encoding="utf-8") as f:
-        model["functions"] = json.load(f)
-    with open(os.path.join(MODEL_DIR, "globalVariables.json"), "r", encoding="utf-8") as f:
-        model["globalVariables"] = json.load(f)
-    with open(os.path.join(MODEL_DIR, "units.json"), "r", encoding="utf-8") as f:
-        model["units"] = json.load(f)
-    with open(os.path.join(MODEL_DIR, "modules.json"), "r", encoding="utf-8") as f:
-        model["modules"] = json.load(f)
-
+        with open(path, "r", encoding="utf-8") as f:
+            model[key] = json.load(f)
     dd_path = os.path.join(MODEL_DIR, "dataDictionary.json")
-    model["dataDictionary"] = {}
-    if os.path.exists(dd_path):
+    if os.path.isfile(dd_path):
         with open(dd_path, "r", encoding="utf-8") as f:
             model["dataDictionary"] = json.load(f)
-
+    else:
+        model["dataDictionary"] = {}
     return model
 
 

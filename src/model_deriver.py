@@ -73,6 +73,8 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
     module_names = sorted({u.split(KEY_SEP)[0] for u in unit_by_file.values() if u and KEY_SEP in u})
 
     units_data = {}
+    total = len([p for p in file_paths if os.path.basename(p).lower().endswith((".cpp", ".cc", ".cxx"))])
+    processed = 0
     for fp in file_paths:
         base = os.path.basename(fp)
         if not base.lower().endswith((".cpp", ".cc", ".cxx")):
@@ -130,7 +132,13 @@ def _build_units_modules(base_path: str, file_paths: list, functions_data: dict,
                 "callerUnits": sorted(caller_unit_names),
                 "calleesUnits": sorted(callee_unit_names),
             }
+        if base.lower().endswith((".cpp", ".cc", ".cxx")):
+            processed += 1
+            if total:
+                print(f"  model_deriver: {processed}/{total} units...", end="\r", flush=True)
 
+    if total:
+        print()
     modules_data = {
         mod: {"units": sorted(un for un in units_data if un.split(KEY_SEP)[0] == mod)}
         for mod in module_names
@@ -250,10 +258,15 @@ def _infer_direction_from_code(
 
     func_sources = {}
     if _extract_source and global_names:
-        for fid, f in functions_data.items():
+        items = list(functions_data.items())
+        total = len(items)
+        for i, (fid, f) in enumerate(items, 1):
+            print(f"  model_deriver: {i}/{total} functions (direction)...", end="\r", flush=True)
             loc = f.get("location") or {}
             if loc:
                 func_sources[fid] = _extract_source(base_path, loc) or ""
+        if total:
+            print()
 
     global_rw = {name: {"read": False, "write": False} for name in global_names}
     for src in func_sources.values():
