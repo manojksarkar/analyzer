@@ -79,9 +79,16 @@ def _render_mermaid_to_png(mmd_path: str, png_path: str, config: dict, project_r
     if config.get("skipPngRender"):
         return
     mmdc = _resolve_mmdc(project_root)
+    puppeteer_cfg = config.get("puppeteerConfigPath") or os.path.join(project_root, "config", "puppeteer-config.json")
+    if not os.path.isabs(puppeteer_cfg):
+        puppeteer_cfg = os.path.join(project_root, puppeteer_cfg)
+    cmd = [mmdc]
+    if os.path.isfile(puppeteer_cfg):
+        cmd.extend(["-p", puppeteer_cfg])
+    cmd.extend(["-i", mmd_path, "-o", png_path])
     try:
         result = subprocess.run(
-            [mmdc, "-i", mmd_path, "-o", png_path],
+            cmd,
             capture_output=True,
             text=True,
             timeout=60,
