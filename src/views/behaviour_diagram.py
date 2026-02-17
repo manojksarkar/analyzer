@@ -23,7 +23,7 @@ def run(model, output_dir, model_dir, config):
         print("  behaviourDiagram: skipped (config.behaviourDiagram.scriptPath not set)")
         return
 
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    project_root = os.path.dirname(output_dir)  # output_dir is <project>/output
     abs_script = script_path if os.path.isabs(script_path) else os.path.join(project_root, script_path)
     if not os.path.isfile(abs_script):
         print(f"  behaviourDiagram: skipped (script not found: {abs_script})")
@@ -67,7 +67,8 @@ def run(model, output_dir, model_dir, config):
 
 def _resolve_mmdc(project_root: str) -> str:
     """Resolve mmdc: node_modules/.bin/mmdc, else 'mmdc' from PATH."""
-    local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + (".cmd" if sys.platform == "win32" else ""))
+    ext = ".cmd" if sys.platform == "win32" else ""
+    local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + ext)
     if os.path.isfile(local):
         return local
     return "mmdc"
