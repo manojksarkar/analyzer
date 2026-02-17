@@ -219,13 +219,9 @@ Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ n
 4. Save software_detailed_design.docx.
 
 ### Direction inference (Phase 2)
+Convention: **Get** (read from global) = **Out**; **Set** (write to global) = **In**; both (e.g. init) = **In**. No In/Out for functions.
+- **LLM-based:** `enrich_functions_with_direction` passes function source + call graph (callsIds, calledByIds) to LLM.
 - **Globals:** Aggregate read/write in function bodies → In / Out / In/Out / -.
-- **Functions:**  
-  1. Write any global → Out.  
-  2. Else read any global → In.  
-  3. Else calls an Out function → Out.  
-  4. Else called from another unit → In.  
-  5. Else default In.
 
 ---
 
@@ -234,7 +230,7 @@ Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ n
 | What | Where | How |
 |------|-------|-----|
 | Call graph | parser.py | `visit_calls` builds call_graph, reverse_call_graph; stored in functions.calledByIds, callsIds |
-| Direction propagation | model_deriver.py `_infer_direction_from_code` | If callee is Out, mark caller Out |
+| Direction | llm_client.enrich_functions_with_direction | LLM with call graph (callsIds, calledByIds) as context |
 | Unit/module build | model_deriver.py `_build_units_modules` | Iterate file_paths; map to unit keys (module\|unitname); aggregate caller/callee units |
 | View build | views/interface_tables.py | Builds interface tables; derives callerUnits/calleesUnits from calledByIds/callsIds; param range via get_range() |
 

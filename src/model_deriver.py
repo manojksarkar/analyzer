@@ -2,403 +2,212 @@
 import os
 import sys
 import json
-import re
-from collections import defaultdict
 
-from utils import get_module_name, norm_path, load_config, short_name, make_function_key, make_global_key, make_unit_key, path_from_unit_rel, KEY_SEP
+from utils import load_config, norm_path, short_name, make_unit_key, path_from_unit_rel, KEY_SEP
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 os.makedirs(MODEL_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def _load_model_inputs():
-    funcs_path = os.path.join(MODEL_DIR, "functions.json")
-    globals_path = os.path.join(MODEL_DIR, "globalVariables.json")
-    metadata_path = os.path.join(MODEL_DIR, "metadata.json")
-    if not os.path.exists(funcs_path) or not os.path.exists(globals_path):
-        print("Error: model not found. Run parser first: python run.py test_cpp_project")
-        raise SystemExit(1)
 
-    with open(funcs_path, "r", encoding="utf-8") as f:
+def _load_model():
+    base_path = None
+    for name in ("metadata", "functions", "globalVariables"):
+        path = os.path.join(MODEL_DIR, f"{name}.json")
+        if not os.path.isfile(path):
+            print(f"Error: {path} not found. Run Phase 1 (parser) first.")
+            raise SystemExit(1)
+    with open(os.path.join(MODEL_DIR, "metadata.json"), "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    base_path = meta["basePath"]
+    project_name = meta.get("projectName", os.path.basename(base_path))
+    with open(os.path.join(MODEL_DIR, "functions.json"), "r", encoding="utf-8") as f:
         functions_data = json.load(f)
-    with open(globals_path, "r", encoding="utf-8") as f:
+    with open(os.path.join(MODEL_DIR, "globalVariables.json"), "r", encoding="utf-8") as f:
         global_variables_data = json.load(f)
-
-    if not os.path.exists(metadata_path):
-        print("Error: metadata.json not found. Run parser first.")
-        raise SystemExit(1)
-    with open(metadata_path, "r", encoding="utf-8") as f:
-        meta_info = json.load(f)
-    base_path = meta_info["basePath"]
-    project_name = meta_info.get("projectName", os.path.basename(base_path))
-
-    config = load_config(PROJECT_ROOT)
-    return base_path, project_name, functions_data, global_variables_data, config
+    return base_path, project_name, functions_data, global_variables_data
 
 
 def _file_path(data: dict, base_path: str) -> str:
-    """Get normalized file path from location.file."""
     return norm_path((data.get("location") or {}).get("file", ""), base_path)
 
 
-def _compute_unit_maps(base_path: str, functions_data: dict, global_variables_data: dict):
-    all_file_paths = set(_file_path(f, base_path) for f in functions_data.values())
-    all_file_paths.update(_file_path(g, base_path) for g in global_variables_data.values())
-    file_paths = sorted(fp for fp in all_file_paths if fp)
-
-    qualified_to_file = defaultdict(set)  # qualifiedName -> files (overloads may span files)
-    for fid, f in functions_data.items():
+def _build_units_modules(base_path: str, functions_data: dict, global_variables_data: dict):
+    all_files = set()
+    for f in functions_data.values():
         fp = _file_path(f, base_path)
         if fp:
-            qualified_to_file[f.get("qualifiedName", "")].add(fp)
+            all_files.add(fp)
+    for g in global_variables_data.values():
+        fp = _file_path(g, base_path)
+        if fp:
+            all_files.add(fp)
 
-    # Unit key: always module|unitname (single-name units; multiple files merge into one)
     unit_by_file = {}
-    for fp in file_paths:
+    for fp in sorted(all_files):
         try:
-            rel = os.path.relpath(fp, base_path)
+            rel = os.path.relpath(fp, base_path).replace("\\", "/")
         except ValueError:
-            rel = fp
-        rel_norm = rel.replace("\\", "/")
-        unit_key = make_unit_key(rel_norm)
-        unit_by_file[fp] = unit_key
-
-    return file_paths, qualified_to_file, unit_by_file
-
-
-def _build_units_modules(base_path: str, file_paths: list, functions_data: dict, global_variables_data: dict, qualified_to_file: dict, unit_by_file: dict):
-    module_names = sorted({u.split(KEY_SEP)[0] for u in unit_by_file.values() if u and KEY_SEP in u})
+            rel = fp.replace("\\", "/")
+        unit_by_file[fp] = make_unit_key(rel)
 
     units_data = {}
-    total = len([p for p in file_paths if os.path.basename(p).lower().endswith((".cpp", ".cc", ".cxx"))])
-    processed = 0
-    for fp in file_paths:
+    for fp in sorted(all_files):
         base = os.path.basename(fp)
         if not base.lower().endswith((".cpp", ".cc", ".cxx")):
             continue
-        unit_key = unit_by_file.get(fp) or make_unit_key(os.path.relpath(fp, base_path).replace("\\", "/") if fp else "")
         try:
-            rel = os.path.relpath(fp, base_path)
+            rel = os.path.relpath(fp, base_path).replace("\\", "/")
         except ValueError:
-            rel = fp
-        path_no_ext = path_from_unit_rel(rel.replace("\\", "/"))
-
+            rel = fp.replace("\\", "/")
+        unit_key = unit_by_file[fp]
+        path_no_ext = path_from_unit_rel(rel)
         func_ids = sorted([fid for fid, f in functions_data.items() if _file_path(f, base_path) == fp],
                          key=lambda x: functions_data[x].get("location", {}).get("line", 0))
         var_ids = sorted([vid for vid, g in global_variables_data.items() if _file_path(g, base_path) == fp],
                         key=lambda x: (global_variables_data[x].get("location") or {}).get("line", 0))
 
-        caller_unit_names = set()
-        callee_unit_names = set()
+        caller_units = set()
+        callee_units = set()
         for fid in func_ids:
             f = functions_data.get(fid, {})
-            for caller_id in f.get("calledByIds", []) or []:
-                caller_func = functions_data.get(caller_id, {})
-                cf = _file_path(caller_func, base_path)
+            for cid in f.get("calledByIds", []) or []:
+                cf = _file_path(functions_data.get(cid, {}), base_path)
                 u = unit_by_file.get(cf)
                 if u and u != unit_key:
-                    caller_unit_names.add(u)
-            for callee_id in f.get("callsIds", []) or []:
-                callee_func = functions_data.get(callee_id, {})
-                cf = _file_path(callee_func, base_path)
+                    caller_units.add(u)
+            for cid in f.get("callsIds", []) or []:
+                cf = _file_path(functions_data.get(cid, {}), base_path)
                 u = unit_by_file.get(cf)
                 if u and u != unit_key:
-                    callee_unit_names.add(u)
+                    callee_units.add(u)
 
         unitname = os.path.splitext(base)[0]
         if unit_key in units_data:
-            # Merge: same module|unitname from multiple files
             u = units_data[unit_key]
             u["functionIds"] = u["functionIds"] + func_ids
             u["globalVariableIds"] = u["globalVariableIds"] + var_ids
-            u["callerUnits"] = sorted(set(u["callerUnits"]) | caller_unit_names)
-            u["calleesUnits"] = sorted(set(u["calleesUnits"]) | callee_unit_names)
-            paths = u.get("path")
-            if isinstance(paths, list):
-                if path_no_ext not in paths:
-                    u["path"] = paths + [path_no_ext]
-            elif path_no_ext != paths:
-                u["path"] = [paths, path_no_ext]
+            u["callerUnits"] = sorted(set(u["callerUnits"]) | caller_units)
+            u["calleesUnits"] = sorted(set(u["calleesUnits"]) | callee_units)
         else:
             units_data[unit_key] = {
                 "name": unitname,
                 "path": path_no_ext,
-                "fileName": os.path.basename(fp),
+                "fileName": base,
                 "functionIds": func_ids,
                 "globalVariableIds": var_ids,
-                "callerUnits": sorted(caller_unit_names),
-                "calleesUnits": sorted(callee_unit_names),
+                "callerUnits": sorted(caller_units),
+                "calleesUnits": sorted(callee_units),
             }
-        if base.lower().endswith((".cpp", ".cc", ".cxx")):
-            processed += 1
-            if total:
-                print(f"  model_deriver: {processed}/{total} units...", end="\r", flush=True)
 
-    if total:
-        print()
-    modules_data = {
-        mod: {"units": sorted(un for un in units_data if un.split(KEY_SEP)[0] == mod)}
-        for mod in module_names
-    }
+    module_names = sorted({u.split(KEY_SEP)[0] for u in units_data if KEY_SEP in u})
+    modules_data = {m: {"units": [u for u in units_data if u.split(KEY_SEP)[0] == m]} for m in module_names}
 
     with open(os.path.join(MODEL_DIR, "units.json"), "w", encoding="utf-8") as f:
         json.dump(units_data, f, indent=2)
     with open(os.path.join(MODEL_DIR, "modules.json"), "w", encoding="utf-8") as f:
         json.dump(modules_data, f, indent=2)
-    print("  model/units.json (%d)" % len(units_data))
-    print("  model/modules.json (%d)" % len(modules_data))
-
-    return units_data, modules_data
+    print(f"  model/units.json ({len(units_data)})")
+    print(f"  model/modules.json ({len(modules_data)})")
+    return units_data, unit_by_file
 
 
 def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict):
-    # Per-file index 01, 02, ... for stable interfaceId suffix
     all_entries = []
     for fid, f in functions_data.items():
-        all_entries.append(("function", fid, f))
+        all_entries.append(("f", fid, f))
     for vid, g in global_variables_data.items():
-        all_entries.append(("globalVariable", vid, g))
+        all_entries.append(("g", vid, g))
 
-    by_file = defaultdict(list)
+    by_file = {}
     for kind, iid, data in all_entries:
         fp = _file_path(data, base_path)
         if fp:
-            by_file[fp].append((kind, iid, data))
+            by_file.setdefault(fp, []).append((kind, iid, data))
 
-    interface_index = {}
-    for fp in sorted(by_file.keys()):
-        entries = sorted(by_file[fp], key=lambda x: (x[2].get("location") or {}).get("line", 0))
-        for idx, (_, iid, _) in enumerate(entries, 1):
-            interface_index[iid] = idx
-    return all_entries, interface_index
-
-
-def _get_description_overrides(base_path: str, functions_data: dict, config: dict) -> dict:
-    """Return description overrides from LLM (file:line -> {description})."""
-    return {}
-    from llm_client import enrich_functions_with_descriptions
-    funcs_list = list(functions_data.values())
-    return enrich_functions_with_descriptions(funcs_list, base_path, config)
+    idx_by_id = {}
+    for fp in sorted(by_file):
+        for idx, (_, iid, data) in enumerate(sorted(by_file[fp], key=lambda x: (x[2].get("location") or {}).get("line", 0)), 1):
+            idx_by_id[iid] = idx
+    return idx_by_id
 
 
-def _enrich_interfaces(
-    base_path: str,
-    project_name: str,
-    all_entries: list,
-    interface_index: dict,
-    functions_data: dict,
-    global_variables_data: dict,
-    description_overrides: dict,
-):
-    project_code = project_name.upper()
-
-    for kind, iid, data in all_entries:
-        loc = data.get("location") or {}
+def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, global_variables_data: dict, idx_by_id: dict):
+    proj_code = project_name.upper()
+    for fid, f in functions_data.items():
+        loc = f.get("location") or {}
         fp = loc.get("file", "")
         try:
             rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
         except ValueError:
-            rel = fp
+            rel = fp or ""
         unit = os.path.splitext(rel)[0] if rel else ""
         unit_code = unit.replace("/", "_").upper()
-        idx_code = f"{interface_index.get(iid, 0):02d}"
-        interface_id = f"IF_{project_code}_{unit_code}_{idx_code}"
+        idx_code = f"{idx_by_id.get(fid, 0):02d}"
+        interface_id = f"IF_{proj_code}_{unit_code}_{idx_code}"
+        raw_params = f.get("parameters", f.get("params", []))
+        params = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]
+        f["interfaceId"] = interface_id
+        f["parameters"] = params
+    for vid, g in global_variables_data.items():
+        loc = g.get("location") or {}
+        fp = loc.get("file", "")
+        try:
+            rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
+        except ValueError:
+            rel = fp or ""
+        unit = os.path.splitext(rel)[0] if rel else ""
+        unit_code = unit.replace("/", "_").upper()
+        idx_code = f"{idx_by_id.get(vid, 0):02d}"
+        g["interfaceId"] = f"IF_{proj_code}_{unit_code}_{idx_code}"
 
-        if kind == "function":
-            raw_params = data.get("parameters", data.get("params", []))
-            parameters = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]
-            functions_data[iid].update({"interfaceId": interface_id, "parameters": parameters})
-            llm_key = f"{loc.get('file', '')}:{loc.get('line', '')}"
-            if description_overrides.get(llm_key, {}).get("description"):
-                functions_data[iid]["description"] = description_overrides[llm_key]["description"]
-        else:
-            global_variables_data[iid].update({"interfaceId": interface_id})
 
-
-def _infer_direction_from_code(
-    base_path: str,
-    functions_data: dict,
-    global_variables_data: dict,
-    config: dict,
-    *,
-    qualified_to_file: dict = None,
-    unit_by_file: dict = None,
-):
+def _enrich_from_llm(base_path: str, functions_data: dict, config: dict):
     try:
-        # Reuse the same source extraction logic as the LLM client.
-        from llm_client import extract_source as _extract_source
-    except Exception:
-        _extract_source = None
-
-    global_names = sorted(
-        {(short_name(g.get("qualifiedName", "")) or g.get("name", "") or "").strip()
-         for g in global_variables_data.values()}
-    )
-    global_names = [n for n in global_names if n]
-
-    patterns = {}
-    for name in global_names:
-        word = re.compile(r"\b" + re.escape(name) + r"\b")
-        assign = re.compile(r"\b" + re.escape(name) + r"\b\s*([+\-*/%&|^]?=)")
-        incdec = re.compile(
-            r"(\+\+\s*\b"
-            + re.escape(name)
-            + r"\b|\b"
-            + re.escape(name)
-            + r"\b\s*\+\+|--\s*\b"
-            + re.escape(name)
-            + r"\b|\b"
-            + re.escape(name)
-            + r"\b\s*--)"
-        )
-        patterns[name] = (word, assign, incdec)
-
-    func_sources = {}
-    if _extract_source and global_names:
-        items = list(functions_data.items())
-        total = len(items)
-        for i, (fid, f) in enumerate(items, 1):
-            print(f"  model_deriver: {i}/{total} functions (direction)...", end="\r", flush=True)
-            loc = f.get("location") or {}
-            if loc:
-                func_sources[fid] = _extract_source(base_path, loc) or ""
-        if total:
-            print()
-
-    global_rw = {name: {"read": False, "write": False} for name in global_names}
-    for src in func_sources.values():
-        for name in global_names:
-            word, assign, incdec = patterns[name]
-            if assign.search(src) or incdec.search(src):
-                global_rw[name]["write"] = True
-            if word.search(src):
-                global_rw[name]["read"] = True
-
-    def _rw_to_dir(read_flag: bool, write_flag: bool) -> str:
-        # Set (written) → In; not set (read-only) → Out; both → In/Out
-        if read_flag and write_flag:
-            return "In/Out"
-        if write_flag:
-            return "In"
-        if read_flag:
-            return "Out"
-        return "-"
-
-    for gid, g in global_variables_data.items():
-        name = (short_name(g.get("qualifiedName", "")) or g.get("name", "") or "").strip()
-        rw = global_rw.get(name, {"read": False, "write": False}) if global_names else {"read": False, "write": False}
-        g["direction"] = _rw_to_dir(rw["read"], rw["write"])
-
-    func_dir = {fid: None for fid in functions_data.keys()}
+        from llm_client import enrich_functions_with_descriptions, enrich_functions_with_direction
+    except ImportError:
+        return
+    funcs_list = list(functions_data.values())
+    desc = enrich_functions_with_descriptions(funcs_list, base_path, config)
+    dirs = enrich_functions_with_direction(funcs_list, base_path, config, functions_by_fid=functions_data)
+    for f in funcs_list:
+        key = f"{f.get('location', {}).get('file', '')}:{f.get('location', {}).get('line', '')}"
+        if desc.get(key, {}).get("description"):
+            f["description"] = desc[key]["description"]
+        if dirs.get(key, {}).get("direction"):
+            f["direction"] = dirs[key]["direction"]
     for fid, f in functions_data.items():
-        src = func_sources.get(fid, "")
-
-        read_any = False
-        write_any = False
-        if src and global_names:
-            for name in global_names:
-                word, assign, incdec = patterns[name]
-                if assign.search(src) or incdec.search(src):
-                    write_any = True
-                if word.search(src):
-                    read_any = True
-                if read_any and write_any:
-                    break
-
-        if write_any:
-            func_dir[fid] = "Out"
-        elif read_any:
-            func_dir[fid] = "In"
-
-    # Single-layer call-graph: if calls Out function (via precise ids), mark Out
-    for fid, f in functions_data.items():
-        if func_dir[fid] is not None:
-            continue
-        callees = f.get("callsIds", []) or []
-        called_out = False
-        for target_id in callees:
-            if func_dir.get(target_id) == "Out":
-                called_out = True
-                break
-        if called_out:
-            func_dir[fid] = "Out"
-
-    # If called from another unit → In (function is an input to this unit)
-    for fid, f in functions_data.items():
-        if func_dir[fid] is not None:
-            continue
-        if not unit_by_file:
-            continue
-        own_fp = _file_path(f, base_path)
-        own_unit = unit_by_file.get(own_fp, "")
-        caller_units = set()
-        for caller_id in f.get("calledByIds", []) or []:
-            cf = _file_path(functions_data.get(caller_id, {}), base_path)
-            u = unit_by_file.get(cf, "")
-            if u and u != own_unit:
-                caller_units.add(u)
-        if caller_units:
-            func_dir[fid] = "In"
-
-    undecided_fids = []
-    for fid in functions_data.keys():
-        if func_dir[fid] is None:
-            func_dir[fid] = "In"
-            undecided_fids.append(fid)
-
-    for fid, direction in func_dir.items():
-        functions_data[fid]["direction"] = direction
-
-
-def _load_data_dictionary():
-    data_dict = {}
-    dd_path = os.path.join(MODEL_DIR, "dataDictionary.json")
-    if os.path.exists(dd_path):
-        with open(dd_path, "r", encoding="utf-8") as f:
-            data_dict = json.load(f)
-    return data_dict
+        if "direction" not in f:
+            f["direction"] = "-"
 
 
 def main():
-    base_path, project_name, functions_data, global_variables_data, config = _load_model_inputs()
-    file_paths, qualified_to_file, unit_by_file = _compute_unit_maps(base_path, functions_data, global_variables_data)
-    units_data, _modules_data = _build_units_modules(
-        base_path, file_paths, functions_data, global_variables_data, qualified_to_file, unit_by_file
-    )
+    base_path, project_name, functions_data, global_variables_data = _load_model()
+    config = load_config(PROJECT_ROOT)
 
-    all_entries, interface_index = _build_interface_index(base_path, functions_data, global_variables_data)
-    description_overrides = _get_description_overrides(base_path, functions_data, config)
-    _enrich_interfaces(
-        base_path=base_path,
-        project_name=project_name,
-        all_entries=all_entries,
-        interface_index=interface_index,
-        functions_data=functions_data,
-        global_variables_data=global_variables_data,
-        description_overrides=description_overrides,
-    )
-    _infer_direction_from_code(
-        base_path, functions_data, global_variables_data, config,
-        qualified_to_file=qualified_to_file,
-        unit_by_file=unit_by_file,
-    )
+    units_data, unit_by_file = _build_units_modules(base_path, functions_data, global_variables_data)
+    idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data)
+    _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id)
+    _enrich_from_llm(base_path, functions_data, config)
 
-    # Persist enriched model (single source of truth, non-redundant)
+    # Default direction for functions without LLM
     for f in functions_data.values():
-        f.pop("name", None)
-        f.pop("interfaceName", None)
-        f.pop("module", None)
+        if "direction" not in f:
+            f["direction"] = "-"
+    # Globals: default -
     for g in global_variables_data.values():
-        g.pop("name", None)
-        g.pop("interfaceName", None)
-        g.pop("module", None)
+        g["direction"] = g.get("direction", "-")
+
+    # Clean and persist
+    for f in functions_data.values():
+        f.pop("params", None)
     with open(os.path.join(MODEL_DIR, "functions.json"), "w", encoding="utf-8") as f:
         json.dump(functions_data, f, indent=2)
     with open(os.path.join(MODEL_DIR, "globalVariables.json"), "w", encoding="utf-8") as f:
         json.dump(global_variables_data, f, indent=2)
+    print(f"  model/functions.json ({len(functions_data)})")
+    print(f"  model/globalVariables.json ({len(global_variables_data)})")
 
 
 if __name__ == "__main__":

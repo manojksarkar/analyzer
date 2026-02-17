@@ -333,7 +333,7 @@ def _collect_source_files():
     files = []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
-            if f.endswith((".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx")):
+            if f.endswith((".cpp", ".cc", ".cxx")):  # exclude .h/.hpp (often fail as translation units)
                 files.append(os.path.join(root, f))
     return files
 

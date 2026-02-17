@@ -90,33 +90,35 @@ One-line description:"""
     return _call_ollama(prompt, config, kind="description")
 
 
-def get_direction_label(source: str, config: dict) -> str:
+def get_direction_label(source: str, config: dict, *, callees: list = None, callers: list = None) -> str:
     if not source:
         return "-"
-    prompt = f"""You are classifying the external interface *direction* of this C++ function
-from the perspective of its callers.
+    ctx = []
+    if callees:
+        ctx.append(f"Calls: {', '.join(short_name(c) for c in callees[:10])}")
+    if callers:
+        ctx.append(f"Called by: {', '.join(short_name(c) for c in callers[:10])}")
+    context_block = "\n".join(ctx) + "\n\n" if ctx else ""
 
-Classify it as exactly ONE of:
-- In        (primarily consumes inputs; does not mainly produce outputs or change shared state)
-- Out       (primarily produces/returns data or writes to shared state / output parameters)
-- In/Out    (both consumes inputs and produces outputs or changes shared state)
-- -         (cannot determine)
+    prompt = f"""You are classifying the external interface *direction* of this C++ function.
+Convention: Get (read from global data) = Out; Set (write to global data) = In. Both read and write (e.g. init) = In. No In/Out.
 
-Function:
+Classify as exactly ONE of: In, Out, -
+
+Call graph context:
+{context_block}Function:
 ```cpp
 {source}
 ```
 
-Answer with exactly one of: In, Out, In/Out, -.
+Answer with exactly one of: In, Out, -
 """
     raw = _call_ollama(prompt, config, kind="direction").strip()
     if not raw:
         return "-"
     text = raw.lower()
-    if "in/out" in text:
-        return "In/Out"
-    if text.startswith("in/out"):
-        return "In/Out"
+    if "in/out" in text or text.startswith("in/out"):
+        return "In"  # both -> In
     if text.startswith("in " ) or text == "in":
         return "In"
     if text.startswith("out") or text == "out":
@@ -130,7 +132,7 @@ Answer with exactly one of: In, Out, In/Out, -.
     if first in ("out", "out,", "out."):
         return "Out"
     if "in/out" in first:
-        return "In/Out"
+        return "In"
     return "-"
 
 def _make_canonical_key(f: dict) -> str:
@@ -139,7 +141,7 @@ def _make_canonical_key(f: dict) -> str:
     return f"{loc.get('file', '')}:{loc.get('line', '')}"
 
 
-def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_fn, result_key: str, label: str, show_val: bool = False) -> dict:
+def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_fn, result_key: str, label: str, show_val: bool = False, functions_by_fid: dict = None) -> dict:
     result = {}
     for idx, f in enumerate(funcs):
         loc = f.get("location", {})
@@ -147,7 +149,17 @@ def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_
             continue
         key = _make_canonical_key(f)
         source = extract_source(base_path, loc)
-        val = processor_fn(source, config)
+        callee_names = []
+        caller_names = []
+        if functions_by_fid:
+            for cid in (f.get("callsIds") or []):
+                callee_names.append(functions_by_fid.get(cid, {}).get("qualifiedName", cid))
+            for cid in (f.get("calledByIds") or []):
+                caller_names.append(functions_by_fid.get(cid, {}).get("qualifiedName", cid))
+        if processor_fn == get_direction_label:
+            val = processor_fn(source, config, callees=callee_names, callers=caller_names)
+        else:
+            val = processor_fn(source, config)
         result[key] = {result_key: val}
         suffix = f" -> {val}" if show_val else ""
         print(f"  {label} [{idx + 1}/{len(funcs)}] {short_name(f.get('qualifiedName', '')) or '?'}{suffix}", file=sys.stderr)
@@ -161,8 +173,9 @@ def enrich_functions_with_descriptions(functions_data: list, base_path: str, con
     return _enrich_functions_loop(functions_data, base_path, config, get_description, "description", "LLM")
 
 
-def enrich_functions_with_direction(functions_data: list, base_path: str, config: dict) -> dict:
+def enrich_functions_with_direction(functions_data: list, base_path: str, config: dict, functions_by_fid: dict = None) -> dict:
+    """Enrich functions with direction via LLM. Pass functions_by_fid {fid: func} for call graph context."""
     if not _ollama_available(config):
         print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
         return {}
-    return _enrich_functions_loop(functions_data, base_path, config, get_direction_label, "direction", "LLM-dir", show_val=True)
+    return _enrich_functions_loop(functions_data, base_path, config, get_direction_label, "direction", "LLM-dir", show_val=True, functions_by_fid=functions_by_fid)

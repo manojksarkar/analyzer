@@ -73,6 +73,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
                 "location": loc,
                 "parameters": params,
                 "direction": f.get("direction", "-"),
+                "reason": f.get("reason") or f.get("directionReason") or "",
                 "callerUnits": sorted(caller_units),
                 "calleesUnits": sorted(callee_units),
             }
@@ -103,6 +104,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
                 "variableType": g.get("type", ""),
                 "range": get_range(g.get("type", ""), dd),
                 "direction": g.get("direction", "-"),
+                "reason": g.get("reason") or g.get("directionReason") or "",
                 "callerUnits": [],
                 "calleesUnits": [],
             })
