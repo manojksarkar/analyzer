@@ -1,4 +1,5 @@
 """Behaviour diagram view. Runs script per function, writes .mmd/.png."""
+import json
 import os
 import subprocess
 import sys
@@ -32,6 +33,7 @@ def run(model, output_dir, model_dir, config):
     functions = list(model.get("functions", {}))
     total = len(functions)
     count = 0
+    with_diagram = []  # fids where CLI returned non-empty and PNG created
     for i, fid in enumerate(functions, 1):
         print(f"  behaviourDiagram: {i}/{total} functions...", end="\r", flush=True)
         args = [fid if str(x) == "{fid}" else str(x) for x in cmd_tpl]
@@ -73,11 +75,18 @@ def run(model, output_dir, model_dir, config):
             if r2.returncode != 0:
                 msg = (r2.stderr or r2.stdout or f"exit {r2.returncode}").strip()
                 print(f"  behaviourDiagram: mmdc failed: {msg}", file=sys.stderr)
+            else:
+                with_diagram.append(fid)
         except FileNotFoundError:
             print(f"  behaviourDiagram: mmdc not found. Run: npm install", file=sys.stderr)
         except subprocess.TimeoutExpired:
             print("  behaviourDiagram: mmdc timed out", file=sys.stderr)
         count += 1
+
+    # List of fids where CLI returned non-empty (docx_exporter uses this)
+    status_path = os.path.join(out_dir, "_with_diagram.json")
+    with open(status_path, "w", encoding="utf-8") as f:
+        json.dump(with_diagram, f, indent=2)
 
     print()  # newline after progress
     print(f"  output/behaviour_diagrams/ ({count} diagrams)")

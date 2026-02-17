@@ -150,27 +150,31 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
         # 2.2 Dynamic Behaviour (per function, with behaviour diagram)
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)
         beh_dir = os.path.join(OUTPUT_DIR, "behaviour_diagrams")
+        with_diagram_path = os.path.join(beh_dir, "_with_diagram.json")
+        with_diagram = set()
+        if os.path.isfile(with_diagram_path):
+            try:
+                with open(with_diagram_path, "r", encoding="utf-8") as f:
+                    with_diagram = set(json.load(f))
+            except (json.JSONDecodeError, IOError):
+                pass
         beh_idx = 0
         for _unit_key, _unit_name, unit_interfaces in sorted(by_module[module_name]):
             for iface in unit_interfaces:
                 if iface.get("type") != "Function":
                     continue
+                fid = iface.get("functionId", "")
+                if not fid or fid not in with_diagram:
+                    # CLI returned empty string or mmdc failed - skip
+                    continue
                 beh_idx += 1
                 iface_name = iface.get("interfaceName", "") or iface.get("name", "?")
                 doc.add_heading(f"{sec_num}.2.{beh_idx} {iface_name}", level=3)
-                fid = iface.get("functionId", "")
-                if fid:
-                    safe = safe_filename(fid)
-                    png_path = os.path.join(beh_dir, f"{safe}.png")
-                    if os.path.isfile(png_path):
-                        try:
-                            doc.add_picture(png_path, width=Inches(6))
-                        except Exception:
-                            _add_para(doc, f"[Behaviour diagram: {png_path}]")
-                    else:
-                        _add_para(doc, "[Behaviour diagram not available.]")
-                else:
-                    _add_para(doc, "[Behaviour diagram not available.]")
+                png_path = os.path.join(beh_dir, f"{safe_filename(fid)}.png")
+                try:
+                    doc.add_picture(png_path, width=Inches(6))
+                except Exception:
+                    _add_para(doc, f"[Behaviour diagram: {png_path}]")
 
     print()  # newline after progress
     # N Code Metrics, Coding rule, test coverage
