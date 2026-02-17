@@ -101,9 +101,9 @@ def get_direction_label(source: str, config: dict, *, callees: list = None, call
     context_block = "\n".join(ctx) + "\n\n" if ctx else ""
 
     prompt = f"""You are classifying the external interface *direction* of this C++ function.
-Convention: Get (read from global data) = Out; Set (write to global data) = In. Both read and write (e.g. init) = In. No In/Out.
+Convention: Get (read from global data) = Out; Set (write to global data) = In. Both read and write (e.g. init) = In.
 
-Classify as exactly ONE of: In, Out, -
+Classify as exactly ONE of: In, Out (must pick one)
 
 Call graph context:
 {context_block}Function:
@@ -111,29 +111,15 @@ Call graph context:
 {source}
 ```
 
-Answer with exactly one of: In, Out, -
+Answer with exactly one of: In, Out.
 """
     raw = _call_ollama(prompt, config, kind="direction").strip()
     if not raw:
-        return "-"
+        return "In"  # default for functions
     text = raw.lower()
-    if "in/out" in text or text.startswith("in/out"):
-        return "In"  # both -> In
-    if text.startswith("in " ) or text == "in":
-        return "In"
-    if text.startswith("out") or text == "out":
+    if "out" in text and ("in" not in text or text.index("out") < text.index("in")):
         return "Out"
-    if text.startswith("-"):
-        return "-"
-    # Fallback: first token
-    first = text.split()[0]
-    if first in ("in", "in,", "in."):
-        return "In"
-    if first in ("out", "out,", "out."):
-        return "Out"
-    if "in/out" in first:
-        return "In"
-    return "-"
+    return "In"  # default In
 
 def _make_canonical_key(f: dict) -> str:
     """Stable key file:line for LLM result lookup."""

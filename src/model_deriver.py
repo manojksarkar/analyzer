@@ -191,13 +191,13 @@ def main():
     _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id)
     _enrich_from_llm(base_path, functions_data, config)
 
-    # Default direction for functions without LLM
+    # Functions: must be In or Out (never -)
     for f in functions_data.values():
-        if "direction" not in f:
-            f["direction"] = "-"
-    # Globals: default -
+        d = f.get("direction", "").strip()
+        f["direction"] = "Out" if d == "Out" else "In"
+    # Globals: In/Out
     for g in global_variables_data.values():
-        g["direction"] = g.get("direction", "-")
+        g["direction"] = "In/Out"
 
     # Clean and persist
     for f in functions_data.values():

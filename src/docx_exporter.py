@@ -43,7 +43,7 @@ def _add_interface_table(doc, interfaces, unit_names, font_small):
         callees = iface.get("calleesUnits", [])
         callers_display = [unit_names.get(c, c) for c in callers]
         callees_display = [unit_names.get(c, c) for c in callees]
-        direction = iface.get("direction", "-") or "-"
+        direction = iface.get("direction") or ("In/Out" if iface.get("type") == "Global Variable" else "In")
         src_dest = f"Source: {', '.join(callers_display)}; Dest: {', '.join(callees_display)}" if (callers or callees) else "-"
         info = iface.get("description", "") or "-"
 
