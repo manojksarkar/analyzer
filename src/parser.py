@@ -20,13 +20,16 @@ MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
 
 _config = load_config(PROJECT_ROOT)
-if _config.get("llvmLibPath") and os.path.isfile(_config["llvmLibPath"]):
-    cindex.Config.set_library_file(_config["llvmLibPath"])
+_clang = _config.get("clang") or {}
+_llvm = _clang.get("llvmLibPath") or _config.get("llvmLibPath")
+_clang_inc = _clang.get("clangIncludePath") or _config.get("clangIncludePath")
+if _llvm and os.path.isfile(_llvm):
+    cindex.Config.set_library_file(_llvm)
 
 CLANG_ARGS = [
     "-std=c++17",
     f"-I{MODULE_BASE_PATH}",
-    f"-I{_config['clangIncludePath']}",
+    f"-I{_clang_inc}",
 ]
 
 

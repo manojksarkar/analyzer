@@ -15,7 +15,9 @@ def _safe_filename(key: str) -> str:
 @register("behaviourDiagram")
 def run(model, output_dir, model_dir, config):
     """For each function, run: python behaviour_diagram.py <functionKey> --model <modelPath>. Write Mermaid to output/behaviour_diagrams/."""
-    beh_cfg = config.get("behaviourDiagram", {})
+    beh_cfg = config.get("views", {}).get("behaviourDiagram") or {}
+    if not isinstance(beh_cfg, dict):
+        beh_cfg = {}
     script_path = beh_cfg.get("scriptPath") or beh_cfg.get("script")
     if not script_path:
         print("  behaviourDiagram: skipped (config.behaviourDiagram.scriptPath not set)")
@@ -57,17 +59,25 @@ def run(model, output_dir, model_dir, config):
             png_path = os.path.join(out_dir, f"{safe}.png")
             with open(mmd_path, "w", encoding="utf-8") as f:
                 f.write(mermaid)
-            _render_mermaid_to_png(mmd_path, png_path, beh_cfg)
+            _render_mermaid_to_png(mmd_path, png_path, beh_cfg, project_root)
             count += 1
 
     print(f"  output/behaviour_diagrams/ ({count} diagrams)")
 
 
-def _render_mermaid_to_png(mmd_path: str, png_path: str, config: dict):
+def _resolve_mmdc(project_root: str) -> str:
+    """Resolve mmdc: node_modules/.bin/mmdc, else 'mmdc' from PATH."""
+    local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + (".cmd" if sys.platform == "win32" else ""))
+    if os.path.isfile(local):
+        return local
+    return "mmdc"
+
+
+def _render_mermaid_to_png(mmd_path: str, png_path: str, config: dict, project_root: str):
     """Convert .mmd to .png via mmdc. Skips if skipPngRender is true."""
     if config.get("skipPngRender"):
         return
-    mmdc = config.get("mmdcPath") or "mmdc"
+    mmdc = _resolve_mmdc(project_root)
     try:
         subprocess.run(
             [mmdc, "-i", mmd_path, "-o", png_path],
@@ -77,4 +87,4 @@ def _render_mermaid_to_png(mmd_path: str, png_path: str, config: dict):
             check=True,
         )
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        print("  behaviourDiagram: mmdc not found. Install: npm install -g @mermaid-js/mermaid-cli", file=sys.stderr)
+        print("  behaviourDiagram: mmdc not found. Run: npm install", file=sys.stderr)

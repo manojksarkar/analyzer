@@ -27,6 +27,9 @@ output/
 # Local config overrides (optional)
 config/config.local.json
 
+# Node
+node_modules/
+
 # Build artifacts
 build/
 dist/

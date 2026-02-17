@@ -1,0 +1,7 @@
+{
+  "name": "software-design-export",
+  "private": true,
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^10.6.1"
+  }
+}

@@ -33,11 +33,9 @@ Parse C++ → model (single source of truth) → views → software_detailed_des
 
 | Key | Description |
 |-----|-------------|
-| views | interfaceTables, sequenceDiagrams, flowcharts, componentDiagram, behaviourDiagram (true/false) |
-| behaviourDiagram.scriptPath | Path to behaviour_diagram.py (absolute or relative to project); required for behaviourDiagram view |
-| behaviourDiagram.mmdcPath | Path to mermaid-cli mmdc (default: mmdc from PATH); converts .mmd to .png for DOCX |
-| llvmLibPath | Path to libclang |
-| clangIncludePath | Path to clang headers |
+| views | interfaceTables, sequenceDiagrams, flowcharts, componentDiagram (true/false), behaviourDiagram (object with scriptPath) |
+| views.behaviourDiagram | { scriptPath } — scriptPath to behaviour_diagram.py; .mmd→.png via node_modules/.bin/mmdc (run npm install) |
+| clang | llvmLibPath, clangIncludePath |
 | llm | baseUrl, defaultModel, timeoutSeconds |
 | export | docxPath, docxFontSize |
 

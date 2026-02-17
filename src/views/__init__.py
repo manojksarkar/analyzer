@@ -6,7 +6,8 @@ def run_views(model, output_dir, model_dir, config):
     """Run all enabled views. model = {functions, globalVariables, units, modules, dataDictionary}."""
     views_cfg = config.get("views", {})
     for view_name, run_fn in VIEW_REGISTRY.items():
-        if views_cfg.get(view_name, view_name == "interfaceTables"):
+        enabled = views_cfg.get(view_name, view_name == "interfaceTables")
+        if enabled:
             run_fn(model, output_dir, model_dir, config)
 
 
