@@ -80,12 +80,18 @@ def _render_mermaid_to_png(mmd_path: str, png_path: str, config: dict, project_r
         return
     mmdc = _resolve_mmdc(project_root)
     try:
-        subprocess.run(
+        result = subprocess.run(
             [mmdc, "-i", mmd_path, "-o", png_path],
             capture_output=True,
             text=True,
             timeout=60,
-            check=True,
+            check=False,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        print("  behaviourDiagram: mmdc not found. Run: npm install", file=sys.stderr)
+        if result.returncode != 0:
+            msg = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+            print(f"  behaviourDiagram: mmdc failed: {msg}", file=sys.stderr)
+    except FileNotFoundError:
+        local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + (".cmd" if sys.platform == "win32" else ""))
+        print(f"  behaviourDiagram: mmdc not found. Run: npm install (looked for {local})", file=sys.stderr)
+    except subprocess.TimeoutExpired:
+        print("  behaviourDiagram: mmdc timed out", file=sys.stderr)
