@@ -1,6 +1,6 @@
 """Interface tables view: model -> output/interface_tables.json."""
-import os
 import json
+import os
 
 from .registry import register
 from utils import get_range, short_name, KEY_SEP
@@ -47,20 +47,20 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
             file_code = os.path.splitext(os.path.basename(loc.get("file", "") or ""))[0].upper()
             interface_name = f"{file_code}_{name}" if (file_code and name) else (name or file_code or "")
             caller_units = {
-                u
-                for cid in f.get("calledByIds", []) or []
+                u for cid in f.get("calledByIds", []) or []
                 for u in fid_to_unit.get(cid, []) if u
             }
             callee_units = {
-                u
-                for cid in f.get("callsIds", []) or []
+                u for cid in f.get("callsIds", []) or []
                 for u in fid_to_unit.get(cid, []) if u
             }
+            self_module = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
+            def _other_mod(u): return u.split(KEY_SEP)[0] != self_module if KEY_SEP in u else True
+            callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _other_mod(u)))
+            callees_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in callee_units if _other_mod(u)))
+            source_dest = f"Source: {', '.join(callers_fmt)}; Dest: {', '.join(callees_fmt)}" if (callers_fmt or callees_fmt) else "-"
             raw_params = f.get("parameters", [])
-            params = [
-                {**p, "range": get_range(p.get("type", ""), dd)}
-                for p in raw_params
-            ]
+            params = [{**p, "range": get_range(p.get("type", ""), dd)} for p in raw_params]
             e = {
                 "interfaceId": f.get("interfaceId", ""),
                 "functionId": fid,
@@ -74,6 +74,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
                 "parameters": params,
                 "direction": f.get("direction") or "In",
                 "reason": f.get("reason") or f.get("directionReason") or "",
+                "sourceDest": source_dest,
                 "callerUnits": sorted(caller_units),
                 "calleesUnits": sorted(callee_units),
             }
@@ -92,8 +93,9 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
                 loc["file"] = _strip_ext(loc["file"])
             file_code = os.path.splitext(os.path.basename(loc.get("file", "") or ""))[0].upper()
             interface_name = f"{file_code}_{name}" if (file_code and name) else (name or file_code or "")
-            entries.append({
+            ge = {
                 "interfaceId": g.get("interfaceId", ""),
+                "globalId": vid,
                 "type": "Global Variable",
                 "interfaceName": interface_name,
                 "name": name,
@@ -105,9 +107,13 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
                 "range": get_range(g.get("type", ""), dd),
                 "direction": g.get("direction") or "In/Out",
                 "reason": g.get("reason") or g.get("directionReason") or "",
+                "sourceDest": "-",
                 "callerUnits": [],
                 "calleesUnits": [],
-            })
+            }
+            if g.get("description"):
+                ge["description"] = g["description"]
+            entries.append(ge)
         result[unit_key] = {"name": unit_name_display, "entries": entries}
     return result
 

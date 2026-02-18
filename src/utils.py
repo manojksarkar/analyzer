@@ -144,44 +144,44 @@ def norm_path(path: str, base_path: str) -> str:
 PRIMITIVES = {
     "void": {"range": "VOID"},
     "bool": {"range": "0-1"},
-    "char": {"range": "-128-127"},
+    "char": {"range": "-0x80-0x7F"},
     "unsigned char": {"range": "0-0xFF"},
-    "signed char": {"range": "-128-127"},
-    "short": {"range": "-32768-32767"},
-    "short int": {"range": "-32768-32767"},
-    "signed short": {"range": "-32768-32767"},
+    "signed char": {"range": "-0x80-0x7F"},
+    "short": {"range": "-0x8000-0x7FFF"},
+    "short int": {"range": "-0x8000-0x7FFF"},
+    "signed short": {"range": "-0x8000-0x7FFF"},
     "unsigned short": {"range": "0-0xFFFF"},
-    "int": {"range": "-2147483648-2147483647"},
-    "signed int": {"range": "-2147483648-2147483647"},
+    "int": {"range": "-0x80000000-0x7FFFFFFF"},
+    "signed int": {"range": "-0x80000000-0x7FFFFFFF"},
     "unsigned": {"range": "0-0xFFFFFFFF"},
     "unsigned int": {"range": "0-0xFFFFFFFF"},
-    "long": {"range": "-2147483648-2147483647"},
-    "long int": {"range": "-2147483648-2147483647"},
+    "long": {"range": "-0x80000000-0x7FFFFFFF"},
+    "long int": {"range": "-0x80000000-0x7FFFFFFF"},
     "unsigned long": {"range": "0-0xFFFFFFFF"},
-    "long long": {"range": "-9223372036854775808-9223372036854775807"},
-    "long long int": {"range": "-9223372036854775808-9223372036854775807"},
+    "long long": {"range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"},
+    "long long int": {"range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"},
     "unsigned long long": {"range": "0-0xFFFFFFFFFFFFFFFF"},
     "float": {"range": "IEEE 754"},
     "double": {"range": "IEEE 754"},
     "long double": {"range": "IEEE 754"},
-    "int8_t": {"range": "-128-127"},
+    "int8_t": {"range": "-0x80-0x7F"},
     "uint8_t": {"range": "0-0xFF"},
-    "int16_t": {"range": "-32768-32767"},
+    "int16_t": {"range": "-0x8000-0x7FFF"},
     "uint16_t": {"range": "0-0xFFFF"},
-    "int32_t": {"range": "-2147483648-2147483647"},
+    "int32_t": {"range": "-0x80000000-0x7FFFFFFF"},
     "uint32_t": {"range": "0-0xFFFFFFFF"},
-    "int64_t": {"range": "-9223372036854775808-9223372036854775807"},
+    "int64_t": {"range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"},
     "uint64_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
-    "intptr_t": {"range": "-9223372036854775808-9223372036854775807"},
+    "intptr_t": {"range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"},
     "uintptr_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
     "size_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
-    "std::int8_t": {"range": "-128-127"},
+    "std::int8_t": {"range": "-0x80-0x7F"},
     "std::uint8_t": {"range": "0-0xFF"},
-    "std::int16_t": {"range": "-32768-32767"},
+    "std::int16_t": {"range": "-0x8000-0x7FFF"},
     "std::uint16_t": {"range": "0-0xFFFF"},
-    "std::int32_t": {"range": "-2147483648-2147483647"},
+    "std::int32_t": {"range": "-0x80000000-0x7FFFFFFF"},
     "std::uint32_t": {"range": "0-0xFFFFFFFF"},
-    "std::int64_t": {"range": "-9223372036854775808-9223372036854775807"},
+    "std::int64_t": {"range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"},
     "std::uint64_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
     "std::size_t": {"range": "0-0xFFFFFFFFFFFFFFFF"},
 }
@@ -205,23 +205,23 @@ def get_range_for_type(type_str: str) -> str:
         return "0-0xFFFFFFFFFFFFFFFF"
     # Fixed-width signed (stdint or param_* typedefs)
     if base in ("int8_t", "std::int8_t", "param_int8_t"):
-        return "-128-127"
+        return "-0x80-0x7F"
     if base in ("int16_t", "std::int16_t", "param_int16_t"):
-        return "-32768-32767"
+        return "-0x8000-0x7FFF"
     if base in ("int32_t", "std::int32_t", "param_int32_t"):
-        return "-2147483648-2147483647"
+        return "-0x80000000-0x7FFFFFFF"
     if base in ("int64_t", "std::int64_t", "param_int64_t"):
-        return "-9223372036854775808-9223372036854775807"
+        return "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"
     if base in ("intptr_t", "std::intptr_t", "param_intptr_t"):
-        return "-9223372036854775808-9223372036854775807"
+        return "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"
     if base in ("int", "signed int"):
-        return "-2147483648-2147483647"
+        return "-0x80000000-0x7FFFFFFF"
     if base in ("short", "short int", "signed short"):
-        return "-32768-32767"
+        return "-0x8000-0x7FFF"
     if base in ("long", "long int", "signed long"):
-        return "-2147483648-2147483647"
+        return "-0x80000000-0x7FFFFFFF"
     if base in ("long long", "long long int", "signed long long"):
-        return "-9223372036854775808-9223372036854775807"
+        return "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"
     if base in ("unsigned int", "unsigned"):
         return "0-0xFFFFFFFF"
     if base == "unsigned short":

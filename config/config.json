@@ -3,10 +3,10 @@
     "interfaceTables": true,
     "sequenceDiagrams": false,
     "flowcharts": false,
-    "componentDiagram": false,
-    "behaviourDiagram": {
-      "scriptCmd": ["python", "fake_behaviour_diagram_generator.py", "{fid}", "--model", "model"]
-    }
+    "componentDiagram": false
+    // "behaviourDiagram": {
+    //   "scriptCmd": ["python", "fake_behaviour_diagram_generator.py", "{fid}", "--model", "model"]
+    // }
   },
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",

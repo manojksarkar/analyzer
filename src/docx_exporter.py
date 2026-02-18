@@ -1,4 +1,4 @@
-"""Export interface_tables.json -> Software Detailed Design DOCX."""
+"""Export interface_tables.json -> Software Detailed Design DOCX. Data only; no derivation logic."""
 import os
 import sys
 import json
@@ -21,7 +21,7 @@ def _add_para(doc, text, style="Normal"):
     return p
 
 
-def _add_interface_table(doc, interfaces, unit_names, font_small):
+def _add_interface_table(doc, interfaces, font_small):
     table = doc.add_table(rows=1, cols=len(COLS))
     table.style = "Table Grid"
     hdr = table.rows[0].cells
@@ -39,12 +39,8 @@ def _add_interface_table(doc, interfaces, unit_names, font_small):
             data_type = "; ".join(p.get("type", "") for p in params) if params else "-"
             data_range = "; ".join(p.get("range", "") for p in params) if params else "-"
 
-        callers = iface.get("callerUnits", [])
-        callees = iface.get("calleesUnits", [])
-        callers_display = [unit_names.get(c, c) for c in callers]
-        callees_display = [unit_names.get(c, c) for c in callees]
-        direction = iface.get("direction") or ("In/Out" if iface.get("type") == "Global Variable" else "In")
-        src_dest = f"Source: {', '.join(callers_display)}; Dest: {', '.join(callees_display)}" if (callers or callees) else "-"
+        src_dest = iface.get("sourceDest") or "-"
+        direction = iface.get("direction") or "-"
         info = iface.get("description", "") or "-"
 
         row = table.add_row().cells
@@ -64,7 +60,7 @@ def _add_interface_table(doc, interfaces, unit_names, font_small):
 
 
 def export_docx(json_path: str = None, docx_path: str = None) -> bool:
-    from utils import load_config, KEY_SEP, safe_filename
+    from utils import load_config, safe_filename, KEY_SEP
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
@@ -89,9 +85,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
     doc = Document()
     doc.add_heading("Software Detailed Design", 0)
 
-    unit_names = data.get("unitNames", {})
-
-    # Group by module
+    # Group by module; use data as-is from view output
     by_module = {}
     for unit_key in data.keys():
         if unit_key in ("basePath", "projectName", "unitNames"):
@@ -138,7 +132,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
 
             # 2.1.1.2 unit interface (table)
             doc.add_heading(f"{sec_num}.1.{unit_idx}.2 unit interface", level=4)
-            _add_interface_table(doc, interfaces, unit_names, font_small)
+            _add_interface_table(doc, interfaces, font_small)
 
             # 2.1.1.3, 2.1.1.4, ... per interface
             for iface_idx, iface in enumerate(interfaces, start=3):

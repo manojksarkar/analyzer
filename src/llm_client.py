@@ -78,6 +78,7 @@ def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
 
 
 def get_description(source: str, config: dict) -> str:
+    return ""
     if not source:
         return ""
     prompt = f"""Describe this C++ function in one short sentence (what it does, not how):
@@ -91,6 +92,7 @@ One-line description:"""
 
 
 def get_direction_label(source: str, config: dict, *, callees: list = None, callers: list = None) -> str:
+    return "-"
     if not source:
         return "-"
     ctx = []
@@ -100,10 +102,9 @@ def get_direction_label(source: str, config: dict, *, callees: list = None, call
         ctx.append(f"Called by: {', '.join(short_name(c) for c in callers[:10])}")
     context_block = "\n".join(ctx) + "\n\n" if ctx else ""
 
-    prompt = f"""You are classifying the external interface *direction* of this C++ function.
-Convention: Get (read from global data) = Out; Set (write to global data) = In. Both read and write (e.g. init) = In.
+    prompt = f"""You are classifying the external interface direction of this C++ function.
 
-Classify as exactly ONE of: In, Out (must pick one)
+Convention: Get functions (getting value from global data structure) = Out. Set functions (setting values in global data structure) = In. If both occur (e.g. initialization) = In. Answer In or Out only.
 
 Call graph context:
 {context_block}Function:
