@@ -3,7 +3,8 @@
     "interfaceTables": true,
     "sequenceDiagrams": false,
     "flowcharts": false,
-    "componentDiagram": false
+    "componentDiagram": false,
+    "unitDiagrams": true
     // "behaviourDiagram": {
     //   "scriptCmd": ["python", "fake_behaviour_diagram_generator.py", "{fid}", "--model", "model"]
     // }

@@ -1,5 +1,6 @@
 #include "dispatch.h"
 #include "../../math/utils.h"
+#include "../hub/hub.h"
 
 int g_polymorphismFactor = 1;
 
@@ -8,7 +9,9 @@ int multiply(int a, int b) {
     for (int i = 0; i < b; i++) {
         result = add(result, a);
     }
-    return result * g_polymorphismFactor;
+    // Call into hub so this unit also calls multiple other units indirectly.
+    int h = hubCompute(a, b);
+    return (result + (h % 7)) * g_polymorphismFactor;
 }
 
 int divide(int a, int b) {

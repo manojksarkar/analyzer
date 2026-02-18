@@ -6,6 +6,7 @@
 #include "../tests/enum/types.h"
 #include "../tests/structs/point_rect.h"
 #include "../tests/direction/read_write.h"
+#include "../tests/hub/hub.h"
 #include "../outer/inner/helper.h"
 
 int g_globalResult = 0;
@@ -97,7 +98,8 @@ int runTypeTests() {
 int runNestedFolderTests() {
     int a = nestedHelper(21);
     int b = helperCompute(10);  // outer calls math
-    return a + b;
+    int h = hubCompute(a, b);   // hub calls multiple units
+    return a + b + h;
 }
 
 int runDirectionTests() {
