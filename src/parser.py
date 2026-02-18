@@ -44,6 +44,8 @@ call_graph = defaultdict(set)  # caller -> {callees}
 reverse_call_graph = defaultdict(set)  # callee -> {callers}
 module_functions = defaultdict(list)
 function_to_module = {}
+global_access_reads = defaultdict(set)   # func_key -> set of var_id
+global_access_writes = defaultdict(set)  # func_key -> set of var_id
 
 
 def is_project_file(file_path: str) -> bool:
@@ -220,6 +222,93 @@ def visit_definitions(cursor):
         visit_definitions(child)
 
 
+# Assignment-like operators: LHS is written. Compound (+= etc) = both read and write.
+_ASSIGN_OPS = {"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="}
+
+
+def _is_assign_op(cursor):
+    if cursor.kind != cindex.CursorKind.BINARY_OPERATOR:
+        return False, False
+    try:
+        tokens = list(cursor.get_tokens())
+        # Tokens: [LHS, op, RHS] or [LHS, +, =, RHS] for +=
+        if len(tokens) >= 2:
+            op = tokens[1].spelling
+            if op == "=":
+                return True, False  # pure write
+            if op in _ASSIGN_OPS:
+                return True, True   # compound = both
+            # Tokenized as separate: + and = -> +=
+            if len(tokens) >= 3:
+                combined = tokens[1].spelling + tokens[2].spelling
+                if combined in _ASSIGN_OPS:
+                    return True, True
+    except Exception:
+        pass
+    return False, False
+
+
+def _is_inc_dec_op(cursor):
+    if cursor.kind != cindex.CursorKind.UNARY_OPERATOR:
+        return False
+    try:
+        tokens = list(cursor.get_tokens())
+        if tokens:
+            return tokens[0].spelling in ("++", "--")
+    except Exception:
+        pass
+    return False
+
+
+def visit_global_access(cursor, current_key=None, is_write=False, is_compound=False):
+    """Track global variable reads/writes per function for In/Out direction."""
+    kind = cursor.kind
+
+    if kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD):
+        if cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
+            current_key = get_function_key(cursor)
+        is_write = False
+        is_compound = False
+    elif kind == cindex.CursorKind.BINARY_OPERATOR:
+        pure_write, compound = _is_assign_op(cursor)
+        if pure_write or compound:
+            children = list(cursor.get_children())
+            if len(children) >= 2:
+                visit_global_access(children[0], current_key, is_write=True, is_compound=compound)
+                visit_global_access(children[1], current_key, is_write=False, is_compound=False)
+            return
+    elif kind == cindex.CursorKind.COMPOUND_ASSIGNMENT_OPERATOR:
+        # +=, -=, etc: LHS is both read and write
+        children = list(cursor.get_children())
+        if len(children) >= 2:
+            visit_global_access(children[0], current_key, is_write=True, is_compound=True)
+            visit_global_access(children[1], current_key, is_write=False, is_compound=False)
+        return
+    elif kind == cindex.CursorKind.UNARY_OPERATOR:
+        if _is_inc_dec_op(cursor):
+            for child in cursor.get_children():
+                visit_global_access(child, current_key, is_write=True, is_compound=False)
+            return
+    elif kind == cindex.CursorKind.DECL_REF_EXPR and current_key:
+        ref = cursor.referenced
+        if ref and ref.kind == cindex.CursorKind.VAR_DECL:
+            par = ref.semantic_parent
+            if par and par.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE):
+                if ref.location.file and is_project_file(ref.location.file.name):
+                    var_id = f"{ref.location.file.name}:{ref.location.line}"
+                    if var_id in globals_data:
+                        if is_write:
+                            global_access_writes[current_key].add(var_id)
+                            if is_compound:
+                                global_access_reads[current_key].add(var_id)
+                        else:
+                            global_access_reads[current_key].add(var_id)
+        return
+
+    for child in cursor.get_children():
+        visit_global_access(child, current_key, is_write, is_compound)
+
+
 def visit_calls(cursor, current_key=None):
     if cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD):
         if cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
@@ -262,6 +351,15 @@ def parse_calls(path):
         pass
 
 
+def parse_global_access(path):
+    """Collect global read/write per function for direction (In/Out)."""
+    try:
+        tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        visit_global_access(tu.cursor)
+    except cindex.TranslationUnitLoadError:
+        pass
+
+
 def build_metadata():
     base_path = os.path.abspath(MODULE_BASE_PATH)
     functions_dict = {}
@@ -288,7 +386,7 @@ def build_metadata():
             "params": f["parameters"],
         }
 
-    # Add precise caller/callee ids using the final function keys (includes overloads, same-name functions, etc.)
+    # Add precise caller/callee ids and direction (In/Out) from global read/write analysis
     for func_key, f in functions.items():
         fid = func_key_to_fid.get(func_key)
         if not fid:
@@ -305,6 +403,16 @@ def build_metadata():
         ]
         functions_dict[fid]["calledByIds"] = sorted(called_ids)
         functions_dict[fid]["callsIds"] = sorted(calls_ids)
+
+        # Direction: Get=Out, Set=In, both=In. No direct global access -> In.
+        reads = global_access_reads.get(func_key, set())
+        writes = global_access_writes.get(func_key, set())
+        if writes and not reads:
+            functions_dict[fid]["direction"] = "In"
+        elif reads and not writes:
+            functions_dict[fid]["direction"] = "Out"
+        else:
+            functions_dict[fid]["direction"] = "In"
 
     for var_id, g in globals_data.items():
         file_path = var_id.rsplit(":", 1)[0]
@@ -351,6 +459,12 @@ def main():
     for i, path in enumerate(source_files, 1):
         print(f"  parser: {i}/{total} files...", end="\r", flush=True)
         parse_calls(path)
+    print()
+
+    print(f"Collecting global access ({total} files)...")
+    for i, path in enumerate(source_files, 1):
+        print(f"  parser: {i}/{total} files...", end="\r", flush=True)
+        parse_global_access(path)
     print()
 
     metadata = build_metadata()

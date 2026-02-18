@@ -164,22 +164,17 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
 
 
 def _enrich_from_llm(base_path: str, functions_data: dict, config: dict):
+    """LLM enrichment for descriptions only. Direction comes from parser (global read/write analysis)."""
     try:
-        from llm_client import enrich_functions_with_descriptions, enrich_functions_with_direction
+        from llm_client import enrich_functions_with_descriptions
     except ImportError:
         return
     funcs_list = list(functions_data.values())
     desc = enrich_functions_with_descriptions(funcs_list, base_path, config)
-    dirs = enrich_functions_with_direction(funcs_list, base_path, config, functions_by_fid=functions_data)
     for f in funcs_list:
         key = f"{f.get('location', {}).get('file', '')}:{f.get('location', {}).get('line', '')}"
         if desc.get(key, {}).get("description"):
             f["description"] = desc[key]["description"]
-        if dirs.get(key, {}).get("direction"):
-            f["direction"] = dirs[key]["direction"]
-    for fid, f in functions_data.items():
-        if "direction" not in f:
-            f["direction"] = "-"
 
 
 def main():

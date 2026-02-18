@@ -149,7 +149,8 @@ def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_
             val = processor_fn(source, config)
         result[key] = {result_key: val}
         suffix = f" -> {val}" if show_val else ""
-        print(f"  {label} [{idx + 1}/{len(funcs)}] {short_name(f.get('qualifiedName', '')) or '?'}{suffix}", file=sys.stderr)
+        print(f"  {label} [{idx + 1}/{len(funcs)}] {short_name(f.get('qualifiedName', '')) or '?'}{suffix}", end="\r", flush=True, file=sys.stderr)
+    print(file=sys.stderr)
     return result
 
 
