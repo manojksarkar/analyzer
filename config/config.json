@@ -5,9 +5,7 @@
     "flowcharts": false,
     "componentDiagram": false,
     "unitDiagrams": true,  // set false to disable
-    "behaviourDiagram": { 
-      "skipPngRender": true 
-    }
+    "behaviourDiagram": false
   },
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",

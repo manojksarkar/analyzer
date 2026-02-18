@@ -1,8 +1,16 @@
 """Unit diagram view: one Mermaid flowchart per unit (boxes for units, edges = interfaceIds)."""
 import os
+import subprocess
+import sys
 
 from .registry import register
 from utils import KEY_SEP, safe_filename
+
+
+def _mmdc_path(project_root: str) -> str:
+    ext = ".cmd" if sys.platform == "win32" else ""
+    local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + ext)
+    return local if os.path.isfile(local) else "mmdc"
 
 
 def _fid_to_unit(units_data):
@@ -139,6 +147,17 @@ def run(model, output_dir, model_dir, config):
                 pass
     os.makedirs(out_dir, exist_ok=True)
 
+    ud_cfg = views_cfg.get("unitDiagrams") if isinstance(views_cfg.get("unitDiagrams"), dict) else {}
+    skip_png = ud_cfg.get("skipPngRender", False)
+    root = os.path.dirname(output_dir)
+    mmdc = _mmdc_path(root)
+    puppeteer = ud_cfg.get("puppeteerConfigPath") or os.path.join(root, "config", "puppeteer-config.json")
+    if not os.path.isabs(puppeteer):
+        puppeteer = os.path.join(root, puppeteer)
+    run_cmd_base = [mmdc]
+    if os.path.isfile(puppeteer):
+        run_cmd_base.extend(["-p", puppeteer])
+
     cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
     total = len(cpp_units)
     for i, unit_key in enumerate(sorted(cpp_units), 1):
@@ -153,6 +172,13 @@ def run(model, output_dir, model_dir, config):
         mmd_path = os.path.join(out_dir, f"{safe}.mmd")
         with open(mmd_path, "w", encoding="utf-8") as f:
             f.write(mermaid)
+        if not skip_png:
+            png_path = os.path.join(out_dir, f"{safe}.png")
+            run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png_path]
+            try:
+                subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
     if total:
         print()
     print(f"  output/unit_diagrams/ ({total} units)")

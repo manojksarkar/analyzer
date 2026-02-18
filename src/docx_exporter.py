@@ -120,9 +120,18 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
         # 2.1 Static Design
         doc.add_heading(f"{sec_num}.1 Static Design", level=2)
 
+        unit_diag_dir = os.path.join(OUTPUT_DIR, "unit_diagrams")
         for unit_idx, (unit_key, unit_name_display, interfaces) in enumerate(sorted(by_module[module_name]), start=1):
             # 2.1.1 unit1
             doc.add_heading(f"{sec_num}.1.{unit_idx} {unit_name_display}", level=3)
+
+            # Unit diagram (before unit header)
+            unit_png = os.path.join(unit_diag_dir, f"{safe_filename(unit_key)}.png")
+            if os.path.isfile(unit_png):
+                try:
+                    doc.add_picture(unit_png, width=Inches(6))
+                except Exception:
+                    _add_para(doc, f"[Unit diagram: {unit_png}]")
 
             # 2.1.1.1 unit header
             path_str = interfaces[0].get("location", {}).get("file", "-") if interfaces else "-"
