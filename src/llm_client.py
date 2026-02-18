@@ -1,4 +1,4 @@
-"""Ollama LLM: descriptions, direction."""
+"""Ollama LLM: descriptions. Direction is derived in parser (global read/write)."""
 import os
 import sys
 
@@ -91,44 +91,13 @@ One-line description:"""
     return _call_ollama(prompt, config, kind="description")
 
 
-def get_direction_label(source: str, config: dict, *, callees: list = None, callers: list = None) -> str:
-    return "-"
-    if not source:
-        return "-"
-    ctx = []
-    if callees:
-        ctx.append(f"Calls: {', '.join(short_name(c) for c in callees[:10])}")
-    if callers:
-        ctx.append(f"Called by: {', '.join(short_name(c) for c in callers[:10])}")
-    context_block = "\n".join(ctx) + "\n\n" if ctx else ""
-
-    prompt = f"""You are classifying the external interface direction of this C++ function.
-
-Convention: Get functions (getting value from global data structure) = Out. Set functions (setting values in global data structure) = In. If both occur (e.g. initialization) = In. Answer In or Out only.
-
-Call graph context:
-{context_block}Function:
-```cpp
-{source}
-```
-
-Answer with exactly one of: In, Out.
-"""
-    raw = _call_ollama(prompt, config, kind="direction").strip()
-    if not raw:
-        return "In"  # default for functions
-    text = raw.lower()
-    if "out" in text and ("in" not in text or text.index("out") < text.index("in")):
-        return "Out"
-    return "In"  # default In
-
 def _make_canonical_key(f: dict) -> str:
     """Stable key file:line for LLM result lookup."""
     loc = f.get("location", {})
     return f"{loc.get('file', '')}:{loc.get('line', '')}"
 
 
-def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_fn, result_key: str, label: str, show_val: bool = False, functions_by_fid: dict = None) -> dict:
+def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_fn, result_key: str, label: str) -> dict:
     result = {}
     for idx, f in enumerate(funcs):
         loc = f.get("location", {})
@@ -136,20 +105,9 @@ def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_
             continue
         key = _make_canonical_key(f)
         source = extract_source(base_path, loc)
-        callee_names = []
-        caller_names = []
-        if functions_by_fid:
-            for cid in (f.get("callsIds") or []):
-                callee_names.append(functions_by_fid.get(cid, {}).get("qualifiedName", cid))
-            for cid in (f.get("calledByIds") or []):
-                caller_names.append(functions_by_fid.get(cid, {}).get("qualifiedName", cid))
-        if processor_fn == get_direction_label:
-            val = processor_fn(source, config, callees=callee_names, callers=caller_names)
-        else:
-            val = processor_fn(source, config)
+        val = processor_fn(source, config)
         result[key] = {result_key: val}
-        suffix = f" -> {val}" if show_val else ""
-        print(f"  {label} [{idx + 1}/{len(funcs)}] {short_name(f.get('qualifiedName', '')) or '?'}{suffix}", end="\r", flush=True, file=sys.stderr)
+        print(f"  {label} [{idx + 1}/{len(funcs)}] {short_name(f.get('qualifiedName', '')) or '?'}", end="\r", flush=True, file=sys.stderr)
     print(file=sys.stderr)
     return result
 
@@ -159,11 +117,3 @@ def enrich_functions_with_descriptions(functions_data: list, base_path: str, con
         print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
         return {}
     return _enrich_functions_loop(functions_data, base_path, config, get_description, "description", "LLM")
-
-
-def enrich_functions_with_direction(functions_data: list, base_path: str, config: dict, functions_by_fid: dict = None) -> dict:
-    """Enrich functions with direction via LLM. Pass functions_by_fid {fid: func} for call graph context."""
-    if not _ollama_available(config):
-        print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
-        return {}
-    return _enrich_functions_loop(functions_data, base_path, config, get_direction_label, "direction", "LLM-dir", show_val=True, functions_by_fid=functions_by_fid)
