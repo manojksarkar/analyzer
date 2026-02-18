@@ -4,7 +4,7 @@
     "sequenceDiagrams": false,
     "flowcharts": false,
     "componentDiagram": false,
-    "unitDiagrams": true
+    "unitDiagrams": true  // set false to disable
     // "behaviourDiagram": {
     //   "scriptCmd": ["python", "fake_behaviour_diagram_generator.py", "{fid}", "--model", "model"]
     // }
