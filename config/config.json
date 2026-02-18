@@ -4,10 +4,10 @@
     "sequenceDiagrams": false,
     "flowcharts": false,
     "componentDiagram": false,
-    "unitDiagrams": true  // set false to disable
-    // "behaviourDiagram": {
-    //   "scriptCmd": ["python", "fake_behaviour_diagram_generator.py", "{fid}", "--model", "model"]
-    // }
+    "unitDiagrams": true,  // set false to disable
+    "behaviourDiagram": { 
+      "skipPngRender": true 
+    }
   },
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",

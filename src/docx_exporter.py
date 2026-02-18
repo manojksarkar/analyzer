@@ -141,7 +141,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{iface_id}", level=4)
                 _add_para(doc, f"{iface_name} ({iface.get('type', '-')}). {iface.get('description', '') or '-'}")
 
-        # 2.2 Dynamic Behaviour (per function, with behaviour diagram)
+        # 2.2 Dynamic Behaviour (per function, with behaviour diagram(s))
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)
         beh_dir = os.path.join(OUTPUT_DIR, "behaviour_diagrams")
         with_diagram_path = os.path.join(beh_dir, "_with_diagram.json")
@@ -152,6 +152,14 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
                     with_diagram = set(json.load(f))
             except (json.JSONDecodeError, IOError):
                 pass
+        behaviour_pngs = {}
+        pngs_path = os.path.join(beh_dir, "_behaviour_pngs.json")
+        if os.path.isfile(pngs_path):
+            try:
+                with open(pngs_path, "r", encoding="utf-8") as f:
+                    behaviour_pngs = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
         beh_idx = 0
         for _unit_key, _unit_name, unit_interfaces in sorted(by_module[module_name]):
             for iface in unit_interfaces:
@@ -159,16 +167,23 @@ def export_docx(json_path: str = None, docx_path: str = None) -> bool:
                     continue
                 fid = iface.get("functionId", "")
                 if not fid or fid not in with_diagram:
-                    # CLI returned empty string or mmdc failed - skip
                     continue
                 beh_idx += 1
                 iface_name = iface.get("interfaceName", "") or iface.get("name", "?")
                 doc.add_heading(f"{sec_num}.2.{beh_idx} {iface_name}", level=3)
-                png_path = os.path.join(beh_dir, f"{safe_filename(fid)}.png")
-                try:
-                    doc.add_picture(png_path, width=Inches(6))
-                except Exception:
-                    _add_para(doc, f"[Behaviour diagram: {png_path}]")
+                png_list = behaviour_pngs.get(fid)
+                if not png_list:
+                    png_list = [os.path.join(beh_dir, f"{safe_filename(fid)}.png")]
+                for diag_idx, png_path in enumerate(png_list):
+                    if len(png_list) > 1:
+                        doc.add_heading(f"Diagram {diag_idx + 1}", level=4)
+                    try:
+                        if os.path.isfile(png_path):
+                            doc.add_picture(png_path, width=Inches(6))
+                        else:
+                            _add_para(doc, f"[Behaviour diagram: {png_path}]")
+                    except Exception:
+                        _add_para(doc, f"[Behaviour diagram: {png_path}]")
 
     print()  # newline after progress
     # N Code Metrics, Coding rule, test coverage
