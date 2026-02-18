@@ -1,4 +1,5 @@
 #include "types.h"
+#include "../../outer/inner/helper.h"
 
 Status checkStatus(Status s) {
     return s == STATUS_OK ? STATUS_OK : STATUS_ERR;
@@ -20,4 +21,8 @@ Status getDefaultStatus() {
 
 Color getDefaultColor() {
     return RED;
+}
+
+int enumWithHelper(int x) {
+    return nestedHelper(x);  // cross-module: tests/enum -> outer
 }

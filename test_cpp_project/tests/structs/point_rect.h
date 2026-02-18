@@ -42,3 +42,6 @@ void noop();
 
 // Test: const reference parameter
 int getPointX(const Point& p);
+
+// Cross-module: tests/structs -> math
+int pointSumWithAdd(int a, int b);

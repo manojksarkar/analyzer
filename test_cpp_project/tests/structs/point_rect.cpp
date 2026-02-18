@@ -1,4 +1,9 @@
 #include "point_rect.h"
+#include "../../math/utils.h"
+
+int pointSumWithAdd(int a, int b) {
+    return add(a, b);  // cross-module: tests/structs -> math
+}
 
 int pointSum(Point p) {
     return p.x + p.y;

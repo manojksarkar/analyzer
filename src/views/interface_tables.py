@@ -58,7 +58,8 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
             def _other_mod(u): return u.split(KEY_SEP)[0] != self_module if KEY_SEP in u else True
             callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _other_mod(u)))
             callees_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in callee_units if _other_mod(u)))
-            source_dest = f"Source: {', '.join(callers_fmt)}; Dest: {', '.join(callees_fmt)}" if (callers_fmt or callees_fmt) else "-"
+            parts = [', '.join(callers_fmt), ', '.join(callees_fmt)]
+            source_dest = '; '.join(p for p in parts if p) if (callers_fmt or callees_fmt) else "-"
             raw_params = f.get("parameters", [])
             params = [{**p, "range": get_range(p.get("type", ""), dd)} for p in raw_params]
             e = {

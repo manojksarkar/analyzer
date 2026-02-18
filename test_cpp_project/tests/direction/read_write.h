@@ -20,3 +20,6 @@ int readWriteGlobal(int delta);
 
 // Test: function calls Out function -> propagation to Out
 void indirectWrite(int v);
+
+// Cross-module: tests/direction -> math
+int directionAdd(int a, int b);

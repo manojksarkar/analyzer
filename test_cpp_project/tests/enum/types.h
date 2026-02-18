@@ -29,3 +29,6 @@ Mode_t setMode(Mode_t m);
 // Test: enum return
 Status getDefaultStatus();
 Color getDefaultColor();
+
+// Cross-module: tests/enum -> outer
+int enumWithHelper(int x);

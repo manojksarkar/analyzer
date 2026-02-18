@@ -74,13 +74,15 @@ int runEnumTests() {
     Status s = getDefaultStatus();
     Color c = nextColor(getDefaultColor());
     Mode_t m = setMode(MODE_ACTIVE);
+    int h = enumWithHelper(7);  // tests/enum -> outer
     (void)m;
-    return static_cast<int>(s) + static_cast<int>(c);
+    return static_cast<int>(s) + static_cast<int>(c) + h;
 }
 
 int runTypeTests() {
     Point p = {1, 2};
     int sum = pointSum(p);
+    int cross = pointSumWithAdd(3, 4);  // tests/structs -> math
     getPointX(p);
     scalePoint(p, 2);
     Rect r = {{0, 0}, {10, 10}};
@@ -89,11 +91,13 @@ int runTypeTests() {
     d.i = 42;
     int vi = getDataAsInt(d);
     noop();
-    return sum + area + vi;
+    return sum + area + vi + cross;
 }
 
 int runNestedFolderTests() {
-    return nestedHelper(21);
+    int a = nestedHelper(21);
+    int b = helperCompute(10);  // outer calls math
+    return a + b;
 }
 
 int runDirectionTests() {
@@ -101,7 +105,8 @@ int runDirectionTests() {
     writeGlobal(10);
     int rw = readWriteGlobal(5);
     indirectWrite(20);
-    return v + rw;
+    int da = directionAdd(1, 2);  // tests/direction -> math
+    return v + rw + da;
 }
 
 int main() {

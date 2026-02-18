@@ -1,4 +1,5 @@
 #include "read_write.h"
+#include "../../math/utils.h"
 
 int g_readOnly = 42;   // read-only: never written
 int g_writeOnly = 0;   // write-only: only written
@@ -19,4 +20,8 @@ int readWriteGlobal(int delta) {
 
 void indirectWrite(int v) {
     writeGlobal(v);
+}
+
+int directionAdd(int a, int b) {
+    return add(a, b);  // cross-module: tests/direction -> math
 }
