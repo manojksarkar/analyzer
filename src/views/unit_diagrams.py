@@ -28,20 +28,11 @@ def _unit_part_id(unit_key):
     return (unit_key or "").replace(KEY_SEP, "_").replace(" ", "_") or "u"
 
 
-def _unit_label(unit_key, unit_names):
-    """Display label for box."""
-    return unit_names.get(unit_key, unit_key.replace(KEY_SEP, "/") if unit_key else "?")
-
-
 def _escape_label(text):
     """Escape text for Mermaid (avoid breaking diagram)."""
-    return (text or "").replace('"', "'").replace("\n", " ")
-
-
-def _box_label(unit_key, unit_names):
-    """Label for flowchart box; escape ] so it does not break node syntax."""
-    raw = _unit_label(unit_key, unit_names)
-    return (raw or "").replace("]", "'").replace("[", "'")
+    t = text or ""
+    t = t.replace('"', "'").replace("\n", " ").replace("|", "\u00a6")
+    return t
 
 
 def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names):
@@ -50,11 +41,9 @@ def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_
         return None
 
     this_id = _unit_part_id(unit_key)
+    this_module = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
 
-    # Collect edges: (from_id, to_id) -> set of interfaceIds
     edges = {}
-
-    # Outgoing: this unit calls other units
     for fid in unit_info.get("functionIds", []):
         if fid not in functions_data:
             continue
@@ -69,7 +58,6 @@ def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_
                 key = (this_id, _unit_part_id(callee_unit))
                 edges.setdefault(key, set()).add(iface)
 
-    # Incoming: other units call this unit
     for fid in unit_info.get("functionIds", []):
         if fid not in functions_data:
             continue
@@ -84,38 +72,95 @@ def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_
             key = (_unit_part_id(caller_unit), this_id)
             edges.setdefault(key, set()).add(iface)
 
-    # Callers (left), this (center), callees (right); each unit once
     caller_ids = {fr for (fr, to) in edges if to == this_id}
     callee_ids = {to for (fr, to) in edges if fr == this_id}
-    ordered_ids = sorted(caller_ids) + [this_id] + sorted(callee_ids - caller_ids)
+    same_mod = set()
+    for uk in units_data:
+        pid = _unit_part_id(uk)
+        uk_module = uk.split(KEY_SEP)[0] if KEY_SEP in uk else ""
+        if uk_module == this_module:
+            same_mod.add(pid)
+    internal_callers = sorted(caller_ids & same_mod)
+    external_callers = sorted(caller_ids - same_mod)
+    internal_callees = sorted((callee_ids - caller_ids) & same_mod)
+    external_callees = sorted((callee_ids - caller_ids) - same_mod)
 
-    # Dynamic height for current unit: scale with number of edges (min 2, max 12 extra lines)
     n_edges = len(edges)
     n_extra_lines = min(max(2, n_edges), 12)
     pad = "   "
 
-    lines = ["flowchart LR"]
-    for pid in ordered_ids:
+    def _node_line(pid):
         for uk in units_data:
             if _unit_part_id(uk) == pid:
-                # Current unit: keep as is; other units: show module/unit
                 raw = unit_names.get(uk, uk) if pid == this_id else uk.replace(KEY_SEP, "/")
                 box_label = (raw or "?").replace("]", "'").replace("[", "'")
                 if pid == this_id:
-                    # Current unit: dynamic height (more edges = taller box) so arrows stay straight
                     extra = "<br/>".join([f"{pad} " for _ in range(n_extra_lines)])
                     box_label = f"{pad}{box_label}{pad}<br/>{extra}"
-                lines.append(f'  {pid}["{box_label}"]')
-                break
+                return f'  {pid}["{box_label}"]'
+        return ""
 
-    # Style current unit: single box, sky blue
-    lines.append(f"  style {this_id} fill:#87CEEB,stroke:#4682B4,stroke-width:3px")
+    lines = ["flowchart LR"]
+    lines.append("  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px")
+    lines.append("  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px")
+    lines.append("")
 
-    # Edges: from --> to with interfaceIds (one per line via <br/>)
+    # External callers (left) - invisible subgraph for layout
+    if external_callers:
+        lines.append("  subgraph ext_left[ ]")
+        lines.append("    direction TB")
+        lines.append("    style ext_left fill:none,stroke:none")
+        for pid in external_callers:
+            lines.append("    " + _node_line(pid).strip())
+        lines.append("  end")
+        lines.append("")
+
+    # Internal module (yellow box) - callers (top) -> this -> callees (bottom)
+    mod_label = (this_module or "Internal").replace("]", "'").replace("[", "'")
+    lines.append(f'  subgraph internal_mod[{mod_label}]')
+    lines.append("    direction TB")
+    lines.append("    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px")
+    lines.append("")
+    for pid in internal_callers:
+        lines.append("    " + _node_line(pid).strip())
+    lines.append("    " + _node_line(this_id).strip())
+    for pid in internal_callees:
+        lines.append("    " + _node_line(pid).strip())
+    lines.append("")
+
+    # Internal edges (inside yellow box)
+    for (fr, to), ifaces in sorted(edges.items()):
+        if fr in same_mod and to in same_mod:
+            label = "<br/>".join(sorted(ifaces))
+            label = _escape_label(label)
+            lines.append(f'    {fr} -- "{label}" --> {to}')
+    lines.append("")
+    # Apply classes to internal nodes
+    lines.append(f"    class {this_id} mainUnit")
+    others = internal_callers + internal_callees
+    if others:
+        lines.append("    class " + ",".join(others) + " internal")
+    lines.append("  end")
+    lines.append("")
+
+    # External callees (right) - invisible subgraph for layout
+    if external_callees:
+        lines.append("  subgraph ext_right[ ]")
+        lines.append("    direction TB")
+        lines.append("    style ext_right fill:none,stroke:none")
+        for pid in external_callees:
+            lines.append("    " + _node_line(pid).strip())
+        lines.append("  end")
+        lines.append("")
+
+    # External connections - direct edges
     for (fr, to), ifaces in sorted(edges.items()):
         label = "<br/>".join(sorted(ifaces))
         label = _escape_label(label)
-        lines.append(f'  {fr} -->|{label}| {to}')
+        is_ext_in = fr in external_callers and to in same_mod
+        is_ext_out = fr in same_mod and to in external_callees
+        if is_ext_in or is_ext_out:
+            lines.append(f'  {fr} -- "{label}" --> {to}')
 
     return "\n".join(lines) if len(lines) > 1 else None
 
@@ -148,7 +193,7 @@ def run(model, output_dir, model_dir, config):
     os.makedirs(out_dir, exist_ok=True)
 
     ud_cfg = views_cfg.get("unitDiagrams") if isinstance(views_cfg.get("unitDiagrams"), dict) else {}
-    skip_png = ud_cfg.get("skipPngRender", False)
+    render_png = ud_cfg.get("renderPng", True)
     root = os.path.dirname(output_dir)
     mmdc = _mmdc_path(root)
     puppeteer = ud_cfg.get("puppeteerConfigPath") or os.path.join(root, "config", "puppeteer-config.json")
@@ -172,7 +217,7 @@ def run(model, output_dir, model_dir, config):
         mmd_path = os.path.join(out_dir, f"{safe}.mmd")
         with open(mmd_path, "w", encoding="utf-8") as f:
             f.write(mermaid)
-        if not skip_png:
+        if render_png:
             png_path = os.path.join(out_dir, f"{safe}.png")
             run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png_path]
             try:

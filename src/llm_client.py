@@ -2,7 +2,7 @@
 import os
 import sys
 
-from utils import load_config, norm_path, short_name
+from utils import norm_path, short_name
 
 # Optional: use requests for HTTP, with fallback
 try:
@@ -78,7 +78,6 @@ def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
 
 
 def get_description(source: str, config: dict) -> str:
-    return ""
     if not source:
         return ""
     prompt = f"""Describe this C++ function in one short sentence (what it does, not how):

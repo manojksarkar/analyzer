@@ -73,7 +73,7 @@ def run(model, output_dir, model_dir, config):
         safe = safe_filename(fid)
         png_paths = []
 
-        if beh_cfg.get("skipPngRender"):
+        if not beh_cfg.get("renderPng", True):
             with_diagram.append(fid)
             # No PNGs; exporter will not find _behaviour_pngs entries, can fall back to single path
             count += 1

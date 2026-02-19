@@ -3,7 +3,7 @@ import os
 import sys
 import json
 
-from utils import load_config, norm_path, short_name, make_unit_key, path_from_unit_rel, KEY_SEP
+from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -12,7 +12,6 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 
 def _load_model():
-    base_path = None
     for name in ("metadata", "functions", "globalVariables"):
         path = os.path.join(MODEL_DIR, f"{name}.json")
         if not os.path.isfile(path):
