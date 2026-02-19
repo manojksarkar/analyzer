@@ -78,8 +78,9 @@ def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
 
 
 def get_description(source: str, config: dict) -> str:
+    return "" 
     if not source:
-        return ""
+        return "" 
     prompt = f"""Describe this C++ function in one short sentence (what it does, not how):
 
 ```cpp

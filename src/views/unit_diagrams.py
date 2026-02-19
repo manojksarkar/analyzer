@@ -35,8 +35,9 @@ def _escape_label(text):
     return t
 
 
-def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names):
-    """Build Mermaid flowchart for one unit: one box per unit, edges labeled with interfaceIds."""
+def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names, internal_scope="project"):
+    """Build Mermaid flowchart for one unit: one box per unit, edges labeled with interfaceIds.
+    internal_scope: 'project' = all units in model are internal; 'module' = only same module."""
     if not (unit_info.get("fileName") or "").endswith(".cpp"):
         return None
 
@@ -100,24 +101,21 @@ def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_
                 return f'  {pid}["{box_label}"]'
         return ""
 
-    lines = ["flowchart LR"]
-    lines.append("  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px")
-    lines.append("  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px")
-    lines.append("")
+    lines = [
+        "%%{init: {'flowchart': {'splines': 'ortho'}}}%%",
+        "flowchart LR",
+        "  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px",
+        "  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px",
+        "",
+    ]
 
-    # External callers (left) - invisible subgraph for layout
-    if external_callers:
-        lines.append("  subgraph ext_left[ ]")
-        lines.append("    direction TB")
-        lines.append("    style ext_left fill:none,stroke:none")
-        for pid in external_callers:
-            lines.append("    " + _node_line(pid).strip())
-        lines.append("  end")
-        lines.append("")
+    # External callers (left)
+    for pid in external_callers:
+        lines.append("  " + _node_line(pid).strip())
 
-    # Internal module (yellow box) - callers (top) -> this -> callees (bottom)
+    # Internal module (yellow box)
     mod_label = (this_module or "Internal").replace("]", "'").replace("[", "'")
-    lines.append(f'  subgraph internal_mod[{mod_label}]')
+    lines.append(f"  subgraph internal_mod[{mod_label}]")
     lines.append("    direction TB")
     lines.append("    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px")
     lines.append("")
@@ -128,14 +126,13 @@ def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_
         lines.append("    " + _node_line(pid).strip())
     lines.append("")
 
-    # Internal edges (inside yellow box)
+    # Internal edges
     for (fr, to), ifaces in sorted(edges.items()):
         if fr in same_mod and to in same_mod:
             label = "<br/>".join(sorted(ifaces))
             label = _escape_label(label)
-            lines.append(f'    {fr} -- "{label}" --> {to}')
+            lines.append(f"    {fr} -->|{label}| {to}")
     lines.append("")
-    # Apply classes to internal nodes
     lines.append(f"    class {this_id} mainUnit")
     others = internal_callers + internal_callees
     if others:
@@ -143,24 +140,19 @@ def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_
     lines.append("  end")
     lines.append("")
 
-    # External callees (right) - invisible subgraph for layout
-    if external_callees:
-        lines.append("  subgraph ext_right[ ]")
-        lines.append("    direction TB")
-        lines.append("    style ext_right fill:none,stroke:none")
-        for pid in external_callees:
-            lines.append("    " + _node_line(pid).strip())
-        lines.append("  end")
-        lines.append("")
+    # External callees (right)
+    for pid in external_callees:
+        lines.append("  " + _node_line(pid).strip())
+    lines.append("")
 
-    # External connections - direct edges
+    # External connections
     for (fr, to), ifaces in sorted(edges.items()):
         label = "<br/>".join(sorted(ifaces))
         label = _escape_label(label)
         is_ext_in = fr in external_callers and to in same_mod
         is_ext_out = fr in same_mod and to in external_callees
         if is_ext_in or is_ext_out:
-            lines.append(f'  {fr} -- "{label}" --> {to}')
+            lines.append(f"  {fr} -->|{label}| {to}")
 
     return "\n".join(lines) if len(lines) > 1 else None
 

@@ -1,12 +1,12 @@
 {
   "views": {
-    "interfaceTables": true,
+    "interfaceTables": false,
     "unitDiagrams": {
-      "renderPng": true
-    },
-    "behaviourDiagram": {
-      "renderPng": true
+      "renderPng": false
     }
+    // "behaviourDiagram": {
+    //   "renderPng": false
+    // }
   },
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
