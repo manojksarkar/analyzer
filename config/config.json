@@ -16,6 +16,7 @@
     // "clangIncludePath": "/usr/lib/llvm-17/include"
   },
   "llm": {
+    "descriptions": false,
     "baseUrl": "http://localhost:11434",
     "defaultModel": "llama3.2",
     "timeoutSeconds": 60

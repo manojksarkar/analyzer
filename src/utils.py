@@ -1,10 +1,18 @@
 """Shared helpers."""
 import os
 import re
+import sys
 import json
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
 KEY_SEP = "|"
+
+
+def mmdc_path(project_root: str) -> str:
+    """Path to mermaid-cli mmdc (local node_modules or system)."""
+    ext = ".cmd" if sys.platform == "win32" else ""
+    local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + ext)
+    return local if os.path.isfile(local) else "mmdc"
 
 
 def safe_filename(s: str) -> str:

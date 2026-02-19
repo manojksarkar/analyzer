@@ -23,14 +23,8 @@ if _proj not in sys.path:
     sys.path.insert(0, _proj)
 
 from .registry import register
-from utils import safe_filename
+from utils import mmdc_path, safe_filename
 from fake_behaviour_diagram_generator import FakeBehaviourGenerator
-
-
-def _mmdc_path(project_root: str) -> str:
-    ext = ".cmd" if sys.platform == "win32" else ""
-    local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + ext)
-    return local if os.path.isfile(local) else "mmdc"
 
 
 @register("behaviourDiagram")
@@ -79,7 +73,7 @@ def run(model, output_dir, model_dir, config):
             count += 1
             continue
 
-        mmdc = _mmdc_path(root)
+        mmdc = mmdc_path(root)
         puppeteer = beh_cfg.get("puppeteerConfigPath") or os.path.join(root, "config", "puppeteer-config.json")
         if not os.path.isabs(puppeteer):
             puppeteer = os.path.join(root, puppeteer)

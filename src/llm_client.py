@@ -50,7 +50,7 @@ def _ollama_available(config: dict) -> bool:
     try:
         r = requests.get(f"{base_url}/api/tags", timeout=3)
         return r.status_code == 200
-    except Exception:
+    except (requests.RequestException, OSError):
         return False
 
 
@@ -71,16 +71,15 @@ def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
         r.raise_for_status()
         data = r.json()
         return (data.get("response") or "").strip()
-    except Exception as e:
+    except (requests.RequestException, OSError) as e:
         print(f"Ollama error: {e}", file=sys.stderr)
         print("  -> Is Ollama running? Start with: ollama serve", file=sys.stderr)
         return ""
 
 
 def get_description(source: str, config: dict) -> str:
-    return "" 
     if not source:
-        return "" 
+        return ""
     prompt = f"""Describe this C++ function in one short sentence (what it does, not how):
 
 ```cpp

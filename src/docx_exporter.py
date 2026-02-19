@@ -2,6 +2,7 @@
 import os
 import sys
 import json
+from typing import Optional, Tuple
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
@@ -58,7 +59,7 @@ def _add_interface_table(doc, interfaces, font_small):
             _set_cell_font(row[i], font_small)
 
 
-def export_docx(json_path: str = None, docx_path: str = None) -> bool:
+def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Optional[str]]:
     from utils import load_config, safe_filename, KEY_SEP
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
