@@ -83,7 +83,7 @@ def run(model, output_dir, model_dir, config):
             cmd.append(f"--clang-arg={str(a)}")
 
     try:
-        r = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True, timeout=120, check=False)
+        r = subprocess.run(cmd, cwd=project_root, check=False)
     except subprocess.TimeoutExpired:
         print("  flowcharts: generator timed out", file=sys.stderr)
         return
@@ -92,13 +92,8 @@ def run(model, output_dir, model_dir, config):
         return
 
     if r.returncode != 0:
-        msg = (r.stderr or r.stdout or f"exit {r.returncode}").strip()
-        print(f"  flowcharts: generator error: {msg}", file=sys.stderr)
+        print(f"  flowcharts: generator exited with code {r.returncode}", file=sys.stderr)
         return
-
-    if (r.stdout or "").strip():
-        for line in r.stdout.strip().splitlines():
-            print(f"  flowcharts: {line}")
 
     # Render flowcharts to PNG when renderPng is true
     if not fc_cfg.get("renderPng", False):

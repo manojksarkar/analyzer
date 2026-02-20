@@ -187,9 +187,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
             unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
             for iface_idx, iface in enumerate(interfaces, start=3):
                 iface_id = iface.get("interfaceId", "")
-                iface_name = iface.get("interfaceName", "")
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{iface_id}", level=4)
-                _add_para(doc, f"{iface_name} ({iface.get('type', '-')}). ", style="Normal")
                 func_name = iface.get("name", "")
                 unit_prefix = unit_key.replace(KEY_SEP, "_")
                 flowchart = (
