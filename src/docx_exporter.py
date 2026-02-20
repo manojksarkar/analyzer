@@ -2,6 +2,7 @@
 import os
 import sys
 import json
+import subprocess
 from typing import Optional, Tuple
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,12 +22,53 @@ def _add_para(doc, text, style="Normal"):
     return p
 
 
-def _add_mermaid_as_text(doc, mermaid: str, font_small):
-    """Add Mermaid flowchart as monospace text block."""
-    p = doc.add_paragraph()
-    run = p.add_run(mermaid.strip())
-    run.font.name = "Consolas"
-    run.font.size = font_small
+def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, font_small):
+    import os
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    from docx.shared import Inches
+
+    table = doc.add_table(rows=1, cols=2)
+    table.style = "Table Grid"
+
+    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AUTO
+
+    row = table.rows[0].cells
+
+    # Vertical align TOP
+    row[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    row[1].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+
+    row[0].text = "Requirements"
+    _set_cell_font(row[0], font_small)
+
+    # Right align text
+    for para in row[0].paragraphs:
+        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    # Remove extra spacing in both cells
+    for cell in row:
+        for para in cell.paragraphs:
+            para.paragraph_format.space_before = 0
+            para.paragraph_format.space_after = 0
+            para.paragraph_format.line_spacing = 1
+
+    # Clear second cell
+    row[1].text = ""
+    p = row[1].paragraphs[0]
+
+    if png_path and os.path.isfile(png_path):
+        try:
+            run = p.add_run()
+            run.add_picture(png_path, width=Inches(4))
+        except Exception:
+            run = p.add_run(flowchart_mermaid.strip())
+            run.font.name = "Consolas"
+            run.font.size = font_small
+    else:
+        run = p.add_run(flowchart_mermaid.strip())
+        run.font.name = "Consolas"
+        run.font.size = font_small
 
 
 def _load_flowcharts(flowcharts_dir: str) -> dict:
@@ -195,19 +237,13 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
                     or flowcharts_map.get(unit_name_flowchart, {}).get(func_name)
                 ) if flowcharts_enabled and func_name else None
                 if flowchart:
+                    png_path = None
                     if flowcharts_render_png:
                         png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
                         if not os.path.isfile(png_path):
                             png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
-                        if os.path.isfile(png_path):
-                            try:
-                                doc.add_picture(png_path, width=Inches(6))
-                            except Exception:
-                                _add_mermaid_as_text(doc, flowchart, font_small)
-                        else:
-                            _add_mermaid_as_text(doc, flowchart, font_small)
-                    else:
-                        _add_mermaid_as_text(doc, flowchart, font_small)
+                    print(f" png_path: {png_path}")
+                    _add_requirement_image_table(doc, png_path or "", flowchart, font_small)
                 else:
                     _add_para(doc, iface.get("description", "") or "-")
 
