@@ -104,7 +104,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     fc_cfg = views_cfg.get("flowcharts") if isinstance(views_cfg.get("flowcharts"), dict) else {}
     flowcharts_enabled = bool(views_cfg.get("flowcharts"))
     flowcharts_render_png = fc_cfg.get("renderPng", True)
-    flowcharts_dir = os.path.join(OUTPUT_DIR, "flowcharts")
+    flowcharts_dir = os.path.abspath(os.path.join(OUTPUT_DIR, "flowcharts"))
     flowcharts_map = _load_flowcharts(flowcharts_dir) if flowcharts_enabled else {}
 
     if not os.path.isfile(json_path):
@@ -197,6 +197,8 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
                 if flowchart:
                     if flowcharts_render_png:
                         png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
+                        if not os.path.isfile(png_path):
+                            png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
                         if os.path.isfile(png_path):
                             try:
                                 doc.add_picture(png_path, width=Inches(6))

@@ -100,6 +100,13 @@ def run(model, output_dir, model_dir, config):
         return
 
     mmdc = mmdc_path(project_root)
+    if not os.path.isfile(mmdc):
+        try:
+            subprocess.run([mmdc, "--help"], capture_output=True, timeout=5, cwd=project_root)
+        except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
+            print("  flowcharts: mmdc not found. Run: npm install @mermaid-js/mermaid-cli", file=sys.stderr)
+            return
+
     puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
     run_cmd_base = [mmdc]
     if os.path.isfile(puppeteer):
@@ -125,22 +132,31 @@ def run(model, output_dir, model_dir, config):
             pass
 
     total = len(items)
+    failed = 0
     for i, (unit_name, func_name, flowchart) in enumerate(items, 1):
         print(f"  flowcharts: PNG {i}/{total} {unit_name}/{func_name}...", end="\r", flush=True)
         png_name = f"{unit_name}_{safe_filename(func_name)}.png"
-        png_path = os.path.join(out_dir, png_name)
-        with tempfile.NamedTemporaryFile(suffix=".mmd", delete=False, mode="w", encoding="utf-8") as tf:
-            tf.write(flowchart)
-            mmd_path = tf.name
+        png_path = os.path.abspath(os.path.join(out_dir, png_name))
+        mmd_path = os.path.join(out_dir, f".tmp_{unit_name}_{safe_filename(func_name)}.mmd")
         try:
-            run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png_path]
-            subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=60, check=False)
-        except (subprocess.TimeoutExpired, OSError):
-            pass
-        try:
-            os.unlink(mmd_path)
-        except OSError:
-            pass
+            with open(mmd_path, "w", encoding="utf-8") as tf:
+                tf.write(flowchart)
+            run_cmd = run_cmd_base + ["-i", os.path.abspath(mmd_path), "-o", png_path]
+            r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False)
+            if r.returncode != 0 and failed == 0:
+                print(file=sys.stderr)
+                print(f"  flowcharts: mmdc failed for {unit_name}/{func_name}: {r.stderr or r.stdout or 'exit ' + str(r.returncode)}", file=sys.stderr)
+                failed += 1
+        except (subprocess.TimeoutExpired, OSError) as e:
+            if failed == 0:
+                print(file=sys.stderr)
+                print(f"  flowcharts: mmdc error for {unit_name}/{func_name}: {e}", file=sys.stderr)
+                failed += 1
+        finally:
+            try:
+                os.unlink(mmd_path)
+            except OSError:
+                pass
     if total:
         print()
         print(f"  flowcharts: {total} PNGs rendered")
