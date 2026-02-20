@@ -1,0 +1,152 @@
+"""Flowcharts view.
+
+Invokes `fake_flowchart_generator.py` to produce per-unit JSON files containing
+simple function names and a Mermaid flowchart string. When renderPng is true,
+renders each flowchart to PNG. The -I include path is derived from metadata.json
+basePath when not set in config.
+"""
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+from .registry import register
+from utils import mmdc_path, safe_filename
+
+
+def _resolve_script(project_root: str, script_path: str) -> str:
+    if not script_path:
+        return os.path.join(project_root, "fake_flowchart_generator.py")
+    return script_path if os.path.isabs(script_path) else os.path.join(project_root, script_path)
+
+
+@register("flowcharts")
+def run(model, output_dir, model_dir, config):
+    views_cfg = config.get("views", {})
+    val = views_cfg.get("flowcharts")
+    if val is None or val is False:
+        # Not enabled
+        return
+    fc_cfg = val if isinstance(val, dict) else {}
+
+    # Be robust to callers passing relative output_dir/model_dir.
+    output_dir_abs = os.path.abspath(output_dir)
+    model_dir_abs = os.path.abspath(model_dir)
+    project_root = os.path.dirname(output_dir_abs)
+
+    # Out dir fixed in code: output/flowcharts under the view output dir
+    out_dir = os.path.join(output_dir_abs, "flowcharts")
+    os.makedirs(out_dir, exist_ok=True)
+
+    functions_path = os.path.join(model_dir_abs, "functions.json")
+    metadata_path = os.path.join(model_dir_abs, "metadata.json")
+
+    std = "c++17"  # fixed in code
+    clang_args = fc_cfg.get("clangArgs")
+    if clang_args is None:
+        # Derive -I from metadata.json basePath
+        clang_args = []
+        if os.path.isfile(metadata_path):
+            try:
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                base_path = meta.get("basePath", "").strip()
+                if base_path:
+                    clang_args = [f"-I{base_path}"]
+            except (json.JSONDecodeError, OSError):
+                pass
+    if not isinstance(clang_args, list):
+        clang_args = [clang_args] if clang_args else []
+
+    script = _resolve_script(project_root, fc_cfg.get("scriptPath"))
+    if not os.path.isfile(script):
+        print(f"  flowcharts: generator not found: {script}", file=sys.stderr)
+        return
+
+    cmd = [
+        sys.executable,
+        script,
+        "--interface-json",
+        functions_path,
+        "--metadata-json",
+        metadata_path,
+        "--std",
+        std,
+        "--out-dir",
+        out_dir,
+    ]
+    for a in clang_args:
+        if a:
+            # Pass as --clang-arg=... so leading '-' isn't parsed as a new option
+            cmd.append(f"--clang-arg={str(a)}")
+
+    try:
+        r = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True, timeout=120, check=False)
+    except subprocess.TimeoutExpired:
+        print("  flowcharts: generator timed out", file=sys.stderr)
+        return
+    except OSError as e:
+        print(f"  flowcharts: generator failed: {e}", file=sys.stderr)
+        return
+
+    if r.returncode != 0:
+        msg = (r.stderr or r.stdout or f"exit {r.returncode}").strip()
+        print(f"  flowcharts: generator error: {msg}", file=sys.stderr)
+        return
+
+    if (r.stdout or "").strip():
+        for line in r.stdout.strip().splitlines():
+            print(f"  flowcharts: {line}")
+
+    # Render flowcharts to PNG when renderPng is true
+    if not fc_cfg.get("renderPng", False):
+        return
+
+    mmdc = mmdc_path(project_root)
+    puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
+    run_cmd_base = [mmdc]
+    if os.path.isfile(puppeteer):
+        run_cmd_base.extend(["-p", puppeteer])
+
+    items = []
+    for fname in sorted(os.listdir(out_dir)):
+        if not fname.endswith(".json"):
+            continue
+        unit_name = fname[:-5]
+        path = os.path.join(out_dir, fname)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                arr = json.load(f)
+            if not isinstance(arr, list):
+                continue
+            for item in arr:
+                func_name = (item.get("name") or "").strip()
+                flowchart = (item.get("flowchart") or "").strip()
+                if func_name and flowchart:
+                    items.append((unit_name, func_name, flowchart))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    total = len(items)
+    for i, (unit_name, func_name, flowchart) in enumerate(items, 1):
+        print(f"  flowcharts: PNG {i}/{total} {unit_name}/{func_name}...", end="\r", flush=True)
+        png_name = f"{unit_name}_{safe_filename(func_name)}.png"
+        png_path = os.path.join(out_dir, png_name)
+        with tempfile.NamedTemporaryFile(suffix=".mmd", delete=False, mode="w", encoding="utf-8") as tf:
+            tf.write(flowchart)
+            mmd_path = tf.name
+        try:
+            run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png_path]
+            subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=60, check=False)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        try:
+            os.unlink(mmd_path)
+        except OSError:
+            pass
+    if total:
+        print()
+        print(f"  flowcharts: {total} PNGs rendered")
+

@@ -21,6 +21,40 @@ def _add_para(doc, text, style="Normal"):
     return p
 
 
+def _add_mermaid_as_text(doc, mermaid: str, font_small):
+    """Add Mermaid flowchart as monospace text block."""
+    p = doc.add_paragraph()
+    run = p.add_run(mermaid.strip())
+    run.font.name = "Consolas"
+    run.font.size = font_small
+
+
+def _load_flowcharts(flowcharts_dir: str) -> dict:
+    """Return { unit_name: { func_name: flowchart_str } }."""
+    result = {}
+    if not os.path.isdir(flowcharts_dir):
+        return result
+    for fname in os.listdir(flowcharts_dir):
+        if not fname.endswith(".json"):
+            continue
+        unit_name = fname[:-5]
+        path = os.path.join(flowcharts_dir, fname)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                arr = json.load(f)
+            if not isinstance(arr, list):
+                continue
+            result[unit_name] = {}
+            for item in arr:
+                name = (item.get("name") or "").strip()
+                flowchart = (item.get("flowchart") or "").strip()
+                if name and flowchart:
+                    result[unit_name][name] = flowchart
+        except (json.JSONDecodeError, OSError):
+            pass
+    return result
+
+
 def _add_interface_table(doc, interfaces, font_small):
     table = doc.add_table(rows=1, cols=len(COLS))
     table.style = "Table Grid"
@@ -66,6 +100,12 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
     docx_path = docx_path or os.path.join(PROJECT_ROOT, export_cfg.get("docxPath", "output/software_detailed_design.docx"))
     font_size = int(export_cfg.get("docxFontSize", 8))
+    views_cfg = config.get("views", {})
+    fc_cfg = views_cfg.get("flowcharts") if isinstance(views_cfg.get("flowcharts"), dict) else {}
+    flowcharts_enabled = bool(views_cfg.get("flowcharts"))
+    flowcharts_render_png = fc_cfg.get("renderPng", True)
+    flowcharts_dir = os.path.join(OUTPUT_DIR, "flowcharts")
+    flowcharts_map = _load_flowcharts(flowcharts_dir) if flowcharts_enabled else {}
 
     if not os.path.isfile(json_path):
         print(f"Error: {json_path} not found. Run pipeline first.")
@@ -144,11 +184,32 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
             _add_interface_table(doc, interfaces, font_small)
 
             # 2.1.1.3, 2.1.1.4, ... per interface
+            unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
             for iface_idx, iface in enumerate(interfaces, start=3):
                 iface_id = iface.get("interfaceId", "")
                 iface_name = iface.get("interfaceName", "")
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{iface_id}", level=4)
-                _add_para(doc, f"{iface_name} ({iface.get('type', '-')}). {iface.get('description', '') or '-'}")
+                _add_para(doc, f"{iface_name} ({iface.get('type', '-')}). ", style="Normal")
+                func_name = iface.get("name", "")
+                unit_prefix = unit_key.replace(KEY_SEP, "_")
+                flowchart = (
+                    flowcharts_map.get(unit_prefix, {}).get(func_name)
+                    or flowcharts_map.get(unit_name_flowchart, {}).get(func_name)
+                ) if flowcharts_enabled and func_name else None
+                if flowchart:
+                    if flowcharts_render_png:
+                        png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
+                        if os.path.isfile(png_path):
+                            try:
+                                doc.add_picture(png_path, width=Inches(6))
+                            except Exception:
+                                _add_mermaid_as_text(doc, flowchart, font_small)
+                        else:
+                            _add_mermaid_as_text(doc, flowchart, font_small)
+                    else:
+                        _add_mermaid_as_text(doc, flowchart, font_small)
+                else:
+                    _add_para(doc, iface.get("description", "") or "-")
 
         # 2.2 Dynamic Behaviour (per function, with behaviour diagram(s))
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)

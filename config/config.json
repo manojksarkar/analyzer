@@ -1,11 +1,15 @@
 {
   "views": {
-    "interfaceTables": false,
-    "unitDiagrams": {
-      "renderPng": false
+    // "interfaceTables": true,
+    // "unitDiagrams": {
+    //   "renderPng": true
+    // },
+    "flowcharts": {
+      "scriptPath": "fake_flowchart_generator.py",
+      "renderPng": true
     }
     // "behaviourDiagram": {
-    //   "renderPng": false
+    //   "renderPng": true
     // }
   },
   "clang": {
