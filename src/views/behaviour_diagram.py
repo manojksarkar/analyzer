@@ -1,7 +1,7 @@
 """Behaviour diagram view.
 
-Creates behaviour diagrams per external call by delegating to a generator object.
-The generator returns one .mmd per external call (current_key_callee_key.mmd).
+Creates behaviour diagrams when current unit gets called by external units.
+The generator returns one .mmd per external caller (current_key__caller_key.mmd).
 We render each to PNG and build docx rows with pngPath for the exporter.
 """
 
@@ -75,19 +75,19 @@ def run(model, output_dir, model_dir, config):
             continue
         module_name = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
         current_unit = unit_names.get(unit_key, unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
-        calls_ids = functions_data.get(fid, {}).get("callsIds", []) or []
-        external_callees = [c for c in calls_ids if c and "|" in c and c.split("|")[0] != module_name]
+        called_by_ids = functions_data.get(fid, {}).get("calledByIds", []) or []
+        external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] != module_name]
 
         for idx, mmd_path in enumerate(mmd_paths):
-            if idx >= len(external_callees):
+            if idx >= len(external_callers):
                 break
-            callee_fid = external_callees[idx]
-            parts = (callee_fid or "").split(KEY_SEP)
+            caller_fid = external_callers[idx]
+            parts = (caller_fid or "").split(KEY_SEP)
             if len(parts) < 3:
                 continue
             qualified = parts[2]
             external_func = qualified.split("::")[-1] if "::" in qualified else qualified
-            external_unit_external_function = f"{parts[1]}_{external_func}"
+            external_unit_external_function = f"{parts[1]}_{external_func}"  # caller's unit_function
 
             png_path = None
             if render_png and os.path.isfile(mmd_path):

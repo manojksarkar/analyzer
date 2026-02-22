@@ -9,10 +9,10 @@ Two ways to use this module:
    mermaid_paths = gen.generate_all_diagrams(function_key, output_dir)
 
    Takes paths to model JSON files (modules, units, functions).
-   Output: one .mmd file per external call, named
-   current_function_key__callee_function_key.mmd (sanitized for filesystem/mmdc)
+   Output: one .mmd file per external caller, named
+   current_function_key__caller_function_key.mmd (current gets called by external unit)
    e.g. app_main_calculate___math_utils_add_int_int.mmd
-   (no .mmd when the function has no external calls).
+   (no .mmd when the function has no external callers).
 
 2) As a legacy CLI (kept for backwards compatibility with the old `scriptCmd` flow):
 
@@ -42,11 +42,12 @@ SAMPLE_MERMAID = """flowchart TD
 
 
 class FakeBehaviourGenerator:
-    """Fake generator that emits one .mmd per (current_function, callee_function) call.
+    """Fake generator that emits one .mmd per (current_function, caller_function).
+    Current unit gets called by external unit.
 
     Takes paths to modules.json, units.json, functions.json.
-    Output naming: current_key__callee_key.mmd (sanitized; | and , replaced for mmdc compatibility)
-    No output when the function has no external calls.
+    Output naming: current_key__caller_key.mmd (sanitized)
+    No output when the function has no external callers.
     """
 
     def __init__(self, modules_path: str, units_path: str, functions_path: str) -> None:
@@ -55,8 +56,8 @@ class FakeBehaviourGenerator:
         self.functions_path = functions_path
 
     def generate_all_diagrams(self, function_key: str, output_dir: str) -> List[str]:
-        """Create one .mmd per external call, named current_key__callee_key.mmd.
-        Returns empty list if no external calls.
+        """Create one .mmd per external caller, named current_key__caller_key.mmd.
+        Returns empty list if no external callers.
         """
         if not function_key:
             return []
@@ -72,15 +73,15 @@ class FakeBehaviourGenerator:
                 pass
 
         self_module = (function_key or "").split("|")[0] if "|" in (function_key or "") else ""
-        calls_ids = functions_data.get(function_key, {}).get("callsIds", []) or []
+        called_by_ids = functions_data.get(function_key, {}).get("calledByIds", []) or []
         paths = []
 
-        for callee_key in calls_ids:
-            callee_module = (callee_key or "").split("|")[0] if "|" in (callee_key or "") else ""
-            if callee_module == self_module:
+        for caller_key in called_by_ids:
+            caller_module = (caller_key or "").split("|")[0] if "|" in (caller_key or "") else ""
+            if caller_module == self_module:
                 continue
             safe_c = safe_filename((function_key or "").replace("|", "_"))
-            safe_k = safe_filename((callee_key or "").replace("|", "_"))
+            safe_k = safe_filename((caller_key or "").replace("|", "_"))
             name = f"{safe_c}__{safe_k}.mmd"
             mmd_path = os.path.join(output_dir, name)
             try:
