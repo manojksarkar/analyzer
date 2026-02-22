@@ -23,8 +23,59 @@ if _proj not in sys.path:
     sys.path.insert(0, _proj)
 
 from .registry import register
-from utils import mmdc_path, safe_filename
+from utils import mmdc_path, safe_filename, KEY_SEP
 from fake_behaviour_diagram_generator import FakeBehaviourGenerator
+
+
+def _build_docx_rows(model, with_diagram):
+    """Build per-module rows for DOCX Dynamic Behaviour: one row per external call,
+    or one row per function with diagram but no external calls (fallback: current_unit - current_unit_function).
+    Returns { module_name: [ {currentUnit, externalUnitFunction, callerFid}, ... ] }.
+    """
+    units_data = model.get("units", {})
+    functions_data = model.get("functions", {})
+    fid_to_unit = {}
+    for uk, u in units_data.items():
+        for fid in u.get("functionIds", []):
+            fid_to_unit[fid] = uk
+    unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
+                  for uk, u in units_data.items()}
+    by_module = {}
+    for fid in with_diagram:
+        unit_key = fid_to_unit.get(fid)
+        if not unit_key:
+            continue
+        module_name = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
+        current_unit = unit_names.get(unit_key, unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
+        fid_parts = (fid or "").split(KEY_SEP)
+        func_qualified = fid_parts[2] if len(fid_parts) >= 3 else ""
+        func_short = func_qualified.split("::")[-1] if "::" in func_qualified else func_qualified
+        calls_ids = functions_data.get(fid, {}).get("callsIds", []) or []
+        has_external = False
+        for callee_fid in calls_ids:
+            parts = (callee_fid or "").split(KEY_SEP)
+            if len(parts) < 3:
+                continue
+            callee_module = parts[0]
+            if callee_module == module_name:
+                continue
+            has_external = True
+            external_unit = parts[1]
+            qualified = parts[2]
+            external_func = qualified.split("::")[-1] if "::" in qualified else qualified
+            external_unit_external_function = f"{external_unit}_{external_func}"
+            by_module.setdefault(module_name, []).append({
+                "currentUnit": current_unit,
+                "externalUnitFunction": external_unit_external_function,
+                "callerFid": fid,
+            })
+        if not has_external:
+            by_module.setdefault(module_name, []).append({
+                "currentUnit": current_unit,
+                "externalUnitFunction": f"{current_unit}_{func_short}",
+                "callerFid": fid,
+            })
+    return by_module
 
 
 @register("behaviourDiagram")
@@ -111,10 +162,12 @@ def run(model, output_dir, model_dir, config):
     status_path = os.path.join(out_dir, "_with_diagram.json")
     with open(status_path, "w", encoding="utf-8") as f:
         json.dump(with_diagram, f, indent=2)
-    # Map fid -> list of PNG paths (DOCX exporter uses this to show all diagrams per function)
+    # Map fid -> list of PNG paths + per-module docx rows (DOCX exporter uses both)
+    docx_rows = _build_docx_rows(model, with_diagram)
+    pngs_export = {**behaviour_pngs, "_docxRows": docx_rows}
     pngs_path = os.path.join(out_dir, "_behaviour_pngs.json")
     with open(pngs_path, "w", encoding="utf-8") as f:
-        json.dump(behaviour_pngs, f, indent=2)
+        json.dump(pngs_export, f, indent=2)
 
     print()  # newline after progress
     print(f"  output/behaviour_diagrams/ ({count} functions processed)")

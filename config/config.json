@@ -4,13 +4,13 @@
     // "unitDiagrams": {
     //   "renderPng": true
     // },
-    "flowcharts": {
-      "scriptPath": "fake_flowchart_generator.py",
-      "renderPng": true
-    }
-    // "behaviourDiagram": {
+    // "flowcharts": {
+    //   "scriptPath": "fake_flowchart_generator.py",
     //   "renderPng": true
     // }
+    "behaviourDiagram": {
+      "renderPng": true
+    }
   },
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
