@@ -11,7 +11,7 @@ Two ways to use this module:
    Takes paths to model JSON files (modules, units, functions).
    Output: one .mmd file per external call, named
    current_function_key__callee_function_key.mmd
-   (keys sanitized for filesystem, e.g. app_main_calculate___math_utils_add_int_int.mmd)
+   e.g. app|main|calculate|__math|utils|add|int,int.mmd
    (no .mmd when the function has no external calls).
 
 2) As a legacy CLI (kept for backwards compatibility with the old `scriptCmd` flow):
@@ -30,7 +30,6 @@ from typing import List
 _proj = os.path.dirname(os.path.abspath(__file__))
 if _proj not in sys.path:
     sys.path.insert(0, _proj)
-from utils import safe_filename
 
 SAMPLE_MERMAID = """flowchart TD
     A[Start] --> B{Check}
@@ -45,7 +44,7 @@ class FakeBehaviourGenerator:
     """Fake generator that emits one .mmd per (current_function, callee_function) call.
 
     Takes paths to modules.json, units.json, functions.json.
-    Output naming: current_key__callee_key.mmd (keys sanitized for filesystem)
+    Output naming: current_key__callee_key.mmd (e.g. app|main|calculate|__math|utils|add|int,int.mmd)
     No output when the function has no external calls.
     """
 
@@ -79,9 +78,7 @@ class FakeBehaviourGenerator:
             callee_module = (callee_key or "").split("|")[0] if "|" in (callee_key or "") else ""
             if callee_module == self_module:
                 continue
-            safe_current = safe_filename((function_key or "").replace("|", "_"))
-            safe_callee = safe_filename((callee_key or "").replace("|", "_"))
-            name = f"{safe_current}__{safe_callee}.mmd"
+            name = f"{(function_key or '')}__{(callee_key or '')}.mmd"
             mmd_path = os.path.join(output_dir, name)
             try:
                 with open(mmd_path, "w", encoding="utf-8") as f:
