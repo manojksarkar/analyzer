@@ -110,12 +110,20 @@ def _add_interface_table(doc, interfaces, font_small):
     for iface in interfaces:
         iface_type = iface.get("type", "") or "-"
         if "variableType" in iface:
-            data_type = iface.get("variableType", "-") or "-"
-            data_range = iface.get("range", "-") or "-"
+            data_type = iface.get("variableType", "") or "-"
+            data_range = iface.get("range", "") or "NA"
         else:
             params = iface.get("parameters", [])
-            data_type = "; ".join(p.get("type", "") for p in params) if params else "-"
-            data_range = "; ".join(p.get("range", "") for p in params) if params else "-"
+            if params:
+                data_type = "; ".join(
+                    (p.get("type", "") + " " + (p.get("name", "") or "")).strip() or "-"
+                    for p in params
+                )
+                ranges = [p.get("range", "") or "NA" for p in params]
+                data_range = "; ".join(ranges)
+            else:
+                data_type = "VOID"
+                data_range = "NA"
 
         src_dest = iface.get("sourceDest") or "-"
         direction = iface.get("direction") or "-"
