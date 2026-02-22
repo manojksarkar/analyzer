@@ -5,9 +5,10 @@ Two ways to use this module:
 
 1) As a small library from `src/views/behaviour_diagram.py`:
 
-   gen = FakeBehaviourGenerator(functions_path, modules_path, units_path)
+   gen = FakeBehaviourGenerator(modules_path, units_path, functions_path)
    mermaid_paths = gen.generate_for_function(function_key, output_dir)
 
+   Takes paths to model JSON files (modules, units, functions).
    Output: one .mmd file per external call, named
    current_function_key__callee_function_key.mmd
    (keys sanitized for filesystem, e.g. app_main_calculate___math_utils_add_int_int.mmd)
@@ -43,14 +44,15 @@ SAMPLE_MERMAID = """flowchart TD
 class FakeBehaviourGenerator:
     """Fake generator that emits one .mmd per (current_function, callee_function) call.
 
+    Takes paths to modules.json, units.json, functions.json.
     Output naming: current_key__callee_key.mmd (keys sanitized for filesystem)
     No output when the function has no external calls.
     """
 
-    def __init__(self, functions_path: str, modules_path: str, units_path: str) -> None:
-        self.functions_path = functions_path
+    def __init__(self, modules_path: str, units_path: str, functions_path: str) -> None:
         self.modules_path = modules_path
         self.units_path = units_path
+        self.functions_path = functions_path
 
     def generate_for_function(self, function_key: str, output_dir: str) -> List[str]:
         """Create one .mmd per external call, named current_key__callee_key.mmd.

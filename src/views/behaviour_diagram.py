@@ -42,7 +42,7 @@ def run(model, output_dir, model_dir, config):
     functions_path = os.path.join(model_dir, "functions.json")
     modules_path = os.path.join(model_dir, "modules.json")
     units_path = os.path.join(model_dir, "units.json")
-    gen = FakeBehaviourGenerator(functions_path, modules_path, units_path)
+    gen = FakeBehaviourGenerator(modules_path, units_path, functions_path)
 
     render_png = beh_cfg.get("renderPng", True)
     mmdc = mmdc_path(root)
