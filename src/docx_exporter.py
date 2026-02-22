@@ -225,11 +225,14 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
             doc.add_heading(f"{sec_num}.1.{unit_idx}.2 unit interface", level=4)
             _add_interface_table(doc, interfaces, font_small)
 
-            # 2.1.1.3, 2.1.1.4, ... per interface
+            # 2.1.1.3, 2.1.1.4, ... per function only (no sub-header for globals)
             unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
-            for iface_idx, iface in enumerate(interfaces, start=3):
-                iface_id = iface.get("interfaceId", "")
-                doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{iface_id}", level=4)
+            iface_idx = 3
+            for iface in interfaces:
+                if iface.get("type") != "Function":
+                    continue
+                iface_name = iface.get("name", "") or iface.get("interfaceName", "")
+                doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {iface_name}", level=4)
                 func_name = iface.get("name", "")
                 unit_prefix = unit_key.replace(KEY_SEP, "_")
                 flowchart = (
@@ -242,10 +245,10 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
                         png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
                         if not os.path.isfile(png_path):
                             png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
-                    print(f" png_path: {png_path}")
                     _add_requirement_image_table(doc, png_path or "", flowchart, font_small)
                 else:
                     _add_para(doc, iface.get("description", "") or "-")
+                iface_idx += 1
 
         # 2.2 Dynamic Behaviour: one sub-header per external call (from view output)
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)

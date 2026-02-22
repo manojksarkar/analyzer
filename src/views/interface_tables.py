@@ -44,8 +44,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
             loc = dict(f.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            file_code = os.path.splitext(os.path.basename(loc.get("file", "") or ""))[0].upper()
-            interface_name = f"{file_code}_{name}" if (file_code and name) else (name or file_code or "")
+            interface_name = name or ""
             caller_units = {
                 u for cid in f.get("calledByIds", []) or []
                 for u in fid_to_unit.get(cid, []) if u
@@ -92,8 +91,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
             loc = dict(g.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            file_code = os.path.splitext(os.path.basename(loc.get("file", "") or ""))[0].upper()
-            interface_name = f"{file_code}_{name}" if (file_code and name) else (name or file_code or "")
+            interface_name = name or ""
             ge = {
                 "interfaceId": g.get("interfaceId", ""),
                 "globalId": vid,
