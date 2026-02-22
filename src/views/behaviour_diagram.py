@@ -7,10 +7,8 @@ We render each to PNG and build docx rows with pngPath for the exporter.
 
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 
 # fake_behaviour_diagram_generator lives in project root
 _proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,7 +16,7 @@ if _proj not in sys.path:
     sys.path.insert(0, _proj)
 
 from .registry import register
-from utils import mmdc_path, safe_filename, KEY_SEP
+from utils import mmdc_path, KEY_SEP
 from fake_behaviour_diagram_generator import FakeBehaviourGenerator
 
 
@@ -64,7 +62,7 @@ def run(model, output_dir, model_dir, config):
         print(f"  behaviourDiagram: {i}/{total} functions...", end="\r", flush=True)
 
         try:
-            mmd_paths = gen.generate_for_function(fid, out_dir) or []
+            mmd_paths = gen.generate_all_diagrams(fid, out_dir) or []
         except Exception as e:
             print(f"  behaviourDiagram: generator error for {fid}: {e}", file=sys.stderr)
             continue
@@ -94,19 +92,9 @@ def run(model, output_dir, model_dir, config):
             png_path = None
             if render_png and os.path.isfile(mmd_path):
                 png_base = os.path.splitext(os.path.basename(mmd_path))[0]
-                png = os.path.join(out_dir, f"{safe_filename(png_base)}.png")
-                tmp_mmd = None
-                mmdc_input = mmd_path
-                if "|" in mmd_path or "," in mmd_path:
-                    fd, tmp_mmd = tempfile.mkstemp(suffix=".mmd", dir=out_dir)
-                    try:
-                        os.close(fd)
-                        shutil.copy2(mmd_path, tmp_mmd)
-                        mmdc_input = tmp_mmd
-                    except OSError:
-                        tmp_mmd = None
+                png = os.path.join(out_dir, f"{png_base}.png")
+                run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png]
                 try:
-                    run_cmd = run_cmd_base + ["-i", mmdc_input, "-o", png]
                     r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
                     if r2.returncode == 0 and os.path.isfile(png):
                         png_path = png
@@ -119,12 +107,6 @@ def run(model, output_dir, model_dir, config):
                 except subprocess.TimeoutExpired:
                     if idx == 0:
                         print("  behaviourDiagram: mmdc timed out", file=sys.stderr)
-                finally:
-                    if tmp_mmd and os.path.isfile(tmp_mmd):
-                        try:
-                            os.remove(tmp_mmd)
-                        except OSError:
-                            pass
 
             docx_rows.setdefault(module_name, {}).setdefault(current_unit, []).append({
                 "externalUnitFunction": external_unit_external_function,

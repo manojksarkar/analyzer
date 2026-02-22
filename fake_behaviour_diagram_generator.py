@@ -6,7 +6,7 @@ Two ways to use this module:
 1) As a small library from `src/views/behaviour_diagram.py`:
 
    gen = FakeBehaviourGenerator(modules_path, units_path, functions_path)
-   mermaid_paths = gen.generate_for_function(function_key, output_dir)
+   mermaid_paths = gen.generate_all_diagrams(function_key, output_dir)
 
    Takes paths to model JSON files (modules, units, functions).
    Output: one .mmd file per external call, named
@@ -54,7 +54,7 @@ class FakeBehaviourGenerator:
         self.units_path = units_path
         self.functions_path = functions_path
 
-    def generate_for_function(self, function_key: str, output_dir: str) -> List[str]:
+    def generate_all_diagrams(self, function_key: str, output_dir: str) -> List[str]:
         """Create one .mmd per external call, named current_key__callee_key.mmd.
         Returns empty list if no external calls.
         """
