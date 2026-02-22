@@ -8,8 +8,10 @@ Two ways to use this module:
    gen = FakeBehaviourGenerator(functions_path, modules_path, units_path)
    mermaid_paths = gen.generate_for_function(function_key, output_dir)
 
-   The method will create 0..N Mermaid `.mmd` files for the given function
-   under `output_dir` and return their full paths.
+   Output: one .mmd file per external call, named
+   current_function_key__callee_function_key.mmd
+   (keys sanitized for filesystem, e.g. app_main_calculate___math_utils_add_int_int.mmd)
+   (no .mmd when the function has no external calls).
 
 2) As a legacy CLI (kept for backwards compatibility with the old `scriptCmd` flow):
 
@@ -19,10 +21,15 @@ Two ways to use this module:
 """
 
 import argparse
+import json
 import os
-import random
 import sys
 from typing import List
+
+_proj = os.path.dirname(os.path.abspath(__file__))
+if _proj not in sys.path:
+    sys.path.insert(0, _proj)
+from utils import safe_filename
 
 SAMPLE_MERMAID = """flowchart TD
     A[Start] --> B{Check}
@@ -34,36 +41,45 @@ SAMPLE_MERMAID = """flowchart TD
 
 
 class FakeBehaviourGenerator:
-    """Simple generator that always returns the same diagram for any function.
+    """Fake generator that emits one .mmd per (current_function, callee_function) call.
 
-    In a real implementation this is where you would:
-    - Read `functions.json`, `modules.json`, `units.json`
-    - Analyse the specific function and its calls
-    - Emit 0..N Mermaid diagrams based on that analysis
+    Output naming: current_key__callee_key.mmd (keys sanitized for filesystem)
+    No output when the function has no external calls.
     """
 
     def __init__(self, functions_path: str, modules_path: str, units_path: str) -> None:
-        # Paths are accepted for API completeness; we don't actually read them here.
         self.functions_path = functions_path
         self.modules_path = modules_path
         self.units_path = units_path
 
     def generate_for_function(self, function_key: str, output_dir: str) -> List[str]:
-        """Create 0..N Mermaid files for `function_key` and return their paths.
-
-        Fake implementation: randomly creates 0, 1, 2, 3, or 4 diagram files per function.
+        """Create one .mmd per external call, named current_key__callee_key.mmd.
+        Returns empty list if no external calls.
         """
         if not function_key:
             return []
 
         os.makedirs(output_dir, exist_ok=True)
 
-        base = function_key.replace("|", "_").replace(" ", "_")
-        n = random.randint(0, 4)
+        functions_data = {}
+        if os.path.isfile(self.functions_path):
+            try:
+                with open(self.functions_path, "r", encoding="utf-8") as f:
+                    functions_data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        self_module = (function_key or "").split("|")[0] if "|" in (function_key or "") else ""
+        calls_ids = functions_data.get(function_key, {}).get("callsIds", []) or []
         paths = []
 
-        for i in range(n):
-            name = f"{base}_beh_{i}.mmd" if n > 1 else f"{base}_beh.mmd"
+        for callee_key in calls_ids:
+            callee_module = (callee_key or "").split("|")[0] if "|" in (callee_key or "") else ""
+            if callee_module == self_module:
+                continue
+            safe_current = safe_filename((function_key or "").replace("|", "_"))
+            safe_callee = safe_filename((callee_key or "").replace("|", "_"))
+            name = f"{safe_current}__{safe_callee}.mmd"
             mmd_path = os.path.join(output_dir, name)
             try:
                 with open(mmd_path, "w", encoding="utf-8") as f:

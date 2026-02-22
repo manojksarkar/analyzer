@@ -16,8 +16,10 @@ def mmdc_path(project_root: str) -> str:
 
 
 def safe_filename(s: str) -> str:
-    """Filesystem-safe name (| and other unsafe chars -> _)."""
-    return re.sub(r'[<>:"/\\|?*]', "_", s or "")
+    """Filesystem-safe name (| and other unsafe chars -> _).
+    Includes , & ; to avoid Windows cmd parsing issues when paths are passed to mmdc.
+    """
+    return re.sub(r'[<>:"/\\|?*,&;]', "_", s or "")
 
 
 

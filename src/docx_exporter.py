@@ -249,36 +249,25 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
 
         # 2.2 Dynamic Behaviour: one sub-header per external call (from view output)
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)
-        beh_dir = os.path.join(OUTPUT_DIR, "behaviour_diagrams")
-        behaviour_pngs = {}
         docx_rows = {}
-        pngs_path = os.path.join(beh_dir, "_behaviour_pngs.json")
+        pngs_path = os.path.join(OUTPUT_DIR, "behaviour_diagrams", "_behaviour_pngs.json")
         if os.path.isfile(pngs_path):
             try:
                 with open(pngs_path, "r", encoding="utf-8") as f:
-                    pngs_data = json.load(f)
-                docx_rows = pngs_data.pop("_docxRows", {})
-                behaviour_pngs = pngs_data
+                    docx_rows = json.load(f).get("_docxRows", {})
             except (json.JSONDecodeError, IOError):
                 pass
-        behaviour_rows = docx_rows.get(module_name, [])
         beh_idx = 0
-        for row in behaviour_rows:
+        for row in docx_rows.get(module_name, []):
             beh_idx += 1
-            current_unit_short = row.get("currentUnit", "")
-            external_unit_external_function = row.get("externalUnitFunction", "")
-            caller_fid = row.get("callerFid", "")
-            doc.add_heading(f"{sec_num}.2.{beh_idx} {current_unit_short} - {external_unit_external_function}", level=3)
-            png_list = behaviour_pngs.get(caller_fid)
-            if not png_list:
-                png_list = [os.path.join(beh_dir, f"{safe_filename(caller_fid)}.png")]
-            png_path = png_list[0]
-            try:
-                if os.path.isfile(png_path):
+            doc.add_heading(f"{sec_num}.2.{beh_idx} {row.get('currentUnit', '')} - {row.get('externalUnitFunction', '')}", level=3)
+            png_path = row.get("pngPath")
+            if png_path and os.path.isfile(png_path):
+                try:
                     doc.add_picture(png_path, width=Inches(6))
-                else:
+                except Exception:
                     _add_para(doc, f"[Behaviour diagram: {png_path}]")
-            except Exception:
+            elif png_path:
                 _add_para(doc, f"[Behaviour diagram: {png_path}]")
 
     print()  # newline after progress
