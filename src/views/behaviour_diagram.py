@@ -53,7 +53,7 @@ def run(model, output_dir, model_dir, config):
     if os.path.isfile(puppeteer):
         run_cmd_base.extend(["-p", puppeteer])
 
-    docx_rows = {}  # module -> [ {currentUnit, externalUnitFunction, pngPath} ]
+    docx_rows = {}  # module -> unit -> [ {externalUnitFunction, pngPath} ]
     functions = list(model.get("functions", {}))
     total = len(functions)
     count = 0
@@ -108,8 +108,7 @@ def run(model, output_dir, model_dir, config):
                     if idx == 0:
                         print("  behaviourDiagram: mmdc timed out", file=sys.stderr)
 
-            docx_rows.setdefault(module_name, []).append({
-                "currentUnit": current_unit,
+            docx_rows.setdefault(module_name, {}).setdefault(current_unit, []).append({
                 "externalUnitFunction": external_unit_external_function,
                 "pngPath": png_path,
             })

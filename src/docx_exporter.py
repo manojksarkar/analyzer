@@ -258,17 +258,18 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
             except (json.JSONDecodeError, IOError):
                 pass
         beh_idx = 0
-        for row in docx_rows.get(module_name, []):
-            beh_idx += 1
-            doc.add_heading(f"{sec_num}.2.{beh_idx} {row.get('currentUnit', '')} - {row.get('externalUnitFunction', '')}", level=3)
-            png_path = row.get("pngPath")
-            if png_path and os.path.isfile(png_path):
-                try:
-                    doc.add_picture(png_path, width=Inches(6))
-                except Exception:
+        for unit_name, entries in sorted((docx_rows.get(module_name) or {}).items()):
+            for row in entries:
+                beh_idx += 1
+                doc.add_heading(f"{sec_num}.2.{beh_idx} {unit_name} - {row.get('externalUnitFunction', '')}", level=3)
+                png_path = row.get("pngPath")
+                if png_path and os.path.isfile(png_path):
+                    try:
+                        doc.add_picture(png_path, width=Inches(6))
+                    except Exception:
+                        _add_para(doc, f"[Behaviour diagram: {png_path}]")
+                elif png_path:
                     _add_para(doc, f"[Behaviour diagram: {png_path}]")
-            elif png_path:
-                _add_para(doc, f"[Behaviour diagram: {png_path}]")
 
     print()  # newline after progress
     # N Code Metrics, Coding rule, test coverage
