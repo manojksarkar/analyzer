@@ -261,7 +261,11 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
         for unit_name, entries in sorted((docx_rows.get(module_name) or {}).items()):
             for row in entries:
                 beh_idx += 1
-                doc.add_heading(f"{sec_num}.2.{beh_idx} {unit_name} - {row.get('externalUnitFunction', '')}", level=3)
+                ext = row.get('externalUnitFunction', '')
+                subheader = f"{unit_name} - {row.get('currentFunctionName', '')}"
+                if ext:
+                    subheader += f" ({ext})"
+                doc.add_heading(f"{sec_num}.2.{beh_idx} {subheader}", level=3)
                 png_path = row.get("pngPath")
                 if png_path and os.path.isfile(png_path):
                     try:

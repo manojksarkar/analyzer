@@ -87,7 +87,10 @@ def run(model, output_dir, model_dir, config):
                 continue
             qualified = parts[2]
             external_func = qualified.split("::")[-1] if "::" in qualified else qualified
-            external_unit_external_function = f"{parts[1]}_{external_func}"  # caller's unit_function
+            external_unit_external_function = f"{parts[1]} - {external_func}"
+            fid_parts = (fid or "").split(KEY_SEP)
+            func_qualified = fid_parts[2] if len(fid_parts) >= 3 else ""
+            current_function_name = func_qualified.split("::")[-1] if "::" in func_qualified else func_qualified
 
             png_path = None
             if render_png and os.path.isfile(mmd_path):
@@ -109,6 +112,7 @@ def run(model, output_dir, model_dir, config):
                         print("  behaviourDiagram: mmdc timed out", file=sys.stderr)
 
             docx_rows.setdefault(module_name, {}).setdefault(current_unit, []).append({
+                "currentFunctionName": current_function_name,
                 "externalUnitFunction": external_unit_external_function,
                 "pngPath": png_path,
             })
