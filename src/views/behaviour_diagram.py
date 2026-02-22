@@ -16,7 +16,7 @@ if _proj not in sys.path:
     sys.path.insert(0, _proj)
 
 from .registry import register
-from utils import mmdc_path, KEY_SEP
+from utils import log, mmdc_path, KEY_SEP
 from fake_behaviour_diagram_generator import FakeBehaviourGenerator
 
 
@@ -25,7 +25,7 @@ def run(model, output_dir, model_dir, config):
     views_cfg = config.get("views", {})
     beh_val = views_cfg.get("behaviourDiagram")
     if beh_val is None or beh_val is False:
-        print("  behaviourDiagram: skipped (views.behaviourDiagram not enabled)")
+        log("skipped (views.behaviourDiagram not enabled)", component="behaviourDiagram")
         return
     beh_cfg = beh_val if isinstance(beh_val, dict) else {}
 
@@ -64,7 +64,7 @@ def run(model, output_dir, model_dir, config):
         try:
             mmd_paths = gen.generate_all_diagrams(fid, out_dir) or []
         except Exception as e:
-            print(f"  behaviourDiagram: generator error for {fid}: {e}", file=sys.stderr)
+            log("generator error for %s: %s" % (fid, e), component="behaviourDiagram", err=True)
             continue
 
         if not mmd_paths:
@@ -103,13 +103,13 @@ def run(model, output_dir, model_dir, config):
                         png_path = png
                     elif r2.returncode != 0 and idx == 0:
                         msg = (r2.stderr or r2.stdout or f"exit {r2.returncode}").strip()
-                        print(f"  behaviourDiagram: mmdc failed: {msg}", file=sys.stderr)
+                        log("mmdc failed: %s" % msg, component="behaviourDiagram", err=True)
                 except FileNotFoundError:
                     if idx == 0:
-                        print("  behaviourDiagram: mmdc not found. Run: npm install", file=sys.stderr)
+                        log("mmdc not found. Run: npm install", component="behaviourDiagram", err=True)
                 except subprocess.TimeoutExpired:
                     if idx == 0:
-                        print("  behaviourDiagram: mmdc timed out", file=sys.stderr)
+                        log("mmdc timed out", component="behaviourDiagram", err=True)
 
             docx_rows.setdefault(module_name, {}).setdefault(current_unit, []).append({
                 "currentFunctionName": current_function_name,
@@ -122,5 +122,4 @@ def run(model, output_dir, model_dir, config):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"_docxRows": docx_rows}, f, indent=2)
 
-    print()
-    print(f"  output/behaviour_diagrams/ ({count} diagrams)")
+    log("output/behaviour_diagrams/ (%d diagrams)" % count, component="behaviourDiagram")

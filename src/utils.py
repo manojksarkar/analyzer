@@ -1,11 +1,39 @@
 """Shared helpers."""
+import contextlib
 import os
 import re
 import sys
 import json
+import time
+from datetime import datetime, timezone
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
 KEY_SEP = "|"
+
+
+def _ts() -> str:
+    """Current timestamp [HH:MM:SS.mmm]."""
+    return datetime.now(timezone.utc).strftime("%H:%M:%S.") + f"{int(time.time() % 1 * 1000):03d}"
+
+
+def log(msg: str, component: str = None, *, err: bool = False):
+    """Unified log from anywhere. component prefixes the message."""
+    stream = sys.stderr if err else sys.stdout
+    prefix = f"[{_ts()}] "
+    if component:
+        text = f"{prefix}{component}: {msg}"
+    else:
+        text = f"{prefix}{msg}"
+    print(text, file=stream, flush=True)
+
+
+@contextlib.contextmanager
+def timed(component: str):
+    """Context manager: log elapsed time on exit. Use: with timed('flowcharts'): ..."""
+    t0 = time.perf_counter()
+    yield
+    elapsed = time.perf_counter() - t0
+    log(f"{elapsed:.2f}s", component=component)
 
 
 def mmdc_path(project_root: str) -> str:

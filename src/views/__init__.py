@@ -1,4 +1,6 @@
 """View builders: model -> output. Each view reads the model and produces its output."""
+from utils import log, timed
+
 from .registry import VIEW_REGISTRY
 
 
@@ -13,7 +15,8 @@ def run_views(model, output_dir, model_dir, config):
         else:
             enabled = False if val is False else True
         if enabled:
-            run_fn(model, output_dir, model_dir, config)
+            with timed(view_name):
+                run_fn(model, output_dir, model_dir, config)
 
 
 # Import view modules so they register themselves

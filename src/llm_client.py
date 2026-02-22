@@ -115,4 +115,4 @@ def enrich_functions_with_descriptions(functions_data: list, base_path: str, con
     if not _ollama_available(config):
         print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
         return {}
-    return _enrich_functions_loop(functions_data, base_path, config, get_description, "description", "LLM")
+    return _enrich_functions_loop(functions_data, base_path, config, get_description, "description", "LLM-description")

@@ -1,13 +1,13 @@
 {
   "views": {
-    // "interfaceTables": true,
-    // "unitDiagrams": {
-    //   "renderPng": true
-    // },
-    // "flowcharts": {
-    //   "scriptPath": "fake_flowchart_generator.py",
-    //   "renderPng": true
-    // }
+    "interfaceTables": true,
+    "unitDiagrams": {
+      "renderPng": true
+    },
+    "flowcharts": {
+      "scriptPath": "fake_flowchart_generator.py",
+      "renderPng": true
+    },
     "behaviourDiagram": {
       "renderPng": true
     }
@@ -20,7 +20,7 @@
     // "clangIncludePath": "/usr/lib/llvm-17/include"
   },
   "llm": {
-    "descriptions": false,
+    "descriptions": true,
     "baseUrl": "http://localhost:11434",
     "defaultModel": "llama3.2",
     "timeoutSeconds": 60

@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 from .registry import register
-from utils import mmdc_path, safe_filename
+from utils import log, mmdc_path, safe_filename
 
 
 def _resolve_script(project_root: str, script_path: str) -> str:
@@ -62,7 +62,7 @@ def run(model, output_dir, model_dir, config):
 
     script = _resolve_script(project_root, fc_cfg.get("scriptPath"))
     if not os.path.isfile(script):
-        print(f"  flowcharts: generator not found: {script}", file=sys.stderr)
+        log("generator not found: %s" % script, component="flowcharts", err=True)
         return
 
     cmd = [
@@ -85,14 +85,14 @@ def run(model, output_dir, model_dir, config):
     try:
         r = subprocess.run(cmd, cwd=project_root, check=False)
     except subprocess.TimeoutExpired:
-        print("  flowcharts: generator timed out", file=sys.stderr)
+        log("generator timed out", component="flowcharts", err=True)
         return
     except OSError as e:
-        print(f"  flowcharts: generator failed: {e}", file=sys.stderr)
+        log("generator failed: %s" % e, component="flowcharts", err=True)
         return
 
     if r.returncode != 0:
-        print(f"  flowcharts: generator exited with code {r.returncode}", file=sys.stderr)
+        log("generator exited with code %s" % r.returncode, component="flowcharts", err=True)
         return
 
     # Render flowcharts to PNG when renderPng is true
@@ -104,7 +104,7 @@ def run(model, output_dir, model_dir, config):
         try:
             subprocess.run([mmdc, "--help"], capture_output=True, timeout=5, cwd=project_root)
         except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
-            print("  flowcharts: mmdc not found. Run: npm install @mermaid-js/mermaid-cli", file=sys.stderr)
+            log("mmdc not found. Run: npm install @mermaid-js/mermaid-cli", component="flowcharts", err=True)
             return
 
     puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
@@ -144,13 +144,11 @@ def run(model, output_dir, model_dir, config):
             run_cmd = run_cmd_base + ["-i", os.path.abspath(mmd_path), "-o", png_path]
             r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False)
             if r.returncode != 0 and failed == 0:
-                print(file=sys.stderr)
-                print(f"  flowcharts: mmdc failed for {unit_name}/{func_name}: {r.stderr or r.stdout or 'exit ' + str(r.returncode)}", file=sys.stderr)
+                log("mmdc failed for %s/%s: %s" % (unit_name, func_name, r.stderr or r.stdout or "exit " + str(r.returncode)), component="flowcharts", err=True)
                 failed += 1
         except (subprocess.TimeoutExpired, OSError) as e:
             if failed == 0:
-                print(file=sys.stderr)
-                print(f"  flowcharts: mmdc error for {unit_name}/{func_name}: {e}", file=sys.stderr)
+                log("mmdc error for %s/%s: %s" % (unit_name, func_name, e), component="flowcharts", err=True)
                 failed += 1
         finally:
             try:
@@ -158,6 +156,5 @@ def run(model, output_dir, model_dir, config):
             except OSError:
                 pass
     if total:
-        print()
-        print(f"  flowcharts: {total} PNGs rendered")
+        log("%d PNGs rendered" % total, component="flowcharts")
 

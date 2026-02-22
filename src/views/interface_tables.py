@@ -3,7 +3,7 @@ import json
 import os
 
 from .registry import register
-from utils import get_range, short_name, KEY_SEP
+from utils import get_range, log, short_name, KEY_SEP
 
 
 def _strip_ext(name):
@@ -132,6 +132,6 @@ def run(model, output_dir, model_dir, config):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(interface_tables, f, indent=2)
     unit_count = len([k for k in interface_tables if k != "unitNames"])
-    print("  output/interface_tables.json (%d units, %d functions, %d globals)" % (
+    log("output/interface_tables.json (%d units, %d functions, %d globals)" % (
         unit_count, len(functions_data), len(global_variables_data)
-    ))
+    ), component="interfaceTables")

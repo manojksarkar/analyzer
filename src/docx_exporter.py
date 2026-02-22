@@ -5,6 +5,8 @@ import json
 import subprocess
 from typing import Optional, Tuple
 
+from utils import log
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
@@ -136,7 +138,7 @@ def _add_interface_table(doc, interfaces, font_small):
 
 
 def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Optional[str]]:
-    from utils import load_config, safe_filename, KEY_SEP
+    from utils import load_config, log, safe_filename, KEY_SEP
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
@@ -150,7 +152,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     flowcharts_map = _load_flowcharts(flowcharts_dir) if flowcharts_enabled else {}
 
     if not os.path.isfile(json_path):
-        print(f"Error: {json_path} not found. Run pipeline first.")
+        log("%s not found. Run pipeline first." % json_path, component="docx_exporter", err=True)
         return (False, None)
 
     try:
@@ -158,7 +160,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
         from docx.shared import Pt, Inches
         font_small = Pt(font_size)
     except ImportError:
-        print("Error: python-docx not installed. pip install python-docx")
+        log("python-docx not installed. pip install python-docx", component="docx_exporter", err=True)
         return (False, None)
 
     with open(json_path, "r", encoding="utf-8") as f:
@@ -298,7 +300,7 @@ def main():
     docx_path = sys.argv[2] if len(sys.argv) >= 3 else None
     ok, out_path = export_docx(json_path, docx_path)
     if ok:
-        print(f"Exported: {out_path}")
+        log("Exported: %s" % out_path, component="docx_exporter")
     sys.exit(0 if ok else 1)
 
 
