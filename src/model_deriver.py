@@ -162,13 +162,13 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         g["interfaceId"] = f"IF_{proj_code}_{unit_code}_{idx_code}"
 
 
-def _enrich_from_llm(base_path: str, functions_data: dict, config: dict):
+def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict):
     """LLM enrichment for descriptions only. Direction comes from parser (global read/write analysis)."""
     llm = config.get("llm") or {}
     if not llm.get("descriptions", True):
         return
     try:
-        from llm_client import enrich_functions_with_descriptions
+        from llm_client import enrich_functions_with_descriptions, enrich_globals_with_descriptions
     except ImportError:
         return
     funcs_list = list(functions_data.values())
@@ -177,6 +177,12 @@ def _enrich_from_llm(base_path: str, functions_data: dict, config: dict):
         key = f"{f.get('location', {}).get('file', '')}:{f.get('location', {}).get('line', '')}"
         if desc.get(key, {}).get("description"):
             f["description"] = desc[key]["description"]
+    globals_list = list(global_variables_data.values())
+    g_desc = enrich_globals_with_descriptions(globals_list, base_path, config)
+    for g in globals_list:
+        key = f"{g.get('location', {}).get('file', '')}:{g.get('location', {}).get('line', '')}"
+        if g_desc.get(key, {}).get("description"):
+            g["description"] = g_desc[key]["description"]
 
 
 def main():
@@ -186,7 +192,7 @@ def main():
     units_data, unit_by_file = _build_units_modules(base_path, functions_data, global_variables_data)
     idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data)
     _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id)
-    _enrich_from_llm(base_path, functions_data, config)
+    _enrich_from_llm(base_path, functions_data, global_variables_data, config)
 
     # Functions: must be In or Out (never -)
     for f in functions_data.values():

@@ -26,10 +26,25 @@ def extract_source(base_path: str, loc: dict) -> str:
         return ""
     if line_start < 1 or line_end < line_start:
         return ""
-    # 0-based index
     start_idx = max(0, line_start - 1)
     end_idx = min(len(lines), line_end)
     return "".join(lines[start_idx:end_idx]).strip()
+
+
+def extract_source_line(base_path: str, loc: dict) -> str:
+    """Extract single line from file (for globals, which have no endLine)."""
+    file_path = norm_path(loc["file"], base_path)
+    if not os.path.isfile(file_path):
+        return ""
+    line_num = int(loc.get("line", 1))
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except (IOError, OSError):
+        return ""
+    if line_num < 1 or line_num > len(lines):
+        return ""
+    return lines[line_num - 1].strip()
 
 
 def _get_llm_config(config: dict) -> dict:
@@ -90,6 +105,19 @@ One-line description:"""
     return _call_ollama(prompt, config, kind="description")
 
 
+def get_global_description(source: str, config: dict) -> str:
+    if not source:
+        return ""
+    prompt = f"""Describe this C++ global variable in one short sentence (what it stores or represents):
+
+```cpp
+{source}
+```
+
+One-line description:"""
+    return _call_ollama(prompt, config, kind="description")
+
+
 def _make_canonical_key(f: dict) -> str:
     """Stable key file:line for LLM result lookup."""
     loc = f.get("location", {})
@@ -116,3 +144,24 @@ def enrich_functions_with_descriptions(functions_data: list, base_path: str, con
         print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
         return {}
     return _enrich_functions_loop(functions_data, base_path, config, get_description, "description", "LLM-description")
+
+
+def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, processor_fn, result_key: str, label: str) -> dict:
+    result = {}
+    for idx, g in enumerate(globals_list):
+        loc = g.get("location", {})
+        if not loc:
+            continue
+        key = _make_canonical_key(g)
+        source = extract_source_line(base_path, loc)
+        val = processor_fn(source, config)
+        result[key] = {result_key: val}
+        print(f"  {label} [{idx + 1}/{len(globals_list)}] {short_name(g.get('qualifiedName', '')) or '?'}", end="\r", flush=True, file=sys.stderr)
+    print(file=sys.stderr)
+    return result
+
+
+def enrich_globals_with_descriptions(globals_data: list, base_path: str, config: dict) -> dict:
+    if not _ollama_available(config):
+        return {}
+    return _enrich_globals_loop(globals_data, base_path, config, get_global_description, "description", "LLM-global")
