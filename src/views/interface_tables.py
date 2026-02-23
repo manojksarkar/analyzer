@@ -106,7 +106,7 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
                 "range": get_range(g.get("type", ""), dd),
                 "direction": g.get("direction") or "In/Out",
                 "reason": g.get("reason") or g.get("directionReason") or "",
-                "sourceDest": "-",
+                "sourceDest": unit_key.replace(KEY_SEP, "/"),
                 "callerUnits": [],
                 "calleesUnits": [],
             }
