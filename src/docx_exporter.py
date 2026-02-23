@@ -24,11 +24,26 @@ def _add_para(doc, text, style="Normal"):
     return p
 
 
+def _flowchart_display_width(flowchart_mermaid: str) -> float:
+    """Three width tiers by line count: small 2.5\", medium 4\", large 6\"."""
+    if not (flowchart_mermaid or "").strip():
+        return 4.0
+    lines = [ln for ln in flowchart_mermaid.strip().splitlines() if ln.strip()]
+    n = len(lines)
+    if n <= 6:
+        return 2.5
+    if n <= 12:
+        return 4.0
+    return 6.0
+
+
 def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, font_small):
     import os
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
     from docx.shared import Inches
+
+    width_inches = _flowchart_display_width(flowchart_mermaid or "")
 
     table = doc.add_table(rows=1, cols=2)
     table.style = "Table Grid"
@@ -44,9 +59,8 @@ def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, fon
     row[0].text = "Requirements"
     _set_cell_font(row[0], font_small)
 
-    # Right align text
     for para in row[0].paragraphs:
-        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
     # Remove extra spacing in both cells
     for cell in row:
@@ -62,7 +76,7 @@ def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, fon
     if png_path and os.path.isfile(png_path):
         try:
             run = p.add_run()
-            run.add_picture(png_path, width=Inches(4))
+            run.add_picture(png_path, width=Inches(width_inches))
         except Exception:
             run = p.add_run(flowchart_mermaid.strip())
             run.font.name = "Consolas"
