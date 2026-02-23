@@ -11,3 +11,7 @@ int subtract(int a, int b) {
     ++g_utilsCounter;
     return a - b;
 }
+
+int computeBoth(int a, int b) {
+    return add(a, b) + subtract(a, b);
+}

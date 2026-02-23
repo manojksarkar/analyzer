@@ -154,15 +154,6 @@ int fnIfEarlyReturn(int x) {
     return x;
 }
 
-int fnSwitchReturn(int cmd) {
-    switch (cmd) {
-        case 1: return add(1, 2);
-        case 2: return add(3, 4);
-        case 3: return add(5, 6);
-        default: return 0;
-    }
-}
-
 int fnMixedForSwitch(int n) {
     int result = 0;
     for (int i = 0; i < n; ++i) {
@@ -173,20 +164,6 @@ int fnMixedForSwitch(int n) {
         }
     }
     return result;
-}
-
-int fnMixedWhileIfElse(int n) {
-    int i = 0;
-    int out = 0;
-    while (i < n) {
-        if (i % 2 == 0) {
-            out += 10;
-        } else {
-            out += 5;
-        }
-        ++i;
-    }
-    return out;
 }
 
 int fnDeeplyNested(int a, int b, int c) {
@@ -252,9 +229,7 @@ int runFlowTests() {
     total += fnForWithIf(8);
     total += fnWhileWithIf(6);
     total += fnIfEarlyReturn(50);
-    total += fnSwitchReturn(2);
     total += fnMixedForSwitch(6);
-    total += fnMixedWhileIfElse(4);
     total += fnDeeplyNested(1, 1, 1);
     total += fnMultipleReturns(3, 2);
     total += fnLoopNestedIfElse(9);

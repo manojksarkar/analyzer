@@ -11,7 +11,8 @@ int g_globalResult = 0;
 
 int calculate() {
     int sum = add(10, 5);
-    int product = multiply(sum, 3);
+    int both = computeBoth(3, 4);  // math: external->computeBoth->add,subtract (internal)
+    int product = multiply(sum + both, 3);
     return product;
 }
 

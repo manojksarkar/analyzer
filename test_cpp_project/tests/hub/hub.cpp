@@ -5,9 +5,15 @@
 #include "../enum/types.h"
 #include "../structs/point_rect.h"
 
+static int hubValidate(int x) {
+    return x >= 0 ? x : 0;
+}
+
 int hubCompute(int a, int b) {
-    int sum = add(a, b);                // calls math/utils
-    int diff = subtract(sum, b);        // calls math/utils
+    int va = hubValidate(a);
+    int vb = hubValidate(b);
+    int sum = add(va, vb);              // calls math/utils
+    int diff = subtract(sum, vb);       // calls math/utils
     int h = helperCompute(diff);        // calls outer/helper
     int ps = pointSumWithAdd(a, b);     // calls tests/structs
 

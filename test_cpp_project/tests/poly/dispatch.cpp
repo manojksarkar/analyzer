@@ -4,14 +4,18 @@
 
 int g_polymorphismFactor = 1;
 
-int multiply(int a, int b) {
+static int multiplyCore(int a, int b) {
     int result = 0;
     for (int i = 0; i < b; i++) {
         result = add(result, a);
     }
-    // Call into hub so this unit also calls multiple other units indirectly.
+    return result;
+}
+
+int multiply(int a, int b) {
+    int prod = multiplyCore(a, b);
     int h = hubCompute(a, b);
-    return (result + (h % 7)) * g_polymorphismFactor;
+    return (prod + (h % 7)) * g_polymorphismFactor;
 }
 
 int divide(int a, int b) {
