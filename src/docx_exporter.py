@@ -25,16 +25,12 @@ def _add_para(doc, text, style="Normal"):
 
 
 def _flowchart_display_width(flowchart_mermaid: str) -> float:
-    """Three width tiers by line count: small 2.5\", medium 4\", large 6\"."""
+    """Width is either 3\" or 5\" by line count."""
     if not (flowchart_mermaid or "").strip():
-        return 4.0
+        return 5.0
     lines = [ln for ln in flowchart_mermaid.strip().splitlines() if ln.strip()]
     n = len(lines)
-    if n <= 6:
-        return 2.5
-    if n <= 12:
-        return 4.0
-    return 6.0
+    return 3.0 if n <= 5 else 5.0
 
 
 def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, font_small):

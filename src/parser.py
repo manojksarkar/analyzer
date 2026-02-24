@@ -31,6 +31,9 @@ CLANG_ARGS = [
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
+_extra = _clang.get("clangArgs")
+if _extra:
+    CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
 
 
 def get_module_name(file_path: str) -> str:
