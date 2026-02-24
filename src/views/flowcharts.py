@@ -143,18 +143,24 @@ def run(model, output_dir, model_dir, config):
                 tf.write(flowchart)
             run_cmd = run_cmd_base + ["-i", os.path.abspath(mmd_path), "-o", png_path]
             r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False)
-            if r.returncode != 0 and failed == 0:
-                log("mmdc failed for %s/%s: %s" % (unit_name, func_name, r.stderr or r.stdout or "exit " + str(r.returncode)), component="flowcharts", err=True)
+            if r.returncode != 0:
                 failed += 1
+                log("mmdc failed for %s/%s: %s" % (unit_name, func_name, (r.stderr or r.stdout or "exit " + str(r.returncode))[:200]), component="flowcharts", err=True)
         except (subprocess.TimeoutExpired, OSError) as e:
-            if failed == 0:
-                log("mmdc error for %s/%s: %s" % (unit_name, func_name, e), component="flowcharts", err=True)
-                failed += 1
+            failed += 1
+            log("mmdc error for %s/%s: %s" % (unit_name, func_name, e), component="flowcharts", err=True)
+        except Exception as e:
+            failed += 1
+            log("flowchart error for %s/%s: %s" % (unit_name, func_name, e), component="flowcharts", err=True)
         finally:
             try:
-                os.unlink(mmd_path)
+                if os.path.isfile(mmd_path):
+                    os.unlink(mmd_path)
             except OSError:
                 pass
     if total:
-        log("%d PNGs rendered" % total, component="flowcharts")
+        msg = "%d PNGs rendered" % total
+        if failed:
+            msg += " (%d failed)" % failed
+        log(msg, component="flowcharts")
 

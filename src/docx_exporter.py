@@ -25,12 +25,8 @@ def _add_para(doc, text, style="Normal"):
 
 
 def _flowchart_display_width(flowchart_mermaid: str) -> float:
-    """Width is either 3\" or 5\" by line count."""
-    if not (flowchart_mermaid or "").strip():
-        return 5.0
-    lines = [ln for ln in flowchart_mermaid.strip().splitlines() if ln.strip()]
-    n = len(lines)
-    return 3.0 if n <= 5 else 5.0
+    """Flowchart image width in inches (fixed 4\" for all)."""
+    return 4.0
 
 
 def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, font_small):
@@ -265,7 +261,10 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
                         png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
                         if not os.path.isfile(png_path):
                             png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
-                    _add_requirement_image_table(doc, png_path or "", flowchart, font_small)
+                    try:
+                        _add_requirement_image_table(doc, png_path or "", flowchart, font_small)
+                    except Exception:
+                        _add_para(doc, flowchart[:500] + ("..." if len(flowchart) > 500 else ""))
                 else:
                     _add_para(doc, iface.get("description", "") or "-")
                 iface_idx += 1
