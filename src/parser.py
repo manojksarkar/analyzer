@@ -172,6 +172,28 @@ def visit_type_definitions(cursor):
         visit_type_definitions(child)
 
 
+def _get_var_init_value(cursor):
+    """Extract initializer value from VAR_DECL cursor. Returns string or None."""
+    try:
+        if cursor.kind != cindex.CursorKind.VAR_DECL:
+            return None
+        if not cursor.location.file:
+            return None
+        with open(cursor.location.file.name, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        line_num = cursor.location.line
+        if line_num < 1 or line_num > len(lines):
+            return None
+        line = lines[line_num - 1]
+        idx = line.find("=")
+        if idx < 0:
+            return None
+        value = line[idx + 1:].strip().rstrip(";").strip()
+        return value if value else None
+    except (OSError, IOError):
+        return None
+
+
 def visit_definitions(cursor):
     is_function = cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
     is_global_var = (
@@ -213,6 +235,7 @@ def visit_definitions(cursor):
 
     elif is_global_var and cursor.spelling and cursor.location.file:
         var_id = f"{cursor.location.file.name}:{cursor.location.line}"
+        value_str = _get_var_init_value(cursor)
         globals_data[var_id] = {
             "variableId": var_id,
             "variableName": cursor.spelling,
@@ -220,6 +243,8 @@ def visit_definitions(cursor):
             "moduleName": get_module_name(cursor.location.file.name),
             "type": cursor.type.spelling if cursor.type else "",
         }
+        if value_str:
+            globals_data[var_id]["value"] = value_str
 
     for child in cursor.get_children():
         visit_definitions(child)
@@ -424,11 +449,14 @@ def build_metadata():
         except ValueError:
             rel_file = file_path.replace("\\", "/")
         vid = make_global_key(rel_file, g["qualifiedName"])
-        global_variables_dict[vid] = {
+        g_entry = {
             "qualifiedName": g["qualifiedName"],
             "location": {"file": rel_file, "line": int(var_id.rsplit(":", 1)[1])},
             "type": g["type"],
         }
+        if g.get("value"):
+            g_entry["value"] = g["value"]
+        global_variables_dict[vid] = g_entry
 
     return {
         "version": 1,
@@ -447,6 +475,63 @@ def _collect_source_files():
             if f.endswith((".cpp", ".cc", ".cxx")):  # exclude .h/.hpp (often fail as translation units)
                 files.append(os.path.join(root, f))
     return files
+
+
+def _collect_define_files():
+    """Files to scan for #define (includes headers)."""
+    exts = (".cpp", ".cc", ".cxx", ".h", ".hpp")
+    files = []
+    for root, _, fnames in os.walk(MODULE_BASE_PATH):
+        for f in fnames:
+            if f.endswith(exts):
+                files.append(os.path.join(root, f))
+    return files
+
+
+def _scan_defines():
+    """Populate data_dictionary with kind=define entries from #define lines."""
+    files = _collect_define_files()
+    for path in files:
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+        except (OSError, IOError):
+            continue
+        try:
+            rel_file = os.path.relpath(path, MODULE_BASE_PATH).replace("\\", "/")
+        except ValueError:
+            rel_file = path.replace("\\", "/")
+        i = 0
+        n = len(lines)
+        while i < n:
+            raw = lines[i]
+            i += 1
+            stripped = raw.lstrip()
+            if not stripped.startswith("#define"):
+                continue
+            line_no = i
+            # Collect continuation lines ending with backslash
+            macro_lines = [raw.rstrip("\n")]
+            while macro_lines[-1].rstrip().endswith("\\") and i < n:
+                macro_lines.append(lines[i].rstrip("\n"))
+                i += 1
+            full = "\n".join(macro_lines).strip()
+            # Parse "#define NAME [value...]"
+            after = stripped[len("#define"):].strip()
+            if not after:
+                continue
+            parts = after.split(None, 1)
+            name = parts[0]
+            value = parts[1].strip() if len(parts) > 1 else ""
+            key = f"{name}@{rel_file}:{line_no}"
+            data_dictionary[key] = {
+                "kind": "define",
+                "name": name,
+                "qualifiedName": name,
+                "value": value,
+                "text": full,
+                "location": {"file": rel_file, "line": line_no},
+            }
 
 
 def main():
@@ -491,6 +576,8 @@ def main():
     # Add primitives (name as key)
     for name, info in PRIMITIVES.items():
         data_dictionary[name] = {"kind": "primitive", "range": info["range"]}
+    # Add defines (kind=define)
+    _scan_defines()
     with open(os.path.join(model_dir, "dataDictionary.json"), "w", encoding="utf-8") as f:
         json.dump(data_dictionary, f, indent=2)
 

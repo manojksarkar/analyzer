@@ -8,6 +8,7 @@ basePath when not set in config.
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -44,9 +45,10 @@ def run(model, output_dir, model_dir, config):
     metadata_path = os.path.join(model_dir_abs, "metadata.json")
 
     std = "c++17"  # fixed in code
-    clang_args = fc_cfg.get("clangArgs")
-    if clang_args is None:
-        # Derive -I from metadata.json basePath
+    clang_cfg = config.get("clang") or {}
+    clang_args = clang_cfg.get("clangArgs")
+    if not clang_args:
+        # Fallback: derive -I from metadata.json basePath
         clang_args = []
         if os.path.isfile(metadata_path):
             try:
@@ -82,6 +84,7 @@ def run(model, output_dir, model_dir, config):
             # Pass as --clang-arg=... so leading '-' isn't parsed as a new option
             cmd.append(f"--clang-arg={str(a)}")
 
+    log("flowcharts cmd: " + " ".join(shlex.quote(a) for a in cmd), component="flowcharts")
     try:
         r = subprocess.run(cmd, cwd=project_root, check=False)
     except subprocess.TimeoutExpired:

@@ -110,6 +110,8 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
                 "callerUnits": [],
                 "calleesUnits": [],
             }
+            if g.get("value"):
+                ge["value"] = g["value"]
             if g.get("description"):
                 ge["description"] = g["description"]
             entries.append(ge)

@@ -1,15 +1,161 @@
-"""Export interface_tables.json -> Software Detailed Design DOCX. Data only; no derivation logic."""
+"""Export interface_tables.json -> Software Detailed Design DOCX. Unit header table built from model."""
 import os
 import sys
 import json
-import subprocess
-from typing import Optional, Tuple
-
-from utils import log
+from typing import Optional, Tuple, List, Dict, Any
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
+MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
+
+
+def _strip_ext(path: str) -> str:
+    if not path:
+        return path
+    return (path or "").replace("\\", "/")
+
+
+def _path_no_ext(path: str) -> str:
+    base, _ = os.path.splitext(path)
+    return base.replace("\\", "/")
+
+
+def _unit_paths(unit_info: dict) -> List[str]:
+    """Path(s) without extension for this unit (for matching dataDictionary locations)."""
+    path = unit_info.get("path")
+    if not path:
+        return []
+    if isinstance(path, list):
+        return [_strip_ext(p) for p in path]
+    return [_strip_ext(path)]
+
+
+def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
+    """Extract a full declaration snippet starting at start_line (1-based)."""
+    if not abs_file or not os.path.isfile(abs_file) or start_line < 1:
+        return "-"
+    try:
+        with open(abs_file, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except (OSError, IOError):
+        return "-"
+    if start_line > len(lines):
+        return "-"
+
+    i = start_line - 1
+    buf: List[str] = []
+    max_lines = 50
+
+    # For struct/class/enum: only stop at }; (not at ; inside the body)
+    # For var/typedef: stop at ;
+    if kind in ("enum", "struct", "class"):
+        end_marker = "};"
+    else:
+        end_marker = ";"
+
+    for _ in range(max_lines):
+        if i >= len(lines):
+            break
+        buf.append(lines[i].rstrip("\n"))
+        joined = "\n".join(buf).rstrip()
+        if end_marker in joined:
+            break
+        i += 1
+
+    out = "\n".join(buf).strip()
+    return out if out else "-"
+
+
+def _load_model_json(name: str) -> dict:
+    path = os.path.join(MODEL_DIR, f"{name}.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _load_base_path() -> str:
+    meta = _load_model_json("metadata")
+    return (meta.get("basePath") or "").strip()
+
+
+def _build_unit_header_table(
+    unit_info: dict,
+    interfaces: list,
+    data_dictionary: dict,
+    global_variables_data: dict,
+    base_path: str,
+) -> List[Dict[str, str]]:
+    """Build rows for unit header table.
+
+    - Column 1: full declaration as in code
+    - Column 2: value (initializer / underlying type / enumerator values)
+    """
+    rows: List[Dict[str, str]] = []
+    dd = data_dictionary or {}
+    unit_paths_set = set(_unit_paths(unit_info))
+
+    # Globals: use model/globalVariables.json so we can read exact line(s)
+    for gid in unit_info.get("globalVariableIds", []) or []:
+        g = (global_variables_data or {}).get(gid) or {}
+        loc = g.get("location") or {}
+        rel_file = (loc.get("file") or "").replace("\\", "/")
+        line = int(loc.get("line") or 0)
+        abs_file = os.path.join(base_path, rel_file) if base_path and rel_file else ""
+        decl = _read_decl_snippet(abs_file, line, kind="var")
+        info = g.get("value") or "-"
+        rows.append({"declaration": decl, "information": info})
+
+    # typedef, enum, struct, class, define: match by unit file(s)
+    for _type_name, t in dd.items():
+        loc = t.get("location") or {}
+        rel_file = (loc.get("file") or "").replace("\\", "/")
+        type_file = _path_no_ext(rel_file)
+        if not type_file or type_file not in unit_paths_set:
+            continue
+        kind = t.get("kind", "")
+        if kind not in ("typedef", "enum", "struct", "class", "define"):
+            continue
+        line = int(loc.get("line") or 0)
+        abs_file = os.path.join(base_path, rel_file) if base_path and rel_file else ""
+        # Defines: use stored text/value from parser for exact macro
+        if kind == "define":
+            decl = t.get("text") or _read_decl_snippet(abs_file, line, kind="var")
+            info = t.get("value", "") or "-"
+            rows.append({"declaration": decl, "information": info})
+            continue
+
+        decl = _read_decl_snippet(abs_file, line, kind=kind)
+
+        if kind == "typedef":
+            info = t.get("underlyingType", "") or "-"
+        elif kind == "enum":
+            enums = t.get("enumerators", [])
+            parts = []
+            for e in enums:
+                n = e.get("name", "")
+                v = e.get("value")
+                if n:
+                    parts.append(f"{n}={v}" if v is not None else n)
+            info = ", ".join(parts) if parts else "-"
+        else:
+            info = "-"
+
+        rows.append({"declaration": decl, "information": info})
+
+    rows.sort(key=lambda r: (r.get("declaration") or "").lower())
+    return rows
+
+
+def _load_model_for_unit_headers() -> Tuple[dict, dict]:
+    """Load units and dataDictionary from model/ for unit header table. Returns (units_data, data_dictionary)."""
+    units_data = _load_model_json("units")
+    data_dictionary = _load_model_json("dataDictionary")
+    return units_data, data_dictionary
 
 
 def _set_cell_font(cell, font_pt, bold=False):
@@ -24,59 +170,12 @@ def _add_para(doc, text, style="Normal"):
     return p
 
 
-def _flowchart_display_width(flowchart_mermaid: str) -> float:
-    """Flowchart image width in inches (fixed 4\" for all)."""
-    return 4.0
-
-
-def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, font_small):
-    import os
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
-    from docx.shared import Inches
-
-    width_inches = _flowchart_display_width(flowchart_mermaid or "")
-
-    table = doc.add_table(rows=1, cols=2)
-    table.style = "Table Grid"
-
-    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AUTO
-
-    row = table.rows[0].cells
-
-    # Vertical align TOP
-    row[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
-    row[1].vertical_alignment = WD_ALIGN_VERTICAL.TOP
-
-    row[0].text = "Requirements"
-    _set_cell_font(row[0], font_small)
-
-    for para in row[0].paragraphs:
-        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-
-    # Remove extra spacing in both cells
-    for cell in row:
-        for para in cell.paragraphs:
-            para.paragraph_format.space_before = 0
-            para.paragraph_format.space_after = 0
-            para.paragraph_format.line_spacing = 1
-
-    # Clear second cell
-    row[1].text = ""
-    p = row[1].paragraphs[0]
-
-    if png_path and os.path.isfile(png_path):
-        try:
-            run = p.add_run()
-            run.add_picture(png_path, width=Inches(width_inches))
-        except Exception:
-            run = p.add_run(flowchart_mermaid.strip())
-            run.font.name = "Consolas"
-            run.font.size = font_small
-    else:
-        run = p.add_run(flowchart_mermaid.strip())
-        run.font.name = "Consolas"
-        run.font.size = font_small
+def _add_mermaid_as_text(doc, mermaid: str, font_small):
+    """Add Mermaid flowchart as monospace text block."""
+    p = doc.add_paragraph()
+    run = p.add_run(mermaid.strip())
+    run.font.name = "Consolas"
+    run.font.size = font_small
 
 
 def _load_flowcharts(flowcharts_dir: str) -> dict:
@@ -105,6 +204,25 @@ def _load_flowcharts(flowcharts_dir: str) -> dict:
     return result
 
 
+def _add_unit_header_table(doc, unit_header_rows: List[Dict[str, str]], font_small) -> None:
+    """Add 2-column table under unit header: global variables/typedef/enum/define | information."""
+    if not unit_header_rows:
+        return
+    table = doc.add_table(rows=1, cols=2)
+    table.style = "Table Grid"
+    hdr = table.rows[0].cells
+    hdr[0].text = "global variables / typedef / enum / define"
+    hdr[1].text = "information"
+    _set_cell_font(hdr[0], font_small, bold=True)
+    _set_cell_font(hdr[1], font_small, bold=True)
+    for row_data in unit_header_rows:
+        row = table.add_row().cells
+        row[0].text = str(row_data.get("declaration", "-"))
+        row[1].text = str(row_data.get("information", "-"))
+        _set_cell_font(row[0], font_small)
+        _set_cell_font(row[1], font_small)
+
+
 def _add_interface_table(doc, interfaces, font_small):
     table = doc.add_table(rows=1, cols=len(COLS))
     table.style = "Table Grid"
@@ -116,20 +234,12 @@ def _add_interface_table(doc, interfaces, font_small):
     for iface in interfaces:
         iface_type = iface.get("type", "") or "-"
         if "variableType" in iface:
-            data_type = iface.get("variableType", "") or "-"
-            data_range = iface.get("range", "") or "NA"
+            data_type = iface.get("variableType", "-") or "-"
+            data_range = iface.get("range", "-") or "-"
         else:
             params = iface.get("parameters", [])
-            if params:
-                data_type = "; ".join(
-                    (p.get("type", "") + " " + (p.get("name", "") or "")).strip() or "-"
-                    for p in params
-                )
-                ranges = [p.get("range", "") or "NA" for p in params]
-                data_range = "; ".join(ranges)
-            else:
-                data_type = "VOID"
-                data_range = "NA"
+            data_type = "; ".join(p.get("type", "") for p in params) if params else "-"
+            data_range = "; ".join(p.get("range", "") for p in params) if params else "-"
 
         src_dest = iface.get("sourceDest") or "-"
         direction = iface.get("direction") or "-"
@@ -152,7 +262,7 @@ def _add_interface_table(doc, interfaces, font_small):
 
 
 def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Optional[str]]:
-    from utils import load_config, log, safe_filename, KEY_SEP
+    from utils import load_config, safe_filename, KEY_SEP
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
@@ -166,7 +276,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     flowcharts_map = _load_flowcharts(flowcharts_dir) if flowcharts_enabled else {}
 
     if not os.path.isfile(json_path):
-        log("%s not found. Run pipeline first." % json_path, component="docx_exporter", err=True)
+        print(f"Error: {json_path} not found. Run pipeline first.")
         return (False, None)
 
     try:
@@ -174,11 +284,15 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
         from docx.shared import Pt, Inches
         font_small = Pt(font_size)
     except ImportError:
-        log("python-docx not installed. pip install python-docx", component="docx_exporter", err=True)
+        print("Error: python-docx not installed. pip install python-docx")
         return (False, None)
 
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
+
+    units_data, data_dictionary = _load_model_for_unit_headers()
+    global_variables_data = _load_model_json("globalVariables")
+    base_path = _load_base_path()
 
     doc = Document()
     doc.add_heading("Software Detailed Design", 0)
@@ -236,19 +350,25 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
             doc.add_heading(f"{sec_num}.1.{unit_idx}.1 unit header", level=4)
             _add_para(doc, f"Unit: {unit_name_display}")
             _add_para(doc, f"Path: {path_str}")
+            unit_info = units_data.get(unit_key, {})
+            unit_header_rows = _build_unit_header_table(
+                unit_info,
+                interfaces,
+                data_dictionary,
+                global_variables_data,
+                base_path,
+            )
+            _add_unit_header_table(doc, unit_header_rows, font_small)
 
             # 2.1.1.2 unit interface (table)
             doc.add_heading(f"{sec_num}.1.{unit_idx}.2 unit interface", level=4)
             _add_interface_table(doc, interfaces, font_small)
 
-            # 2.1.1.3, 2.1.1.4, ... per function only (no sub-header for globals)
+            # 2.1.1.3, 2.1.1.4, ... per interface
             unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
-            iface_idx = 3
-            for iface in interfaces:
-                if iface.get("type") != "Function":
-                    continue
-                iface_name = iface.get("name", "") or iface.get("interfaceName", "")
-                doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {iface_name}", level=4)
+            for iface_idx, iface in enumerate(interfaces, start=3):
+                iface_id = iface.get("interfaceId", "")
+                doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{iface_id}", level=4)
                 func_name = iface.get("name", "")
                 unit_prefix = unit_key.replace(KEY_SEP, "_")
                 flowchart = (
@@ -256,18 +376,21 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
                     or flowcharts_map.get(unit_name_flowchart, {}).get(func_name)
                 ) if flowcharts_enabled and func_name else None
                 if flowchart:
-                    png_path = None
                     if flowcharts_render_png:
                         png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
                         if not os.path.isfile(png_path):
                             png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
-                    try:
-                        _add_requirement_image_table(doc, png_path or "", flowchart, font_small)
-                    except Exception:
-                        _add_para(doc, flowchart[:500] + ("..." if len(flowchart) > 500 else ""))
+                        if os.path.isfile(png_path):
+                            try:
+                                doc.add_picture(png_path, width=Inches(6))
+                            except Exception:
+                                _add_mermaid_as_text(doc, flowchart, font_small)
+                        else:
+                            _add_mermaid_as_text(doc, flowchart, font_small)
+                    else:
+                        _add_mermaid_as_text(doc, flowchart, font_small)
                 else:
                     _add_para(doc, iface.get("description", "") or "-")
-                iface_idx += 1
 
         # 2.2 Dynamic Behaviour: one sub-header per external call (from view output)
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)
@@ -283,7 +406,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
         for unit_name, entries in sorted((docx_rows.get(module_name) or {}).items()):
             for row in entries:
                 beh_idx += 1
-                ext = row.get('externalUnitFunction', '')
+                ext = row.get("externalUnitFunction", "")
                 subheader = f"{unit_name} - {row.get('currentFunctionName', '')}"
                 if ext:
                     subheader += f" ({ext})"
@@ -317,7 +440,7 @@ def main():
     docx_path = sys.argv[2] if len(sys.argv) >= 3 else None
     ok, out_path = export_docx(json_path, docx_path)
     if ok:
-        log("Exported: %s" % out_path, component="docx_exporter")
+        print(f"Exported: {out_path}")
     sys.exit(0 if ok else 1)
 
 

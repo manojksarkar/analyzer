@@ -1,6 +1,11 @@
 #include "point_rect.h"
 #include "../../math/utils.h"
 
+// Test macros for unit header tables and defines pipeline
+#define DEFAULT_SCALE_FACTOR 2
+#define RECT_DEFAULT_WIDTH   10
+#define RECT_DEFAULT_HEIGHT  20
+
 int pointSumWithAdd(int a, int b) {
     return add(a, b);  // cross-module: tests/structs -> math
 }

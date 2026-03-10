@@ -1,6 +1,10 @@
 #include "types.h"
 #include "../../outer/inner/helper.h"
 
+// Test macros for enum-related defines
+#define STATUS_OK_CODE  0
+#define STATUS_ERR_CODE 1
+
 Status checkStatus(Status s) {
     return s == STATUS_OK ? STATUS_OK : STATUS_ERR;
 }
