@@ -8,6 +8,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
+# Placeholder when no value (no column may be empty)
+NA = "N/A"
 
 
 def _strip_ext(path: str) -> str:
@@ -29,6 +31,28 @@ def _unit_paths(unit_info: dict) -> List[str]:
     if isinstance(path, list):
         return [_strip_ext(p) for p in path]
     return [_strip_ext(path)]
+
+def _struct_info_from_name(name: str) -> str:
+    """Build a short description for a struct, e.g. 'HeapSort' -> 'Structure for Heap sorting'."""
+    if not (name or "").strip():
+        return "Structure for (unnamed)"
+    s = name.strip()
+    # Snake_case -> spaces; CamelCase -> spaces before capitals
+    readable = []
+    for i, c in enumerate(s):
+        if c == "_":
+            readable.append(" ")
+        elif c.isupper() and i > 0 and readable and readable[-1] != " ":
+            readable.append(" ")
+            readable.append(c)
+        else:
+            readable.append(c)
+    base = "".join(readable).strip()
+    # Optional: lowercase trailing 'ing' context, e.g. "Heap Sort" -> "Heap sorting"
+    if base and base.endswith(" Sort"):
+        base = base[:-5] + " sorting"
+    return f"Structure for {base}"
+
 
 def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
     """Extract declaration snippet safely using brace depth."""
@@ -122,12 +146,43 @@ def _load_base_path() -> str:
     return (meta.get("basePath") or "").strip()
 
 
+def _load_abbreviations(project_root: str, config: dict) -> dict:
+    """Load abbreviations from text file in config (llm.abbreviationsPath). Format: one per line, 'abbrev: meaning' or 'abbrev=meaning'; # = comment."""
+    path = (config.get("llm") or {}).get("abbreviationsPath", "").strip()
+    if not path:
+        return {}
+    full_path = os.path.join(project_root, path) if not os.path.isabs(path) else path
+    if not os.path.isfile(full_path):
+        return {}
+    result = {}
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if ":" in line:
+                    k, _, v = line.partition(":")
+                elif "=" in line:
+                    k, _, v = line.partition("=")
+                else:
+                    continue
+                k, v = k.strip(), v.strip()
+                if k:
+                    result[k] = v
+        return result
+    except OSError:
+        return {}
+
+
 def _build_unit_header_table(
     unit_info: dict,
     interfaces: list,
     data_dictionary: dict,
     global_variables_data: dict,
     base_path: str,
+    config: Optional[dict] = None,
+    abbreviations: Optional[dict] = None,
 ) -> List[Dict[str, str]]:
     """Build rows for unit header table.
 
@@ -146,8 +201,10 @@ def _build_unit_header_table(
         line = int(loc.get("line") or 0)
         abs_file = os.path.join(base_path, rel_file) if base_path and rel_file else ""
         decl = _read_decl_snippet(abs_file, line, kind="var")
-        info = g.get("value") or "-"
-        rows.append({"declaration": decl, "information": info})
+        info = g.get("value") or NA
+        if (decl or "").strip() in ("", "-"):
+            decl = g.get("qualifiedName") or g.get("name") or str(gid) or NA
+        rows.append({"declaration": decl or NA, "information": info})
 
     # typedef, enum, define: match by unit file(s)
     for _type_name, t in dd.items():
@@ -166,8 +223,10 @@ def _build_unit_header_table(
         # Defines: use stored text/value from parser for exact macro
         if kind == "define":
             decl = t.get("text") or _read_decl_snippet(abs_file, line, kind="var")
-            info = t.get("value", "") or "-"
-            rows.append({"declaration": decl, "information": info})
+            info = t.get("value", "") or NA
+            if (decl or "").strip() in ("", "-"):
+                decl = t.get("name") or _type_name or NA
+            rows.append({"declaration": decl or NA, "information": info})
             continue
 
         decl = _read_decl_snippet(abs_file, line, kind=kind)
@@ -180,15 +239,31 @@ def _build_unit_header_table(
             enum_ent = dd.get(underlying)
 
             if isinstance(enum_ent, dict) and enum_ent.get("kind") == "enum":
-
                 enums = enum_ent.get("enumerators", []) or []
-                vals = [e.get("value") for e in enums if e.get("value") is not None]
+                parts = []
+                for e in enums:
+                    n = e.get("name", "")
+                    v = e.get("value")
+                    if n:
+                        parts.append(f"{n}={v}" if v is not None else n)
+                info = ", ".join(parts) if parts else NA
 
-                info = ", ".join(str(v) for v in vals) if vals else "-"
-
+            elif isinstance(enum_ent, dict) and enum_ent.get("kind") == "struct":
+                # typedef struct: description from name + fields (on the go, no store)
+                type_name = t.get("name") or underlying or _type_name
+                fields = enum_ent.get("fields") or []
+                info = _struct_info_from_name(type_name)  # fallback
+                if config:
+                    try:
+                        from llm_client import get_struct_description, _ollama_available
+                        if _ollama_available(config) and config.get("llm", {}).get("descriptions", True):
+                            llm_desc = get_struct_description(type_name, fields, config, abbreviations or {})
+                            if llm_desc:
+                                info = llm_desc
+                    except ImportError:
+                        pass
             else:
-                # For typedef struct / typedef basic types → show "-"
-                info = "-"
+                info = NA
         elif kind == "enum":
             enums = t.get("enumerators", [])
             parts = []
@@ -197,21 +272,22 @@ def _build_unit_header_table(
                 v = e.get("value")
                 if n:
                     parts.append(f"{n}={v}" if v is not None else n)
-            info = ", ".join(parts) if parts else "-"
+            info = ", ".join(parts) if parts else NA
         else:
-            # define handled above; this branch should not be reached
-            info = "-"
+            info = NA
 
-        rows.append({"declaration": decl, "information": info})
+        if (decl or "").strip() in ("", "-"):
+            decl = t.get("name") or _type_name or NA
+        rows.append({"declaration": decl or NA, "information": info})
 
     # Deduplicate (same declaration can appear via enum + typedef entries)
     dedup = {}
     for r in rows:
-        d = (r.get("declaration") or "-").strip()
+        d = (r.get("declaration") or NA).strip()
         if d not in dedup:
             dedup[d] = r
         else:
-            # Prefer the richer "name=value" info over "0, 1, 2" when both exist
+            # Prefer the richer "name=value" info when both exist
             existing = dedup[d]
             existing_info = (existing.get("information") or "").strip()
             new_info = (r.get("information") or "").strip()
@@ -387,8 +463,8 @@ def _add_unit_header_table(doc, unit_header_rows: List[Dict[str, str]], font_sma
     _set_cell_font(hdr[1], font_small, bold=True)
     for row_data in unit_header_rows:
         row = table.add_row().cells
-        row[0].text = str(row_data.get("declaration", "-"))
-        row[1].text = str(row_data.get("information", "-"))
+        row[0].text = str(row_data.get("declaration") or NA)
+        row[1].text = str(row_data.get("information") or NA)
         _set_cell_font(row[0], font_small)
         _set_cell_font(row[1], font_small)
 
@@ -460,6 +536,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
+    abbreviations = _load_abbreviations(PROJECT_ROOT, config)
     units_data, data_dictionary = _load_model_for_unit_headers()
     global_variables_data = _load_model_json("globalVariables")
     base_path = _load_base_path()
@@ -527,6 +604,8 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
                 data_dictionary,
                 global_variables_data,
                 base_path,
+                config,
+                abbreviations,
             )
             _add_unit_header_table(doc, unit_header_rows, font_small)
 

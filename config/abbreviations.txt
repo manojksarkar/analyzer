@@ -1,0 +1,13 @@
+# Abbreviations (one per line: abbrev: meaning or abbrev=meaning)
+buf: buffer
+cfg: configuration
+msg: message
+ptr: pointer
+len: length
+cnt: count
+idx: index
+tmp: temporary
+ctx: context
+hdl: handle
+ms: milliseconds
+us: microseconds

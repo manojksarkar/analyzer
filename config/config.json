@@ -24,7 +24,8 @@
     "descriptions": false,
     "baseUrl": "http://localhost:11434",
     "defaultModel": "llama3.2",
-    "timeoutSeconds": 60
+    "timeoutSeconds": 60,
+    "abbreviationsPath": "config/abbreviations.txt"
   },
   "export": {
     "docxPath": "output/software_detailed_design.docx",

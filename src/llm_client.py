@@ -4,6 +4,35 @@ import sys
 
 from utils import norm_path, short_name
 
+
+def load_abbreviations(project_root: str, config: dict) -> dict:
+    """Load abbreviations from text file in config (llm.abbreviationsPath). Format: one per line, 'abbrev: meaning' or 'abbrev=meaning'; # = comment."""
+    path = (config.get("llm") or {}).get("abbreviationsPath", "").strip()
+    if not path:
+        return {}
+    full_path = os.path.join(project_root, path) if not os.path.isabs(path) else path
+    if not os.path.isfile(full_path):
+        return {}
+    result = {}
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if ":" in line:
+                    k, _, v = line.partition(":")
+                elif "=" in line:
+                    k, _, v = line.partition("=")
+                else:
+                    continue
+                k, v = k.strip(), v.strip()
+                if k:
+                    result[k] = v
+        return result
+    except OSError:
+        return {}
+
 # Optional: use requests for HTTP, with fallback
 try:
     import requests
@@ -92,7 +121,15 @@ def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
         return ""
 
 
-def get_description(source: str, config: dict, callee_descriptions: dict = None) -> str:
+def _format_abbreviations(abbreviations: dict) -> str:
+    """Format abbreviations dict as prompt block."""
+    if not abbreviations:
+        return ""
+    lines = [f"  {k}: {v}" for k, v in sorted(abbreviations.items()) if k and v]
+    return "\n".join(lines) + "\n\n" if lines else ""
+
+
+def get_description(source: str, config: dict, callee_descriptions: dict = None, abbreviations: dict = None) -> str:
     if not source:
         return ""
     
@@ -105,11 +142,13 @@ def get_description(source: str, config: dict, callee_descriptions: dict = None)
         if context_parts:
             context = "\n\nContext: This function calls the following functions:\n" + "\n".join(context_parts)
 
-    prompt = f"""Describe this C++ function in one short sentence (what it does, not how).{context}
+    abbrev_block = ""
+    if abbreviations:
+        formatted = _format_abbreviations(abbreviations)
+        if formatted:
+            abbrev_block = "\n\nAlso, consider the following abbreviations:\n\n" + formatted
 
-Also, consider the following abbreviations:
-
-
+    prompt = f"""Describe this C++ function in one short sentence (what it does, not how).{context}{abbrev_block}
 ```cpp
 {source}
 ```
@@ -126,6 +165,24 @@ def get_global_description(source: str, config: dict) -> str:
 ```cpp
 {source}
 ```
+
+One-line description:"""
+    return _call_ollama(prompt, config, kind="description")
+
+
+def get_struct_description(struct_name: str, fields: list, config: dict, abbreviations: dict = None) -> str:
+    """One-line description of a struct from its name and fields. Uses name + member variables, not name alone."""
+    fields_part = ", ".join(f"{f.get('name', '')} ({f.get('type', '')})" for f in (fields or []) if f.get("name"))
+    if not struct_name and not fields_part:
+        return "Structure (unnamed, no fields)."
+    abbrev_block = ""
+    if abbreviations:
+        lines = [f"  {k}: {v}" for k, v in sorted(abbreviations.items()) if k and v]
+        if lines:
+            abbrev_block = "\nConsider these abbreviations when interpreting names:\n" + "\n".join(lines) + "\n\n"
+    prompt = f"""Describe this C/C++ structure in one short sentence. Use both the structure name and the member variables to infer what it represents. Do not rely only on the name—the fields are important.{abbrev_block}
+Struct name: {struct_name or '(unnamed)'}
+Fields: {fields_part or 'none'}
 
 One-line description:"""
     return _call_ollama(prompt, config, kind="description")
@@ -194,7 +251,9 @@ def enrich_functions_with_descriptions(functions_data: list, base_path: str, con
     if not _ollama_available(config):
         print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
         return {}
-    return _enrich_functions_loop(functions_data, base_path, config, get_description, "description", "LLM-description")
+    abbreviations = load_abbreviations(base_path, config)
+    processor = lambda source, cfg, callee: get_description(source, cfg, callee, abbreviations)
+    return _enrich_functions_loop(functions_data, base_path, config, processor, "description", "LLM-description")
 
 
 def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, processor_fn, result_key: str, label: str) -> dict:
