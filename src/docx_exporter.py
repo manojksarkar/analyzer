@@ -177,6 +177,105 @@ def _add_mermaid_as_text(doc, mermaid: str, font_small):
     run.font.name = "Consolas"
     run.font.size = font_small
 
+def _add_behavior_description_table(doc, behavior_description_list):
+    """Create a table with 'Requirements' in first column and bullet points in second column.
+
+    Args:
+        doc: The python-docx Document object
+        behavior_description_list: A list of strings to be displayed as bullet points
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+
+    table = doc.add_table(rows=1, cols=2)
+    table.style = "Table Grid"
+    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AUTO
+
+    row = table.rows[0].cells
+
+    # Vertical align TOP
+    row[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    row[1].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+
+    # First column: Requirements header
+    row[0].text = "Requirements"
+    for para in row[0].paragraphs:
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    # Remove extra spacing in both cells
+    for cell in row:
+        for para in cell.paragraphs:
+            para.paragraph_format.space_before = 0
+            para.paragraph_format.space_after = 0
+            para.paragraph_format.line_spacing = 1
+
+    # Second column: Bullet points from the list
+    if behavior_description_list and isinstance(behavior_description_list, list):
+        # Add bold "Behavior Description" in same column as bullet points
+        p = row[1].paragraphs[0]
+        header_run = p.add_run("Behavior Description\n")
+        header_run.bold = True
+        p.paragraph_format.space_before = 0
+        p.paragraph_format.space_after = 0
+
+        for item in behavior_description_list:
+            # Add new paragraph for each bullet point
+            bullet_p = row[1].add_paragraph()
+            # Add bullet point
+            run = bullet_p.add_run(f"• {item}")
+            bullet_p.paragraph_format.space_before = 0
+            bullet_p.paragraph_format.space_after = 0
+    else:
+        row[1].text = "-"
+
+def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, font_small):
+    import os
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    from docx.shared import Inches
+
+    width_inches = 4.0
+
+    table = doc.add_table(rows=1, cols=2)
+    table.style = "Table Grid"
+
+    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AUTO
+
+    row = table.rows[0].cells
+
+    # Vertical align TOP
+    row[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    row[1].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+
+    row[0].text = "Requirements"
+    _set_cell_font(row[0], font_small)
+
+    for para in row[0].paragraphs:
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    # Remove extra spacing in both cells
+    for cell in row:
+        for para in cell.paragraphs:
+            para.paragraph_format.space_before = 0
+            para.paragraph_format.space_after = 0
+            para.paragraph_format.line_spacing = 1
+
+    # Clear second cell
+    row[1].text = ""
+    p = row[1].paragraphs[0]
+
+    if png_path and os.path.isfile(png_path):
+        try:
+            run = p.add_run()
+            run.add_picture(png_path, width=Inches(width_inches))
+        except Exception:
+            run = p.add_run(flowchart_mermaid.strip())
+            run.font.name = "Consolas"
+            run.font.size = font_small
+    else:
+        run = p.add_run(flowchart_mermaid.strip())
+        run.font.name = "Consolas"
+        run.font.size = font_small
 
 def _load_flowcharts(flowcharts_dir: str) -> dict:
     """Return { unit_name: { func_name: flowchart_str } }."""
@@ -411,6 +510,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
                 if ext:
                     subheader += f" ({ext})"
                 doc.add_heading(f"{sec_num}.2.{beh_idx} {subheader}", level=3)
+                _add_behavior_description_table(doc, row.get("behaviorDescription", None))
                 png_path = row.get("pngPath")
                 if png_path and os.path.isfile(png_path):
                     try:

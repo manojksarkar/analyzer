@@ -92,10 +92,23 @@ def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
         return ""
 
 
-def get_description(source: str, config: dict) -> str:
+def get_description(source: str, config: dict, callee_descriptions: dict = None) -> str:
     if not source:
         return ""
-    prompt = f"""Describe this C++ function in one short sentence (what it does, not how):
+    
+    context = ""
+    if callee_descriptions:
+        context_parts = []
+        for callee_name, desc in callee_descriptions.items():
+            if desc:
+                context_parts.append(f" - {callee_name}: {desc}")
+        if context_parts:
+            context = "\n\nContext: This function calls the following functions:\n" + "\n".join(context_parts)
+
+    prompt = f"""Describe this C++ function in one short sentence (what it does, not how).{context}
+
+Also, consider the following abbreviations:
+
 
 ```cpp
 {source}
@@ -125,16 +138,54 @@ def _make_canonical_key(f: dict) -> str:
 
 
 def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_fn, result_key: str, label: str) -> dict:
+    func_by_key = {}
+    for f in funcs:
+        func_by_key[f["id"]] = f
+
+    calls_map = {}
+    for f in funcs:
+        calls_map[f["id"]] = set(f.get("callsIds", []))
+    
+    processed = set()    
     result = {}
-    for idx, f in enumerate(funcs):
-        loc = f.get("location", {})
-        if not loc:
+    order = []
+
+    all_keys = set(func_by_key.keys())
+
+    while len(processed) < len(all_keys):
+        ready = []
+        for key in all_keys - processed:
+            callees = calls_map.get(key, set())
+            if callees.issubset(processed):
+                ready.append(key)
+            
+        if not ready:
+            ready = list(all_keys - processed)
+        
+        for key in ready:
+            order.append(key)
+            processed.add(key)
+
+    for idx, key in enumerate(order):
+        f = func_by_key.get(key)
+        if not f:
             continue
-        key = _make_canonical_key(f)
+
+        loc = f.get("location", {})
         source = extract_source(base_path, loc)
-        val = processor_fn(source, config)
+
+        callee_descriptions = {}
+        for callee_key in calls_map.get(key,set()):
+            callee_f = func_by_key.get(callee_key)
+            if callee_f:
+                callee_name = callee_f.get("qualifiedName", "").split("::")[-1]
+                callee_desc = result.get(callee_key, {}).get(result_key, "")
+                if callee_desc:
+                    callee_descriptions[callee_name] = callee_desc
+        
+        val = processor_fn(source, config, callee_descriptions)
         result[key] = {result_key: val}
-        print(f"  {label} [{idx + 1}/{len(funcs)}] {short_name(f.get('qualifiedName', '')) or '?'}", end="\r", flush=True, file=sys.stderr)
+        print(f"  {label} [{idx + 1}/{len(order)}] {short_name(f.get('qualifiedName', '')) or '?'}", end="\r", flush=True, file=sys.stderr)
     print(file=sys.stderr)
     return result
 

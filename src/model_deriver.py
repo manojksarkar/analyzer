@@ -171,10 +171,9 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
         from llm_client import enrich_functions_with_descriptions, enrich_globals_with_descriptions
     except ImportError:
         return
-    funcs_list = list(functions_data.values())
+    funcs_list = [{"id": key, **value} for key, value in functions_data.items() ]
     desc = enrich_functions_with_descriptions(funcs_list, base_path, config)
-    for f in funcs_list:
-        key = f"{f.get('location', {}).get('file', '')}:{f.get('location', {}).get('line', '')}"
+    for key, f in functions_data.items():
         if desc.get(key, {}).get("description"):
             f["description"] = desc[key]["description"]
     globals_list = list(global_variables_data.values())
