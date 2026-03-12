@@ -30,42 +30,81 @@ def _unit_paths(unit_info: dict) -> List[str]:
         return [_strip_ext(p) for p in path]
     return [_strip_ext(path)]
 
-
 def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
-    """Extract a full declaration snippet starting at start_line (1-based)."""
+    """Extract declaration snippet safely using brace depth."""
+
     if not abs_file or not os.path.isfile(abs_file) or start_line < 1:
         return "-"
+
     try:
         with open(abs_file, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
     except (OSError, IOError):
         return "-"
+
     if start_line > len(lines):
         return "-"
 
     i = start_line - 1
-    buf: List[str] = []
-    max_lines = 50
+    buf = []
+    max_lines = 60
 
-    # For struct/class/enum: only stop at }; (not at ; inside the body)
-    # For var/typedef: stop at ;
-    if kind in ("enum", "struct", "class"):
-        end_marker = "};"
-    else:
-        end_marker = ";"
+    brace_depth = 0
+    started = False
 
     for _ in range(max_lines):
+
         if i >= len(lines):
             break
-        buf.append(lines[i].rstrip("\n"))
-        joined = "\n".join(buf).rstrip()
-        if end_marker in joined:
+
+        line = lines[i].rstrip("\n")
+        stripped = line.strip()
+
+        # skip leading comments
+        if not started and (not stripped or stripped.startswith("//") or stripped.startswith("/*")):
+            i += 1
+            continue
+
+        buf.append(line)
+
+        if "{" in line:
+            brace_depth += line.count("{")
+            started = True
+
+        if "}" in line:
+            brace_depth -= line.count("}")
+
+        # stop when typedef/struct block closes
+        if started and brace_depth == 0 and ";" in line:
             break
+
+        # stop simple declarations
+        if not started and ";" in line:
+            break
+
         i += 1
 
     out = "\n".join(buf).strip()
-    return out if out else "-"
 
+    # filter out function prototypes
+    first_line = buf[0].strip() if buf else ""
+
+    if "(" in first_line and ")" in first_line and first_line.endswith(";"):
+        return "-"
+
+    if kind == "typedef" and not out.lstrip().startswith("typedef"):
+        return "-"
+
+    if kind == "enum" and not (
+        out.lstrip().startswith("enum") or out.lstrip().startswith("typedef enum")
+    ):
+        return "-"
+
+    if kind == "struct":
+        if not out.lstrip().startswith(("struct", "typedef struct")):
+            return "-"
+
+    return out if out else "-"
 
 def _load_model_json(name: str) -> dict:
     path = os.path.join(MODEL_DIR, f"{name}.json")
@@ -110,7 +149,7 @@ def _build_unit_header_table(
         info = g.get("value") or "-"
         rows.append({"declaration": decl, "information": info})
 
-    # typedef, enum, struct, class, define: match by unit file(s)
+    # typedef, enum, define: match by unit file(s)
     for _type_name, t in dd.items():
         loc = t.get("location") or {}
         rel_file = (loc.get("file") or "").replace("\\", "/")
@@ -118,7 +157,9 @@ def _build_unit_header_table(
         if not type_file or type_file not in unit_paths_set:
             continue
         kind = t.get("kind", "")
-        if kind not in ("typedef", "enum", "struct", "class", "define"):
+        # Include structs/unions so typedef-based structs (and unions) are visible
+        # in the unit header table alongside typedef/enum/define entries.
+        if kind not in ("typedef", "enum", "define"):
             continue
         line = int(loc.get("line") or 0)
         abs_file = os.path.join(base_path, rel_file) if base_path and rel_file else ""
@@ -132,7 +173,22 @@ def _build_unit_header_table(
         decl = _read_decl_snippet(abs_file, line, kind=kind)
 
         if kind == "typedef":
-            info = t.get("underlyingType", "") or "-"
+
+            underlying = (t.get("underlyingType", "") or "").strip()
+
+            # Only show values if typedef is aliasing an enum
+            enum_ent = dd.get(underlying)
+
+            if isinstance(enum_ent, dict) and enum_ent.get("kind") == "enum":
+
+                enums = enum_ent.get("enumerators", []) or []
+                vals = [e.get("value") for e in enums if e.get("value") is not None]
+
+                info = ", ".join(str(v) for v in vals) if vals else "-"
+
+            else:
+                # For typedef struct / typedef basic types → show "-"
+                info = "-"
         elif kind == "enum":
             enums = t.get("enumerators", [])
             parts = []
@@ -143,12 +199,27 @@ def _build_unit_header_table(
                     parts.append(f"{n}={v}" if v is not None else n)
             info = ", ".join(parts) if parts else "-"
         else:
+            # define handled above; this branch should not be reached
             info = "-"
 
         rows.append({"declaration": decl, "information": info})
 
-    rows.sort(key=lambda r: (r.get("declaration") or "").lower())
-    return rows
+    # Deduplicate (same declaration can appear via enum + typedef entries)
+    dedup = {}
+    for r in rows:
+        d = (r.get("declaration") or "-").strip()
+        if d not in dedup:
+            dedup[d] = r
+        else:
+            # Prefer the richer "name=value" info over "0, 1, 2" when both exist
+            existing = dedup[d]
+            existing_info = (existing.get("information") or "").strip()
+            new_info = (r.get("information") or "").strip()
+            if ("=" not in existing_info) and ("=" in new_info):
+                dedup[d] = r
+    out_rows = list(dedup.values())
+    out_rows.sort(key=lambda r: (r.get("declaration") or "").lower())
+    return out_rows
 
 
 def _load_model_for_unit_headers() -> Tuple[dict, dict]:

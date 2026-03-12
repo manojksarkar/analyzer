@@ -18,6 +18,16 @@ typedef struct {
     const char* name;
 } Widget_t;
 
+// Test: another typedef struct (for RAG/unit-header coverage)
+typedef struct {
+    int width;
+    int height;
+} Size_t;
+
+// Test: typedef struct usage
+void initWidget(Widget_t* w, int id, const char* name);
+int areaOfSize(Size_t s);
+
 // Test: union
 union Data {
     int i;

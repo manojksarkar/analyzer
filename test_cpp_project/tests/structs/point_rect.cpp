@@ -36,3 +36,13 @@ void noop() {
 int getPointX(const Point& p) {
     return p.x;
 }
+
+void initWidget(Widget_t* w, int id, const char* name) {
+    if (!w) return;
+    w->id = id;
+    w->name = name;
+}
+
+int areaOfSize(Size_t s) {
+    return s.width * s.height;
+}

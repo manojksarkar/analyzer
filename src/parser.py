@@ -91,6 +91,46 @@ def _get_type_key(cursor):
     return get_qualified_name(cursor)
 
 
+def _maybe_add_typedef_for_struct(name: str, qn: str, loc: dict, rel_file: str):
+    """If this struct comes from a 'typedef struct { ... } Name;' pattern, add a typedef entry."""
+    if not name or not rel_file or not loc:
+        return
+    # Heuristic: look a few lines around the struct location for 'typedef struct' ending with the name.
+    try:
+        abs_path = os.path.join(MODULE_BASE_PATH, rel_file)
+        with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except (OSError, IOError):
+        return
+    line_no = int(loc.get("line", 0)) or 0
+    if line_no < 1 or line_no > len(lines):
+        return
+    start = max(0, line_no - 10)
+    end = min(len(lines), line_no + 10)
+    typedef_line = None
+    for idx in range(start, end):
+        t = lines[idx].strip()
+        if not t or t.startswith("//") or t.startswith("/*") or t.startswith("*"):
+            continue
+        if "typedef struct" in t or "typedef union" in t:
+            typedef_line = idx + 1  # 1-based
+            break
+    if typedef_line is None:
+        return
+    key = f"typedef@{qn}:{rel_file}:{typedef_line}"
+    if key in data_dictionary:
+        return
+    underlying = qn or name
+    data_dictionary[key] = {
+        "kind": "typedef",
+        "name": name,
+        "qualifiedName": qn,
+        "underlyingType": underlying or "(opaque)",
+        "range": get_range_for_type(underlying or ""),
+        "location": {"file": rel_file, "line": typedef_line},
+    }
+
+
 def visit_type_definitions(cursor):
     if not cursor.location.file or not is_project_file(cursor.location.file.name):
         for child in cursor.get_children():
@@ -127,6 +167,9 @@ def visit_type_definitions(cursor):
                 "range": "NA",
                 "location": loc,
             }
+            # Also add typedef entry when this struct participates in a 'typedef struct { ... } Name;' pattern.
+            if cursor.kind == cindex.CursorKind.STRUCT_DECL and cursor.spelling:
+                _maybe_add_typedef_for_struct(name, qn, loc, rel_file)
 
     elif cursor.kind == cindex.CursorKind.ENUM_DECL:
         key = _get_type_key(cursor)
@@ -157,16 +200,19 @@ def visit_type_definitions(cursor):
         if cursor.spelling:
             qn = get_qualified_name(cursor)
             underlying = cursor.type.spelling if cursor.type else ""
-            # Don't overwrite enum with typedef when same name (enum has range)
-            if qn not in data_dictionary or data_dictionary[qn].get("kind") != "enum":
-                data_dictionary[qn] = {
-                    "kind": "typedef",
-                    "name": cursor.spelling,
-                    "qualifiedName": qn,
-                    "underlyingType": underlying or "(opaque)",
-                    "range": get_range_for_type(underlying or ""),
-                    "location": loc,
-                }
+            # If an enum already exists with the same name, keep it (enum has range),
+            # but ALSO store the typedef as a separate entry (unique key) so it can appear in views.
+            key = qn
+            if qn in data_dictionary and data_dictionary[qn].get("kind") == "enum":
+                key = f"typedef@{qn}:{rel_file}:{loc.get('line', '')}"
+            data_dictionary[key] = {
+                "kind": "typedef",
+                "name": cursor.spelling,
+                "qualifiedName": qn,
+                "underlyingType": underlying or "(opaque)",
+                "range": get_range_for_type(underlying or ""),
+                "location": loc,
+            }
 
     for child in cursor.get_children():
         visit_type_definitions(child)
