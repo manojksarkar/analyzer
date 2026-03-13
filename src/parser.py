@@ -26,6 +26,18 @@ _clang_inc = _clang.get("clangIncludePath") or _config.get("clangIncludePath")
 if _llvm and os.path.isfile(_llvm):
     cindex.Config.set_library_file(_llvm)
 
+_modules_cfg = _config.get("modules") or {}
+_MODULE_FOLDERS = []
+for _mod_paths in _modules_cfg.values():
+    if not _mod_paths:
+        continue
+    if isinstance(_mod_paths, str):
+        _mod_paths = [_mod_paths]
+    for _p in _mod_paths:
+        _norm = (_p or "").replace("\\", "/").lstrip("./")
+        if _norm:
+            _MODULE_FOLDERS.append(_norm)
+
 CLANG_ARGS = [
     "-std=c++17",
     f"-I{MODULE_BASE_PATH}",
@@ -52,11 +64,32 @@ global_access_writes = defaultdict(set)  # func_key -> set of var_id
 
 
 def is_project_file(file_path: str) -> bool:
+    """Return True if file should be analysed as part of the project.
+
+    - Always requires the path to be under MODULE_BASE_PATH.
+    - If config.modules is provided, only files whose relative path is inside
+      one of the configured folders are included (folder or any subfolder).
+    - If config.modules is not provided, all files under MODULE_BASE_PATH are included.
+    """
     if not file_path:
         return False
     abs_path = os.path.normcase(os.path.abspath(file_path))
     abs_base = os.path.normcase(os.path.abspath(MODULE_BASE_PATH))
-    return abs_path.startswith(abs_base)
+    if not abs_path.startswith(abs_base):
+        return False
+
+    if _MODULE_FOLDERS:
+        try:
+            rel = os.path.relpath(abs_path, MODULE_BASE_PATH).replace("\\", "/")
+        except ValueError:
+            rel = abs_path.replace("\\", "/")
+        for folder in _MODULE_FOLDERS:
+            # Folder-based match: folder itself or any subpath under it
+            if rel == folder or rel.startswith(folder + "/"):
+                return True
+        return False
+
+    return True
 
 
 def get_qualified_name(cursor):
@@ -519,7 +552,9 @@ def _collect_source_files():
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
             if f.endswith((".cpp", ".cc", ".cxx")):  # exclude .h/.hpp (often fail as translation units)
-                files.append(os.path.join(root, f))
+                path = os.path.join(root, f)
+                if is_project_file(path):
+                    files.append(path)
     return files
 
 
@@ -530,7 +565,9 @@ def _collect_define_files():
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
             if f.endswith(exts):
-                files.append(os.path.join(root, f))
+                path = os.path.join(root, f)
+                if is_project_file(path):
+                    files.append(path)
     return files
 
 

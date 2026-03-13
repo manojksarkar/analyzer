@@ -112,14 +112,53 @@ def load_config(project_root: str) -> dict:
     return config
 
 
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
+_CONFIG_CACHE = load_config(_PROJECT_ROOT)
+_MODULE_OVERRIDES = _CONFIG_CACHE.get("modules") or {}
+
+
+def _resolve_module_from_rel(rel_file: str) -> str:
+    """Resolve module name for a path relative to the project base.
+
+    Behaviour:
+    - If config.modules is provided, only those mappings are used; unmatched
+      paths resolve to "unknown".
+    - If config.modules is not provided, fallback is first path segment
+      (original behaviour).
+    """
+    path = rel_file.replace("\\", "/") if rel_file else ""
+    if not path:
+        return "unknown"
+
+    # Configurable overrides: "modules": { "ModuleName": "folder" | ["folder1", "dir/subdir"] }
+    if _MODULE_OVERRIDES:
+        for module, paths in _MODULE_OVERRIDES.items():
+            if not paths:
+                continue
+            if isinstance(paths, str):
+                paths = [paths]
+            for folder in paths:
+                p = (folder or "").replace("\\", "/").lstrip("./")
+                if not p:
+                    continue
+                # Folder-based match: module is the folder and its subfolders.
+                if path == p or path.startswith(p + "/"):
+                    return module
+        return "unknown"
+
+    parts = path.split("/")
+    return parts[0] if parts and parts[0] else "unknown"
+
+
 def _path_to_module_unit(rel_file: str) -> tuple:
     """Return (module, unitname) from rel_file. Unitname = filename without extension (no subpath)."""
     path = rel_file.replace("\\", "/") if rel_file else ""
-    parts = path.split("/")
-    if not parts:
+    if not path:
         return "unknown", ""
-    module = parts[0]
-    unitname = os.path.splitext(parts[-1])[0]
+    module = _resolve_module_from_rel(path)
+    parts = path.split("/")
+    unitname = os.path.splitext(parts[-1])[0] if parts else ""
     return module, unitname
 
 
@@ -166,9 +205,8 @@ def get_module_name(file_path: str, base_path: str) -> str:
         abs_path = os.path.normcase(os.path.abspath(path))
         if not abs_path.startswith(abs_base):
             return "unknown"
-        rel = os.path.relpath(abs_path, abs_base)
-        parts = rel.replace("\\", "/").split("/")
-        return parts[0] if parts and parts[0] else "unknown"
+        rel = os.path.relpath(abs_path, abs_base).replace("\\", "/")
+        return _resolve_module_from_rel(rel)
     except ValueError:
         return "unknown"
 

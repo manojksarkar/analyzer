@@ -27,6 +27,34 @@
     "timeoutSeconds": 60,
     "abbreviationsPath": "config/abbreviations.txt"
   },
+  // Optional: override default "first folder = module" logic.
+  // Keys are module names; values are folder paths (or list of folders)
+  // relative to the parsed C++ project base (metadata.basePath / parser arg).
+  // When "modules" is present, only .cpp files under these folders (and their
+  // subfolders) are parsed; their module name is taken from this mapping.
+  // Other files are ignored, and no "first folder" fallback is used.
+  // Example:
+  // "modules": {
+  //   "Core": ["src/core", "lib/core"],
+  //   "Tests": "tests"
+  // },
+  "modules": {
+    "core": [
+      "app",
+      "math"
+    ],
+    "support": "outer/inner",
+    "tests_a": [
+      "tests/direction",
+      "tests/enum",
+      "tests/flow"
+    ],
+    "tests_b": [
+      "tests/hub",
+      "tests/poly",
+      "tests/structs"
+    ]
+  },
   "export": {
     "docxPath": "output/software_detailed_design.docx",
     "docxFontSize": 8
