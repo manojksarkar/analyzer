@@ -61,6 +61,8 @@ module_functions = defaultdict(list)
 function_to_module = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
 global_access_writes = defaultdict(set)  # func_key -> set of var_id
+# First non-trivial return expression per function (for behaviour output naming)
+function_return_expr = {}
 
 
 def is_project_file(file_path: str) -> bool:
@@ -307,6 +309,7 @@ def visit_definitions(cursor):
             "mangledName": cursor.mangled_name or "",
             "moduleName": module_name,
             "parameters": params,
+            "returnType": cursor.result_type.spelling if cursor.result_type else "",
             "endLine": end_line,
         }
         module_functions[module_name].append(get_function_key(cursor))
@@ -396,6 +399,16 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
             for child in cursor.get_children():
                 visit_global_access(child, current_key, is_write=True, is_compound=False)
             return
+    elif kind == cindex.CursorKind.RETURN_STMT and current_key:
+        # Capture first return expression as text (e.g. 'release_status')
+        if current_key not in function_return_expr:
+            try:
+                tokens = [t.spelling for t in cursor.get_tokens()]
+                expr = " ".join(t for t in tokens if t not in ("return", ";")).strip()
+                if expr:
+                    function_return_expr[current_key] = expr
+            except Exception:
+                pass
     elif kind == cindex.CursorKind.DECL_REF_EXPR and current_key:
         ref = cursor.referenced
         if ref and ref.kind == cindex.CursorKind.VAR_DECL:
@@ -491,9 +504,33 @@ def build_metadata():
                 "endLine": f.get("endLine", int(f["functionId"].rsplit(":", 1)[1])),
             },
             "params": f["parameters"],
+            "returnType": f.get("returnType", ""),
         }
+        # Attach first return expression text if available (for behaviour output naming)
+        ret_expr = function_return_expr.get(func_key)
+        if ret_expr:
+            functions_dict[fid]["returnExpr"] = ret_expr
 
-    # Add precise caller/callee ids and direction (In/Out) from global read/write analysis
+    # Build globalVariables model entries and map raw var ids to model keys
+    var_id_to_vid = {}
+    for var_id, g in globals_data.items():
+        file_path = var_id.rsplit(":", 1)[0]
+        try:
+            rel_file = os.path.relpath(file_path, base_path).replace("\\", "/")
+        except ValueError:
+            rel_file = file_path.replace("\\", "/")
+        vid = make_global_key(rel_file, g["qualifiedName"])
+        var_id_to_vid[var_id] = vid
+        g_entry = {
+            "qualifiedName": g["qualifiedName"],
+            "location": {"file": rel_file, "line": int(var_id.rsplit(":", 1)[1])},
+            "type": g["type"],
+        }
+        if g.get("value"):
+            g_entry["value"] = g["value"]
+        global_variables_dict[vid] = g_entry
+
+    # Add precise caller/callee ids, global read/write ids and direction (In/Out) from global read/write analysis
     for func_key, f in functions.items():
         fid = func_key_to_fid.get(func_key)
         if not fid:
@@ -511,31 +548,23 @@ def build_metadata():
         functions_dict[fid]["calledByIds"] = sorted(called_ids)
         functions_dict[fid]["callsIds"] = sorted(calls_ids)
 
+        # Map raw global var ids to model keys for reads/writes
+        read_raw = global_access_reads.get(func_key, set())
+        write_raw = global_access_writes.get(func_key, set())
+        read_vids = sorted({var_id_to_vid[v] for v in read_raw if v in var_id_to_vid})
+        write_vids = sorted({var_id_to_vid[v] for v in write_raw if v in var_id_to_vid})
+        if read_vids:
+            functions_dict[fid]["readsGlobalIds"] = read_vids
+        if write_vids:
+            functions_dict[fid]["writesGlobalIds"] = write_vids
+
         # Direction: Get=Out, Set=In, both=In. No direct global access -> In.
-        reads = global_access_reads.get(func_key, set())
-        writes = global_access_writes.get(func_key, set())
-        if writes and not reads:
+        if write_raw and not read_raw:
             functions_dict[fid]["direction"] = "In"
-        elif reads and not writes:
+        elif read_raw and not write_raw:
             functions_dict[fid]["direction"] = "Out"
         else:
             functions_dict[fid]["direction"] = "In"
-
-    for var_id, g in globals_data.items():
-        file_path = var_id.rsplit(":", 1)[0]
-        try:
-            rel_file = os.path.relpath(file_path, base_path).replace("\\", "/")
-        except ValueError:
-            rel_file = file_path.replace("\\", "/")
-        vid = make_global_key(rel_file, g["qualifiedName"])
-        g_entry = {
-            "qualifiedName": g["qualifiedName"],
-            "location": {"file": rel_file, "line": int(var_id.rsplit(":", 1)[1])},
-            "type": g["type"],
-        }
-        if g.get("value"):
-            g_entry["value"] = g["value"]
-        global_variables_dict[vid] = g_entry
 
     return {
         "version": 1,

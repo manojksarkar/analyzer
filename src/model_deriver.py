@@ -184,6 +184,205 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
             g["description"] = g_desc[key]["description"]
 
 
+def _readable_label(name: str) -> str:
+    """Convert identifier or type name into a short human label."""
+    if not name:
+        return ""
+    # Strip common prefixes
+    for prefix in ("g_", "s_", "t_"):
+        if name.startswith(prefix):
+            name = name[len(prefix) :]
+            break
+    name = name.replace("_", " ")
+    name = name.strip()
+    # Ignore very short/meaningless identifiers (e.g. "i", "v", "x")
+    if len(name) <= 2:
+        return ""
+    # Simple capitalization
+    return name[:1].upper() + name[1:] if name else ""
+
+
+def _propagate_global_access(functions_data: dict):
+    """Propagate global reads/writes along call graph so outers see inner globals."""
+    # Build adjacency and initial direct sets
+    calls_map = {}
+    reads_map = {}
+    writes_map = {}
+    for fid, f in functions_data.items():
+        calls_map[fid] = list(f.get("callsIds") or [])
+        reads_map[fid] = set(f.get("readsGlobalIds") or [])
+        writes_map[fid] = set(f.get("writesGlobalIds") or [])
+
+    # Fixed-point propagation: repeatedly add callee globals to caller
+    changed = True
+    while changed:
+        changed = False
+        for fid, callees in calls_map.items():
+            for cid in callees:
+                if cid not in reads_map or cid not in writes_map:
+                    continue
+                before_r = len(reads_map[fid])
+                before_w = len(writes_map[fid])
+                reads_map[fid] |= reads_map[cid]
+                writes_map[fid] |= writes_map[cid]
+                if len(reads_map[fid]) != before_r or len(writes_map[fid]) != before_w:
+                    changed = True
+
+    # Store transitive sets back into functions_data
+    for fid, f in functions_data.items():
+        if reads_map.get(fid):
+            f["readsGlobalIdsTransitive"] = sorted(reads_map[fid])
+        if writes_map.get(fid):
+            f["writesGlobalIdsTransitive"] = sorted(writes_map[fid])
+
+
+def _enrich_behaviour_names(functions_data: dict, global_variables_data: dict):
+    """Populate behaviourInputName / behaviourOutputName statically from params, globals, returnType."""
+    primitive_types = {"void", "int", "bool", "float", "double", "char", "short", "long"}
+    for fid, f in functions_data.items():
+        params = f.get("parameters") or f.get("params") or []
+        # Prefer transitive read/write sets if present (includes inner calls)
+        reads_ids = f.get("readsGlobalIdsTransitive") or f.get("readsGlobalIds") or []
+        writes_ids = f.get("writesGlobalIdsTransitive") or f.get("writesGlobalIds") or []
+        return_type = (f.get("returnType") or "").strip()
+        return_expr = (f.get("returnExpr") or "").strip()
+
+        in_label = ""
+        out_label = ""
+
+        # Input Name: prefer main parameter; fall back to first written global; then first read global.
+        main_param_name = ""
+        if isinstance(params, list) and params:
+            main_param_name = (params[0].get("name") or "").strip()
+        if main_param_name:
+            in_label = _readable_label(main_param_name)
+        elif writes_ids:
+            g = (global_variables_data or {}).get(writes_ids[0]) or {}
+            g_name = (g.get("qualifiedName") or "").split("::")[-1]
+            in_label = _readable_label(g_name)
+        elif reads_ids:
+            g = (global_variables_data or {}).get(reads_ids[0]) or {}
+            g_name = (g.get("qualifiedName") or "").split("::")[-1]
+            in_label = _readable_label(g_name)
+
+        # Output Name: prefer simple return expression identifier; then non-primitive return type; else written/read global.
+        # Try to use a simple identifier from the return expression, e.g. 'release_status'
+        simple_ret_ident = ""
+        if return_expr:
+            # Heuristic: take first token before any operators or punctuation
+            for ch in "();,+-*/%&|^<>!?:":
+                return_expr = return_expr.replace(ch, " ")
+            parts = [p for p in return_expr.split() if p]
+            cand = parts[0] if parts else ""
+            if cand and (cand[0].isalpha() or cand[0] == "_"):
+                simple_ret_ident = cand
+        if simple_ret_ident:
+            out_label = _readable_label(simple_ret_ident)
+        else:
+            base_ret = return_type.split()[-1] if return_type else ""
+            if base_ret and base_ret not in primitive_types:
+                out_label = _readable_label(base_ret)
+        if not out_label and writes_ids:
+            g = (global_variables_data or {}).get(writes_ids[0]) or {}
+            g_name = (g.get("qualifiedName") or "").split("::")[-1]
+            out_label = _readable_label(g_name)
+        elif not out_label and reads_ids:
+            g = (global_variables_data or {}).get(reads_ids[0]) or {}
+            g_name = (g.get("qualifiedName") or "").split("::")[-1]
+            out_label = _readable_label(g_name)
+
+        # As a last resort, derive from function base name itself.
+        if (not in_label) or (not out_label):
+            qn = f.get("qualifiedName", "") or ""
+            base_name = qn.split("::")[-1] if qn else ""
+            base_fn = _readable_label(base_name)
+            if not in_label:
+                in_label = (base_fn + " input").strip() if base_fn else "Behaviour input"
+            if not out_label:
+                out_label = (base_fn + " result").strip() if base_fn else "Behaviour result"
+
+        f["behaviourInputName"] = in_label
+        f["behaviourOutputName"] = out_label
+
+
+def _static_behaviour_name_is_poor(f: dict) -> bool:
+    """True if we should ask LLM to improve Input/Output names (generic or function-name fallback)."""
+    inp = (f.get("behaviourInputName") or "").strip()
+    out = (f.get("behaviourOutputName") or "").strip()
+    if not inp or not out:
+        return True
+    if inp.endswith(" input") or inp.endswith(" result"):
+        return True
+    if out.endswith(" input") or out.endswith(" result"):
+        return True
+    return False
+
+
+def _enrich_behaviour_names_llm(
+    base_path: str,
+    functions_data: dict,
+    global_variables_data: dict,
+    config: dict,
+):
+    """Use LLM to improve behaviourInputName/behaviourOutputName when static names are poor. Uses abbreviations."""
+    llm = config.get("llm") or {}
+    if not llm.get("behaviourNames", True):
+        return
+    try:
+        from llm_client import (
+            _ollama_available,
+            extract_source,
+            get_behaviour_names,
+            load_abbreviations,
+        )
+    except ImportError:
+        return
+    if not _ollama_available(config):
+        return
+    abbreviations = load_abbreviations(PROJECT_ROOT, config)
+    order = list(functions_data.keys())
+    n = len(order)
+    for idx, fid in enumerate(order):
+        f = functions_data.get(fid)
+        if not f or not _static_behaviour_name_is_poor(f):
+            continue
+        loc = f.get("location") or {}
+        source = extract_source(base_path, loc)
+        if not source:
+            continue
+        params = f.get("parameters") or f.get("params") or []
+        reads_ids = f.get("readsGlobalIdsTransitive") or f.get("readsGlobalIds") or []
+        writes_ids = f.get("writesGlobalIdsTransitive") or f.get("writesGlobalIds") or []
+        def _globals_list(gids):
+            out = []
+            for gid in gids:
+                g = (global_variables_data or {}).get(gid) or {}
+                out.append({
+                    "name": (g.get("qualifiedName") or "").split("::")[-1],
+                    "qualifiedName": g.get("qualifiedName", ""),
+                    "type": g.get("type", ""),
+                    "description": g.get("description", ""),
+                })
+            return out
+        globals_read = _globals_list(reads_ids)
+        globals_written = _globals_list(writes_ids)
+        return_type = (f.get("returnType") or "").strip()
+        return_expr = (f.get("returnExpr") or "").strip()
+        draft_input = (f.get("behaviourInputName") or "").strip()
+        draft_output = (f.get("behaviourOutputName") or "").strip()
+        res = get_behaviour_names(
+            source, params, globals_read, globals_written, return_type, return_expr,
+            draft_input, draft_output, config, abbreviations,
+        )
+        if res.get("behaviourInputName"):
+            f["behaviourInputName"] = res["behaviourInputName"]
+        if res.get("behaviourOutputName"):
+            f["behaviourOutputName"] = res["behaviourOutputName"]
+        qn = (f.get("qualifiedName") or "").split("::")[-1]
+        print(f"  LLM behaviour names [{idx + 1}/{n}] {qn or fid}", end="\r", flush=True)
+    print(flush=True)
+
+
 def main():
     base_path, project_name, functions_data, global_variables_data = _load_model()
     config = load_config(PROJECT_ROOT)
@@ -191,6 +390,12 @@ def main():
     units_data, unit_by_file = _build_units_modules(base_path, functions_data, global_variables_data)
     idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data)
     _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id)
+    # Propagate global access along call graph so outers inherit inner globals
+    _propagate_global_access(functions_data)
+    # Static behaviour names (Input Name / Output Name) from params/globals/returnType
+    _enrich_behaviour_names(functions_data, global_variables_data)
+    # LLM polish for poor static names (uses abbreviations)
+    _enrich_behaviour_names_llm(base_path, functions_data, global_variables_data, config)
     _enrich_from_llm(base_path, functions_data, global_variables_data, config)
 
     # Functions: must be In or Out (never -)

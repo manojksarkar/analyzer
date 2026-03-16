@@ -12,6 +12,24 @@ COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Rang
 NA = "N/A"
 
 
+def _readable_label(name: str) -> str:
+    """Convert an identifier like 'g_readWrite' or 'sb_index' into a human label."""
+    if not name:
+        return ""
+    # Strip common global prefixes
+    for prefix in ("g_", "s_", "t_"):
+        if name.startswith(prefix):
+            name = name[len(prefix) :]
+            break
+    # Replace underscores with spaces
+    name = name.replace("_", " ")
+    # Ignore very short/meaningless identifiers (e.g. "i", "v", "x")
+    if len(name.strip()) <= 2:
+        return ""
+    # Basic title-case
+    return name[:1].upper() + name[1:] if name else ""
+
+
 def _strip_ext(path: str) -> str:
     if not path:
         return path
@@ -324,33 +342,32 @@ def _add_mermaid_as_text(doc, mermaid: str, font_small):
     run.font.name = "Consolas"
     run.font.size = font_small
 
-def _add_behavior_description_table(doc, behavior_description_list):
-    """Create a table with 'Requirements' in first column and bullet points in second column.
+def _add_behavior_description_table(doc, behavior_description_list, input_name: str = "", output_name: str = ""):
+    """Create a table with Requirements, Risk, Capacity, Input Name, Output Name rows.
 
     Args:
         doc: The python-docx Document object
         behavior_description_list: A list of strings to be displayed as bullet points
+        input_name: Short human label for input of this behaviour
+        output_name: Short human label for output of this behaviour
     """
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
 
-    table = doc.add_table(rows=1, cols=2)
+    table = doc.add_table(rows=5, cols=2)
     table.style = "Table Grid"
+
+    # Row 0: Requirements
+    row0 = table.rows[0].cells
+    row0[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    row0[1].vertical_alignment = WD_ALIGN_VERTICAL.TOP
     table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AUTO
-
-    row = table.rows[0].cells
-
-    # Vertical align TOP
-    row[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
-    row[1].vertical_alignment = WD_ALIGN_VERTICAL.TOP
-
-    # First column: Requirements header
-    row[0].text = "Requirements"
-    for para in row[0].paragraphs:
+    row0[0].text = "Requirements"
+    for para in row0[0].paragraphs:
         para.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-    # Remove extra spacing in both cells
-    for cell in row:
+    # Remove extra spacing and fill second column for row 0
+    for cell in row0:
         for para in cell.paragraphs:
             para.paragraph_format.space_before = 0
             para.paragraph_format.space_after = 0
@@ -358,22 +375,38 @@ def _add_behavior_description_table(doc, behavior_description_list):
 
     # Second column: Bullet points from the list
     if behavior_description_list and isinstance(behavior_description_list, list):
-        # Add bold "Behavior Description" in same column as bullet points
-        p = row[1].paragraphs[0]
+        p = row0[1].paragraphs[0]
         header_run = p.add_run("Behavior Description\n")
         header_run.bold = True
         p.paragraph_format.space_before = 0
         p.paragraph_format.space_after = 0
-
         for item in behavior_description_list:
-            # Add new paragraph for each bullet point
-            bullet_p = row[1].add_paragraph()
-            # Add bullet point
-            run = bullet_p.add_run(f"• {item}")
+            bullet_p = row0[1].add_paragraph()
+            bullet_p.add_run(f"• {item}")
             bullet_p.paragraph_format.space_before = 0
             bullet_p.paragraph_format.space_after = 0
     else:
-        row[1].text = "-"
+        row0[1].text = "-"
+
+    # Row 1: Risk (default Medium for now)
+    row1 = table.rows[1].cells
+    row1[0].text = "Risk"
+    row1[1].text = "Medium"
+
+    # Row 2: Capacity (default Common for now)
+    row2 = table.rows[2].cells
+    row2[0].text = "Capacity"
+    row2[1].text = "Common"
+
+    # Row 3: Input Name (second column filled from model when available)
+    row3 = table.rows[3].cells
+    row3[0].text = "Input Name"
+    row3[1].text = input_name or ""
+
+    # Row 4: Output Name (second column filled from model when available)
+    row4 = table.rows[4].cells
+    row4[0].text = "Output Name"
+    row4[1].text = output_name or ""
 
 def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, font_small):
     import os
@@ -539,6 +572,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     abbreviations = _load_abbreviations(PROJECT_ROOT, config)
     units_data, data_dictionary = _load_model_for_unit_headers()
     global_variables_data = _load_model_json("globalVariables")
+    functions_data = _load_model_json("functions")
     base_path = _load_base_path()
 
     doc = Document()
@@ -656,11 +690,45 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
             for row in entries:
                 beh_idx += 1
                 ext = row.get("externalUnitFunction", "")
-                subheader = f"{unit_name} - {row.get('currentFunctionName', '')}"
+                current_fn = row.get("currentFunctionName", "") or ""
+                subheader = f"{unit_name} - {current_fn}"
                 if ext:
                     subheader += f" ({ext})"
                 doc.add_heading(f"{sec_num}.2.{beh_idx} {subheader}", level=3)
-                _add_behavior_description_table(doc, row.get("behaviorDescription", None))
+                # Prefer precomputed behaviourInputName / behaviourOutputName from model_deriver
+                input_label = ""
+                output_label = ""
+                try:
+                    for fid, f in (functions_data or {}).items():
+                        parts = fid.split("|")
+                        if len(parts) < 3:
+                            continue
+                        mod, unit, _ = parts[0], parts[1], parts[2]
+                        if mod != module_name or unit != unit_name:
+                            continue
+                        qn = f.get("qualifiedName", "") or ""
+                        base_name = qn.split("::")[-1] if qn else ""
+                        if base_name != current_fn:
+                            continue
+                        input_label = (f.get("behaviourInputName") or "").strip()
+                        output_label = (f.get("behaviourOutputName") or "").strip()
+                        break
+                except Exception:
+                    input_label = input_label or ""
+                    output_label = output_label or ""
+
+                # Fallback if model is old/missing fields
+                if not input_label:
+                    base_fn_label = _readable_label(current_fn)
+                    input_label = (base_fn_label + " input").strip() if base_fn_label else "Behaviour input"
+                if not output_label:
+                    base_fn_label = _readable_label(current_fn)
+                    output_label = (base_fn_label + " result").strip() if base_fn_label else "Behaviour result"
+
+                _add_behavior_description_table(doc, row.get("behaviorDescription", None), input_label, output_label)
+                p = doc.add_paragraph()
+                r = p.add_run("Behaviour")
+                r.bold = True
                 png_path = row.get("pngPath")
                 if png_path and os.path.isfile(png_path):
                     try:

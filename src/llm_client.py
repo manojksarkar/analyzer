@@ -188,6 +188,77 @@ One-line description:"""
     return _call_ollama(prompt, config, kind="description")
 
 
+def get_behaviour_names(
+    source: str,
+    params: list,
+    globals_read: list,
+    globals_written: list,
+    return_type: str,
+    return_expr: str,
+    draft_input: str,
+    draft_output: str,
+    config: dict,
+    abbreviations: dict = None,
+) -> dict:
+    """Ask LLM for short human-readable Input Name and Output Name. Uses abbreviations.
+    globals_read: list of globals this function reads (input side).
+    globals_written: list of globals this function writes (output side).
+    Returns {"behaviourInputName": str, "behaviourOutputName": str}; may be empty if parse fails.
+    """
+    if not source:
+        return {}
+    params_part = ", ".join(f"{p.get('name', '')} ({p.get('type', '')})" for p in (params or []) if p.get("name") or p.get("type"))
+
+    def _globals_block(label: str, glist: list) -> str:
+        if not glist:
+            return ""
+        lines = []
+        for g in glist:
+            name = g.get("name") or (g.get("qualifiedName") or "").split("::")[-1]
+            typ = g.get("type", "")
+            desc = (g.get("description") or "").strip()
+            lines.append(f"  - {name} ({typ})" + (f": {desc}" if desc else ""))
+        return "\n" + label + "\n" + "\n".join(lines)
+
+    globals_read_part = _globals_block("Globals read (inputs):", globals_read or [])
+    globals_written_part = _globals_block("Globals written (outputs):", globals_written or [])
+
+    abbrev_block = ""
+    if abbreviations:
+        formatted = _format_abbreviations(abbreviations)
+        if formatted:
+            abbrev_block = "\n\nUse these abbreviations when naming (expand to full phrase where relevant):\n\n" + formatted
+    prompt = f"""Given this C++ function, suggest two short human-readable labels for documentation:
+1) Input Name: what this behaviour takes as input (parameters + globals it reads).
+2) Output Name: what it produces (return value or globals it writes).
+
+{abbrev_block}
+Function:
+```cpp
+{source}
+```
+Parameters: {params_part or 'none'}
+Return type: {return_type or 'void'}
+Return expression: {return_expr or 'none'}{globals_read_part}{globals_written_part}
+
+Current draft labels (improve if they are generic or code-like): Input="{draft_input or ''}", Output="{draft_output or ''}"
+
+Reply with exactly two lines in this format (no other text):
+Input Name: <short phrase>
+Output Name: <short phrase>"""
+    raw = _call_ollama(prompt, config, kind="behaviour_names")
+    if not raw:
+        return {}
+    result = {}
+    for line in raw.split("\n"):
+        line = line.strip()
+        if line.lower().startswith("input name:"):
+            result["behaviourInputName"] = line[11:].strip()
+        elif line.lower().startswith("output name:"):
+            result["behaviourOutputName"] = line[12:].strip()
+    return result
+
+
 def _make_canonical_key(f: dict) -> str:
     """Stable key file:line for LLM result lookup."""
     loc = f.get("location", {})
