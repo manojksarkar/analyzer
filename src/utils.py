@@ -115,7 +115,15 @@ def load_config(project_root: str) -> dict:
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 _CONFIG_CACHE = load_config(_PROJECT_ROOT)
-_MODULE_OVERRIDES = _CONFIG_CACHE.get("modules") or {}
+
+_MODULE_GROUPS = _CONFIG_CACHE.get("modulesGroups") or {}
+_SELECTED_GROUP = _CONFIG_CACHE.get("selectedGroup") or _CONFIG_CACHE.get("modulesGroup")
+if _SELECTED_GROUP and isinstance(_MODULE_GROUPS.get(_SELECTED_GROUP), dict):
+    _MODULE_OVERRIDES = _MODULE_GROUPS[_SELECTED_GROUP] or {}
+else:
+    # If no selected group (or invalid), fall back to top-level "modules" if present.
+    # When that is also missing/empty, default behaviour is used: module = first folder.
+    _MODULE_OVERRIDES = _CONFIG_CACHE.get("modules") or {}
 
 
 def _resolve_module_from_rel(rel_file: str) -> str:

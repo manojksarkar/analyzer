@@ -545,7 +545,11 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
-    docx_path = docx_path or os.path.join(PROJECT_ROOT, export_cfg.get("docxPath", "output/software_detailed_design.docx"))
+    # Allow group-specific filenames via {group} placeholder.
+    group_name = config.get("selectedGroup") or config.get("modulesGroup") or "all"
+    raw_docx = export_cfg.get("docxPath", "output/software_detailed_design.docx")
+    raw_docx = raw_docx.replace("{group}", group_name)
+    docx_path = docx_path or os.path.join(PROJECT_ROOT, raw_docx)
     font_size = int(export_cfg.get("docxFontSize", 8))
     views_cfg = config.get("views", {})
     fc_cfg = views_cfg.get("flowcharts") if isinstance(views_cfg.get("flowcharts"), dict) else {}

@@ -27,36 +27,57 @@
     "timeoutSeconds": 60,
     "abbreviationsPath": "config/abbreviations.txt"
   },
-  // Optional: override default "first folder = module" logic.
-  // Keys are module names; values are folder paths (or list of folders)
-  // relative to the parsed C++ project base (metadata.basePath / parser arg).
-  // When "modules" is present, only .cpp files under these folders (and their
-  // subfolders) are parsed; their module name is taken from this mapping.
-  // Other files are ignored, and no "first folder" fallback is used.
+  // Optional: logical groups of modules. Each group key maps to a full
+  // "modules" mapping (module name -> folder or list of folders, relative
+  // to the parsed C++ project base). When "selectedGroup" is set to one of
+  // these keys, only that group's modules are parsed; other files are ignored.
+  // If "selectedGroup" is empty or missing, the default behaviour is used
+  // (either top-level "modules" mapping if present, or first-folder = module).
+  //
   // Example:
-  // "modules": {
-  //   "Core": ["src/core", "lib/core"],
-  //   "Tests": "tests"
+  // "modulesGroups": {
+  //   "group1": {
+  //     "core": ["app", "math"],
+  //     "support": "outer/inner",
+  //     "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
+  //     "tests_b": ["tests/hub", "tests/poly", "tests/structs"]
+  //   },
+  //   "group2": {
+  //     "core": ["app"],
+  //     "tests_b": ["tests/hub"]
+  //   }
   // },
-  "modules": {
-    "core": [
-      "app",
-      "math"
-    ],
-    "support": "outer/inner",
-    "tests_a": [
-      "tests/direction",
-      "tests/enum",
-      "tests/flow"
-    ],
-    "tests_b": [
-      "tests/hub",
-      "tests/poly",
-      "tests/structs"
-    ]
+  //
+  // "selectedGroup": "group1",
+  "selectedGroup": "group1",
+  "modulesGroups": {
+    "group1": {
+      "core": [
+        "app",
+        "math"
+      ],
+      "support": "outer/inner",
+      "tests_a": [
+        "tests/direction",
+        "tests/enum",
+        "tests/flow"
+      ],
+      "tests_b": [
+        "tests/hub",
+        "tests/poly",
+        "tests/structs"
+      ]
+    },
+    "group2": {
+      "core": [
+        "app",
+        "math"
+      ],
+      "support": "outer/inner"
+    }
   },
   "export": {
-    "docxPath": "output/software_detailed_design.docx",
+    "docxPath": "output/software_detailed_design_{group}.docx",
     "docxFontSize": 8
   }
 }

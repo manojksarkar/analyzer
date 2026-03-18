@@ -26,7 +26,16 @@ _clang_inc = _clang.get("clangIncludePath") or _config.get("clangIncludePath")
 if _llvm and os.path.isfile(_llvm):
     cindex.Config.set_library_file(_llvm)
 
-_modules_cfg = _config.get("modules") or {}
+_modules_groups = _config.get("modulesGroups") or {}
+# Prefer new "selectedGroup" key; fall back to legacy "modulesGroup" if present.
+_selected_group = _config.get("selectedGroup") or _config.get("modulesGroup")
+if _selected_group and isinstance(_modules_groups.get(_selected_group), dict):
+    _modules_cfg = _modules_groups[_selected_group] or {}
+else:
+    # If no selected group (or invalid), fall back to top-level "modules" if present.
+    # When that is also missing/empty, default behaviour is used: all files
+    # under MODULE_BASE_PATH are parsed and module = first folder.
+    _modules_cfg = _config.get("modules") or {}
 _MODULE_FOLDERS = []
 for _mod_paths in _modules_cfg.values():
     if not _mod_paths:
