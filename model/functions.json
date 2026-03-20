@@ -1,1807 +1,139 @@
 {
-  "core|utils|add|int,int": {
-    "qualifiedName": "add",
-    "location": {
-      "file": "math/utils.cpp",
-      "line": 5,
-      "endLine": 8
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "a + b",
-    "calledByIds": [
-      "core|main|calculate|",
-      "core|utils|computeBoth|int,int",
-      "support|helper|helperCompute|int",
-      "tests_a|read_write|directionAdd|int,int",
-      "tests_b|dispatch|AddOperation::apply|int,int",
-      "tests_b|dispatch|multiplyCore|int,int",
-      "tests_b|hub|hubCompute|int,int",
-      "tests_b|point_rect|pointSumWithAdd|int,int"
-    ],
-    "callsIds": [],
-    "writesGlobalIds": [
-      "core|utils|g_utilsCounter"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_MATH_UTILS_02",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "Add input",
-    "behaviourOutputName": "UtilsCounter"
-  },
-  "core|utils|subtract|int,int": {
-    "qualifiedName": "subtract",
-    "location": {
-      "file": "math/utils.cpp",
-      "line": 10,
-      "endLine": 13
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "a - b",
-    "calledByIds": [
-      "core|utils|computeBoth|int,int",
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "callsIds": [],
-    "writesGlobalIds": [
-      "core|utils|g_utilsCounter"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_MATH_UTILS_03",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "Subtract input",
-    "behaviourOutputName": "UtilsCounter"
-  },
-  "core|utils|computeBoth|int,int": {
-    "qualifiedName": "computeBoth",
-    "location": {
-      "file": "math/utils.cpp",
-      "line": 15,
-      "endLine": 17
-    },
-    "returnType": "int",
-    "visibility": "protected",
-    "returnExpr": "add ( a , b ) + subtract ( a , b )",
-    "calledByIds": [
-      "core|main|calculate|"
-    ],
-    "callsIds": [
-      "core|utils|add|int,int",
-      "core|utils|subtract|int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_MATH_UTILS_04",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "ComputeBoth input",
-    "behaviourOutputName": "Add"
-  },
-  "tests_a|flowcharts|runFlowTests|": {
-    "qualifiedName": "runFlowTests",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 215,
-      "endLine": 237
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "total",
-    "calledByIds": [
-      "core|main|main|"
-    ],
-    "callsIds": [
-      "tests_a|flowcharts|fnDeeplyNested|int,int,int",
-      "tests_a|flowcharts|fnDoWhile|int",
-      "tests_a|flowcharts|fnForBreak|int,int",
-      "tests_a|flowcharts|fnForContinue|int",
-      "tests_a|flowcharts|fnForLoop|int",
-      "tests_a|flowcharts|fnForWithIf|int",
-      "tests_a|flowcharts|fnIfEarlyReturn|int",
-      "tests_a|flowcharts|fnIfElseIf|int",
-      "tests_a|flowcharts|fnIfElse|int",
-      "tests_a|flowcharts|fnIfSimple|int",
-      "tests_a|flowcharts|fnLoopNestedIfElse|int",
-      "tests_a|flowcharts|fnMixedForSwitch|int",
-      "tests_a|flowcharts|fnMultipleReturns|int,int",
-      "tests_a|flowcharts|fnNestedFor|int,int",
-      "tests_a|flowcharts|fnNestedIfElse|int,int",
-      "tests_a|flowcharts|fnSwitchFallthrough|int",
-      "tests_a|flowcharts|fnSwitchSimple|int",
-      "tests_a|flowcharts|fnWhileLoop|int",
-      "tests_a|flowcharts|fnWhileWithIf|int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_20",
-    "parameters": [],
-    "behaviourInputName": "RunFlowTests input",
-    "behaviourOutputName": "Total"
-  },
-  "tests_b|dispatch|multiply|int,int": {
-    "qualifiedName": "multiply",
-    "location": {
-      "file": "tests/poly/dispatch.cpp",
-      "line": 15,
-      "endLine": 19
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "( prod + ( h % 7 ) ) * g_polymorphismFactor",
-    "calledByIds": [
-      "core|main|calculate|",
-      "tests_b|dispatch|MultiplyOperation::apply|int,int"
-    ],
-    "callsIds": [
-      "tests_b|dispatch|multiplyCore|int,int",
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "readsGlobalIds": [
-      "tests_b|dispatch|g_polymorphismFactor"
-    ],
-    "direction": "Out",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_03",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "readsGlobalIdsTransitive": [
-      "tests_b|dispatch|g_polymorphismFactor"
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "Multiply input",
-    "behaviourOutputName": "Prod"
-  },
-  "tests_b|dispatch|divide|int,int": {
-    "qualifiedName": "divide",
-    "location": {
-      "file": "tests/poly/dispatch.cpp",
-      "line": 21,
-      "endLine": 24
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "0",
-    "calledByIds": [],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_04",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "Divide input",
-    "behaviourOutputName": "Divide result"
-  },
-  "tests_b|dispatch|applyWithCallback|int (*)(int, int),int,int": {
-    "qualifiedName": "applyWithCallback",
-    "location": {
-      "file": "tests/poly/dispatch.cpp",
-      "line": 26,
-      "endLine": 28
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "fn ? fn ( a , b ) : 0",
-    "calledByIds": [
-      "core|main|calculateWithCallback|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_05",
-    "parameters": [
-      {
-        "name": "fn",
-        "type": "int (*)(int, int)"
-      },
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "ApplyWithCallback input",
-    "behaviourOutputName": "ApplyWithCallback result"
-  },
-  "tests_b|dispatch|Operation::apply|int,int": {
-    "qualifiedName": "Operation::apply",
-    "location": {
-      "file": "tests/poly/dispatch.h",
-      "line": 13,
-      "endLine": 13
-    },
-    "returnType": "int",
-    "visibility": "default",
-    "declarationOnly": true,
-    "calledByIds": [
-      "tests_b|dispatch|applyWithOperation|Operation *,int,int"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_01",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "Apply input",
-    "behaviourOutputName": "Apply result"
-  },
-  "tests_b|dispatch|AddOperation::apply|int,int": {
-    "qualifiedName": "AddOperation::apply",
-    "location": {
-      "file": "tests/poly/dispatch.cpp",
-      "line": 30,
-      "endLine": 32
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "add ( a , b )",
-    "calledByIds": [],
-    "callsIds": [
-      "core|utils|add|int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_06",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "Apply input",
-    "behaviourOutputName": "Add"
-  },
-  "tests_b|dispatch|MultiplyOperation::apply|int,int": {
-    "qualifiedName": "MultiplyOperation::apply",
-    "location": {
-      "file": "tests/poly/dispatch.cpp",
-      "line": 34,
-      "endLine": 36
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "multiply ( a , b )",
-    "calledByIds": [],
-    "callsIds": [
-      "tests_b|dispatch|multiply|int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_07",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "readsGlobalIdsTransitive": [
-      "tests_b|dispatch|g_polymorphismFactor"
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "Apply input",
-    "behaviourOutputName": "Multiply"
-  },
-  "tests_b|dispatch|applyWithOperation|Operation *,int,int": {
-    "qualifiedName": "applyWithOperation",
-    "location": {
-      "file": "tests/poly/dispatch.cpp",
-      "line": 38,
-      "endLine": 41
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "0",
-    "calledByIds": [
-      "core|main|calculateWithPolymorphism|"
-    ],
-    "callsIds": [
-      "tests_b|dispatch|Operation::apply|int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_08",
-    "parameters": [
-      {
-        "name": "op",
-        "type": "Operation *"
-      },
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "ApplyWithOperation input",
-    "behaviourOutputName": "ApplyWithOperation result"
-  },
-  "tests_a|types|checkStatus|Status": {
-    "qualifiedName": "checkStatus",
-    "location": {
-      "file": "tests/enum/types.cpp",
-      "line": 8,
-      "endLine": 10
-    },
-    "returnType": "Status",
-    "visibility": "public",
-    "returnExpr": "s == STATUS_OK ? STATUS_OK : STATUS_ERR",
-    "calledByIds": [
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_ENUM_TYPES_01",
-    "parameters": [
-      {
-        "name": "s",
-        "type": "Status"
-      }
-    ],
-    "behaviourInputName": "CheckStatus input",
-    "behaviourOutputName": "CheckStatus result"
-  },
-  "tests_a|types|nextColor|Color": {
-    "qualifiedName": "nextColor",
-    "location": {
-      "file": "tests/enum/types.cpp",
-      "line": 12,
-      "endLine": 16
-    },
-    "returnType": "Color",
-    "visibility": "public",
-    "returnExpr": "GREEN",
-    "calledByIds": [
-      "core|main|runEnumTests|",
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_ENUM_TYPES_02",
-    "parameters": [
-      {
-        "name": "c",
-        "type": "Color"
-      }
-    ],
-    "behaviourInputName": "NextColor input",
-    "behaviourOutputName": "GREEN"
-  },
-  "tests_a|types|setMode|Mode_t": {
-    "qualifiedName": "setMode",
-    "location": {
-      "file": "tests/enum/types.cpp",
-      "line": 18,
-      "endLine": 20
-    },
-    "returnType": "Mode_t",
-    "visibility": "protected",
-    "returnExpr": "m",
-    "calledByIds": [
-      "core|main|runEnumTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_ENUM_TYPES_03",
-    "parameters": [
-      {
-        "name": "m",
-        "type": "Mode_t"
-      }
-    ],
-    "behaviourInputName": "SetMode input",
-    "behaviourOutputName": "SetMode result"
-  },
-  "tests_a|types|getDefaultStatus|": {
-    "qualifiedName": "getDefaultStatus",
-    "location": {
-      "file": "tests/enum/types.cpp",
-      "line": 22,
-      "endLine": 24
-    },
-    "returnType": "Status",
-    "visibility": "public",
-    "returnExpr": "STATUS_OK",
-    "calledByIds": [
-      "core|main|runEnumTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_ENUM_TYPES_04",
-    "parameters": [],
-    "behaviourInputName": "GetDefaultStatus input",
-    "behaviourOutputName": "STATUS OK"
-  },
-  "tests_a|types|getDefaultColor|": {
-    "qualifiedName": "getDefaultColor",
-    "location": {
-      "file": "tests/enum/types.cpp",
-      "line": 26,
-      "endLine": 28
-    },
-    "returnType": "Color",
-    "visibility": "public",
-    "returnExpr": "RED",
-    "calledByIds": [
-      "core|main|runEnumTests|",
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_ENUM_TYPES_05",
-    "parameters": [],
-    "behaviourInputName": "GetDefaultColor input",
-    "behaviourOutputName": "RED"
-  },
-  "tests_a|types|enumWithHelper|int": {
-    "qualifiedName": "enumWithHelper",
-    "location": {
-      "file": "tests/enum/types.cpp",
-      "line": 30,
-      "endLine": 32
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "nestedHelper ( x )",
-    "calledByIds": [
-      "core|main|runEnumTests|",
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "callsIds": [
-      "support|helper|nestedHelper|int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_ENUM_TYPES_06",
-    "parameters": [
-      {
-        "name": "x",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "EnumWithHelper input",
-    "behaviourOutputName": "NestedHelper"
-  },
-  "tests_b|point_rect|initWidget|Widget_t *,int,const char *": {
-    "qualifiedName": "initWidget",
-    "location": {
-      "file": "tests/structs/point_rect.cpp",
-      "line": 40,
-      "endLine": 44
-    },
-    "returnType": "void",
-    "visibility": "public",
-    "calledByIds": [],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_STRUCTS_POINT_RECT_08",
-    "parameters": [
-      {
-        "name": "w",
-        "type": "Widget_t *"
-      },
-      {
-        "name": "id",
-        "type": "int"
-      },
-      {
-        "name": "name",
-        "type": "const char *"
-      }
-    ],
-    "behaviourInputName": "InitWidget input",
-    "behaviourOutputName": "InitWidget result"
-  },
-  "tests_b|point_rect|areaOfSize|Size_t": {
-    "qualifiedName": "areaOfSize",
-    "location": {
-      "file": "tests/structs/point_rect.cpp",
-      "line": 46,
-      "endLine": 48
-    },
-    "returnType": "int",
-    "visibility": "protected",
-    "returnExpr": "s . width * s . height",
-    "calledByIds": [],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_STRUCTS_POINT_RECT_09",
-    "parameters": [
-      {
-        "name": "s",
-        "type": "Size_t"
-      }
-    ],
-    "behaviourInputName": "AreaOfSize input",
-    "behaviourOutputName": "AreaOfSize result"
-  },
-  "tests_b|point_rect|pointSum|Point": {
-    "qualifiedName": "pointSum",
-    "location": {
-      "file": "tests/structs/point_rect.cpp",
-      "line": 13,
-      "endLine": 15
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "p . x + p . y",
-    "calledByIds": [
-      "core|main|runTypeTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_STRUCTS_POINT_RECT_02",
-    "parameters": [
-      {
-        "name": "p",
-        "type": "Point"
-      }
-    ],
-    "behaviourInputName": "PointSum input",
-    "behaviourOutputName": "PointSum result"
-  },
-  "tests_b|point_rect|rectArea|const Rect *": {
-    "qualifiedName": "rectArea",
-    "location": {
-      "file": "tests/structs/point_rect.cpp",
-      "line": 17,
-      "endLine": 22
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "0",
-    "calledByIds": [
-      "core|main|runTypeTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_STRUCTS_POINT_RECT_03",
-    "parameters": [
-      {
-        "name": "r",
-        "type": "const Rect *"
-      }
-    ],
-    "behaviourInputName": "RectArea input",
-    "behaviourOutputName": "RectArea result"
-  },
-  "tests_b|point_rect|scalePoint|Point &,int": {
-    "qualifiedName": "scalePoint",
-    "location": {
-      "file": "tests/structs/point_rect.cpp",
-      "line": 24,
-      "endLine": 27
-    },
-    "returnType": "void",
-    "visibility": "public",
-    "calledByIds": [
-      "core|main|runTypeTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_STRUCTS_POINT_RECT_04",
-    "parameters": [
-      {
-        "name": "p",
-        "type": "Point &"
-      },
-      {
-        "name": "factor",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "ScalePoint input",
-    "behaviourOutputName": "ScalePoint result"
-  },
-  "tests_b|point_rect|getDataAsInt|Data": {
-    "qualifiedName": "getDataAsInt",
-    "location": {
-      "file": "tests/structs/point_rect.cpp",
-      "line": 29,
-      "endLine": 31
-    },
-    "returnType": "int",
-    "visibility": "protected",
-    "returnExpr": "d . i",
-    "calledByIds": [
-      "core|main|runTypeTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_STRUCTS_POINT_RECT_05",
-    "parameters": [
-      {
-        "name": "d",
-        "type": "Data"
-      }
-    ],
-    "behaviourInputName": "GetDataAsInt input",
-    "behaviourOutputName": "GetDataAsInt result"
-  },
-  "tests_b|point_rect|noop|": {
-    "qualifiedName": "noop",
-    "location": {
-      "file": "tests/structs/point_rect.cpp",
-      "line": 33,
-      "endLine": 34
-    },
-    "returnType": "void",
-    "visibility": "private",
-    "calledByIds": [
-      "core|main|runTypeTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_STRUCTS_POINT_RECT_06",
-    "parameters": [],
-    "behaviourInputName": "Noop input",
-    "behaviourOutputName": "Noop result"
-  },
-  "tests_b|point_rect|getPointX|const Point &": {
-    "qualifiedName": "getPointX",
-    "location": {
-      "file": "tests/structs/point_rect.cpp",
-      "line": 36,
-      "endLine": 38
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "p . x",
-    "calledByIds": [
-      "core|main|runTypeTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_STRUCTS_POINT_RECT_07",
-    "parameters": [
-      {
-        "name": "p",
-        "type": "const Point &"
-      }
-    ],
-    "behaviourInputName": "GetPointX input",
-    "behaviourOutputName": "GetPointX result"
-  },
-  "tests_b|point_rect|pointSumWithAdd|int,int": {
-    "qualifiedName": "pointSumWithAdd",
-    "location": {
-      "file": "tests/structs/point_rect.cpp",
-      "line": 9,
-      "endLine": 11
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "add ( a , b )",
-    "calledByIds": [
-      "core|main|runTypeTests|",
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "callsIds": [
-      "core|utils|add|int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_STRUCTS_POINT_RECT_01",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "PointSumWithAdd input",
-    "behaviourOutputName": "Add"
-  },
-  "tests_a|read_write|readGlobal|": {
-    "qualifiedName": "readGlobal",
-    "location": {
-      "file": "tests/direction/read_write.cpp",
-      "line": 8,
-      "endLine": 10
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "g_readOnly",
-    "calledByIds": [
-      "core|main|runDirectionTests|"
-    ],
-    "callsIds": [],
-    "readsGlobalIds": [
-      "tests_a|read_write|g_readOnly"
-    ],
-    "direction": "Out",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_04",
-    "parameters": [],
-    "readsGlobalIdsTransitive": [
-      "tests_a|read_write|g_readOnly"
-    ],
-    "behaviourInputName": "ReadOnly",
-    "behaviourOutputName": "ReadOnly"
-  },
-  "tests_a|read_write|writeGlobal|int": {
-    "qualifiedName": "writeGlobal",
-    "location": {
-      "file": "tests/direction/read_write.cpp",
-      "line": 12,
-      "endLine": 14
-    },
-    "returnType": "void",
-    "visibility": "private",
-    "calledByIds": [
-      "core|main|runDirectionTests|",
-      "tests_a|read_write|indirectWrite|int"
-    ],
-    "callsIds": [],
-    "writesGlobalIds": [
-      "tests_a|read_write|g_writeOnly"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_05",
-    "parameters": [
-      {
-        "name": "v",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "tests_a|read_write|g_writeOnly"
-    ],
-    "behaviourInputName": "WriteGlobal input",
-    "behaviourOutputName": "WriteOnly"
-  },
-  "tests_a|read_write|readWriteGlobal|int": {
-    "qualifiedName": "readWriteGlobal",
-    "location": {
-      "file": "tests/direction/read_write.cpp",
-      "line": 16,
-      "endLine": 19
-    },
-    "returnType": "int",
-    "visibility": "protected",
-    "returnExpr": "g_readWrite",
-    "calledByIds": [
-      "core|main|runDirectionTests|"
-    ],
-    "callsIds": [],
-    "readsGlobalIds": [
-      "tests_a|read_write|g_readWrite"
-    ],
-    "writesGlobalIds": [
-      "tests_a|read_write|g_readWrite"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_06",
-    "parameters": [
-      {
-        "name": "delta",
-        "type": "int"
-      }
-    ],
-    "readsGlobalIdsTransitive": [
-      "tests_a|read_write|g_readWrite"
-    ],
-    "writesGlobalIdsTransitive": [
-      "tests_a|read_write|g_readWrite"
-    ],
-    "behaviourInputName": "Delta",
-    "behaviourOutputName": "ReadWrite"
-  },
-  "tests_a|read_write|indirectWrite|int": {
-    "qualifiedName": "indirectWrite",
-    "location": {
-      "file": "tests/direction/read_write.cpp",
-      "line": 21,
-      "endLine": 23
-    },
-    "returnType": "void",
-    "visibility": "private",
-    "calledByIds": [
-      "core|main|runDirectionTests|"
-    ],
-    "callsIds": [
-      "tests_a|read_write|writeGlobal|int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_07",
-    "parameters": [
-      {
-        "name": "v",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "tests_a|read_write|g_writeOnly"
-    ],
-    "behaviourInputName": "IndirectWrite input",
-    "behaviourOutputName": "WriteOnly"
-  },
-  "tests_a|read_write|directionAdd|int,int": {
-    "qualifiedName": "directionAdd",
-    "location": {
-      "file": "tests/direction/read_write.cpp",
-      "line": 25,
-      "endLine": 27
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "add ( a , b )",
-    "calledByIds": [
-      "core|main|runDirectionTests|"
-    ],
-    "callsIds": [
-      "core|utils|add|int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_08",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "DirectionAdd input",
-    "behaviourOutputName": "Add"
-  },
-  "tests_b|hub|hubCompute|int,int": {
-    "qualifiedName": "hubCompute",
-    "location": {
-      "file": "tests/hub/hub.cpp",
-      "line": 12,
-      "endLine": 25
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "h + ps + e + static_cast < int > ( st ) + static_cast < int > ( c )",
-    "calledByIds": [
-      "core|main|runNestedFolderTests|",
-      "tests_b|dispatch|multiply|int,int"
-    ],
-    "callsIds": [
-      "core|utils|add|int,int",
-      "core|utils|subtract|int,int",
-      "support|helper|helperCompute|int",
-      "tests_a|types|checkStatus|Status",
-      "tests_a|types|enumWithHelper|int",
-      "tests_a|types|getDefaultColor|",
-      "tests_a|types|nextColor|Color",
-      "tests_b|hub|hubValidate|int",
-      "tests_b|point_rect|pointSumWithAdd|int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_HUB_HUB_02",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "HubCompute input",
-    "behaviourOutputName": "UtilsCounter"
-  },
-  "support|helper|nestedHelper|int": {
-    "qualifiedName": "nestedHelper",
-    "location": {
-      "file": "outer/inner/helper.cpp",
-      "line": 4,
-      "endLine": 6
-    },
-    "returnType": "int",
-    "visibility": "protected",
-    "returnExpr": "x * 2",
-    "calledByIds": [
-      "core|main|runNestedFolderTests|",
-      "tests_a|types|enumWithHelper|int"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_OUTER_INNER_HELPER_01",
-    "parameters": [
-      {
-        "name": "x",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "NestedHelper input",
-    "behaviourOutputName": "NestedHelper result"
-  },
-  "support|helper|helperCompute|int": {
-    "qualifiedName": "helperCompute",
-    "location": {
-      "file": "outer/inner/helper.cpp",
-      "line": 8,
-      "endLine": 10
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "add ( x , 1 )",
-    "calledByIds": [
-      "core|main|runNestedFolderTests|",
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "callsIds": [
-      "core|utils|add|int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_OUTER_INNER_HELPER_02",
-    "parameters": [
-      {
-        "name": "x",
-        "type": "int"
-      }
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "HelperCompute input",
-    "behaviourOutputName": "Add"
-  },
-  "core|main|calculate|": {
+  "app|main|calculate|": {
     "qualifiedName": "calculate",
     "location": {
       "file": "app/main.cpp",
-      "line": 12,
-      "endLine": 17
+      "line": 3,
+      "endLine": 7
     },
     "returnType": "int",
-    "visibility": "public",
     "returnExpr": "product",
     "calledByIds": [
-      "core|main|main|"
+      "app|main|main|"
     ],
     "callsIds": [
-      "core|utils|add|int,int",
-      "core|utils|computeBoth|int,int",
-      "tests_b|dispatch|multiply|int,int"
+      "math|utils|add|int,int",
+      "math|utils|multiply|int,int"
     ],
     "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_02",
+    "interfaceId": "IF_TEST_CPP_PROJECT2_APP_MAIN_01",
     "parameters": [],
-    "readsGlobalIdsTransitive": [
-      "tests_b|dispatch|g_polymorphismFactor"
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "UtilsCounter",
-    "behaviourOutputName": "Product"
+    "behaviourInputName": "Calculation parameters",
+    "behaviourOutputName": "Result of calculation",
+    "description": "The calculate function calculates a product by first adding two numbers and then multiplying the result with a third number."
   },
-  "core|main|calculateWithCallback|": {
-    "qualifiedName": "calculateWithCallback",
+  "app|main|compute|": {
+    "qualifiedName": "compute",
     "location": {
       "file": "app/main.cpp",
-      "line": 19,
-      "endLine": 23
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "viaAdd + viaSubtract",
-    "calledByIds": [
-      "core|main|main|"
-    ],
-    "callsIds": [
-      "tests_b|dispatch|applyWithCallback|int (*)(int, int),int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_03",
-    "parameters": [],
-    "behaviourInputName": "CalculateWithCallback input",
-    "behaviourOutputName": "ViaAdd"
-  },
-  "core|main|calculateWithPolymorphism|": {
-    "qualifiedName": "calculateWithPolymorphism",
-    "location": {
-      "file": "app/main.cpp",
-      "line": 25,
-      "endLine": 33
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "v1 + v2",
-    "calledByIds": [
-      "core|main|main|"
-    ],
-    "callsIds": [
-      "tests_b|dispatch|applyWithOperation|Operation *,int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_04",
-    "parameters": [],
-    "behaviourInputName": "CalculateWithPolymorphism input",
-    "behaviourOutputName": "CalculateWithPolymorphism result"
-  },
-  "core|main|runEnumTests|": {
-    "qualifiedName": "runEnumTests",
-    "location": {
-      "file": "app/main.cpp",
-      "line": 35,
-      "endLine": 42
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "static_cast < int > ( s ) + static_cast < int > ( c ) + h",
-    "calledByIds": [
-      "core|main|main|"
-    ],
-    "callsIds": [
-      "tests_a|types|enumWithHelper|int",
-      "tests_a|types|getDefaultColor|",
-      "tests_a|types|getDefaultStatus|",
-      "tests_a|types|nextColor|Color",
-      "tests_a|types|setMode|Mode_t"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_05",
-    "parameters": [],
-    "behaviourInputName": "RunEnumTests input",
-    "behaviourOutputName": "Static cast"
-  },
-  "core|main|runTypeTests|": {
-    "qualifiedName": "runTypeTests",
-    "location": {
-      "file": "app/main.cpp",
-      "line": 44,
-      "endLine": 57
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "sum + area + vi + cross",
-    "calledByIds": [
-      "core|main|main|"
-    ],
-    "callsIds": [
-      "tests_b|point_rect|getDataAsInt|Data",
-      "tests_b|point_rect|getPointX|const Point &",
-      "tests_b|point_rect|noop|",
-      "tests_b|point_rect|pointSumWithAdd|int,int",
-      "tests_b|point_rect|pointSum|Point",
-      "tests_b|point_rect|rectArea|const Rect *",
-      "tests_b|point_rect|scalePoint|Point &,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_06",
-    "parameters": [],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "UtilsCounter",
-    "behaviourOutputName": "Sum"
-  },
-  "core|main|runNestedFolderTests|": {
-    "qualifiedName": "runNestedFolderTests",
-    "location": {
-      "file": "app/main.cpp",
-      "line": 59,
-      "endLine": 64
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "a + b + h",
-    "calledByIds": [
-      "core|main|main|"
-    ],
-    "callsIds": [
-      "support|helper|helperCompute|int",
-      "support|helper|nestedHelper|int",
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_07",
-    "parameters": [],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
-    ],
-    "behaviourInputName": "UtilsCounter",
-    "behaviourOutputName": "UtilsCounter"
-  },
-  "core|main|runDirectionTests|": {
-    "qualifiedName": "runDirectionTests",
-    "location": {
-      "file": "app/main.cpp",
-      "line": 66,
-      "endLine": 73
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "v + rw + da",
-    "calledByIds": [
-      "core|main|main|"
-    ],
-    "callsIds": [
-      "tests_a|read_write|directionAdd|int,int",
-      "tests_a|read_write|indirectWrite|int",
-      "tests_a|read_write|readGlobal|",
-      "tests_a|read_write|readWriteGlobal|int",
-      "tests_a|read_write|writeGlobal|int"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_08",
-    "parameters": [],
-    "readsGlobalIdsTransitive": [
-      "tests_a|read_write|g_readOnly",
-      "tests_a|read_write|g_readWrite"
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter",
-      "tests_a|read_write|g_readWrite",
-      "tests_a|read_write|g_writeOnly"
-    ],
-    "behaviourInputName": "UtilsCounter",
-    "behaviourOutputName": "UtilsCounter"
-  },
-  "core|main|main|": {
-    "qualifiedName": "main",
-    "location": {
-      "file": "app/main.cpp",
-      "line": 75,
-      "endLine": 86
-    },
-    "returnType": "int",
-    "visibility": "public",
-    "returnExpr": "g_globalResult",
-    "calledByIds": [],
-    "callsIds": [
-      "core|main|calculateWithCallback|",
-      "core|main|calculateWithPolymorphism|",
-      "core|main|calculate|",
-      "core|main|runDirectionTests|",
-      "core|main|runEnumTests|",
-      "core|main|runNestedFolderTests|",
-      "core|main|runTypeTests|",
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "readsGlobalIds": [
-      "core|main|g_globalResult"
-    ],
-    "writesGlobalIds": [
-      "core|main|g_globalResult"
-    ],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_09",
-    "parameters": [],
-    "readsGlobalIdsTransitive": [
-      "core|main|g_globalResult",
-      "tests_a|read_write|g_readOnly",
-      "tests_a|read_write|g_readWrite",
-      "tests_b|dispatch|g_polymorphismFactor"
-    ],
-    "writesGlobalIdsTransitive": [
-      "core|main|g_globalResult",
-      "core|utils|g_utilsCounter",
-      "tests_a|read_write|g_readWrite",
-      "tests_a|read_write|g_writeOnly"
-    ],
-    "behaviourInputName": "GlobalResult",
-    "behaviourOutputName": "GlobalResult"
-  },
-  "tests_a|flowcharts|fnIfSimple|int": {
-    "qualifiedName": "fnIfSimple",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 4,
-      "endLine": 9
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "x + 1",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_01",
-    "parameters": [
-      {
-        "name": "x",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnIfSimple input",
-    "behaviourOutputName": "FnIfSimple result"
-  },
-  "tests_a|flowcharts|fnIfElse|int": {
-    "qualifiedName": "fnIfElse",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 11,
-      "endLine": 17
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "1",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_02",
-    "parameters": [
-      {
-        "name": "x",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnIfElse input",
-    "behaviourOutputName": "FnIfElse result"
-  },
-  "tests_a|flowcharts|fnNestedIfElse|int,int": {
-    "qualifiedName": "fnNestedIfElse",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 19,
-      "endLine": 33
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "a + b",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_03",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnNestedIfElse input",
-    "behaviourOutputName": "FnNestedIfElse result"
-  },
-  "tests_a|flowcharts|fnIfElseIf|int": {
-    "qualifiedName": "fnIfElseIf",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 35,
-      "endLine": 45
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "- 1",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_04",
-    "parameters": [
-      {
-        "name": "x",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnIfElseIf input",
-    "behaviourOutputName": "FnIfElseIf result"
-  },
-  "tests_a|flowcharts|fnSwitchSimple|int": {
-    "qualifiedName": "fnSwitchSimple",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 47,
-      "endLine": 56
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "result",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_05",
-    "parameters": [
-      {
-        "name": "op",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnSwitchSimple input",
-    "behaviourOutputName": "Result"
-  },
-  "tests_a|flowcharts|fnSwitchFallthrough|int": {
-    "qualifiedName": "fnSwitchFallthrough",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 58,
-      "endLine": 67
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "bonus",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_06",
-    "parameters": [
-      {
-        "name": "tier",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "Tier",
-    "behaviourOutputName": "Bonus"
-  },
-  "tests_a|flowcharts|fnForLoop|int": {
-    "qualifiedName": "fnForLoop",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 69,
-      "endLine": 75
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "sum",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_07",
-    "parameters": [
-      {
-        "name": "n",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnForLoop input",
-    "behaviourOutputName": "Sum"
-  },
-  "tests_a|flowcharts|fnForBreak|int,int": {
-    "qualifiedName": "fnForBreak",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 77,
-      "endLine": 84
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "sum",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_08",
-    "parameters": [
-      {
-        "name": "n",
-        "type": "int"
-      },
-      {
-        "name": "stop",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnForBreak input",
-    "behaviourOutputName": "Sum"
-  },
-  "tests_a|flowcharts|fnForContinue|int": {
-    "qualifiedName": "fnForContinue",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 86,
-      "endLine": 93
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "sum",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_09",
-    "parameters": [
-      {
-        "name": "n",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnForContinue input",
-    "behaviourOutputName": "Sum"
-  },
-  "tests_a|flowcharts|fnWhileLoop|int": {
-    "qualifiedName": "fnWhileLoop",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 95,
-      "endLine": 103
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "sum",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_10",
-    "parameters": [
-      {
-        "name": "n",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnWhileLoop input",
-    "behaviourOutputName": "Sum"
-  },
-  "tests_a|flowcharts|fnDoWhile|int": {
-    "qualifiedName": "fnDoWhile",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 105,
-      "endLine": 113
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "sum",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_11",
-    "parameters": [
-      {
-        "name": "n",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnDoWhile input",
-    "behaviourOutputName": "Sum"
-  },
-  "tests_a|flowcharts|fnNestedFor|int,int": {
-    "qualifiedName": "fnNestedFor",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 115,
-      "endLine": 123
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "total",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_12",
-    "parameters": [
-      {
-        "name": "rows",
-        "type": "int"
-      },
-      {
-        "name": "cols",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "Rows",
-    "behaviourOutputName": "Total"
-  },
-  "tests_a|flowcharts|fnForWithIf|int": {
-    "qualifiedName": "fnForWithIf",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 125,
-      "endLine": 135
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "sum",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_13",
-    "parameters": [
-      {
-        "name": "n",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnForWithIf input",
-    "behaviourOutputName": "Sum"
-  },
-  "tests_a|flowcharts|fnWhileWithIf|int": {
-    "qualifiedName": "fnWhileWithIf",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 137,
-      "endLine": 149
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "sum",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_14",
-    "parameters": [
-      {
-        "name": "n",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnWhileWithIf input",
-    "behaviourOutputName": "Sum"
-  },
-  "tests_a|flowcharts|fnIfEarlyReturn|int": {
-    "qualifiedName": "fnIfEarlyReturn",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 151,
-      "endLine": 155
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "0",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_15",
-    "parameters": [
-      {
-        "name": "x",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnIfEarlyReturn input",
-    "behaviourOutputName": "FnIfEarlyReturn result"
-  },
-  "tests_a|flowcharts|fnMixedForSwitch|int": {
-    "qualifiedName": "fnMixedForSwitch",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 157,
-      "endLine": 167
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "result",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_16",
-    "parameters": [
-      {
-        "name": "n",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnMixedForSwitch input",
-    "behaviourOutputName": "Result"
-  },
-  "tests_a|flowcharts|fnDeeplyNested|int,int,int": {
-    "qualifiedName": "fnDeeplyNested",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 169,
-      "endLine": 191
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "a + b + c",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_17",
-    "parameters": [
-      {
-        "name": "a",
-        "type": "int"
-      },
-      {
-        "name": "b",
-        "type": "int"
-      },
-      {
-        "name": "c",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnDeeplyNested input",
-    "behaviourOutputName": "FnDeeplyNested result"
-  },
-  "tests_a|flowcharts|fnMultipleReturns|int,int": {
-    "qualifiedName": "fnMultipleReturns",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 193,
-      "endLine": 199
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "- 1",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_18",
-    "parameters": [
-      {
-        "name": "x",
-        "type": "int"
-      },
-      {
-        "name": "y",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnMultipleReturns input",
-    "behaviourOutputName": "FnMultipleReturns result"
-  },
-  "tests_a|flowcharts|fnLoopNestedIfElse|int": {
-    "qualifiedName": "fnLoopNestedIfElse",
-    "location": {
-      "file": "tests/flow/flowcharts.cpp",
-      "line": 201,
-      "endLine": 213
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "s",
-    "calledByIds": [
-      "tests_a|flowcharts|runFlowTests|"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_FLOW_FLOWCHARTS_19",
-    "parameters": [
-      {
-        "name": "n",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "FnLoopNestedIfElse input",
-    "behaviourOutputName": "FnLoopNestedIfElse result"
-  },
-  "tests_b|hub|hubValidate|int": {
-    "qualifiedName": "hubValidate",
-    "location": {
-      "file": "tests/hub/hub.cpp",
-      "line": 8,
-      "endLine": 10
-    },
-    "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "x >= 0 ? x : 0",
-    "calledByIds": [
-      "tests_b|hub|hubCompute|int,int"
-    ],
-    "callsIds": [],
-    "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_HUB_HUB_01",
-    "parameters": [
-      {
-        "name": "x",
-        "type": "int"
-      }
-    ],
-    "behaviourInputName": "HubValidate input",
-    "behaviourOutputName": "HubValidate result"
-  },
-  "tests_b|dispatch|multiplyCore|int,int": {
-    "qualifiedName": "multiplyCore",
-    "location": {
-      "file": "tests/poly/dispatch.cpp",
-      "line": 7,
+      "line": 9,
       "endLine": 13
     },
     "returnType": "int",
-    "visibility": "private",
-    "returnExpr": "result",
+    "returnExpr": "multiply ( b , 2 )",
     "calledByIds": [
-      "tests_b|dispatch|multiply|int,int"
+      "app|main|main|"
     ],
     "callsIds": [
-      "core|utils|add|int,int"
+      "math|utils|add|int,int",
+      "math|utils|multiply|int,int",
+      "math|utils|subtract|int,int"
     ],
     "direction": "In",
-    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_02",
+    "interfaceId": "IF_TEST_CPP_PROJECT2_APP_MAIN_02",
+    "parameters": [],
+    "behaviourInputName": "Compute operation",
+    "behaviourOutputName": "Multiply result",
+    "description": "The function computes the final value of an arithmetic expression by multiplying the result of doubling and adding two numbers together."
+  },
+  "app|main|process|": {
+    "qualifiedName": "process",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 15,
+      "endLine": 19
+    },
+    "returnType": "int",
+    "returnExpr": "add ( x , y )",
+    "calledByIds": [
+      "app|main|main|"
+    ],
+    "callsIds": [
+      "math|utils|add|int,int",
+      "math|utils|subtract|int,int"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT2_APP_MAIN_03",
+    "parameters": [],
+    "behaviourInputName": "Function inputs",
+    "behaviourOutputName": "Calculated results",
+    "description": "It performs a series of addition and subtraction operations."
+  },
+  "app|main|run|": {
+    "qualifiedName": "run",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 21,
+      "endLine": 24
+    },
+    "returnType": "int",
+    "returnExpr": "add ( v , subtract ( 5 , 1 ) )",
+    "calledByIds": [
+      "app|main|main|"
+    ],
+    "callsIds": [
+      "math|utils|add|int,int",
+      "math|utils|multiply|int,int",
+      "math|utils|subtract|int,int"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT2_APP_MAIN_04",
+    "parameters": [],
+    "behaviourInputName": "Run context",
+    "behaviourOutputName": "Return value of add operation",
+    "description": "The function calculates a value by first multiplying 3 and 4, then adding that result to the difference between 5 and 1."
+  },
+  "app|main|main|": {
+    "qualifiedName": "main",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 26,
+      "endLine": 32
+    },
+    "returnType": "int",
+    "returnExpr": "r1 + r2 + r3 + r4",
+    "calledByIds": [],
+    "callsIds": [
+      "app|main|calculate|",
+      "app|main|compute|",
+      "app|main|process|",
+      "app|main|run|"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT2_APP_MAIN_05",
+    "parameters": [],
+    "behaviourInputName": "Function Inputs",
+    "behaviourOutputName": "Main Result",
+    "description": "The function calls various other functions to perform different mathematical operations and returns the sum of their results."
+  },
+  "math|utils|add|int,int": {
+    "qualifiedName": "add",
+    "location": {
+      "file": "math/utils.cpp",
+      "line": 3,
+      "endLine": 5
+    },
+    "returnType": "int",
+    "returnExpr": "a + b",
+    "calledByIds": [
+      "app|main|calculate|",
+      "app|main|compute|",
+      "app|main|process|",
+      "app|main|run|"
+    ],
+    "callsIds": [],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT2_MATH_UTILS_01",
     "parameters": [
       {
         "name": "a",
@@ -1812,10 +144,70 @@
         "type": "int"
       }
     ],
-    "writesGlobalIdsTransitive": [
-      "core|utils|g_utilsCounter"
+    "behaviourInputName": "Argument values to process",
+    "behaviourOutputName": "Resulting value calculation",
+    "description": "Adds two integers together and returns the result."
+  },
+  "math|utils|subtract|int,int": {
+    "qualifiedName": "subtract",
+    "location": {
+      "file": "math/utils.cpp",
+      "line": 7,
+      "endLine": 9
+    },
+    "returnType": "int",
+    "returnExpr": "a - b",
+    "calledByIds": [
+      "app|main|compute|",
+      "app|main|process|",
+      "app|main|run|"
     ],
-    "behaviourInputName": "MultiplyCore input",
-    "behaviourOutputName": "Result"
+    "callsIds": [],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT2_MATH_UTILS_02",
+    "parameters": [
+      {
+        "name": "a",
+        "type": "int"
+      },
+      {
+        "name": "b",
+        "type": "int"
+      }
+    ],
+    "behaviourInputName": "Subtract values",
+    "behaviourOutputName": "Subtract result",
+    "description": "Subtracts two integers and returns the result."
+  },
+  "math|utils|multiply|int,int": {
+    "qualifiedName": "multiply",
+    "location": {
+      "file": "math/utils.cpp",
+      "line": 11,
+      "endLine": 13
+    },
+    "returnType": "int",
+    "returnExpr": "a * b",
+    "calledByIds": [
+      "app|main|calculate|",
+      "app|main|compute|",
+      "app|main|run|"
+    ],
+    "callsIds": [],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT2_MATH_UTILS_03",
+    "parameters": [
+      {
+        "name": "a",
+        "type": "int"
+      },
+      {
+        "name": "b",
+        "type": "int"
+      }
+    ],
+    "behaviourInputName": "Multiply input values",
+    "behaviourOutputName": "Multiply result value",
+    "description": "This function multiplies two integers together."
   }
 }

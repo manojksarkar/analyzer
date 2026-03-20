@@ -1,0 +1,22 @@
+[
+  {
+    "name": "calculate",
+    "flowchart": "flowchart TD\n    A[Start] --> B{Check}\n    B -->|yes| C[Process]\n    B -->|no| D[Skip]\n    C --> E[End]\n    D --> E"
+  },
+  {
+    "name": "compute",
+    "flowchart": "flowchart TD\n    A[Start] --> B{Check}\n    B -->|yes| C[Process]\n    B -->|no| D[Skip]\n    C --> E[End]\n    D --> E"
+  },
+  {
+    "name": "process",
+    "flowchart": "flowchart TD\n    A[Start] --> B{Check}\n    B -->|yes| C[Process]\n    B -->|no| D[Skip]\n    C --> E[End]\n    D --> E"
+  },
+  {
+    "name": "run",
+    "flowchart": "flowchart TD\n    A[Start] --> B{Check}\n    B -->|yes| C[Process]\n    B -->|no| D[Skip]\n    C --> E[End]\n    D --> E"
+  },
+  {
+    "name": "main",
+    "flowchart": "flowchart TD\n    A[Start] --> B{Check}\n    B -->|yes| C[Process]\n    B -->|no| D[Skip]\n    C --> E[End]\n    D --> E"
+  }
+]
