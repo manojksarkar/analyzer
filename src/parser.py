@@ -24,6 +24,16 @@ _clang = _config.get("clang") or {}
 _llvm = _clang.get("llvmLibPath") or _config.get("llvmLibPath")
 _clang_inc = _clang.get("clangIncludePath") or _config.get("clangIncludePath")
 if _llvm and os.path.isfile(_llvm):
+    # Windows can fail to load libclang when dependent DLLs (e.g. from LLVM)
+    # are not on the DLL search path. Ensure the LLVM bin folder is discoverable.
+    _llvm_bin_dir = os.path.dirname(_llvm)
+    if _llvm_bin_dir and os.path.isdir(_llvm_bin_dir):
+        try:
+            # Python 3.8+: scoped DLL directory for the current process.
+            os.add_dll_directory(_llvm_bin_dir)  # type: ignore[attr-defined]
+        except Exception:
+            # Fallback: extend PATH so dependent DLLs are found.
+            os.environ["PATH"] = _llvm_bin_dir + os.pathsep + os.environ.get("PATH", "")
     cindex.Config.set_library_file(_llvm)
 
 _modules_groups = _config.get("modulesGroups") or {}

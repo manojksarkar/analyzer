@@ -1,16 +1,16 @@
 {
   "views": {
-    // "interfaceTables": true,
-    // "unitDiagrams": {
-    //   "renderPng": true
-    // },
-    // "flowcharts": {
-    //   "scriptPath": "fake_flowchart_generator.py",
-    //   "renderPng": true
-    // },
-    // "behaviourDiagram": {
-    //   "renderPng": true
-    // },
+    "interfaceTables": true,
+    "unitDiagrams": {
+      "renderPng": true
+    },
+    "flowcharts": {
+      "scriptPath": "fake_flowchart_generator.py",
+      "renderPng": true
+    },
+    "behaviourDiagram": {
+      "renderPng": true
+    },
     "moduleStaticDiagram": {
       "enabled": true,
       "renderPng": true,
@@ -26,8 +26,8 @@
     // "clangIncludePath": "/usr/lib/llvm-17/include"
   },
   "llm": {
-    "descriptions": false,
-    "behaviourNames": false,
+    "descriptions": true,
+    "behaviourNames": true,
     "baseUrl": "http://localhost:11434",
     "defaultModel": "llama3.2",
     "timeoutSeconds": 60,
@@ -55,7 +55,7 @@
   // },
   //
   // "selectedGroup": "group1",
-  "selectedGroup": "group1",
+  // "selectedGroup": "group1",
   "modulesGroups": {
     "group1": {
       "core": [

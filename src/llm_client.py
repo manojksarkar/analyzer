@@ -170,6 +170,56 @@ One-line description:"""
     return _call_ollama(prompt, config, kind="description")
 
 
+def get_unit_description(
+    unit_name: str,
+    function_descriptions: list,
+    global_descriptions: list,
+    config: dict,
+    abbreviations: dict = None,
+) -> str:
+    """Describe a unit from its functions/globals descriptions (summary for DOCX table)."""
+    def _items_to_text(items: list) -> str:
+        if not items:
+            return ""
+        # items: list[(name, description)]
+        lines = []
+        for name, desc in items:
+            name = (name or "").strip()
+            desc = (desc or "").strip()
+            if not desc or desc in ("-", "N/A"):
+                continue
+            if name:
+                lines.append(f" - {name}: {desc}")
+            else:
+                lines.append(f" - {desc}")
+        return "\n".join(lines)
+
+    abbrev_block = ""
+    if abbreviations:
+        lines = [f"  {k}: {v}" for k, v in sorted(abbreviations.items()) if k and v]
+        if lines:
+            abbrev_block = "\nConsider these abbreviations when interpreting names:\n" + "\n".join(lines) + "\n\n"
+
+    fn_block = _items_to_text(function_descriptions)
+    gv_block = _items_to_text(global_descriptions)
+    if not (fn_block or gv_block):
+        return ""
+
+    prompt = f"""Given the following C++ function and global-variable descriptions that belong to this unit, write ONE short sentence summarizing what the unit does overall.
+Be concrete but brief: at most ~25 words, no bullet list, no colon-separated catalog.
+
+Unit name: {unit_name or '(unnamed)'}
+
+Functions (descriptions):
+{fn_block or '-'}
+
+Globals (descriptions):
+{gv_block or '-'}{abbrev_block}
+
+One sentence:"""
+    return _call_ollama(prompt, config, kind="description")
+
+
 def get_struct_description(struct_name: str, fields: list, config: dict, abbreviations: dict = None) -> str:
     """One-line description of a struct from its name and fields. Uses name + member variables, not name alone."""
     fields_part = ", ".join(f"{f.get('name', '')} ({f.get('type', '')})" for f in (fields or []) if f.get("name"))

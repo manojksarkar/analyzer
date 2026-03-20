@@ -619,6 +619,126 @@ def _add_interface_table(doc, interfaces, font_small):
             _set_cell_font(row[i], font_small)
 
 
+def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, config: dict, abbreviations: dict) -> None:
+    """Add module-level table: Component | Unit | Description | Note.
+
+    Description is derived from per-unit `interface_tables.json` entries:
+    it aggregates available `description` fields from both functions and globals.
+    Note column is left as N/A for now.
+    """
+    if not unit_rows:
+        return
+    table = doc.add_table(rows=1, cols=4)
+    table.style = "Table Grid"
+    hdr = table.rows[0].cells
+    headers = ("Component", "Unit", "Description", "Note")
+    for i, h in enumerate(headers):
+        hdr[i].text = h
+        _set_cell_font(hdr[i], font_small, bold=True)
+
+    def _cell_trim(s: str, max_len: int = 90) -> str:
+        s = (s or "").strip()
+        if not s:
+            return ""
+        if len(s) <= max_len:
+            return s
+        return s[: max_len - 3] + "..."
+
+    def _unique_preserve_order(items: List[str]) -> List[str]:
+        seen = set()
+        out = []
+        for it in items:
+            if it in seen:
+                continue
+            seen.add(it)
+            out.append(it)
+        return out
+
+    for row_data in unit_rows:
+        # row_data = (unit_key, unit_name_display, interfaces)
+        unit_name_display = row_data[1] if len(row_data) > 1 else str(row_data[0])
+        interfaces = row_data[2] if len(row_data) > 2 else []
+
+        # Pull descriptions from both functions and globals.
+        fn_items: List[Tuple[str, str]] = []
+        gv_items: List[Tuple[str, str]] = []
+        for iface in interfaces or []:
+            d = str(iface.get("description") or "").strip()
+            if not d or d in ("-", NA):
+                continue
+
+            # Clean up newlines so prompt/table content stays readable.
+            d_clean = " ".join(d.split())
+
+            iface_type = iface.get("type") or ""
+            name = (
+                iface.get("interfaceName")
+                or iface.get("name")
+                or (iface.get("qualifiedName") or "").split("::")[-1]
+                or ""
+            )
+            name = str(name).strip()
+
+            if iface_type == "Global Variable":
+                gv_items.append((name, d_clean))
+            else:
+                # Default to "Function" for any non-global interface types we got.
+                fn_items.append((name, d_clean))
+
+        # De-duplicate while preserving order.
+        def _dedup_items(items: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+            seen = set()
+            out = []
+            for n, d in items:
+                key = (n or "").strip().lower() + "|" + (d or "").strip().lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append((n, d))
+            return out
+
+        fn_items = _dedup_items(fn_items)
+        gv_items = _dedup_items(gv_items)
+
+        description_text = NA
+        try:
+            from llm_client import _ollama_available, get_unit_description
+
+            if _ollama_available(config):
+                description_text = get_unit_description(
+                    unit_name_display,
+                    fn_items,
+                    gv_items,
+                    config,
+                    abbreviations or {},
+                ).strip()
+        except Exception:
+            # Fall back to deterministic join if the LLM call fails.
+            description_text = NA
+
+        if not description_text or description_text in ("-", NA):
+            # Fallback: join all descriptions (not just 3), but cap length for DOCX readability.
+            all_descs = [d for _, d in (fn_items + gv_items)]
+            all_descs = _unique_preserve_order(all_descs)
+            joined = "; ".join(all_descs)
+            description_text = _cell_trim(joined, max_len=120)
+
+        # Keep output short even when the LLM returns long text.
+        description_text = _cell_trim(str(description_text or NA), max_len=140)
+        if not description_text:
+            description_text = NA
+
+        note_text = NA
+
+        row = table.add_row().cells
+        row[0].text = str(component_name or NA)
+        row[1].text = str(unit_name_display or NA)
+        row[2].text = str(description_text or NA)
+        row[3].text = str(note_text or NA)
+        for c in row:
+            _set_cell_font(c, font_small)
+
+
 def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Optional[str]]:
     from utils import load_config, safe_filename, KEY_SEP
     config = load_config(PROJECT_ROOT)
@@ -715,6 +835,16 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
                     _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
             else:
                 _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
+
+        # Module-level index table (Component/Unit/Description/Note)
+        _add_component_unit_table(
+            doc,
+            module_name,
+            unit_rows_module,
+            font_small,
+            config=config,
+            abbreviations=abbreviations,
+        )
 
         unit_diag_dir = os.path.join(OUTPUT_DIR, "unit_diagrams")
         for unit_idx, (unit_key, unit_name_display, interfaces) in enumerate(unit_rows_module, start=1):
