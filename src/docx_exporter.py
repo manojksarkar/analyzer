@@ -2,6 +2,7 @@
 import os
 import sys
 import json
+import subprocess
 from typing import Optional, Tuple, List, Dict, Any
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -342,6 +343,73 @@ def _add_mermaid_as_text(doc, mermaid: str, font_small):
     run.font.name = "Consolas"
     run.font.size = font_small
 
+
+def _escape_mermaid_label_for_structure(text: str) -> str:
+    t = (text or "").replace('"', "'").replace("\n", " ").replace("|", "\u00a6")
+    return t
+
+
+def _build_module_static_structure_mermaid(
+    module_name: str,
+    unit_rows: List[Tuple[Any, str, Any]],
+) -> str:
+    """Mermaid TB chart: one box for module, one row of child boxes for units.
+
+    unit_rows: sorted list of (unit_key, unit_name_display, interfaces) per module.
+    """
+    mod_id = "MOD"
+    mod_label = _escape_mermaid_label_for_structure(f"Module: {module_name}")
+    lines = [
+        "%%{init: {'flowchart': {'ranksep': '0.55', 'nodesep': '0.35'}}}%%",
+        "flowchart TB",
+        f'  {mod_id}["{mod_label}"]',
+    ]
+    for i, row in enumerate(unit_rows):
+        disp = row[1] if len(row) > 1 else str(row[0])
+        uid = f"U{i}"
+        lines.append(f'  {uid}["{_escape_mermaid_label_for_structure(disp)}"]')
+        lines.append(f"  {mod_id} --> {uid}")
+    return "\n".join(lines)
+
+
+def _parse_module_static_diagram_cfg(views_cfg: dict, export_cfg: dict = None) -> Tuple[bool, bool, float]:
+    """enabled, renderPng, widthInches for Static Design module→units diagram (config.views.moduleStaticDiagram)."""
+    raw = (views_cfg or {}).get("moduleStaticDiagram")
+    if raw is None and export_cfg:
+        raw = export_cfg.get("moduleStaticDiagram")
+    if raw is None:
+        raw = True
+    if isinstance(raw, dict):
+        return (
+            bool(raw.get("enabled", True)),
+            bool(raw.get("renderPng", True)),
+            float(raw.get("widthInches", 5.5)),
+        )
+    return bool(raw), True, 5.5
+
+
+def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bool:
+    """Write .mmd and invoke mmdc; return True if png exists."""
+    from utils import mmdc_path
+
+    os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
+    mmd_path = os.path.splitext(png_path)[0] + ".mmd"
+    try:
+        with open(mmd_path, "w", encoding="utf-8") as f:
+            f.write(mermaid)
+    except OSError:
+        return False
+    puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
+    mmdc = mmdc_path(project_root)
+    cmd = [mmdc, "-i", mmd_path, "-o", png_path]
+    if os.path.isfile(puppeteer):
+        cmd.extend(["-p", puppeteer])
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
+        return r.returncode == 0 and os.path.isfile(png_path)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
 def _add_behavior_description_table(doc, behavior_description_list, input_name: str = "", output_name: str = ""):
     """Create a table with Requirements, Risk, Capacity, Input Name, Output Name rows.
 
@@ -552,6 +620,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     docx_path = docx_path or os.path.join(PROJECT_ROOT, raw_docx)
     font_size = int(export_cfg.get("docxFontSize", 8))
     views_cfg = config.get("views", {})
+    msd_enabled, msd_render_png, msd_width_in = _parse_module_static_diagram_cfg(views_cfg, export_cfg)
     fc_cfg = views_cfg.get("flowcharts") if isinstance(views_cfg.get("flowcharts"), dict) else {}
     flowcharts_enabled = bool(views_cfg.get("flowcharts"))
     flowcharts_render_png = fc_cfg.get("renderPng", True)
@@ -617,8 +686,27 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
         # 2.1 Static Design
         doc.add_heading(f"{sec_num}.1 Static Design", level=2)
 
+        unit_rows_module = sorted(by_module[module_name])
+        if msd_enabled and unit_rows_module:
+            mod_structure_mmd = _build_module_static_structure_mermaid(module_name, unit_rows_module)
+            static_mod_png = os.path.join(
+                OUTPUT_DIR, "module_static_diagrams", f"{safe_filename(module_name)}.png"
+            )
+            if msd_render_png:
+                if _render_mermaid_to_png(PROJECT_ROOT, mod_structure_mmd, static_mod_png) and os.path.isfile(
+                    static_mod_png
+                ):
+                    try:
+                        doc.add_picture(static_mod_png, width=Inches(msd_width_in))
+                    except Exception:
+                        _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
+                else:
+                    _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
+            else:
+                _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
+
         unit_diag_dir = os.path.join(OUTPUT_DIR, "unit_diagrams")
-        for unit_idx, (unit_key, unit_name_display, interfaces) in enumerate(sorted(by_module[module_name]), start=1):
+        for unit_idx, (unit_key, unit_name_display, interfaces) in enumerate(unit_rows_module, start=1):
             # 2.1.1 unit1
             doc.add_heading(f"{sec_num}.1.{unit_idx} {unit_name_display}", level=3)
 

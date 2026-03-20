@@ -33,10 +33,11 @@ Parse C++ → model (single source of truth) → views → software_detailed_des
 
 | Key | Description |
 |-----|-------------|
-| views | interfaceTables, sequenceDiagrams, flowcharts, componentDiagram (true/false), behaviourDiagram (object with scriptPath) |
+| views | interfaceTables, sequenceDiagrams, flowcharts, componentDiagram (true/false), behaviourDiagram (object), **moduleStaticDiagram** (`enabled`, `renderPng`, `widthInches`) for DOCX Static Design module→units tree |
 | views.behaviourDiagram | { scriptCmd } — full CLI argv; {fid} replaced per function; cwd=project root; .mmd→.png via mmdc |
+| views.moduleStaticDiagram | Optional; still read from legacy **export.moduleStaticDiagram** if missing under views |
 | clang | llvmLibPath, clangIncludePath |
-| llm | baseUrl, defaultModel, timeoutSeconds |
+| llm | baseUrl, defaultModel, timeoutSeconds, descriptions, **behaviourNames** (LLM polish for behaviour Input/Output names when Ollama is up), abbreviationsPath |
 | export | docxPath, docxFontSize |
 
 ---
@@ -212,7 +213,7 @@ Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ n
 1. Load interface_tables.json.
 2. Build Software Detailed Design structure ([spec](software_detailed_design.json)):
    - 1 Introduction (Purpose, Scope, Terms)
-   - 2..N Modules (Static Design: unit header, unit interface table, per-interface sections; Dynamic Behaviour: 2.2.x per function with behaviour diagram PNG from mermaid-cli)
+   - 2..N Modules (Static Design: **module overview diagram** — `config.views.moduleStaticDiagram`; one Mermaid box for the module name and one box per unit, rendered to PNG via mmdc under `output/module_static_diagrams/` (fallback: Mermaid source as monospace); then per-unit unit diagram (if enabled), unit header, unit interface table, per-interface sections; Dynamic Behaviour: 2.2.x per function with behaviour diagram PNG from mermaid-cli)
    - Code Metrics, Coding Rule, Test Coverage
    - Appendix A. Design Guideline
 3. Table columns: Interface ID, Interface Name, Information, Data Type, Data Range, Direction, Source/Destination, Interface Type.

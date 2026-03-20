@@ -8,8 +8,13 @@
     //   "scriptPath": "fake_flowchart_generator.py",
     //   "renderPng": true
     // },
-    "behaviourDiagram": {
-      "renderPng": true
+    // "behaviourDiagram": {
+    //   "renderPng": true
+    // },
+    "moduleStaticDiagram": {
+      "enabled": true,
+      "renderPng": true,
+      "widthInches": 5.5
     }
   },
   "clang": {
@@ -22,6 +27,7 @@
   },
   "llm": {
     "descriptions": false,
+    "behaviourNames": false,
     "baseUrl": "http://localhost:11434",
     "defaultModel": "llama3.2",
     "timeoutSeconds": 60,
