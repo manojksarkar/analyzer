@@ -1,0 +1,14 @@
+[
+  {
+    "name": "add",
+    "flowchart": "flowchart TD\n    A[Start] --> B{Check}\n    B -->|yes| C[Process]\n    B -->|no| D[Skip]\n    C --> E[End]\n    D --> E"
+  },
+  {
+    "name": "subtract",
+    "flowchart": "flowchart TD\n    A[Start] --> B{Check}\n    B -->|yes| C[Process]\n    B -->|no| D[Skip]\n    C --> E[End]\n    D --> E"
+  },
+  {
+    "name": "multiply",
+    "flowchart": "flowchart TD\n    A[Start] --> B{Check}\n    B -->|yes| C[Process]\n    B -->|no| D[Skip]\n    C --> E[End]\n    D --> E"
+  }
+]
