@@ -358,17 +358,28 @@ def _build_module_static_structure_mermaid(
     unit_rows: sorted list of (unit_key, unit_name_display, interfaces) per module.
     """
     mod_id = "MOD"
-    mod_label = _escape_mermaid_label_for_structure(f"Module: {module_name}")
+    mod_label = _escape_mermaid_label_for_structure(module_name)
     lines = [
         "%%{init: {'flowchart': {'ranksep': '0.55', 'nodesep': '0.35'}}}%%",
         "flowchart TB",
         f'  {mod_id}["{mod_label}"]',
     ]
+    unit_ids = []
     for i, row in enumerate(unit_rows):
         disp = row[1] if len(row) > 1 else str(row[0])
         uid = f"U{i}"
+        unit_ids.append(uid)
         lines.append(f'  {uid}["{_escape_mermaid_label_for_structure(disp)}"]')
         lines.append(f"  {mod_id} --> {uid}")
+    lines.append(
+        "  classDef moduleNode fill:#1e293b,stroke:#334155,color:#ffffff"
+    )
+    lines.append(
+        "  classDef unitNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff"
+    )
+    lines.append(f"  class {mod_id} moduleNode")
+    if unit_ids:
+        lines.append(f"  class {','.join(unit_ids)} unitNode")
     return "\n".join(lines)
 
 
