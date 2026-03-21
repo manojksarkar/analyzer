@@ -1,128 +1,134 @@
-# DOCX Generation Walkthrough (Demo Notes)
+# Software Detailed Design DOCX — Section Guide
 
-This document explains how `software_detailed_design.docx` is created section-by-section, and which data/files drive each part.
+This guide explains **what each part of the generated DOCX is for** and **how sections are ordered**, at document / design level — not domain rules, not routine-level implementation detail.
 
-## What generates the DOCX
+The generated **Software Detailed Design** presents modules, units, and interfaces from overview down to table rows. Where useful, subsections note **what to cover** and **expected depth** for readers — without naming individual routines in the narrative body.
 
-1. DOCX exporter script: `src/docx_exporter.py`
-2. It produces: `output/software_detailed_design_all.docx` (or per-group filename)
+**Reading order:** start with the outline below, then Section 1, then each module chapter in numeric order (static design for each unit before dynamic behaviour for that module).
 
-## Main inputs to the exporter
+---
 
-The exporter loads these files:
+## Outline and numbering
 
-- `output/interface_tables.json` (view output; drives the module/unit/interface table content)
-- `model/units.json` (used to find unit-related metadata for “unit header”)
-- `model/modules.json` (indirectly; module grouping happens from keys in `interface_tables.json`)
-- `model/dataDictionary.json` (used when building “unit header” type/enum/typedef snippets and for range lookups)
-- `model/globalVariables.json` (used by `unit header` table content)
-- `model/functions.json` (used for behaviour diagram input/output naming)
-- Flowchart diagrams: `output/flowcharts/*.png` (optional, used in per-interface sections)
-- Unit diagrams: `output/unit_diagrams/*.png` (optional, used before the unit header)
-- Behaviour diagram metadata: `output/behaviour_diagrams/_behaviour_pngs.json` (optional; drives the “Dynamic Behaviour” sections)
+| Order | Section | Role |
+|-------|---------|------|
+| Title | Software Detailed Design | Pipeline output |
+| **1** | Introduction | Purpose, scope, terms |
+| **2 … N** | One chapter per **module** | Logical slice of the tree (config / top-level area) |
+| **N+1** | Code Metrics, Coding Rule, Test Coverage | Placeholder |
+| **Appendix A** | Design Guideline | Placeholder |
 
-## Config that affects DOCX content
+**Inside each module:** **Static Design** (structure, units, interfaces, declarations) then **Dynamic Behaviour** (interactions across units).
 
-Important config keys (from `config/config.json`):
+**Numbers:**
 
-- `views.moduleStaticDiagram.enabled`, `views.moduleStaticDiagram.renderPng`, `views.moduleStaticDiagram.widthInches`
-- `views.flowcharts.renderPng` (controls whether flowchart PNGs are used)
-- `export.docxPath`, `export.docxFontSize`
+- `1` = Introduction only.
+- First module = `2`, second = `3`, and so on.
+- Under a module: `N.1` = Static Design, `N.2` = Dynamic Behaviour.
+- Units: `N.1.1`, `N.1.2`, … (third number = unit index).
+- Under unit `N.1.x`: `N.1.x.1` = unit header, `N.1.x.2` = unit interface table, `N.1.x.3`, `N.1.x.4`, … = one subsection per interface row (same order as the table).
 
-## Section-by-section creation
+**Terms:** *Module* = configured top-level group; *Unit* = typically one compilation unit (file name); *Interface* = one row in the unit interface table (function or global variable).
 
-### 1. “Software Detailed Design” heading
+---
 
-Added as the document title near the top.
+## Section 1 — Introduction
 
-### 1 Introduction
+**1.1 Purpose** — why this document exists. **1.2 Scope** — what is in scope (and when filled, what is out of scope). **1.3 Terms** — acronyms and terms used later in the DOCX.
 
-The exporter adds these headings and placeholder paragraphs:
+**When fully written:**
 
-- `1 Introduction`
-- `1.1 Purpose`
-- `1.2 Scope`
-- `1.3 Terms, Abbreviations and Definitions`
+- **1.1** — Audience, objective of the document, how it sits next to other artifacts (architecture, tests, etc.).
+- **1.2** — Product or subsystem boundary, baseline or version if relevant, external systems only at a high level.
+- **1.3** — One line per acronym or special term; expand on first use in the body if needed.
 
-### 2 Modules (static + interface tables + dynamic behaviour)
+**Today:** headings with short placeholder paragraphs (replace for a real project).
 
-The exporter groups units by module using keys from `interface_tables.json`, then loops:
+---
 
-#### 2.1 Static Design
+## Sections 2 … N — Per module
 
-For each module:
+**Module chapter expectations:**
 
-1. Module→units diagram
-   - The exporter uses the module name and the unit names from `interface_tables.json` to build the module→units tree.
-   - It renders the diagram to PNG and inserts it into the DOCX.
+- Section title uses the **module name** from the analysis configuration.
+- **Static Design** (`N.1`) appears before **Dynamic Behaviour** (`N.2`) so structure is read before interaction.
 
-2. Module-level index table: Component | Unit | Description | Note
-   - Each unit gets a short “Description” built from the interface descriptions in `interface_tables.json`.
-   - “Note” is currently left as `N/A`.
+### N.1 Static Design
 
-3. Per-unit content loop
-   - For each unit in the module, the exporter renders the unit header and interface table.
+| Block | Role | Notes |
+|-------|------|--------|
+| Module → units diagram | Module name + unit names from model | One node for the module, one per unit; labels match headings and tables; unit order matches index table when possible |
+| Index table (Component \| Unit \| Description \| Note) | Inventory + short unit summary | Description from aggregated interface text; Note column shows `N/A` until filled |
+| Unit title + path | Locate sources | Human-readable name + path without extension |
+| Unit diagram | Unit-level diagram | Placed above the unit header when the asset is produced |
+| **N.1.x.1** Unit header | Globals + typedef/enum/define | Left: declaration/macro; right: value / enumerators / note; avoid duplicate rows when the pipeline merges entries |
+| **N.1.x.2** Unit interface | Main interface table | See column table below |
+| **N.1.x.3+** Per interface | One subsection per table row | Heading: unit display name — interface id; body: flowchart PNG if available, else description text; subsection order matches table row order |
 
-Each unit:
+**Interface table columns**
 
-- Unit heading
-- Unit diagram PNG: the exporter looks for `output/unit_diagrams/*.png` and inserts it
-- Unit header section: lists globals and type declarations (typedef/enum/define) available in the unit
-- Unit interface table
-  - Globals: `Data Type` / `Data Range` come from `variableType` / `range`
-  - Functions:
-    - if `parameters` is non-empty: join parameter types/ranges into `Data Type`/`Data Range`
-    - if `parameters` is empty: `Data Type = VOID` and `Data Range = NA`
-- Per-interface section (one section per interface entry)
-  - Includes the interface ID in the heading
-  - Flowchart PNG: looks for a matching file under `output/flowcharts/` and inserts it
+| Column | Meaning |
+|--------|---------|
+| Interface ID | Stable id for cross-references |
+| Interface Name | Name of the interface |
+| Information | Short description of role or behaviour |
+| Data Type / Data Range | For **functions**, **inputs** via parameter types/ranges; **no parameters** → **VOID** / **NA**. For **globals**, variable type and range |
+| Direction (In/Out) | How flow is classified for that row |
+| Source/Destination | Related unit or area |
+| Interface Type | Kind of row (e.g. Function vs Global Variable) |
 
-#### 2.2 Dynamic Behaviour
+**Table quality:** Do not leave type/range empty — use VOID/NA for functions with no parameters; keep Direction and Source/Destination consistent with the analysis; keep Information readable (one sentence or short paragraph per row when a description exists).
 
-After static design for each module:
+### N.2 Dynamic Behaviour
 
-- The exporter adds a “Dynamic Behaviour” section.
-- It reads behaviour rows from `output/behaviour_diagrams/_behaviour_pngs.json`.
-- For each behaviour row:
-  - Adds a subheader describing the current function and any external call.
-  - Builds a small 2-column table of Inputs/Outputs based on `functions.json` labels.
-  - Inserts the behaviour diagram PNG.
+**Content per subsection (one per behaviour row):**
 
-### 3 Code Metrics, Coding Rule, Test Coverage
+- **Title line** — unit name, active logic, and another callee in parentheses when the row describes a cross-unit call.
+- **Behaviour description table** — bullet list of behaviour points when provided; Risk and Capacity lines use defaults unless overridden elsewhere.
+- **Input name / Output name** — short labels from the enriched model when present; otherwise readable generated labels.
+- **Behaviour** — diagram image under the bold “Behaviour” label when the file exists on disk.
 
-Added as placeholders:
+**Ordering:** Subsections are sorted in a stable way (e.g. by unit name, then order in behaviour metadata) so two exports stay comparable.
 
-- `[Code metrics, coding rules and test coverage.]`
+---
 
-### Appendix A. Design Guideline
+## Code Metrics / Appendix A
 
-Added as placeholders:
+**Code Metrics, Coding Rule, Test Coverage (last numbered section):**
 
-- `[Design guidelines.]`
+- Placeholder today.
+- When filled: quantitative metrics (size, complexity, or org-specific counts), pointers to coding standards or checklists, test coverage summary or link to a report.
 
-## Where “Data Type / Data Range” are decided
+**Appendix A — Design Guideline:**
 
-During DOCX rendering of the unit interface table:
+- Placeholder today.
+- When filled: naming conventions for modules/units, error-handling or logging expectations at design level, constraints (real-time, memory, safety) if they shape the structure in the main body.
 
-- Globals: `variableType` and `range`
-- Functions: parameter-based
-  - If `iface["parameters"]` is empty:
-    - `Data Type = "VOID"`
-    - `Data Range = "NA"`
-  - Otherwise:
-    - `Data Type` joins all `p.type`
-    - `Data Range` joins all `p.range`
+---
 
-Other interface-table columns are populated directly:
+## Data sources (reference)
 
-- `Information`: uses the interface description
-- `Direction`: uses the interface direction
-- `Source/Destination`: uses `sourceDest`
-- `Interface Type`: uses `type`
+| Need | Location |
+|------|----------|
+| Interface tables + text | `output/interface_tables.json` |
+| Unit header | `model/units.json`, `model/globalVariables.json`, `model/dataDictionary.json`, sources under project base from metadata |
+| Behaviour labels and rows | `model/functions.json`, `output/behaviour_diagrams/_behaviour_pngs.json` |
+| Diagrams | `output/flowcharts/`, `output/unit_diagrams/`, `output/module_static_diagrams/` |
+| DOCX output | `output/software_detailed_design_all.docx` (exact filename from export settings) |
 
-## How to regenerate (for the demo)
+**Config (affects DOCX):** `config/config.json` — e.g. `views.moduleStaticDiagram` (diagram size and rendering), `views.flowcharts`, `export.docxPath` and `export.docxFontSize`.
 
-1. Generate model and views (pipeline)
-2. Then re-run DOCX export:
-   - `python src/docx_exporter.py`
+**Refresh:** Regenerate model and views, then run the project **DOCX export** step from the repo root (see README).
 
+---
+
+## Diagrams
+
+These are **fixed places** in the DOCX layout. Each type is generated from the pipeline outputs below.
+
+| Diagram | Where it appears | Source |
+|---------|------------------|--------|
+| Module → units | Start of each module’s Static Design | Module + unit names in the model |
+| Unit | Under each unit heading, before unit header | `output/unit_diagrams/` |
+| Per-interface flowchart | Under each interface subsection | `output/flowcharts/` |
+| Behaviour | Under each Dynamic Behaviour subsection | Behaviour view + PNG path in metadata |
