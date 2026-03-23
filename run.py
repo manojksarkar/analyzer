@@ -1,11 +1,28 @@
 #!/usr/bin/env python3
-"""Entry: python run.py [--clean] [--selected-group <name>] <project_path>"""
+"""Entry: python run.py [options] <project_path>
+
+Options:
+  --clean              Delete output/ and model/ before running
+  --use-model          Skip Phase 1+2, reuse existing model/
+  --skip-model         Alias for --use-model
+  --selected-group <G> Export only one module group
+  --no-llm-summarize   Skip LLM phase/hierarchy summarization (faster, lower quality)
+  --llm-summarize      Accepted for backwards-compatibility; summarization is ON by default
+  --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
+
+Examples:
+  python run.py test_cpp_project
+  python run.py --clean test_cpp_project
+  python run.py --clean test_cpp_project --selected-group QuickSample
+  python run.py --use-model test_cpp_project --selected-group Flowcharts
+  python run.py --no-llm-summarize test_cpp_project
+  python run.py --from-phase 3 test_cpp_project
+"""
 import os
 import shutil
 import sys
 import subprocess
 import time
-import json
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(SCRIPT_DIR)
@@ -13,14 +30,60 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "src"))
 
 from utils import log, load_config
 
-raw_args = [a for a in sys.argv[1:] if a not in ("--clean", "--selected-group", "--use-model", "--skip-model")]
-clean_all = "--clean" in sys.argv[1:]
-use_model = ("--use-model" in sys.argv[1:]) or ("--skip-model" in sys.argv[1:])
-selected_group_arg = None
-if "--selected-group" in sys.argv:
-    i = sys.argv.index("--selected-group")
-    if i + 1 < len(sys.argv):
-        selected_group_arg = sys.argv[i + 1]
+
+def _parse_args(argv: list[str]):
+    """Return (clean_all, use_model, selected_group, project_path, no_llm_summarize, from_phase)."""
+    clean_all = False
+    use_model = False
+    selected_group = None
+    project_path = None
+    no_llm_summarize = False
+    from_phase = 1
+
+    args = list(argv[1:])
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--clean":
+            clean_all = True
+            i += 1
+        elif a in ("--use-model", "--skip-model"):
+            use_model = True
+            i += 1
+        elif a == "--selected-group":
+            if i + 1 < len(args):
+                selected_group = args[i + 1]
+                i += 2
+            else:
+                selected_group = ""
+                i += 1
+        elif a == "--no-llm-summarize":
+            no_llm_summarize = True
+            i += 1
+        elif a == "--llm-summarize":
+            # Accepted for backwards-compatibility; summarization is ON by default.
+            i += 1
+        elif a == "--from-phase":
+            if i + 1 < len(args):
+                try:
+                    from_phase = int(args[i + 1])
+                    if from_phase < 1 or from_phase > 4:
+                        raise ValueError
+                except ValueError:
+                    print(f"--from-phase must be 1, 2, 3, or 4 (got: {args[i + 1]})")
+                    raise SystemExit(1)
+                i += 2
+            else:
+                print("--from-phase requires an integer argument (1-4)")
+                raise SystemExit(1)
+        elif a.startswith("-"):
+            print(f"Unknown option: {a}")
+            raise SystemExit(2)
+        else:
+            project_path = a
+            i += 1
+
+    return clean_all, use_model, selected_group, project_path, no_llm_summarize, from_phase
 
 
 def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
@@ -37,10 +100,15 @@ def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
             return k
     return None
 
-if len(raw_args) < 1:
-    print("Usage: python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>] <project_path>")
+
+clean_all, use_model, selected_group_arg, project_path, no_llm_summarize, from_phase = _parse_args(sys.argv)
+
+if not project_path:
+    print("Usage: python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
+    print("                     [--no-llm-summarize] [--from-phase N] <project_path>")
     print("Example: python run.py test_cpp_project")
     print("         python run.py --clean test_cpp_project")
+    print("         python run.py --clean test_cpp_project --selected-group QuickSample")
     sys.exit(1)
 
 if clean_all:
@@ -50,17 +118,24 @@ if clean_all:
             shutil.rmtree(path)
             log(f"Removed {d}/", component="run")
 
-project_path = raw_args[0]
 resolved = os.path.abspath(project_path) if os.path.isabs(project_path) else os.path.join(SCRIPT_DIR, project_path)
 if not os.path.isdir(resolved):
     log(f"Project path not found: {resolved}", component="run", err=True)
     sys.exit(1)
 
+# ---------------------------------------------------------------------------
+# Phase definitions
+# LLM summarization (phases + hierarchy summaries) is ON by default.
+# Pass --no-llm-summarize to skip it for faster runs at lower quality.
+# ---------------------------------------------------------------------------
+
+deriver_flags = [] if no_llm_summarize else ["--llm-summarize"]
+
 PHASES_DEFAULT = [
-    ("Phase 1: Parse C++ source", "parser.py", [resolved]),
-    ("Phase 2: Derive model", "model_deriver.py", []),
-    ("Phase 3: Generate views", "run_views.py", []),
-    ("Phase 4: Export to DOCX", "docx_exporter.py", []),
+    ("Phase 1: Parse C++ source", "parser.py",        [resolved]),
+    ("Phase 2: Derive model",     "model_deriver.py", deriver_flags),
+    ("Phase 3: Generate views",   "run_views.py",     []),
+    ("Phase 4: Export to DOCX",   "docx_exporter.py", []),
 ]
 PHASES_BUILD_MODEL = PHASES_DEFAULT[:2]
 MODEL_FILES = (
@@ -70,11 +145,15 @@ MODEL_FILES = (
     os.path.join(SCRIPT_DIR, "model", "modules.json"),
 )
 
+
 def _run_pipeline() -> float:
-    """Run all phases once with current config."""
+    """Run all phases (respecting --from-phase) with current config."""
     total = 0.0
-    for i, (label, script, phase_args) in enumerate(PHASES_DEFAULT, 1):
-        print(f"\n=== {label} ===" if i > 1 else f"=== {label} ===", flush=True)
+    for idx, (label, script, phase_args) in enumerate(PHASES_DEFAULT, 1):
+        if idx < from_phase:
+            log(f"Skipped (--from-phase {from_phase})", component=label)
+            continue
+        print(f"\n=== {label} ===" if idx > 1 else f"=== {label} ===", flush=True)
         t0 = time.perf_counter()
         r = subprocess.run(
             [sys.executable, os.path.join("src", script)] + phase_args,
@@ -89,6 +168,7 @@ def _run_pipeline() -> float:
 
 
 total_time = 0.0
+
 
 def _run_phases(phases) -> float:
     total = 0.0
@@ -105,6 +185,7 @@ def _run_phases(phases) -> float:
         if r.returncode != 0:
             sys.exit(r.returncode)
     return total
+
 
 cfg = load_config(SCRIPT_DIR)
 groups_cfg = (cfg.get("modulesGroups") or {})
@@ -133,7 +214,7 @@ if group_names and not selected_group_arg:
         total_time += _run_phases(
             [
                 ("Phase 1: Parse C++ source", "parser.py", [resolved]),
-                ("Phase 2: Derive model", "model_deriver.py", []),
+                ("Phase 2: Derive model",     "model_deriver.py", deriver_flags),
             ],
         )
     for idx, g in enumerate(group_names, 1):
@@ -168,7 +249,7 @@ elif group_names and selected_group_arg:
         total_time += _run_phases(
             [
                 ("Phase 1: Parse C++ source", "parser.py", [resolved]),
-                ("Phase 2: Derive model", "model_deriver.py", []),
+                ("Phase 2: Derive model",     "model_deriver.py", deriver_flags),
             ],
         )
     total_time += _run_phases(
