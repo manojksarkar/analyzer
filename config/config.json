@@ -5,7 +5,7 @@
       "renderPng": true
     },
     "flowcharts": {
-      "scriptPath": "fake_flowchart_generator.py",
+      "scriptPath": "src/flowchart/flowchart_engine.py",
       "renderPng": true
     },
     "behaviourDiagram": {
@@ -29,8 +29,9 @@
     "descriptions": true,
     "behaviourNames": true,
     "baseUrl": "http://localhost:11434",
-    "defaultModel": "llama3.2",
-    "timeoutSeconds": 60,
+    "defaultModel": "qwen2.5-coder:14b",
+    "timeoutSeconds": 120,
+    "numCtx": 8192,
     "abbreviationsPath": "config/abbreviations.txt"
   },
   // Optional: logical groups of modules. Each group key maps to a full

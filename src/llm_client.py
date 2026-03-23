@@ -77,12 +77,15 @@ def extract_source_line(base_path: str, loc: dict) -> str:
 
 
 def _get_llm_config(config: dict) -> dict:
-    """Read llm block from config (baseUrl, defaultModel, timeoutSeconds)."""
+    """Read llm block from config (baseUrl, defaultModel, timeoutSeconds, numCtx)."""
     llm = config.get("llm") or {}
     return {
         "baseUrl": (llm.get("baseUrl") or "http://localhost:11434").rstrip("/"),
-        "defaultModel": llm.get("defaultModel") or "llama3.2",
-        "timeoutSeconds": int(llm.get("timeoutSeconds", 60)),
+        "defaultModel": llm.get("defaultModel") or "qwen2.5-coder:14b",
+        "timeoutSeconds": int(llm.get("timeoutSeconds", 120)),
+        # numCtx: Ollama defaults to 2048 which is too small for our prompts.
+        # Prompts exceeding num_ctx cause an immediate empty response.
+        "numCtx": int(llm.get("numCtx", 8192)),
     }
 
 
@@ -99,6 +102,7 @@ def _ollama_available(config: dict) -> bool:
 
 
 def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
+    """Call Ollama /api/generate with num_ctx and one auto-retry on empty response."""
     if not HAS_REQUESTS:
         print("Warning: requests not installed. pip install requests", file=sys.stderr)
         return ""
@@ -106,19 +110,42 @@ def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
     base_url = cfg["baseUrl"]
     model = cfg["defaultModel"]
     url = f"{base_url}/api/generate"
-    try:
-        r = requests.post(
-            url,
-            json={"model": model, "prompt": prompt, "stream": False},
-            timeout=cfg["timeoutSeconds"],
-        )
-        r.raise_for_status()
-        data = r.json()
-        return (data.get("response") or "").strip()
-    except (requests.RequestException, OSError) as e:
-        print(f"Ollama error: {e}", file=sys.stderr)
-        print("  -> Is Ollama running? Start with: ollama serve", file=sys.stderr)
-        return ""
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "num_ctx": cfg["numCtx"],
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "num_predict": 2048,
+        },
+    }
+    for attempt in range(2):  # one retry on empty/error
+        try:
+            r = requests.post(url, json=payload, timeout=cfg["timeoutSeconds"])
+            r.raise_for_status()
+            data = r.json()
+            text = (data.get("response") or "").strip()
+            if text:
+                return text
+            if attempt == 0:
+                error_msg = data.get("error", "")
+                if error_msg:
+                    print(f"  Ollama returned error: {error_msg} — retrying", file=sys.stderr)
+                else:
+                    print(
+                        "  Ollama returned empty response (prompt may exceed context window) "
+                        f"— retrying with num_ctx={cfg['numCtx']}",
+                        file=sys.stderr,
+                    )
+        except (requests.RequestException, OSError) as e:
+            if attempt == 0:
+                print(f"Ollama error: {e} — retrying", file=sys.stderr)
+            else:
+                print(f"Ollama error: {e}", file=sys.stderr)
+                print("  -> Is Ollama running? Start with: ollama serve", file=sys.stderr)
+    return ""
 
 
 def _format_abbreviations(abbreviations: dict) -> str:
