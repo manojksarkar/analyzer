@@ -153,6 +153,72 @@ global_access_writes = defaultdict(set)  # func_key -> set of var_id
 # First non-trivial return expression per function (for behaviour output naming)
 function_return_expr = {}
 
+# ---------------------------------------------------------------------------
+# Comment extraction helpers
+# ---------------------------------------------------------------------------
+
+_source_cache: dict = {}
+
+
+def _get_source_lines(file_path: str):
+    """Return cached source lines (list of str) for file_path."""
+    if file_path not in _source_cache:
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as _f:
+                _source_cache[file_path] = _f.readlines()
+        except (OSError, IOError):
+            _source_cache[file_path] = []
+    return _source_cache[file_path]
+
+
+def _preceding_comment(cursor) -> str:
+    """Return comment text on lines immediately above cursor (// or /* */ style)."""
+    if not cursor.location.file:
+        return ""
+    lines = _get_source_lines(cursor.location.file.name)
+    line_no = cursor.location.line  # 1-based
+    collected: list = []
+    i = line_no - 2  # 0-indexed line directly above
+    while i >= 0:
+        stripped = lines[i].strip()
+        if stripped.startswith("//"):
+            collected.insert(0, stripped.lstrip("/").strip())
+            i -= 1
+        elif stripped.endswith("*/"):
+            # Block comment — walk back to find /*
+            block: list = []
+            while i >= 0:
+                s = lines[i].strip()
+                block.insert(0, s)
+                if "/*" in s:
+                    break
+                i -= 1
+            for bl in block:
+                t = bl.lstrip("/*").rstrip("*/").strip("* \t")
+                if t:
+                    collected.insert(0, t)
+            i -= 1
+        elif stripped == "" or stripped.startswith("#"):
+            break
+        else:
+            break
+    return " ".join(collected)
+
+
+def _inline_comment(cursor) -> str:
+    """Return trailing // comment on the same line as cursor."""
+    if not cursor.location.file:
+        return ""
+    lines = _get_source_lines(cursor.location.file.name)
+    line_no = cursor.location.line  # 1-based
+    if line_no < 1 or line_no > len(lines):
+        return ""
+    line = lines[line_no - 1]
+    idx = line.find("//")
+    if idx < 0:
+        return ""
+    return line[idx + 2:].strip()
+
 
 def is_project_file(file_path: str) -> bool:
     """Return True if this path should be treated as project source for parsing.
@@ -275,18 +341,21 @@ def visit_type_definitions(cursor):
     if cursor.kind in (cindex.CursorKind.STRUCT_DECL, cindex.CursorKind.CLASS_DECL):
         if cursor.spelling or cursor.is_definition():
             key = _get_type_key(cursor)
-            fields = [
-                {
-                    "name": c.spelling,
-                    "type": c.type.spelling if c.type else "",
-                    "range": get_range_for_type(c.type.spelling if c.type else ""),
-                }
-                for c in cursor.get_children()
-                if c.kind == cindex.CursorKind.FIELD_DECL and c.spelling
-            ]
+            fields = []
+            for c in cursor.get_children():
+                if c.kind == cindex.CursorKind.FIELD_DECL and c.spelling:
+                    field_entry = {
+                        "name": c.spelling,
+                        "type": c.type.spelling if c.type else "",
+                        "range": get_range_for_type(c.type.spelling if c.type else ""),
+                    }
+                    cmt = _inline_comment(c)
+                    if cmt:
+                        field_entry["comment"] = cmt
+                    fields.append(field_entry)
             name = cursor.spelling or "(anonymous)"
             qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
-            data_dictionary[qn] = {
+            struct_entry: dict = {
                 "kind": "struct" if cursor.kind == cindex.CursorKind.STRUCT_DECL else "class",
                 "name": name,
                 "qualifiedName": qn,
@@ -294,6 +363,10 @@ def visit_type_definitions(cursor):
                 "range": "NA",
                 "location": loc,
             }
+            cmt = _preceding_comment(cursor)
+            if cmt:
+                struct_entry["comment"] = cmt
+            data_dictionary[qn] = struct_entry
             # Also add typedef entry when this struct participates in a 'typedef struct { ... } Name;' pattern.
             if cursor.kind == cindex.CursorKind.STRUCT_DECL and cursor.spelling:
                 _maybe_add_typedef_for_struct(name, qn, loc, rel_file)
@@ -304,16 +377,17 @@ def visit_type_definitions(cursor):
         for child in cursor.get_children():
             if child.kind == cindex.CursorKind.ENUM_CONSTANT_DECL:
                 val = child.enum_value if hasattr(child, "enum_value") else None
-                enumerators.append({
-                    "name": child.spelling,
-                    "value": val,
-                })
+                enum_entry: dict = {"name": child.spelling, "value": val}
+                cmt = _inline_comment(child)
+                if cmt:
+                    enum_entry["comment"] = cmt
+                enumerators.append(enum_entry)
         name = cursor.spelling or "(anonymous)"
         qn = get_qualified_name(cursor) if cursor.spelling else f"(anonymous)@{key}"
         underlying = cursor.type.spelling if cursor.type else ""
         vals = [e["value"] for e in enumerators if e["value"] is not None]
         enum_range = f"{min(vals)}-{max(vals)}" if vals else "NA"
-        data_dictionary[qn] = {
+        enum_dict: dict = {
             "kind": "enum",
             "name": name,
             "qualifiedName": qn,
@@ -322,6 +396,10 @@ def visit_type_definitions(cursor):
             "range": enum_range,
             "location": loc,
         }
+        cmt = _preceding_comment(cursor)
+        if cmt:
+            enum_dict["comment"] = cmt
+        data_dictionary[qn] = enum_dict
 
     elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
         if cursor.spelling:
@@ -332,7 +410,7 @@ def visit_type_definitions(cursor):
             key = qn
             if qn in data_dictionary and data_dictionary[qn].get("kind") == "enum":
                 key = f"typedef@{qn}:{rel_file}:{loc.get('line', '')}"
-            data_dictionary[key] = {
+            typedef_dict: dict = {
                 "kind": "typedef",
                 "name": cursor.spelling,
                 "qualifiedName": qn,
@@ -340,6 +418,10 @@ def visit_type_definitions(cursor):
                 "range": get_range_for_type(underlying or ""),
                 "location": loc,
             }
+            cmt = _preceding_comment(cursor)
+            if cmt:
+                typedef_dict["comment"] = cmt
+            data_dictionary[key] = typedef_dict
 
     for child in cursor.get_children():
         visit_type_definitions(child)
@@ -507,6 +589,7 @@ def visit_definitions(cursor):
             "returnType": cursor.result_type.spelling if cursor.result_type else "",
             "endLine": end_line,
             "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
+            "comment": _preceding_comment(cursor),
         }
         if cursor.is_definition():
             functions[fk] = entry
@@ -747,6 +830,7 @@ def build_metadata():
             },
             "params": f["parameters"],
             "returnType": f.get("returnType", ""),
+            "comment": f.get("comment", ""),
         }
         functions_dict[fid]["visibility"] = f.get("visibility", "default")
         if f.get("syntheticFromVarDecl"):

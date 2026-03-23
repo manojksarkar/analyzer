@@ -1,5 +1,6 @@
 """Derive model: units, modules, enrichment. Phase 2."""
 import os
+import re
 import sys
 import json
 
@@ -171,7 +172,14 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
         from llm_client import enrich_functions_with_descriptions, enrich_globals_with_descriptions
     except ImportError:
         return
-    funcs_list = [{"id": key, **value} for key, value in functions_data.items() ]
+    # Skip functions that already have a source comment extracted by parser.py.
+    # The Flowchart engine prefers source comments over LLM descriptions; calling
+    # the LLM for already-documented functions wastes calls and the result is discarded.
+    funcs_list = [
+        {"id": key, **value}
+        for key, value in functions_data.items()
+        if not value.get("comment")
+    ]
     desc = enrich_functions_with_descriptions(funcs_list, base_path, config)
     for key, f in functions_data.items():
         if desc.get(key, {}).get("description"):
@@ -383,9 +391,225 @@ def _enrich_behaviour_names_llm(
     print(flush=True)
 
 
+# ---------------------------------------------------------------------------
+# LLM summarization (--llm-summarize) — delegates to Flowchart's HierarchySummarizer
+# ---------------------------------------------------------------------------
+
+def _build_signature(f: dict) -> str:
+    """Build a C++ function signature string from a function data dict."""
+    qn = f.get("qualifiedName", "")
+    ret = f.get("returnType", "")
+    params = f.get("parameters") or f.get("params") or []
+    param_str = ", ".join(
+        f"{p.get('type', '')} {p.get('name', '')}".strip()
+        for p in params
+    )
+    return f"{ret} {qn}({param_str})".strip()
+
+
+def _run_hierarchy_summarizer(
+    base_path: str,
+    project_name: str,
+    functions_data: dict,
+    config: dict,
+) -> dict:
+    """
+    Run the Flowchart engine's HierarchySummarizer on the current model data.
+
+    Reuses the existing implementation in src/flowchart/project_scanner.py rather
+    than duplicating the prompts and logic here.
+
+    Steps:
+      1. Build a ProjectKnowledge object from functions_data (no extra LLM calls)
+      2. Run HierarchySummarizer.summarize() — 4 levels: function, file, module, project
+      3. Write phases back into functions_data in place
+      4. Return {"project", "modules", "files"} for knowledge_base.json
+
+    Returns empty summaries dict if the flowchart module cannot be imported.
+    """
+    _fc_dir = os.path.join(SCRIPT_DIR, "flowchart")
+    if _fc_dir not in sys.path:
+        sys.path.insert(0, _fc_dir)
+    try:
+        from project_scanner import HierarchySummarizer
+        from llm.client import LlmClient
+        from pkb.knowledge import FunctionKnowledge, ProjectKnowledge
+    except ImportError as exc:
+        print(f"  Cannot import Flowchart HierarchySummarizer: {exc}", file=sys.stderr)
+        return {"project": "", "modules": {}, "files": {}}
+
+    # Build ProjectKnowledge from already-parsed model data (no extra LLM/libclang calls)
+    knowledge = ProjectKnowledge(project_name=project_name, base_path=base_path)
+    for fid, f in functions_data.items():
+        qn = f.get("qualifiedName", "")
+        if not qn:
+            continue
+        fk = FunctionKnowledge(
+            qualified_name=qn,
+            signature=_build_signature(f),
+            file=(f.get("location") or {}).get("file", ""),
+            line=(f.get("location") or {}).get("line", 0),
+            # Prefer source comment; fall back to LLM description if available
+            comment=f.get("comment", "") or f.get("description", ""),
+            calls=[
+                functions_data[c].get("qualifiedName", c)
+                for c in (f.get("callsIds") or [])
+                if c in functions_data
+            ],
+            phases=f.get("phases", []),
+        )
+        knowledge.functions[qn] = fk
+
+    # Create LlmClient using the same config the analyzer uses
+    llm_cfg = config.get("llm") or {}
+    llm_base_url = (llm_cfg.get("baseUrl") or "http://localhost:11434").rstrip("/")
+    llm_url = f"{llm_base_url}/api/generate"
+    llm_model = llm_cfg.get("defaultModel") or "qwen2.5-coder:14b"
+    num_ctx = int(llm_cfg.get("numCtx", 8192))
+    client = LlmClient(url=llm_url, model=llm_model, num_ctx=num_ctx)
+
+    # Run the 4-level summarization (function summaries, phases, file, module, project)
+    summarizer = HierarchySummarizer(knowledge, client, base_path)
+    summarizer.summarize()
+
+    # Write phases back into functions_data in place
+    qn_to_fid = {f.get("qualifiedName", ""): fid for fid, f in functions_data.items()}
+    for qn, fk in knowledge.functions.items():
+        if fk.phases:
+            fid = qn_to_fid.get(qn)
+            if fid and fid in functions_data:
+                functions_data[fid]["phases"] = fk.phases
+        # Also back-fill comment if HierarchySummarizer added one for an undocumented function
+        if fk.comment:
+            fid = qn_to_fid.get(qn)
+            if fid and fid in functions_data and not functions_data[fid].get("comment"):
+                functions_data[fid]["comment"] = fk.comment
+
+    return {
+        "project": knowledge.project_summary,
+        "modules": knowledge.module_summaries,
+        "files": knowledge.file_summaries,
+    }
+
+
+def _generate_knowledge_base(
+    base_path: str,
+    project_name: str,
+    functions_data: dict,
+    data_dict: dict,
+    summaries: dict,
+) -> None:
+    """Write model/knowledge_base.json in the format expected by Flowchart's pkb/builder.py."""
+    functions_kb: dict = {}
+    for fid, fentry in functions_data.items():
+        qn = fentry.get("qualifiedName", "")
+        if not qn:
+            continue
+        calls_qnames = [
+            functions_data[c].get("qualifiedName", c)
+            for c in (fentry.get("callsIds") or [])
+            if c in functions_data
+        ]
+        functions_kb[qn] = {
+            "qualifiedName": qn,
+            "signature": _build_signature(fentry),
+            "file": (fentry.get("location") or {}).get("file", ""),
+            "line": (fentry.get("location") or {}).get("line", 0),
+            "comment": fentry.get("comment", "") or fentry.get("description", ""),
+            "calls": calls_qnames,
+            "phases": fentry.get("phases", []),
+        }
+
+    enums_kb: dict = {}
+    macros_kb: dict = {}
+    typedefs_kb: dict = {}
+    structs_kb: dict = {}
+    for key, entry in data_dict.items():
+        kind = entry.get("kind", "")
+        file_val = (entry.get("location") or {}).get("file", "")
+        if kind == "enum":
+            qn = entry.get("qualifiedName", key)
+            values: dict = {}
+            for e in entry.get("enumerators", []):
+                ename = e.get("name", "")
+                if ename:
+                    values[ename] = {"value": str(e.get("value", "")), "comment": e.get("comment", "")}
+            enums_kb[qn] = {
+                "qualifiedName": qn,
+                "file": file_val,
+                "comment": entry.get("comment", ""),
+                "values": values,
+            }
+        elif kind == "define":
+            name = entry.get("name", "")
+            if name:
+                macros_kb[name] = {
+                    "name": name,
+                    "value": entry.get("value", ""),
+                    "file": file_val,
+                    "comment": entry.get("comment", ""),
+                }
+        elif kind == "typedef":
+            qn = entry.get("qualifiedName", key)
+            if qn:
+                typedefs_kb[qn] = {
+                    "name": entry.get("name", qn),
+                    "underlying": entry.get("underlyingType", ""),
+                    "file": file_val,
+                    "comment": entry.get("comment", ""),
+                }
+        elif kind in ("struct", "class"):
+            qn = entry.get("qualifiedName", key)
+            if qn:
+                members: dict = {}
+                for field_item in entry.get("fields", []):
+                    fname = field_item.get("name", "")
+                    if fname:
+                        members[fname] = {
+                            "type": field_item.get("type", ""),
+                            "comment": field_item.get("comment", ""),
+                        }
+                structs_kb[qn] = {
+                    "qualifiedName": qn,
+                    "file": file_val,
+                    "comment": entry.get("comment", ""),
+                    "members": members,
+                }
+
+    kb = {
+        "project_name": project_name,
+        "base_path": base_path,
+        "project_summary": summaries.get("project", ""),
+        "module_summaries": summaries.get("modules", {}),
+        "file_summaries": summaries.get("files", {}),
+        "functions": functions_kb,
+        "enums": enums_kb,
+        "macros": macros_kb,
+        "typedefs": typedefs_kb,
+        "structs": structs_kb,
+    }
+    out_path = os.path.join(MODEL_DIR, "knowledge_base.json")
+    with open(out_path, "w", encoding="utf-8") as _kbf:
+        json.dump(kb, _kbf, indent=2, ensure_ascii=False)
+    print(
+        f"  model/knowledge_base.json (functions={len(functions_kb)}, "
+        f"enums={len(enums_kb)}, macros={len(macros_kb)}, "
+        f"typedefs={len(typedefs_kb)}, structs={len(structs_kb)})"
+    )
+
+
 def main():
+    llm_summarize = "--llm-summarize" in sys.argv
+
     base_path, project_name, functions_data, global_variables_data = _load_model()
     config = load_config(PROJECT_ROOT)
+
+    # Load dataDictionary for knowledge_base.json generation
+    dd_path = os.path.join(MODEL_DIR, "dataDictionary.json")
+    data_dict: dict = {}
+    if os.path.isfile(dd_path):
+        with open(dd_path, "r", encoding="utf-8") as _ddf:
+            data_dict = json.load(_ddf)
 
     units_data, unit_by_file = _build_units_modules(base_path, functions_data, global_variables_data)
     idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data)
@@ -396,25 +620,41 @@ def main():
     _enrich_behaviour_names(functions_data, global_variables_data)
     # LLM polish for poor static names (uses abbreviations)
     _enrich_behaviour_names_llm(base_path, functions_data, global_variables_data, config)
+
+    # LLM summarization (--llm-summarize only): phases + file/module/project hierarchy.
+    # Runs before _enrich_from_llm so that phases are in functions_data when knowledge_base
+    # is written, and before description enrichment so already-commented functions are skipped.
+    summaries: dict = {}
+    if llm_summarize:
+        print("Running LLM summarization (phases + hierarchy)...")
+        summaries = _run_hierarchy_summarizer(base_path, project_name, functions_data, config)
+        summ_path = os.path.join(MODEL_DIR, "summaries.json")
+        with open(summ_path, "w", encoding="utf-8") as _sf:
+            json.dump(summaries, _sf, indent=2, ensure_ascii=False)
+        print("  model/summaries.json")
+
     _enrich_from_llm(base_path, functions_data, global_variables_data, config)
 
     # Functions: must be In or Out (never -)
-    for f in functions_data.values():
-        d = f.get("direction", "").strip()
-        f["direction"] = "Out" if d == "Out" else "In"
+    for fentry in functions_data.values():
+        d = fentry.get("direction", "").strip()
+        fentry["direction"] = "Out" if d == "Out" else "In"
     # Globals: In/Out
     for g in global_variables_data.values():
         g["direction"] = "In/Out"
 
     # Clean and persist
-    for f in functions_data.values():
-        f.pop("params", None)
-    with open(os.path.join(MODEL_DIR, "functions.json"), "w", encoding="utf-8") as f:
-        json.dump(functions_data, f, indent=2)
-    with open(os.path.join(MODEL_DIR, "globalVariables.json"), "w", encoding="utf-8") as f:
-        json.dump(global_variables_data, f, indent=2)
+    for fentry in functions_data.values():
+        fentry.pop("params", None)
+    with open(os.path.join(MODEL_DIR, "functions.json"), "w", encoding="utf-8") as _ff:
+        json.dump(functions_data, _ff, indent=2)
+    with open(os.path.join(MODEL_DIR, "globalVariables.json"), "w", encoding="utf-8") as _gf:
+        json.dump(global_variables_data, _gf, indent=2)
     print(f"  model/functions.json ({len(functions_data)})")
     print(f"  model/globalVariables.json ({len(global_variables_data)})")
+
+    # Always generate knowledge_base.json (Flowchart engine reads this)
+    _generate_knowledge_base(base_path, project_name, functions_data, data_dict, summaries)
 
 
 if __name__ == "__main__":
