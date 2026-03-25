@@ -14,6 +14,7 @@ Rules (ABSOLUTE — never change):
 """
 
 import logging
+import re
 from typing import Callable, Dict, List, Optional, Tuple
 
 import clang.cindex as ci
@@ -36,6 +37,21 @@ _CONTROL_FLOW_KINDS = frozenset({
     ci.CursorKind.CONTINUE_STMT,
     ci.CursorKind.CXX_TRY_STMT,
 })
+
+# Regex that matches ASSERT/assert macro calls to exclude from flowcharts.
+# Matches: assert(...), ASSERT(...), POS_ASSERT(...), static_assert(...), etc.
+# Does NOT match regular function calls that merely start with "assert" lowercase
+# (e.g. assertSomeHelper(...)) because those lack the ALL-CAPS or prefix pattern.
+_ASSERT_RE = re.compile(
+    r'^\s*(?:static_assert|(?:[A-Z][A-Z0-9_]*_)?ASSERT|assert)\s*\(',
+    re.ASCII,
+)
+
+
+def _is_assert_stmt(src_text: str) -> bool:
+    """Return True if the statement source text is an ASSERT/assert call."""
+    return bool(_ASSERT_RE.match(src_text))
+
 
 # (node_id, edge_label_or_None) — edges waiting to connect to next node
 OpenExits = List[Tuple[str, Optional[str]]]
@@ -216,7 +232,8 @@ class CFGBuilder:
                 all_breaks.extend(brks)
                 all_continues.extend(conts)
             else:
-                pending.append(child)
+                if not _is_assert_stmt(self._src_text(child)):
+                    pending.append(child)
 
         flush()
         return (first_entry, current_open, all_returns, all_breaks, all_continues)
@@ -516,7 +533,8 @@ class CFGBuilder:
                 all_brks.extend(brks)
                 all_conts.extend(conts)
             else:
-                pending.append(s)
+                if not _is_assert_stmt(self._src_text(s)):
+                    pending.append(s)
 
         flush()
         return (first_entry, current_open, all_rets, all_brks, all_conts)
