@@ -35,9 +35,18 @@ def _escape_label(text):
     return t
 
 
-def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names, internal_scope="project"):
+def _build_unit_diagram(
+    unit_key,
+    unit_info,
+    units_data,
+    functions_data,
+    fid_to_unit,
+    unit_names,
+    *,
+    allowed_modules: set | None = None,
+):
     """Build Mermaid flowchart for one unit: one box per unit, edges labeled with interfaceIds.
-    internal_scope: 'project' = all units in model are internal; 'module' = only same module."""
+    If allowed_modules is provided, "internal" means: units whose module is in allowed_modules."""
     if not (unit_info.get("fileName") or "").endswith(".cpp"):
         return None
 
@@ -75,16 +84,20 @@ def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_
 
     caller_ids = {fr for (fr, to) in edges if to == this_id}
     callee_ids = {to for (fr, to) in edges if fr == this_id}
-    same_mod = set()
+    internal_set = set()
     for uk in units_data:
         pid = _unit_part_id(uk)
         uk_module = uk.split(KEY_SEP)[0] if KEY_SEP in uk else ""
-        if uk_module == this_module:
-            same_mod.add(pid)
-    internal_callers = sorted(caller_ids & same_mod)
-    external_callers = sorted(caller_ids - same_mod)
-    internal_callees = sorted((callee_ids - caller_ids) & same_mod)
-    external_callees = sorted((callee_ids - caller_ids) - same_mod)
+        if allowed_modules:
+            if uk_module in allowed_modules:
+                internal_set.add(pid)
+        else:
+            if uk_module == this_module:
+                internal_set.add(pid)
+    internal_callers = sorted(caller_ids & internal_set)
+    external_callers = sorted(caller_ids - internal_set)
+    internal_callees = sorted((callee_ids - caller_ids) & internal_set)
+    external_callees = sorted((callee_ids - caller_ids) - internal_set)
 
     n_edges = len(edges)
     n_extra_lines = min(max(2, n_edges), 12)
@@ -128,7 +141,7 @@ def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_
 
     # Internal edges
     for (fr, to), ifaces in sorted(edges.items()):
-        if fr in same_mod and to in same_mod:
+        if fr in internal_set and to in internal_set:
             label = "<br/>".join(sorted(ifaces))
             label = _escape_label(label)
             lines.append(f"    {fr} -->|{label}| {to}")
@@ -149,8 +162,8 @@ def _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_
     for (fr, to), ifaces in sorted(edges.items()):
         label = "<br/>".join(sorted(ifaces))
         label = _escape_label(label)
-        is_ext_in = fr in external_callers and to in same_mod
-        is_ext_out = fr in same_mod and to in external_callees
+        is_ext_in = fr in external_callers and to in internal_set
+        is_ext_out = fr in internal_set and to in external_callees
         if is_ext_in or is_ext_out:
             lines.append(f"  {fr} -->|{label}| {to}")
 
@@ -168,6 +181,7 @@ def run(model, output_dir, model_dir, config):
     functions_data = model.get("functions", {})
     if not units_data or not functions_data:
         return
+    allowed_modules = set(config.get("_analyzerAllowedModules") or [])
 
     fid_to_unit = _fid_to_unit(units_data)
     unit_names = {
@@ -196,12 +210,20 @@ def run(model, output_dir, model_dir, config):
         run_cmd_base.extend(["-p", puppeteer])
 
     cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
+    if allowed_modules:
+        cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0] in allowed_modules]
     total = len(cpp_units)
     for i, unit_key in enumerate(sorted(cpp_units), 1):
         print(f"  unitDiagrams: {i}/{total} units...", end="\r", flush=True)
         unit_info = units_data[unit_key]
         mermaid = _build_unit_diagram(
-            unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names
+            unit_key,
+            unit_info,
+            units_data,
+            functions_data,
+            fid_to_unit,
+            unit_names,
+            allowed_modules=allowed_modules or None,
         )
         if not mermaid:
             continue

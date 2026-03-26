@@ -95,6 +95,43 @@ def _strip_json_comments(text: str) -> str:
     return "".join(result)
 
 
+def _strip_trailing_commas(text: str) -> str:
+    """Remove trailing commas before } or ] (JSON5-style), outside strings."""
+    out = []
+    i = 0
+    in_string = False
+    escape = False
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if escape:
+            out.append(c)
+            escape = False
+            i += 1
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            out.append(c)
+            i += 1
+            continue
+        if c == '"':
+            in_string = not in_string
+            out.append(c)
+            i += 1
+            continue
+        if not in_string and c == ",":
+            # If next non-whitespace is } or ], drop this comma.
+            j = i + 1
+            while j < n and text[j] in (" ", "\t", "\r", "\n"):
+                j += 1
+            if j < n and text[j] in ("}", "]"):
+                i += 1
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def load_config(project_root: str) -> dict:
     """Load config from config/config.json, then config.local.json overrides."""
     config = {}
@@ -106,7 +143,10 @@ def load_config(project_root: str) -> dict:
         if os.path.isfile(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    config.update(json.loads(_strip_json_comments(f.read())))
+                    raw = f.read()
+                    stripped = _strip_json_comments(raw)
+                    stripped = _strip_trailing_commas(stripped)
+                    config.update(json.loads(stripped))
             except (json.JSONDecodeError, IOError):
                 pass
     return config
@@ -124,6 +164,35 @@ else:
     # If no selected group (or invalid), fall back to top-level "modules" if present.
     # When that is also missing/empty, default behaviour is used: module = first folder.
     _MODULE_OVERRIDES = _CONFIG_CACHE.get("modules") or {}
+    # If no explicit modules mapping is provided, but modulesGroups exists,
+    # merge all groups so the "full model" uses the same logical module names.
+    # This keeps unit keys stable across per-group exports.
+    if not _MODULE_OVERRIDES and isinstance(_MODULE_GROUPS, dict) and _MODULE_GROUPS:
+        merged: dict = {}
+        for _, grp in _MODULE_GROUPS.items():
+            if not isinstance(grp, dict):
+                continue
+            for module, paths in grp.items():
+                if not paths:
+                    continue
+                if isinstance(paths, str):
+                    paths_list = [paths]
+                else:
+                    paths_list = list(paths) if isinstance(paths, list) else []
+                if module not in merged:
+                    merged[module] = paths_list if len(paths_list) != 1 else paths_list[0]
+                else:
+                    existing = merged.get(module)
+                    # Normalize to list for merge
+                    if isinstance(existing, str):
+                        existing_list = [existing]
+                    else:
+                        existing_list = list(existing) if isinstance(existing, list) else []
+                    for p in paths_list:
+                        if p and p not in existing_list:
+                            existing_list.append(p)
+                    merged[module] = existing_list if len(existing_list) != 1 else existing_list[0]
+        _MODULE_OVERRIDES = merged
 
 
 def _resolve_module_from_rel(rel_file: str) -> str:

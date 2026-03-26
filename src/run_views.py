@@ -6,8 +6,6 @@ import json
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 def _load_model():
@@ -33,9 +31,21 @@ def main():
     from utils import load_config
     from views import run_views
 
+    # Optional CLI override:
+    #   python src/run_views.py --output-dir output/group1
+    output_dir = os.path.join(PROJECT_ROOT, "output")
+    args = sys.argv[1:]
+    if "--output-dir" in args:
+        i = args.index("--output-dir")
+        if i + 1 < len(args):
+            output_dir = args[i + 1]
+    if not os.path.isabs(output_dir):
+        output_dir = os.path.join(PROJECT_ROOT, output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
     model = _load_model()
     config = load_config(PROJECT_ROOT)
-    run_views(model, OUTPUT_DIR, MODEL_DIR, config)
+    run_views(model, output_dir, MODEL_DIR, config)
 
 
 if __name__ == "__main__":

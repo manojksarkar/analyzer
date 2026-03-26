@@ -35,6 +35,7 @@ def run(model, output_dir, model_dir, config):
 
     units_data = model.get("units", {})
     functions_data = model.get("functions", {})
+    allowed_modules = set(config.get("_analyzerAllowedModules") or [])
     fid_to_unit = {fid: uk for uk, u in units_data.items() for fid in u.get("functionIds", [])}
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                   for uk, u in units_data.items()}
@@ -54,7 +55,12 @@ def run(model, output_dir, model_dir, config):
         run_cmd_base.extend(["-p", puppeteer])
 
     docx_rows = {}  # module -> unit -> [ {externalUnitFunction, pngPath} ]
-    functions = list(model.get("functions", {}))
+    # Only generate diagrams for functions within the selected group (if any),
+    # but keep full-model context so external callers (outside the group) are captured.
+    if allowed_modules:
+        functions = [fid for fid, uk in fid_to_unit.items() if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0] in allowed_modules]
+    else:
+        functions = list(model.get("functions", {}))
     total = len(functions)
     count = 0
 
@@ -76,7 +82,12 @@ def run(model, output_dir, model_dir, config):
         module_name = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
         current_unit = unit_names.get(unit_key, unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
         called_by_ids = functions_data.get(fid, {}).get("calledByIds", []) or []
-        external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] != module_name]
+        if allowed_modules:
+            # External = outside selected group
+            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] not in allowed_modules]
+        else:
+            # Default behaviour: external = different module
+            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] != module_name]
 
         for idx, mmd_path in enumerate(mmd_paths):
             if idx >= len(external_callers):

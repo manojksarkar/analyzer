@@ -748,7 +748,8 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     group_name = config.get("selectedGroup") or config.get("modulesGroup") or "all"
     raw_docx = export_cfg.get("docxPath", "output/software_detailed_design.docx")
     raw_docx = raw_docx.replace("{group}", group_name)
-    docx_path = docx_path or os.path.join(PROJECT_ROOT, raw_docx)
+    if not docx_path:
+        docx_path = os.path.join(PROJECT_ROOT, raw_docx)
     font_size = int(export_cfg.get("docxFontSize", 8))
     views_cfg = config.get("views", {})
     msd_enabled, msd_render_png, msd_width_in = _parse_module_static_diagram_cfg(views_cfg, export_cfg)

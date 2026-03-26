@@ -22,7 +22,14 @@ def _fid_to_unit(units_data):
     return out
 
 
-def _build_interface_tables(units_data, functions_data, global_variables_data, data_dictionary=None):
+def _build_interface_tables(
+    units_data,
+    functions_data,
+    global_variables_data,
+    data_dictionary=None,
+    *,
+    allowed_modules: set | None = None,
+):
     # Only .cpp units; entries sorted by line; caller/callee units derived from calledByIds/callsIds
     fid_to_unit = _fid_to_unit(units_data)
     dd = data_dictionary or {}
@@ -30,6 +37,9 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
 
     result = {"unitNames": unit_names}
     for unit_key, unit_info in units_data.items():
+        if allowed_modules:
+            if KEY_SEP in unit_key and unit_key.split(KEY_SEP, 1)[0] not in allowed_modules:
+                continue
         if not (unit_info.get("fileName") or "").endswith(".cpp"):
             continue
         unit_name_display = unit_info.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
@@ -54,9 +64,17 @@ def _build_interface_tables(units_data, functions_data, global_variables_data, d
                 for u in fid_to_unit.get(cid, []) if u
             }
             self_module = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
-            def _other_mod(u): return u.split(KEY_SEP)[0] != self_module if KEY_SEP in u else True
-            callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _other_mod(u)))
-            callees_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in callee_units if _other_mod(u)))
+            def _is_external_unit(u: str) -> bool:
+                if KEY_SEP not in u:
+                    return True
+                mod = u.split(KEY_SEP, 1)[0]
+                if allowed_modules:
+                    return mod not in allowed_modules
+                # Default behaviour: treat different module as external
+                return mod != self_module
+
+            callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _is_external_unit(u)))
+            callees_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in callee_units if _is_external_unit(u)))
             parts = [', '.join(callers_fmt), ', '.join(callees_fmt)]
             source_dest = '; '.join(p for p in parts if p) if (callers_fmt or callees_fmt) else "-"
             raw_params = f.get("parameters", [])
@@ -125,9 +143,14 @@ def run(model, output_dir, model_dir, config):
     functions_data = model.get("functions", {})
     global_variables_data = model.get("globalVariables", {})
     data_dict = model.get("dataDictionary", {})
+    allowed_modules = set(config.get("_analyzerAllowedModules") or [])
 
     interface_tables = _build_interface_tables(
-        units_data, functions_data, global_variables_data, data_dict
+        units_data,
+        functions_data,
+        global_variables_data,
+        data_dict,
+        allowed_modules=allowed_modules,
     )
     out_path = os.path.join(output_dir, "interface_tables.json")
     os.makedirs(output_dir, exist_ok=True)

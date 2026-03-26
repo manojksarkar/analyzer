@@ -40,10 +40,7 @@ if not os.path.isdir(resolved):
 PHASES = [
     ("Phase 1: Parse C++ source", "parser.py", [resolved]),
     ("Phase 2: Derive model", "model_deriver.py", []),
-    ("Phase 3: Generate views", "run_views.py", []),
-    ("Phase 4: Export to DOCX", "docx_exporter.py", []),
 ]
-
 
 def _run_pipeline() -> float:
     """Run all phases once with current config (including any config.local.json)."""
@@ -69,6 +66,23 @@ config_dir = os.path.join(SCRIPT_DIR, "config")
 local_cfg_path = os.path.join(config_dir, "config.local.json")
 original_local_bytes: bytes | None = None
 
+
+def _run_phases(phases) -> float:
+    total = 0.0
+    for i, (label, script, phase_args) in enumerate(phases, 1):
+        print(f"\n=== {label} ===" if i > 1 else f"=== {label} ===", flush=True)
+        t0 = time.perf_counter()
+        r = subprocess.run(
+            [sys.executable, os.path.join("src", script)] + phase_args,
+            cwd=SCRIPT_DIR,
+        )
+        elapsed = time.perf_counter() - t0
+        total += elapsed
+        log(f"{elapsed:.2f}s", component=label)
+        if r.returncode != 0:
+            sys.exit(r.returncode)
+    return total
+
 if run_all_groups:
     # Preserve any existing config.local.json
     if os.path.isfile(local_cfg_path):
@@ -84,12 +98,33 @@ if run_all_groups:
             total_time += _run_pipeline()
         else:
             os.makedirs(config_dir, exist_ok=True)
+            # Build the full model once (no selectedGroup).
+            with open(local_cfg_path, "w", encoding="utf-8") as f:
+                json.dump({}, f, indent=2)
+            log("Building full model once (all modules).", component="run")
+            total_time += _run_pipeline()
+
+            # Then export per group (logical filtering happens in Phase 3/4 via config.selectedGroup).
             for idx, g in enumerate(group_names, 1):
                 log(f"Group {idx}/{len(group_names)}: {g}", component="run")
-                # Write a minimal config.local.json that selects this group (new key).
                 with open(local_cfg_path, "w", encoding="utf-8") as f:
                     json.dump({"selectedGroup": g}, f, indent=2)
-                total_time += _run_pipeline()
+                group_out = os.path.join(SCRIPT_DIR, "output", g)
+                os.makedirs(group_out, exist_ok=True)
+
+                total_time += _run_phases(
+                    [
+                        ("Phase 3: Generate views", "run_views.py", ["--output-dir", group_out]),
+                        (
+                            "Phase 4: Export to DOCX",
+                            "docx_exporter.py",
+                            [
+                                os.path.join(group_out, "interface_tables.json"),
+                                os.path.join(group_out, f"software_detailed_design_{g}.docx"),
+                            ],
+                        ),
+                    ]
+                )
     finally:
         # Restore previous config.local.json (if any), or remove our temporary one.
         if original_local_bytes is not None:
