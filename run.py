@@ -11,7 +11,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(SCRIPT_DIR)
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "src"))
 
-from utils import log, timed, load_config
+from utils import log, load_config
 
 raw_args = [a for a in sys.argv[1:] if a not in ("--clean", "--all-groups")]
 clean_all = "--clean" in sys.argv[1:]
@@ -37,15 +37,18 @@ if not os.path.isdir(resolved):
     log(f"Project path not found: {resolved}", component="run", err=True)
     sys.exit(1)
 
-PHASES = [
+PHASES_DEFAULT = [
     ("Phase 1: Parse C++ source", "parser.py", [resolved]),
     ("Phase 2: Derive model", "model_deriver.py", []),
+    ("Phase 3: Generate views", "run_views.py", []),
+    ("Phase 4: Export to DOCX", "docx_exporter.py", []),
 ]
+PHASES_BUILD_MODEL = PHASES_DEFAULT[:2]
 
 def _run_pipeline() -> float:
     """Run all phases once with current config (including any config.local.json)."""
     total = 0.0
-    for i, (label, script, phase_args) in enumerate(PHASES, 1):
+    for i, (label, script, phase_args) in enumerate(PHASES_DEFAULT, 1):
         print(f"\n=== {label} ===" if i > 1 else f"=== {label} ===", flush=True)
         t0 = time.perf_counter()
         r = subprocess.run(
@@ -102,7 +105,7 @@ if run_all_groups:
             with open(local_cfg_path, "w", encoding="utf-8") as f:
                 json.dump({}, f, indent=2)
             log("Building full model once (all modules).", component="run")
-            total_time += _run_pipeline()
+            total_time += _run_phases(PHASES_BUILD_MODEL)
 
             # Then export per group (logical filtering happens in Phase 3/4 via config.selectedGroup).
             for idx, g in enumerate(group_names, 1):
