@@ -48,9 +48,21 @@ _ASSERT_RE = re.compile(
 )
 
 
-def _is_assert_stmt(src_text: str) -> bool:
-    """Return True if the statement source text is an ASSERT/assert call."""
-    return bool(_ASSERT_RE.match(src_text))
+def _is_assert_stmt(cursor: ci.Cursor) -> bool:
+    """Return True if cursor represents an ASSERT/assert macro call.
+
+    Uses the first token at the call site (reliable even when the macro
+    expands to an IF_STMT, which would otherwise slip through as a
+    DECISION node).  Must be called BEFORE the _CONTROL_FLOW_KINDS
+    dispatch in _process_compound / _process_case_stmts.
+    """
+    try:
+        tokens = list(cursor.get_tokens())
+        if tokens:
+            return bool(_ASSERT_RE.match(tokens[0].spelling + "("))
+    except Exception:
+        pass
+    return False
 
 
 # (node_id, edge_label_or_None) — edges waiting to connect to next node
@@ -220,6 +232,10 @@ class CFGBuilder:
             pending.clear()
 
         for child in cursor.get_children():
+            # Filter ASSERT macros before kind dispatch: some expand to IF_STMT
+            # which would otherwise become a DECISION node.
+            if _is_assert_stmt(child):
+                continue
             if child.kind in _CONTROL_FLOW_KINDS:
                 flush()
                 entry, opens, rets, brks, conts = self._process_stmt(child)
@@ -232,8 +248,7 @@ class CFGBuilder:
                 all_breaks.extend(brks)
                 all_continues.extend(conts)
             else:
-                if not _is_assert_stmt(self._src_text(child)):
-                    pending.append(child)
+                pending.append(child)
 
         flush()
         return (first_entry, current_open, all_returns, all_breaks, all_continues)
@@ -521,6 +536,9 @@ class CFGBuilder:
             # Nested CASE_STMT inside a case means fallthrough — stop here
             if s.kind in (ci.CursorKind.CASE_STMT, ci.CursorKind.DEFAULT_STMT):
                 break
+            # Filter ASSERT macros before kind dispatch (same reason as _process_compound)
+            if _is_assert_stmt(s):
+                continue
             if s.kind in _CONTROL_FLOW_KINDS:
                 flush()
                 entry, opens, rets, brks, conts = self._process_stmt(s)
@@ -533,8 +551,7 @@ class CFGBuilder:
                 all_brks.extend(brks)
                 all_conts.extend(conts)
             else:
-                if not _is_assert_stmt(self._src_text(s)):
-                    pending.append(s)
+                pending.append(s)
 
         flush()
         return (first_entry, current_open, all_rets, all_brks, all_conts)
