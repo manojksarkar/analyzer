@@ -619,6 +619,15 @@ def _add_interface_table(doc, interfaces, font_small):
             _set_cell_font(row[i], font_small)
 
 
+def _merge_vertical_cells(table, col: int, start_row: int, end_row: int) -> None:
+    """Merge vertically from start_row to end_row inclusive (same column). Word keeps top-left cell content."""
+    if start_row >= end_row:
+        return
+    top = table.cell(start_row, col)
+    bottom = table.cell(end_row, col)
+    top.merge(bottom)
+
+
 def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, config: dict, abbreviations: dict) -> None:
     """Add module-level table: Component | Unit | Description | Note.
 
@@ -654,7 +663,7 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
             out.append(it)
         return out
 
-    for row_data in unit_rows:
+    for row_idx, row_data in enumerate(unit_rows):
         # row_data = (unit_key, unit_name_display, interfaces)
         unit_name_display = row_data[1] if len(row_data) > 1 else str(row_data[0])
         interfaces = row_data[2] if len(row_data) > 2 else []
@@ -731,12 +740,18 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         note_text = NA
 
         row = table.add_row().cells
-        row[0].text = str(component_name or NA)
+        # Component is one per module; only first body row holds text, then column 0 is merged.
+        row[0].text = str(component_name or NA) if row_idx == 0 else ""
         row[1].text = str(unit_name_display or NA)
         row[2].text = str(description_text or NA)
         row[3].text = str(note_text or NA)
         for c in row:
             _set_cell_font(c, font_small)
+
+    # Merge Component column across all body rows (same component for the whole table).
+    n = len(table.rows)
+    if n > 2:
+        _merge_vertical_cells(table, 0, 1, n - 1)
 
 
 def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Optional[str]]:
