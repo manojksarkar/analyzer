@@ -56,32 +56,32 @@
   //
   // "selectedGroup": "group1",
   // "selectedGroup": "group1",
-  "modulesGroups": {
-    "group1": {
-      "core": [
-        "app",
-        "math"
-      ],
-      "support": "outer/inner",
-      "tests_a": [
-        "tests/direction",
-        "tests/enum",
-        "tests/flow"
-      ],
-      "tests_b": [
-        "tests/hub",
-        "tests/poly",
-        "tests/structs"
-      ]
-    },
-    "group2": {
-      "core": [
-        "app",
-        "math"
-      ],
-      "support": "outer/inner"
-    }
-  },
+  // "modulesGroups": {
+  //   "group1": {
+  //     "core": [
+  //       "app",
+  //       "math"
+  //     ],
+  //     "support": "outer/inner",
+  //     "tests_a": [
+  //       "tests/direction",
+  //       "tests/enum",
+  //       "tests/flow"
+  //     ],
+  //     "tests_b": [
+  //       "tests/hub",
+  //       "tests/poly",
+  //       "tests/structs"
+  //     ]
+  //   },
+  //   "group2": {
+  //     "core": [
+  //       "app",
+  //       "math"
+  //     ],
+  //     "support": "outer/inner"
+  //   }
+  // },
   "export": {
     "docxPath": "output/software_detailed_design_{group}.docx",
     "docxFontSize": 8

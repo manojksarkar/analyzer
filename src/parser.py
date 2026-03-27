@@ -62,6 +62,14 @@ CLANG_ARGS = [
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
+# Common visibility-like macros seen in C/C++ codebases.
+# Defining them keeps declarations such as
+# "PROTECTED DB_TYPE foo(...)" parseable even when headers don't define them.
+_default_macro_defs = ("PRIVATE", "PROTECTED", "PUBLIC")
+for _macro in _default_macro_defs:
+    _arg = f"-D{_macro}="
+    if _arg not in CLANG_ARGS:
+        CLANG_ARGS.append(_arg)
 _extra = _clang.get("clangArgs")
 if _extra:
     CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
