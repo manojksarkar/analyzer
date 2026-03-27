@@ -14,6 +14,7 @@ Rules (ABSOLUTE — never change):
 """
 
 import logging
+import re
 from typing import Callable, Dict, List, Optional, Tuple
 
 import clang.cindex as ci
@@ -36,6 +37,41 @@ _CONTROL_FLOW_KINDS = frozenset({
     ci.CursorKind.CONTINUE_STMT,
     ci.CursorKind.CXX_TRY_STMT,
 })
+
+# Matches any assertion macro call to suppress from the flowchart.
+#
+# Covered forms (token-based check — see _is_assert_stmt):
+#   assert(...)                     — C standard
+#   static_assert(...)              — C++11
+#   ASSERT(...)                     — plain uppercase
+#   POS_ASSERT(...)                 — one prefix segment
+#   UTIL_DEBUG_ASSERT(...)          — multiple prefix segments  ← key fix: * not ?
+#   MY_CUSTOM_ASSERT(...)           — any number of ALL_CAPS_ prefixes
+#
+# Does NOT match:
+#   assertSomeHelper(...)           — camelCase, no ALL-CAPS suffix
+#   ASSERT_EQ / ASSERT_TRUE         — suffix after ASSERT, not a prefix before it
+_ASSERT_RE = re.compile(
+    r'^(?:assert|static_assert|(?:[A-Z][A-Z0-9_]*_)*ASSERT)\s*\(',
+    re.ASCII,
+)
+
+
+def _is_assert_stmt(cursor: ci.Cursor) -> bool:
+    """Return True if cursor is an ASSERT/assert macro call.
+
+    Reads the first token at the call site so the check is reliable even
+    when the macro expands to an IF_STMT (which would otherwise become a
+    DECISION node).  Must be called BEFORE _CONTROL_FLOW_KINDS dispatch.
+    """
+    try:
+        tokens = list(cursor.get_tokens())
+        if tokens:
+            return bool(_ASSERT_RE.match(tokens[0].spelling + "("))
+    except Exception:
+        pass
+    return False
+
 
 # (node_id, edge_label_or_None) — edges waiting to connect to next node
 OpenExits = List[Tuple[str, Optional[str]]]
@@ -204,6 +240,10 @@ class CFGBuilder:
             pending.clear()
 
         for child in cursor.get_children():
+            # Must be before kind dispatch: ASSERT macros can expand to IF_STMT
+            # and would otherwise become DECISION nodes.
+            if _is_assert_stmt(child):
+                continue
             if child.kind in _CONTROL_FLOW_KINDS:
                 flush()
                 entry, opens, rets, brks, conts = self._process_stmt(child)
@@ -504,6 +544,9 @@ class CFGBuilder:
             # Nested CASE_STMT inside a case means fallthrough — stop here
             if s.kind in (ci.CursorKind.CASE_STMT, ci.CursorKind.DEFAULT_STMT):
                 break
+            # Must be before kind dispatch (same reason as _process_compound)
+            if _is_assert_stmt(s):
+                continue
             if s.kind in _CONTROL_FLOW_KINDS:
                 flush()
                 entry, opens, rets, brks, conts = self._process_stmt(s)
