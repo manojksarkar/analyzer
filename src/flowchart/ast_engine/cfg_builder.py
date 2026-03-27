@@ -38,28 +38,37 @@ _CONTROL_FLOW_KINDS = frozenset({
     ci.CursorKind.CXX_TRY_STMT,
 })
 
-# Regex that matches ASSERT/assert macro calls to exclude from flowcharts.
-# Matches: assert(...), ASSERT(...), POS_ASSERT(...), static_assert(...), etc.
-# Does NOT match regular function calls that merely start with "assert" lowercase
-# (e.g. assertSomeHelper(...)) because those lack the ALL-CAPS or prefix pattern.
+# Matches any assertion macro call to suppress from the flowchart.
+# Uses `*` (not `?`) for the prefix group so macros with multiple ALL-CAPS
+# prefix segments are covered: ASSERT, POS_ASSERT, UTIL_DEBUG_ASSERT, etc.
 _ASSERT_RE = re.compile(
-    r'^\s*(?:static_assert|(?:[A-Z][A-Z0-9_]*_)?ASSERT|assert)\s*\(',
+    r'^\s*(?:assert|static_assert|(?:[A-Z][A-Z0-9_]*_)*ASSERT)\s*\(',
     re.ASCII,
 )
 
 
-def _is_assert_stmt(cursor: ci.Cursor) -> bool:
-    """Return True if cursor represents an ASSERT/assert macro call.
+def _is_assert_stmt(cursor: ci.Cursor, src_lines: List[str]) -> bool:
+    """Return True if cursor originates from an ASSERT/assert macro call.
 
-    Uses the first token at the call site (reliable even when the macro
-    expands to an IF_STMT, which would otherwise slip through as a
-    DECISION node).  Must be called BEFORE the _CONTROL_FLOW_KINDS
-    dispatch in _process_compound / _process_case_stmts.
+    WHY get_expansion_location() instead of cursor.get_tokens():
+      When a macro like UTIL_DEBUG_ASSERT expands to an IF_STMT, the
+      cursor's tokens come from the SPELLING location — the 'if' keyword
+      inside the macro definition file.  So tokens[0].spelling is 'if',
+      not 'UTIL_DEBUG_ASSERT', and the token-based check always returns
+      False for such macros.
+
+      get_expansion_location() always maps back to the call site in the
+      user's source regardless of what the macro expands to, giving us
+      the original macro name to match against _ASSERT_RE.
+
+    Must be called BEFORE _CONTROL_FLOW_KINDS dispatch.
     """
     try:
-        tokens = list(cursor.get_tokens())
-        if tokens:
-            return bool(_ASSERT_RE.match(tokens[0].spelling + "("))
+        _, exp_line, exp_col, _ = cursor.extent.start.get_expansion_location()
+        line_idx = exp_line - 1
+        if 0 <= line_idx < len(src_lines):
+            snippet = src_lines[line_idx][exp_col - 1:]
+            return bool(_ASSERT_RE.match(snippet))
     except Exception:
         pass
     return False
@@ -234,7 +243,7 @@ class CFGBuilder:
         for child in cursor.get_children():
             # Filter ASSERT macros before kind dispatch: some expand to IF_STMT
             # which would otherwise become a DECISION node.
-            if _is_assert_stmt(child):
+            if _is_assert_stmt(child, self._src):
                 continue
             if child.kind in _CONTROL_FLOW_KINDS:
                 flush()
@@ -537,7 +546,7 @@ class CFGBuilder:
             if s.kind in (ci.CursorKind.CASE_STMT, ci.CursorKind.DEFAULT_STMT):
                 break
             # Filter ASSERT macros before kind dispatch (same reason as _process_compound)
-            if _is_assert_stmt(s):
+            if _is_assert_stmt(s, self._src):
                 continue
             if s.kind in _CONTROL_FLOW_KINDS:
                 flush()
