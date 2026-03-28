@@ -64,6 +64,47 @@ logger = logging.getLogger("flowchart_engine")
 
 
 # ---------------------------------------------------------------------------
+# Header-file detection and stub generation
+# ---------------------------------------------------------------------------
+
+# All recognised C/C++ header extensions (both cases for case-sensitive FSes).
+_HEADER_SUFFIXES = frozenset({
+    '.h', '.hpp', '.hxx', '.hh',
+    '.H', '.HPP', '.HXX', '.HH',
+})
+
+
+def _is_header_file(path: str) -> bool:
+    """Return True if path is a C/C++ header file based on its extension."""
+    return Path(path).suffix in _HEADER_SUFFIXES
+
+
+def _stub_mermaid(qualified_name: str) -> str:
+    """
+    Build a minimal Mermaid stub for a function defined in a header file.
+
+    The function body is not analysed; the flowchart shows only the
+    function call node so downstream consumers have a valid Mermaid script.
+    Uses the same #NNN; entity encoding as mermaid/builder.py so the
+    output is safe to paste directly into mermaid.live.
+    """
+    _ESC = {
+        '(': '#40;', ')': '#41;', '<': '#60;',  '>': '#62;',
+        '[': '#91;', ']': '#93;', '{': '#123;', '}': '#125;',
+        '|': '#124;', '"': '#quot;', '&': '#38;', ';': '#59;',
+    }
+    label = ''.join(_ESC.get(c, c) for c in qualified_name) + '#40;#41;'
+    return (
+        "flowchart TD\n"
+        "    START([Start])\n"
+        f"    N1[{label}]\n"
+        "    END([End])\n"
+        "    START --> N1\n"
+        "    N1 --> END"
+    )
+
+
+# ---------------------------------------------------------------------------
 # CLI argument parsing
 # ---------------------------------------------------------------------------
 
@@ -211,6 +252,19 @@ def _process_function(
     """
     key = func_entry.key
     qn = func_entry.qualified_name
+
+    # Header-defined functions: skip full body analysis and return a stub.
+    # These are typically small inline utilities whose headers cannot be
+    # parsed as standalone TUs (missing include context → libclang errors →
+    # resolver finds no cursor).  A minimal stub Mermaid is emitted instead.
+    if _is_header_file(func_entry.file):
+        logger.info("   Skipping body analysis (header-defined): %s in %s",
+                    qn, func_entry.file)
+        return FlowchartResult(
+            function_key=key,
+            qualified_name=qn,
+            mermaid_script=_stub_mermaid(qn),
+        )
 
     try:
         # 1. Extract source text by line range
