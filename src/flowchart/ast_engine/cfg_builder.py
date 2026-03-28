@@ -38,45 +38,50 @@ _CONTROL_FLOW_KINDS = frozenset({
     ci.CursorKind.CXX_TRY_STMT,
 })
 
-# Matches any assertion macro call to suppress from the flowchart.
+# Matches any assertion macro call — no line-start anchor so finditer()
+# can locate ASSERTs at any column position within a source line.
 # Uses `*` (not `?`) for the prefix group so macros with multiple ALL-CAPS
 # prefix segments are covered: ASSERT, POS_ASSERT, UTIL_DEBUG_ASSERT, etc.
 _ASSERT_RE = re.compile(
-    r'^\s*(?:assert|static_assert|(?:[A-Z][A-Z0-9_]*_)*ASSERT)\s*\(',
+    r'(?:assert|static_assert|(?:[A-Z][A-Z0-9_]*_)*ASSERT)\s*\(',
     re.ASCII,
 )
 
 
-def _is_assert_stmt(cursor: ci.Cursor, src_lines: List[str]) -> bool:
+def _collect_assert_locations(src_lines: List[str]) -> frozenset:
+    """Scan source lines once and return every ASSERT call site as (line, col).
+
+    Both values are 1-indexed, matching libclang's cursor.extent.start
+    line/column convention.  The frozenset is built once per CFGBuilder
+    instance so CFG traversal does O(1) set-lookups instead of per-cursor
+    regex matches.
+
+    Using finditer (not match) means ASSERTs are found at any column —
+    handles standalone calls, inline calls, and any indentation level.
+    """
+    locs: set = set()
+    for i, text in enumerate(src_lines, start=1):
+        for m in _ASSERT_RE.finditer(text):
+            locs.add((i, m.start() + 1))   # m.start() is 0-indexed → +1
+    return frozenset(locs)
+
+
+def _is_assert_stmt(cursor: ci.Cursor, assert_locs: frozenset) -> bool:
     """Return True if cursor originates from an ASSERT/assert macro call.
 
-    WHY .line / .column instead of get_expansion_location() / get_tokens():
-      cursor.get_tokens() reads from the SPELLING location — the 'if' keyword
-      inside the macro definition file — so tokens[0].spelling is 'if', not
-      the macro name.
+    Looks up (line, col) of cursor.extent.start in the pre-scanned set.
+    cursor.extent.start maps to the macro call site in the user's source
+    for both single-level and nested macro chains — verified empirically.
 
-      get_expansion_location() and get_spelling_location() are NOT available
-      as methods on SourceLocation in this libclang Python binding version;
-      calling them raises AttributeError.
-
-      cursor.extent.start.line and .column ARE available and already map
-      directly to the CALL SITE in the user's source file, for both
-      single-level macros (SIMPLE_ASSERT -> if) and nested chains
-      (UTIL_DEBUG_ASSERT -> INNER_ASSERT -> if).  Verified empirically.
+    O(1) frozenset lookup — no regex, no source text read per cursor call.
 
     Must be called BEFORE _CONTROL_FLOW_KINDS dispatch.
     """
     try:
-        line = cursor.extent.start.line
-        col = cursor.extent.start.column
-        if line > 0 and col > 0:
-            idx = line - 1
-            if 0 <= idx < len(src_lines):
-                snippet = src_lines[idx][col - 1:]
-                return bool(_ASSERT_RE.match(snippet))
+        return (cursor.extent.start.line,
+                cursor.extent.start.column) in assert_locs
     except Exception:
-        pass
-    return False
+        return False
 
 
 # (node_id, edge_label_or_None) — edges waiting to connect to next node
@@ -95,6 +100,7 @@ class CFGBuilder:
     def __init__(self, source_lines: List[str],
                  max_stmts: int = 5, max_lines: int = 10) -> None:
         self._src = source_lines
+        self._assert_locs = _collect_assert_locations(source_lines)
         self._max_stmts = max_stmts
         self._max_lines = max_lines
 
@@ -248,7 +254,7 @@ class CFGBuilder:
         for child in cursor.get_children():
             # Filter ASSERT macros before kind dispatch: some expand to IF_STMT
             # which would otherwise become a DECISION node.
-            if _is_assert_stmt(child, self._src):
+            if _is_assert_stmt(child, self._assert_locs):
                 continue
             if child.kind in _CONTROL_FLOW_KINDS:
                 flush()
@@ -551,7 +557,7 @@ class CFGBuilder:
             if s.kind in (ci.CursorKind.CASE_STMT, ci.CursorKind.DEFAULT_STMT):
                 break
             # Filter ASSERT macros before kind dispatch (same reason as _process_compound)
-            if _is_assert_stmt(s, self._src):
+            if _is_assert_stmt(s, self._assert_locs):
                 continue
             if s.kind in _CONTROL_FLOW_KINDS:
                 flush()
