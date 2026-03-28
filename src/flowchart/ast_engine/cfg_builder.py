@@ -50,25 +50,30 @@ _ASSERT_RE = re.compile(
 def _is_assert_stmt(cursor: ci.Cursor, src_lines: List[str]) -> bool:
     """Return True if cursor originates from an ASSERT/assert macro call.
 
-    WHY get_expansion_location() instead of cursor.get_tokens():
-      When a macro like UTIL_DEBUG_ASSERT expands to an IF_STMT, the
-      cursor's tokens come from the SPELLING location — the 'if' keyword
-      inside the macro definition file.  So tokens[0].spelling is 'if',
-      not 'UTIL_DEBUG_ASSERT', and the token-based check always returns
-      False for such macros.
+    WHY .line / .column instead of get_expansion_location() / get_tokens():
+      cursor.get_tokens() reads from the SPELLING location — the 'if' keyword
+      inside the macro definition file — so tokens[0].spelling is 'if', not
+      the macro name.
 
-      get_expansion_location() always maps back to the call site in the
-      user's source regardless of what the macro expands to, giving us
-      the original macro name to match against _ASSERT_RE.
+      get_expansion_location() and get_spelling_location() are NOT available
+      as methods on SourceLocation in this libclang Python binding version;
+      calling them raises AttributeError.
+
+      cursor.extent.start.line and .column ARE available and already map
+      directly to the CALL SITE in the user's source file, for both
+      single-level macros (SIMPLE_ASSERT -> if) and nested chains
+      (UTIL_DEBUG_ASSERT -> INNER_ASSERT -> if).  Verified empirically.
 
     Must be called BEFORE _CONTROL_FLOW_KINDS dispatch.
     """
     try:
-        _, exp_line, exp_col, _ = cursor.extent.start.get_expansion_location()
-        line_idx = exp_line - 1
-        if 0 <= line_idx < len(src_lines):
-            snippet = src_lines[line_idx][exp_col - 1:]
-            return bool(_ASSERT_RE.match(snippet))
+        line = cursor.extent.start.line
+        col = cursor.extent.start.column
+        if line > 0 and col > 0:
+            idx = line - 1
+            if 0 <= idx < len(src_lines):
+                snippet = src_lines[idx][col - 1:]
+                return bool(_ASSERT_RE.match(snippet))
     except Exception:
         pass
     return False
