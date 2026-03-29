@@ -230,18 +230,6 @@ def _process_function(
     key = func_entry.key
     qn = func_entry.qualified_name
 
-    # Header-defined functions: skip full body analysis and return a stub.
-    # These are typically small inline utilities whose headers cannot be
-    # parsed as standalone TUs (missing include context → libclang errors →
-    # resolver finds no cursor).  A minimal stub Mermaid is emitted instead.
-    if _is_header_file(func_entry.file):
-        logger.info("   Skipping (header-defined): %s in %s", qn, func_entry.file)
-        return FlowchartResult(
-            function_key=key,
-            qualified_name=qn,
-            mermaid_script="",
-        )
-
     try:
         # 1. Extract source text by line range
         source_code = source_extractor.extract_by_lines(
@@ -376,9 +364,18 @@ def run(config: EngineConfig) -> None:
         else:
             logger.warning("Key not in PKB (skipping): %s", key)
 
+    # Drop functions defined in header files — they cannot be parsed as
+    # standalone TUs and their bodies are not worth analysing.  They already
+    # appear as ACTION nodes in their callers' flowcharts.
+    non_header = [e for e in target_entries if not _is_header_file(e.file)]
+    skipped_headers = len(target_entries) - len(non_header)
+    if skipped_headers:
+        logger.info("Skipping %d header-defined function(s) (no output generated)",
+                    skipped_headers)
+
     # Group by source file (deterministic order)
     by_file: Dict[str, List[FunctionEntry]] = defaultdict(list)
-    for entry in target_entries:
+    for entry in non_header:
         by_file[entry.file].append(entry)
 
     logger.info("Processing %d function(s) across %d source file(s)",
