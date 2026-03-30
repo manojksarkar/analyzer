@@ -1,5 +1,6 @@
 """Parse C++ source -> model/."""
 import os
+import re
 import sys
 import json
 from datetime import datetime, timezone
@@ -65,7 +66,10 @@ CLANG_ARGS = [
 # Common visibility-like macros seen in C/C++ codebases.
 # Defining them keeps declarations such as
 # "PROTECTED DB_TYPE foo(...)" parseable even when headers don't define them.
-_default_macro_defs = ("PRIVATE", "PROTECTED", "PUBLIC")
+# __ONLYINT: empty placeholder sometimes placed between return type and the function name, e.g.
+#   PRIVATE UNIT __ONLYINT
+#   _SOME_FUNCTION(GG *gg){}
+_default_macro_defs = ("PRIVATE", "PROTECTED", "PUBLIC", "__ONLYINT")
 for _macro in _default_macro_defs:
     _arg = f"-D{_macro}="
     if _arg not in CLANG_ARGS:
@@ -302,6 +306,108 @@ def _get_var_init_value(cursor):
         return None
 
 
+def _extent_source_text(cursor):
+    """Return source text covered by cursor.extent (multi-line safe)."""
+    try:
+        start = cursor.extent.start
+        end = cursor.extent.end
+        if not start.file or not end.file:
+            return None
+        path = start.file.name
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        sline, eline = start.line, end.line
+        if sline < 1 or eline > len(lines) or sline > eline:
+            return None
+        if sline == eline:
+            row = lines[sline - 1]
+            a = max(0, start.column - 1)
+            b = end.column - 1 if end.column else len(row)
+            b = min(len(row), max(a, b))
+            return row[a:b]
+        parts = []
+        parts.append(lines[sline - 1][max(0, start.column - 1) :])
+        for ln in range(sline + 1, eline):
+            parts.append(lines[ln - 1])
+        last = lines[eline - 1]
+        ec = end.column - 1 if end.column else len(last)
+        parts.append(last[: max(0, ec)])
+        return "".join(parts)
+    except (OSError, IOError, TypeError, ValueError):
+        return None
+
+
+def _strip_implicit_cast(cursor):
+    c = cursor
+    while "IMPLICIT_CAST" in _cursor_kind_name(c):
+        ch = list(c.get_children())
+        if len(ch) != 1:
+            break
+        c = ch[0]
+    return c
+
+
+def _cursor_kind_name(cursor):
+    try:
+        return str(cursor.kind).split(".")[-1] if cursor.kind else ""
+    except Exception:
+        return ""
+
+
+def _var_decl_init_args_cursors(cursor):
+    """Sub-expressions that Clang attaches as the '(a,b)' part of a mis-parsed 'T name(a,b)'."""
+    for ch in cursor.get_children():
+        kn = _cursor_kind_name(ch)
+        subs = list(ch.get_children())
+        if kn == "PAREN_EXPR":
+            return subs
+        if kn == "CALL_EXPR":
+            return subs
+        if kn == "CXX_FUNCTIONAL_CAST_EXPR":
+            return subs
+        if kn == "CXX_PAREN_LIST_INIT_EXPR":
+            return subs
+        if kn == "CXX_CONSTRUCT_EXPR" or ("CONSTRUCT" in kn and "DESTRUCT" not in kn):
+            return subs
+    # e.g. UNIT _SOME_FUNCTION(VOID) -> TYPE_REF + UNEXPOSED_EXPR(DECL_REF_EXPR VOID)
+    args = []
+    for ch in cursor.get_children():
+        kn = _cursor_kind_name(ch)
+        if kn == "TYPE_REF":
+            continue
+        if kn == "UNEXPOSED_EXPR":
+            for sub in ch.get_children():
+                args.append(sub)
+    return args
+
+
+def _var_decl_init_args_are_only_decl_refs(cursor):
+    """True when (a,b) style init uses only identifier references — typical mis-parse of param list."""
+    args = _var_decl_init_args_cursors(cursor)
+    if not args:
+        return False
+    for a in args:
+        leaf = _strip_implicit_cast(a)
+        if leaf.kind != cindex.CursorKind.DECL_REF_EXPR:
+            return False
+    return True
+
+
+def _var_decl_should_record_as_function_not_global(cursor):
+    """Clang may emit VAR_DECL for 'T name(id1)' when (id1) is read as ctor init, not parameters."""
+    if cursor.kind != cindex.CursorKind.VAR_DECL:
+        return False
+    text = _extent_source_text(cursor)
+    if not text or "=" in text:
+        return False
+    name = cursor.spelling
+    if not name:
+        return False
+    if not re.search(r"\b" + re.escape(name) + r"\s*\(", text):
+        return False
+    return _var_decl_init_args_are_only_decl_refs(cursor)
+
+
 def visit_definitions(cursor):
     is_function = cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
     is_global_var = (
@@ -343,17 +449,52 @@ def visit_definitions(cursor):
         function_to_module[get_function_key(cursor)] = module_name
 
     elif is_global_var and cursor.spelling and cursor.location.file:
-        var_id = f"{cursor.location.file.name}:{cursor.location.line}"
-        value_str = _get_var_init_value(cursor)
-        globals_data[var_id] = {
-            "variableId": var_id,
-            "variableName": cursor.spelling,
-            "qualifiedName": get_qualified_name(cursor),
-            "moduleName": get_module_name(cursor.location.file.name),
-            "type": cursor.type.spelling if cursor.type else "",
-        }
-        if value_str:
-            globals_data[var_id]["value"] = value_str
+        if _var_decl_should_record_as_function_not_global(cursor):
+            func_id = f"{cursor.location.file.name}:{cursor.location.line}"
+            module_name = get_module_name(cursor.location.file.name)
+            params = []
+            for a in _var_decl_init_args_cursors(cursor):
+                leaf = _strip_implicit_cast(a)
+                if leaf.kind == cindex.CursorKind.DECL_REF_EXPR and leaf.referenced:
+                    ref = leaf.referenced
+                    params.append({
+                        "name": ref.spelling or "",
+                        "type": ref.type.spelling if ref.type else "",
+                    })
+                else:
+                    params.append({"name": "", "type": leaf.type.spelling if leaf.type else ""})
+            end_line = cursor.location.line
+            try:
+                if cursor.extent.end.file and cursor.extent.end.file.name == cursor.location.file.name:
+                    end_line = cursor.extent.end.line
+            except Exception:
+                pass
+            fk = get_function_key(cursor)
+            functions[fk] = {
+                "functionId": func_id,
+                "functionName": cursor.spelling,
+                "qualifiedName": get_qualified_name(cursor),
+                "mangledName": "",
+                "moduleName": module_name,
+                "parameters": params,
+                "returnType": cursor.type.spelling if cursor.type else "",
+                "endLine": end_line,
+                "syntheticFromVarDecl": True,
+            }
+            module_functions[module_name].append(fk)
+            function_to_module[fk] = module_name
+        else:
+            var_id = f"{cursor.location.file.name}:{cursor.location.line}"
+            value_str = _get_var_init_value(cursor)
+            globals_data[var_id] = {
+                "variableId": var_id,
+                "variableName": cursor.spelling,
+                "qualifiedName": get_qualified_name(cursor),
+                "moduleName": get_module_name(cursor.location.file.name),
+                "type": cursor.type.spelling if cursor.type else "",
+            }
+            if value_str:
+                globals_data[var_id]["value"] = value_str
 
     for child in cursor.get_children():
         visit_definitions(child)
@@ -533,6 +674,8 @@ def build_metadata():
             "params": f["parameters"],
             "returnType": f.get("returnType", ""),
         }
+        if f.get("syntheticFromVarDecl"):
+            functions_dict[fid]["syntheticFromVarDecl"] = True
         # Attach first return expression text if available (for behaviour output naming)
         ret_expr = function_return_expr.get(func_key)
         if ret_expr:
