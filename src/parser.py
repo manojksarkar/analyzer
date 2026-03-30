@@ -66,14 +66,21 @@ CLANG_ARGS = [
 # Common visibility-like macros seen in C/C++ codebases.
 # Defining them keeps declarations such as
 # "PROTECTED DB_TYPE foo(...)" parseable even when headers don't define them.
-# __ONLYINT: empty placeholder sometimes placed between return type and the function name, e.g.
-#   PRIVATE UNIT __ONLYINT
+# __OVLYINIT: empty placeholder sometimes placed between return type and the function name, e.g.
+#   PRIVATE UNIT __OVLYINIT
 #   _SOME_FUNCTION(GG *gg){}
-_default_macro_defs = ("PRIVATE", "PROTECTED", "PUBLIC", "__ONLYINT")
+_default_macro_defs = ("PRIVATE", "PROTECTED", "PUBLIC", "__OVLYINIT")
 for _macro in _default_macro_defs:
     _arg = f"-D{_macro}="
     if _arg not in CLANG_ARGS:
         CLANG_ARGS.append(_arg)
+# When sources use VOID like a typedef for void but "typedef void VOID;" never appears in
+# the translation unit, Clang otherwise sees an unknown type. This matches common builds.
+# If your project instead defines typedef void VOID in a header, add "-UVOID" to
+# clang.clangArgs so this default does not break that typedef line.
+_void_arg = "-DVOID=void"
+if _void_arg not in CLANG_ARGS:
+    CLANG_ARGS.append(_void_arg)
 _extra = _clang.get("clangArgs")
 if _extra:
     CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
@@ -418,7 +425,7 @@ def visit_definitions(cursor):
         and cursor.semantic_parent.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE)
     )
 
-    if is_function and cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
+    if is_function and cursor.location.file and is_project_file(cursor.location.file.name):
         func_id = f"{cursor.location.file.name}:{cursor.location.line}"
         module_name = get_module_name(cursor.location.file.name)
         params = []
@@ -435,7 +442,8 @@ def visit_definitions(cursor):
         except Exception:
             pass
 
-        functions[get_function_key(cursor)] = {
+        fk = get_function_key(cursor)
+        entry = {
             "functionId": func_id,
             "functionName": cursor.spelling,
             "qualifiedName": get_qualified_name(cursor),
@@ -445,8 +453,17 @@ def visit_definitions(cursor):
             "returnType": cursor.result_type.spelling if cursor.result_type else "",
             "endLine": end_line,
         }
-        module_functions[module_name].append(get_function_key(cursor))
-        function_to_module[get_function_key(cursor)] = module_name
+        if cursor.is_definition():
+            functions[fk] = entry
+            if fk not in function_to_module:
+                module_functions[module_name].append(fk)
+                function_to_module[fk] = module_name
+        elif fk not in functions:
+            # Forward declaration only (e.g. "VOID _f(VOID);" with no body in this TU)
+            entry["declarationOnly"] = True
+            functions[fk] = entry
+            module_functions[module_name].append(fk)
+            function_to_module[fk] = module_name
 
     elif is_global_var and cursor.spelling and cursor.location.file:
         if _var_decl_should_record_as_function_not_global(cursor):
@@ -676,6 +693,8 @@ def build_metadata():
         }
         if f.get("syntheticFromVarDecl"):
             functions_dict[fid]["syntheticFromVarDecl"] = True
+        if f.get("declarationOnly"):
+            functions_dict[fid]["declarationOnly"] = True
         # Attach first return expression text if available (for behaviour output naming)
         ret_expr = function_return_expr.get(func_key)
         if ret_expr:

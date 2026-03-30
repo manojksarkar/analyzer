@@ -1,6 +1,4 @@
-// PRIVATE is not #defined anywhere in this project; see void_as_var.cpp comment.
-// Contrast: VOID expands to void — same layout, but this is a real function.
-#define VOID void
+// PRIVATE is not #defined anywhere; VOID is supplied as void via -DVOID=void (parser).
 typedef int UNIT;
 
 PRIVATE UNIT
