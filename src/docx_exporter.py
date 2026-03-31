@@ -754,7 +754,7 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         _merge_vertical_cells(table, 0, 1, n - 1)
 
 
-def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Optional[str]]:
+def export_docx(json_path: str = None, docx_path: str = None, selected_group: str | None = None) -> Tuple[bool, Optional[str]]:
     from utils import load_config, safe_filename, KEY_SEP
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
@@ -763,7 +763,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     # Views write next to interface_tables.json (e.g. output/<group>/); do not use output/ only.
     artifacts_dir = os.path.dirname(json_path)
     # Allow group-specific filenames via {group} placeholder.
-    group_name = config.get("selectedGroup") or config.get("modulesGroup") or "all"
+    group_name = selected_group or "all"
     raw_docx = export_cfg.get("docxPath", "output/software_detailed_design.docx")
     raw_docx = raw_docx.replace("{group}", group_name)
     if not docx_path:
@@ -1006,9 +1006,18 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
 
 
 def main():
-    json_path = sys.argv[1] if len(sys.argv) >= 2 else None
-    docx_path = sys.argv[2] if len(sys.argv) >= 3 else None
-    ok, out_path = export_docx(json_path, docx_path)
+    args = sys.argv[1:]
+    selected_group = None
+    if "--selected-group" in args:
+        i = args.index("--selected-group")
+        if i + 1 < len(args):
+            selected_group = args[i + 1]
+            # Remove the flag + value so positional args remain: json_path docx_path
+            args = args[:i] + args[i + 2 :]
+
+    json_path = args[0] if len(args) >= 1 else None
+    docx_path = args[1] if len(args) >= 2 else None
+    ok, out_path = export_docx(json_path, docx_path, selected_group=selected_group)
     if ok:
         print(f"Exported: {out_path}")
     sys.exit(0 if ok else 1)

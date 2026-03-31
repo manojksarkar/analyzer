@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Entry: python run.py [--clean] <project_path>"""
+"""Entry: python run.py [--clean] [--selected-group <name>] <project_path>"""
 import os
 import shutil
 import sys
@@ -13,15 +13,34 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "src"))
 
 from utils import log, load_config
 
-raw_args = [a for a in sys.argv[1:] if a not in ("--clean", "--all-groups")]
+raw_args = [a for a in sys.argv[1:] if a not in ("--clean", "--selected-group", "--use-model", "--skip-model")]
 clean_all = "--clean" in sys.argv[1:]
-run_all_groups = "--all-groups" in sys.argv[1:]
+use_model = ("--use-model" in sys.argv[1:]) or ("--skip-model" in sys.argv[1:])
+selected_group_arg = None
+if "--selected-group" in sys.argv:
+    i = sys.argv.index("--selected-group")
+    if i + 1 < len(sys.argv):
+        selected_group_arg = sys.argv[i + 1]
+
+
+def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
+    """Resolve requested group name against config.modulesGroups, case-insensitive."""
+    if not requested:
+        return None
+    if not isinstance(groups, dict) or not groups:
+        return None
+    if requested in groups:
+        return requested
+    req_key = requested.casefold()
+    for k in groups.keys():
+        if isinstance(k, str) and k.casefold() == req_key:
+            return k
+    return None
 
 if len(raw_args) < 1:
-    print("Usage: python run.py [--clean] [--all-groups] <project_path>")
+    print("Usage: python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>] <project_path>")
     print("Example: python run.py test_cpp_project")
     print("         python run.py --clean test_cpp_project")
-    print("         python run.py --all-groups test_cpp_project")
     sys.exit(1)
 
 if clean_all:
@@ -44,9 +63,15 @@ PHASES_DEFAULT = [
     ("Phase 4: Export to DOCX", "docx_exporter.py", []),
 ]
 PHASES_BUILD_MODEL = PHASES_DEFAULT[:2]
+MODEL_FILES = (
+    os.path.join(SCRIPT_DIR, "model", "functions.json"),
+    os.path.join(SCRIPT_DIR, "model", "globalVariables.json"),
+    os.path.join(SCRIPT_DIR, "model", "units.json"),
+    os.path.join(SCRIPT_DIR, "model", "modules.json"),
+)
 
 def _run_pipeline() -> float:
-    """Run all phases once with current config (including any config.local.json)."""
+    """Run all phases once with current config."""
     total = 0.0
     for i, (label, script, phase_args) in enumerate(PHASES_DEFAULT, 1):
         print(f"\n=== {label} ===" if i > 1 else f"=== {label} ===", flush=True)
@@ -65,11 +90,6 @@ def _run_pipeline() -> float:
 
 total_time = 0.0
 
-config_dir = os.path.join(SCRIPT_DIR, "config")
-local_cfg_path = os.path.join(config_dir, "config.local.json")
-original_local_bytes: bytes | None = None
-
-
 def _run_phases(phases) -> float:
     total = 0.0
     for i, (label, script, phase_args) in enumerate(phases, 1):
@@ -86,57 +106,87 @@ def _run_phases(phases) -> float:
             sys.exit(r.returncode)
     return total
 
-if run_all_groups:
-    # Preserve any existing config.local.json
-    if os.path.isfile(local_cfg_path):
-        with open(local_cfg_path, "rb") as f:
-            original_local_bytes = f.read()
+cfg = load_config(SCRIPT_DIR)
+groups_cfg = (cfg.get("modulesGroups") or {})
+group_names = sorted(groups_cfg.keys()) if isinstance(groups_cfg, dict) else []
+resolved_selected = _resolve_group_name(groups_cfg, selected_group_arg)
+if selected_group_arg and not resolved_selected:
+    log(
+        f"Unknown --selected-group {selected_group_arg!r}. Valid groups: {', '.join(group_names) if group_names else '(none)'}",
+        component="run",
+        err=True,
+    )
+    sys.exit(2)
+if selected_group_arg and resolved_selected and resolved_selected != selected_group_arg:
+    log(f"--selected-group resolved to {resolved_selected!r} (case-insensitive match)", component="run")
 
-    try:
-        cfg = load_config(SCRIPT_DIR)
-        groups_cfg = (cfg.get("modulesGroups") or {})
-        group_names = sorted(groups_cfg.keys())
-        if not group_names:
-            log("No modulesGroups configured; running once with default settings.", component="run")
-            total_time += _run_pipeline()
-        else:
-            os.makedirs(config_dir, exist_ok=True)
-            # Build the full model once (no selectedGroup).
-            with open(local_cfg_path, "w", encoding="utf-8") as f:
-                json.dump({}, f, indent=2)
-            log("Building full model once (all modules).", component="run")
-            total_time += _run_phases(PHASES_BUILD_MODEL)
-
-            # Then export per group (logical filtering happens in Phase 3/4 via config.selectedGroup).
-            for idx, g in enumerate(group_names, 1):
-                log(f"Group {idx}/{len(group_names)}: {g}", component="run")
-                with open(local_cfg_path, "w", encoding="utf-8") as f:
-                    json.dump({"selectedGroup": g}, f, indent=2)
-                group_out = os.path.join(SCRIPT_DIR, "output", g)
-                os.makedirs(group_out, exist_ok=True)
-
-                total_time += _run_phases(
+if group_names and not selected_group_arg:
+    # Default: export all groups when modulesGroups is configured.
+    if use_model:
+        missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
+        if missing:
+            log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
+            sys.exit(2)
+        log("Using existing model/ (skipping Phase 1/2).", component="run")
+    else:
+        log("Building full model once (all modules).", component="run")
+        total_time += _run_phases(
+            [
+                ("Phase 1: Parse C++ source", "parser.py", [resolved]),
+                ("Phase 2: Derive model", "model_deriver.py", []),
+            ],
+        )
+    for idx, g in enumerate(group_names, 1):
+        log(f"Group {idx}/{len(group_names)}: {g}", component="run")
+        group_out = os.path.join(SCRIPT_DIR, "output", g)
+        os.makedirs(group_out, exist_ok=True)
+        total_time += _run_phases(
+            [
+                ("Phase 3: Generate views", "run_views.py", ["--output-dir", group_out, "--selected-group", g]),
+                (
+                    "Phase 4: Export to DOCX",
+                    "docx_exporter.py",
                     [
-                        ("Phase 3: Generate views", "run_views.py", ["--output-dir", group_out]),
-                        (
-                            "Phase 4: Export to DOCX",
-                            "docx_exporter.py",
-                            [
-                                os.path.join(group_out, "interface_tables.json"),
-                                os.path.join(group_out, f"software_detailed_design_{g}.docx"),
-                            ],
-                        ),
-                    ]
-                )
-    finally:
-        # Restore previous config.local.json (if any), or remove our temporary one.
-        if original_local_bytes is not None:
-            with open(local_cfg_path, "wb") as f:
-                f.write(original_local_bytes)
-        elif os.path.isfile(local_cfg_path):
-            os.remove(local_cfg_path)
+                        os.path.join(group_out, "interface_tables.json"),
+                        os.path.join(group_out, f"software_detailed_design_{g}.docx"),
+                        "--selected-group",
+                        g,
+                    ],
+                ),
+            ],
+        )
+elif group_names and selected_group_arg:
+    # Export only one group when requested.
+    if use_model:
+        missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
+        if missing:
+            log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
+            sys.exit(2)
+        log("Using existing model/ (skipping Phase 1/2).", component="run")
+    else:
+        log("Building full model once (all modules).", component="run")
+        total_time += _run_phases(
+            [
+                ("Phase 1: Parse C++ source", "parser.py", [resolved]),
+                ("Phase 2: Derive model", "model_deriver.py", []),
+            ],
+        )
+    total_time += _run_phases(
+        [
+            ("Phase 3: Generate views", "run_views.py", ["--selected-group", resolved_selected]),
+            ("Phase 4: Export to DOCX", "docx_exporter.py", ["--selected-group", resolved_selected]),
+        ],
+    )
 else:
-    total_time += _run_pipeline()
+    # No modulesGroups configured: just run once.
+    if use_model:
+        missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
+        if missing:
+            log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
+            sys.exit(2)
+        total_time += _run_phases(PHASES_DEFAULT[2:])
+    else:
+        total_time += _run_pipeline()
 
 print(flush=True)
 log(f"Done. Total: {total_time:.2f}s", component="run")

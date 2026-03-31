@@ -156,43 +156,55 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 _CONFIG_CACHE = load_config(_PROJECT_ROOT)
 
-_MODULE_GROUPS = _CONFIG_CACHE.get("modulesGroups") or {}
-_SELECTED_GROUP = _CONFIG_CACHE.get("selectedGroup") or _CONFIG_CACHE.get("modulesGroup")
-if _SELECTED_GROUP and isinstance(_MODULE_GROUPS.get(_SELECTED_GROUP), dict):
-    _MODULE_OVERRIDES = _MODULE_GROUPS[_SELECTED_GROUP] or {}
-else:
-    # If no selected group (or invalid), fall back to top-level "modules" if present.
-    # When that is also missing/empty, default behaviour is used: module = first folder.
-    _MODULE_OVERRIDES = _CONFIG_CACHE.get("modules") or {}
-    # If no explicit modules mapping is provided, but modulesGroups exists,
-    # merge all groups so the "full model" uses the same logical module names.
-    # This keeps unit keys stable across per-group exports.
-    if not _MODULE_OVERRIDES and isinstance(_MODULE_GROUPS, dict) and _MODULE_GROUPS:
-        merged: dict = {}
-        for _, grp in _MODULE_GROUPS.items():
-            if not isinstance(grp, dict):
+# Module mapping cache (initialized at import).
+_MODULE_OVERRIDES: dict = {}
+
+
+def init_module_mapping(config: dict) -> None:
+    """Initialize module folder mapping used by get_module_name/make_*_key helpers.
+
+    This project no longer uses config.selectedGroup to affect module mapping.
+    Module mapping is derived from:
+    - top-level config.modules (if present), else
+    - merged union of all config.modulesGroups entries.
+    """
+    global _MODULE_OVERRIDES
+    cfg = config or {}
+    _MODULE_OVERRIDES = cfg.get("modules") or {}
+    if _MODULE_OVERRIDES:
+        return
+    groups = cfg.get("modulesGroups") or {}
+    if not isinstance(groups, dict) or not groups:
+        _MODULE_OVERRIDES = {}
+        return
+    merged: dict = {}
+    for _, grp in groups.items():
+        if not isinstance(grp, dict):
+            continue
+        for module, paths in grp.items():
+            if not paths:
                 continue
-            for module, paths in grp.items():
-                if not paths:
-                    continue
-                if isinstance(paths, str):
-                    paths_list = [paths]
+            if isinstance(paths, str):
+                paths_list = [paths]
+            else:
+                paths_list = list(paths) if isinstance(paths, list) else []
+            if module not in merged:
+                merged[module] = paths_list if len(paths_list) != 1 else paths_list[0]
+            else:
+                existing = merged.get(module)
+                if isinstance(existing, str):
+                    existing_list = [existing]
                 else:
-                    paths_list = list(paths) if isinstance(paths, list) else []
-                if module not in merged:
-                    merged[module] = paths_list if len(paths_list) != 1 else paths_list[0]
-                else:
-                    existing = merged.get(module)
-                    # Normalize to list for merge
-                    if isinstance(existing, str):
-                        existing_list = [existing]
-                    else:
-                        existing_list = list(existing) if isinstance(existing, list) else []
-                    for p in paths_list:
-                        if p and p not in existing_list:
-                            existing_list.append(p)
-                    merged[module] = existing_list if len(existing_list) != 1 else existing_list[0]
-        _MODULE_OVERRIDES = merged
+                    existing_list = list(existing) if isinstance(existing, list) else []
+                for p in paths_list:
+                    if p and p not in existing_list:
+                        existing_list.append(p)
+                merged[module] = existing_list if len(existing_list) != 1 else existing_list[0]
+    _MODULE_OVERRIDES = merged
+
+
+# Default initialization from on-disk config.
+init_module_mapping(_CONFIG_CACHE)
 
 
 def _resolve_module_from_rel(rel_file: str) -> str:

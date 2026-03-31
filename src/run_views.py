@@ -28,23 +28,44 @@ def _load_model():
 
 
 def main():
-    from utils import load_config
-    from views import run_views
-
     # Optional CLI override:
     #   python src/run_views.py --output-dir output/group1
+    #   python src/run_views.py --selected-group tests
     output_dir = os.path.join(PROJECT_ROOT, "output")
     args = sys.argv[1:]
     if "--output-dir" in args:
         i = args.index("--output-dir")
         if i + 1 < len(args):
             output_dir = args[i + 1]
+    selected_group = None
+    if "--selected-group" in args:
+        i = args.index("--selected-group")
+        if i + 1 < len(args):
+            selected_group = args[i + 1]
     if not os.path.isabs(output_dir):
         output_dir = os.path.join(PROJECT_ROOT, output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
+    from utils import load_config
+    from views import run_views
+
     model = _load_model()
     config = load_config(PROJECT_ROOT)
+    if selected_group:
+        groups = (config.get("modulesGroups") or {})
+        resolved = selected_group
+        if isinstance(groups, dict) and selected_group not in groups:
+            sk = selected_group.casefold()
+            for k in groups.keys():
+                if isinstance(k, str) and k.casefold() == sk:
+                    resolved = k
+                    break
+        if resolved != selected_group:
+            print(f"[run_views] --selected-group resolved to {resolved!r} (case-insensitive match)")
+        grp = (groups.get(resolved) if isinstance(groups, dict) else None)
+        if isinstance(grp, dict):
+            config = dict(config)
+            config["_analyzerAllowedModules"] = sorted(grp.keys())
     run_views(model, output_dir, MODEL_DIR, config)
 
 

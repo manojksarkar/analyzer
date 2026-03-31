@@ -1,21 +1,21 @@
 {
   "views": {
-    // "interfaceTables": true,
-    // "unitDiagrams": {
-    //   "renderPng": true
-    // },
-    // "flowcharts": {
-    //   "scriptPath": "fake_flowchart_generator.py",
-    //   "renderPng": true
-    // },
-    // "behaviourDiagram": {
-    //   "renderPng": true
-    // },
-    // "moduleStaticDiagram": {
-    //   "enabled": true,
-    //   "renderPng": true,
-    //   "widthInches": 5.5
-    // }
+    "interfaceTables": true,
+    "unitDiagrams": {
+      "renderPng": true
+    },
+    "flowcharts": {
+      "scriptPath": "fake_flowchart_generator.py",
+      "renderPng": true
+    },
+    "behaviourDiagram": {
+      "renderPng": true
+    },
+    "moduleStaticDiagram": {
+      "enabled": true,
+      "renderPng": true,
+      "widthInches": 5.5
+    }
   },
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
@@ -33,55 +33,29 @@
     "timeoutSeconds": 60,
     "abbreviationsPath": "config/abbreviations.txt"
   },
-  // Optional: logical groups of modules. Each group key maps to a full
-  // "modules" mapping (module name -> folder or list of folders, relative
-  // to the parsed C++ project base). When "selectedGroup" is set to one of
-  // these keys, only that group's modules are parsed; other files are ignored.
-  // If "selectedGroup" is empty or missing, the default behaviour is used
-  // (either top-level "modules" mapping if present, or first-folder = module).
-  //
-  // Example:
-  // "modulesGroups": {
-  //   "group1": {
-  //     "core": ["app", "math"],
-  //     "support": "outer/inner",
-  //     "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
-  //     "tests_b": ["tests/hub", "tests/poly", "tests/structs"]
-  //   },
-  //   "group2": {
-  //     "core": ["app"],
-  //     "tests_b": ["tests/hub"]
-  //   }
-  // },
-  //
-  // "selectedGroup": "group1",
-  // "selectedGroup": "group1",
-  // "modulesGroups": {
-  //   "group1": {
-  //     "core": [
-  //       "app",
-  //       "math"
-  //     ],
-  //     "support": "outer/inner",
-  //     "tests_a": [
-  //       "tests/direction",
-  //       "tests/enum",
-  //       "tests/flow"
-  //     ],
-  //     "tests_b": [
-  //       "tests/hub",
-  //       "tests/poly",
-  //       "tests/structs"
-  //     ]
-  //   },
-  //   "group2": {
-  //     "core": [
-  //       "app",
-  //       "math"
-  //     ],
-  //     "support": "outer/inner"
-  //   }
-  // },
+  "modulesGroups": {
+    "core": {
+      "core": [
+        "app",
+        "math"
+      ]
+    },
+    "support": {
+      "support": "outer/inner"
+    },
+    "tests": {
+      "tests_a": [
+        "tests/direction",
+        "tests/enum",
+        "tests/flow"
+      ],
+      "tests_b": [
+        "tests/hub",
+        "tests/poly",
+        "tests/structs"
+      ]
+    }
+  },
   "export": {
     "docxPath": "output/software_detailed_design_{group}.docx",
     "docxFontSize": 8

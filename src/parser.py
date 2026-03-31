@@ -8,17 +8,23 @@ from collections import defaultdict
 
 from clang import cindex
 
-from utils import get_module_name as _get_module, get_range_for_type, load_config, make_function_key, make_global_key, PRIMITIVES
-
-if len(sys.argv) < 2:
-    print("Usage: python parser.py <project_path>")
-    sys.exit(1)
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+if len(sys.argv) < 2:
+    print("Usage: python parser.py <project_path>")
+    raise SystemExit(1)
 proj_arg = sys.argv[1]
 MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.path.join(PROJECT_ROOT, proj_arg)
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
+
+from utils import (
+    get_module_name as _get_module,
+    get_range_for_type,
+    load_config,
+    make_function_key,
+    make_global_key,
+    PRIMITIVES,
+)
 
 _config = load_config(PROJECT_ROOT)
 _clang = _config.get("clang") or {}
@@ -38,43 +44,34 @@ if _llvm and os.path.isfile(_llvm):
     cindex.Config.set_library_file(_llvm)
 
 _modules_groups = _config.get("modulesGroups") or {}
-# Prefer new "selectedGroup" key; fall back to legacy "modulesGroup" if present.
-_selected_group = _config.get("selectedGroup") or _config.get("modulesGroup")
-if _selected_group and isinstance(_modules_groups.get(_selected_group), dict):
-    _modules_cfg = _modules_groups[_selected_group] or {}
-else:
-    # If no selected group (or invalid), fall back to top-level "modules" if present.
-    # When that is also missing/empty, default behaviour is used: all files
-    # under MODULE_BASE_PATH are parsed and module = first folder.
-    _modules_cfg = _config.get("modules") or {}
-    # If modulesGroups exists but no explicit "modules" is provided, merge all groups.
-    # This makes the "full model" parse only the union of all configured module folders
-    # (and avoids generating module="unknown" for unmapped files).
-    if not _modules_cfg and isinstance(_modules_groups, dict) and _modules_groups:
-        merged = {}
-        for _, grp in _modules_groups.items():
-            if not isinstance(grp, dict):
+_modules_cfg = _config.get("modules") or {}
+# If modulesGroups exists but no explicit "modules" is provided, merge all groups.
+# This makes the model parse only the union of all configured module folders.
+if not _modules_cfg and isinstance(_modules_groups, dict) and _modules_groups:
+    merged = {}
+    for _, grp in _modules_groups.items():
+        if not isinstance(grp, dict):
+            continue
+        for module, paths in grp.items():
+            if not paths:
                 continue
-            for module, paths in grp.items():
-                if not paths:
-                    continue
-                if isinstance(paths, str):
-                    paths_list = [paths]
+            if isinstance(paths, str):
+                paths_list = [paths]
+            else:
+                paths_list = list(paths) if isinstance(paths, list) else []
+            if module not in merged:
+                merged[module] = paths_list if len(paths_list) != 1 else paths_list[0]
+            else:
+                existing = merged.get(module)
+                if isinstance(existing, str):
+                    existing_list = [existing]
                 else:
-                    paths_list = list(paths) if isinstance(paths, list) else []
-                if module not in merged:
-                    merged[module] = paths_list if len(paths_list) != 1 else paths_list[0]
-                else:
-                    existing = merged.get(module)
-                    if isinstance(existing, str):
-                        existing_list = [existing]
-                    else:
-                        existing_list = list(existing) if isinstance(existing, list) else []
-                    for p in paths_list:
-                        if p and p not in existing_list:
-                            existing_list.append(p)
-                    merged[module] = existing_list if len(existing_list) != 1 else existing_list[0]
-        _modules_cfg = merged
+                    existing_list = list(existing) if isinstance(existing, list) else []
+                for p in paths_list:
+                    if p and p not in existing_list:
+                        existing_list.append(p)
+                merged[module] = existing_list if len(existing_list) != 1 else existing_list[0]
+    _modules_cfg = merged
 _MODULE_FOLDERS = []
 for _mod_paths in _modules_cfg.values():
     if not _mod_paths:
@@ -134,14 +131,9 @@ function_return_expr = {}
 def is_project_file(file_path: str) -> bool:
     """Return True if this path should be treated as project source for parsing.
 
-    - The file must lie under ``MODULE_BASE_PATH``. That root is ``os.path.abspath`` of
-      the project path from the CLI (relative or absolute); see ``path_is_under`` in
-      ``utils`` for how “under” is defined (case-insensitive on Windows, no prefix false
-      positives).
-    - Folder allowlists come only from config: ``modulesGroups[selectedGroup]``, or an
-      optional top-level ``modules`` map, or (if neither is set) the merged union of all
-      ``modulesGroups``. You do **not** need a ``modules`` key when you use
-      ``modulesGroups`` only.
+    - The file must lie under ``MODULE_BASE_PATH``.
+    - Folder allowlists come only from config: optional top-level ``modules`` map, or
+      (if not present) the merged union of all ``modulesGroups``.
     - If ``_MODULE_FOLDERS`` is non-empty, only files whose path relative to the project
       root matches one of those entries (or a subpath) are included.
     - If ``_MODULE_FOLDERS`` is empty, any file under the project root passes this check
