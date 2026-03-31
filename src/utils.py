@@ -273,15 +273,33 @@ def short_name(full_name: str) -> str:
     return ((full_name or "").split("::")[-1]).strip()
 
 
+def path_is_under(base_path: str, candidate_path: str) -> bool:
+    """True if candidate_path resolves to the project root or a path inside it.
+
+    Uses ``normcase`` so different spellings/casing on Windows match. Uses
+    ``relpath`` (not string prefix) so ``C:\\foo`` does not incorrectly include
+    ``C:\\foobar``.
+    """
+    if not base_path or not candidate_path:
+        return False
+    try:
+        b = os.path.normcase(os.path.abspath(base_path))
+        p = os.path.normcase(os.path.abspath(candidate_path))
+        rel = os.path.relpath(p, b)
+    except ValueError:
+        return False
+    return not rel.startswith("..")
+
+
 def get_module_name(file_path: str, base_path: str) -> str:
     if not file_path:
         return "unknown"
     try:
-        abs_base = os.path.normcase(os.path.abspath(base_path))
         path = file_path if os.path.isabs(file_path) else os.path.join(base_path, file_path)
-        abs_path = os.path.normcase(os.path.abspath(path))
-        if not abs_path.startswith(abs_base):
+        if not path_is_under(base_path, path):
             return "unknown"
+        abs_base = os.path.normcase(os.path.abspath(base_path))
+        abs_path = os.path.normcase(os.path.abspath(path))
         rel = os.path.relpath(abs_path, abs_base).replace("\\", "/")
         return _resolve_module_from_rel(rel)
     except ValueError:

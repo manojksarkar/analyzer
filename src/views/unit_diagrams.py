@@ -4,13 +4,7 @@ import subprocess
 import sys
 
 from .registry import register
-from utils import KEY_SEP, safe_filename
-
-
-def _mmdc_path(project_root: str) -> str:
-    ext = ".cmd" if sys.platform == "win32" else ""
-    local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + ext)
-    return local if os.path.isfile(local) else "mmdc"
+from utils import KEY_SEP, mmdc_path, safe_filename
 
 
 def _fid_to_unit(units_data):
@@ -200,11 +194,12 @@ def run(model, output_dir, model_dir, config):
 
     ud_cfg = views_cfg.get("unitDiagrams") if isinstance(views_cfg.get("unitDiagrams"), dict) else {}
     render_png = ud_cfg.get("renderPng", True)
-    root = os.path.dirname(output_dir)
-    mmdc = _mmdc_path(root)
-    puppeteer = ud_cfg.get("puppeteerConfigPath") or os.path.join(root, "config", "puppeteer-config.json")
+    # Project root must not be derived from output_dir: with --all-groups output is output/<group>/.
+    project_root = os.path.dirname(os.path.abspath(model_dir))
+    mmdc = mmdc_path(project_root)
+    puppeteer = ud_cfg.get("puppeteerConfigPath") or os.path.join(project_root, "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):
-        puppeteer = os.path.join(root, puppeteer)
+        puppeteer = os.path.join(project_root, puppeteer)
     run_cmd_base = [mmdc]
     if os.path.isfile(puppeteer):
         run_cmd_base.extend(["-p", puppeteer])

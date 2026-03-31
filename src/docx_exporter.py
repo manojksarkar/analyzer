@@ -759,6 +759,9 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     config = load_config(PROJECT_ROOT)
     export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
+    json_path = os.path.abspath(json_path)
+    # Views write next to interface_tables.json (e.g. output/<group>/); do not use output/ only.
+    artifacts_dir = os.path.dirname(json_path)
     # Allow group-specific filenames via {group} placeholder.
     group_name = config.get("selectedGroup") or config.get("modulesGroup") or "all"
     raw_docx = export_cfg.get("docxPath", "output/software_detailed_design.docx")
@@ -771,7 +774,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
     fc_cfg = views_cfg.get("flowcharts") if isinstance(views_cfg.get("flowcharts"), dict) else {}
     flowcharts_enabled = bool(views_cfg.get("flowcharts"))
     flowcharts_render_png = fc_cfg.get("renderPng", True)
-    flowcharts_dir = os.path.abspath(os.path.join(OUTPUT_DIR, "flowcharts"))
+    flowcharts_dir = os.path.abspath(os.path.join(artifacts_dir, "flowcharts"))
     flowcharts_map = _load_flowcharts(flowcharts_dir) if flowcharts_enabled else {}
 
     if not os.path.isfile(json_path):
@@ -806,10 +809,10 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
         unit_data = data[unit_key]
         if not isinstance(unit_data, dict) or "entries" not in unit_data:
             continue
-        unit_name_display = unit_data.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
-        interfaces = unit_data["entries"]
         parts = unit_key.split(KEY_SEP, 1)
         module_name = parts[0]
+        unit_name_display = unit_data.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
+        interfaces = unit_data["entries"]
         by_module.setdefault(module_name, []).append((unit_key, unit_name_display, interfaces))
 
     sorted_modules = sorted(by_module.keys())
@@ -837,7 +840,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
         if msd_enabled and unit_rows_module:
             mod_structure_mmd = _build_module_static_structure_mermaid(module_name, unit_rows_module)
             static_mod_png = os.path.join(
-                OUTPUT_DIR, "module_static_diagrams", f"{safe_filename(module_name)}.png"
+                artifacts_dir, "module_static_diagrams", f"{safe_filename(module_name)}.png"
             )
             if msd_render_png:
                 if _render_mermaid_to_png(PROJECT_ROOT, mod_structure_mmd, static_mod_png) and os.path.isfile(
@@ -862,7 +865,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
             abbreviations=abbreviations,
         )
 
-        unit_diag_dir = os.path.join(OUTPUT_DIR, "unit_diagrams")
+        unit_diag_dir = os.path.join(artifacts_dir, "unit_diagrams")
         for unit_idx, (unit_key, unit_name_display, interfaces) in enumerate(unit_rows_module, start=1):
             # 2.1.1 unit1
             doc.add_heading(f"{sec_num}.1.{unit_idx} {unit_name_display}", level=3)
@@ -927,7 +930,7 @@ def export_docx(json_path: str = None, docx_path: str = None) -> Tuple[bool, Opt
         # 2.2 Dynamic Behaviour: one sub-header per external call (from view output)
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)
         docx_rows = {}
-        pngs_path = os.path.join(OUTPUT_DIR, "behaviour_diagrams", "_behaviour_pngs.json")
+        pngs_path = os.path.join(artifacts_dir, "behaviour_diagrams", "_behaviour_pngs.json")
         if os.path.isfile(pngs_path):
             try:
                 with open(pngs_path, "r", encoding="utf-8") as f:

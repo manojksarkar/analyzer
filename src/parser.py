@@ -47,6 +47,34 @@ else:
     # When that is also missing/empty, default behaviour is used: all files
     # under MODULE_BASE_PATH are parsed and module = first folder.
     _modules_cfg = _config.get("modules") or {}
+    # If modulesGroups exists but no explicit "modules" is provided, merge all groups.
+    # This makes the "full model" parse only the union of all configured module folders
+    # (and avoids generating module="unknown" for unmapped files).
+    if not _modules_cfg and isinstance(_modules_groups, dict) and _modules_groups:
+        merged = {}
+        for _, grp in _modules_groups.items():
+            if not isinstance(grp, dict):
+                continue
+            for module, paths in grp.items():
+                if not paths:
+                    continue
+                if isinstance(paths, str):
+                    paths_list = [paths]
+                else:
+                    paths_list = list(paths) if isinstance(paths, list) else []
+                if module not in merged:
+                    merged[module] = paths_list if len(paths_list) != 1 else paths_list[0]
+                else:
+                    existing = merged.get(module)
+                    if isinstance(existing, str):
+                        existing_list = [existing]
+                    else:
+                        existing_list = list(existing) if isinstance(existing, list) else []
+                    for p in paths_list:
+                        if p and p not in existing_list:
+                            existing_list.append(p)
+                    merged[module] = existing_list if len(existing_list) != 1 else existing_list[0]
+        _modules_cfg = merged
 _MODULE_FOLDERS = []
 for _mod_paths in _modules_cfg.values():
     if not _mod_paths:
@@ -104,12 +132,20 @@ function_return_expr = {}
 
 
 def is_project_file(file_path: str) -> bool:
-    """Return True if file should be analysed as part of the project.
+    """Return True if this path should be treated as project source for parsing.
 
-    - Always requires the path to be under MODULE_BASE_PATH.
-    - If config.modules is provided, only files whose relative path is inside
-      one of the configured folders are included (folder or any subfolder).
-    - If config.modules is not provided, all files under MODULE_BASE_PATH are included.
+    - The file must lie under ``MODULE_BASE_PATH``. That root is ``os.path.abspath`` of
+      the project path from the CLI (relative or absolute); see ``path_is_under`` in
+      ``utils`` for how “under” is defined (case-insensitive on Windows, no prefix false
+      positives).
+    - Folder allowlists come only from config: ``modulesGroups[selectedGroup]``, or an
+      optional top-level ``modules`` map, or (if neither is set) the merged union of all
+      ``modulesGroups``. You do **not** need a ``modules`` key when you use
+      ``modulesGroups`` only.
+    - If ``_MODULE_FOLDERS`` is non-empty, only files whose path relative to the project
+      root matches one of those entries (or a subpath) are included.
+    - If ``_MODULE_FOLDERS`` is empty, any file under the project root passes this check
+      (callers such as ``_collect_source_files`` still restrict by extension).
     """
     if not file_path:
         return False
@@ -125,7 +161,7 @@ def is_project_file(file_path: str) -> bool:
             rel = abs_path.replace("\\", "/")
         for folder in _MODULE_FOLDERS:
             # Folder-based match: folder itself or any subpath under it
-            if rel == folder or rel.startswith(folder + "/"):
+            if rel == folder or rel.startswith(folder.lower() + "/"):
                 return True
         return False
 

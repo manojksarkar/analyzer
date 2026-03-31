@@ -134,6 +134,7 @@ def _build_interface_tables(
                 ge["description"] = g["description"]
             entries.append(ge)
         result[unit_key] = {"name": unit_name_display, "entries": entries}
+    result["unitNames"] = {k: unit_names[k] for k in result if k != "unitNames" and k in unit_names}
     return result
 
 

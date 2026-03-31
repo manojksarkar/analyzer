@@ -35,7 +35,7 @@ def run(model, output_dir, model_dir, config):
     # Be robust to callers passing relative output_dir/model_dir.
     output_dir_abs = os.path.abspath(output_dir)
     model_dir_abs = os.path.abspath(model_dir)
-    project_root = os.path.dirname(output_dir_abs)
+    project_root = os.path.dirname(model_dir_abs)
 
     # Out dir fixed in code: output/flowcharts under the view output dir
     out_dir = os.path.join(output_dir_abs, "flowcharts")

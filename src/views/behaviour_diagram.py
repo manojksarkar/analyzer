@@ -29,7 +29,7 @@ def run(model, output_dir, model_dir, config):
         return
     beh_cfg = beh_val if isinstance(beh_val, dict) else {}
 
-    root = os.path.dirname(output_dir)
+    project_root = os.path.dirname(os.path.abspath(model_dir))
     out_dir = os.path.join(output_dir, "behaviour_diagrams")
     os.makedirs(out_dir, exist_ok=True)
 
@@ -46,10 +46,10 @@ def run(model, output_dir, model_dir, config):
     gen = FakeBehaviourGenerator(modules_path, units_path, functions_path)
 
     render_png = beh_cfg.get("renderPng", True)
-    mmdc = mmdc_path(root)
-    puppeteer = beh_cfg.get("puppeteerConfigPath") or os.path.join(root, "config", "puppeteer-config.json")
+    mmdc = mmdc_path(project_root)
+    puppeteer = beh_cfg.get("puppeteerConfigPath") or os.path.join(project_root, "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):
-        puppeteer = os.path.join(root, puppeteer)
+        puppeteer = os.path.join(project_root, puppeteer)
     run_cmd_base = [mmdc]
     if os.path.isfile(puppeteer):
         run_cmd_base.extend(["-p", puppeteer])
