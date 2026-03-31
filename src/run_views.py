@@ -65,6 +65,7 @@ def main():
         grp = (groups.get(resolved) if isinstance(groups, dict) else None)
         if isinstance(grp, dict):
             config = dict(config)
+            config["_analyzerSelectedGroup"] = resolved
             config["_analyzerAllowedModules"] = sorted(grp.keys())
     run_views(model, output_dir, MODEL_DIR, config)
 

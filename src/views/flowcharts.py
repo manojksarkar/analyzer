@@ -11,10 +11,8 @@ import os
 import shlex
 import subprocess
 import sys
-import tempfile
-
 from .registry import register
-from utils import log, mmdc_path, safe_filename
+from utils import KEY_SEP, log, mmdc_path, safe_filename
 
 
 def _resolve_script(project_root: str, script_path: str) -> str:
@@ -43,6 +41,7 @@ def run(model, output_dir, model_dir, config):
 
     functions_path = os.path.join(model_dir_abs, "functions.json")
     metadata_path = os.path.join(model_dir_abs, "metadata.json")
+    allowed_modules = set((config or {}).get("_analyzerAllowedModules") or [])
 
     std = "c++17"  # fixed in code
     clang_cfg = config.get("clang") or {}
@@ -67,11 +66,33 @@ def run(model, output_dir, model_dir, config):
         log("generator not found: %s" % script, component="flowcharts", err=True)
         return
 
+    # If we are exporting a selected group, pass only that group's functions to the generator.
+    functions_arg_path = functions_path
+    group_name = (config or {}).get("_analyzerSelectedGroup") or ""
+    if allowed_modules and group_name and os.path.isfile(functions_path):
+        try:
+            with open(functions_path, "r", encoding="utf-8") as f:
+                all_funcs = json.load(f)
+            if isinstance(all_funcs, dict):
+                filtered = {
+                    fid: info
+                    for fid, info in all_funcs.items()
+                    if isinstance(fid, str)
+                    and KEY_SEP in fid
+                    and fid.split(KEY_SEP, 1)[0] in allowed_modules
+                }
+                group_functions_path = os.path.join(model_dir_abs, f"functions_{safe_filename(group_name)}.json")
+                with open(group_functions_path, "w", encoding="utf-8") as tf:
+                    json.dump(filtered, tf, indent=2)
+                functions_arg_path = group_functions_path
+        except (OSError, json.JSONDecodeError):
+            pass
+
     cmd = [
         sys.executable,
         script,
         "--interface-json",
-        functions_path,
+        functions_arg_path,
         "--metadata-json",
         metadata_path,
         "--std",
