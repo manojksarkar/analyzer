@@ -1,0 +1,342 @@
+{
+  "core|utils|add|int,int": {
+    "qualifiedName": "add",
+    "location": {
+      "file": "math/utils.cpp",
+      "line": 5,
+      "endLine": 8
+    },
+    "returnType": "int",
+    "returnExpr": "a + b",
+    "calledByIds": [
+      "core|main|calculate|",
+      "core|utils|computeBoth|int,int",
+      "support|helper|helperCompute|int",
+      "tests_a|read_write|directionAdd|int,int",
+      "tests_b|dispatch|AddOperation::apply|int,int",
+      "tests_b|dispatch|multiplyCore|int,int",
+      "tests_b|hub|hubCompute|int,int",
+      "tests_b|point_rect|pointSumWithAdd|int,int"
+    ],
+    "callsIds": [],
+    "writesGlobalIds": [
+      "core|utils|g_utilsCounter"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_MATH_UTILS_02",
+    "parameters": [
+      {
+        "name": "a",
+        "type": "int"
+      },
+      {
+        "name": "b",
+        "type": "int"
+      }
+    ],
+    "writesGlobalIdsTransitive": [
+      "core|utils|g_utilsCounter"
+    ],
+    "behaviourInputName": "Add input",
+    "behaviourOutputName": "UtilsCounter"
+  },
+  "core|utils|subtract|int,int": {
+    "qualifiedName": "subtract",
+    "location": {
+      "file": "math/utils.cpp",
+      "line": 10,
+      "endLine": 13
+    },
+    "returnType": "int",
+    "returnExpr": "a - b",
+    "calledByIds": [
+      "core|utils|computeBoth|int,int",
+      "tests_b|hub|hubCompute|int,int"
+    ],
+    "callsIds": [],
+    "writesGlobalIds": [
+      "core|utils|g_utilsCounter"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_MATH_UTILS_03",
+    "parameters": [
+      {
+        "name": "a",
+        "type": "int"
+      },
+      {
+        "name": "b",
+        "type": "int"
+      }
+    ],
+    "writesGlobalIdsTransitive": [
+      "core|utils|g_utilsCounter"
+    ],
+    "behaviourInputName": "Subtract input",
+    "behaviourOutputName": "UtilsCounter"
+  },
+  "core|utils|computeBoth|int,int": {
+    "qualifiedName": "computeBoth",
+    "location": {
+      "file": "math/utils.cpp",
+      "line": 15,
+      "endLine": 17
+    },
+    "returnType": "int",
+    "returnExpr": "add ( a , b ) + subtract ( a , b )",
+    "calledByIds": [
+      "core|main|calculate|"
+    ],
+    "callsIds": [
+      "core|utils|add|int,int",
+      "core|utils|subtract|int,int"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_MATH_UTILS_04",
+    "parameters": [
+      {
+        "name": "a",
+        "type": "int"
+      },
+      {
+        "name": "b",
+        "type": "int"
+      }
+    ],
+    "writesGlobalIdsTransitive": [
+      "core|utils|g_utilsCounter"
+    ],
+    "behaviourInputName": "ComputeBoth input",
+    "behaviourOutputName": "Add"
+  },
+  "core|main|calculate|": {
+    "qualifiedName": "calculate",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 12,
+      "endLine": 17
+    },
+    "returnType": "int",
+    "returnExpr": "product",
+    "calledByIds": [
+      "core|main|main|"
+    ],
+    "callsIds": [
+      "core|utils|add|int,int",
+      "core|utils|computeBoth|int,int",
+      "tests_b|dispatch|multiply|int,int"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_02",
+    "parameters": [],
+    "readsGlobalIdsTransitive": [
+      "tests_b|dispatch|g_polymorphismFactor"
+    ],
+    "writesGlobalIdsTransitive": [
+      "core|utils|g_utilsCounter"
+    ],
+    "behaviourInputName": "UtilsCounter",
+    "behaviourOutputName": "Product"
+  },
+  "core|main|calculateWithCallback|": {
+    "qualifiedName": "calculateWithCallback",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 19,
+      "endLine": 23
+    },
+    "returnType": "int",
+    "returnExpr": "viaAdd + viaSubtract",
+    "calledByIds": [
+      "core|main|main|"
+    ],
+    "callsIds": [
+      "tests_b|dispatch|applyWithCallback|int (*)(int, int),int,int"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_03",
+    "parameters": [],
+    "behaviourInputName": "CalculateWithCallback input",
+    "behaviourOutputName": "ViaAdd"
+  },
+  "core|main|calculateWithPolymorphism|": {
+    "qualifiedName": "calculateWithPolymorphism",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 25,
+      "endLine": 33
+    },
+    "returnType": "int",
+    "returnExpr": "v1 + v2",
+    "calledByIds": [
+      "core|main|main|"
+    ],
+    "callsIds": [
+      "tests_b|dispatch|applyWithOperation|Operation *,int,int"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_04",
+    "parameters": [],
+    "behaviourInputName": "CalculateWithPolymorphism input",
+    "behaviourOutputName": "CalculateWithPolymorphism result"
+  },
+  "core|main|runEnumTests|": {
+    "qualifiedName": "runEnumTests",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 35,
+      "endLine": 42
+    },
+    "returnType": "int",
+    "returnExpr": "static_cast < int > ( s ) + static_cast < int > ( c ) + h",
+    "calledByIds": [
+      "core|main|main|"
+    ],
+    "callsIds": [
+      "tests_a|types|enumWithHelper|int",
+      "tests_a|types|getDefaultColor|",
+      "tests_a|types|getDefaultStatus|",
+      "tests_a|types|nextColor|Color",
+      "tests_a|types|setMode|Mode_t"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_05",
+    "parameters": [],
+    "behaviourInputName": "RunEnumTests input",
+    "behaviourOutputName": "Static cast"
+  },
+  "core|main|runTypeTests|": {
+    "qualifiedName": "runTypeTests",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 44,
+      "endLine": 57
+    },
+    "returnType": "int",
+    "returnExpr": "sum + area + vi + cross",
+    "calledByIds": [
+      "core|main|main|"
+    ],
+    "callsIds": [
+      "tests_b|point_rect|getDataAsInt|Data",
+      "tests_b|point_rect|getPointX|const Point &",
+      "tests_b|point_rect|noop|",
+      "tests_b|point_rect|pointSumWithAdd|int,int",
+      "tests_b|point_rect|pointSum|Point",
+      "tests_b|point_rect|rectArea|const Rect *",
+      "tests_b|point_rect|scalePoint|Point &,int"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_06",
+    "parameters": [],
+    "writesGlobalIdsTransitive": [
+      "core|utils|g_utilsCounter"
+    ],
+    "behaviourInputName": "UtilsCounter",
+    "behaviourOutputName": "Sum"
+  },
+  "core|main|runNestedFolderTests|": {
+    "qualifiedName": "runNestedFolderTests",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 59,
+      "endLine": 64
+    },
+    "returnType": "int",
+    "returnExpr": "a + b + h",
+    "calledByIds": [
+      "core|main|main|"
+    ],
+    "callsIds": [
+      "support|helper|helperCompute|int",
+      "support|helper|nestedHelper|int",
+      "tests_b|hub|hubCompute|int,int"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_07",
+    "parameters": [],
+    "writesGlobalIdsTransitive": [
+      "core|utils|g_utilsCounter"
+    ],
+    "behaviourInputName": "UtilsCounter",
+    "behaviourOutputName": "UtilsCounter"
+  },
+  "core|main|runDirectionTests|": {
+    "qualifiedName": "runDirectionTests",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 66,
+      "endLine": 73
+    },
+    "returnType": "int",
+    "returnExpr": "v + rw + da",
+    "calledByIds": [
+      "core|main|main|"
+    ],
+    "callsIds": [
+      "tests_a|read_write|directionAdd|int,int",
+      "tests_a|read_write|indirectWrite|int",
+      "tests_a|read_write|readGlobal|",
+      "tests_a|read_write|readWriteGlobal|int",
+      "tests_a|read_write|writeGlobal|int"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_08",
+    "parameters": [],
+    "readsGlobalIdsTransitive": [
+      "tests_a|read_write|g_readOnly",
+      "tests_a|read_write|g_readWrite"
+    ],
+    "writesGlobalIdsTransitive": [
+      "core|utils|g_utilsCounter",
+      "tests_a|read_write|g_readWrite",
+      "tests_a|read_write|g_writeOnly"
+    ],
+    "behaviourInputName": "UtilsCounter",
+    "behaviourOutputName": "UtilsCounter"
+  },
+  "core|main|main|": {
+    "qualifiedName": "main",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 75,
+      "endLine": 86
+    },
+    "returnType": "int",
+    "returnExpr": "g_globalResult",
+    "calledByIds": [],
+    "callsIds": [
+      "core|main|calculateWithCallback|",
+      "core|main|calculateWithPolymorphism|",
+      "core|main|calculate|",
+      "core|main|runDirectionTests|",
+      "core|main|runEnumTests|",
+      "core|main|runNestedFolderTests|",
+      "core|main|runTypeTests|",
+      "tests_a|flowcharts|runFlowTests|"
+    ],
+    "readsGlobalIds": [
+      "core|main|g_globalResult"
+    ],
+    "writesGlobalIds": [
+      "core|main|g_globalResult"
+    ],
+    "direction": "In",
+    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_09",
+    "parameters": [],
+    "readsGlobalIdsTransitive": [
+      "core|main|g_globalResult",
+      "tests_a|read_write|g_readOnly",
+      "tests_a|read_write|g_readWrite",
+      "tests_b|dispatch|g_polymorphismFactor"
+    ],
+    "writesGlobalIdsTransitive": [
+      "core|main|g_globalResult",
+      "core|utils|g_utilsCounter",
+      "tests_a|read_write|g_readWrite",
+      "tests_a|read_write|g_writeOnly"
+    ],
+    "behaviourInputName": "GlobalResult",
+    "behaviourOutputName": "GlobalResult"
+  }
+}

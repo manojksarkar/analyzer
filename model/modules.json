@@ -1,0 +1,27 @@
+{
+  "core": {
+    "units": [
+      "core|main",
+      "core|utils"
+    ]
+  },
+  "support": {
+    "units": [
+      "support|helper"
+    ]
+  },
+  "tests_a": {
+    "units": [
+      "tests_a|read_write",
+      "tests_a|types",
+      "tests_a|flowcharts"
+    ]
+  },
+  "tests_b": {
+    "units": [
+      "tests_b|hub",
+      "tests_b|dispatch",
+      "tests_b|point_rect"
+    ]
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "tests_a|read_write|g_readOnly": {
+    "qualifiedName": "g_readOnly",
+    "location": {
+      "file": "tests/direction/read_write.cpp",
+      "line": 4
+    },
+    "type": "int",
+    "value": "42;   // read-only: never written",
+    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_01",
+    "direction": "In/Out"
+  },
+  "tests_a|read_write|g_writeOnly": {
+    "qualifiedName": "g_writeOnly",
+    "location": {
+      "file": "tests/direction/read_write.cpp",
+      "line": 5
+    },
+    "type": "int",
+    "value": "0;   // write-only: only written",
+    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_02",
+    "direction": "In/Out"
+  },
+  "tests_a|read_write|g_readWrite": {
+    "qualifiedName": "g_readWrite",
+    "location": {
+      "file": "tests/direction/read_write.cpp",
+      "line": 6
+    },
+    "type": "int",
+    "value": "0;   // both read and written",
+    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_03",
+    "direction": "In/Out"
+  },
+  "core|main|g_globalResult": {
+    "qualifiedName": "g_globalResult",
+    "location": {
+      "file": "app/main.cpp",
+      "line": 10
+    },
+    "type": "int",
+    "value": "0",
+    "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_01",
+    "direction": "In/Out"
+  },
+  "core|utils|g_utilsCounter": {
+    "qualifiedName": "g_utilsCounter",
+    "location": {
+      "file": "math/utils.cpp",
+      "line": 3
+    },
+    "type": "int",
+    "value": "0",
+    "interfaceId": "IF_TEST_CPP_PROJECT_MATH_UTILS_01",
+    "direction": "In/Out"
+  },
+  "tests_b|dispatch|g_polymorphismFactor": {
+    "qualifiedName": "g_polymorphismFactor",
+    "location": {
+      "file": "tests/poly/dispatch.cpp",
+      "line": 5
+    },
+    "type": "int",
+    "value": "1",
+    "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_01",
+    "direction": "In/Out"
+  }
+}

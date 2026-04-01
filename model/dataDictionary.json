@@ -1,0 +1,465 @@
+{
+  "Operation": {
+    "kind": "class",
+    "name": "Operation",
+    "qualifiedName": "Operation",
+    "fields": [],
+    "range": "NA",
+    "location": {
+      "file": "tests/poly/dispatch.h",
+      "line": 10
+    }
+  },
+  "AddOperation": {
+    "kind": "class",
+    "name": "AddOperation",
+    "qualifiedName": "AddOperation",
+    "fields": [],
+    "range": "NA",
+    "location": {
+      "file": "tests/poly/dispatch.h",
+      "line": 16
+    }
+  },
+  "MultiplyOperation": {
+    "kind": "class",
+    "name": "MultiplyOperation",
+    "qualifiedName": "MultiplyOperation",
+    "fields": [],
+    "range": "NA",
+    "location": {
+      "file": "tests/poly/dispatch.h",
+      "line": 21
+    }
+  },
+  "Status": {
+    "kind": "enum",
+    "name": "Status",
+    "qualifiedName": "Status",
+    "underlyingType": "Status",
+    "enumerators": [
+      {
+        "name": "STATUS_OK",
+        "value": 0
+      },
+      {
+        "name": "STATUS_ERR",
+        "value": -1
+      },
+      {
+        "name": "STATUS_PENDING",
+        "value": 1
+      }
+    ],
+    "range": "-1-1",
+    "location": {
+      "file": "tests/enum/types.h",
+      "line": 4
+    }
+  },
+  "Color": {
+    "kind": "enum",
+    "name": "Color",
+    "qualifiedName": "Color",
+    "underlyingType": "Color",
+    "enumerators": [
+      {
+        "name": "RED",
+        "value": 0
+      },
+      {
+        "name": "GREEN",
+        "value": 1
+      },
+      {
+        "name": "BLUE",
+        "value": 2
+      }
+    ],
+    "range": "0-2",
+    "location": {
+      "file": "tests/enum/types.h",
+      "line": 11
+    }
+  },
+  "Mode_t": {
+    "kind": "enum",
+    "name": "Mode_t",
+    "qualifiedName": "Mode_t",
+    "underlyingType": "Mode_t",
+    "enumerators": [
+      {
+        "name": "MODE_IDLE",
+        "value": 0
+      },
+      {
+        "name": "MODE_ACTIVE",
+        "value": 1
+      },
+      {
+        "name": "MODE_DONE",
+        "value": 2
+      }
+    ],
+    "range": "0-2",
+    "location": {
+      "file": "tests/enum/types.h",
+      "line": 18
+    }
+  },
+  "typedef@Mode_t:tests/enum/types.h:22": {
+    "kind": "typedef",
+    "name": "Mode_t",
+    "qualifiedName": "Mode_t",
+    "underlyingType": "Mode_t",
+    "range": "NA",
+    "location": {
+      "file": "tests/enum/types.h",
+      "line": 22
+    }
+  },
+  "Point": {
+    "kind": "struct",
+    "name": "Point",
+    "qualifiedName": "Point",
+    "fields": [
+      {
+        "name": "x",
+        "type": "int",
+        "range": "-0x80000000-0x7FFFFFFF"
+      },
+      {
+        "name": "y",
+        "type": "int",
+        "range": "-0x80000000-0x7FFFFFFF"
+      }
+    ],
+    "range": "NA",
+    "location": {
+      "file": "tests/structs/point_rect.h",
+      "line": 4
+    }
+  },
+  "Rect": {
+    "kind": "struct",
+    "name": "Rect",
+    "qualifiedName": "Rect",
+    "fields": [
+      {
+        "name": "topLeft",
+        "type": "Point",
+        "range": "NA"
+      },
+      {
+        "name": "bottomRight",
+        "type": "Point",
+        "range": "NA"
+      }
+    ],
+    "range": "NA",
+    "location": {
+      "file": "tests/structs/point_rect.h",
+      "line": 10
+    }
+  },
+  "typedef@Rect:tests/structs/point_rect.h:16": {
+    "kind": "typedef",
+    "name": "Rect",
+    "qualifiedName": "Rect",
+    "underlyingType": "Rect",
+    "range": "NA",
+    "location": {
+      "file": "tests/structs/point_rect.h",
+      "line": 16
+    }
+  },
+  "Widget_t": {
+    "kind": "struct",
+    "name": "Widget_t",
+    "qualifiedName": "Widget_t",
+    "fields": [
+      {
+        "name": "id",
+        "type": "int",
+        "range": "-0x80000000-0x7FFFFFFF"
+      },
+      {
+        "name": "name",
+        "type": "const char *",
+        "range": "NA"
+      }
+    ],
+    "range": "NA",
+    "location": {
+      "file": "tests/structs/point_rect.h",
+      "line": 16
+    }
+  },
+  "typedef@Widget_t:tests/structs/point_rect.h:16": {
+    "kind": "typedef",
+    "name": "Widget_t",
+    "qualifiedName": "Widget_t",
+    "underlyingType": "Widget_t",
+    "range": "NA",
+    "location": {
+      "file": "tests/structs/point_rect.h",
+      "line": 16
+    }
+  },
+  "Size_t": {
+    "kind": "struct",
+    "name": "Size_t",
+    "qualifiedName": "Size_t",
+    "fields": [
+      {
+        "name": "width",
+        "type": "int",
+        "range": "-0x80000000-0x7FFFFFFF"
+      },
+      {
+        "name": "height",
+        "type": "int",
+        "range": "-0x80000000-0x7FFFFFFF"
+      }
+    ],
+    "range": "NA",
+    "location": {
+      "file": "tests/structs/point_rect.h",
+      "line": 22
+    }
+  },
+  "typedef@Size_t:tests/structs/point_rect.h:16": {
+    "kind": "typedef",
+    "name": "Size_t",
+    "qualifiedName": "Size_t",
+    "underlyingType": "Size_t",
+    "range": "0-0xFFFFFFFFFFFFFFFF",
+    "location": {
+      "file": "tests/structs/point_rect.h",
+      "line": 16
+    }
+  },
+  "void": {
+    "kind": "primitive",
+    "range": "VOID"
+  },
+  "bool": {
+    "kind": "primitive",
+    "range": "0-1"
+  },
+  "char": {
+    "kind": "primitive",
+    "range": "-0x80-0x7F"
+  },
+  "unsigned char": {
+    "kind": "primitive",
+    "range": "0-0xFF"
+  },
+  "signed char": {
+    "kind": "primitive",
+    "range": "-0x80-0x7F"
+  },
+  "short": {
+    "kind": "primitive",
+    "range": "-0x8000-0x7FFF"
+  },
+  "short int": {
+    "kind": "primitive",
+    "range": "-0x8000-0x7FFF"
+  },
+  "signed short": {
+    "kind": "primitive",
+    "range": "-0x8000-0x7FFF"
+  },
+  "unsigned short": {
+    "kind": "primitive",
+    "range": "0-0xFFFF"
+  },
+  "int": {
+    "kind": "primitive",
+    "range": "-0x80000000-0x7FFFFFFF"
+  },
+  "signed int": {
+    "kind": "primitive",
+    "range": "-0x80000000-0x7FFFFFFF"
+  },
+  "unsigned": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFF"
+  },
+  "unsigned int": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFF"
+  },
+  "long": {
+    "kind": "primitive",
+    "range": "-0x80000000-0x7FFFFFFF"
+  },
+  "long int": {
+    "kind": "primitive",
+    "range": "-0x80000000-0x7FFFFFFF"
+  },
+  "unsigned long": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFF"
+  },
+  "long long": {
+    "kind": "primitive",
+    "range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"
+  },
+  "long long int": {
+    "kind": "primitive",
+    "range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"
+  },
+  "unsigned long long": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFFFFFFFFFF"
+  },
+  "float": {
+    "kind": "primitive",
+    "range": "IEEE 754"
+  },
+  "double": {
+    "kind": "primitive",
+    "range": "IEEE 754"
+  },
+  "long double": {
+    "kind": "primitive",
+    "range": "IEEE 754"
+  },
+  "int8_t": {
+    "kind": "primitive",
+    "range": "-0x80-0x7F"
+  },
+  "uint8_t": {
+    "kind": "primitive",
+    "range": "0-0xFF"
+  },
+  "int16_t": {
+    "kind": "primitive",
+    "range": "-0x8000-0x7FFF"
+  },
+  "uint16_t": {
+    "kind": "primitive",
+    "range": "0-0xFFFF"
+  },
+  "int32_t": {
+    "kind": "primitive",
+    "range": "-0x80000000-0x7FFFFFFF"
+  },
+  "uint32_t": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFF"
+  },
+  "int64_t": {
+    "kind": "primitive",
+    "range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"
+  },
+  "uint64_t": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFFFFFFFFFF"
+  },
+  "intptr_t": {
+    "kind": "primitive",
+    "range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"
+  },
+  "uintptr_t": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFFFFFFFFFF"
+  },
+  "size_t": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFFFFFFFFFF"
+  },
+  "std::int8_t": {
+    "kind": "primitive",
+    "range": "-0x80-0x7F"
+  },
+  "std::uint8_t": {
+    "kind": "primitive",
+    "range": "0-0xFF"
+  },
+  "std::int16_t": {
+    "kind": "primitive",
+    "range": "-0x8000-0x7FFF"
+  },
+  "std::uint16_t": {
+    "kind": "primitive",
+    "range": "0-0xFFFF"
+  },
+  "std::int32_t": {
+    "kind": "primitive",
+    "range": "-0x80000000-0x7FFFFFFF"
+  },
+  "std::uint32_t": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFF"
+  },
+  "std::int64_t": {
+    "kind": "primitive",
+    "range": "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"
+  },
+  "std::uint64_t": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFFFFFFFFFF"
+  },
+  "std::size_t": {
+    "kind": "primitive",
+    "range": "0-0xFFFFFFFFFFFFFFFF"
+  },
+  "STATUS_OK_CODE@tests/enum/types.cpp:5": {
+    "kind": "define",
+    "name": "STATUS_OK_CODE",
+    "qualifiedName": "STATUS_OK_CODE",
+    "value": "0",
+    "text": "#define STATUS_OK_CODE  0",
+    "location": {
+      "file": "tests/enum/types.cpp",
+      "line": 5
+    }
+  },
+  "STATUS_ERR_CODE@tests/enum/types.cpp:6": {
+    "kind": "define",
+    "name": "STATUS_ERR_CODE",
+    "qualifiedName": "STATUS_ERR_CODE",
+    "value": "1",
+    "text": "#define STATUS_ERR_CODE 1",
+    "location": {
+      "file": "tests/enum/types.cpp",
+      "line": 6
+    }
+  },
+  "DEFAULT_SCALE_FACTOR@tests/structs/point_rect.cpp:5": {
+    "kind": "define",
+    "name": "DEFAULT_SCALE_FACTOR",
+    "qualifiedName": "DEFAULT_SCALE_FACTOR",
+    "value": "2",
+    "text": "#define DEFAULT_SCALE_FACTOR 2",
+    "location": {
+      "file": "tests/structs/point_rect.cpp",
+      "line": 5
+    }
+  },
+  "RECT_DEFAULT_WIDTH@tests/structs/point_rect.cpp:6": {
+    "kind": "define",
+    "name": "RECT_DEFAULT_WIDTH",
+    "qualifiedName": "RECT_DEFAULT_WIDTH",
+    "value": "10",
+    "text": "#define RECT_DEFAULT_WIDTH   10",
+    "location": {
+      "file": "tests/structs/point_rect.cpp",
+      "line": 6
+    }
+  },
+  "RECT_DEFAULT_HEIGHT@tests/structs/point_rect.cpp:7": {
+    "kind": "define",
+    "name": "RECT_DEFAULT_HEIGHT",
+    "qualifiedName": "RECT_DEFAULT_HEIGHT",
+    "value": "20",
+    "text": "#define RECT_DEFAULT_HEIGHT  20",
+    "location": {
+      "file": "tests/structs/point_rect.cpp",
+      "line": 7
+    }
+  }
+}
