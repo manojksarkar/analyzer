@@ -25,6 +25,8 @@ Parse C++ → model (single source of truth) → views → software_detailed_des
 
 **Views (read-only projections):** Each view reads the model and writes output. Configurable via `config.views`. Implemented: interfaceTables → interface_tables.json; behaviourDiagram → output/behaviour_diagrams/ (calls external behaviour_diagram.py per function). Stubs: sequenceDiagrams, flowcharts, componentDiagram.
 
+**Visibility filtering:** Functions and global variables tagged `PRIVATE` are excluded from the interface table, unit header table, and behaviour diagrams. The DOCX flowchart section renders a non-private function's own flowchart followed by flowcharts of any private functions it calls — each private function flowchart is rendered at most once per unit (deduplication via `rendered_private_fids` set). `PUBLIC` and `PROTECTED` entries are included everywhere.
+
 **Output:** software_detailed_design.docx — structure spec in [software_detailed_design.json](software_detailed_design.json): 1 Introduction, 2..N Modules (Static Design with unit interface tables, Dynamic Behaviour), Code Metrics, Appendix A.
 
 ---
@@ -68,6 +70,7 @@ All keys use `|` (KEY_SEP) as separator. Paths use `/`.
 | interfaceId | string | IF_project_unit_index |
 | parameters | array | name, type; range resolved at view time |
 | direction | string | In, Out |
+| visibility | string | `private`, `public`, `protected`, or `default` (no macro prefix found) |
 | description | string | (optional) |
 
 **Example:**
@@ -93,6 +96,7 @@ All keys use `|` (KEY_SEP) as separator. Paths use `/`.
 | type | string | C++ type |
 | interfaceId | string | IF_project_unit_index |
 | direction | string | In, Out, In/Out, - |
+| visibility | string | `private`, `public`, `protected`, or `default` (no macro prefix found) |
 
 **Example:**
 ```json
@@ -192,8 +196,9 @@ Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ n
 ### Phase 1 – Parse (parser.py)
 1. Walk project dir for `.cpp`, `.h`, `.hpp`, etc.
 2. For each file: libclang parse → `visit_definitions`, `visit_type_definitions` → collect functions, globals, types (structs, enums, typedefs, primitives in dataDictionary keyed by name/qualifiedName with kind).
-3. Second pass: `visit_calls` → build call graph (call_graph, reverse_call_graph).
-4. Write metadata.json, functions.json, globalVariables.json, dataDictionary.json.
+3. For each function/global: `_detect_visibility(file, line)` scans raw source up to 5 lines backwards from the declaration line to detect `PRIVATE`, `PUBLIC`, or `PROTECTED` macro prefix — stored as lowercase in the `visibility` field (`"default"` if none found). Handles multi-line declarations (e.g. `PRIVATE UNIT\n_func(...)`).
+4. Second pass: `visit_calls` → build call graph (call_graph, reverse_call_graph).
+5. Write metadata.json, functions.json, globalVariables.json, dataDictionary.json.
 
 ### Phase 2 – Derive model (model_deriver.py)
 1. Load functions, globals, metadata.
@@ -208,6 +213,12 @@ Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ n
 ### Phase 3 – Generate views (run_views.py)
 1. Load model (functions, globals, units, modules, dataDictionary) from model/.
 2. `run_views` → for each enabled view in `config.views`, call view builder. interfaceTables → output/interface_tables.json.
+3. **Visibility filtering applied per view:**
+   - `interfaceTables`: skips functions and globals where `visibility == "private"`
+   - `behaviourDiagram`: skips functions where `visibility == "private"`
+   - `flowcharts`: generates for all functions (no filtering)
+   - `unitDiagrams`, `moduleStaticDiagram`: no function-level filtering
+4. **Case-insensitive module matching:** `_analyzerAllowedModules` is normalised to lowercase when the `allowed_modules` set is built; extracted module names are compared with `.lower()` throughout all views.
 
 ### Phase 4 – Export (docx_exporter.py)
 1. Load interface_tables.json.
@@ -216,8 +227,10 @@ Top-level keys: `unitNames` (unitKey → display name), then unit keys with `{ n
    - 2..N Modules (Static Design: **module overview diagram** — `config.views.moduleStaticDiagram`; one Mermaid box for the module name and one box per unit, rendered to PNG via mmdc under `output/module_static_diagrams/` (fallback: Mermaid source as monospace); then per-unit unit diagram (if enabled), unit header, unit interface table, per-interface sections; Dynamic Behaviour: 2.2.x per function with behaviour diagram PNG from mermaid-cli)
    - Code Metrics, Coding Rule, Test Coverage
    - Appendix A. Design Guideline
-3. Table columns: Interface ID, Interface Name, Information, Data Type, Data Range, Direction, Source/Destination, Interface Type.
-4. Save software_detailed_design.docx.
+3. **Unit header table:** skips global variables where `visibility == "private"`.
+4. **Per-interface flowchart rendering:** for each non-private interface, renders its own flowchart then renders flowcharts of any private functions it calls (`callsIds`) that have not yet been rendered in this unit. Deduplication is tracked per unit via `rendered_private_fids` set — each private function flowchart appears at most once per unit section.
+5. Table columns: Interface ID, Interface Name, Information, Data Type, Data Range, Direction, Source/Destination, Interface Type.
+6. Save software_detailed_design.docx.
 
 ### Direction inference (Phase 2)
 Convention: **Get** (read from global) = **Out**; **Set** (write to global) = **In**; both (e.g. init) = **In**. No In/Out for functions.

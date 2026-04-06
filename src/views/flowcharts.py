@@ -41,7 +41,7 @@ def run(model, output_dir, model_dir, config):
 
     functions_path = os.path.join(model_dir_abs, "functions.json")
     metadata_path = os.path.join(model_dir_abs, "metadata.json")
-    allowed_modules = set((config or {}).get("_analyzerAllowedModules") or [])
+    allowed_modules = {m.lower() for m in ((config or {}).get("_analyzerAllowedModules") or [])}
 
     std = "c++17"  # fixed in code
     clang_cfg = config.get("clang") or {}
@@ -79,7 +79,7 @@ def run(model, output_dir, model_dir, config):
                     for fid, info in all_funcs.items()
                     if isinstance(fid, str)
                     and KEY_SEP in fid
-                    and fid.split(KEY_SEP, 1)[0] in allowed_modules
+                    and fid.split(KEY_SEP, 1)[0].lower() in allowed_modules
                 }
                 group_functions_path = os.path.join(model_dir_abs, f"functions_{safe_filename(group_name)}.json")
                 with open(group_functions_path, "w", encoding="utf-8") as tf:

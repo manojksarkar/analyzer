@@ -22,13 +22,13 @@ typedef enum {
 } Mode_t;
 
 // Test: enum as parameter
-Status checkStatus(Status s);
-Color nextColor(Color c);
-Mode_t setMode(Mode_t m);
+PUBLIC Status checkStatus(Status s);
+PUBLIC Color nextColor(Color c);
+PROTECTED Mode_t setMode(Mode_t m);
 
 // Test: enum return
-Status getDefaultStatus();
-Color getDefaultColor();
+PUBLIC Status getDefaultStatus();
+PUBLIC Color getDefaultColor();
 
 // Cross-module: tests/enum -> outer
-int enumWithHelper(int x);
+PRIVATE int enumWithHelper(int x);

@@ -157,10 +157,15 @@ One-line description:"""
     return _call_ollama(prompt, config, kind="description")
 
 
-def get_global_description(source: str, config: dict) -> str:
+def get_global_description(source: str, config: dict, abbreviations: dict = None) -> str:
     if not source:
         return ""
-    prompt = f"""Describe this C++ global variable in one short sentence (what it stores or represents):
+    abbrev_block = ""
+    if abbreviations:
+        formatted = _format_abbreviations(abbreviations)
+        if formatted:
+            abbrev_block = "\n\nAlso, consider the following abbreviations:\n\n" + formatted
+    prompt = f"""Describe this C++ global variable in one short sentence (what it stores or represents).{abbrev_block}
 
 ```cpp
 {source}
@@ -395,4 +400,6 @@ def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, proce
 def enrich_globals_with_descriptions(globals_data: list, base_path: str, config: dict) -> dict:
     if not _ollama_available(config):
         return {}
-    return _enrich_globals_loop(globals_data, base_path, config, get_global_description, "description", "LLM-global")
+    abbreviations = load_abbreviations(base_path, config)
+    processor = lambda source, cfg: get_global_description(source, cfg, abbreviations)
+    return _enrich_globals_loop(globals_data, base_path, config, processor, "description", "LLM-global")

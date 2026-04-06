@@ -1,14 +1,14 @@
 #include "flowcharts.h"
 #include "../../math/utils.h"
 
-int fnIfSimple(int x) {
+PRIVATE int fnIfSimple(int x) {
     if (x > 0) {
         return x + 1;
     }
     return x;
 }
 
-int fnIfElse(int x) {
+PRIVATE int fnIfElse(int x) {
     if (x > 0) {
         return 1;
     } else {
@@ -16,7 +16,7 @@ int fnIfElse(int x) {
     }
 }
 
-int fnNestedIfElse(int a, int b) {
+PRIVATE int fnNestedIfElse(int a, int b) {
     if (a > 0) {
         if (b > 0) {
             return a + b;
@@ -32,7 +32,7 @@ int fnNestedIfElse(int a, int b) {
     }
 }
 
-int fnIfElseIf(int x) {
+PRIVATE int fnIfElseIf(int x) {
     if (x < 0) {
         return -1;
     } else if (x == 0) {
@@ -44,7 +44,7 @@ int fnIfElseIf(int x) {
     }
 }
 
-int fnSwitchSimple(int op) {
+PRIVATE int fnSwitchSimple(int op) {
     int result = 0;
     switch (op) {
         case 1: result = 10; break;
@@ -55,7 +55,7 @@ int fnSwitchSimple(int op) {
     return result;
 }
 
-int fnSwitchFallthrough(int tier) {
+PRIVATE int fnSwitchFallthrough(int tier) {
     int bonus = 0;
     switch (tier) {
         case 3: bonus += 100;
@@ -66,7 +66,7 @@ int fnSwitchFallthrough(int tier) {
     return bonus;
 }
 
-int fnForLoop(int n) {
+PRIVATE int fnForLoop(int n) {
     int sum = 0;
     for (int i = 0; i < n; ++i) {
         sum += i;
@@ -74,7 +74,7 @@ int fnForLoop(int n) {
     return sum;
 }
 
-int fnForBreak(int n, int stop) {
+PRIVATE int fnForBreak(int n, int stop) {
     int sum = 0;
     for (int i = 0; i < n; ++i) {
         if (i == stop) break;
@@ -83,7 +83,7 @@ int fnForBreak(int n, int stop) {
     return sum;
 }
 
-int fnForContinue(int n) {
+PRIVATE int fnForContinue(int n) {
     int sum = 0;
     for (int i = 0; i < n; ++i) {
         if (i % 2 == 0) continue;
@@ -92,7 +92,7 @@ int fnForContinue(int n) {
     return sum;
 }
 
-int fnWhileLoop(int n) {
+PRIVATE int fnWhileLoop(int n) {
     int sum = 0;
     int i = 0;
     while (i < n) {
@@ -102,7 +102,7 @@ int fnWhileLoop(int n) {
     return sum;
 }
 
-int fnDoWhile(int n) {
+PRIVATE int fnDoWhile(int n) {
     int sum = 0;
     int i = 0;
     do {
@@ -112,7 +112,7 @@ int fnDoWhile(int n) {
     return sum;
 }
 
-int fnNestedFor(int rows, int cols) {
+PRIVATE int fnNestedFor(int rows, int cols) {
     int total = 0;
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < cols; ++c) {
@@ -122,7 +122,7 @@ int fnNestedFor(int rows, int cols) {
     return total;
 }
 
-int fnForWithIf(int n) {
+PRIVATE int fnForWithIf(int n) {
     int sum = 0;
     for (int i = 0; i < n; ++i) {
         if (i % 2 == 0) {
@@ -134,7 +134,7 @@ int fnForWithIf(int n) {
     return sum;
 }
 
-int fnWhileWithIf(int n) {
+PRIVATE int fnWhileWithIf(int n) {
     int i = 0;
     int sum = 0;
     while (i < n) {
@@ -148,13 +148,13 @@ int fnWhileWithIf(int n) {
     return sum;
 }
 
-int fnIfEarlyReturn(int x) {
+PRIVATE int fnIfEarlyReturn(int x) {
     if (x < 0) return 0;
     if (x > 100) return 100;
     return x;
 }
 
-int fnMixedForSwitch(int n) {
+PRIVATE int fnMixedForSwitch(int n) {
     int result = 0;
     for (int i = 0; i < n; ++i) {
         switch (i % 3) {
@@ -166,7 +166,7 @@ int fnMixedForSwitch(int n) {
     return result;
 }
 
-int fnDeeplyNested(int a, int b, int c) {
+PRIVATE int fnDeeplyNested(int a, int b, int c) {
     if (a > 0) {
         if (b > 0) {
             if (c > 0) {
@@ -190,7 +190,7 @@ int fnDeeplyNested(int a, int b, int c) {
     }
 }
 
-int fnMultipleReturns(int x, int y) {
+PRIVATE int fnMultipleReturns(int x, int y) {
     if (x < 0) return -1;
     if (y < 0) return -2;
     if (x == y) return 0;
@@ -198,7 +198,7 @@ int fnMultipleReturns(int x, int y) {
     return 2;
 }
 
-int fnLoopNestedIfElse(int n) {
+PRIVATE int fnLoopNestedIfElse(int n) {
     int s = 0;
     for (int i = 0; i < n; ++i) {
         if (i < n / 3) {
@@ -212,7 +212,7 @@ int fnLoopNestedIfElse(int n) {
     return s;
 }
 
-int runFlowTests() {
+PUBLIC int runFlowTests() {
     int total = 0;
     total += fnIfSimple(5);
     total += fnIfElse(-3);

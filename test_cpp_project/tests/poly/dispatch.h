@@ -2,10 +2,10 @@
 
 // Test: virtual functions, function pointers, polymorphic dispatch
 
-int multiply(int a, int b);
-int divide(int a, int b);
+PUBLIC int multiply(int a, int b);
+PUBLIC int divide(int a, int b);
 
-int applyWithCallback(int (*fn)(int, int), int a, int b);
+PUBLIC int applyWithCallback(int (*fn)(int, int), int a, int b);
 
 class Operation {
 public:
@@ -23,4 +23,4 @@ public:
     int apply(int a, int b) override;
 };
 
-int applyWithOperation(Operation* op, int a, int b);
+PUBLIC int applyWithOperation(Operation* op, int a, int b);

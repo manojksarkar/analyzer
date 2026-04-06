@@ -25,8 +25,8 @@ typedef struct {
 } Size_t;
 
 // Test: typedef struct usage
-void initWidget(Widget_t* w, int id, const char* name);
-int areaOfSize(Size_t s);
+PUBLIC void initWidget(Widget_t* w, int id, const char* name);
+PROTECTED int areaOfSize(Size_t s);
 
 // Test: union
 union Data {
@@ -36,22 +36,22 @@ union Data {
 };
 
 // Test: struct as parameter (by value)
-int pointSum(Point p);
+PUBLIC int pointSum(Point p);
 
 // Test: struct as parameter (by pointer)
-int rectArea(const Rect* r);
+PUBLIC int rectArea(const Rect* r);
 
 // Test: struct by reference
-void scalePoint(Point& p, int factor);
+PUBLIC void scalePoint(Point& p, int factor);
 
 // Test: union as parameter
-int getDataAsInt(Data d);
+PROTECTED int getDataAsInt(Data d);
 
 // Test: void return
-void noop();
+PRIVATE void noop();
 
 // Test: const reference parameter
-int getPointX(const Point& p);
+PUBLIC int getPointX(const Point& p);
 
 // Cross-module: tests/structs -> math
-int pointSumWithAdd(int a, int b);
+PUBLIC int pointSumWithAdd(int a, int b);

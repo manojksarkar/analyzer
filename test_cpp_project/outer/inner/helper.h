@@ -1,4 +1,4 @@
 #pragma once
 
-int nestedHelper(int x);
-int helperCompute(int x);  // uses math::add
+PROTECTED int nestedHelper(int x);
+PUBLIC int helperCompute(int x);  // uses math::add

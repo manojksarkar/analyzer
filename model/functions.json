@@ -7,6 +7,7 @@
       "endLine": 8
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "a + b",
     "calledByIds": [
       "core|main|calculate|",
@@ -48,6 +49,7 @@
       "endLine": 13
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "a - b",
     "calledByIds": [
       "core|utils|computeBoth|int,int",
@@ -83,6 +85,7 @@
       "endLine": 17
     },
     "returnType": "int",
+    "visibility": "protected",
     "returnExpr": "add ( a , b ) + subtract ( a , b )",
     "calledByIds": [
       "core|main|calculate|"
@@ -117,6 +120,7 @@
       "endLine": 237
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "total",
     "calledByIds": [
       "core|main|main|"
@@ -156,6 +160,7 @@
       "endLine": 19
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "( prod + ( h % 7 ) ) * g_polymorphismFactor",
     "calledByIds": [
       "core|main|calculate|",
@@ -197,6 +202,7 @@
       "endLine": 24
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "0",
     "calledByIds": [],
     "callsIds": [],
@@ -223,6 +229,7 @@
       "endLine": 28
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "fn ? fn ( a , b ) : 0",
     "calledByIds": [
       "core|main|calculateWithCallback|"
@@ -255,6 +262,7 @@
       "endLine": 13
     },
     "returnType": "int",
+    "visibility": "default",
     "declarationOnly": true,
     "calledByIds": [
       "tests_b|dispatch|applyWithOperation|Operation *,int,int"
@@ -283,6 +291,7 @@
       "endLine": 32
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "add ( a , b )",
     "calledByIds": [],
     "callsIds": [
@@ -314,6 +323,7 @@
       "endLine": 36
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "multiply ( a , b )",
     "calledByIds": [],
     "callsIds": [
@@ -348,6 +358,7 @@
       "endLine": 41
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "0",
     "calledByIds": [
       "core|main|calculateWithPolymorphism|"
@@ -382,6 +393,7 @@
       "endLine": 10
     },
     "returnType": "Status",
+    "visibility": "public",
     "returnExpr": "s == STATUS_OK ? STATUS_OK : STATUS_ERR",
     "calledByIds": [
       "tests_b|hub|hubCompute|int,int"
@@ -406,6 +418,7 @@
       "endLine": 16
     },
     "returnType": "Color",
+    "visibility": "public",
     "returnExpr": "GREEN",
     "calledByIds": [
       "core|main|runEnumTests|",
@@ -431,6 +444,7 @@
       "endLine": 20
     },
     "returnType": "Mode_t",
+    "visibility": "protected",
     "returnExpr": "m",
     "calledByIds": [
       "core|main|runEnumTests|"
@@ -455,6 +469,7 @@
       "endLine": 24
     },
     "returnType": "Status",
+    "visibility": "public",
     "returnExpr": "STATUS_OK",
     "calledByIds": [
       "core|main|runEnumTests|"
@@ -474,6 +489,7 @@
       "endLine": 28
     },
     "returnType": "Color",
+    "visibility": "public",
     "returnExpr": "RED",
     "calledByIds": [
       "core|main|runEnumTests|",
@@ -494,6 +510,7 @@
       "endLine": 32
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "nestedHelper ( x )",
     "calledByIds": [
       "core|main|runEnumTests|",
@@ -521,6 +538,7 @@
       "endLine": 44
     },
     "returnType": "void",
+    "visibility": "public",
     "calledByIds": [],
     "callsIds": [],
     "direction": "In",
@@ -550,6 +568,7 @@
       "endLine": 48
     },
     "returnType": "int",
+    "visibility": "protected",
     "returnExpr": "s . width * s . height",
     "calledByIds": [],
     "callsIds": [],
@@ -572,6 +591,7 @@
       "endLine": 15
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "p . x + p . y",
     "calledByIds": [
       "core|main|runTypeTests|"
@@ -596,6 +616,7 @@
       "endLine": 22
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "0",
     "calledByIds": [
       "core|main|runTypeTests|"
@@ -620,6 +641,7 @@
       "endLine": 27
     },
     "returnType": "void",
+    "visibility": "public",
     "calledByIds": [
       "core|main|runTypeTests|"
     ],
@@ -647,6 +669,7 @@
       "endLine": 31
     },
     "returnType": "int",
+    "visibility": "protected",
     "returnExpr": "d . i",
     "calledByIds": [
       "core|main|runTypeTests|"
@@ -671,6 +694,7 @@
       "endLine": 34
     },
     "returnType": "void",
+    "visibility": "private",
     "calledByIds": [
       "core|main|runTypeTests|"
     ],
@@ -689,6 +713,7 @@
       "endLine": 38
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "p . x",
     "calledByIds": [
       "core|main|runTypeTests|"
@@ -713,6 +738,7 @@
       "endLine": 11
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "add ( a , b )",
     "calledByIds": [
       "core|main|runTypeTests|",
@@ -747,6 +773,7 @@
       "endLine": 10
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "g_readOnly",
     "calledByIds": [
       "core|main|runDirectionTests|"
@@ -772,6 +799,7 @@
       "endLine": 14
     },
     "returnType": "void",
+    "visibility": "private",
     "calledByIds": [
       "core|main|runDirectionTests|",
       "tests_a|read_write|indirectWrite|int"
@@ -802,6 +830,7 @@
       "endLine": 19
     },
     "returnType": "int",
+    "visibility": "protected",
     "returnExpr": "g_readWrite",
     "calledByIds": [
       "core|main|runDirectionTests|"
@@ -838,6 +867,7 @@
       "endLine": 23
     },
     "returnType": "void",
+    "visibility": "private",
     "calledByIds": [
       "core|main|runDirectionTests|"
     ],
@@ -866,6 +896,7 @@
       "endLine": 27
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "add ( a , b )",
     "calledByIds": [
       "core|main|runDirectionTests|"
@@ -899,6 +930,7 @@
       "endLine": 25
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "h + ps + e + static_cast < int > ( st ) + static_cast < int > ( c )",
     "calledByIds": [
       "core|main|runNestedFolderTests|",
@@ -941,6 +973,7 @@
       "endLine": 6
     },
     "returnType": "int",
+    "visibility": "protected",
     "returnExpr": "x * 2",
     "calledByIds": [
       "core|main|runNestedFolderTests|",
@@ -966,6 +999,7 @@
       "endLine": 10
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "add ( x , 1 )",
     "calledByIds": [
       "core|main|runNestedFolderTests|",
@@ -996,6 +1030,7 @@
       "endLine": 17
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "product",
     "calledByIds": [
       "core|main|main|"
@@ -1025,6 +1060,7 @@
       "endLine": 23
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "viaAdd + viaSubtract",
     "calledByIds": [
       "core|main|main|"
@@ -1046,6 +1082,7 @@
       "endLine": 33
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "v1 + v2",
     "calledByIds": [
       "core|main|main|"
@@ -1067,6 +1104,7 @@
       "endLine": 42
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "static_cast < int > ( s ) + static_cast < int > ( c ) + h",
     "calledByIds": [
       "core|main|main|"
@@ -1092,6 +1130,7 @@
       "endLine": 57
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "sum + area + vi + cross",
     "calledByIds": [
       "core|main|main|"
@@ -1122,6 +1161,7 @@
       "endLine": 64
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "a + b + h",
     "calledByIds": [
       "core|main|main|"
@@ -1148,6 +1188,7 @@
       "endLine": 73
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "v + rw + da",
     "calledByIds": [
       "core|main|main|"
@@ -1182,6 +1223,7 @@
       "endLine": 86
     },
     "returnType": "int",
+    "visibility": "public",
     "returnExpr": "g_globalResult",
     "calledByIds": [],
     "callsIds": [
@@ -1226,6 +1268,7 @@
       "endLine": 9
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "x + 1",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1250,6 +1293,7 @@
       "endLine": 17
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "1",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1274,6 +1318,7 @@
       "endLine": 33
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "a + b",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1302,6 +1347,7 @@
       "endLine": 45
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "- 1",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1326,6 +1372,7 @@
       "endLine": 56
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "result",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1350,6 +1397,7 @@
       "endLine": 67
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "bonus",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1374,6 +1422,7 @@
       "endLine": 75
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "sum",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1398,6 +1447,7 @@
       "endLine": 84
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "sum",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1426,6 +1476,7 @@
       "endLine": 93
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "sum",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1450,6 +1501,7 @@
       "endLine": 103
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "sum",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1474,6 +1526,7 @@
       "endLine": 113
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "sum",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1498,6 +1551,7 @@
       "endLine": 123
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "total",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1526,6 +1580,7 @@
       "endLine": 135
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "sum",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1550,6 +1605,7 @@
       "endLine": 149
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "sum",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1574,6 +1630,7 @@
       "endLine": 155
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "0",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1598,6 +1655,7 @@
       "endLine": 167
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "result",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1622,6 +1680,7 @@
       "endLine": 191
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "a + b + c",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1654,6 +1713,7 @@
       "endLine": 199
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "- 1",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1682,6 +1742,7 @@
       "endLine": 213
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "s",
     "calledByIds": [
       "tests_a|flowcharts|runFlowTests|"
@@ -1706,6 +1767,7 @@
       "endLine": 10
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "x >= 0 ? x : 0",
     "calledByIds": [
       "tests_b|hub|hubCompute|int,int"
@@ -1730,6 +1792,7 @@
       "endLine": 13
     },
     "returnType": "int",
+    "visibility": "private",
     "returnExpr": "result",
     "calledByIds": [
       "tests_b|dispatch|multiply|int,int"

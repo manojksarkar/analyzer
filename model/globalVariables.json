@@ -6,7 +6,8 @@
       "line": 4
     },
     "type": "int",
-    "value": "42;   // read-only: never written",
+    "value": "42;    // read-only: never written",
+    "visibility": "public",
     "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_01",
     "direction": "In/Out"
   },
@@ -18,6 +19,7 @@
     },
     "type": "int",
     "value": "0;   // write-only: only written",
+    "visibility": "private",
     "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_02",
     "direction": "In/Out"
   },
@@ -28,7 +30,8 @@
       "line": 6
     },
     "type": "int",
-    "value": "0;   // both read and written",
+    "value": "0; // both read and written",
+    "visibility": "protected",
     "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_DIRECTION_READ_WRITE_03",
     "direction": "In/Out"
   },
@@ -40,6 +43,7 @@
     },
     "type": "int",
     "value": "0",
+    "visibility": "public",
     "interfaceId": "IF_TEST_CPP_PROJECT_APP_MAIN_01",
     "direction": "In/Out"
   },
@@ -51,6 +55,7 @@
     },
     "type": "int",
     "value": "0",
+    "visibility": "private",
     "interfaceId": "IF_TEST_CPP_PROJECT_MATH_UTILS_01",
     "direction": "In/Out"
   },
@@ -62,6 +67,7 @@
     },
     "type": "int",
     "value": "1",
+    "visibility": "protected",
     "interfaceId": "IF_TEST_CPP_PROJECT_TESTS_POLY_DISPATCH_01",
     "direction": "In/Out"
   }

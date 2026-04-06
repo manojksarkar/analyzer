@@ -215,6 +215,8 @@ def _build_unit_header_table(
     # Globals: use model/globalVariables.json so we can read exact line(s)
     for gid in unit_info.get("globalVariableIds", []) or []:
         g = (global_variables_data or {}).get(gid) or {}
+        if (g.get("visibility") or "").lower() == "private":
+            continue
         loc = g.get("location") or {}
         rel_file = (loc.get("file") or "").replace("\\", "/")
         line = int(loc.get("line") or 0)
@@ -901,6 +903,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
 
             # 2.1.1.3, 2.1.1.4, ... per interface
             unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
+            rendered_private_fids = set()  # track private flowcharts already shown in this unit
             for iface_idx, iface in enumerate(interfaces, start=3):
                 iface_id = iface.get("interfaceId", "")
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{iface_id}", level=4)
@@ -926,6 +929,45 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         _add_mermaid_as_text(doc, flowchart, font_small)
                 else:
                     _add_para(doc, iface.get("description", "") or "-")
+
+                # Also render flowcharts of private functions called by this interface
+                if flowcharts_enabled:
+                    callee_fids = (functions_data.get(iface.get("functionId")) or {}).get("callsIds") or []
+                    for callee_fid in callee_fids:
+                        callee = functions_data.get(callee_fid) or {}
+                        if (callee.get("visibility") or "").lower() != "private":
+                            continue
+                        callee_parts = callee_fid.split(KEY_SEP)
+                        callee_unit_key = KEY_SEP.join(callee_parts[:2]) if len(callee_parts) >= 2 else ""
+                        callee_unit_prefix = callee_unit_key.replace(KEY_SEP, "_")
+                        callee_unit_name = callee_parts[1] if len(callee_parts) > 1 else ""
+                        callee_qn = callee.get("qualifiedName", "")
+                        callee_func_name = callee_qn.split("::")[-1] if callee_qn else ""
+                        if not callee_func_name:
+                            continue
+                        callee_flowchart = (
+                            flowcharts_map.get(callee_unit_prefix, {}).get(callee_func_name)
+                            or flowcharts_map.get(callee_unit_name, {}).get(callee_func_name)
+                        )
+                        if not callee_flowchart:
+                            continue
+                        if callee_fid in rendered_private_fids:
+                            continue
+                        rendered_private_fids.add(callee_fid)
+                        _add_para(doc, f"[Private: {callee_func_name}]")
+                        if flowcharts_render_png:
+                            callee_png = os.path.join(flowcharts_dir, f"{callee_unit_prefix}_{safe_filename(callee_func_name)}.png")
+                            if not os.path.isfile(callee_png):
+                                callee_png = os.path.join(flowcharts_dir, f"{callee_unit_name}_{safe_filename(callee_func_name)}.png")
+                            if os.path.isfile(callee_png):
+                                try:
+                                    doc.add_picture(callee_png, width=Inches(6))
+                                except Exception:
+                                    _add_mermaid_as_text(doc, callee_flowchart, font_small)
+                            else:
+                                _add_mermaid_as_text(doc, callee_flowchart, font_small)
+                        else:
+                            _add_mermaid_as_text(doc, callee_flowchart, font_small)
 
         # 2.2 Dynamic Behaviour: one sub-header per external call (from view output)
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)

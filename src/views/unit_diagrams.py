@@ -83,7 +83,7 @@ def _build_unit_diagram(
         pid = _unit_part_id(uk)
         uk_module = uk.split(KEY_SEP)[0] if KEY_SEP in uk else ""
         if allowed_modules:
-            if uk_module in allowed_modules:
+            if uk_module.lower() in allowed_modules:
                 internal_set.add(pid)
         else:
             if uk_module == this_module:
@@ -175,7 +175,7 @@ def run(model, output_dir, model_dir, config):
     functions_data = model.get("functions", {})
     if not units_data or not functions_data:
         return
-    allowed_modules = set(config.get("_analyzerAllowedModules") or [])
+    allowed_modules = {m.lower() for m in (config.get("_analyzerAllowedModules") or [])}
 
     fid_to_unit = _fid_to_unit(units_data)
     unit_names = {
@@ -206,7 +206,7 @@ def run(model, output_dir, model_dir, config):
 
     cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
     if allowed_modules:
-        cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0] in allowed_modules]
+        cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0].lower() in allowed_modules]
     total = len(cpp_units)
     for i, unit_key in enumerate(sorted(cpp_units), 1):
         print(f"  unitDiagrams: {i}/{total} units...", end="\r", flush=True)

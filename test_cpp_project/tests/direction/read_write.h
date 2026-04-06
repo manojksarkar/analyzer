@@ -1,25 +1,25 @@
 #pragma once
 
 // Test: direction inference - read-only global (In)
-extern int g_readOnly;
+PUBLIC extern int g_readOnly;
 
 // Test: write-only global (Out)
-extern int g_writeOnly;
+PRIVATE extern int g_writeOnly;
 
 // Test: read+write global (In/Out)
-extern int g_readWrite;
+PROTECTED extern int g_readWrite;
 
 // Test: read global only -> function direction In
-int readGlobal();
+PUBLIC int readGlobal();
 
 // Test: write global only -> function direction Out
-void writeGlobal(int v);
+PRIVATE void writeGlobal(int v);
 
 // Test: read and write global -> function direction Out
-int readWriteGlobal(int delta);
+PROTECTED int readWriteGlobal(int delta);
 
 // Test: function calls Out function -> propagation to Out
-void indirectWrite(int v);
+PRIVATE void indirectWrite(int v);
 
 // Cross-module: tests/direction -> math
-int directionAdd(int a, int b);
+PUBLIC int directionAdd(int a, int b);

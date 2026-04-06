@@ -38,7 +38,7 @@ def _build_interface_tables(
     result = {"unitNames": unit_names}
     for unit_key, unit_info in units_data.items():
         if allowed_modules:
-            if KEY_SEP in unit_key and unit_key.split(KEY_SEP, 1)[0] not in allowed_modules:
+            if KEY_SEP in unit_key and unit_key.split(KEY_SEP, 1)[0].lower() not in allowed_modules:
                 continue
         if not (unit_info.get("fileName") or "").endswith(".cpp"):
             continue
@@ -49,6 +49,8 @@ def _build_interface_tables(
             if fid not in functions_data:
                 continue
             f = functions_data[fid]
+            if (f.get("visibility") or "").lower() == "private":
+                continue
             qn = f.get("qualifiedName", "")
             name = short_name(qn)
             loc = dict(f.get("location", {}))
@@ -69,7 +71,7 @@ def _build_interface_tables(
                     return True
                 mod = u.split(KEY_SEP, 1)[0]
                 if allowed_modules:
-                    return mod not in allowed_modules
+                    return mod.lower() not in allowed_modules
                 # Default behaviour: treat different module as external
                 return mod != self_module
 
@@ -104,6 +106,8 @@ def _build_interface_tables(
             if vid not in global_variables_data:
                 continue
             g = global_variables_data[vid]
+            if (g.get("visibility") or "").lower() == "private":
+                continue
             qn = g.get("qualifiedName", "")
             name = short_name(qn)
             loc = dict(g.get("location", {}))
@@ -144,7 +148,7 @@ def run(model, output_dir, model_dir, config):
     functions_data = model.get("functions", {})
     global_variables_data = model.get("globalVariables", {})
     data_dict = model.get("dataDictionary", {})
-    allowed_modules = set(config.get("_analyzerAllowedModules") or [])
+    allowed_modules = {m.lower() for m in (config.get("_analyzerAllowedModules") or [])}
 
     interface_tables = _build_interface_tables(
         units_data,

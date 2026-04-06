@@ -35,7 +35,7 @@ def run(model, output_dir, model_dir, config):
 
     units_data = model.get("units", {})
     functions_data = model.get("functions", {})
-    allowed_modules = set(config.get("_analyzerAllowedModules") or [])
+    allowed_modules = {m.lower() for m in (config.get("_analyzerAllowedModules") or [])}
     fid_to_unit = {fid: uk for uk, u in units_data.items() for fid in u.get("functionIds", [])}
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                   for uk, u in units_data.items()}
@@ -58,9 +58,17 @@ def run(model, output_dir, model_dir, config):
     # Only generate diagrams for functions within the selected group (if any),
     # but keep full-model context so external callers (outside the group) are captured.
     if allowed_modules:
-        functions = [fid for fid, uk in fid_to_unit.items() if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0] in allowed_modules]
+        functions = [
+            fid for fid, uk in fid_to_unit.items()
+            if KEY_SEP in uk
+            and uk.split(KEY_SEP, 1)[0].lower() in allowed_modules
+            and (functions_data.get(fid, {}).get("visibility") or "").lower() != "private"
+        ]
     else:
-        functions = list(model.get("functions", {}))
+        functions = [
+            fid for fid in model.get("functions", {})
+            if (functions_data.get(fid, {}).get("visibility") or "").lower() != "private"
+        ]
     total = len(functions)
     count = 0
 
@@ -84,7 +92,7 @@ def run(model, output_dir, model_dir, config):
         called_by_ids = functions_data.get(fid, {}).get("calledByIds", []) or []
         if allowed_modules:
             # External = outside selected group
-            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] not in allowed_modules]
+            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0].lower() not in allowed_modules]
         else:
             # Default behaviour: external = different module
             external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] != module_name]

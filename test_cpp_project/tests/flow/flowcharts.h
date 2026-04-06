@@ -1,3 +1,3 @@
 #pragma once
 
-int runFlowTests();
+PUBLIC int runFlowTests();

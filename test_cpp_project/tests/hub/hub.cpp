@@ -5,11 +5,11 @@
 #include "../enum/types.h"
 #include "../structs/point_rect.h"
 
-static int hubValidate(int x) {
+PRIVATE static int hubValidate(int x) {
     return x >= 0 ? x : 0;
 }
 
-int hubCompute(int a, int b) {
+PUBLIC int hubCompute(int a, int b) {
     int va = hubValidate(a);
     int vb = hubValidate(b);
     int sum = add(va, vb);              // calls math/utils
@@ -23,4 +23,3 @@ int hubCompute(int a, int b) {
 
     return h + ps + e + static_cast<int>(st) + static_cast<int>(c);
 }
-

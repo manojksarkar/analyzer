@@ -95,6 +95,7 @@ CLANG_ARGS = [
 #   PRIVATE UNIT __OVLYINIT
 #   _SOME_FUNCTION(GG *gg){}
 _default_macro_defs = ("PRIVATE", "PROTECTED", "PUBLIC", "__OVLYINIT")
+_VISIBILITY_KEYWORDS = {"PRIVATE", "PUBLIC", "PROTECTED"}
 for _macro in _default_macro_defs:
     _arg = f"-D{_macro}="
     if _arg not in CLANG_ARGS:
@@ -109,6 +110,31 @@ if _void_arg not in CLANG_ARGS:
 _extra = _clang.get("clangArgs")
 if _extra:
     CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
+
+
+def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str:
+    """Scan raw source lines at/before line_no to detect PRIVATE/PUBLIC/PROTECTED prefix.
+
+    Returns 'private', 'public', 'protected', or 'default' if none found.
+    Scans backwards from the declaration line to handle multi-line declarations like:
+        PRIVATE UNIT __OVLYINIT
+        _SomeFunction(GG *gg) {}
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except (OSError, IOError):
+        return "default"
+
+    start = max(0, line_no - scan_lines)
+    for i in range(line_no - 1, start - 1, -1):
+        line = lines[i].strip()
+        if not line or line.startswith("//") or line.startswith("/*") or line.startswith("*"):
+            continue
+        first_token = re.split(r"\s+", line)[0]
+        if first_token in _VISIBILITY_KEYWORDS:
+            return first_token.lower()
+    return "default"
 
 
 def get_module_name(file_path: str) -> str:
@@ -480,6 +506,7 @@ def visit_definitions(cursor):
             "parameters": params,
             "returnType": cursor.result_type.spelling if cursor.result_type else "",
             "endLine": end_line,
+            "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
         }
         if cursor.is_definition():
             functions[fk] = entry
@@ -525,6 +552,7 @@ def visit_definitions(cursor):
                 "returnType": cursor.type.spelling if cursor.type else "",
                 "endLine": end_line,
                 "syntheticFromVarDecl": True,
+                "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
             }
             module_functions[module_name].append(fk)
             function_to_module[fk] = module_name
@@ -537,6 +565,7 @@ def visit_definitions(cursor):
                 "qualifiedName": get_qualified_name(cursor),
                 "moduleName": get_module_name(cursor.location.file.name),
                 "type": cursor.type.spelling if cursor.type else "",
+                "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
             }
             if value_str:
                 globals_data[var_id]["value"] = value_str
@@ -719,6 +748,7 @@ def build_metadata():
             "params": f["parameters"],
             "returnType": f.get("returnType", ""),
         }
+        functions_dict[fid]["visibility"] = f.get("visibility", "default")
         if f.get("syntheticFromVarDecl"):
             functions_dict[fid]["syntheticFromVarDecl"] = True
         if f.get("declarationOnly"):
@@ -745,6 +775,7 @@ def build_metadata():
         }
         if g.get("value"):
             g_entry["value"] = g["value"]
+        g_entry["visibility"] = g.get("visibility", "default")
         global_variables_dict[vid] = g_entry
 
     # Add precise caller/callee ids, global read/write ids and direction (In/Out) from global read/write analysis

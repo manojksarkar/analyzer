@@ -7,22 +7,22 @@
 #include "../tests/hub/hub.h"
 #include "../outer/inner/helper.h"
 
-int g_globalResult = 0;
+PUBLIC int g_globalResult = 0;
 
-int calculate() {
+PUBLIC int calculate() {
     int sum = add(10, 5);
     int both = computeBoth(3, 4);  // math: external->computeBoth->add,subtract (internal)
     int product = multiply(sum + both, 3);
     return product;
 }
 
-int calculateWithCallback() {
+PUBLIC int calculateWithCallback() {
     int viaAdd = applyWithCallback(&add, 2, 3);
     int viaSubtract = applyWithCallback(&subtract, 10, 4);
     return viaAdd + viaSubtract;
 }
 
-int calculateWithPolymorphism() {
+PUBLIC int calculateWithPolymorphism() {
     AddOperation addOp;
     MultiplyOperation mulOp;
     Operation* base = &addOp;
@@ -32,7 +32,7 @@ int calculateWithPolymorphism() {
     return v1 + v2;
 }
 
-int runEnumTests() {
+PRIVATE int runEnumTests() {
     Status s = getDefaultStatus();
     Color c = nextColor(getDefaultColor());
     Mode_t m = setMode(MODE_ACTIVE);
@@ -41,7 +41,7 @@ int runEnumTests() {
     return static_cast<int>(s) + static_cast<int>(c) + h;
 }
 
-int runTypeTests() {
+PRIVATE int runTypeTests() {
     Point p = {1, 2};
     int sum = pointSum(p);
     int cross = pointSumWithAdd(3, 4);  // tests/structs -> math
@@ -56,14 +56,14 @@ int runTypeTests() {
     return sum + area + vi + cross;
 }
 
-int runNestedFolderTests() {
+PRIVATE int runNestedFolderTests() {
     int a = nestedHelper(21);
     int b = helperCompute(10);  // outer calls math
     int h = hubCompute(a, b);   // hub calls multiple units
     return a + b + h;
 }
 
-int runDirectionTests() {
+PRIVATE int runDirectionTests() {
     int v = readGlobal();
     writeGlobal(10);
     int rw = readWriteGlobal(5);
@@ -72,7 +72,7 @@ int runDirectionTests() {
     return v + rw + da;
 }
 
-int main() {
+PUBLIC int main() {
     int result1 = calculate();
     int result2 = calculateWithCallback();
     int result3 = calculateWithPolymorphism();
