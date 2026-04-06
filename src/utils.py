@@ -228,11 +228,12 @@ def _resolve_module_from_rel(rel_file: str) -> str:
             if isinstance(paths, str):
                 paths = [paths]
             for folder in paths:
-                p = (folder or "").replace("\\", "/").lstrip("./")
+                p = (folder or "").replace("\\", "/").lstrip("./").lower()
                 if not p:
                     continue
                 # Folder-based match: module is the folder and its subfolders.
-                if path == p or path.startswith(p + "/"):
+                path_lower = path.lower()
+                if path_lower == p or path_lower.startswith(p + "/"):
                     return module
         return "unknown"
 

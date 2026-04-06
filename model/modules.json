@@ -1,27 +1,68 @@
 {
-  "core": {
+  "BdCross": {
     "units": [
-      "core|main",
-      "core|utils"
+      "BdCross|Hub"
     ]
   },
-  "support": {
+  "BdPoly": {
     "units": [
-      "support|helper"
+      "BdPoly|Dispatch"
     ]
   },
-  "tests_a": {
+  "DiagParser": {
     "units": [
-      "tests_a|read_write",
-      "tests_a|types",
-      "tests_a|flowcharts"
+      "DiagParser|ForwardVoidDecl",
+      "DiagParser|MultilineOvlyinit",
+      "DiagParser|PreprocIfFunction",
+      "DiagParser|PreprocIfFunctionThen",
+      "DiagParser|VoidAsVar",
+      "DiagParser|VoidIsVoid"
     ]
   },
-  "tests_b": {
+  "FcControl": {
     "units": [
-      "tests_b|hub",
-      "tests_b|dispatch",
-      "tests_b|point_rect"
+      "FcControl|Flowcharts"
+    ]
+  },
+  "ItDirection": {
+    "units": [
+      "ItDirection|ReadWrite"
+    ]
+  },
+  "ItTypes": {
+    "units": [
+      "ItTypes|PointRect",
+      "ItTypes|Types"
+    ]
+  },
+  "ItVisibility": {
+    "units": [
+      "ItVisibility|AccessVisibility"
+    ]
+  },
+  "QsCore": {
+    "units": [
+      "QsCore|Sample"
+    ]
+  },
+  "QsUtils": {
+    "units": [
+      "QsUtils|SampleUtils"
+    ]
+  },
+  "UdMath": {
+    "units": [
+      "UdMath|Utils"
+    ]
+  },
+  "UdNamespaces": {
+    "units": [
+      "UdNamespaces|Advanced"
+    ]
+  },
+  "UdNested": {
+    "units": [
+      "UdNested|Helper"
     ]
   }
 }

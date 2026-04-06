@@ -34,26 +34,29 @@
     "abbreviationsPath": "config/abbreviations.txt"
   },
   "modulesGroups": {
-    "core": {
-      "core": [
-        "app",
-        "math"
-      ]
+    "InterfaceTables": {
+      "ItTypes": ["InterfaceTables/Types"],
+      "ItVisibility": ["InterfaceTables/Visibility"],
+      "ItDirection": ["InterfaceTables/Direction"]
     },
-    "support": {
-      "support": "outer/inner"
+    "Flowcharts": {
+      "FcControl": ["Flowcharts/ControlFlow"]
     },
-    "tests": {
-      "tests_a": [
-        "tests/direction",
-        "tests/enum",
-        "tests/flow"
-      ],
-      "tests_b": [
-        "tests/hub",
-        "tests/poly",
-        "tests/structs"
-      ]
+    "BehaviourDiagram": {
+      "BdCross": ["BehaviourDiagram/CrossModule"],
+      "BdPoly": ["BehaviourDiagram/Polymorphism"]
+    },
+    "UnitDiagrams": {
+      "UdMath": ["UnitDiagrams/BasicMath"],
+      "UdNested": ["UnitDiagrams/Nested/Inner"],
+      "UdNamespaces": ["UnitDiagrams/Namespaces"]
+    },
+    "Diagnostics": {
+      "DiagParser": ["Diagnostics/ParserEdge"]
+    },
+    "QuickSample": {
+      "QsCore": ["QuickSample/Core"],
+      "QsUtils": ["QuickSample/Utils"]
     }
   },
   "export": {

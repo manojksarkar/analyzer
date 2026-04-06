@@ -1,37 +1,4 @@
 {
-  "Operation": {
-    "kind": "class",
-    "name": "Operation",
-    "qualifiedName": "Operation",
-    "fields": [],
-    "range": "NA",
-    "location": {
-      "file": "tests/poly/dispatch.h",
-      "line": 10
-    }
-  },
-  "AddOperation": {
-    "kind": "class",
-    "name": "AddOperation",
-    "qualifiedName": "AddOperation",
-    "fields": [],
-    "range": "NA",
-    "location": {
-      "file": "tests/poly/dispatch.h",
-      "line": 16
-    }
-  },
-  "MultiplyOperation": {
-    "kind": "class",
-    "name": "MultiplyOperation",
-    "qualifiedName": "MultiplyOperation",
-    "fields": [],
-    "range": "NA",
-    "location": {
-      "file": "tests/poly/dispatch.h",
-      "line": 21
-    }
-  },
   "Status": {
     "kind": "enum",
     "name": "Status",
@@ -53,8 +20,8 @@
     ],
     "range": "-1-1",
     "location": {
-      "file": "tests/enum/types.h",
-      "line": 4
+      "file": "InterfaceTables/Types/Types.h",
+      "line": 18
     }
   },
   "Color": {
@@ -78,8 +45,8 @@
     ],
     "range": "0-2",
     "location": {
-      "file": "tests/enum/types.h",
-      "line": 11
+      "file": "InterfaceTables/Types/Types.h",
+      "line": 25
     }
   },
   "Mode_t": {
@@ -103,19 +70,19 @@
     ],
     "range": "0-2",
     "location": {
-      "file": "tests/enum/types.h",
-      "line": 18
+      "file": "InterfaceTables/Types/Types.h",
+      "line": 32
     }
   },
-  "typedef@Mode_t:tests/enum/types.h:22": {
+  "typedef@Mode_t:InterfaceTables/Types/Types.h:36": {
     "kind": "typedef",
     "name": "Mode_t",
     "qualifiedName": "Mode_t",
     "underlyingType": "Mode_t",
     "range": "NA",
     "location": {
-      "file": "tests/enum/types.h",
-      "line": 22
+      "file": "InterfaceTables/Types/Types.h",
+      "line": 36
     }
   },
   "Point": {
@@ -136,8 +103,8 @@
     ],
     "range": "NA",
     "location": {
-      "file": "tests/structs/point_rect.h",
-      "line": 4
+      "file": "InterfaceTables/Types/PointRect.h",
+      "line": 23
     }
   },
   "Rect": {
@@ -158,19 +125,19 @@
     ],
     "range": "NA",
     "location": {
-      "file": "tests/structs/point_rect.h",
-      "line": 10
+      "file": "InterfaceTables/Types/PointRect.h",
+      "line": 29
     }
   },
-  "typedef@Rect:tests/structs/point_rect.h:16": {
+  "typedef@Rect:InterfaceTables/Types/PointRect.h:35": {
     "kind": "typedef",
     "name": "Rect",
     "qualifiedName": "Rect",
     "underlyingType": "Rect",
     "range": "NA",
     "location": {
-      "file": "tests/structs/point_rect.h",
-      "line": 16
+      "file": "InterfaceTables/Types/PointRect.h",
+      "line": 35
     }
   },
   "Widget_t": {
@@ -191,19 +158,19 @@
     ],
     "range": "NA",
     "location": {
-      "file": "tests/structs/point_rect.h",
-      "line": 16
+      "file": "InterfaceTables/Types/PointRect.h",
+      "line": 35
     }
   },
-  "typedef@Widget_t:tests/structs/point_rect.h:16": {
+  "typedef@Widget_t:InterfaceTables/Types/PointRect.h:35": {
     "kind": "typedef",
     "name": "Widget_t",
     "qualifiedName": "Widget_t",
     "underlyingType": "Widget_t",
     "range": "NA",
     "location": {
-      "file": "tests/structs/point_rect.h",
-      "line": 16
+      "file": "InterfaceTables/Types/PointRect.h",
+      "line": 35
     }
   },
   "Size_t": {
@@ -224,19 +191,192 @@
     ],
     "range": "NA",
     "location": {
-      "file": "tests/structs/point_rect.h",
-      "line": 22
+      "file": "InterfaceTables/Types/PointRect.h",
+      "line": 41
     }
   },
-  "typedef@Size_t:tests/structs/point_rect.h:16": {
+  "typedef@Size_t:InterfaceTables/Types/PointRect.h:35": {
     "kind": "typedef",
     "name": "Size_t",
     "qualifiedName": "Size_t",
     "underlyingType": "Size_t",
     "range": "0-0xFFFFFFFFFFFFFFFF",
     "location": {
-      "file": "tests/structs/point_rect.h",
-      "line": 16
+      "file": "InterfaceTables/Types/PointRect.h",
+      "line": 35
+    }
+  },
+  "Operation": {
+    "kind": "class",
+    "name": "Operation",
+    "qualifiedName": "Operation",
+    "fields": [],
+    "range": "NA",
+    "location": {
+      "file": "BehaviourDiagram/Polymorphism/Dispatch.h",
+      "line": 30
+    }
+  },
+  "AddOperation": {
+    "kind": "class",
+    "name": "AddOperation",
+    "qualifiedName": "AddOperation",
+    "fields": [],
+    "range": "NA",
+    "location": {
+      "file": "BehaviourDiagram/Polymorphism/Dispatch.h",
+      "line": 37
+    }
+  },
+  "MultiplyOperation": {
+    "kind": "class",
+    "name": "MultiplyOperation",
+    "qualifiedName": "MultiplyOperation",
+    "fields": [],
+    "range": "NA",
+    "location": {
+      "file": "BehaviourDiagram/Polymorphism/Dispatch.h",
+      "line": 43
+    }
+  },
+  "UNIT": {
+    "kind": "typedef",
+    "name": "UNIT",
+    "qualifiedName": "UNIT",
+    "underlyingType": "UNIT",
+    "range": "NA",
+    "location": {
+      "file": "Diagnostics/ParserEdge/VoidIsVoid.cpp",
+      "line": 7
+    }
+  },
+  "GG": {
+    "kind": "struct",
+    "name": "GG",
+    "qualifiedName": "GG",
+    "fields": [
+      {
+        "name": "x",
+        "type": "int",
+        "range": "-0x80000000-0x7FFFFFFF"
+      }
+    ],
+    "range": "NA",
+    "location": {
+      "file": "Diagnostics/ParserEdge/PreprocIfFunctionThen.cpp",
+      "line": 13
+    }
+  },
+  "typedef@GG:Diagnostics/ParserEdge/MultilineOvlyinit.cpp:9": {
+    "kind": "typedef",
+    "name": "GG",
+    "qualifiedName": "GG",
+    "underlyingType": "GG",
+    "range": "NA",
+    "location": {
+      "file": "Diagnostics/ParserEdge/MultilineOvlyinit.cpp",
+      "line": 9
+    }
+  },
+  "typedef@GG:Diagnostics/ParserEdge/PreprocIfFunction.cpp:11": {
+    "kind": "typedef",
+    "name": "GG",
+    "qualifiedName": "GG",
+    "underlyingType": "GG",
+    "range": "NA",
+    "location": {
+      "file": "Diagnostics/ParserEdge/PreprocIfFunction.cpp",
+      "line": 11
+    }
+  },
+  "typedef@GG:Diagnostics/ParserEdge/PreprocIfFunctionThen.cpp:13": {
+    "kind": "typedef",
+    "name": "GG",
+    "qualifiedName": "GG",
+    "underlyingType": "GG",
+    "range": "NA",
+    "location": {
+      "file": "Diagnostics/ParserEdge/PreprocIfFunctionThen.cpp",
+      "line": 13
+    }
+  },
+  "DB_TYPE": {
+    "kind": "enum",
+    "name": "DB_TYPE",
+    "qualifiedName": "DB_TYPE",
+    "underlyingType": "DB_TYPE",
+    "enumerators": [
+      {
+        "name": "DB_NONE",
+        "value": 0
+      },
+      {
+        "name": "DB_MAIN",
+        "value": 1
+      },
+      {
+        "name": "DB_BACKUP",
+        "value": 2
+      }
+    ],
+    "range": "0-2",
+    "location": {
+      "file": "InterfaceTables/Visibility/AccessVisibility.h",
+      "line": 27
+    }
+  },
+  "typedef@DB_TYPE:InterfaceTables/Visibility/AccessVisibility.h:31": {
+    "kind": "typedef",
+    "name": "DB_TYPE",
+    "qualifiedName": "DB_TYPE",
+    "underlyingType": "DB_TYPE",
+    "range": "NA",
+    "location": {
+      "file": "InterfaceTables/Visibility/AccessVisibility.h",
+      "line": 31
+    }
+  },
+  "SampleStatus": {
+    "kind": "enum",
+    "name": "SampleStatus",
+    "qualifiedName": "SampleStatus",
+    "underlyingType": "SampleStatus",
+    "enumerators": [
+      {
+        "name": "SAMPLE_OK",
+        "value": 0
+      },
+      {
+        "name": "SAMPLE_ERR",
+        "value": 1
+      }
+    ],
+    "range": "0-1",
+    "location": {
+      "file": "QuickSample/Core/Sample.h",
+      "line": 30
+    }
+  },
+  "SamplePoint": {
+    "kind": "struct",
+    "name": "SamplePoint",
+    "qualifiedName": "SamplePoint",
+    "fields": [
+      {
+        "name": "x",
+        "type": "int",
+        "range": "-0x80000000-0x7FFFFFFF"
+      },
+      {
+        "name": "y",
+        "type": "int",
+        "range": "-0x80000000-0x7FFFFFFF"
+      }
+    ],
+    "range": "NA",
+    "location": {
+      "file": "QuickSample/Core/Sample.h",
+      "line": 32
     }
   },
   "void": {
@@ -407,59 +547,103 @@
     "kind": "primitive",
     "range": "0-0xFFFFFFFFFFFFFFFF"
   },
-  "STATUS_OK_CODE@tests/enum/types.cpp:5": {
+  "SOME_THING@Diagnostics/ParserEdge/PreprocIfFunctionThen.cpp:9": {
     "kind": "define",
-    "name": "STATUS_OK_CODE",
-    "qualifiedName": "STATUS_OK_CODE",
-    "value": "0",
-    "text": "#define STATUS_OK_CODE  0",
-    "location": {
-      "file": "tests/enum/types.cpp",
-      "line": 5
-    }
-  },
-  "STATUS_ERR_CODE@tests/enum/types.cpp:6": {
-    "kind": "define",
-    "name": "STATUS_ERR_CODE",
-    "qualifiedName": "STATUS_ERR_CODE",
+    "name": "SOME_THING",
+    "qualifiedName": "SOME_THING",
     "value": "1",
-    "text": "#define STATUS_ERR_CODE 1",
+    "text": "#define SOME_THING 1",
     "location": {
-      "file": "tests/enum/types.cpp",
-      "line": 6
+      "file": "Diagnostics/ParserEdge/PreprocIfFunctionThen.cpp",
+      "line": 9
     }
   },
-  "DEFAULT_SCALE_FACTOR@tests/structs/point_rect.cpp:5": {
+  "DEFAULT_SCALE_FACTOR@InterfaceTables/Types/PointRect.cpp:5": {
     "kind": "define",
     "name": "DEFAULT_SCALE_FACTOR",
     "qualifiedName": "DEFAULT_SCALE_FACTOR",
     "value": "2",
     "text": "#define DEFAULT_SCALE_FACTOR 2",
     "location": {
-      "file": "tests/structs/point_rect.cpp",
+      "file": "InterfaceTables/Types/PointRect.cpp",
       "line": 5
     }
   },
-  "RECT_DEFAULT_WIDTH@tests/structs/point_rect.cpp:6": {
+  "RECT_DEFAULT_WIDTH@InterfaceTables/Types/PointRect.cpp:6": {
     "kind": "define",
     "name": "RECT_DEFAULT_WIDTH",
     "qualifiedName": "RECT_DEFAULT_WIDTH",
     "value": "10",
     "text": "#define RECT_DEFAULT_WIDTH   10",
     "location": {
-      "file": "tests/structs/point_rect.cpp",
+      "file": "InterfaceTables/Types/PointRect.cpp",
       "line": 6
     }
   },
-  "RECT_DEFAULT_HEIGHT@tests/structs/point_rect.cpp:7": {
+  "RECT_DEFAULT_HEIGHT@InterfaceTables/Types/PointRect.cpp:7": {
     "kind": "define",
     "name": "RECT_DEFAULT_HEIGHT",
     "qualifiedName": "RECT_DEFAULT_HEIGHT",
     "value": "20",
     "text": "#define RECT_DEFAULT_HEIGHT  20",
     "location": {
-      "file": "tests/structs/point_rect.cpp",
+      "file": "InterfaceTables/Types/PointRect.cpp",
       "line": 7
+    }
+  },
+  "STATUS_OK_CODE@InterfaceTables/Types/Types.cpp:5": {
+    "kind": "define",
+    "name": "STATUS_OK_CODE",
+    "qualifiedName": "STATUS_OK_CODE",
+    "value": "0",
+    "text": "#define STATUS_OK_CODE  0",
+    "location": {
+      "file": "InterfaceTables/Types/Types.cpp",
+      "line": 5
+    }
+  },
+  "STATUS_ERR_CODE@InterfaceTables/Types/Types.cpp:6": {
+    "kind": "define",
+    "name": "STATUS_ERR_CODE",
+    "qualifiedName": "STATUS_ERR_CODE",
+    "value": "1",
+    "text": "#define STATUS_ERR_CODE 1",
+    "location": {
+      "file": "InterfaceTables/Types/Types.cpp",
+      "line": 6
+    }
+  },
+  "PRIVATE@InterfaceTables/Visibility/AccessVisibility.h:23": {
+    "kind": "define",
+    "name": "PRIVATE",
+    "qualifiedName": "PRIVATE",
+    "value": "",
+    "text": "#define PRIVATE",
+    "location": {
+      "file": "InterfaceTables/Visibility/AccessVisibility.h",
+      "line": 23
+    }
+  },
+  "PROTECTED@InterfaceTables/Visibility/AccessVisibility.h:24": {
+    "kind": "define",
+    "name": "PROTECTED",
+    "qualifiedName": "PROTECTED",
+    "value": "",
+    "text": "#define PROTECTED",
+    "location": {
+      "file": "InterfaceTables/Visibility/AccessVisibility.h",
+      "line": 24
+    }
+  },
+  "PUBLIC@InterfaceTables/Visibility/AccessVisibility.h:25": {
+    "kind": "define",
+    "name": "PUBLIC",
+    "qualifiedName": "PUBLIC",
+    "value": "",
+    "text": "#define PUBLIC",
+    "location": {
+      "file": "InterfaceTables/Visibility/AccessVisibility.h",
+      "line": 25
     }
   }
 }
