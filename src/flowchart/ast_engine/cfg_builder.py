@@ -36,6 +36,8 @@ _CONTROL_FLOW_KINDS = frozenset({
     ci.CursorKind.BREAK_STMT,
     ci.CursorKind.CONTINUE_STMT,
     ci.CursorKind.CXX_TRY_STMT,
+    ci.CursorKind.GOTO_STMT,
+    ci.CursorKind.LABEL_STMT,
 })
 
 # Matches any assertion macro call — no line-start anchor so finditer()
@@ -107,6 +109,8 @@ class CFGBuilder:
         self._counter = 0
         self._nodes: Dict[str, CfgNode] = {}
         self._edges: List[CfgEdge] = []
+        self._labels: Dict[str, str] = {}              # label_name → entry node_id
+        self._gotos: List[Tuple[str, str]] = []         # (goto_node_id, label_name)
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -142,6 +146,18 @@ class CFGBuilder:
                 self._edge(nid, end.node_id, lbl)
             for nid in returns:
                 self._edge(nid, end.node_id)
+
+            # Resolve deferred goto → label edges.
+            # Both goto and label may appear in any order in the source,
+            # so resolution must happen after the full body is traversed.
+            for goto_id, label_name in self._gotos:
+                target_id = self._labels.get(label_name)
+                if target_id:
+                    self._edge(goto_id, target_id)
+                else:
+                    logger.warning("goto target label '%s' not found in "
+                                   "function '%s'",
+                                   label_name, func_entry.qualified_name)
 
         return ControlFlowGraph(
             function_key=func_entry.key,
@@ -217,6 +233,10 @@ class CFGBuilder:
             return self._process_continue(cursor)
         if k == ci.CursorKind.CXX_TRY_STMT:
             return self._process_try(cursor)
+        if k == ci.CursorKind.GOTO_STMT:
+            return self._process_goto(cursor)
+        if k == ci.CursorKind.LABEL_STMT:
+            return self._process_label(cursor)
         # Default: treat as an action node
         raw = self._src_text(cursor)
         node = self._new_node(NodeType.ACTION, raw,
@@ -525,6 +545,13 @@ class CFGBuilder:
             if child.kind in (ci.CursorKind.CASE_STMT,
                               ci.CursorKind.DEFAULT_STMT):
                 collect(child)
+            elif result:
+                # Sibling statement (e.g. break) that clang places at
+                # the COMPOUND_STMT level rather than as a child of the
+                # preceding CASE_STMT.  Append it to the most recent
+                # case's body so break / goto / etc. are not lost.
+                last_label, last_stmts = result[-1]
+                result[-1] = (last_label, last_stmts + [child])
 
         return result
 
@@ -594,6 +621,70 @@ class CFGBuilder:
         node = self._new_node(NodeType.CONTINUE, "continue",
                               cursor.extent.start.line, cursor.extent.end.line)
         return (node.node_id, [], [], [], [node.node_id])
+
+    # ------------------------------------------------------------------
+    # goto / label
+    # ------------------------------------------------------------------
+
+    def _process_goto(self, cursor: ci.Cursor):
+        """Process a goto statement.
+
+        goto is terminal — it transfers control to the target label and does
+        NOT fall through to the next sequential statement.  The actual edge
+        to the label is deferred and resolved in build() after the entire
+        function body has been traversed (the label may appear later).
+        """
+        raw = self._src_text(cursor)
+        node = self._new_node(NodeType.ACTION, raw,
+                              cursor.extent.start.line,
+                              cursor.extent.end.line)
+        # Extract target label name from "goto <name>;" source text
+        label = raw.replace("goto", "", 1).strip().rstrip(";").strip()
+        if label:
+            self._gotos.append((node.node_id, label))
+        # No open exits — goto terminates sequential flow (like return)
+        return (node.node_id, [], [], [], [])
+
+    def _process_label(self, cursor: ci.Cursor):
+        """Process a labeled statement (e.g. ``fail: sink = -1;``).
+
+        Registers the label name → entry node mapping so deferred goto
+        edges can be resolved later.  The labeled sub-statement is
+        processed normally and participates in sequential flow (code can
+        fall through into a label from above).
+        """
+        label_name = cursor.spelling
+        if not label_name:
+            # Fallback: extract from source text ("fail: ..." → "fail")
+            raw = self._src_text(cursor)
+            label_name = raw.split(":")[0].strip()
+
+        children = list(cursor.get_children())
+        # LABEL_STMT has one child: the sub-statement after the colon
+        sub = children[-1] if children else None
+
+        if sub is None:
+            # Label with no sub-statement (shouldn't happen in valid C++)
+            node = self._new_node(NodeType.ACTION, f"{label_name}:",
+                                  cursor.extent.start.line,
+                                  cursor.extent.start.line)
+            self._labels[label_name] = node.node_id
+            return (node.node_id, [(node.node_id, None)], [], [], [])
+
+        entry, opens, rets, brks, conts = self._process_stmt(sub)
+
+        if entry is not None:
+            self._labels[label_name] = entry
+        else:
+            # Sub-statement produced no entry — create passthrough node
+            node = self._new_node(NodeType.ACTION, f"{label_name}:",
+                                  cursor.extent.start.line,
+                                  cursor.extent.start.line)
+            self._labels[label_name] = node.node_id
+            entry = node.node_id
+            opens = [(node.node_id, None)]
+
+        return (entry, opens, rets, brks, conts)
 
     # ------------------------------------------------------------------
     # try / catch
