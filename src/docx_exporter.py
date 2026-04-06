@@ -423,6 +423,102 @@ def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bo
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
+def _add_flowchart_table(doc, func_name: str, description: str, input_name: str,
+                         output_name: str, flowcharts: list, font_small):
+    """Render a flowchart table matching the behaviour diagram table layout.
+
+    Rows: Requirements (description + all flowcharts stacked), Capacity, Risk,
+          Input Name, Output Name.
+
+    flowcharts: list of (png_path_or_None, mermaid_str, label_str) tuples.
+                First entry is the function's own flowchart; subsequent entries
+                are private callee flowcharts.
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    from docx.shared import Inches
+
+    table = doc.add_table(rows=5, cols=2)
+    table.style = "Table Grid"
+
+    def _tight(para):
+        para.paragraph_format.space_before = 0
+        para.paragraph_format.space_after = 0
+        para.paragraph_format.line_spacing = 1
+
+    # Row 0: Requirements — description header then all flowcharts stacked
+    row0 = table.rows[0].cells
+    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AUTO
+    for cell in row0:
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP
+        for para in cell.paragraphs:
+            _tight(para)
+    row0[0].text = "Requirements"
+    _set_cell_font(row0[0], font_small)
+    row0[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    for para in row0[0].paragraphs:
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        _tight(para)
+
+    # Right cell: description header, then each flowchart with an optional label
+    p = row0[1].paragraphs[0]
+    header_run = p.add_run(description.strip() if description and description.strip() else func_name or "-")
+    header_run.bold = False
+    header_run.font.size = font_small
+    _tight(p)
+
+    for png_path, mermaid, label in (flowcharts or []):
+        if label:
+            lp = row0[1].add_paragraph()
+            label_run = lp.add_run(label)
+            label_run.font.size = font_small
+            _tight(lp)
+        if png_path and os.path.isfile(png_path):
+            ip = row0[1].add_paragraph()
+            _tight(ip)
+            try:
+                ip.add_run().add_picture(png_path, width=Inches(4.0))
+            except Exception:
+                if mermaid:
+                    fb = ip.add_run(mermaid.strip())
+                    fb.font.name = "Consolas"
+                    fb.font.size = font_small
+        elif mermaid:
+            mp = row0[1].add_paragraph()
+            _tight(mp)
+            fb = mp.add_run(mermaid.strip())
+            fb.font.name = "Consolas"
+            fb.font.size = font_small
+
+    # Row 1: Risk
+    row1 = table.rows[1].cells
+    row1[0].text = "Risk"
+    row1[1].text = "Medium"
+    _set_cell_font(row1[0], font_small)
+    _set_cell_font(row1[1], font_small)
+
+    # Row 2: Capacity (Density)
+    row2 = table.rows[2].cells
+    row2[0].text = "Capacity(Density)"
+    row2[1].text = "Common"
+    _set_cell_font(row2[0], font_small)
+    _set_cell_font(row2[1], font_small)
+
+    # Row 3: Input Name
+    row3 = table.rows[3].cells
+    row3[0].text = "Input Name"
+    row3[1].text = input_name or ""
+    _set_cell_font(row3[0], font_small)
+    _set_cell_font(row3[1], font_small)
+
+    # Row 4: Output Name
+    row4 = table.rows[4].cells
+    row4[0].text = "Output Name"
+    row4[1].text = output_name or ""
+    _set_cell_font(row4[0], font_small)
+    _set_cell_font(row4[1], font_small)
+
+
 def _add_behavior_description_table(doc, behavior_description_list, input_name: str = "", output_name: str = ""):
     """Create a table with Requirements, Risk, Capacity, Input Name, Output Name rows.
 
@@ -913,24 +1009,24 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                     flowcharts_map.get(unit_prefix, {}).get(func_name)
                     or flowcharts_map.get(unit_name_flowchart, {}).get(func_name)
                 ) if flowcharts_enabled and func_name else None
+                # Build flowcharts list: own flowchart + private callee flowcharts
+                flowcharts_list = []
                 if flowchart:
+                    png_path = None
                     if flowcharts_render_png:
                         png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
                         if not os.path.isfile(png_path):
                             png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
-                        if os.path.isfile(png_path):
-                            try:
-                                doc.add_picture(png_path, width=Inches(6))
-                            except Exception:
-                                _add_mermaid_as_text(doc, flowchart, font_small)
-                        else:
-                            _add_mermaid_as_text(doc, flowchart, font_small)
-                    else:
-                        _add_mermaid_as_text(doc, flowchart, font_small)
-                else:
-                    _add_para(doc, iface.get("description", "") or "-")
+                        if not os.path.isfile(png_path):
+                            png_path = None
+                    iface_params = ", ".join(
+                        f"{p.get('type', '')} {p.get('name', '')}".strip()
+                        for p in (iface.get("parameters") or [])
+                    )
+                    iface_return = iface.get("returnType", "") or ""
+                    iface_signature = f"{iface_return} {func_name}({iface_params})".strip()
+                    flowcharts_list.append((png_path, flowchart, iface_signature))
 
-                # Also render flowcharts of private functions called by this interface
                 if flowcharts_enabled:
                     callee_fids = (functions_data.get(iface.get("functionId")) or {}).get("callsIds") or []
                     for callee_fid in callee_fids:
@@ -954,20 +1050,30 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         if callee_fid in rendered_private_fids:
                             continue
                         rendered_private_fids.add(callee_fid)
-                        _add_para(doc, f"[Private: {callee_func_name}]")
+                        callee_png = None
                         if flowcharts_render_png:
                             callee_png = os.path.join(flowcharts_dir, f"{callee_unit_prefix}_{safe_filename(callee_func_name)}.png")
                             if not os.path.isfile(callee_png):
                                 callee_png = os.path.join(flowcharts_dir, f"{callee_unit_name}_{safe_filename(callee_func_name)}.png")
-                            if os.path.isfile(callee_png):
-                                try:
-                                    doc.add_picture(callee_png, width=Inches(6))
-                                except Exception:
-                                    _add_mermaid_as_text(doc, callee_flowchart, font_small)
-                            else:
-                                _add_mermaid_as_text(doc, callee_flowchart, font_small)
-                        else:
-                            _add_mermaid_as_text(doc, callee_flowchart, font_small)
+                            if not os.path.isfile(callee_png):
+                                callee_png = None
+                        callee_params = ", ".join(
+                            f"{p.get('type', '')} {p.get('name', '')}".strip()
+                            for p in (callee.get("params") or callee.get("parameters") or [])
+                        )
+                        callee_return = callee.get("returnType", "")
+                        callee_signature = f"{callee_return} {callee_func_name}({callee_params})".strip()
+                        flowcharts_list.append((callee_png, callee_flowchart, callee_signature))
+
+                if flowcharts_list:
+                    input_label = (functions_data.get(iface.get("functionId")) or {}).get("behaviourInputName") or \
+                        (_readable_label(func_name) + " input").strip() if func_name else ""
+                    output_label = (functions_data.get(iface.get("functionId")) or {}).get("behaviourOutputName") or \
+                        (_readable_label(func_name) + " result").strip() if func_name else ""
+                    _add_flowchart_table(doc, func_name, iface.get("description", ""),
+                        input_label, output_label, flowcharts_list, font_small)
+                else:
+                    _add_para(doc, iface.get("description", "") or "-")
 
         # 2.2 Dynamic Behaviour: one sub-header per external call (from view output)
         doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)
