@@ -120,7 +120,7 @@ def main() -> None:
         metavar="DIR",
         help="Output directory for unit JSON files",
     )
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     if not os.path.isfile(args.interface_json):
         print(f"Error: not found: {args.interface_json}", file=sys.stderr)

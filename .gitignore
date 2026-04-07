@@ -21,8 +21,8 @@ ENV/
 Thumbs.db
 
 # Analyzer output
-# model/
-# output/
+model/
+output/
 
 # Local config overrides (optional)
 config/config.local.json
