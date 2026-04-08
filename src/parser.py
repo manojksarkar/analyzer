@@ -555,6 +555,7 @@ def visit_definitions(cursor):
     is_function = cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
     is_global_var = (
         cursor.kind == cindex.CursorKind.VAR_DECL
+        and cursor.is_definition()
         and cursor.location.file
         and is_project_file(cursor.location.file.name)
         and cursor.semantic_parent
