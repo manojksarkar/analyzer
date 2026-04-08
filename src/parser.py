@@ -245,7 +245,7 @@ def is_project_file(file_path: str) -> bool:
             rel = abs_path.replace("\\", "/")
         for folder in _MODULE_FOLDERS:
             # Folder-based match: folder itself or any subpath under it
-            if rel == folder or rel.startswith(folder.lower() + "/"):
+            if rel.lower() == folder.lower() or rel.lower().startswith(folder.lower() + "/"):
                 return True
         return False
 
