@@ -1,5 +1,5 @@
 # C++ Codebase Analyzer — Complete Project Context
-> Generated: 2026-04-07. Validated against current source code.
+> Generated: 2026-04-08 (updated x2). Validated against current source code.
 
 ---
 
@@ -825,7 +825,109 @@ python run.py test_cpp_project --selected-group core
 
 ---
 
-## 18. Dependencies
+## 18. Test Framework
+
+### Directory structure
+
+```
+tests/
+├── conftest.py                        — shared session fixture (run_pipeline), JSON fixtures
+├── pytest.ini                         — testpaths = tests, -v --tb=short
+├── integration/                       — pipeline runs once, check intermediate JSON artifacts
+│   └── test_interface_tables.py       — ACTIVE: output/interface_tables.json assertions + snapshot
+├── e2e/                               — pipeline runs once, check the final DOCX
+│   └── test_docx.py                   — ACTIVE: opens DOCX with python-docx, asserts tables/images/headings
+└── snapshots/
+    └── Sample/
+        └── interface_tables.json      — golden snapshot (committed); regenerate with --update-snapshots
+```
+
+**When to add files:**
+- New view ready to test → add `tests/integration/test_<view>.py`
+- New snapshot needed → run once with `--update-snapshots`, review `git diff tests/snapshots/`, commit
+- Pure Python utility tests (no pipeline) → add `tests/unit/` dir + `test_*.py`
+
+### Test fixture project for automated tests
+
+All automated tests run against the **`SampleCppProject`** fixture (not `test_cpp_project`).
+`conftest.py` runs: `python run.py SampleCppProject --clean --selected-group Sample`
+
+```
+SampleCppProject/Sample/
+  Core/   — Core.h/cpp   (public: coreAdd, coreCompute, coreLoopSum, coreCheck, coreSumPoint,
+                           coreSetResult, coreProcess, coreOrchestrate, coreSetMode, coreGetCount
+                           private: coreHelper, coreSwitch
+                           public global: g_result  private global: g_count)
+  Lib/    — Lib.h/cpp    (public: libAdd, libNormalize  private: libClamp)
+  Util/   — Util.h/cpp   (public: utilCompute, utilScale  private: utilClip
+                           public global: g_utilBase)
+```
+
+### Run commands
+
+```bash
+# All tests (pipeline runs once automatically)
+python -m pytest tests/ -v
+
+# Skip pipeline rerun — test against existing output/
+python -m pytest tests/ -v --skip-pipeline
+
+# Interface tables only
+python -m pytest tests/integration/test_interface_tables.py -v
+
+# DOCX only
+python -m pytest tests/e2e/test_docx.py -v
+
+# Regenerate golden snapshot after intentional pipeline change
+python -m pytest tests/integration/test_interface_tables.py --update-snapshots --skip-pipeline
+# then: git diff tests/snapshots/  → review → git commit
+```
+
+### conftest.py fixtures
+
+| Fixture | Scope | What it provides |
+|---|---|---|
+| `run_pipeline` | session, autouse | Runs pipeline once; skipped if `--skip-pipeline` |
+| `interface_tables` | session | Full `output/interface_tables.json` as dict |
+| `core_entries` | session | `interface_tables["Core|Core"]["entries"]` |
+| `lib_entries` | session | `interface_tables["Lib|Lib"]["entries"]` |
+| `util_entries` | session | `interface_tables["Util|Util"]["entries"]` |
+| `all_entries` | session | `core_entries + lib_entries + util_entries` |
+| `update_snapshots` | session | True if `--update-snapshots` passed |
+| `assert_snapshot` | function | Compares or regenerates a golden JSON snapshot |
+
+### What test_interface_tables.py checks (integration, 51 tests total)
+
+Parametrized where applicable — adding a new unit or function only requires updating the data, not new test functions.
+
+- Structure: `unitNames` present; Core, Lib, Util units all exist and have entries
+- Required fields: every entry (`all_entries`) has `interfaceId`, `type`, `name`, `unitKey`, `unitName`, `direction`; functions also have `functionId`
+- Filtering: `coreHelper`, `coreSwitch`, `libClamp`, `utilClip`, `g_count` absent (PRIVATE)
+- Direction (parametrized): `coreGetCount` → Out, `coreSetResult` → In, `utilCompute` → Out
+- Direction validity: all functions only In or Out; all globals → In/Out
+- IDs: every `interfaceId` starts with `IF_`
+- Public functions (parametrized per unit): all 10 Core, 2 Lib, 2 Util
+- Public globals (parametrized): `g_result` (Core), `g_utilBase` (Util)
+- Snapshot: full JSON matches `tests/snapshots/Sample/interface_tables.json`
+
+### What test_docx.py checks (e2e, 51 tests total)
+
+Column map (`COLS` in `docx_exporter.py`):
+`0=Interface ID, 1=Interface Name, 2=Information, 3=Data Type, 4=Data Range, 5=Direction(In/Out), 6=Source/Destination, 7=Interface Type`
+
+- File exists and is non-empty
+- Interface tables present (header row col-0 = "Interface ID")
+- Every data row col-0 starts with `IF_`
+- Private names (`coreHelper`, `coreSwitch`, `libClamp`, `utilClip`, `g_count`) absent from all cells
+- Public names (parametrized, 16 cases): all 10 Core, 2 Lib, 2 Util functions + `g_result`, `g_utilBase`
+- Direction (parametrized): `coreGetCount` col-5 = "Out", `coreSetResult` col-5 = "In", `g_result` col-5 = "In/Out"
+- Interface Type values only "Function" or "Global Variable"
+- At least one embedded image (`doc.inline_shapes`)
+- Headings (parametrized): "Dynamic Behaviour" and "Static" present
+
+---
+
+## 19. Dependencies
 
 ```
 libclang (LLVM 17)        — C++ AST parsing (via Python clang bindings)
