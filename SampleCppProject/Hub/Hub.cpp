@@ -1,9 +1,10 @@
-#include "hub.h"
+#include "Hub.h"
 
-#include "../../math/utils.h"
-#include "../../outer/inner/helper.h"
-#include "../enum/types.h"
-#include "../structs/point_rect.h"
+#include "Math/Utils.h"
+#include "Outer/Inner/Helper.h"
+#include "Types/Types.h"
+#include "Types/PointRect.h"
+#include "Sample/Core/Core.h"
 
 PRIVATE static int hubValidate(int x) {
     return x >= 0 ? x : 0;
@@ -21,5 +22,7 @@ PUBLIC int hubCompute(int a, int b) {
     Color c = nextColor(getDefaultColor());
     int e = enumWithHelper(h);
 
-    return h + ps + e + static_cast<int>(st) + static_cast<int>(c);
+    int ca = coreAdd(a, b);  // Hub -> Sample/Core (second external caller for coreAdd behaviour diagram)
+
+    return h + ps + e + static_cast<int>(st) + static_cast<int>(c) + ca;
 }

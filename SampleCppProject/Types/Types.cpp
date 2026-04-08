@@ -1,5 +1,5 @@
-#include "types.h"
-#include "../../outer/inner/helper.h"
+#include "Types.h"
+#include "Outer/Inner/Helper.h"
 
 // Test macros for enum-related defines
 #define STATUS_OK_CODE  0

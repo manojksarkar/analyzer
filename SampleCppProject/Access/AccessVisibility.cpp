@@ -1,4 +1,4 @@
-#include "access_visibility.h"
+#include "AccessVisibility.h"
 
 DB_TYPE g_selectedDbType = DB_MAIN;
 int g_dbVersion = 7;

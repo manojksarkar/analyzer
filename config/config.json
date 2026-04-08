@@ -35,26 +35,25 @@
     "abbreviationsPath": "config/abbreviations.txt"
   },
   "modulesGroups": {
-    "core": {
-      "core": [
-        "app",
-        "math"
-      ]
+    "Sample": {
+      "Core": "Sample/Core",
+      "Lib":  "Sample/Lib",
+      "Util": "Sample/Util"
     },
-    "support": {
-      "support": "outer/inner"
+    "Full": {
+      "Iface": ["Direction", "Types", "Flow"],
+      "Cross": ["Hub", "Poly"]
     },
-    "tests": {
-      "tests_a": [
-        "tests/direction",
-        "tests/enum",
-        "tests/flow"
-      ],
-      "tests_b": [
-        "tests/hub",
-        "tests/poly",
-        "tests/structs"
-      ]
+    "Support": {
+      "Math":  "Math",
+      "App":   "App",
+      "Outer": "Outer/Inner"
+    },
+    "Access": {
+      "Access": "Access"
+    },
+    "Diag": {
+      "Diag": "Diag"
     }
   },
   "export": {

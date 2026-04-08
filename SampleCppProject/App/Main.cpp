@@ -1,11 +1,12 @@
-#include "../math/utils.h"
-#include "../tests/flow/flowcharts.h"
-#include "../tests/poly/dispatch.h"
-#include "../tests/enum/types.h"
-#include "../tests/structs/point_rect.h"
-#include "../tests/direction/read_write.h"
-#include "../tests/hub/hub.h"
-#include "../outer/inner/helper.h"
+#include "Math/Utils.h"
+#include "Flow/Flowcharts.h"
+#include "Poly/Dispatch.h"
+#include "Types/Types.h"
+#include "Types/PointRect.h"
+#include "Direction/ReadWrite.h"
+#include "Hub/Hub.h"
+#include "Outer/Inner/Helper.h"
+#include "Sample/Core/Core.h"
 
 PUBLIC int g_globalResult = 0;
 
@@ -72,6 +73,14 @@ PRIVATE int runDirectionTests() {
     return v + rw + da;
 }
 
+PRIVATE int runSampleTests() {
+    int a = coreAdd(3, 4);           // App -> Core (external caller for behaviour diagram)
+    int b = coreProcess(10, 100);    // App -> Core
+    int c = coreOrchestrate(a, b);   // App -> Core (hub function, fan-out)
+    coreSetResult(a + b + c);
+    return coreGetCount();
+}
+
 PUBLIC int main() {
     int result1 = calculate();
     int result2 = calculateWithCallback();
@@ -81,6 +90,7 @@ PUBLIC int main() {
     int result6 = runNestedFolderTests();
     int result7 = runDirectionTests();
     int result8 = runFlowTests();
-    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8;
+    int result9 = runSampleTests();
+    g_globalResult = result1 + result2 + result3 + result4 + result5 + result6 + result7 + result8 + result9;
     return g_globalResult;
 }

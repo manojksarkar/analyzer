@@ -1,5 +1,5 @@
-#include "flowcharts.h"
-#include "../../math/utils.h"
+#include "Flowcharts.h"
+#include "Math/Utils.h"
 
 PRIVATE int fnIfSimple(int x) {
     if (x > 0) {

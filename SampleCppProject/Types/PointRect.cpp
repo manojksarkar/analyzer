@@ -1,5 +1,5 @@
-#include "point_rect.h"
-#include "../../math/utils.h"
+#include "PointRect.h"
+#include "Math/Utils.h"
 
 // Test macros for unit header tables and defines pipeline
 #define DEFAULT_SCALE_FACTOR 2

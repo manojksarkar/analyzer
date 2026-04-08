@@ -1,6 +1,6 @@
-#include "dispatch.h"
-#include "../../math/utils.h"
-#include "../hub/hub.h"
+#include "Dispatch.h"
+#include "Math/Utils.h"
+#include "Hub/Hub.h"
 
 PROTECTED int g_polymorphismFactor = 1;
 

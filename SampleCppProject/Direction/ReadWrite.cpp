@@ -1,5 +1,5 @@
-#include "read_write.h"
-#include "../../math/utils.h"
+#include "ReadWrite.h"
+#include "Math/Utils.h"
 
 PUBLIC int g_readOnly = 42;    // read-only: never written
 PRIVATE int g_writeOnly = 0;   // write-only: only written

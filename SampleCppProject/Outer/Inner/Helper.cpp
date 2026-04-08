@@ -1,5 +1,5 @@
-#include "helper.h"
-#include "../../math/utils.h"
+#include "Helper.h"
+#include "Math/Utils.h"
 
 PROTECTED int nestedHelper(int x) {
     return x * 2;
