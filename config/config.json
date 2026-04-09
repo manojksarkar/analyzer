@@ -28,11 +28,27 @@
   "llm": {
     "descriptions": false,
     "behaviourNames": false,
+    // provider: "ollama" (local) | "openai" (OpenAI-compatible gateway)
+    "provider": "ollama",
     "baseUrl": "http://localhost:11434",
     "defaultModel": "qwen2.5-coder:14b",
     "timeoutSeconds": 120,
     "numCtx": 8192,
-    "abbreviationsPath": "config/abbreviations.txt"
+    // retries: number of retries (in addition to the first attempt) on
+    // HTTP error or empty response. Default 1 = up to 2 total tries.
+    "retries": 1,
+    "abbreviationsPath": "config/abbreviations.txt",
+    // apiKey: bearer token for openai provider. Prefer env var LLM_API_KEY.
+    "apiKey": "",
+    // customHeaders: extra headers sent on every openai request. Each value
+    // can be overridden via the matching environment variable
+    // (X_DEP_TICKET, USER_TYPE, USER_ID, SEND_SYSTEM_NAME).
+    "customHeaders": {
+      "x-dep-ticket": "credential:",
+      "User-Type": "AD_ID",
+      "User-Id": "",
+      "Send-System-Name": "rvc-api-module"
+    }
   },
   "modulesGroups": {
     "core": {

@@ -8,8 +8,12 @@ from collections import defaultdict
 
 from clang import cindex
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+from core.paths import paths as _paths
+from core.config import app_config as _app_config, clang_config as _clang_config
+
+_p = _paths()
+SCRIPT_DIR = _p.src_dir
+PROJECT_ROOT = _p.project_root
 if len(sys.argv) < 2:
     print("Usage: python parser.py <project_path>")
     raise SystemExit(1)
@@ -26,7 +30,7 @@ from utils import (
     PRIMITIVES,
 )
 
-_config = load_config(PROJECT_ROOT)
+_config = _app_config()
 _clang = _config.get("clang") or {}
 _llvm = _clang.get("llvmLibPath") or _config.get("llvmLibPath")
 _clang_inc = _clang.get("clangIncludePath") or _config.get("clangIncludePath")
@@ -979,25 +983,32 @@ def _scan_defines():
 
 
 def main():
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
+    plog = get_logger("parser")
     source_files = _collect_source_files()
     total = len(source_files)
-    print(f"Parsing {total} files...")
-    for i, path in enumerate(source_files, 1):
-        print(f"  parser: {i}/{total} files...", end="\r", flush=True)
+
+    p1 = ProgressReporter("parser:parse", total=total, logger=plog)
+    p1.start(f"parsing {total} files")
+    for path in source_files:
+        p1.step()
         parse_file(path)
-    print()
+    p1.done()
 
-    print(f"Collecting calls ({total} files)...")
-    for i, path in enumerate(source_files, 1):
-        print(f"  parser: {i}/{total} files...", end="\r", flush=True)
+    p2 = ProgressReporter("parser:calls", total=total, logger=plog)
+    p2.start(f"collecting calls ({total} files)")
+    for path in source_files:
+        p2.step()
         parse_calls(path)
-    print()
+    p2.done()
 
-    print(f"Collecting global access ({total} files)...")
-    for i, path in enumerate(source_files, 1):
-        print(f"  parser: {i}/{total} files...", end="\r", flush=True)
+    p3 = ProgressReporter("parser:globals", total=total, logger=plog)
+    p3.start(f"collecting global access ({total} files)")
+    for path in source_files:
+        p3.step()
         parse_global_access(path)
-    print()
+    p3.done()
 
     metadata = build_metadata()
     model_dir = os.path.join(PROJECT_ROOT, "model")
@@ -1010,20 +1021,16 @@ def main():
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
     }
-    with open(os.path.join(model_dir, "metadata.json"), "w", encoding="utf-8") as f:
-        json.dump(meta_header, f, indent=2)
-
-    with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as f:
-        json.dump(metadata["functions"], f, indent=2)
-    with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as f:
-        json.dump(metadata["globalVariables"], f, indent=2)
+    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY
+    write_model_file(METADATA, meta_header)
+    write_model_file(FUNCTIONS, metadata["functions"])
+    write_model_file(GLOBALS, metadata["globalVariables"])
     # Add primitives (name as key)
     for name, info in PRIMITIVES.items():
         data_dictionary[name] = {"kind": "primitive", "range": info["range"]}
     # Add defines (kind=define)
     _scan_defines()
-    with open(os.path.join(model_dir, "dataDictionary.json"), "w", encoding="utf-8") as f:
-        json.dump(data_dictionary, f, indent=2)
+    write_model_file(DATA_DICTIONARY, data_dictionary)
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])

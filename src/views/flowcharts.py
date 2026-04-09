@@ -179,10 +179,14 @@ def run(model, output_dir, model_dir, config):
         except (json.JSONDecodeError, OSError):
             pass
 
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
     total = len(items)
     failed = 0
+    progress = ProgressReporter("flowcharts:PNG", total=total, logger=get_logger("flowcharts"))
+    progress.start()
     for i, (unit_name, func_name, flowchart) in enumerate(items, 1):
-        print(f"  flowcharts: PNG {i}/{total} {unit_name}/{func_name}...", end="\r", flush=True)
+        progress.step(label=f"{unit_name}/{func_name}")
         png_name = f"{unit_name}_{safe_filename(func_name)}.png"
         png_path = os.path.abspath(os.path.join(out_dir, png_name))
         mmd_path = os.path.join(out_dir, f".tmp_{unit_name}_{safe_filename(func_name)}.mmd")
@@ -206,9 +210,5 @@ def run(model, output_dir, model_dir, config):
                     os.unlink(mmd_path)
             except OSError:
                 pass
-    if total:
-        msg = "%d PNGs rendered" % total
-        if failed:
-            msg += " (%d failed)" % failed
-        log(msg, component="flowcharts")
+    progress.done(summary=("%d PNGs rendered%s" % (total, (" (%d failed)" % failed) if failed else "")) if total else None)
 

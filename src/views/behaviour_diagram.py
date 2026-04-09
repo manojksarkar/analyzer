@@ -69,11 +69,15 @@ def run(model, output_dir, model_dir, config):
             fid for fid in model.get("functions", {})
             if (functions_data.get(fid, {}).get("visibility") or "").lower() != "private"
         ]
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
     total = len(functions)
     count = 0
 
+    progress = ProgressReporter("behaviourDiagram", total=total, logger=get_logger("behaviourDiagram"))
+    progress.start()
     for i, fid in enumerate(functions, 1):
-        print(f"  behaviourDiagram: {i}/{total} functions...", end="\r", flush=True)
+        progress.step()
 
         try:
             mmd_paths = gen.generate_all_diagrams(fid, out_dir) or []
@@ -141,4 +145,4 @@ def run(model, output_dir, model_dir, config):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"_docxRows": docx_rows}, f, indent=2)
 
-    log("output/behaviour_diagrams/ (%d diagrams)" % count, component="behaviourDiagram")
+    progress.done(summary="output/behaviour_diagrams/ (%d diagrams)" % count)

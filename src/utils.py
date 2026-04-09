@@ -3,9 +3,12 @@ import contextlib
 import os
 import re
 import sys
-import json
 import time
 from datetime import datetime, timezone
+
+# Config loading lives in core.config (these are re-exports for backward
+# compatibility with existing call sites that still `from utils import ...`).
+from core.config import load_config, load_llm_config  # noqa: E402,F401
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
 KEY_SEP = "|"
@@ -17,14 +20,25 @@ def _ts() -> str:
 
 
 def log(msg: str, component: str = None, *, err: bool = False):
-    """Unified log from anywhere. component prefixes the message."""
-    stream = sys.stderr if err else sys.stdout
-    prefix = f"[{_ts()}] "
-    if component:
-        text = f"{prefix}{component}: {msg}"
-    else:
-        text = f"{prefix}{msg}"
-    print(text, file=stream, flush=True)
+    """Unified log from anywhere. component prefixes the message.
+
+    Routes through the central logging system (stderr + daily log file)
+    so every legacy caller automatically gets file capture.
+    """
+    try:
+        from core.logging_setup import get_logger
+        logger = get_logger(component or "run")
+        if err:
+            logger.error(msg)
+        else:
+            logger.info(msg)
+        return
+    except Exception:
+        # Fallback if core.logging_setup isn't importable yet (very early bootstrap)
+        stream = sys.stderr if err else sys.stdout
+        prefix = f"[{_ts()}] "
+        text = f"{prefix}{component}: {msg}" if component else f"{prefix}{msg}"
+        print(text, file=stream, flush=True)
 
 
 @contextlib.contextmanager
@@ -49,107 +63,6 @@ def safe_filename(s: str) -> str:
     """
     return re.sub(r'[<>:"/\\|?*,&;]', "_", s or "")
 
-
-
-def _strip_json_comments(text: str) -> str:
-    """Strip // and /* */ so config files can use comments."""
-    result = []
-    i = 0
-    in_string = False
-    escape = False
-    while i < len(text):
-        c = text[i]
-        if escape:
-            result.append(c)
-            escape = False
-            i += 1
-            continue
-        if c == "\\" and in_string:
-            escape = True
-            result.append(c)
-            i += 1
-            continue
-        if c == '"' and not escape:
-            in_string = not in_string
-            result.append(c)
-            i += 1
-            continue
-        if in_string:
-            result.append(c)
-            i += 1
-            continue
-        if c == "/" and i + 1 < len(text):
-            if text[i + 1] == "/":
-                i += 2
-                while i < len(text) and text[i] != "\n":
-                    i += 1
-                continue
-            if text[i + 1] == "*":
-                i += 2
-                while i + 1 < len(text) and (text[i] != "*" or text[i + 1] != "/"):
-                    i += 1
-                i += 2
-                continue
-        result.append(c)
-        i += 1
-    return "".join(result)
-
-
-def _strip_trailing_commas(text: str) -> str:
-    """Remove trailing commas before } or ] (JSON5-style), outside strings."""
-    out = []
-    i = 0
-    in_string = False
-    escape = False
-    n = len(text)
-    while i < n:
-        c = text[i]
-        if escape:
-            out.append(c)
-            escape = False
-            i += 1
-            continue
-        if c == "\\" and in_string:
-            escape = True
-            out.append(c)
-            i += 1
-            continue
-        if c == '"':
-            in_string = not in_string
-            out.append(c)
-            i += 1
-            continue
-        if not in_string and c == ",":
-            # If next non-whitespace is } or ], drop this comma.
-            j = i + 1
-            while j < n and text[j] in (" ", "\t", "\r", "\n"):
-                j += 1
-            if j < n and text[j] in ("}", "]"):
-                i += 1
-                continue
-        out.append(c)
-        i += 1
-    return "".join(out)
-
-
-def load_config(project_root: str) -> dict:
-    """Load config from config/config.json, then config.local.json overrides."""
-    config = {}
-    config_dir = os.path.join(project_root, "config")
-    for name in ("config.json", "config.local.json"):
-        path = os.path.join(config_dir, name)
-        if not os.path.isfile(path):
-            path = os.path.join(project_root, name)
-        if os.path.isfile(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    raw = f.read()
-                    stripped = _strip_json_comments(raw)
-                    stripped = _strip_trailing_commas(stripped)
-                    config.update(json.loads(stripped))
-            except (json.JSONDecodeError, IOError):
-                pass
-    return config
 
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

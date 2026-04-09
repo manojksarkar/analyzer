@@ -5,9 +5,12 @@ import json
 import subprocess
 from typing import Optional, Tuple, List, Dict, Any
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
-MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
+from core.paths import paths as _paths
+
+_p = _paths()
+PROJECT_ROOT = _p.project_root
+OUTPUT_DIR = _p.output_dir
+MODEL_DIR = _p.model_dir
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
 # Placeholder when no value (no column may be empty)
 NA = "N/A"
@@ -276,8 +279,8 @@ def _build_unit_header_table(
                 info = _struct_info_from_name(type_name)  # fallback
                 if config:
                     try:
-                        from llm_client import get_struct_description, _ollama_available
-                        if _ollama_available(config) and config.get("llm", {}).get("descriptions", True):
+                        from llm_enrichment import get_struct_description, llm_provider_reachable
+                        if llm_provider_reachable(config) and config.get("llm", {}).get("descriptions", True):
                             llm_desc = get_struct_description(type_name, fields, config, abbreviations or {})
                             if llm_desc:
                                 info = llm_desc
@@ -809,9 +812,9 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
 
         description_text = NA
         try:
-            from llm_client import _ollama_available, get_unit_description
+            from llm_enrichment import llm_provider_reachable, get_unit_description
 
-            if _ollama_available(config):
+            if llm_provider_reachable(config):
                 description_text = get_unit_description(
                     unit_name_display,
                     fn_items,
@@ -853,8 +856,9 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
 
 
 def export_docx(json_path: str = None, docx_path: str = None, selected_group: str | None = None) -> Tuple[bool, Optional[str]]:
-    from utils import load_config, safe_filename, KEY_SEP
-    config = load_config(PROJECT_ROOT)
+    from utils import safe_filename, KEY_SEP
+    from core.config import app_config
+    config = app_config()
     export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
     json_path = os.path.abspath(json_path)
@@ -925,10 +929,14 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     _add_para(doc, "[Terms, abbreviations and definitions.]")
 
     # 2, 3, ... Modules
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
     n_modules = len(sorted_modules)
+    _docx_progress = ProgressReporter("docx_exporter", total=n_modules, logger=get_logger("docx_exporter"))
+    _docx_progress.start()
     for sec_idx, module_name in enumerate(sorted_modules, start=0):
         sec_num = sec_idx + 2
-        print(f"  docx_exporter: {sec_idx + 1}/{n_modules} modules...", end="\r", flush=True)
+        _docx_progress.step(label=module_name)
         doc.add_heading(f"{sec_num} {module_name}", level=1)
 
         # 2.1 Static Design
@@ -1138,7 +1146,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 elif png_path:
                     _add_para(doc, f"[Behaviour diagram: {png_path}]")
 
-    print()  # newline after progress
+    _docx_progress.done(summary=f"{n_modules} modules written")
     # N Code Metrics, Coding rule, test coverage
     metrics_sec = len(sorted_modules) + 2
     doc.add_heading(f"{metrics_sec} Code Metrics, Coding Rule, Test Coverage", level=1)

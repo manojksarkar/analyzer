@@ -45,7 +45,7 @@ import os
 import re
 from typing import Dict, List, Optional, Set, Tuple
 
-from llm.client import LlmClient
+from llm_core.client import LlmClient
 from llm.prompts import SYSTEM_PROMPT, build_user_prompt
 from models import CfgNode, ControlFlowGraph, FunctionEntry, NodeType
 from pkb.builder import ProjectKnowledgeBase
