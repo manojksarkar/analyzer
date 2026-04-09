@@ -767,9 +767,11 @@ project_root = os.path.dirname(os.path.abspath(model_dir))
 ```
 This is stable regardless of `output_dir` value.
 
-### Case-insensitive path matching (Windows safety)
+### Case-insensitive path matching (Windows + Linux safety)
 
-`_resolve_module_from_rel` lowercases both the configured folder prefix and the relative file path before comparison. This is essential on Windows where `normcase` lowercases paths.
+`_resolve_module_from_rel` lowercases both the configured folder prefix and the relative file path before comparison.
+
+`is_project_file` (parser.py) does the same: `rel.lower()` vs `folder.lower()`. On Windows, `os.normcase` lowercases paths anyway so both sides match. On Linux, `os.normcase` is a no-op — without explicit `.lower()` on both sides, `Sample/Core` would never match `sample/core` and 0 files would be parsed.
 
 ---
 
@@ -804,6 +806,16 @@ Was present in an intermediate version. Removed because it was redundant (all-gr
 ### Env-based group override removed
 
 An `os.environ`-based selected-group override was added then removed. Preference in this codebase: minimal optional code paths, explicit CLI-only control.
+
+### Linux: 0 files parsed (fixed)
+
+**Root cause**: `is_project_file` in `parser.py` computed `rel` from `os.normcase(abs_path)` but compared against `folder.lower()`. On Linux `normcase` is a no-op so `rel` kept original case (`Sample/Core/...`) and never matched `folder.lower()` (`sample/core`).
+**Fix**: `rel.lower() == folder.lower()` and `rel.lower().startswith(folder.lower() + "/")` — lowercase both sides explicitly.
+
+### Linux: global variables missing from interface tables (fixed)
+
+**Root cause**: When `Util.cpp` is parsed and includes `Util.h`, libclang visits both the `extern int g_utilBase` declaration (in `.h`) and the definition (in `.cpp`). Without `cursor.is_definition()` check, the extern from `.h` was recorded. `model_deriver` assigns globals to units by matching `g["location"]["file"]` against `.cpp` paths — the `.h` path never matched, so `g_utilBase` was never assigned to any unit and disappeared from the interface table.
+**Fix**: Added `cursor.is_definition()` to `is_global_var` check in `visit_definitions` so only the `.cpp` definition is recorded.
 
 ---
 

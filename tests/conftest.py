@@ -23,17 +23,27 @@ _pipeline_failure = None
 
 
 def pytest_addoption(parser):
-    parser.addoption(
-        "--update-snapshots",
-        action="store_true",
-        default=False,
-        help="Regenerate golden snapshot files instead of comparing against them.",
+    grp = parser.getgroup(
+        "analyzer",
+        "Analyzer suite  |  examples: pytest --skip-pipeline · pytest -P · pytest --update-snapshots",
     )
-    parser.addoption(
+    grp.addoption(
         "--skip-pipeline",
         action="store_true",
         default=False,
         help="Skip running the pipeline and test against existing output/.",
+    )
+    grp.addoption(
+        "-P", "--show-pipeline-output",
+        action="store_true",
+        default=False,
+        help="Print captured pipeline stdout/stderr after the run (always shown on failure).",
+    )
+    grp.addoption(
+        "--update-snapshots",
+        action="store_true",
+        default=False,
+        help="Regenerate golden snapshot files instead of comparing against them.",
     )
 
 
@@ -46,52 +56,65 @@ def pytest_collection_finish(session):
     """Run the pipeline after collection, before any test executes."""
     global _pipeline_failure
 
+    out = sys.__stdout__
     sep = "-" * 60
     if session.config.getoption("--skip-pipeline", default=False):
-        print(f"\n{sep}", flush=True)
-        print("  Pipeline: SKIPPED (using existing output/)", flush=True)
-        print(f"{sep}\n", flush=True)
+        out.write(f"\n{sep}\n  Pipeline: SKIPPED (using existing output/)\n{sep}\n\n")
+        out.flush()
         return
 
     project_name = os.path.basename(SAMPLE_PROJECT)
     group = "Sample"
-    label = f"{project_name} --selected-group {group}"
+    label = f"{project_name} [{group}]"
 
-    print(f"\n{sep}", flush=True)
+    show_output = session.config.getoption("--show-pipeline-output", default=False)
 
-    done_event = threading.Event()
-
-    def _progress():
-        while not done_event.wait(1):
-            elapsed = int(time.monotonic() - start)
-            sys.stdout.write(f"\r  Pipeline: {label} ... {elapsed}s  ")
-            sys.stdout.flush()
+    out.write(f"\n{sep}\n")
+    out.flush()
 
     start = time.monotonic()
-    t = threading.Thread(target=_progress, daemon=True)
-    t.start()
 
-    result = subprocess.run(
-        [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-    )
+    if show_output:
+        out.write(f"  Pipeline: {label}\n\n")
+        out.flush()
+        result = subprocess.run(
+            [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group, "--no-llm-summarize"],
+            cwd=PROJECT_ROOT,
+        )
+    else:
+        done_event = threading.Event()
 
-    done_event.set()
+        def _progress():
+            while not done_event.wait(1):
+                elapsed = int(time.monotonic() - start)
+                out.write(f"\r  Pipeline: {label} ... {elapsed}s  ")
+                out.flush()
+
+        t = threading.Thread(target=_progress, daemon=True)
+        t.start()
+
+        result = subprocess.run(
+            [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group, "--no-llm-summerize"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        done_event.set()
+
     elapsed = int(time.monotonic() - start)
 
     if result.returncode != 0:
+        captured = "" if show_output else f"{getattr(result, 'stderr', '')}\n{getattr(result, 'stdout', '')}"
         _pipeline_failure = (
-            f"Pipeline failed in {elapsed}s (exit {result.returncode}):\n"
-            f"{result.stderr}\n{result.stdout}"
+            f"Pipeline failed in {elapsed}s (exit {result.returncode})"
+            + (f":\n{captured}" if captured.strip() else " (output streamed above)")
         )
-        sys.stdout.write(f"\r  Pipeline: {label} ... FAILED ({elapsed}s)\n")
-        sys.stdout.flush()
+        out.write(f"\n  Pipeline: {label} ... FAILED ({elapsed}s)\n")
     else:
-        sys.stdout.write(f"\r  Pipeline: {label} ... OK ({elapsed}s)\n")
-        sys.stdout.flush()
-    print(f"{sep}\n", flush=True)
+        out.write(f"\n  Pipeline: {label} ... OK ({elapsed}s)\n")
+
+    out.write(f"{sep}\n\n")
+    out.flush()
 
 
 @pytest.fixture(scope="session", autouse=True)

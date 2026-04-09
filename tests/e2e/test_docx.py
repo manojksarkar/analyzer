@@ -142,9 +142,69 @@ def test_direction_in_docx(all_interface_rows, name, expected_direction):
 # Images and headings
 # ---------------------------------------------------------------------------
 
+_W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_UNIT_NAMES = ("Core", "Lib", "Util")
+
+
+def _para_has_image(para):
+    """True if this paragraph contains an embedded image (w:drawing element)."""
+    return bool(para._element.findall(f".//{{{_W_NS}}}drawing"))
+
+
+def _collect_unit_diagram_placement(docx):
+    """Walk paragraphs to find each unit's level-3 heading, then check whether
+    the next paragraph before the following heading contains an image.
+
+    Unit headings are rendered as level-3 with text like '2.1.1 Core'.
+    The unit diagram PNG is inserted by doc.add_picture() immediately after,
+    before the level-4 '2.1.1.1 unit header' heading.
+
+    Returns dict: unit_name -> True/False.
+    """
+    paras = list(docx.paragraphs)
+    result = {}
+    for i, para in enumerate(paras):
+        if para.style.name != "Heading 3":
+            continue
+        text = para.text.strip()
+        matched = next((u for u in _UNIT_NAMES if text.endswith(u)), None)
+        if matched is None:
+            continue
+        image_found = False
+        for j in range(i + 1, len(paras)):
+            if paras[j].style.name.startswith("Heading"):
+                break
+            if _para_has_image(paras[j]):
+                image_found = True
+                break
+        result[matched] = image_found
+    return result
+
+
+@pytest.fixture(scope="module")
+def unit_diagram_placement(docx):
+    return _collect_unit_diagram_placement(docx)
+
+
 def test_docx_has_embedded_images(docx):
     assert len(docx.inline_shapes) > 0, (
         "No embedded images in DOCX — unit/behaviour/flowchart/module-static diagrams missing"
+    )
+
+
+def test_all_unit_headings_found_in_docx(unit_diagram_placement):
+    """All three unit-level headings must exist in the DOCX."""
+    missing = [u for u in _UNIT_NAMES if u not in unit_diagram_placement]
+    assert not missing, f"Unit headings not found in DOCX: {missing}"
+
+
+@pytest.mark.parametrize("unit", _UNIT_NAMES)
+def test_unit_diagram_image_placed_after_heading(unit_diagram_placement, unit):
+    """A unit diagram image must appear immediately after each unit's heading,
+    before the next sub-heading ('unit header').  Fails if the PNG was missing
+    or the exporter placed the image in the wrong section."""
+    assert unit_diagram_placement.get(unit), (
+        f"No unit diagram image found after '{unit}' heading in DOCX"
     )
 
 
