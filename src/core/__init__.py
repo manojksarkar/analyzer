@@ -76,4 +76,12 @@ __all__ = [
     "write_model_file",
     "load_model",
     "ensure_model_dir",
+    "Phase",
+    "PhaseRunner",
+    "RunPlan",
+    "plan_runs",
+    "PHASE_PARSE",
+    "PHASE_DERIVE",
+    "PHASE_VIEWS",
+    "PHASE_EXPORT",
 ]
