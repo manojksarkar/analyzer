@@ -158,6 +158,7 @@ _CONFIG_CACHE = load_config(_PROJECT_ROOT)
 
 # Module mapping cache (initialized at import).
 _MODULE_OVERRIDES: dict = {}
+_GROUP_MAP: dict = {}  # module name -> group name
 
 
 def init_module_mapping(config: dict) -> None:
@@ -168,9 +169,10 @@ def init_module_mapping(config: dict) -> None:
     - top-level config.modules (if present), else
     - merged union of all config.modulesGroups entries.
     """
-    global _MODULE_OVERRIDES
+    global _MODULE_OVERRIDES, _GROUP_MAP
     cfg = config or {}
     _MODULE_OVERRIDES = cfg.get("modules") or {}
+    _GROUP_MAP = {}
     if _MODULE_OVERRIDES:
         return
     groups = cfg.get("modulesGroups") or {}
@@ -178,10 +180,11 @@ def init_module_mapping(config: dict) -> None:
         _MODULE_OVERRIDES = {}
         return
     merged: dict = {}
-    for _, grp in groups.items():
+    for group_name, grp in groups.items():
         if not isinstance(grp, dict):
             continue
         for module, paths in grp.items():
+            _GROUP_MAP.setdefault(module, group_name)
             if not paths:
                 continue
             if isinstance(paths, str):
@@ -205,6 +208,11 @@ def init_module_mapping(config: dict) -> None:
 
 # Default initialization from on-disk config.
 init_module_mapping(_CONFIG_CACHE)
+
+
+def resolve_group(module: str) -> str:
+    """Return the modulesGroups group name for a module, or empty string if unknown."""
+    return _GROUP_MAP.get(module, "")
 
 
 def _resolve_module_from_rel(rel_file: str) -> str:
