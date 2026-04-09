@@ -506,10 +506,14 @@ def _generate_knowledge_base(
     base_path: str,
     project_name: str,
     functions_data: dict,
+    global_variables_data: dict,
     data_dict: dict,
     summaries: dict,
 ) -> None:
     """Write model/knowledge_base.json in the format expected by Flowchart's pkb/builder.py."""
+    # Build fid → qualifiedName mapping for reverse lookups
+    fid_to_qn = {fid: f.get("qualifiedName", "") for fid, f in functions_data.items()}
+
     functions_kb: dict = {}
     for fid, fentry in functions_data.items():
         qn = fentry.get("qualifiedName", "")
@@ -520,13 +524,33 @@ def _generate_knowledge_base(
             for c in (fentry.get("callsIds") or [])
             if c in functions_data
         ]
+        # Reverse call graph: resolve calledByIds to qualified names
+        called_by_qnames = [
+            fid_to_qn[c]
+            for c in (fentry.get("calledByIds") or [])
+            if c in fid_to_qn and fid_to_qn[c]
+        ]
+        # Global variable names this function reads/writes (transitive)
+        reads_globals = [
+            (global_variables_data.get(gid) or {}).get("qualifiedName", gid)
+            for gid in (fentry.get("readsGlobalIdsTransitive") or fentry.get("readsGlobalIds") or [])
+        ]
+        writes_globals = [
+            (global_variables_data.get(gid) or {}).get("qualifiedName", gid)
+            for gid in (fentry.get("writesGlobalIdsTransitive") or fentry.get("writesGlobalIds") or [])
+        ]
         functions_kb[qn] = {
             "qualifiedName": qn,
             "signature": _build_signature(fentry),
+            "returnType": fentry.get("returnType", ""),
+            "parameters": fentry.get("parameters") or fentry.get("params") or [],
             "file": (fentry.get("location") or {}).get("file", ""),
             "line": (fentry.get("location") or {}).get("line", 0),
             "comment": fentry.get("comment", "") or fentry.get("description", ""),
             "calls": calls_qnames,
+            "calledBy": called_by_qnames,
+            "readsGlobals": reads_globals,
+            "writesGlobals": writes_globals,
             "phases": fentry.get("phases", []),
         }
 
@@ -586,6 +610,37 @@ def _generate_knowledge_base(
                     "members": members,
                 }
 
+    # Build globals section: each global with its type, value, and access context.
+    # Resolve read_by / written_by by scanning functions for global references.
+    globals_kb: dict = {}
+    for gid, gentry in global_variables_data.items():
+        gqn = gentry.get("qualifiedName", "")
+        if not gqn:
+            continue
+        # Find which functions read/write this global (transitive)
+        read_by = []
+        written_by = []
+        for fid2, f2 in functions_data.items():
+            f2_qn = f2.get("qualifiedName", "")
+            if not f2_qn:
+                continue
+            reads = set(f2.get("readsGlobalIdsTransitive") or f2.get("readsGlobalIds") or [])
+            writes = set(f2.get("writesGlobalIdsTransitive") or f2.get("writesGlobalIds") or [])
+            if gid in reads:
+                read_by.append(f2_qn)
+            if gid in writes:
+                written_by.append(f2_qn)
+        raw_value = (gentry.get("value") or "").split(";")[0].strip()
+        globals_kb[gqn] = {
+            "qualifiedName": gqn,
+            "type": gentry.get("type", ""),
+            "file": (gentry.get("location") or {}).get("file", ""),
+            "comment": gentry.get("comment", "") or gentry.get("description", ""),
+            "value": raw_value,
+            "readBy": read_by,
+            "writtenBy": written_by,
+        }
+
     kb = {
         "project_name": project_name,
         "base_path": base_path,
@@ -597,13 +652,15 @@ def _generate_knowledge_base(
         "macros": macros_kb,
         "typedefs": typedefs_kb,
         "structs": structs_kb,
+        "globals": globals_kb,
     }
     from core.model_io import write_model_file, KNOWLEDGE_BASE
     write_model_file(KNOWLEDGE_BASE, kb, ensure_ascii=False)
     print(
         f"  model/knowledge_base.json (functions={len(functions_kb)}, "
         f"enums={len(enums_kb)}, macros={len(macros_kb)}, "
-        f"typedefs={len(typedefs_kb)}, structs={len(structs_kb)})"
+        f"typedefs={len(typedefs_kb)}, structs={len(structs_kb)}, "
+        f"globals={len(globals_kb)})"
     )
 
 
@@ -659,7 +716,7 @@ def main():
     print(f"  model/globalVariables.json ({len(global_variables_data)})")
 
     # Always generate knowledge_base.json (Flowchart engine reads this)
-    _generate_knowledge_base(base_path, project_name, functions_data, data_dict, summaries)
+    _generate_knowledge_base(base_path, project_name, functions_data, global_variables_data, data_dict, summaries)
 
 
 if __name__ == "__main__":

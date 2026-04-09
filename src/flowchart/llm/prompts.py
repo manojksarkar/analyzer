@@ -53,8 +53,13 @@ For example: if the project is a storage OS and the module is QoS management, th
 — not a literal copy of the code.
 
 You are also provided with a 4-level call graph context showing what functions are called,
-what those callees call, and so on up to 4 levels deep.  Use callee descriptions to
-understand what each function call in the code actually does.
+what those callees call, and so on up to 4 levels deep.  Use callee descriptions and
+return types to understand what each function call in the code actually does.
+
+You may also receive a "Global variables accessed by this function" section listing
+the global/shared variables this function reads or writes, with their types and values.
+Use this to translate opaque variable names (e.g. g_utilsCounter) into meaningful
+descriptions (e.g. "Increment global utils counter").
 
 === LABEL WRITING RULES ===
 
