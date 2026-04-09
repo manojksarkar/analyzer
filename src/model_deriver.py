@@ -5,28 +5,26 @@ import sys
 import json
 
 from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP
+from core.paths import paths as _paths
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
+_p = _paths()
+SCRIPT_DIR = _p.src_dir
+PROJECT_ROOT = _p.project_root
+MODEL_DIR = _p.model_dir
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 
 def _load_model():
-    for name in ("metadata", "functions", "globalVariables"):
-        path = os.path.join(MODEL_DIR, f"{name}.json")
-        if not os.path.isfile(path):
-            print(f"Error: {path} not found. Run Phase 1 (parser) first.")
-            raise SystemExit(1)
-    with open(os.path.join(MODEL_DIR, "metadata.json"), "r", encoding="utf-8") as f:
-        meta = json.load(f)
+    from core.model_io import load_model, METADATA, FUNCTIONS, GLOBALS, ModelFileMissing
+    try:
+        m = load_model(METADATA, FUNCTIONS, GLOBALS)
+    except ModelFileMissing as e:
+        print(f"Error: {e}. Run Phase 1 (parser) first.")
+        raise SystemExit(1)
+    meta = m[METADATA]
     base_path = meta["basePath"]
     project_name = meta.get("projectName", os.path.basename(base_path))
-    with open(os.path.join(MODEL_DIR, "functions.json"), "r", encoding="utf-8") as f:
-        functions_data = json.load(f)
-    with open(os.path.join(MODEL_DIR, "globalVariables.json"), "r", encoding="utf-8") as f:
-        global_variables_data = json.load(f)
-    return base_path, project_name, functions_data, global_variables_data
+    return base_path, project_name, m[FUNCTIONS], m[GLOBALS]
 
 
 def _file_path(data: dict, base_path: str) -> str:
@@ -104,10 +102,9 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
     module_names = sorted({u.split(KEY_SEP)[0] for u in units_data if KEY_SEP in u})
     modules_data = {m: {"units": [u for u in units_data if u.split(KEY_SEP)[0] == m]} for m in module_names}
 
-    with open(os.path.join(MODEL_DIR, "units.json"), "w", encoding="utf-8") as f:
-        json.dump(units_data, f, indent=2)
-    with open(os.path.join(MODEL_DIR, "modules.json"), "w", encoding="utf-8") as f:
-        json.dump(modules_data, f, indent=2)
+    from core.model_io import write_model_file, UNITS, MODULES
+    write_model_file(UNITS, units_data)
+    write_model_file(MODULES, modules_data)
     print(f"  model/units.json ({len(units_data)})")
     print(f"  model/modules.json ({len(modules_data)})")
     return units_data, unit_by_file
@@ -169,7 +166,7 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
     if not llm.get("descriptions", True):
         return
     try:
-        from llm_client import enrich_functions_with_descriptions, enrich_globals_with_descriptions
+        from llm_enrichment import enrich_functions_with_descriptions, enrich_globals_with_descriptions
     except ImportError:
         return
     # Skip functions that already have a source comment extracted by parser.py.
@@ -337,19 +334,23 @@ def _enrich_behaviour_names_llm(
     if not llm.get("behaviourNames", True):
         return
     try:
-        from llm_client import (
-            _ollama_available,
+        from llm_enrichment import (
+            llm_provider_reachable,
             extract_source,
             get_behaviour_names,
             load_abbreviations,
         )
     except ImportError:
         return
-    if not _ollama_available(config):
+    if not llm_provider_reachable(config):
         return
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
     abbreviations = load_abbreviations(PROJECT_ROOT, config)
     order = list(functions_data.keys())
     n = len(order)
+    progress = ProgressReporter("LLM-behaviour-names", total=n, logger=get_logger("model_deriver"))
+    progress.start()
     for idx, fid in enumerate(order):
         f = functions_data.get(fid)
         if not f or not _static_behaviour_name_is_poor(f):
@@ -387,8 +388,8 @@ def _enrich_behaviour_names_llm(
         if res.get("behaviourOutputName"):
             f["behaviourOutputName"] = res["behaviourOutputName"]
         qn = (f.get("qualifiedName") or "").split("::")[-1]
-        print(f"  LLM behaviour names [{idx + 1}/{n}] {qn or fid}", end="\r", flush=True)
-    print(flush=True)
+        progress.step(label=qn or fid)
+    progress.done()
 
 
 # ---------------------------------------------------------------------------
@@ -427,12 +428,15 @@ def _run_hierarchy_summarizer(
 
     Returns empty summaries dict if the flowchart module cannot be imported.
     """
+    # Import the shared LLM client from src/llm_core BEFORE inserting
+    # src/flowchart into sys.path — once flowchart is on the path, the bare
+    # name `llm` would resolve to src/flowchart/llm/ (which is itself a shim).
+    from llm_core.client import from_config as _build_llm_client_from_config
     _fc_dir = os.path.join(SCRIPT_DIR, "flowchart")
     if _fc_dir not in sys.path:
         sys.path.insert(0, _fc_dir)
     try:
         from project_scanner import HierarchySummarizer
-        from llm.client import LlmClient
         from pkb.knowledge import FunctionKnowledge, ProjectKnowledge
     except ImportError as exc:
         print(f"  Cannot import Flowchart HierarchySummarizer: {exc}", file=sys.stderr)
@@ -460,13 +464,10 @@ def _run_hierarchy_summarizer(
         )
         knowledge.functions[qn] = fk
 
-    # Create LlmClient using the same config the analyzer uses
-    llm_cfg = config.get("llm") or {}
-    llm_base_url = (llm_cfg.get("baseUrl") or "http://localhost:11434").rstrip("/")
-    llm_url = f"{llm_base_url}/api/generate"
-    llm_model = llm_cfg.get("defaultModel") or "qwen2.5-coder:14b"
-    num_ctx = int(llm_cfg.get("numCtx", 8192))
-    client = LlmClient(url=llm_url, model=llm_model, num_ctx=num_ctx)
+    # Create LlmClient via the unified config loader so the provider switch
+    # (ollama / openai) and custom headers / retries / timeouts all work.
+    from utils import load_llm_config
+    client = _build_llm_client_from_config(load_llm_config(config))
 
     # Run the 4-level summarization (function summaries, phases, file, module, project)
     summarizer = HierarchySummarizer(knowledge, client, base_path)
@@ -588,9 +589,8 @@ def _generate_knowledge_base(
         "typedefs": typedefs_kb,
         "structs": structs_kb,
     }
-    out_path = os.path.join(MODEL_DIR, "knowledge_base.json")
-    with open(out_path, "w", encoding="utf-8") as _kbf:
-        json.dump(kb, _kbf, indent=2, ensure_ascii=False)
+    from core.model_io import write_model_file, KNOWLEDGE_BASE
+    write_model_file(KNOWLEDGE_BASE, kb, ensure_ascii=False)
     print(
         f"  model/knowledge_base.json (functions={len(functions_kb)}, "
         f"enums={len(enums_kb)}, macros={len(macros_kb)}, "
@@ -601,15 +601,13 @@ def _generate_knowledge_base(
 def main():
     llm_summarize = "--llm-summarize" in sys.argv
 
+    from core.config import app_config
+    from core.model_io import read_model_file, DATA_DICTIONARY
     base_path, project_name, functions_data, global_variables_data = _load_model()
-    config = load_config(PROJECT_ROOT)
+    config = app_config()
 
     # Load dataDictionary for knowledge_base.json generation
-    dd_path = os.path.join(MODEL_DIR, "dataDictionary.json")
-    data_dict: dict = {}
-    if os.path.isfile(dd_path):
-        with open(dd_path, "r", encoding="utf-8") as _ddf:
-            data_dict = json.load(_ddf)
+    data_dict = read_model_file(DATA_DICTIONARY, required=False, default={})
 
     units_data, unit_by_file = _build_units_modules(base_path, functions_data, global_variables_data)
     idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data)
@@ -626,11 +624,10 @@ def main():
     # is written, and before description enrichment so already-commented functions are skipped.
     summaries: dict = {}
     if llm_summarize:
+        from core.model_io import write_model_file as _write, SUMMARIES
         print("Running LLM summarization (phases + hierarchy)...")
         summaries = _run_hierarchy_summarizer(base_path, project_name, functions_data, config)
-        summ_path = os.path.join(MODEL_DIR, "summaries.json")
-        with open(summ_path, "w", encoding="utf-8") as _sf:
-            json.dump(summaries, _sf, indent=2, ensure_ascii=False)
+        _write(SUMMARIES, summaries, ensure_ascii=False)
         print("  model/summaries.json")
 
     _enrich_from_llm(base_path, functions_data, global_variables_data, config)
@@ -646,10 +643,9 @@ def main():
     # Clean and persist
     for fentry in functions_data.values():
         fentry.pop("params", None)
-    with open(os.path.join(MODEL_DIR, "functions.json"), "w", encoding="utf-8") as _ff:
-        json.dump(functions_data, _ff, indent=2)
-    with open(os.path.join(MODEL_DIR, "globalVariables.json"), "w", encoding="utf-8") as _gf:
-        json.dump(global_variables_data, _gf, indent=2)
+    from core.model_io import write_model_file as _write, FUNCTIONS, GLOBALS
+    _write(FUNCTIONS, functions_data)
+    _write(GLOBALS, global_variables_data)
     print(f"  model/functions.json ({len(functions_data)})")
     print(f"  model/globalVariables.json ({len(global_variables_data)})")
 

@@ -48,6 +48,12 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+# When launched as a script, sys.path[0] is this file's directory (src/flowchart).
+# Add the analyzer's src/ directory so we can import the shared llm_core package.
+_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _SRC_DIR not in sys.path:
+    sys.path.insert(1, _SRC_DIR)
+
 import clang.cindex as ci
 
 from pkb.knowledge import (
@@ -1254,7 +1260,7 @@ if __name__ == "__main__":
     # Optional LLM summarization pass
     if args.llm_summarize:
         try:
-            from llm.client import LlmClient  # import here to keep scanner standalone
+            from llm_core.client import LlmClient
             llm_client = LlmClient(
                 url=args.llm_url,
                 model=args.llm_model,
@@ -1271,7 +1277,7 @@ if __name__ == "__main__":
             )
             summarizer.summarize()
         except ImportError:
-            logger.error("Cannot import LlmClient — ensure llm/client.py is accessible")
+            logger.error("Cannot import LlmClient — ensure src/llm_core/ is on sys.path")
         except Exception as exc:
             logger.error("LLM summarization failed: %s", exc, exc_info=args.verbose)
 

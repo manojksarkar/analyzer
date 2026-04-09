@@ -1,9 +1,48 @@
-"""Ollama LLM: descriptions. Direction is derived in parser (global read/write)."""
+"""Prompt builders + enrichment loops used by Phase 2 (model_deriver) and Phase 4 (docx_exporter).
+
+This module is NOT an LLM client. The only LLM client in the project lives at
+src/llm_core/. This file owns the analyzer's prompts and enrichment logic,
+and delegates every HTTP call to llm_core.LlmClient.
+
+It provides:
+  - extract_source / extract_source_line  : read function/global source by location
+  - load_abbreviations                    : load abbreviations.txt
+  - llm_provider_reachable                : is the configured provider reachable
+  - get_description / get_global_description / get_unit_description /
+    get_struct_description / get_behaviour_names
+  - enrich_functions_with_descriptions / enrich_globals_with_descriptions
+
+Provider, headers, retry, think-section stripping and token tracking all live
+in llm_core.LlmClient.
+"""
+
 import os
 import sys
+from typing import Dict, Optional
 
-from utils import norm_path, short_name
+from utils import norm_path, short_name, load_llm_config
+from core.logging_setup import get_logger
+from core.progress import ProgressReporter
 
+_log = get_logger("llm_enrichment")
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+
+# Lazy import to avoid hard dependency at import time (e.g. when llm_core is
+# being smoke-tested in isolation).
+try:
+    from llm_core.client import LlmClient
+except ImportError:
+    LlmClient = None  # type: ignore
+
+
+# ---------------------------------------------------------------------------
+# Source extraction
+# ---------------------------------------------------------------------------
 
 def load_abbreviations(project_root: str, config: dict) -> dict:
     """Load abbreviations from text file in config (llm.abbreviationsPath). Format: one per line, 'abbrev: meaning' or 'abbrev=meaning'; # = comment."""
@@ -32,13 +71,6 @@ def load_abbreviations(project_root: str, config: dict) -> dict:
         return result
     except OSError:
         return {}
-
-# Optional: use requests for HTTP, with fallback
-try:
-    import requests
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
 
 
 def extract_source(base_path: str, loc: dict) -> str:
@@ -76,24 +108,60 @@ def extract_source_line(base_path: str, loc: dict) -> str:
     return lines[line_num - 1].strip()
 
 
-def _get_llm_config(config: dict) -> dict:
-    """Read llm block from config (baseUrl, defaultModel, timeoutSeconds, numCtx)."""
-    llm = config.get("llm") or {}
-    return {
-        "baseUrl": (llm.get("baseUrl") or "http://localhost:11434").rstrip("/"),
-        "defaultModel": llm.get("defaultModel") or "qwen2.5-coder:14b",
-        "timeoutSeconds": int(llm.get("timeoutSeconds", 120)),
-        # numCtx: Ollama defaults to 2048 which is too small for our prompts.
-        # Prompts exceeding num_ctx cause an immediate empty response.
-        "numCtx": int(llm.get("numCtx", 8192)),
-    }
+# ---------------------------------------------------------------------------
+# LLM client cache (one client per process keyed on the resolved llm config)
+# ---------------------------------------------------------------------------
+
+_CLIENT_CACHE: Dict[str, "LlmClient"] = {}
 
 
-def _ollama_available(config: dict) -> bool:
-    if not HAS_REQUESTS:
+def _client_cache_key(llm_cfg: dict) -> str:
+    return "|".join([
+        llm_cfg.get("provider", ""),
+        llm_cfg.get("baseUrl", ""),
+        llm_cfg.get("defaultModel", ""),
+        str(llm_cfg.get("numCtx", "")),
+        str(llm_cfg.get("retries", "")),
+        str(llm_cfg.get("timeoutSeconds", "")),
+    ])
+
+
+def _get_client(config: dict) -> Optional["LlmClient"]:
+    """Build or return a cached LlmClient for the resolved config."""
+    if LlmClient is None:
+        return None
+    llm_cfg = load_llm_config(config)
+    key = _client_cache_key(llm_cfg)
+    cached = _CLIENT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    client = LlmClient(
+        provider=llm_cfg["provider"],
+        base_url=llm_cfg["baseUrl"],
+        model=llm_cfg["defaultModel"],
+        api_key=llm_cfg.get("apiKey"),
+        custom_headers=llm_cfg.get("customHeaders") or {},
+        timeout=llm_cfg["timeoutSeconds"],
+        num_ctx=llm_cfg["numCtx"],
+        max_retries=llm_cfg["retries"],
+    )
+    _CLIENT_CACHE[key] = client
+    return client
+
+
+def llm_provider_reachable(config: dict) -> bool:
+    """Return True if the configured LLM provider is reachable.
+
+    For ollama, ping /api/tags. For openai we cannot ping cheaply so we
+    return True and rely on the per-call error handling in LlmClient.
+    """
+    if not HAS_REQUESTS or LlmClient is None:
         return False
-    cfg = _get_llm_config(config)
-    base_url = cfg["baseUrl"]
+    llm_cfg = load_llm_config(config)
+    provider = llm_cfg["provider"]
+    if provider == "openai":
+        return True  # assume reachable; first call will surface any failure
+    base_url = llm_cfg["baseUrl"]
     try:
         r = requests.get(f"{base_url}/api/tags", timeout=3)
         return r.status_code == 200
@@ -101,52 +169,25 @@ def _ollama_available(config: dict) -> bool:
         return False
 
 
-def _call_ollama(prompt: str, config: dict, *, kind: str = "default") -> str:
-    """Call Ollama /api/generate with num_ctx and one auto-retry on empty response."""
-    if not HAS_REQUESTS:
-        print("Warning: requests not installed. pip install requests", file=sys.stderr)
+def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "default") -> str:
+    """Issue a single LLM call via the unified client. Returns "" on failure."""
+    client = _get_client(config)
+    if client is None:
+        if not HAS_REQUESTS:
+            _log.warning("requests not installed. pip install requests")
         return ""
-    cfg = _get_llm_config(config)
-    base_url = cfg["baseUrl"]
-    model = cfg["defaultModel"]
-    url = f"{base_url}/api/generate"
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "num_ctx": cfg["numCtx"],
-            "temperature": 0.1,
-            "top_p": 0.9,
-            "num_predict": 2048,
-        },
-    }
-    for attempt in range(2):  # one retry on empty/error
-        try:
-            r = requests.post(url, json=payload, timeout=cfg["timeoutSeconds"])
-            r.raise_for_status()
-            data = r.json()
-            text = (data.get("response") or "").strip()
-            if text:
-                return text
-            if attempt == 0:
-                error_msg = data.get("error", "")
-                if error_msg:
-                    print(f"  Ollama returned error: {error_msg} — retrying", file=sys.stderr)
-                else:
-                    print(
-                        "  Ollama returned empty response (prompt may exceed context window) "
-                        f"— retrying with num_ctx={cfg['numCtx']}",
-                        file=sys.stderr,
-                    )
-        except (requests.RequestException, OSError) as e:
-            if attempt == 0:
-                print(f"Ollama error: {e} — retrying", file=sys.stderr)
-            else:
-                print(f"Ollama error: {e}", file=sys.stderr)
-                print("  -> Is Ollama running? Start with: ollama serve", file=sys.stderr)
-    return ""
+    text = client.generate(system, prompt)
+    if not text and client.provider == "ollama":
+        _log.warning(
+            "Ollama returned no response (prompt may exceed context window or "
+            "ollama not running). Start with: ollama serve"
+        )
+    return text or ""
 
+
+# ---------------------------------------------------------------------------
+# Prompt builders / public LLM endpoints
+# ---------------------------------------------------------------------------
 
 def _format_abbreviations(abbreviations: dict) -> str:
     """Format abbreviations dict as prompt block."""
@@ -159,7 +200,7 @@ def _format_abbreviations(abbreviations: dict) -> str:
 def get_description(source: str, config: dict, callee_descriptions: dict = None, abbreviations: dict = None) -> str:
     if not source:
         return ""
-    
+
     context = ""
     if callee_descriptions:
         context_parts = []
@@ -181,7 +222,7 @@ def get_description(source: str, config: dict, callee_descriptions: dict = None,
 ```
 
 One-line description:"""
-    return _call_ollama(prompt, config, kind="description")
+    return _call_llm(prompt, config, kind="description")
 
 
 def get_global_description(source: str, config: dict, abbreviations: dict = None) -> str:
@@ -199,7 +240,7 @@ def get_global_description(source: str, config: dict, abbreviations: dict = None
 ```
 
 One-line description:"""
-    return _call_ollama(prompt, config, kind="description")
+    return _call_llm(prompt, config, kind="description")
 
 
 def get_unit_description(
@@ -249,7 +290,7 @@ Globals (descriptions):
 {gv_block or '-'}{abbrev_block}
 
 One sentence:"""
-    return _call_ollama(prompt, config, kind="description")
+    return _call_llm(prompt, config, kind="description")
 
 
 def get_struct_description(struct_name: str, fields: list, config: dict, abbreviations: dict = None) -> str:
@@ -267,7 +308,7 @@ Struct name: {struct_name or '(unnamed)'}
 Fields: {fields_part or 'none'}
 
 One-line description:"""
-    return _call_ollama(prompt, config, kind="description")
+    return _call_llm(prompt, config, kind="description")
 
 
 def get_behaviour_names(
@@ -328,7 +369,7 @@ Current draft labels (improve if they are generic or code-like): Input="{draft_i
 Reply with exactly two lines in this format (no other text):
 Input Name: <short phrase>
 Output Name: <short phrase>"""
-    raw = _call_ollama(prompt, config, kind="behaviour_names")
+    raw = _call_llm(prompt, config, kind="behaviour_names")
     if not raw:
         return {}
     result = {}
@@ -355,8 +396,8 @@ def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_
     calls_map = {}
     for f in funcs:
         calls_map[f["id"]] = set(f.get("callsIds", []))
-    
-    processed = set()    
+
+    processed = set()
     result = {}
     order = []
 
@@ -368,14 +409,16 @@ def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_
             callees = calls_map.get(key, set())
             if callees.issubset(processed):
                 ready.append(key)
-            
+
         if not ready:
             ready = list(all_keys - processed)
-        
+
         for key in ready:
             order.append(key)
             processed.add(key)
 
+    progress = ProgressReporter(label, total=len(order), logger=_log)
+    progress.start()
     for idx, key in enumerate(order):
         f = func_by_key.get(key)
         if not f:
@@ -385,24 +428,24 @@ def _enrich_functions_loop(funcs: list, base_path: str, config: dict, processor_
         source = extract_source(base_path, loc)
 
         callee_descriptions = {}
-        for callee_key in calls_map.get(key,set()):
+        for callee_key in calls_map.get(key, set()):
             callee_f = func_by_key.get(callee_key)
             if callee_f:
                 callee_name = callee_f.get("qualifiedName", "").split("::")[-1]
                 callee_desc = result.get(callee_key, {}).get(result_key, "")
                 if callee_desc:
                     callee_descriptions[callee_name] = callee_desc
-        
+
         val = processor_fn(source, config, callee_descriptions)
         result[key] = {result_key: val}
-        print(f"  {label} [{idx + 1}/{len(order)}] {short_name(f.get('qualifiedName', '')) or '?'}", end="\r", flush=True, file=sys.stderr)
-    print(file=sys.stderr)
+        progress.step(label=short_name(f.get("qualifiedName", "")) or "?")
+    progress.done(summary=f"{len(result)} described")
     return result
 
 
 def enrich_functions_with_descriptions(functions_data: list, base_path: str, config: dict) -> dict:
-    if not _ollama_available(config):
-        print("  Ollama not reachable. Start with: ollama serve", file=sys.stderr)
+    if not llm_provider_reachable(config):
+        _log.warning("LLM provider not reachable. Start Ollama (ollama serve) or check openai gateway settings.")
         return {}
     abbreviations = load_abbreviations(base_path, config)
     processor = lambda source, cfg, callee: get_description(source, cfg, callee, abbreviations)
@@ -411,6 +454,8 @@ def enrich_functions_with_descriptions(functions_data: list, base_path: str, con
 
 def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, processor_fn, result_key: str, label: str) -> dict:
     result = {}
+    progress = ProgressReporter(label, total=len(globals_list), logger=_log)
+    progress.start()
     for idx, g in enumerate(globals_list):
         loc = g.get("location", {})
         if not loc:
@@ -419,13 +464,13 @@ def _enrich_globals_loop(globals_list: list, base_path: str, config: dict, proce
         source = extract_source_line(base_path, loc)
         val = processor_fn(source, config)
         result[key] = {result_key: val}
-        print(f"  {label} [{idx + 1}/{len(globals_list)}] {short_name(g.get('qualifiedName', '')) or '?'}", end="\r", flush=True, file=sys.stderr)
-    print(file=sys.stderr)
+        progress.step(label=short_name(g.get("qualifiedName", "")) or "?")
+    progress.done(summary=f"{len(result)} described")
     return result
 
 
 def enrich_globals_with_descriptions(globals_data: list, base_path: str, config: dict) -> dict:
-    if not _ollama_available(config):
+    if not llm_provider_reachable(config):
         return {}
     abbreviations = load_abbreviations(base_path, config)
     processor = lambda source, cfg: get_global_description(source, cfg, abbreviations)

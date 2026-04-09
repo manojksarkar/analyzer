@@ -31,17 +31,25 @@ The engine:
 import argparse
 import json
 import logging
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
+
+# When launched as a script, sys.path[0] is this file's directory (src/flowchart).
+# Add the analyzer's src/ directory too so we can import the shared llm_core
+# package (the single LlmClient used by the whole project).
+_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _SRC_DIR not in sys.path:
+    sys.path.insert(1, _SRC_DIR)
 
 from ast_engine.cfg_builder import CFGBuilder
 from ast_engine.parser import SourceExtractor, TranslationUnitParser
 from ast_engine.resolver import find_function_cursor, get_function_body
 from config import EngineConfig
 from enrichment.enricher import NodeEnricher
-from llm.client import LlmClient
+from llm_core.client import LlmClient
 from llm.generator import LabelGenerator
 from mermaid.builder import build_mermaid
 from mermaid.validator import validate_cfg, validate_mermaid
@@ -131,11 +139,18 @@ def _parse_args() -> EngineConfig:
                    help="Max source lines per ACTION node segment (default: 10)")
     p.add_argument("--verbose", "-v", action="store_true",
                    help="Enable debug logging")
+    p.add_argument("--quiet", "-q", action="store_true",
+                   help="Suppress info logging (warnings/errors only)")
 
     args = p.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    # Configure unified logging (stderr + daily file). Idempotent.
+    try:
+        from core.logging_setup import configure_logging
+        configure_logging(quiet=args.quiet, verbose=args.verbose)
+    except Exception:
+        if args.verbose:
+            logging.getLogger().setLevel(logging.DEBUG)
 
     return EngineConfig(
         functions_json_path=args.interface_json,
@@ -304,6 +319,60 @@ def _process_function(
 
 
 # ---------------------------------------------------------------------------
+# LLM client construction
+# ---------------------------------------------------------------------------
+
+def _build_llm_client(config: EngineConfig):
+    """Build an LlmClient.
+
+    Preference order:
+      1. If an analyzer config.json is reachable from cwd, use the unified
+         loader (load_llm_config + from_config). This pulls in provider,
+         custom headers, retries, and api_key — making the openai gateway
+         work end-to-end without extra CLI plumbing.
+      2. Otherwise fall back to the legacy CLI-arg constructor (Ollama only,
+         backwards compatible with the standalone subprocess invocation).
+    """
+    try:
+        # Walk up from cwd looking for config/config.json. flowchart_engine
+        # is launched with cwd=project_root by views/flowcharts.py, so the
+        # first hit is the analyzer config.
+        cwd = os.path.abspath(os.getcwd())
+        for candidate in (cwd, os.path.dirname(cwd)):
+            cfg_path = os.path.join(candidate, "config", "config.json")
+            if os.path.isfile(cfg_path):
+                # Lazy import to avoid hard dependency when running standalone
+                # without the analyzer src/ on the path.
+                from utils import load_config, load_llm_config  # noqa: WPS433
+                from llm_core.client import from_config  # noqa: WPS433
+                cfg = load_config(candidate)
+                llm_cfg = load_llm_config(cfg)
+                # CLI args still win for the engine-specific knobs that the
+                # analyzer config doesn't carry (num_ctx default, timeout):
+                # we let the analyzer config drive provider/url/model/headers
+                # but respect the CLI num_ctx if explicitly larger.
+                if config.llm_num_ctx and config.llm_num_ctx > llm_cfg["numCtx"]:
+                    llm_cfg["numCtx"] = config.llm_num_ctx
+                logger.info(
+                    "LLM provider=%s model=%s baseUrl=%s (from %s)",
+                    llm_cfg["provider"], llm_cfg["defaultModel"],
+                    llm_cfg["baseUrl"], cfg_path,
+                )
+                return from_config(llm_cfg)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Falling back to legacy LLM client construction: %s", exc)
+
+    # Legacy fallback — works for standalone Ollama-only invocations.
+    return LlmClient(
+        url=config.llm_url,
+        model=config.llm_model,
+        timeout=config.llm_timeout,
+        temperature=config.llm_temperature,
+        num_ctx=config.llm_num_ctx,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
 
@@ -384,13 +453,7 @@ def run(config: EngineConfig) -> None:
     # Initialise shared infrastructure
     source_extractor = SourceExtractor(base_path)
     tu_parser = TranslationUnitParser(config.std, config.clang_args)
-    llm_client = LlmClient(
-        url=config.llm_url,
-        model=config.llm_model,
-        timeout=config.llm_timeout,
-        temperature=config.llm_temperature,
-        num_ctx=config.llm_num_ctx,
-    )
+    llm_client = _build_llm_client(config)
     label_generator = LabelGenerator(
         client=llm_client,
         pkb=pkb,
