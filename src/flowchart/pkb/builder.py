@@ -8,6 +8,8 @@ LLM call includes:
   1. Hierarchical project context   (project → module → file → function)
   2. 4-level callee call-graph      (BFS up to depth 4, project-only, deduplicated)
   3. Parameter type resolution      (enum + typedef meanings from project_knowledge)
+  4. Caller context with signatures  (who calls this function and why)
+  5. Global variable context         (globals this function reads/writes, with types)
 """
 
 import logging
@@ -17,7 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from models import FunctionEntry
-from pkb.knowledge import FunctionKnowledge, ProjectKnowledge
+from pkb.knowledge import FunctionKnowledge, GlobalKnowledge, ProjectKnowledge
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +163,7 @@ class ProjectKnowledgeBase:
           3. Parameters + type meanings
           4. Function purpose
           5. Function execution phases
+          6. Global variable context    (globals this function reads/writes)
 
         Does NOT include callee BFS — that is done per-batch via
         build_targeted_callee_context() so only relevant callees are injected.
@@ -212,6 +215,11 @@ class ProjectKnowledgeBase:
                 desc = phase.get("description", "")
                 phase_lines.append(f"  Phase {i} (lines {sl}–{el}): {desc}")
             sections.append("\n".join(phase_lines))
+
+        # ── 6. Global variable context ────────────────────────────────
+        globals_ctx = self._build_global_context(func_entry)
+        if globals_ctx:
+            sections.append(globals_ctx)
 
         return "\n".join(sections)
 
@@ -498,6 +506,53 @@ class ProjectKnowledgeBase:
 
         return result
 
+    # ------------------------------------------------------------------
+    # Global variable context builder
+    # ------------------------------------------------------------------
+
+    def _build_global_context(self, func_entry: FunctionEntry) -> str:
+        """
+        Build context about global variables this function reads or writes.
+
+        Gives the LLM understanding of shared state — e.g., "g_utilsCounter
+        is an int counter incremented by add/subtract" — so labels like
+        "Increment global utils counter" replace opaque "g_utilsCounter++".
+
+        Uses the knowledge base globals section (populated from
+        model_deriver → knowledge_base.json). Caps at 8 globals.
+        """
+        if not self._knowledge or not self._knowledge.globals:
+            return ""
+
+        fk = self._knowledge.functions.get(func_entry.qualified_name)
+        if not fk:
+            return ""
+
+        # Collect globals this function touches
+        global_names = set(fk.reads_globals) | set(fk.writes_globals)
+        if not global_names:
+            return ""
+
+        lines: List[str] = []
+        for gname in sorted(global_names)[:8]:
+            gk = self._knowledge.globals.get(gname)
+            if gk:
+                access = []
+                if gname in fk.reads_globals:
+                    access.append("reads")
+                if gname in fk.writes_globals:
+                    access.append("writes")
+                access_str = "/".join(access)
+                desc = gk.summary()
+                lines.append(f"  - [{access_str}] {desc}")
+            else:
+                lines.append(f"  - {gname}")
+
+        if not lines:
+            return ""
+
+        return "Global variables accessed by this function:\n" + "\n".join(lines)
+
 
 # ---------------------------------------------------------------------------
 # Module-level helpers
@@ -525,20 +580,27 @@ def _callsid_to_qname(calls_id: str) -> str:
 
 def _make_callee_info(qname: str, fk: FunctionKnowledge) -> Dict:
     """Build a callee info dict from a FunctionKnowledge entry."""
-    return {
+    info: Dict = {
         "signature": fk.signature or qname,
         "description": fk.comment or "",
         "file": fk.file,
     }
+    if fk.return_type:
+        info["returnType"] = fk.return_type
+    return info
 
 
 def _format_callee_entry(info: Dict) -> str:
     """Format one callee info dict as a single prompt line."""
     sig = info.get("signature", "")
+    ret = info.get("returnType", "")
     desc = info.get("description", "")
+    parts = [f"  - {sig}"]
+    if ret:
+        parts.append(f"returns {ret}")
     if desc:
-        return f"  - {sig}  →  {desc}"
-    return f"  - {sig}"
+        parts.append(f"→  {desc}")
+    return "  ".join(parts)
 
 
 # ---------------------------------------------------------------------------

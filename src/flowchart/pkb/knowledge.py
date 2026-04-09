@@ -33,9 +33,18 @@ class FunctionKnowledge:
     file: str
     line: int
     comment: str = ""
+    return_type: str = ""
+    # Structured parameter list: [{"name": "x", "type": "int"}, ...]
+    parameters: List[Dict] = field(default_factory=list)
     # Qualified names of project functions this function calls (non-system).
     # Populated by project_scanner.py via CALL_EXPR traversal.
     calls: List[str] = field(default_factory=list)
+    # Qualified names of project functions that call this function.
+    called_by: List[str] = field(default_factory=list)
+    # Global variable IDs that this function reads (transitively).
+    reads_globals: List[str] = field(default_factory=list)
+    # Global variable IDs that this function writes (transitively).
+    writes_globals: List[str] = field(default_factory=list)
     # Phase-by-phase breakdown of the function body (from --llm-summarize).
     # Each entry: {"start_line": N, "end_line": M, "description": "..."}
     # Line numbers are relative to function start (1 = first line of function).
@@ -151,6 +160,28 @@ class StructKnowledge:
 
 
 @dataclass
+class GlobalKnowledge:
+    """A C++ global variable with its type, value, and access context."""
+    qualified_name: str
+    var_type: str
+    file: str
+    comment: str = ""
+    value: str = ""
+    # Qualified names of functions that read this global (transitively).
+    read_by: List[str] = field(default_factory=list)
+    # Qualified names of functions that write this global (transitively).
+    written_by: List[str] = field(default_factory=list)
+
+    def summary(self) -> str:
+        desc = f"{self.qualified_name} ({self.var_type})"
+        if self.value:
+            desc += f" = {self.value}"
+        if self.comment:
+            desc += f"  [{self.comment}]"
+        return desc
+
+
+@dataclass
 class ProjectKnowledge:
     project_name: str = ""
     base_path: str = ""
@@ -172,17 +203,19 @@ class ProjectKnowledge:
     typedefs: Dict[str, TypedefKnowledge] = field(default_factory=dict)
     # Keyed by simple or qualified struct/class name
     structs: Dict[str, StructKnowledge] = field(default_factory=dict)
+    # Keyed by qualified_name (e.g. "g_utilsCounter")
+    globals: Dict[str, GlobalKnowledge] = field(default_factory=dict)
 
     def is_empty(self) -> bool:
         return (not self.functions and not self.enums
                 and not self.macros and not self.typedefs
-                and not self.structs)
+                and not self.structs and not self.globals)
 
     def stats(self) -> str:
         return (
             f"functions={len(self.functions)}, enums={len(self.enums)}, "
             f"macros={len(self.macros)}, typedefs={len(self.typedefs)}, "
-            f"structs={len(self.structs)}, "
+            f"structs={len(self.structs)}, globals={len(self.globals)}, "
             f"file_summaries={len(self.file_summaries)}, "
             f"module_summaries={len(self.module_summaries)}, "
             f"project_summary={'yes' if self.project_summary else 'no'}"
@@ -208,7 +241,12 @@ def save_knowledge(knowledge: ProjectKnowledge, path: str) -> None:
                 "file": v.file,
                 "line": v.line,
                 "comment": v.comment,
+                "returnType": v.return_type,
+                "parameters": v.parameters,
                 "calls": v.calls,
+                "calledBy": v.called_by,
+                "readsGlobals": v.reads_globals,
+                "writesGlobals": v.writes_globals,
                 "phases": v.phases,
             }
             for k, v in knowledge.functions.items()
@@ -255,6 +293,18 @@ def save_knowledge(knowledge: ProjectKnowledge, path: str) -> None:
             }
             for k, v in knowledge.structs.items()
         },
+        "globals": {
+            k: {
+                "qualifiedName": v.qualified_name,
+                "type": v.var_type,
+                "file": v.file,
+                "comment": v.comment,
+                "value": v.value,
+                "readBy": v.read_by,
+                "writtenBy": v.written_by,
+            }
+            for k, v in knowledge.globals.items()
+        },
     }
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -291,7 +341,12 @@ def load_knowledge(path: str) -> Optional[ProjectKnowledge]:
             file=v.get("file", ""),
             line=v.get("line", 0),
             comment=v.get("comment", ""),
+            return_type=v.get("returnType", ""),
+            parameters=v.get("parameters", []),
             calls=v.get("calls", []),
+            called_by=v.get("calledBy", []),
+            reads_globals=v.get("readsGlobals", []),
+            writes_globals=v.get("writesGlobals", []),
             phases=v.get("phases", []),
         )
 
@@ -339,6 +394,17 @@ def load_knowledge(path: str) -> Optional[ProjectKnowledge]:
             file=v.get("file", ""),
             comment=v.get("comment", ""),
             members=members,
+        )
+
+    for key, v in data.get("globals", {}).items():
+        k.globals[key] = GlobalKnowledge(
+            qualified_name=v.get("qualifiedName", key),
+            var_type=v.get("type", ""),
+            file=v.get("file", ""),
+            comment=v.get("comment", ""),
+            value=v.get("value", ""),
+            read_by=v.get("readBy", []),
+            written_by=v.get("writtenBy", []),
         )
 
     logger.info("Project knowledge loaded: %s  (%s)", path, k.stats())
