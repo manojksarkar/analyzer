@@ -39,13 +39,12 @@ SOURCE_PADDING    — source lines above/below batch nodes in excerpt.
 BATCH_SIZE        — default nodes per LLM call.
 """
 
-import json
 import logging
 import os
-import re
 from typing import Dict, List, Optional, Set, Tuple
 
 from llm_core.client import LlmClient
+from llm_core.structured_output import extract_and_validate
 from llm.prompts import SYSTEM_PROMPT, build_user_prompt
 from models import CfgNode, ControlFlowGraph, FunctionEntry, NodeType
 from pkb.builder import ProjectKnowledgeBase
@@ -88,11 +87,13 @@ class LabelGenerator:
 
     def __init__(self, client: LlmClient, pkb: ProjectKnowledgeBase,
                  max_retries: int = 2,
-                 batch_size: int = BATCH_SIZE) -> None:
+                 batch_size: int = BATCH_SIZE,
+                 enrichment_config: Optional[Dict] = None) -> None:
         self._client = client
         self._pkb = pkb
         self._max_retries = max_retries
         self._batch_size = batch_size
+        self._enrichment = enrichment_config or {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -107,6 +108,21 @@ class LabelGenerator:
                      if n.node_type not in (NodeType.START, NodeType.END)]
         if not labelable:
             return
+
+        # Optional: LLM-guided simplification for large CFGs. Merges trivial
+        # sequential ACTION nodes and drops boilerplate, shrinking the labeling
+        # workload and producing a more readable diagram. Controlled by
+        # llm.enrichment.cfgSimplification (default false).
+        if self._enrichment.get("cfgSimplification") and len(labelable) > 15:
+            try:
+                self._simplify_cfg(cfg, func_entry)
+                # Refresh labelable after mutation
+                labelable = [n for n in cfg.nodes.values()
+                             if n.node_type not in (NodeType.START, NodeType.END)]
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning("CFG simplification failed for '%s': %s — "
+                               "continuing with original graph",
+                               func_entry.qualified_name, exc)
 
         # Build static (per-function) context — hierarchy + callers + purpose + phases
         # + full BFS callee graph (always present as baseline callee context).
@@ -165,6 +181,220 @@ class LabelGenerator:
         else:
             logger.debug("'%s': all %d nodes labeled by LLM",
                          func_entry.qualified_name, len(labelable))
+
+    # ------------------------------------------------------------------
+    # CFG simplification (optional pass, off by default)
+    # ------------------------------------------------------------------
+
+    _SIMPLIFY_SYSTEM = (
+        "You are a C++ CFG optimiser. You receive an ordered list of ACTION "
+        "nodes with their raw source. Your job is to identify short sequential "
+        "runs that represent a single logical step and should be merged into "
+        "one box. You also identify trivial nodes (e.g. redundant temporary "
+        "assignments) that can be dropped without losing meaning. You NEVER "
+        "touch decisions, loops, switches, returns, breaks, continues, or "
+        "case nodes — they are not in the list you receive."
+    )
+
+    def _simplify_cfg(
+        self,
+        cfg: ControlFlowGraph,
+        func_entry: FunctionEntry,
+    ) -> None:
+        """Ask the LLM for a merge/drop plan and apply it in place.
+
+        Safety constraints (enforced AFTER the LLM replies, regardless of what
+        it says):
+          - Only merges strict linear chains: each inner node has exactly one
+            predecessor (the previous node in the group) and one successor
+            (the next node in the group).
+          - Only drops nodes with one incoming and one outgoing edge.
+          - Only touches ACTION nodes. Decisions, loops, returns, etc. are
+            never presented to the LLM and never mutated.
+        """
+        action_nodes = [
+            n for n in cfg.nodes.values() if n.node_type == NodeType.ACTION
+        ]
+        if len(action_nodes) < 6:
+            return  # not worth the round-trip
+
+        # Preserve execution order for the prompt
+        topo_ids, _ = _topo_sort(cfg)
+        action_by_id = {n.node_id: n for n in action_nodes}
+        ordered_actions = [action_by_id[nid] for nid in topo_ids if nid in action_by_id]
+
+        node_lines = []
+        for n in ordered_actions:
+            raw = (n.raw_code or "").strip().replace("\n", " ")[:80]
+            node_lines.append(f'  "{n.node_id}": "{raw}"')
+
+        prompt = (
+            f"Function: {func_entry.qualified_name}\n\n"
+            f"This CFG has {len(ordered_actions)} ACTION nodes. Identify short "
+            "sequential runs that form ONE logical step and should be merged.\n\n"
+            "Rules:\n"
+            "  - Only merge nodes that appear consecutively in the list.\n"
+            "  - Merge groups must have 2-4 nodes; longer runs are probably "
+            "distinct steps.\n"
+            "  - Only drop nodes whose raw code is clearly redundant "
+            "(e.g. temporaries immediately consumed).\n"
+            "  - If nothing should change, return empty lists.\n\n"
+            "ACTION nodes (in execution order):\n"
+            + "\n".join(node_lines)
+            + "\n\n"
+            'Return ONLY JSON: {"merge": [["N3","N4"], ["N7","N8","N9"]], '
+            '"drop": ["N12"]}'
+        )
+
+        raw = self._client.generate(self._SIMPLIFY_SYSTEM, prompt)
+        if not raw:
+            logger.debug("CFG simplification: no LLM response for '%s'",
+                         func_entry.qualified_name)
+            return
+
+        plan = extract_and_validate(raw)
+        if not plan:
+            logger.debug("CFG simplification: unparseable response for '%s'",
+                         func_entry.qualified_name)
+            return
+
+        merge_groups = plan.get("merge") or []
+        drop_ids = plan.get("drop") or []
+        if not isinstance(merge_groups, list):
+            merge_groups = []
+        if not isinstance(drop_ids, list):
+            drop_ids = []
+
+        action_id_set = {n.node_id for n in action_nodes}
+        merged = 0
+        dropped = 0
+
+        # ---- Apply merges ----
+        for group in merge_groups:
+            if not isinstance(group, list) or len(group) < 2 or len(group) > 4:
+                continue
+            # Every node must be an ACTION node that still exists
+            if not all(nid in cfg.nodes and nid in action_id_set for nid in group):
+                continue
+            if self._is_linear_chain(cfg, group):
+                self._apply_merge(cfg, group)
+                merged += 1
+
+        # ---- Apply drops ----
+        for nid in drop_ids:
+            if not isinstance(nid, str) or nid not in cfg.nodes:
+                continue
+            if nid not in action_id_set:
+                continue
+            if self._has_single_in_single_out(cfg, nid):
+                self._apply_drop(cfg, nid)
+                dropped += 1
+
+        if merged or dropped:
+            logger.info(
+                "'%s': CFG simplified — %d merge(s), %d drop(s)",
+                func_entry.qualified_name, merged, dropped,
+            )
+
+    @staticmethod
+    def _is_linear_chain(cfg: ControlFlowGraph, group: List[str]) -> bool:
+        """True if *group* forms a strict A→B→C→... linear chain.
+
+        Head may have any fan-in; tail may have any fan-out. Every interior
+        node must have exactly one predecessor (= its prev-in-group) and
+        exactly one successor (= its next-in-group). The head must have
+        exactly one outgoing edge and it must go to group[1].
+        """
+        if len(group) < 2:
+            return False
+        for i in range(len(group) - 1):
+            cur, nxt = group[i], group[i + 1]
+            out_edges = [e for e in cfg.edges if e.source == cur]
+            if len(out_edges) != 1 or out_edges[0].target != nxt:
+                return False
+        # Interior nodes (everything except head) must have exactly one in-edge
+        for nid in group[1:]:
+            in_edges = [e for e in cfg.edges if e.target == nid]
+            if len(in_edges) != 1:
+                return False
+        return True
+
+    @staticmethod
+    def _has_single_in_single_out(cfg: ControlFlowGraph, nid: str) -> bool:
+        in_edges = [e for e in cfg.edges if e.target == nid]
+        out_edges = [e for e in cfg.edges if e.source == nid]
+        return len(in_edges) == 1 and len(out_edges) == 1
+
+    @staticmethod
+    def _apply_merge(cfg: ControlFlowGraph, group: List[str]) -> None:
+        """Contract *group* into its head node.
+
+        Combines raw_code from every node in the group, re-parents outgoing
+        edges of the tail to the head, removes the interior and tail nodes
+        from cfg.nodes, and drops now-dead edges.
+        """
+        head_id = group[0]
+        tail_id = group[-1]
+        head = cfg.nodes[head_id]
+
+        # Combine raw_code with "; " separator (cap length to avoid runaway)
+        combined = head.raw_code or ""
+        for nid in group[1:]:
+            piece = (cfg.nodes[nid].raw_code or "").strip()
+            if piece:
+                combined = (combined + "; " + piece).strip("; ")
+        head.raw_code = combined[:400]
+        # Extend end_line to the tail's end
+        tail = cfg.nodes[tail_id]
+        if tail.end_line > head.end_line:
+            head.end_line = tail.end_line
+
+        # Rewire: every edge that starts at *tail* now starts at *head*
+        new_edges = []
+        internal = set(group[1:])  # nodes to be deleted
+        for e in cfg.edges:
+            if e.source in internal or e.target in internal:
+                if e.source == tail_id and e.target not in internal:
+                    new_edges.append(type(e)(source=head_id, target=e.target, label=e.label))
+                # Drop everything else touching the interior
+                continue
+            new_edges.append(e)
+        cfg.edges = new_edges
+
+        # Delete interior nodes
+        for nid in internal:
+            cfg.nodes.pop(nid, None)
+
+        # Fix up entry / exit ids
+        if cfg.entry_node_id in internal:
+            cfg.entry_node_id = head_id
+        cfg.exit_node_ids = [
+            (head_id if nid in internal else nid) for nid in cfg.exit_node_ids
+        ]
+
+    @staticmethod
+    def _apply_drop(cfg: ControlFlowGraph, nid: str) -> None:
+        """Bypass *nid*: rewire its single in-edge to its single out-edge target."""
+        in_edges = [e for e in cfg.edges if e.target == nid]
+        out_edges = [e for e in cfg.edges if e.source == nid]
+        if len(in_edges) != 1 or len(out_edges) != 1:
+            return
+        pred = in_edges[0].source
+        succ = out_edges[0].target
+        label = in_edges[0].label or out_edges[0].label
+
+        cfg.edges = [e for e in cfg.edges if e.source != nid and e.target != nid]
+        # Add a direct pred → succ edge if not already present
+        if not any(e.source == pred and e.target == succ for e in cfg.edges):
+            edge_cls = type(in_edges[0])
+            cfg.edges.append(edge_cls(source=pred, target=succ, label=label))
+
+        cfg.nodes.pop(nid, None)
+        if cfg.entry_node_id == nid:
+            cfg.entry_node_id = succ
+        cfg.exit_node_ids = [
+            (succ if x == nid else x) for x in cfg.exit_node_ids
+        ]
 
     # ------------------------------------------------------------------
     # Auto-halving wrapper
@@ -339,9 +569,15 @@ class LabelGenerator:
 
     _COHERENCE_SYSTEM = (
         "You are a technical editor reviewing flowchart labels for a C++ function. "
-        "Fix ONLY: inconsistent terminology, non-active-voice phrasing, or labels "
-        "that break the narrative flow when read in sequence. "
-        "Do NOT change meanings, do NOT re-label nodes that are already good. "
+        "Your job is to enforce a consistent, high-quality narrative across labels. "
+        "Fix the following issues — and ONLY these issues — without changing node meaning:\n"
+        "  1. Inconsistent terminology (e.g. 'request'/'req'/'payload' for the same thing).\n"
+        "  2. Non-active voice ('X is initialized' → 'Initialize X').\n"
+        "  3. Labels that break the step-by-step narrative when read in sequence.\n"
+        "  4. Labels that are too literal (copy of raw code) or too abstract (generic phrase).\n"
+        "  5. DECISION / LOOP_HEAD / SWITCH_HEAD labels that do not end with '?'.\n"
+        "  6. Return and break labels that are not phrased as outcomes.\n"
+        "Do NOT re-label nodes that are already good. Do NOT invent new information.\n"
         'Return ONLY a JSON object for labels you changed: {"node_id": "improved_label"}. '
         "Return {} if nothing needs changing. No markdown, no explanations."
     )
@@ -387,17 +623,21 @@ class LabelGenerator:
             + (f"Purpose: {purpose}\n" if purpose else "")
             + f"\nFlowchart labels ({len(ordered_pairs)} nodes in execution order):\n"
             + node_lines
-            + "\n\nReview as a set:\n"
-            "1. Fix inconsistent terminology (e.g. 'request'/'req' — pick one).\n"
-            "2. Ensure active voice throughout (e.g. 'Initialize X' not 'X is initialized').\n"
-            "3. Make labels read as a coherent step-by-step narrative.\n"
-            "4. Do NOT change node meaning — only improve phrasing/consistency.\n"
-            "5. Return only labels you changed.\n"
+            + "\n\nReview the labels as a coherent set and fix only what needs fixing:\n"
+            "  - Pick one canonical term and replace variants throughout.\n"
+            "  - Rewrite passive voice as active imperative ('Initialize X' not 'X is initialized').\n"
+            "  - Fix labels that sound out of place in the step-by-step narrative.\n"
+            "  - DECISION / LOOP_HEAD / SWITCH_HEAD labels must end with '?'.\n"
+            "  - Replace labels that are copies of raw code with readable prose.\n"
+            "  - Replace vague labels ('Process data', 'Handle case') with specifics drawn from the raw node content.\n"
+            "  - Do NOT change node meaning; do NOT re-label already-good labels.\n\n"
             'Return ONLY: {"node_id": "improved_label", ...} or {} if nothing needs changing.'
         )
 
-        # Cap prompt size — coherence pass is best-effort
-        if len(self._COHERENCE_SYSTEM) + len(prompt) > MAX_PROMPT_CHARS:
+        # Budget-aware size check. Uses TokenCounter + ContextBudget from
+        # llm_core so the coherence pass scales with the model's real window
+        # instead of the fixed char cap MAX_PROMPT_CHARS.
+        if not self._fits_coherence_budget(prompt):
             logger.debug("Coherence pass skipped for '%s': prompt too large",
                          func_entry.qualified_name)
             return label_map
@@ -408,16 +648,8 @@ class LabelGenerator:
                          func_entry.qualified_name)
             return label_map
 
-        cleaned = _extract_json(raw)
-        if not cleaned:
-            return label_map
-
-        try:
-            changes = json.loads(cleaned)
-        except json.JSONDecodeError:
-            return label_map
-
-        if not isinstance(changes, dict) or not changes:
+        changes = extract_and_validate(raw)
+        if not changes:
             return label_map
 
         updated = dict(label_map)
@@ -435,6 +667,40 @@ class LabelGenerator:
             logger.info("Coherence pass updated %d label(s) for '%s'",
                         changed_count, func_entry.qualified_name)
         return updated
+
+    def _fits_coherence_budget(self, prompt: str) -> bool:
+        """Return True if *prompt* + system prompt fits the coherence budget.
+
+        Uses ContextBudget + TokenCounter when available; falls back to the
+        legacy char-based MAX_PROMPT_CHARS check if llm_core token counting
+        is not importable.
+        """
+        try:
+            from llm_core import TokenCounter, ContextBudget
+        except ImportError:
+            return len(self._COHERENCE_SYSTEM) + len(prompt) <= MAX_PROMPT_CHARS
+
+        num_ctx = int(getattr(self._client, "_num_ctx", 8192) or 8192)
+        try:
+            counter = TokenCounter(model=getattr(self._client, "_model", "") or "")
+            budget = ContextBudget(
+                max_tokens=num_ctx,
+                task="cfg_coherence",
+                counter=counter,
+            )
+            # Coherence pass caps input at system_prompt + all_labels +
+            # function_purpose + instructions. Anything above that leaves no
+            # room for the JSON output_reserve, so we skip the pass.
+            allowed = (
+                budget.allocate("system_prompt")
+                + budget.allocate("all_labels")
+                + budget.allocate("function_purpose")
+                + budget.allocate("instructions")
+            )
+            used = counter.count(self._COHERENCE_SYSTEM) + counter.count(prompt)
+            return used <= allowed
+        except Exception:
+            return len(self._COHERENCE_SYSTEM) + len(prompt) <= MAX_PROMPT_CHARS
 
     # ------------------------------------------------------------------
     # Apply labels back to CFG nodes
@@ -806,22 +1072,10 @@ def _parse_partial(
     accepted: Dict[str, str] = {}
     failures: Dict[str, str] = {}
 
-    cleaned = _extract_json(raw)
-    if not cleaned:
+    data = extract_and_validate(raw)
+    if data is None:
         for nid in required_ids:
-            failures[nid] = "No JSON object found in LLM response"
-        return accepted, failures
-
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        for nid in required_ids:
-            failures[nid] = f"JSON parse error: {exc}"
-        return accepted, failures
-
-    if not isinstance(data, dict):
-        for nid in required_ids:
-            failures[nid] = "LLM response was not a JSON object"
+            failures[nid] = "No valid JSON object in LLM response"
         return accepted, failures
 
     for nid in required_ids:
@@ -841,24 +1095,6 @@ def _parse_partial(
         accepted[nid] = label
 
     return accepted, failures
-
-
-def _extract_json(text: str) -> Optional[str]:
-    """Extract the first complete JSON object from a potentially noisy response."""
-    text = re.sub(r"```(?:json)?\s*", "", text)
-    text = re.sub(r"```", "", text)
-    start = text.find("{")
-    if start == -1:
-        return None
-    depth = 0
-    for i in range(start, len(text)):
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start: i + 1]
-    return None
 
 
 # ---------------------------------------------------------------------------

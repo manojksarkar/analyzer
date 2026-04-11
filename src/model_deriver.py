@@ -166,24 +166,43 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
     if not llm.get("descriptions", True):
         return
     try:
-        from llm_enrichment import enrich_functions_with_descriptions, enrich_globals_with_descriptions
+        from llm_enrichment import (
+            enrich_functions_with_descriptions, enrich_globals_with_descriptions,
+            enrich_functions_rich, enrich_globals_rich,
+        )
     except ImportError:
         return
-    # Skip functions that already have a source comment extracted by parser.py.
-    # The Flowchart engine prefers source comments over LLM descriptions; calling
-    # the LLM for already-documented functions wastes calls and the result is discarded.
-    funcs_list = [
-        {"id": key, **value}
-        for key, value in functions_data.items()
-        if not value.get("comment")
-    ]
-    desc = enrich_functions_with_descriptions(funcs_list, base_path, config)
+
+    # Try to load existing knowledge_base.json for richer context.
+    # On first run it won't exist — the rich path still works (just without
+    # repo map and sibling context), and the knowledge base is generated after.
+    knowledge = None
+    try:
+        from flowchart.pkb.knowledge import load_knowledge
+        from core.paths import paths
+        import os
+        kb_path = os.path.join(paths().model_dir, "knowledge_base.json")
+        knowledge = load_knowledge(kb_path)
+    except Exception:
+        pass
+
+    # Rich enrichment path — budget-aware with degradation ladder
+    desc = enrich_functions_rich(functions_data, base_path, config, knowledge=knowledge)
     for key, f in functions_data.items():
         if desc.get(key, {}).get("description"):
             f["description"] = desc[key]["description"]
-    globals_list = list(global_variables_data.values())
-    g_desc = enrich_globals_with_descriptions(globals_list, base_path, config)
-    for g in globals_list:
+
+    # Rich global enrichment
+    enrichment_cfg = llm.get("enrichment") or {}
+    if enrichment_cfg.get("variableEnrichment", True):
+        g_desc = enrich_globals_rich(
+            global_variables_data, functions_data, base_path, config,
+            knowledge=knowledge,
+        )
+    else:
+        globals_list = list(global_variables_data.values())
+        g_desc = enrich_globals_with_descriptions(globals_list, base_path, config)
+    for g in global_variables_data.values():
         key = f"{g.get('location', {}).get('file', '')}:{g.get('location', {}).get('line', '')}"
         if g_desc.get(key, {}).get("description"):
             g["description"] = g_desc[key]["description"]

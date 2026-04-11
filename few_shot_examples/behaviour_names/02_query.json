@@ -1,0 +1,5 @@
+{
+  "tags": ["query", "lookup", "getter"],
+  "input_context": "Function: SessionRegistry::findSession(SessionId id) -> Session*\nParameters: id (SessionId)\nReturn type: Session*\nReturn expression: it->second",
+  "ideal_output": "Input Name: Session Lookup Key\nOutput Name: Matching Session"
+}

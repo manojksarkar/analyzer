@@ -454,11 +454,30 @@ def run(config: EngineConfig) -> None:
     source_extractor = SourceExtractor(base_path)
     tu_parser = TranslationUnitParser(config.std, config.clang_args)
     llm_client = _build_llm_client(config)
+
+    # Load llm.enrichment flags from config.json if available (same
+    # cwd-walk as _build_llm_client).  When run standalone without a
+    # reachable config, this stays empty and every enrichment feature
+    # remains off.
+    enrichment_cfg: Dict = {}
+    try:
+        cwd = os.path.abspath(os.getcwd())
+        for candidate in (cwd, os.path.dirname(cwd)):
+            cfg_path = os.path.join(candidate, "config", "config.json")
+            if os.path.isfile(cfg_path):
+                from utils import load_config  # noqa: WPS433
+                cfg = load_config(candidate)
+                enrichment_cfg = (cfg.get("llm") or {}).get("enrichment") or {}
+                break
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Could not load enrichment config: %s", exc)
+
     label_generator = LabelGenerator(
         client=llm_client,
         pkb=pkb,
         max_retries=config.llm_max_retries,
         batch_size=config.llm_batch_size,
+        enrichment_config=enrichment_cfg,
     )
     writer = OutputWriter(config.out_dir)
 

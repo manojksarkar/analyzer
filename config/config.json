@@ -38,6 +38,22 @@
     // HTTP error or empty response. Default 1 = up to 2 total tries.
     "retries": 1,
     "abbreviationsPath": "config/abbreviations.txt",
+    // maxContextTokens: null = auto (numCtx-512 for Ollama, 128K for OpenAI).
+    // Set explicitly to override the auto-derived value.
+    "maxContextTokens": null,
+    // enrichment: toggle individual enrichment features.
+    // All default to the cheapest safe option (off or single-pass).
+    "enrichment": {
+      "twoPassDescriptions": true,
+      "selfReview": false,
+      "ensemble": false,
+      "cfgSimplification": false,
+      "variableEnrichment": true
+    },
+    // fewShotExamplesDir: directory containing hand-curated few-shot examples.
+    "fewShotExamplesDir": "few_shot_examples",
+    // cacheVersion: bump to invalidate entity-level LLM cache.
+    "cacheVersion": 1,
     // apiKey: bearer token for openai provider. Prefer env var LLM_API_KEY.
     "apiKey": "",
     // customHeaders: extra headers sent on every openai request. Each value

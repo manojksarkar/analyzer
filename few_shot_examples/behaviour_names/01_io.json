@@ -1,0 +1,5 @@
+{
+  "tags": ["io", "read", "block_device"],
+  "input_context": "Function: BlockDevice::readBlock(uint64_t lba, void* buf, size_t len) -> status_t\nParameters: lba (uint64_t), buf (void*), len (size_t)\nReturn type: status_t\nReturn expression: rc",
+  "ideal_output": "Input Name: Block Read Request\nOutput Name: Read Completion Status"
+}
