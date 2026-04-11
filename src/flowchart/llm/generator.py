@@ -88,12 +88,17 @@ class LabelGenerator:
     def __init__(self, client: LlmClient, pkb: ProjectKnowledgeBase,
                  max_retries: int = 2,
                  batch_size: int = BATCH_SIZE,
-                 enrichment_config: Optional[Dict] = None) -> None:
+                 enrichment_config: Optional[Dict] = None,
+                 max_context_tokens: Optional[int] = None) -> None:
         self._client = client
         self._pkb = pkb
         self._max_retries = max_retries
         self._batch_size = batch_size
         self._enrichment = enrichment_config or {}
+        # Authoritative input-token budget for budget-aware passes (coherence,
+        # CFG simplification). Resolved upstream via llm_core.budget.resolve_max_tokens
+        # so it honours config.llm.maxContextTokens for both Ollama and OpenAI.
+        self._max_context_tokens = max_context_tokens
 
     # ------------------------------------------------------------------
     # Public API
@@ -680,11 +685,16 @@ class LabelGenerator:
         except ImportError:
             return len(self._COHERENCE_SYSTEM) + len(prompt) <= MAX_PROMPT_CHARS
 
-        num_ctx = int(getattr(self._client, "_num_ctx", 8192) or 8192)
+        # Prefer the resolved max_context_tokens (which honours
+        # config.llm.maxContextTokens for both providers). Fall back to the
+        # client's num_ctx for backwards compat with standalone invocations.
+        max_tokens = self._max_context_tokens
+        if not max_tokens:
+            max_tokens = int(getattr(self._client, "_num_ctx", 8192) or 8192)
         try:
             counter = TokenCounter(model=getattr(self._client, "_model", "") or "")
             budget = ContextBudget(
-                max_tokens=num_ctx,
+                max_tokens=max_tokens,
                 task="cfg_coherence",
                 counter=counter,
             )
