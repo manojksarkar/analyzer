@@ -8,7 +8,12 @@ from datetime import datetime, timezone
 
 # Config loading lives in core.config (these are re-exports for backward
 # compatibility with existing call sites that still `from utils import ...`).
-from core.config import load_config, load_llm_config  # noqa: E402,F401
+from core.config import (  # noqa: E402,F401
+    LlmConfigError,
+    format_llm_config_banner,
+    load_config,
+    load_llm_config,
+)
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
 KEY_SEP = "|"

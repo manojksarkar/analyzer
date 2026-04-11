@@ -135,97 +135,269 @@ def load_config(project_root: str) -> Dict[str, Any]:
     return config
 
 
-def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Resolve the llm config block, applying environment-variable overrides.
+class LlmConfigError(ValueError):
+    """Raised when llm config has missing or invalid required fields.
 
-    Returns a normalised dict with these keys:
+    Strict validation: rather than falling back to silent defaults, the
+    analyzer surfaces the exact field that is wrong so the user can fix
+    config.json (or the matching env var) and re-run.
+    """
+
+
+def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve and STRICTLY validate the llm config block.
+
+    Required fields (no silent defaults — raises LlmConfigError if missing
+    or invalid):
         provider          - "ollama" | "openai"
-        baseUrl           - endpoint base URL (no trailing slash)
-        defaultModel      - model name string
-        timeoutSeconds    - int
-        numCtx            - int (Ollama context window)
-        retries           - int (default 1)
-        descriptions      - bool (whether to call LLM for descriptions)
-        behaviourNames    - bool (whether to call LLM for behaviour names)
-        abbreviationsPath - str
-        customHeaders     - dict (passed through to OpenAI gateway)
-        apiKey            - str | None (resolved from LLM_API_KEY env var first)
+        baseUrl           - non-empty endpoint base URL
+        defaultModel      - non-empty model name
+        timeoutSeconds    - positive int
+        numCtx            - positive int (Ollama context window; informational
+                            on OpenAI but still required for plumbing)
+        retries           - int >= 0
+
+    Optional fields (with documented defaults):
+        descriptions      - bool, default True
+        behaviourNames    - bool, default True
+        abbreviationsPath - str, default ""
+        customHeaders     - dict, default {}
+        apiKey            - str | None (env LLM_API_KEY wins)
         maxContextTokens  - int | None (null → auto-derived from numCtx/provider)
-        enrichment        - dict of feature toggles:
-            twoPassDescriptions (bool, default True)
-            selfReview          (bool, default False)
-            ensemble            (bool, default False)
-            cfgSimplification   (bool, default False)
-            variableEnrichment  (bool, default True)
-        cacheVersion      - int (bump to invalidate entity cache)
-        fewShotExamplesDir - str (path to few-shot examples directory)
+        enrichment        - dict of feature toggles (each must be a bool):
+            twoPassDescriptions (default True)
+            selfReview          (default False)
+            ensemble            (default False)
+            cfgSimplification   (default False)
+            variableEnrichment  (default True)
+        cacheVersion      - int >= 1 (bump to invalidate entity cache)
+        fewShotExamplesDir - str (default "few_shot_examples")
 
     Environment variables (override the matching config field if set):
         LLM_PROVIDER, LLM_BASE_URL, LLM_DEFAULT_MODEL,
         LLM_TIMEOUT_SECONDS, LLM_NUM_CTX, LLM_RETRIES, LLM_API_KEY
+
+    Raises
+    ------
+    LlmConfigError
+        If a required field is missing, empty, or not parseable.
     """
-    llm = (config or {}).get("llm") or {}
+    if not config or not isinstance(config, dict):
+        raise LlmConfigError("config.json is empty or not a JSON object")
 
-    def _env_or(key: str, default):
+    llm = config.get("llm")
+    if not isinstance(llm, dict) or not llm:
+        raise LlmConfigError("config.json has no 'llm' block")
+
+    def _env_or(key: str, fallback):
         v = os.environ.get(key)
-        return v if v is not None and v != "" else default
+        return v if v is not None and v != "" else fallback
 
-    provider = _env_or("LLM_PROVIDER", llm.get("provider") or "ollama")
-    base_url = _env_or("LLM_BASE_URL", llm.get("baseUrl") or "http://localhost:11434")
-    model = _env_or("LLM_DEFAULT_MODEL", llm.get("defaultModel") or "qwen2.5-coder:14b")
+    def _require_str(field: str, env_var: str) -> str:
+        raw = _env_or(env_var, llm.get(field))
+        if raw is None or str(raw).strip() == "":
+            raise LlmConfigError(
+                f"Missing required llm.{field} (or env {env_var}) in config.json"
+            )
+        return str(raw).strip()
+
+    def _require_pos_int(field: str, env_var: str) -> int:
+        raw = _env_or(env_var, llm.get(field))
+        if raw is None or raw == "":
+            raise LlmConfigError(
+                f"Missing required llm.{field} (or env {env_var}) in config.json"
+            )
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise LlmConfigError(
+                f"llm.{field} must be an integer (got {raw!r})"
+            )
+        if val <= 0:
+            raise LlmConfigError(
+                f"llm.{field} must be a positive integer (got {val})"
+            )
+        return val
+
+    # ── Required fields ──
+    provider = _require_str("provider", "LLM_PROVIDER").lower()
+    if provider not in ("ollama", "openai"):
+        raise LlmConfigError(
+            f"llm.provider must be 'ollama' or 'openai' (got {provider!r})"
+        )
+
+    base_url = _require_str("baseUrl", "LLM_BASE_URL").rstrip("/")
+    model = _require_str("defaultModel", "LLM_DEFAULT_MODEL")
+    timeout = _require_pos_int("timeoutSeconds", "LLM_TIMEOUT_SECONDS")
+    num_ctx = _require_pos_int("numCtx", "LLM_NUM_CTX")
+
+    # retries is required but allowed to be 0
+    retries_raw = _env_or("LLM_RETRIES", llm.get("retries"))
+    if retries_raw is None or retries_raw == "":
+        raise LlmConfigError(
+            "Missing required llm.retries (or env LLM_RETRIES) in config.json"
+        )
     try:
-        timeout = int(_env_or("LLM_TIMEOUT_SECONDS", llm.get("timeoutSeconds", 120)))
+        retries = int(retries_raw)
     except (TypeError, ValueError):
-        timeout = 120
-    try:
-        num_ctx = int(_env_or("LLM_NUM_CTX", llm.get("numCtx", 8192)))
-    except (TypeError, ValueError):
-        num_ctx = 8192
-    try:
-        retries = int(_env_or("LLM_RETRIES", llm.get("retries", 1)))
-    except (TypeError, ValueError):
-        retries = 1
+        raise LlmConfigError(
+            f"llm.retries must be an integer (got {retries_raw!r})"
+        )
+    if retries < 0:
+        raise LlmConfigError(
+            f"llm.retries must be >= 0 (got {retries})"
+        )
+
+    # ── Optional fields with strict-typed validation ──
     api_key = _env_or("LLM_API_KEY", llm.get("apiKey"))
+    api_key = str(api_key) if api_key else None
 
-    # maxContextTokens: null → auto-derived in budget.resolve_max_tokens()
-    max_ctx_raw = llm.get("maxContextTokens")
-    max_ctx = None
-    if max_ctx_raw is not None:
+    # maxContextTokens: null → auto-derived later via budget.resolve_max_tokens
+    max_ctx_raw = llm.get("maxContextTokens", None)
+    if max_ctx_raw is None:
+        max_ctx = None
+    else:
         try:
             max_ctx = int(max_ctx_raw)
         except (TypeError, ValueError):
-            pass
+            raise LlmConfigError(
+                f"llm.maxContextTokens must be null or an integer "
+                f"(got {max_ctx_raw!r})"
+            )
+        if max_ctx <= 0:
+            raise LlmConfigError(
+                f"llm.maxContextTokens must be positive (got {max_ctx})"
+            )
 
-    # enrichment sub-block — defaults favour cheap/safe options
-    enrich_raw = llm.get("enrichment") or {}
-    enrichment = {
-        "twoPassDescriptions": bool(enrich_raw.get("twoPassDescriptions", True)),
-        "selfReview": bool(enrich_raw.get("selfReview", False)),
-        "ensemble": bool(enrich_raw.get("ensemble", False)),
-        "cfgSimplification": bool(enrich_raw.get("cfgSimplification", False)),
-        "variableEnrichment": bool(enrich_raw.get("variableEnrichment", True)),
+    # enrichment: every flag must be a bool
+    enrich_raw = llm.get("enrichment", {}) or {}
+    if not isinstance(enrich_raw, dict):
+        raise LlmConfigError(
+            f"llm.enrichment must be an object (got {type(enrich_raw).__name__})"
+        )
+    _enrich_defaults = {
+        "twoPassDescriptions": True,
+        "selfReview": False,
+        "ensemble": False,
+        "cfgSimplification": False,
+        "variableEnrichment": True,
     }
+    enrichment: Dict[str, bool] = {}
+    for key, default in _enrich_defaults.items():
+        val = enrich_raw.get(key, default)
+        if not isinstance(val, bool):
+            raise LlmConfigError(
+                f"llm.enrichment.{key} must be true or false (got {val!r})"
+            )
+        enrichment[key] = val
 
-    cache_version = int(llm.get("cacheVersion", 1))
-    few_shot_dir = str(llm.get("fewShotExamplesDir", "few_shot_examples") or "few_shot_examples")
+    # cacheVersion
+    cache_v_raw = llm.get("cacheVersion", 1)
+    try:
+        cache_version = int(cache_v_raw)
+    except (TypeError, ValueError):
+        raise LlmConfigError(
+            f"llm.cacheVersion must be an integer (got {cache_v_raw!r})"
+        )
+    if cache_version < 1:
+        raise LlmConfigError(
+            f"llm.cacheVersion must be >= 1 (got {cache_version})"
+        )
+
+    few_shot_dir = llm.get("fewShotExamplesDir", "few_shot_examples")
+    if not isinstance(few_shot_dir, str) or not few_shot_dir.strip():
+        raise LlmConfigError(
+            f"llm.fewShotExamplesDir must be a non-empty string "
+            f"(got {few_shot_dir!r})"
+        )
+
+    descriptions = llm.get("descriptions", True)
+    if not isinstance(descriptions, bool):
+        raise LlmConfigError(
+            f"llm.descriptions must be true or false (got {descriptions!r})"
+        )
+    behaviour_names = llm.get("behaviourNames", True)
+    if not isinstance(behaviour_names, bool):
+        raise LlmConfigError(
+            f"llm.behaviourNames must be true or false (got {behaviour_names!r})"
+        )
+
+    custom_headers = llm.get("customHeaders", {}) or {}
+    if not isinstance(custom_headers, dict):
+        raise LlmConfigError(
+            f"llm.customHeaders must be an object (got {type(custom_headers).__name__})"
+        )
 
     return {
-        "provider": str(provider).lower(),
-        "baseUrl": str(base_url).rstrip("/"),
-        "defaultModel": str(model),
+        "provider": provider,
+        "baseUrl": base_url,
+        "defaultModel": model,
         "timeoutSeconds": timeout,
         "numCtx": num_ctx,
         "retries": retries,
-        "descriptions": bool(llm.get("descriptions", True)),
-        "behaviourNames": bool(llm.get("behaviourNames", True)),
+        "descriptions": descriptions,
+        "behaviourNames": behaviour_names,
         "abbreviationsPath": str(llm.get("abbreviationsPath", "") or ""),
-        "customHeaders": dict(llm.get("customHeaders") or {}),
-        "apiKey": str(api_key) if api_key else None,
+        "customHeaders": dict(custom_headers),
+        "apiKey": api_key,
         "maxContextTokens": max_ctx,
         "enrichment": enrichment,
         "cacheVersion": cache_version,
-        "fewShotExamplesDir": few_shot_dir,
+        "fewShotExamplesDir": few_shot_dir.strip(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Startup banner
+# ---------------------------------------------------------------------------
+
+def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
+    """Format a multi-line banner showing the resolved LLM config.
+
+    Used by run.py and flowchart_engine.py to print exactly which provider,
+    model, endpoint, and budgets the run is going to use. The point is to
+    eliminate "I thought it was X but it ran with Y" surprises.
+    """
+    # Lazy import to avoid an import cycle (budget imports nothing from core)
+    try:
+        from llm_core.budget import resolve_max_tokens
+        resolved_max = resolve_max_tokens(llm_cfg)
+    except Exception:  # pragma: no cover — defensive
+        resolved_max = None
+
+    enrichment = llm_cfg.get("enrichment", {}) or {}
+    flags_on = sorted(k for k, v in enrichment.items() if v)
+    flags_off = sorted(k for k, v in enrichment.items() if not v)
+
+    api_key_display = "set" if llm_cfg.get("apiKey") else "(none)"
+    max_ctx_raw = llm_cfg.get("maxContextTokens")
+    if max_ctx_raw is None:
+        max_ctx_display = f"auto -> {resolved_max}" if resolved_max else "auto"
+    else:
+        max_ctx_display = str(max_ctx_raw)
+
+    lines = [
+        "-" * 60,
+        "LLM configuration (will be used for this run)",
+        "-" * 60,
+        f"  provider          : {llm_cfg.get('provider')}",
+        f"  baseUrl           : {llm_cfg.get('baseUrl')}",
+        f"  defaultModel      : {llm_cfg.get('defaultModel')}",
+        f"  numCtx            : {llm_cfg.get('numCtx')}  "
+        f"({'used' if llm_cfg.get('provider') == 'ollama' else 'ignored on openai'})",
+        f"  maxContextTokens  : {max_ctx_display}",
+        f"  timeoutSeconds    : {llm_cfg.get('timeoutSeconds')}",
+        f"  retries           : {llm_cfg.get('retries')}",
+        f"  apiKey            : {api_key_display}",
+        f"  cacheVersion      : {llm_cfg.get('cacheVersion')}",
+        f"  fewShotExamplesDir: {llm_cfg.get('fewShotExamplesDir')}",
+        f"  descriptions      : {llm_cfg.get('descriptions')}",
+        f"  behaviourNames    : {llm_cfg.get('behaviourNames')}",
+        f"  enrichment ON     : {', '.join(flags_on) if flags_on else '(none)'}",
+        f"  enrichment OFF    : {', '.join(flags_off) if flags_off else '(none)'}",
+        "-" * 60,
+    ]
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

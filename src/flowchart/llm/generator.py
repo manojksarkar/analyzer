@@ -676,41 +676,33 @@ class LabelGenerator:
     def _fits_coherence_budget(self, prompt: str) -> bool:
         """Return True if *prompt* + system prompt fits the coherence budget.
 
-        Uses ContextBudget + TokenCounter when available; falls back to the
-        legacy char-based MAX_PROMPT_CHARS check if llm_core token counting
-        is not importable.
+        Uses the authoritative max_context_tokens threaded in from config
+        (`llm.maxContextTokens`, resolved once by the caller). No silent
+        defaults — callers that skip this parameter (e.g. standalone tests
+        that don't plumb config) fall back to the legacy char check.
         """
-        try:
-            from llm_core import TokenCounter, ContextBudget
-        except ImportError:
+        if not self._max_context_tokens:
             return len(self._COHERENCE_SYSTEM) + len(prompt) <= MAX_PROMPT_CHARS
 
-        # Prefer the resolved max_context_tokens (which honours
-        # config.llm.maxContextTokens for both providers). Fall back to the
-        # client's num_ctx for backwards compat with standalone invocations.
-        max_tokens = self._max_context_tokens
-        if not max_tokens:
-            max_tokens = int(getattr(self._client, "_num_ctx", 8192) or 8192)
-        try:
-            counter = TokenCounter(model=getattr(self._client, "_model", "") or "")
-            budget = ContextBudget(
-                max_tokens=max_tokens,
-                task="cfg_coherence",
-                counter=counter,
-            )
-            # Coherence pass caps input at system_prompt + all_labels +
-            # function_purpose + instructions. Anything above that leaves no
-            # room for the JSON output_reserve, so we skip the pass.
-            allowed = (
-                budget.allocate("system_prompt")
-                + budget.allocate("all_labels")
-                + budget.allocate("function_purpose")
-                + budget.allocate("instructions")
-            )
-            used = counter.count(self._COHERENCE_SYSTEM) + counter.count(prompt)
-            return used <= allowed
-        except Exception:
-            return len(self._COHERENCE_SYSTEM) + len(prompt) <= MAX_PROMPT_CHARS
+        from llm_core import TokenCounter, ContextBudget
+
+        counter = TokenCounter(model=self._client.model)
+        budget = ContextBudget(
+            max_tokens=self._max_context_tokens,
+            task="cfg_coherence",
+            counter=counter,
+        )
+        # Coherence pass caps input at system_prompt + all_labels +
+        # function_purpose + instructions. Anything above that leaves no
+        # room for the JSON output_reserve, so we skip the pass.
+        allowed = (
+            budget.allocate("system_prompt")
+            + budget.allocate("all_labels")
+            + budget.allocate("function_purpose")
+            + budget.allocate("instructions")
+        )
+        used = counter.count(self._COHERENCE_SYSTEM) + counter.count(prompt)
+        return used <= allowed
 
     # ------------------------------------------------------------------
     # Apply labels back to CFG nodes
