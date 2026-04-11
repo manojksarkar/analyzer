@@ -1,8 +1,14 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-04-09 (post version2 refactor — Batches 1-6 complete).
+> Updated: 2026-04-11 (version3 — LLM layer upgrade complete on top of version2).
+> Current active branch: `version3` (off `version2`, which is off `main`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
+>
+> Quick orientation:
+> - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
+> - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
+> - All pre-existing sections have been updated in place where version3 changed the behaviour.
 
 ---
 
@@ -100,6 +106,141 @@ returning nothing.
 
 ---
 
+## 4b. LLM layer upgrade (`version3` branch)
+
+Three commits on top of `version2` implement a full LLM upgrade plan. Original
+plan lives at `.claude/plans/zippy-riding-shell.md`. Shipped commits:
+
+| Commit | Title |
+|---|---|
+| `17f6636` | feat: LLM layer upgrade — budgeting, two-pass, cache, review, ensemble, CFG simplify |
+| `66cc98f` | fix: make maxContextTokens authoritative for coherence + simplify passes |
+| `4d10df6` | feat(config): strict LLM validation + startup banner |
+
+### Goals (why this exists)
+
+The version2 LLM layer shipped with hardcoded char caps (`MAX_PROMPT_CHARS=6000`,
+`CONTEXT_BUDGET=1200`), single-pass descriptions that never saw caller context,
+nearly-useless global-variable descriptions, no few-shot examples, no cache, no
+self-review, and no structured-output repair. On large models this wasted the
+context window; on small models prompts silently overflowed and returned empty.
+version3 rewrites the LLM subsystem around a token budget and a set of
+reusable helpers in `src/llm_core/`.
+
+### What was NOT adopted (explicit out-of-scope)
+
+- Tool-calling agentic loop (Ollama doesn't support it reliably).
+- YAML config migration (keep JSONC).
+- Full pipeline rewrite — still the same 4-phase subprocess architecture.
+
+### Batch matrix (what every phase delivered)
+
+| Phase | Delivered | Key files |
+|---|---|---|
+| **P1 — Foundation** | TokenCounter (tiktoken + char fallback), ContextBudget with `TASK_RATIOS`, `LlmClient.call()` multi-message API, config additions (`maxContextTokens`, `enrichment.*`, `fewShotExamplesDir`, `cacheVersion`) | `llm_core/token_counter.py`, `llm_core/budget.py`, `llm_core/client.py`, `core/config.py`, `config/config.json` |
+| **P2 — Context quality** | Degradation ladder (`ContextBuilder`), scoped `RepoMap` (neighborhood → file → module → project tiers), `get_rich_description()` with callees / callers / types / globals / siblings / repo-map, `get_rich_global_description()` for variables | `llm_core/context_builder.py`, `llm_core/repo_map.py`, `llm_enrichment.py` |
+| **P3 — Two-pass + few-shot** | Two-pass descriptions (Pass 1 bottom-up, Pass 2 refines with caller context), `FewShotPool` with keyword-overlap ranking, seed example directories (`few_shot_examples/{descriptions,labels,globals,behaviour_names}`) | `llm_core/few_shot.py`, `llm_enrichment.py`, `few_shot_examples/` |
+| **P4 — Cache + structured output** | `EntityCache` with composite hash keys (source + sorted callee hashes + version), `extract_and_validate()` (strip fences → extract JSON → repair → validate keys), `parse_label_response()` for flowchart batches | `llm_core/cache.py`, `llm_core/structured_output.py` |
+| **P5 — Self-review, ensemble, CFG simplify** | `self_review()` generate→review→revise (≥20-line functions), `ensemble_generate()` for unit/module summaries (3 temperatures + synthesis), LLM-guided CFG simplification (merge linear ACTION chains + drop single-in/single-out), strengthened coherence prompt | `llm_core/review.py`, `llm_enrichment.py`, `flowchart/llm/generator.py` |
+| **Follow-up — strict config + banner** | `LlmConfigError`, strict validation of every required and optional llm field, `format_llm_config_banner()` displayed at the start of every subprocess, removal of `getattr(client, "_num_ctx", 8192)` style hardcoded fallbacks, `LlmClient.num_ctx` property | `core/config.py`, `run.py`, `flowchart/flowchart_engine.py` |
+
+### `llm.enrichment` flag semantics
+
+Every feature ships gated behind `config.llm.enrichment.<flag>`:
+
+| Flag | Default | What it does | Cost multiplier |
+|---|---|---|---|
+| `twoPassDescriptions` | `true` | Pass 2 refines function descriptions using caller context from Pass 1 | 2x descriptions |
+| `selfReview` | `false` | generate → review → revise for function descriptions (≥20 non-blank lines) and high-visibility summaries | 3x on reviewed items |
+| `ensemble` | `false` | 3 temperatures + synthesis call for unit / module summaries | 4x on synthesized items |
+| `cfgSimplification` | `false` | LLM proposes merge/drop plan for CFGs with >15 nodes; only linear chains + single-in/single-out drops are applied, decisions/loops/returns are never touched | 1 extra call per large CFG |
+| `variableEnrichment` | `true` | Rich global-variable descriptions (write-site + read-site evidence vs. the old one-line declaration) | — |
+
+The defaults trade conservative cost for quality on the features that most
+affect DOCX output (`twoPassDescriptions`, `variableEnrichment`). The expensive
+features (`selfReview`, `ensemble`, `cfgSimplification`) are **opt-in** — set
+them in `config/config.json` or `config.local.json`.
+
+### Token budgeting — `ContextBudget` + `TASK_RATIOS`
+
+One config knob (`maxContextTokens`) now scales every prompt allocation.
+[src/llm_core/budget.py](src/llm_core/budget.py) defines `TASK_RATIOS` — a
+dict of per-task section ratios summing to ~1.0 — for:
+
+- `function_description`, `function_description_refined`
+- `variable_description`, `behaviour_names`
+- `function_summary`, `file_summary`, `module_summary`, `project_summary`
+- `cfg_node_labeling`, `cfg_coherence`, `cfg_simplification`
+- `self_review`, `ensemble_synthesis`
+
+`ContextBudget(max_tokens, task, counter)` reserves a 10 % safety margin then
+hands each named section (`system_prompt`, `few_shot`, `callees`, …) its
+absolute token budget. Callers feed content through `ContextBuilder` /
+`RepoMap` / `FewShotPool` which return text sized to fit the section budget.
+
+`resolve_max_tokens(llm_cfg)` derives `max_context_tokens`:
+1. Explicit `llm.maxContextTokens` in config → used as-is.
+2. Otherwise `openai` → 127488 (~128K − 512 reserve).
+3. Otherwise `ollama` → `numCtx − 512`.
+
+No silent default for `provider` or `numCtx` any more — the field must be
+validated first by `load_llm_config()`.
+
+### Strict config + startup banner (why runs are now self-documenting)
+
+`core.config.load_llm_config()` raises **`LlmConfigError`** with the exact
+failing field name when any required field is missing / empty / wrong type:
+`provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`, `retries`.
+Optional fields (`enrichment.*`, `descriptions`, `behaviourNames`,
+`maxContextTokens`, `cacheVersion`, `fewShotExamplesDir`, `customHeaders`)
+are type-checked the same way. `provider` is restricted to
+`"ollama"`|`"openai"`.
+
+`core.config.format_llm_config_banner(llm_cfg)` returns a multi-line summary.
+Both [run.py](run.py) and [src/flowchart/flowchart_engine.py](src/flowchart/flowchart_engine.py)
+print it at the top of every run so the user sees exactly which
+provider / baseUrl / model / `numCtx` / `maxContextTokens` (resolved, e.g.
+`auto -> 7680`) / timeout / retries / enrichment flags are active:
+
+```
+------------------------------------------------------------
+LLM configuration (will be used for this run)
+------------------------------------------------------------
+  provider          : ollama
+  baseUrl           : http://localhost:11434
+  defaultModel      : qwen2.5-coder:14b
+  numCtx            : 8192  (used)
+  maxContextTokens  : auto -> 7680
+  timeoutSeconds    : 120
+  retries           : 1
+  apiKey            : (none)
+  cacheVersion      : 1
+  fewShotExamplesDir: few_shot_examples
+  descriptions      : False
+  behaviourNames    : False
+  enrichment ON     : twoPassDescriptions, variableEnrichment
+  enrichment OFF    : cfgSimplification, ensemble, selfReview
+------------------------------------------------------------
+```
+
+The banner is ASCII-only — `─` and `→` were removed because Windows cp1252
+stderr choked on the Unicode characters.
+
+### Quality impact ranking (original plan — for reference)
+
+1. Richer description prompts (get_rich_description) — biggest DOCX impact
+2. Two-pass descriptions — fixes the biggest blind spot (no caller context)
+3. Degradation ladder — stops silently dropping callees
+4. Variable enrichment — global descriptions go from useless to useful
+5. Few-shot examples — teaches output style, helps weaker models
+6. CFG simplification — complex flowcharts become readable
+7. Scoped repo map — reduces hallucinated symbols
+8. Self-review — polish for high-visibility descriptions
+9. Entity cache — productivity (10× faster re-runs), no quality impact
+10. Structured output — robustness (fewer fallback labels)
+
+---
+
 ## 5. CLI — `run.py`
 
 ### Syntax
@@ -137,14 +278,26 @@ historical bugs are guarded against here:
 
 After parsing flags, run.py:
 
-1. Validates `<project_path>` exists.
-2. If `--use-model` is set, verifies `model/functions.json`, `globalVariables.json`,
+1. Loads `config/config.json` (+ `config.local.json`) via `load_config`.
+2. **Resolves the LLM block strictly via `load_llm_config(cfg)`** and prints the
+   `format_llm_config_banner` to the log so the operator sees exactly which
+   provider, baseUrl, model, `numCtx`, resolved `maxContextTokens`, retries,
+   cache version, and enrichment flags will be used. If the LLM block is
+   missing, malformed, or has an invalid value, `LlmConfigError` is raised and
+   `run.py` exits with code 2 — there are no silent defaults. (See §17 design
+   decision "Fail loud on config errors".)
+3. Validates `<project_path>` exists.
+4. If `--use-model` is set, verifies `model/functions.json`, `globalVariables.json`,
    `units.json`, and `modules.json` are all present (paths via
    `core.model_io.model_file_path`). Exits 2 if missing.
-3. Calls [core.group_planner.plan_runs(...)](src/core/group_planner.py) which
+5. Calls [core.group_planner.plan_runs(...)](src/core/group_planner.py) which
    returns a flat `List[RunPlan]`.
-4. Iterates the plans through a single [PhaseRunner](src/core/orchestration.py)
+6. Iterates the plans through a single [PhaseRunner](src/core/orchestration.py)
    instance. Each plan corresponds to one `runner.run(plan.phases, from_phase=plan.runner_from_phase)` call.
+
+The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
+(flowchart engine) starts, because that engine can be invoked standalone — see
+§13.
 
 ### Three dispatch shapes (collapsed inside `plan_runs`)
 
@@ -183,17 +336,36 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     "clangArgs":         []
   },
   "llm": {
-    "descriptions":      false,
-    "behaviourNames":    false,
-    "provider":          "ollama",        // "ollama" | "openai"
+    // ── required fields — load_llm_config raises LlmConfigError if missing ──
+    "provider":          "ollama",        // "ollama" | "openai"  (strictly validated)
     "baseUrl":           "http://localhost:11434",
     "defaultModel":      "qwen2.5-coder:14b",
-    "timeoutSeconds":    120,
-    "numCtx":            8192,             // Ollama context window
-    "retries":           1,                // up to (1 + retries) total tries
+    "timeoutSeconds":    120,              // positive int
+    "numCtx":            8192,             // Ollama context window (positive int)
+    "retries":           1,                // >=0; up to (1+retries) total tries
+
+    // ── optional fields ──
+    "descriptions":      false,            // enable LLM function descriptions (Phase 2)
+    "behaviourNames":    false,            // enable LLM behaviour input/output names
     "abbreviationsPath": "config/abbreviations.txt",
     "apiKey":            "",               // openai bearer; prefer env LLM_API_KEY
-    "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... }
+    "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
+
+    // version3 — token budgeting
+    // null → auto: numCtx-512 for Ollama, 127488 for OpenAI
+    // int  → explicit override (e.g. 16000 for Ollama 16K, 120000 for GPT-4o)
+    "maxContextTokens":  null,
+    "cacheVersion":      1,                // bump to invalidate llm entity cache
+    "fewShotExamplesDir": "few_shot_examples",
+
+    // version3 — enrichment feature flags (every flag must be a bool)
+    "enrichment": {
+      "twoPassDescriptions": true,   // Pass 2 refines with caller context   (2x desc cost)
+      "selfReview":          false,  // generate→review→revise (≥20-line fns) (3x cost)
+      "ensemble":            false,  // 3 temps + synthesis for unit/module summaries (4x cost)
+      "cfgSimplification":   false,  // LLM proposes merge/drop plan for >15-node CFGs
+      "variableEnrichment":  true    // rich global-variable descriptions
+    }
   },
   "modulesGroups": {
     "core":    { "core":    ["app", "math"] },
@@ -236,6 +408,15 @@ Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 - LLM is off by default for descriptions/behaviour names. Phase 2 hierarchy
   summarization (which writes `summaries.json` + `knowledge_base.json`) is
   on by default and is controlled by `--no-llm-summarize`.
+- **Strict validation** (version3): missing/empty/wrong-type required fields
+  cause `run.py` (and `flowchart_engine.py`) to print `Invalid LLM config:
+  <specific field>` and exit(2). There are no silent defaults for the required
+  fields. Fix the JSON (or the matching env var) and re-run.
+- **Startup banner** (version3): every run prints the resolved LLM
+  configuration — provider, baseUrl, model, numCtx, `maxContextTokens`
+  (resolved, e.g. `auto -> 7680`), timeout, retries, apiKey status,
+  `cacheVersion`, `fewShotExamplesDir`, and which enrichment flags are ON/OFF.
+  See §4b for an example.
 
 ---
 
@@ -341,18 +522,48 @@ Re-exports every public symbol so call sites can write
 
 ---
 
-## 8. `src/llm_core/` — unified LLM client
+## 8. `src/llm_core/` — unified LLM client + token-budget toolkit
 
-Five files. The whole point: there is **one** LLM client class in the project.
+Post-version3, `src/llm_core/` is a full toolkit: one HTTP client plus a set of
+composable helpers (counter, budget, context builder, repo map, few-shot,
+cache, structured output, review). Everything LLM-related in the project
+flows through this layer.
+
+```
+src/llm_core/
+  client.py              LlmClient + from_config — single HTTP client (ollama + openai)
+  headers.py             build_openai_headers + resolve_api_key
+  think.py               strip_think_section
+  tokens.py              process-wide token usage counter (record + format_report)
+  token_counter.py       TokenCounter (tiktoken wrapper + char/3.5 fallback) — version3
+  budget.py              ContextBudget + TASK_RATIOS + resolve_max_tokens      — version3
+  context_builder.py     ContextBuilder — callee/caller/types degradation ladder — version3
+  repo_map.py            RepoMap — scoped repo signature view (4 tiers)          — version3
+  few_shot.py            FewShotPool — keyword-ranked example selection          — version3
+  cache.py               EntityCache — composite-hash disk cache                 — version3
+  structured_output.py   extract_and_validate + parse_label_response             — version3
+  review.py              self_review + ensemble_generate                        — version3
+```
+
+Public API re-exported from `llm_core.__init__`:
+`LlmClient`, `from_config`, `strip_think_section`, `tokens`,
+`TokenCounter`, `get_counter`, `ContextBudget`, `resolve_max_tokens`,
+`extract_and_validate`, `parse_label_response`, `self_review`,
+`ensemble_generate`.
 
 ### `llm_core.client.LlmClient` — [src/llm_core/client.py](src/llm_core/client.py)
 
-Two providers behind one `generate(system_prompt, user_prompt)` method:
+Two providers behind one interface:
 
-| Provider | Endpoint | Auth |
+| Provider | Endpoint (single-call / chat) | Auth |
 |---|---|---|
-| `ollama` | `POST {baseUrl}/api/generate` | none |
+| `ollama` | `POST {baseUrl}/api/generate` and `/api/chat` | none |
 | `openai` | `POST {baseUrl}/chat/completions` | bearer + custom headers |
+
+Two public call methods:
+- `generate(system_prompt, user_prompt)` — simple system+user pair.
+- `call(messages, *, temperature=None)` (version3) — multi-message chat API
+  with per-call temperature override. Backing for ensemble + self-review.
 
 Shared pipeline:
 1. **Retry loop** — `max_retries+1` total tries, retries on Timeout /
@@ -366,27 +577,161 @@ Hard rules baked in for the OpenAI route:
 - Every OpenAI call is followed by `time.sleep(3.0)` (`_OPENAI_RATE_LIMIT_SEC`)
   even on failure, because the corporate gateway throttles ~1 req/3s.
 
+Public properties (version3 adds `num_ctx`):
+`client.provider`, `client.model`, `client.num_ctx` — prefer these over
+poking `_provider` / `_model` / `_num_ctx`.
+
 `from_config(llm_cfg)` builds an `LlmClient` from a `load_llm_config()` dict.
+Legacy positional args (`url=`, `use_openai_format=`) still accepted so the
+flowchart engine's standalone subprocess invocation keeps working.
 
-Legacy positional args (`url=`, `use_openai_format=`) are still accepted so
-the flowchart engine's standalone subprocess invocation keeps working.
+### `llm_core.headers`, `llm_core.think`, `llm_core.tokens`
 
-### `llm_core.headers` — `build_openai_headers`, `resolve_api_key`
+- `headers` — `build_openai_headers`, `resolve_api_key`. Resolves `LLM_API_KEY`
+  env var first, falls back to `llm.apiKey`. Handles the corporate-gateway
+  custom-header format and `X_DEP_TICKET`/`USER_TYPE`/`USER_ID`/`SEND_SYSTEM_NAME`
+  env overrides.
+- `think.strip_think_section(text)` — removes `<think>...</think>` sections
+  (gpt-oss / DeepSeek R1 style) so downstream consumers see just the answer.
+- `tokens.record(provider, model, prompt, completion)` + `format_report()` —
+  process-wide counter dumped automatically by the logging atexit hook so
+  each subprocess writes its own report into `logs/run_YYYYMMDD.log`.
 
-Resolves `LLM_API_KEY` env var first, falls back to `llm.apiKey`. Handles
-the corporate-gateway custom-header format and `X_DEP_TICKET`/`USER_TYPE`/
-`USER_ID`/`SEND_SYSTEM_NAME` env overrides.
+### `llm_core.token_counter.TokenCounter` (version3)
 
-### `llm_core.think` — `strip_think_section(text)`
+Thin wrapper around `tiktoken.get_encoding("cl100k_base")` when tiktoken is
+installed, otherwise falls back to `len(text) / 3.5` (C++ code tokenizes at
+roughly 2–3 chars/token, so 3.5 is conservative).
 
-Removes `<think>...</think>` sections (used by `gpt-oss` / DeepSeek R1 style
-models) so downstream consumers see just the answer.
+```python
+counter = TokenCounter(model="qwen2.5-coder:14b")
+counter.count(text)                          # int
+counter.fits(text, budget)                   # bool
+counter.truncate_to_budget(text, budget)     # str — binary-search by token count
+```
 
-### `llm_core.tokens` — `record(provider, model, prompt, completion)`,
-`format_report()`
+Module-level `get_counter(model)` caches one instance per model.
 
-Process-wide counter. Dumped automatically by the logging atexit hook so each
-subprocess writes its own report into `logs/run_YYYYMMDD.log`.
+### `llm_core.budget.ContextBudget` + `TASK_RATIOS` + `resolve_max_tokens` (version3)
+
+See §4b for the full story. Summary:
+
+- `TASK_RATIOS: Dict[str, Dict[str, float]]` — per-task section ratios
+  (sum to ~1.0, enforced by assertion). Tasks include `function_description`,
+  `function_description_refined`, `variable_description`, `behaviour_names`,
+  `function_summary`, `file_summary`, `module_summary`, `project_summary`,
+  `cfg_node_labeling`, `cfg_coherence`, `cfg_simplification`, `self_review`,
+  `ensemble_synthesis`.
+- `ContextBudget(max_tokens, task, counter)` — holds a 10 % safety margin;
+  `.allocate(section)` returns the section's token budget.
+- `resolve_max_tokens(llm_cfg)` — priority: explicit `maxContextTokens` →
+  `numCtx − 512` (ollama) → 127488 (openai). Expects a validated llm_cfg —
+  no silent default for `provider` or `numCtx` any more.
+
+### `llm_core.context_builder.ContextBuilder` (version3)
+
+Degradation ladder: prefers breadth over depth. Starts every callee / caller /
+type at Level 0 (full source + description), and when the total exceeds the
+budget it promotes the lowest-priority items one level at a time until it
+fits. Levels:
+
+```
+Level 0: Full source + description
+Level 1: Signature + 3-line description
+Level 2: Signature + 1-line purpose
+Level 3: Signature only
+Level 4: Qualified name only
+```
+
+Public methods: `fit_callees(callees, budget)`, `fit_callers(callers, budget)`,
+`fit_types(types, budget)`. Priority ranking is by call-site count,
+public/exported status, and usage frequency in the target function.
+
+### `llm_core.repo_map.RepoMap` (version3)
+
+Compact signature-level view built from `knowledge_base.json` (no extra
+parsing). Four tiers tried from most-specific to most-general until one fits
+the budget:
+
+1. Function neighborhood — callees + callers + same-file functions
+2. File level — all functions in the same file with signatures
+3. Module level — all files in the module with function counts
+4. Project level — module names with file counts
+
+```python
+RepoMap(knowledge).for_function(qn, budget, counter) -> str
+```
+
+Injected as a new section in both `pkb/builder.build_base_context_packet()`
+(for flowchart labels) and `llm_enrichment.get_rich_description()` (for
+function descriptions).
+
+### `llm_core.few_shot.FewShotPool` (version3)
+
+Loads hand-curated examples from
+`few_shot_examples/{descriptions,labels,globals,behaviour_names}/*.json`.
+Each example: `{"tags": [...], "input_context": "...", "ideal_output": "..."}`.
+
+```python
+FewShotPool(examples_dir).select(task, target_input, budget, counter) -> str
+```
+
+Ranking: keyword overlap (callee names, param types, tags). Budget-aware
+greedy fill. Returns `""` if the directory is missing or empty — that is the
+supported off-path, not an error.
+
+### `llm_core.cache.EntityCache` (version3)
+
+Per-entity disk cache with composite hash keys. Stored at
+`.flowchart_cache/llm_descriptions/` (or whatever `cache_dir` the caller
+passes).
+
+```python
+EntityCache(cache_dir, cache_version)
+  .get(entity_id, content_hash) -> Optional[dict]
+  .put(entity_id, content_hash, value, metadata=None)
+  .stats() -> "N hits, M misses, X% hit rate"
+```
+
+Cache key = `sha256(entity_source + sorted_callee_hashes + str(cache_version))[:16]`.
+
+Dependency tracking is implicit: when function A's source changes, its hash
+changes, so its cache misses. When A's callee B changes, B's hash changes,
+so A's composite hash (which includes B's hash) also changes, causing A to
+miss too. Bumping `llm.cacheVersion` invalidates everything.
+
+### `llm_core.structured_output.extract_and_validate` (version3)
+
+```python
+extract_and_validate(raw_response, expected_keys=None) -> Optional[Dict]
+```
+
+Robust JSON extraction + repair + schema validation in one function. Handles
+markdown fences, trailing commas, single quotes, explanatory text around JSON,
+and missing closing braces. Replaces the old ad-hoc `_extract_json()` in
+`flowchart/llm/generator.py` and ad-hoc parsing paths in `llm_enrichment.py`.
+
+`parse_label_response(raw)` is the flowchart-specific helper that extracts
+a `{node_id: label}` dict from an LLM reply.
+
+### `llm_core.review` — `self_review`, `ensemble_generate` (version3)
+
+```python
+self_review(client, draft, evidence) -> str
+ensemble_generate(client, system, user, temperatures=[0.0, 0.3, 0.7]) -> str
+```
+
+- `self_review` — generate → review → revise cycle. Review prompt asks
+  "is this accurate? does it miss behaviours? are side effects listed?".
+  Returns an issues list or "OK"; revision happens only if issues are found.
+  3 LLM calls worst case. Applied to function descriptions (≥20 non-blank
+  lines) and high-visibility summaries when `llm.enrichment.selfReview=true`.
+- `ensemble_generate` — 3 temperatures + synthesis call (4 total). Only
+  applied to unit / module / project summaries when
+  `llm.enrichment.ensemble=true`. Scales to ~80 extra calls for a
+  ~20-module project.
+
+Both helpers use `extract_and_validate` when parsing verdicts.
 
 ---
 
@@ -595,14 +940,42 @@ read/written, return type, return expression, draft input/output names, and
 abbreviations. The unified `LlmClient` runs the request through the
 appropriate provider.
 
-### `_enrich_from_llm`
+### `_enrich_from_llm` (version3 — rich path)
 
 When `config.llm.descriptions: true`:
-- `enrich_functions_with_descriptions` processes functions **bottom-up**
-  through the call graph (callees first), so each prompt can include the
-  callees' descriptions as context.
-- `enrich_globals_with_descriptions` processes globals sequentially.
-- A `ProgressReporter` reports `[idx/total]` progress.
+
+1. Tries to load `model/knowledge_base.json` (may not exist on first run —
+   the rich path still works, just without repo-map / sibling context).
+2. Calls **`enrich_functions_rich(functions_data, base_path, config, knowledge=…)`**
+   from [src/llm_enrichment.py](src/llm_enrichment.py) — the version3
+   budget-aware function enrichment path. It:
+   - Resolves `max_context_tokens` via `resolve_max_tokens(llm_cfg)`.
+   - Builds `ContextBuilder`, `RepoMap`, `FewShotPool`, `EntityCache`.
+   - Topologically orders functions (callees first) and skips any that
+     already have a source `comment`.
+   - **Pass 1 (always)** — bottom-up. Each function sees callee descriptions
+     built at this pass. Uses `get_rich_description()` with budget-allocated
+     sections: repo_map, function source, callees, types/globals, siblings,
+     few_shot, abbreviations.
+   - **Pass 2 (when `enrichment.twoPassDescriptions=true`, default true)** —
+     re-runs in the same order. Now both callee AND caller descriptions from
+     Pass 1 are available. Uses `_get_refined_description()` which compares
+     the prior description against caller context.
+   - **Self-review (when `enrichment.selfReview=true`)** — for functions with
+     ≥20 non-blank lines, runs `_run_self_review()` which wraps
+     `llm_core.review.self_review(client, draft, evidence)`. 3 LLM calls
+     worst case per reviewed function.
+   - Every result goes into `EntityCache` keyed on
+     `sha256(source + sorted_callee_hashes + cache_version)[:16]`. Re-runs
+     are 10× faster because unchanged functions (and functions whose callees
+     are unchanged) hit the cache.
+3. Calls **`enrich_globals_rich(...)`** when `enrichment.variableEnrichment=true`
+   (default true). This replaces the old one-line declaration prompt with
+   rich evidence: declaration + write-site 2–3-line snippets + read-site
+   snippets + containing-file summary + related functions. Falls back to
+   `enrich_globals_with_descriptions` (the old version2 path) when
+   `variableEnrichment=false`.
+4. A `ProgressReporter` reports `[idx/total]` progress for every pass.
 
 ### `_enrich_with_hierarchy_summaries`
 
@@ -847,7 +1220,22 @@ src/flowchart/
    `tests/diagnose_assert.py`** — the linter has previously reverted this fix.
 6. **Enrichment** — `NodeEnricher.enrich(cfg, func_entry)` attaches PKB
    context (callee descriptions, type meanings, project-knowledge comments).
-7. **LLM labeling** — `LabelGenerator.label_cfg(cfg, func_entry, source, base)`
+7. **Optional CFG simplification** (version3) — if
+   `llm.enrichment.cfgSimplification=true` and the CFG has >15 labelable
+   nodes, `LabelGenerator._simplify_cfg()` asks the LLM for a merge/drop
+   plan: `{"merge": [["N3","N4"], ["N7","N8","N9"]], "drop": ["N12"]}`.
+   Safety constraints enforced AFTER the LLM replies (regardless of what it
+   proposed):
+   - Only merges **strict linear chains**: each inner node has exactly one
+     predecessor (= its prev-in-group) and one successor (= its next-in-group).
+     `_is_linear_chain()` verifies this on the live `cfg.edges`.
+   - Only drops nodes with one incoming and one outgoing edge
+     (`_has_single_in_single_out`). Merges are capped at 2–4 nodes per group.
+   - Only touches `NodeType.ACTION` — decisions, loops, switches, returns,
+     breaks, continues, and case nodes are never offered to the LLM and
+     never mutated.
+   - Uses `extract_and_validate()` to parse the JSON plan.
+8. **LLM labeling** — `LabelGenerator.label_cfg(cfg, func_entry, source, base)`
    batches up to `BATCH_SIZE=4` nodes per LLM call. Two failure modes are
    handled differently:
    - Empty response (`raw=None`, prompt > num_ctx) → retry **without** any
@@ -856,18 +1244,51 @@ src/flowchart/
      model's actual context window without manual tuning.
    - Bad JSON / missing nodes → append a targeted retry note with the failing
      `node_id`s so the LLM can correct precisely.
-   `MAX_PROMPT_CHARS=6000` (~1500 tokens) is the hard cap.
-8. **Validation** — `validate_cfg(cfg)` then `validate_mermaid(script)`.
-   Failures are logged at WARNING but don't abort the run.
-9. **Build Mermaid** — `build_mermaid(cfg)`.
+   Version3: JSON parsing routes through `llm_core.structured_output.parse_label_response()`
+   which handles markdown fences, trailing commas, single quotes, and
+   partial/missing braces — significantly fewer fallback labels than the
+   version2 ad-hoc `_extract_json()` path. `MAX_PROMPT_CHARS=6000` stays as
+   a legacy-standalone fallback only; the coherence pass now sizes via
+   `ContextBudget(task="cfg_coherence")` when `max_context_tokens` is
+   threaded in (it is, from `flowchart_engine.py`).
+9. **Coherence pass** — `_coherence_pass()` normalises terminology and
+   phrasing across all labels in one LLM call. Version3: prompt strengthened
+   (inconsistent terminology, passive voice, too-literal vs. too-abstract
+   labels, decision nodes without "?"). Sized via
+   `_fits_coherence_budget()` using the authoritative
+   `self._max_context_tokens` — no more `getattr(client, "_num_ctx", 8192)`
+   fallback.
+10. **Validation** — `validate_cfg(cfg)` then `validate_mermaid(script)`.
+    Failures are logged at WARNING but don't abort the run.
+11. **Build Mermaid** — `build_mermaid(cfg)`.
 
-### LLM client construction (`_build_llm_client`)
+### LLM client construction + banner + enrichment config (version3)
 
-Walks `cwd` and one parent for `config/config.json`. If found, uses
-`utils.load_config + load_llm_config + llm_core.client.from_config` so the
-analyzer's provider, custom headers, retries, and API key all flow through.
-Falls back to a legacy Ollama-only positional constructor when running
-standalone outside the analyzer tree.
+At the top of `run()`, [src/flowchart/flowchart_engine.py](src/flowchart/flowchart_engine.py)
+calls `_load_analyzer_llm_config()` which walks `cwd` and one parent for
+`config/config.json`, loads it with `utils.load_config`, then resolves it
+strictly with `utils.load_llm_config` (raising `LlmConfigError` with the
+specific failing field on any invalid input). The resolved llm_cfg is
+displayed via `format_llm_config_banner()` before any real work begins, so
+the subprocess is self-documenting.
+
+`_build_llm_client(config, llm_cfg_resolved)` then builds the `LlmClient`:
+- When the analyzer config is reachable: `llm_core.client.from_config(llm_cfg)` —
+  provider, custom headers, retries, and API key all flow through. CLI
+  `--llm-num-ctx` still wins if it is explicitly larger than the config
+  value (useful for one-off standalone invocations).
+- When running outside the analyzer tree: falls back to the legacy
+  positional constructor (Ollama only, backwards compatible).
+
+The `LabelGenerator` is constructed with two version3 parameters threaded
+from the resolved config:
+- `enrichment_config=llm_cfg["enrichment"]` — feature flags.
+- `max_context_tokens=resolve_max_tokens(llm_cfg)` — authoritative
+  budget used by the coherence pass and CFG simplification pass. This
+  replaces the old `getattr(client, "_num_ctx", 8192)` fallback.
+
+A log line `Coherence/simplify budget = N tokens (provider=…)` is printed
+right after the banner.
 
 ### PKB caching
 
@@ -1174,6 +1595,33 @@ engine.
 `//`, `/* */`, and trailing commas are accepted. The strippers live in
 `core.config` and operate before `json.loads`.
 
+### Fail loud on config errors (version3)
+
+The version2 LLM config path silently defaulted missing fields (e.g.
+`.get("provider", "ollama")`, `.get("numCtx", 8192)`). Debugging the
+difference between "what config says" and "what's actually used" wasted
+enough time that version3 replaced every silent default with a
+`LlmConfigError` that names the failing field. If a user wants a different
+provider/model/budget they must put it in the config — the tool will not
+guess. The startup banner exists so the user can verify which values were
+actually read before the long-running pipeline starts. See §4b.
+
+### One token budget, many sections (version3)
+
+Every LLM call in the project derives its section limits from one knob
+(`llm.maxContextTokens`) via `ContextBudget(task, …)` + `TASK_RATIOS`.
+Adding a new LLM task type means adding an entry in `TASK_RATIOS` — no
+other code changes. Section ratios must sum to ~1.0 (enforced by assertion).
+
+### Enrichment features are individually gated (version3)
+
+Every enrichment feature (`twoPassDescriptions`, `selfReview`, `ensemble`,
+`cfgSimplification`, `variableEnrichment`) can be turned on or off
+independently via `llm.enrichment.*`. Defaults favour the cheapest safe
+option: the two features with the biggest quality payoff for DOCX output
+(`twoPassDescriptions`, `variableEnrichment`) are ON; the expensive ones
+are OFF. Users opt into cost by flipping the flag.
+
 ---
 
 ## 18. Past mistakes / lessons learned
@@ -1228,6 +1676,35 @@ Earlier docs referenced `InterfaceTables`, `Flowcharts`, `BehaviourDiagram`,
 (matching the test fixture). When validating CLI behaviour, always check
 which config is active before quoting group names.
 
+### Do not reach into private `_attrs` on `LlmClient` (version3)
+
+The coherence pass used to have
+`int(getattr(self._client, "_num_ctx", 8192) or 8192)` as a fallback. That
+kind of access is indistinguishable from a hardcode — the config file could
+say 32000 and the pass would still silently use 8192 if anything upstream
+misreferenced the attribute. Fix: threaded `max_context_tokens` down from
+the caller via a constructor parameter, added `LlmClient.num_ctx` as a
+public property, and removed every `getattr(client, "_*", default)`. If a
+new LLM helper needs to know a budget, take it as a parameter — do not
+peek.
+
+### Windows cp1252 stderr kills Unicode box-drawing (version3)
+
+The first version of `format_llm_config_banner()` used `─` (U+2500) and
+`→` (U+2192) and crashed on Windows because Python's stderr defaults to
+cp1252. Fixed by switching to ASCII `-` and `->`. Rule of thumb: if text
+may be printed to stderr on Windows without a deliberate UTF-8 setup, keep
+it to ASCII.
+
+### Shell heredocs fail under Git Bash on Windows (ongoing)
+
+Multi-line `python -c "…"` with indented code hits
+`IndentationError: unexpected indent` because `bash.exe` (Git Bash) on
+Windows does weird things to newlines inside double-quoted strings. When
+you need a multi-line Python snippet, write a temp `.py` file and run it,
+or use a single expression with `;` separators. Do not try to fix heredocs
+on this machine — it's a known loss.
+
 ---
 
 ## 19. Dependencies
@@ -1260,6 +1737,12 @@ python run.py --selected-group core test_cpp_project
    `from_phase = 1`, `use_model = False`, `no_llm_summarize = False`.
 3. **`load_config(SCRIPT_DIR)`** (re-exported from `core.config`) — reads
    JSONC, merges `config.local.json` if present.
+3a. **`load_llm_config(cfg)` + banner** — strictly validates the `llm` block
+   (required: `provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`,
+   `retries`; type-checked enrichment toggles; env-var overrides). Renders
+   `format_llm_config_banner` and writes it to the log so the run begins with a
+   visible record of which provider/model/budget will be used. On any
+   validation failure → `LlmConfigError` → exit 2 (no silent defaults).
 4. **`plan_runs(cfg, …)`** — sees `modulesGroups` is set and a single
    `selected_group`. Returns two plans:
    - Plan 1: "Build model (all modules)" → `[parser.py, model_deriver.py --llm-summarize]`
