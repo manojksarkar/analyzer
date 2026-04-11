@@ -120,12 +120,17 @@ def configure_logging(
 
 
 def _emit_token_report() -> None:
-    """At-exit hook: dump LLM token usage so each subprocess records its own."""
+    """At-exit hook: dump LLM token usage so each subprocess records its own.
+
+    `format_report()` already starts its output with "LLM token usage:" and
+    returns an empty string when nothing was recorded, so subprocesses that
+    never made an LLM call (e.g. run.py orchestrator, parser.py) stay silent.
+    """
     try:
         from llm_core import tokens as _tok
         report = _tok.format_report()
         if report and report.strip():
-            logging.getLogger("tokens").info("LLM token usage:\n" + report)
+            logging.getLogger("tokens").info(report)
     except Exception:
         pass
 

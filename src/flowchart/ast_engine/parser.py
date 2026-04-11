@@ -93,7 +93,21 @@ class TranslationUnitParser:
         self._tu_cache: Dict[str, ci.TranslationUnit] = {}
 
     def _build_args(self) -> List[str]:
-        return [f"-std={self._std}", "-x", "c++"] + self._extra_args
+        # Pull the shared default macro defines from core.config so this
+        # re-parser inherits the same `-DPUBLIC=`, `-DPROTECTED=`, etc. that
+        # Phase 1's parser uses. Without these, libclang reports
+        # "unknown type name 'PUBLIC'" warnings on every project that hides
+        # visibility behind macros, and the resulting AST is incomplete.
+        try:
+            from core.config import default_clang_macro_defs
+            macro_defs = default_clang_macro_defs()
+        except Exception:
+            macro_defs = []
+        args = [f"-std={self._std}", "-x", "c++"] + macro_defs
+        for extra in self._extra_args:
+            if extra not in args:
+                args.append(extra)
+        return args
 
     def get_tu(self, abs_path: str) -> ci.TranslationUnit:
         """Return (cached) TranslationUnit for a source file."""
