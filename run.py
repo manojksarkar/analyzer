@@ -123,6 +123,19 @@ if use_model:
 # ---------------------------------------------------------------------------
 cfg = load_config(SCRIPT_DIR)
 
+# Resolve and display the LLM config up-front so the user sees exactly which
+# provider, endpoint, model, and token budget the run will use. Fails loud
+# (LlmConfigError) if any required field is missing or invalid — better to
+# stop here than half-way through a long run.
+from core.config import load_llm_config, format_llm_config_banner, LlmConfigError
+try:
+    _resolved_llm_cfg = load_llm_config(cfg)
+    for _line in format_llm_config_banner(_resolved_llm_cfg).splitlines():
+        log(_line, component="run")
+except LlmConfigError as e:
+    log(f"Invalid LLM config: {e}", component="run", err=True)
+    sys.exit(2)
+
 try:
     plans = plan_runs(
         cfg,

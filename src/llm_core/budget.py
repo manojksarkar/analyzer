@@ -262,22 +262,20 @@ class ContextBudget:
 def resolve_max_tokens(llm_cfg: Dict) -> int:
     """Derive max_context_tokens from the LLM config.
 
+    Expects *llm_cfg* to come from ``core.config.load_llm_config`` so the
+    required fields (``provider``, ``numCtx``) are already validated — this
+    function does NOT silently default them.
+
     Priority:
-      1. Explicit ``maxContextTokens`` in config
-      2. ``numCtx - 512`` for Ollama (reserve for output)
+      1. Explicit ``maxContextTokens`` in config (int) — used as-is
+      2. ``numCtx - 512`` for Ollama (reserve headroom for output)
       3. 127488 for OpenAI (128K - 512 reserve)
-      4. Fallback: 7680 (conservative 8K - 512)
     """
     explicit = llm_cfg.get("maxContextTokens")
     if explicit is not None:
-        try:
-            return int(explicit)
-        except (TypeError, ValueError):
-            pass
+        return int(explicit)
 
-    provider = (llm_cfg.get("provider") or "ollama").lower()
+    provider = llm_cfg["provider"].lower()
     if provider == "openai":
         return 127488
-
-    num_ctx = int(llm_cfg.get("numCtx", 8192))
-    return max(1024, num_ctx - 512)
+    return max(1024, int(llm_cfg["numCtx"]) - 512)

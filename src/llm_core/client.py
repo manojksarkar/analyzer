@@ -112,6 +112,15 @@ class LlmClient:
     def model(self) -> str:
         return self._model
 
+    @property
+    def num_ctx(self) -> int:
+        """Ollama context-window size this client was configured with.
+
+        Still populated for OpenAI (from config) but not sent to the gateway —
+        use `maxContextTokens` for budget math on OpenAI.
+        """
+        return self._num_ctx
+
     def generate(self, system_prompt: str, user_prompt: str) -> Optional[str]:
         """Call the LLM and return the (think-stripped) response text.
 

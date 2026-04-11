@@ -322,45 +322,42 @@ def _process_function(
 # LLM client construction
 # ---------------------------------------------------------------------------
 
-def _build_llm_client(config: EngineConfig):
-    """Build an LlmClient.
+def _load_analyzer_llm_config() -> Optional[Dict]:
+    """Return the resolved llm config block, walking up from cwd.
 
-    Preference order:
-      1. If an analyzer config.json is reachable from cwd, use the unified
-         loader (load_llm_config + from_config). This pulls in provider,
-         custom headers, retries, and api_key — making the openai gateway
-         work end-to-end without extra CLI plumbing.
-      2. Otherwise fall back to the legacy CLI-arg constructor (Ollama only,
-         backwards compatible with the standalone subprocess invocation).
+    flowchart_engine is launched with cwd=project_root by views/flowcharts.py,
+    so the first hit is the analyzer config. Returns None if no config.json
+    is reachable (e.g. standalone CLI invocation from another directory).
+
+    Raises LlmConfigError (from core.config) if the config.json IS reachable
+    but has missing/invalid required fields — that is a user-facing error,
+    not a silent fallback.
     """
-    try:
-        # Walk up from cwd looking for config/config.json. flowchart_engine
-        # is launched with cwd=project_root by views/flowcharts.py, so the
-        # first hit is the analyzer config.
-        cwd = os.path.abspath(os.getcwd())
-        for candidate in (cwd, os.path.dirname(cwd)):
-            cfg_path = os.path.join(candidate, "config", "config.json")
-            if os.path.isfile(cfg_path):
-                # Lazy import to avoid hard dependency when running standalone
-                # without the analyzer src/ on the path.
-                from utils import load_config, load_llm_config  # noqa: WPS433
-                from llm_core.client import from_config  # noqa: WPS433
-                cfg = load_config(candidate)
-                llm_cfg = load_llm_config(cfg)
-                # CLI args still win for the engine-specific knobs that the
-                # analyzer config doesn't carry (num_ctx default, timeout):
-                # we let the analyzer config drive provider/url/model/headers
-                # but respect the CLI num_ctx if explicitly larger.
-                if config.llm_num_ctx and config.llm_num_ctx > llm_cfg["numCtx"]:
-                    llm_cfg["numCtx"] = config.llm_num_ctx
-                logger.info(
-                    "LLM provider=%s model=%s baseUrl=%s (from %s)",
-                    llm_cfg["provider"], llm_cfg["defaultModel"],
-                    llm_cfg["baseUrl"], cfg_path,
-                )
-                return from_config(llm_cfg)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Falling back to legacy LLM client construction: %s", exc)
+    from utils import load_config, load_llm_config  # noqa: WPS433
+    cwd = os.path.abspath(os.getcwd())
+    for candidate in (cwd, os.path.dirname(cwd)):
+        cfg_path = os.path.join(candidate, "config", "config.json")
+        if os.path.isfile(cfg_path):
+            cfg = load_config(candidate)
+            return load_llm_config(cfg)
+    return None
+
+
+def _build_llm_client(config: EngineConfig, llm_cfg: Optional[Dict]):
+    """Build an LlmClient from the resolved llm config, or legacy CLI args.
+
+    When *llm_cfg* is provided (analyzer config was reachable), we use the
+    unified from_config path so provider/custom headers/retries/api_key all
+    flow through. Otherwise fall back to the legacy CLI-arg constructor
+    (Ollama only, backwards compatible with standalone subprocess usage).
+    """
+    if llm_cfg is not None:
+        from llm_core.client import from_config  # noqa: WPS433
+        # CLI args still win for num_ctx if explicitly larger — lets a
+        # standalone caller bump the window without editing config.json.
+        if config.llm_num_ctx and config.llm_num_ctx > llm_cfg["numCtx"]:
+            llm_cfg["numCtx"] = config.llm_num_ctx
+        return from_config(llm_cfg)
 
     # Legacy fallback — works for standalone Ollama-only invocations.
     return LlmClient(
@@ -382,12 +379,27 @@ def run(config: EngineConfig) -> None:
     logger.info("  functions.json : %s", config.functions_json_path)
     logger.info("  metadata.json  : %s", config.metadata_json_path)
     logger.info("  out-dir        : %s", config.out_dir)
-    logger.info("  LLM            : %s  model=%s", config.llm_url, config.llm_model)
     if config.knowledge_json_path:
         logger.info("  knowledge-json : %s", config.knowledge_json_path)
     if config.function_key:
         logger.info("  filter key     : %s", config.function_key)
     logger.info("=" * 60)
+
+    # Resolve and display the LLM config the subprocess is actually going to
+    # use. Any missing/invalid required field surfaces here as LlmConfigError,
+    # so the user sees the exact failing field instead of a silent fallback.
+    from utils import format_llm_config_banner, LlmConfigError  # noqa: WPS433
+    try:
+        llm_cfg_resolved = _load_analyzer_llm_config()
+    except LlmConfigError as exc:
+        logger.error("Invalid LLM config: %s", exc)
+        sys.exit(2)
+    if llm_cfg_resolved is not None:
+        for _line in format_llm_config_banner(llm_cfg_resolved).splitlines():
+            logger.info(_line)
+    else:
+        logger.info("LLM (legacy standalone): %s  model=%s",
+                    config.llm_url, config.llm_model)
 
     # Load inputs
     meta = _load_project_meta(config.metadata_json_path)
@@ -453,29 +465,19 @@ def run(config: EngineConfig) -> None:
     # Initialise shared infrastructure
     source_extractor = SourceExtractor(base_path)
     tu_parser = TranslationUnitParser(config.std, config.clang_args)
-    llm_client = _build_llm_client(config)
+    llm_client = _build_llm_client(config, llm_cfg_resolved)
 
-    # Load llm.enrichment flags + resolved max_context_tokens from config.json
-    # (same cwd-walk as _build_llm_client).  When run standalone without a
+    # Derive enrichment flags + authoritative max_context_tokens from the
+    # resolved llm config (displayed above). When standalone without a
     # reachable config, both stay None and every enrichment feature is off.
     enrichment_cfg: Dict = {}
     max_context_tokens: Optional[int] = None
-    try:
-        cwd = os.path.abspath(os.getcwd())
-        for candidate in (cwd, os.path.dirname(cwd)):
-            cfg_path = os.path.join(candidate, "config", "config.json")
-            if os.path.isfile(cfg_path):
-                from utils import load_config, load_llm_config  # noqa: WPS433
-                from llm_core.budget import resolve_max_tokens  # noqa: WPS433
-                cfg = load_config(candidate)
-                llm_cfg = load_llm_config(cfg)
-                enrichment_cfg = llm_cfg.get("enrichment") or {}
-                max_context_tokens = resolve_max_tokens(llm_cfg)
-                logger.info("Coherence/simplify budget = %d tokens (provider=%s)",
-                            max_context_tokens, llm_cfg.get("provider"))
-                break
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("Could not load enrichment config: %s", exc)
+    if llm_cfg_resolved is not None:
+        from llm_core.budget import resolve_max_tokens  # noqa: WPS433
+        enrichment_cfg = llm_cfg_resolved.get("enrichment") or {}
+        max_context_tokens = resolve_max_tokens(llm_cfg_resolved)
+        logger.info("Coherence/simplify budget = %d tokens (provider=%s)",
+                    max_context_tokens, llm_cfg_resolved.get("provider"))
 
     label_generator = LabelGenerator(
         client=llm_client,
