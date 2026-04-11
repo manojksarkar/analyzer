@@ -38,8 +38,11 @@
     // HTTP error or empty response. Default 1 = up to 2 total tries.
     "retries": 1,
     "abbreviationsPath": "config/abbreviations.txt",
-    // maxContextTokens: null = auto (numCtx-512 for Ollama, 128K for OpenAI).
-    // Set explicitly to override the auto-derived value.
+    // maxContextTokens: hard limit on tokens the analyzer plans against
+    // when allocating per-section budgets (callees, callers, repo map, etc.).
+    //   - null  → auto: numCtx-512 for Ollama, 127488 (~128K) for OpenAI
+    //   - int   → explicit override (e.g. 16000 for Ollama 16K, 120000 for GPT-4o)
+    // For OpenAI provider, numCtx is ignored — set this field instead.
     "maxContextTokens": null,
     // enrichment: toggle individual enrichment features.
     // All default to the cheapest safe option (off or single-pass).
