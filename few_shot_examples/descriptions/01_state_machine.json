@@ -1,0 +1,5 @@
+{
+  "tags": ["state_machine", "transition", "enum", "switch"],
+  "input_context": "Function: QosScheduler::advanceState(QosEvent ev)\n\n[Function Source]\n```cpp\nvoid QosScheduler::advanceState(QosEvent ev) {\n    switch (ev) {\n        case QosEvent::Admit:\n            if (m_state == QosState::Idle)\n                m_state = QosState::Running;\n            break;\n        case QosEvent::Throttle:\n            if (m_state == QosState::Running)\n                m_state = QosState::Paused;\n            break;\n        case QosEvent::Complete:\n            m_state = QosState::Idle;\n            break;\n    }\n}\n```\n\n[Called Functions]\n(none)\n\n[Callers — who calls this function and why]\nQosManager::onIoEvent(): dispatches I/O events to the scheduler",
+  "ideal_output": "Advances the QoS scheduler state machine in response to an admission, throttle, or completion event, transitioning between Idle, Running, and Paused states."
+}

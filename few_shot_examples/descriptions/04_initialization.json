@@ -1,0 +1,5 @@
+{
+  "tags": ["init", "struct", "config", "setup"],
+  "input_context": "Function: QosConfig::init(const ConfigDict& cfg)\n\n[Function Source]\n```cpp\nvoid QosConfig::init(const ConfigDict& cfg) {\n    m_maxIops     = cfg.getInt(\"max_iops\", 1000);\n    m_burstSize   = cfg.getInt(\"burst_size\", 64);\n    m_windowMs    = cfg.getInt(\"window_ms\", 1000);\n    m_enabled     = cfg.getBool(\"enabled\", true);\n    validateRanges();\n}\n```\n\n[Called Functions]\nQosConfig::validateRanges() -> void: asserts all QoS parameters are within hardware limits",
+  "ideal_output": "Initializes QoS configuration from a key-value dictionary, reading max IOPS, burst size, time window, and enable flag with defaults, then validates the resulting ranges."
+}

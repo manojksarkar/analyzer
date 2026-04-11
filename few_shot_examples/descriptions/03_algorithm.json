@@ -1,0 +1,5 @@
+{
+  "tags": ["algorithm", "loop", "computation", "aggregation"],
+  "input_context": "Function: computeChecksum(const uint8_t* data, size_t len)\n\n[Function Source]\n```cpp\nuint32_t computeChecksum(const uint8_t* data, size_t len) {\n    uint32_t sum = 0;\n    for (size_t i = 0; i < len; ++i) {\n        sum = (sum << 1) ^ data[i];\n    }\n    return sum;\n}\n```",
+  "ideal_output": "Computes a lightweight rotating-shift XOR checksum over a byte buffer. Used as a quick integrity hint, not a cryptographic hash."
+}

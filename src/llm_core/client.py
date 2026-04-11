@@ -176,6 +176,84 @@ class LlmClient:
             )
         return None
 
+    def call(self, messages: list, *, temperature: Optional[float] = None) -> Optional[str]:
+        """Send a multi-message conversation to the LLM.
+
+        This is the lower-level interface that ``generate()`` delegates to.
+        Use it when you need multi-turn conversations (e.g. self-review:
+        generate → review → revise) or per-call temperature overrides
+        (e.g. ensemble at different temperatures).
+
+        Parameters
+        ----------
+        messages : list[dict]
+            OpenAI chat-format messages: ``[{"role": "system", "content": "..."},
+            {"role": "user", "content": "..."}, ...]``.
+        temperature : float, optional
+            Override the instance default temperature for this call only.
+
+        Returns
+        -------
+        str or None
+            The (think-stripped) response text, or None on persistent failure.
+        """
+        temp = temperature if temperature is not None else self._temperature
+        last_exc: Optional[BaseException] = None
+        total_attempts = self._max_retries + 1
+        for attempt in range(1, total_attempts + 1):
+            try:
+                if self._provider == "openai":
+                    raw = self._call_openai_messages(messages, temp)
+                else:
+                    raw = self._call_ollama_messages(messages, temp)
+                if raw:
+                    cleaned = strip_think_section(raw)
+                    if cleaned:
+                        return cleaned
+                if attempt < total_attempts:
+                    logger.warning(
+                        "LLM (%s/%s) call() empty response on attempt %d/%d — retrying",
+                        self._provider, self._model, attempt, total_attempts,
+                    )
+                    continue
+                logger.warning(
+                    "LLM (%s/%s) call() empty response after %d attempt(s)",
+                    self._provider, self._model, total_attempts,
+                )
+                return None
+            except requests.Timeout as exc:
+                last_exc = exc
+                logger.warning(
+                    "LLM (%s/%s) call() timed out (attempt %d/%d)",
+                    self._provider, self._model, attempt, total_attempts,
+                )
+            except requests.ConnectionError as exc:
+                last_exc = exc
+                logger.warning(
+                    "LLM (%s/%s) call() connection error: %s (attempt %d/%d)",
+                    self._provider, self._model, exc, attempt, total_attempts,
+                )
+            except requests.HTTPError as exc:
+                last_exc = exc
+                status = getattr(exc.response, "status_code", "?")
+                body = getattr(exc.response, "text", "") or ""
+                logger.warning(
+                    "LLM (%s/%s) call() HTTP %s: %s (attempt %d/%d)",
+                    self._provider, self._model, status, body[:200], attempt, total_attempts,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                logger.warning(
+                    "LLM (%s/%s) call() unexpected error: %s (attempt %d/%d)",
+                    self._provider, self._model, exc, attempt, total_attempts,
+                )
+        if last_exc is not None:
+            logger.error(
+                "LLM (%s/%s) call() failed after %d attempt(s): %s",
+                self._provider, self._model, total_attempts, last_exc,
+            )
+        return None
+
     # ------------------------------------------------------------------
     # Ollama
     # ------------------------------------------------------------------
@@ -207,6 +285,38 @@ class LlmClient:
             err = data.get("error") or ""
             if err:
                 logger.warning("Ollama error body: %s", err)
+        return text or None
+
+    def _call_ollama_messages(self, messages: list, temperature: float) -> Optional[str]:
+        """POST to Ollama /api/chat with a pre-formed messages list."""
+        # Derive the /api/chat endpoint from the stored endpoint.
+        # _endpoint is either the legacy url= or {base}/api/generate.
+        chat_endpoint = self._endpoint.replace("/api/generate", "/api/chat")
+        payload = {
+            "model": self._model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "num_ctx": self._num_ctx,
+                "temperature": temperature,
+                "top_p": 0.9,
+                "num_predict": 2048,
+            },
+        }
+        resp = requests.post(chat_endpoint, json=payload, timeout=self._timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        # /api/chat returns {"message": {"role": "assistant", "content": "..."}}
+        msg = data.get("message") or {}
+        text = (msg.get("content") or "").strip()
+        # Token tracking
+        prompt_tokens = int(data.get("prompt_eval_count") or 0)
+        completion_tokens = int(data.get("eval_count") or 0)
+        token_counter.record("ollama", self._model, prompt_tokens, completion_tokens)
+        if not text:
+            err = data.get("error") or ""
+            if err:
+                logger.warning("Ollama chat error body: %s", err)
         return text or None
 
     # ------------------------------------------------------------------
@@ -243,6 +353,42 @@ class LlmClient:
             finally:
                 # Sleep on every attempt — including failures — so a tight
                 # retry loop never bursts the gateway.
+                time.sleep(_OPENAI_RATE_LIMIT_SEC)
+        choices = data.get("choices") or []
+        text = ""
+        if choices:
+            msg = choices[0].get("message") or {}
+            text = (msg.get("content") or "").strip()
+        # Token tracking
+        usage = data.get("usage") or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        token_counter.record("openai", self._model, prompt_tokens, completion_tokens)
+        return text or None
+
+    def _call_openai_messages(self, messages: list, temperature: float) -> Optional[str]:
+        """POST to OpenAI endpoint with a pre-formed messages list."""
+        payload = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": 2048,
+        }
+        with _OPENAI_LOCK:
+            headers = build_openai_headers(
+                api_key=self._api_key,
+                config_headers=self._custom_headers,
+            )
+            try:
+                resp = requests.post(
+                    self._endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=self._timeout,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            finally:
                 time.sleep(_OPENAI_RATE_LIMIT_SEC)
         choices = data.get("choices") or []
         text = ""

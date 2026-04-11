@@ -1,0 +1,5 @@
+{
+  "tags": ["action", "json", "initialization", "sequence"],
+  "input_context": "Nodes N3, N4, N5 all operate on 'doc' (data_flow_shared).\nN3 (ACTION): doc.SetObject();\nN4 (ACTION): doc.AddMember(\"initiator\", initiatorId, alloc);\nN5 (ACTION): doc.AddMember(\"count\", iuCount, alloc);\nphase_hint: build JSON request body for replication",
+  "ideal_output": "{\"N3\": \"Initialize JSON document as object\", \"N4\": \"Add initiator ID to JSON body\", \"N5\": \"Add I/O unit count to JSON body\"}"
+}

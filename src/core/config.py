@@ -150,6 +150,15 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         abbreviationsPath - str
         customHeaders     - dict (passed through to OpenAI gateway)
         apiKey            - str | None (resolved from LLM_API_KEY env var first)
+        maxContextTokens  - int | None (null → auto-derived from numCtx/provider)
+        enrichment        - dict of feature toggles:
+            twoPassDescriptions (bool, default True)
+            selfReview          (bool, default False)
+            ensemble            (bool, default False)
+            cfgSimplification   (bool, default False)
+            variableEnrichment  (bool, default True)
+        cacheVersion      - int (bump to invalidate entity cache)
+        fewShotExamplesDir - str (path to few-shot examples directory)
 
     Environment variables (override the matching config field if set):
         LLM_PROVIDER, LLM_BASE_URL, LLM_DEFAULT_MODEL,
@@ -177,6 +186,29 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
     except (TypeError, ValueError):
         retries = 1
     api_key = _env_or("LLM_API_KEY", llm.get("apiKey"))
+
+    # maxContextTokens: null → auto-derived in budget.resolve_max_tokens()
+    max_ctx_raw = llm.get("maxContextTokens")
+    max_ctx = None
+    if max_ctx_raw is not None:
+        try:
+            max_ctx = int(max_ctx_raw)
+        except (TypeError, ValueError):
+            pass
+
+    # enrichment sub-block — defaults favour cheap/safe options
+    enrich_raw = llm.get("enrichment") or {}
+    enrichment = {
+        "twoPassDescriptions": bool(enrich_raw.get("twoPassDescriptions", True)),
+        "selfReview": bool(enrich_raw.get("selfReview", False)),
+        "ensemble": bool(enrich_raw.get("ensemble", False)),
+        "cfgSimplification": bool(enrich_raw.get("cfgSimplification", False)),
+        "variableEnrichment": bool(enrich_raw.get("variableEnrichment", True)),
+    }
+
+    cache_version = int(llm.get("cacheVersion", 1))
+    few_shot_dir = str(llm.get("fewShotExamplesDir", "few_shot_examples") or "few_shot_examples")
+
     return {
         "provider": str(provider).lower(),
         "baseUrl": str(base_url).rstrip("/"),
@@ -189,6 +221,10 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "abbreviationsPath": str(llm.get("abbreviationsPath", "") or ""),
         "customHeaders": dict(llm.get("customHeaders") or {}),
         "apiKey": str(api_key) if api_key else None,
+        "maxContextTokens": max_ctx,
+        "enrichment": enrichment,
+        "cacheVersion": cache_version,
+        "fewShotExamplesDir": few_shot_dir,
     }
 
 

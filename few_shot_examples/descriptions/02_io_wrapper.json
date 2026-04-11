@@ -1,0 +1,5 @@
+{
+  "tags": ["io", "wrapper", "delegate", "error_handling"],
+  "input_context": "Function: BlockDevice::readBlock(uint64_t lba, void* buf, size_t len)\n\n[Function Source]\n```cpp\nstatus_t BlockDevice::readBlock(uint64_t lba, void* buf, size_t len) {\n    if (!buf || len == 0)\n        return STATUS_INVALID_ARG;\n    if (lba >= m_capacity)\n        return STATUS_OUT_OF_RANGE;\n    auto rc = m_backend->read(lba, buf, len);\n    if (rc != STATUS_OK)\n        m_errorCount++;\n    return rc;\n}\n```\n\n[Called Functions]\nStorageBackend::read(lba, buf, len) -> status_t: submits a synchronous read to the backing device",
+  "ideal_output": "Reads one logical block from the backing storage, validating the buffer and LBA range first. Increments the device error counter on backend failures."
+}

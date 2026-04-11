@@ -1,0 +1,5 @@
+{
+  "tags": ["counter", "global", "statistics"],
+  "input_context": "Global variable: g_activeSessionCount\n\n[Declaration]\n```cpp\nstatic int g_activeSessionCount = 0;\n```\n\n[Written by]\n  SessionManager::handleConnect: increments when a new client session is established\n  SessionManager::handleDisconnect: decrements when a session is torn down\n\n[Read by]\n  StatsReporter::emitSessionStats: reports the current count to monitoring\n  AdmissionControl::shouldAccept: rejects new sessions when the count exceeds the cap",
+  "ideal_output": "Current number of active client sessions across the server, used for admission control and monitoring."
+}
