@@ -441,6 +441,37 @@ def clang_config() -> Dict[str, Any]:
     return app_config().get("clang") or {}
 
 
+# ---------------------------------------------------------------------------
+# Default clang preprocessor flags shared by every libclang entry point
+# ---------------------------------------------------------------------------
+#
+# Both Phase 1 (`src/parser.py`) and the flowchart engine's per-function
+# re-parser (`src/flowchart/ast_engine/parser.py`) feed source through
+# libclang. Real C/C++ projects almost always use visibility-style macros
+# (`PUBLIC`, `PRIVATE`, `PROTECTED`) and sometimes a `VOID` alias that the
+# build system defines but a standalone libclang invocation does not see.
+# Without these defines, libclang reports `unknown type name 'PUBLIC'`
+# warnings and the AST is incomplete, which then breaks CFG construction.
+#
+# Defining the macros here (rather than in two separate parser files) keeps
+# the two libclang entry points in lock-step. Override locally by passing
+# `-UPUBLIC` etc. via `clang.clangArgs` in config.json.
+
+DEFAULT_VISIBILITY_MACROS = ("PRIVATE", "PROTECTED", "PUBLIC", "__OVLYINIT")
+
+
+def default_clang_macro_defs() -> list:
+    """Return the `-D…` macro defines every libclang call should include.
+
+    Used by `src/parser.py` (Phase 1) and `src/flowchart/ast_engine/parser.py`
+    (flowchart engine re-parser) so both parsers share the exact same set of
+    visibility-macro shims and `VOID` alias.
+    """
+    args = [f"-D{name}=" for name in DEFAULT_VISIBILITY_MACROS]
+    args.append("-DVOID=void")
+    return args
+
+
 def modules_groups() -> Dict[str, Any]:
     """Return the `modulesGroups` block (or {} if absent)."""
     return app_config().get("modulesGroups") or {}

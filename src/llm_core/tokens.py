@@ -40,7 +40,11 @@ class _TokenCounter:
     def format_report(self) -> str:
         snap = self.snapshot()
         if not snap:
-            return "LLM tokens: (no calls)"
+            # Empty string suppresses the at-exit report. The orchestrator
+            # subprocess (run.py) never makes LLM calls itself, so we don't
+            # want it to log "(no calls)" alongside the real reports from
+            # model_deriver.py / flowchart_engine.py.
+            return ""
         lines = ["LLM token usage:"]
         grand_p = grand_c = grand_n = 0
         for (provider, model), (p, c, n) in sorted(snap.items()):

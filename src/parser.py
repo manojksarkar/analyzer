@@ -9,7 +9,12 @@ from collections import defaultdict
 from clang import cindex
 
 from core.paths import paths as _paths
-from core.config import app_config as _app_config, clang_config as _clang_config
+from core.config import (
+    DEFAULT_VISIBILITY_MACROS,
+    app_config as _app_config,
+    clang_config as _clang_config,
+    default_clang_macro_defs,
+)
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -92,25 +97,14 @@ CLANG_ARGS = [
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
-# Common visibility-like macros seen in C/C++ codebases.
-# Defining them keeps declarations such as
-# "PROTECTED DB_TYPE foo(...)" parseable even when headers don't define them.
-# __OVLYINIT: empty placeholder sometimes placed between return type and the function name, e.g.
-#   PRIVATE UNIT __OVLYINIT
-#   _SOME_FUNCTION(GG *gg){}
-_default_macro_defs = ("PRIVATE", "PROTECTED", "PUBLIC", "__OVLYINIT")
-_VISIBILITY_KEYWORDS = {"PRIVATE", "PUBLIC", "PROTECTED"}
-for _macro in _default_macro_defs:
-    _arg = f"-D{_macro}="
+# Visibility-style macros (PRIVATE/PROTECTED/PUBLIC/__OVLYINIT) and the
+# `VOID` -> `void` alias come from `core.config.default_clang_macro_defs()`
+# so the flowchart engine's per-function re-parser can reuse the same set.
+# Override locally by adding `-UPUBLIC` etc. to `clang.clangArgs` in config.
+_VISIBILITY_KEYWORDS = set(DEFAULT_VISIBILITY_MACROS) - {"__OVLYINIT"}
+for _arg in default_clang_macro_defs():
     if _arg not in CLANG_ARGS:
         CLANG_ARGS.append(_arg)
-# When sources use VOID like a typedef for void but "typedef void VOID;" never appears in
-# the translation unit, Clang otherwise sees an unknown type. This matches common builds.
-# If your project instead defines typedef void VOID in a header, add "-UVOID" to
-# clang.clangArgs so this default does not break that typedef line.
-_void_arg = "-DVOID=void"
-if _void_arg not in CLANG_ARGS:
-    CLANG_ARGS.append(_void_arg)
 _extra = _clang.get("clangArgs")
 if _extra:
     CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
