@@ -269,5 +269,7 @@ class TestEnrichInterfaces:
         idx = {"Core|core|add|": 1}
         _enrich_interfaces("", "My_Project_123", fns, {}, idx)
         iid = fns["Core|core|add|"]["interfaceId"]
-        assert "_" not in iid
+        # _ separates segments (always present); digits/underscores stripped from the project segment only
         assert "123" not in iid
+        # Project segment is "MYPROJECT" (underscores and digits stripped by _id_seg)
+        assert "MYPROJECT" in iid
