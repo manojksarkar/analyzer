@@ -1,5 +1,5 @@
 # C++ Codebase Analyzer — Complete Project Context
-> Generated: 2026-04-08 (updated x3). Validated against current source code.
+> Generated: 2026-04-08 (updated x4). Validated against current source code.
 
 ---
 
@@ -845,22 +845,29 @@ python run.py test_cpp_project --selected-group core
 
 ```
 tests/
-├── conftest.py                        — shared session fixture (run_pipeline), JSON fixtures
+├── conftest.py                        — shared session fixture (run_pipeline), JSON fixtures, snapshot helper
 ├── pytest.ini                         — testpaths = tests, -v --tb=short
 ├── integration/                       — pipeline runs once, check intermediate JSON/mmd artifacts
 │   ├── test_interface_tables.py       — output/interface_tables.json assertions + snapshot
-│   ├── test_unit_diagrams.py          — output/unit_diagrams/*.mmd: format, topology, direction
+│   ├── test_unit_diagrams.py          — output/unit_diagrams/*.mmd: format, topology, direction + snapshot
 │   ├── test_behaviour_diagram.py      — output/behaviour_diagrams/: files, _behaviour_pngs.json, rows
 │   ├── test_flowcharts.py             — output/flowcharts/Core.json, Lib.json, Util.json: structure + functions
-│   └── test_behaviour_names.py        — model/functions.json: Phase 2 static behaviour name enrichment
+│   ├── test_behaviour_names.py        — model/functions.json: Phase 2 static behaviour name enrichment
+│   └── test_model_json.py             — model/functions.json, globalVariables.json, units.json, modules.json
 ├── unit/                              — pure Python tests, no pipeline needed
-│   └── test_llm_client.py             — src/llm_client.py: mocked Ollama, all public functions
+│   ├── test_llm_client.py             — src/llm_client.py: mocked Ollama, all public functions
+│   ├── test_utils.py                  — src/utils.py: comment stripping, trailing commas, config merge, safe_filename
+│   ├── test_cli.py                    — run.py: _resolve_group_name (AST-extracted, no side effects)
+│   └── test_model_deriver.py          — src/model_deriver.py: _id_seg, _readable_label, transitive globals,
+│                                         _enrich_interfaces (interfaceId format), _enrich_behaviour_names
 ├── e2e/                               — pipeline runs once, check the final DOCX
 │   └── test_docx.py                   — opens DOCX with python-docx; interface tables, images, headings,
-│                                         behaviour tables, flowchart tables, document structure
+│                                         behaviour tables, flowchart tables, component/unit table,
+│                                         unit header table, moduleStaticDiagram, document structure
 └── snapshots/
     └── Sample/
-        └── interface_tables.json      — golden snapshot (committed); regenerate with --update-snapshots
+        ├── interface_tables.json      — golden snapshot; regenerate with --update-snapshots
+        └── unit_diagrams.json         — golden snapshot for all three unit .mmd files
 ```
 
 **When to add files:**
@@ -937,12 +944,13 @@ python -m pytest tests/integration/test_interface_tables.py --update-snapshots -
 - Public globals (parametrized): `g_result` (Core), `g_utilBase` (Util)
 - Snapshot: full JSON matches `tests/snapshots/Sample/interface_tables.json`
 
-#### test_unit_diagrams.py (integration, ~14 tests)
+#### test_unit_diagrams.py (integration, ~15 tests)
 - All three `.mmd` files exist (`Core_Core.mmd`, `Lib_Lib.mmd`, `Util_Util.mmd`)
 - Each starts with `flowchart LR` and contains `subgraph internal_mod[<Module>]`
 - Main unit styled `mainUnit`; peers are NOT styled `mainUnit`
 - Cross-module edges: every expected edge appears in both source and target unit's diagram, labeled with `IF_`
 - Direction invariants: Util never initiates cross-module calls; Core has no incoming cross-module callers
+- Snapshot: full `.mmd` content for all three units matches `tests/snapshots/Sample/unit_diagrams.json`
 
 #### test_behaviour_diagram.py (integration, 13 tests)
 - `output/behaviour_diagrams/` dir and `_behaviour_pngs.json` exist; `.mmd` files present
@@ -973,7 +981,43 @@ python -m pytest tests/integration/test_interface_tables.py --update-snapshots -
 - `get_behaviour_names`: parses `Input Name: X\nOutput Name: Y`, case-insensitive, empty/unparseable → `{}`, partial, prompt contains params/globals/abbreviations
 - `get_global_description`: response, empty source, prompt content
 
-#### test_docx.py (e2e, 44 tests)
+#### test_model_json.py (integration, 19 tests)
+- `functions.json`: non-empty, keys are `module|unit|qualifiedName|paramTypes`, required fields present,
+  `interfaceId` starts with `IF_`, `direction` is In or Out, unique IDs, `behaviourInputName`/`behaviourOutputName` set
+- `globalVariables.json`: non-empty, keys are `module|unit|qualifiedName`, required fields present
+- `units.json`: non-empty, Core/Lib/Util present, required fields, Core calls Lib+Util, Util has no callees
+- `modules.json`: non-empty, Core/Lib/Util present, each has non-empty `units` list
+
+#### test_llm_client.py (unit, 39 tests — no pipeline, mocked HTTP)
+- `load_abbreviations`: colon/equals format, comments/blanks ignored, missing file → `{}`
+- `extract_source`: line range extraction, missing file → `""`, invalid range → `""`
+- `_ollama_available`: 200 → True, non-200/error/no-requests → False
+- `_call_ollama`: response text/whitespace, retry on empty, retry on exception, model/numCtx from config
+- `get_description`: returns response, empty source guard, prompt contains source/callees/abbreviations
+- `get_behaviour_names`: parses `Input Name: X\nOutput Name: Y`, case-insensitive, empty/unparseable → `{}`, partial, prompt contains params/globals/abbreviations
+- `get_global_description`: response, empty source, prompt content
+
+#### test_utils.py (unit, 22 tests — no pipeline)
+- `_strip_json_comments`: `//` and `/* */` stripped; strings with URLs/comment markers preserved
+- `_strip_trailing_commas`: trailing commas before `}` / `]` removed; in-string commas preserved; nested
+- `load_config`: comments + trailing commas in JSON loaded correctly; local override merges on top; missing → `{}`
+- `safe_filename`: `|`, `/`, `\` → `_`; unsafe chars replaced; `None` → `""`
+- `short_name`: `MyClass::foo` → `"foo"`; plain name unchanged; empty/None → `""`
+- `get_range_for_type`: `void` → `"VOID"`; `uint8_t` → `"0-0xFF"`; `int` → signed range; `const uint8_t` handled
+- `make_unit_key`: resolves module from path; unit name is filename without extension
+
+#### test_cli.py (unit, 7 tests — AST-extracted, no pipeline)
+- `_resolve_group_name` extracted from `run.py` via AST (avoids module-level side effects)
+- Exact match, case-insensitive match (`sample` → `Sample`), no match → None, None/empty groups → None
+
+#### test_model_deriver.py (unit, 32 tests — no pipeline)
+- `_id_seg`: keeps uppercase letters only; strips digits, underscores, spaces
+- `_readable_label`: strips `g_`/`s_`/`t_` prefixes; underscores → spaces; short names → `""`
+- `_propagate_global_access`: direct reads/writes stored; transitive via call graph; multi-hop; no globals → no transitive fields; recursive function safe
+- `_enrich_behaviour_names`: param → input name; returnExpr → output name; global read fallback; function name fallback; short param skipped; fields always set
+- `_enrich_interfaces`: `interfaceId` starts with `IF_`; contains project code; contains group code; index zero-padded; non-letters stripped from project segment
+
+#### test_docx.py (e2e, 50 tests)
 Column map: `0=Interface ID, 1=Interface Name, 2=Information, 3=Data Type, 4=Data Range, 5=Direction(In/Out), 6=Source/Destination, 7=Interface Type`
 
 - File exists, non-empty
@@ -990,6 +1034,9 @@ Column map: `0=Interface ID, 1=Interface Name, 2=Information, 3=Data Type, 4=Dat
 - Behaviour description tables: `Requirements`, `Risk`, `Capacity`, `Input Name`, `Output Name` rows
 - Flowchart tables: `Capacity(Density)` row (distinguishes from behaviour tables)
 - Unit diagram images placed after each unit heading
+- Component/Unit table: headers `Component`, `Unit`, `Description`, `Note`; Core/Lib/Util in cells
+- Unit header table: first-column header `"global variables / typedef / enum / define"`
+- moduleStaticDiagram: PNG or Mermaid text present in each Static Design section
 
 ---
 

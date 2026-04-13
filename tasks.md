@@ -2,8 +2,8 @@
 
 ## Immediate
 - [x] Add `.gitignore`
-- [x] Commit all changes (5 short commits)
-- [ ] Push to `origin/feature/test-framework`
+- [x] Commit all changes
+- [x] Push to `origin/feature/test-framework` ← pending
 
 ---
 
@@ -62,3 +62,18 @@
 - [ ] Test `--use-model` / `--skip-model` mode
 - [ ] Test all-groups mode (no `--selected-group`)
 - [ ] Edge-case scenario: all-private project, no globals, no external callers
+
+---
+
+## Commits ahead of origin (not yet pushed)
+```
+c374d84 fix: correct interfaceId underscore assertion in test_model_deriver
+827ea1e test: add model JSON integration tests
+13c4445 test: add model_deriver unit tests
+bc67a2f test: add unit_diagrams snapshot
+24d4992 chore: add tasks.md, update project context and config
+78ea1ff test: add component/unit table, unit header, and static diagram e2e checks
+86d1238 test: add unit tests for llm_client, utils, and CLI
+1c0e41e test: add behaviour and flowchart integration tests
+c9a1818 fix: typo --no-llm-summerize in conftest
+```
