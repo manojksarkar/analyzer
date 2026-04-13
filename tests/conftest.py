@@ -94,7 +94,7 @@ def pytest_collection_finish(session):
         t.start()
 
         result = subprocess.run(
-            [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group, "--no-llm-summerize"],
+            [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group, "--no-llm-summarize"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
