@@ -214,3 +214,155 @@ def test_heading_present(docx, heading):
     assert any(heading in h for h in headings), (
         f"'{heading}' heading not found. Headings: {sorted(headings)[:10]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Document structure — sections and headings
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("expected", ["Purpose", "Scope", "Terms"])
+def test_introduction_section_headings(docx, expected):
+    headings = [p.text.strip() for p in docx.paragraphs if p.style.name.startswith("Heading")]
+    assert any(expected in h for h in headings), f"Introduction section '{expected}' not found in DOCX"
+
+
+@pytest.mark.parametrize("module", ["Core", "Lib", "Util"])
+def test_module_level1_heading_present(docx, module):
+    level1 = [p.text.strip() for p in docx.paragraphs if p.style.name == "Heading 1"]
+    assert any(module in h for h in level1), f"No level-1 heading for module '{module}'"
+
+
+def test_code_metrics_heading_present(docx):
+    headings = {p.text.strip() for p in docx.paragraphs if p.style.name.startswith("Heading")}
+    assert any("Code Metrics" in h for h in headings), "Code Metrics heading not found in DOCX"
+
+
+def test_appendix_heading_present(docx):
+    headings = {p.text.strip() for p in docx.paragraphs if p.style.name.startswith("Heading")}
+    assert any("Appendix" in h for h in headings), "Appendix heading not found in DOCX"
+
+
+# ---------------------------------------------------------------------------
+# Dynamic Behaviour section
+# ---------------------------------------------------------------------------
+
+def test_dynamic_behaviour_sub_headings_for_core(docx):
+    """Core is called by external units (App/Main, Cross/Hub) outside the Sample group.
+    The DOCX must contain level-3 headings of the form 'N.2.M Core - <func> (<caller>)'."""
+    level3 = [p.text.strip() for p in docx.paragraphs if p.style.name == "Heading 3"]
+    behaviour_headings = [h for h in level3 if "Core -" in h and "(" in h]
+    assert behaviour_headings, (
+        "No Dynamic Behaviour sub-headings found for Core "
+        "(expected: Core is called by external App/Main and Cross/Hub)"
+    )
+
+
+def test_behaviour_description_tables_present(docx):
+    """_add_behavior_description_table creates 5-row tables with 'Requirements','Risk','Capacity'."""
+    row_labels = {
+        row.cells[0].text.strip()
+        for t in docx.tables
+        for row in t.rows
+    }
+    for label in ("Requirements", "Risk", "Capacity", "Input Name", "Output Name"):
+        assert label in row_labels, (
+            f"Behaviour description table missing '{label}' row label in DOCX"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Flowchart tables (Static Design interface section)
+# ---------------------------------------------------------------------------
+
+def test_flowchart_tables_present(docx):
+    """_add_flowchart_table uses 'Capacity(Density)' — distinct from the behaviour table."""
+    row_labels = {
+        row.cells[0].text.strip()
+        for t in docx.tables
+        for row in t.rows
+    }
+    assert "Capacity(Density)" in row_labels, (
+        "No flowchart tables found in DOCX (expected 'Capacity(Density)' row label)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Component/Unit table (_add_component_unit_table)
+# ---------------------------------------------------------------------------
+
+def test_component_unit_table_present(docx):
+    """_add_component_unit_table writes a 4-column table with headers Component/Unit/Description/Note."""
+    all_headers = set()
+    for t in docx.tables:
+        if t.rows:
+            row0_texts = {c.text.strip() for c in t.rows[0].cells}
+            all_headers.update(row0_texts)
+    for expected in ("Component", "Unit", "Description", "Note"):
+        assert expected in all_headers, (
+            f"Component/Unit table header '{expected}' not found in DOCX tables"
+        )
+
+
+def test_component_unit_table_has_module_names(docx):
+    """Component column must contain the Sample group module names."""
+    component_tables = [
+        t for t in docx.tables
+        if t.rows and {c.text.strip() for c in t.rows[0].cells} >= {"Component", "Unit"}
+    ]
+    assert component_tables, "No Component/Unit table found in DOCX"
+    all_cell_text = {
+        c.text.strip()
+        for t in component_tables
+        for row in t.rows
+        for c in row.cells
+    }
+    for module in ("Core", "Lib", "Util"):
+        assert module in all_cell_text, f"Module '{module}' missing from Component/Unit table"
+
+
+# ---------------------------------------------------------------------------
+# Unit header table (_add_unit_header_table)
+# ---------------------------------------------------------------------------
+
+def test_unit_header_table_present(docx):
+    """_add_unit_header_table writes a 2-column table with 'global variables / typedef / enum / define' header."""
+    header_text = "global variables / typedef / enum / define"
+    found = any(
+        t.rows and t.rows[0].cells[0].text.strip() == header_text
+        for t in docx.tables
+    )
+    assert found, (
+        f"Unit header table not found in DOCX (expected first-column header: '{header_text}')"
+    )
+
+
+# ---------------------------------------------------------------------------
+# moduleStaticDiagram — PNG or Mermaid text present in Static Design section
+# ---------------------------------------------------------------------------
+
+def test_module_static_diagram_content_present(docx):
+    """Static Design section must contain either an embedded image (PNG rendered)
+    or a paragraph with 'flowchart' (Mermaid text fallback)."""
+    paras = list(docx.paragraphs)
+    static_headings = [
+        i for i, p in enumerate(paras)
+        if p.style.name == "Heading 2" and "Static Design" in p.text
+    ]
+    assert static_headings, "No 'Static Design' Heading 2 found in DOCX"
+
+    _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+    for h_idx in static_headings:
+        found = False
+        for j in range(h_idx + 1, len(paras)):
+            if paras[j].style.name.startswith("Heading") and j != h_idx:
+                break
+            if paras[j]._element.findall(f".//{{{_W_NS}}}drawing"):
+                found = True
+                break
+            if "flowchart" in paras[j].text.lower():
+                found = True
+                break
+        assert found, (
+            f"Static Design section (para {h_idx}) has no module diagram image or Mermaid text"
+        )
