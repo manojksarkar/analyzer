@@ -162,3 +162,11 @@ def test_core_has_no_incoming_cross_module_callers(mmd_files):
     """Nothing in the Sample group calls Core — Core_Core must never be an edge target."""
     bad = [l.strip() for l in mmd_files["Core"].splitlines() if "--> Core_Core" in l]
     assert not bad, f"Core_Core should have no incoming edges, found: {bad}"
+
+
+# ---------------------------------------------------------------------------
+# Snapshot — full .mmd content for all units
+# ---------------------------------------------------------------------------
+
+def test_snapshot(mmd_files, assert_snapshot):
+    assert_snapshot(mmd_files, "Sample/unit_diagrams.json")

@@ -1,8 +1,8 @@
 # Tasks
 
 ## Immediate
-- [x] Add `.gitignore` (`.claude/`, `.flowchart_cache/`, `model/`, `output/`, `__pycache__/`, `*.pyc`, `.pytest_cache/`)
-- [ ] Commit remaining changes (exclude `.claude/`, `.flowchart_cache/`)
+- [x] Add `.gitignore`
+- [x] Commit all changes (5 short commits)
 - [ ] Push to `origin/feature/test-framework`
 
 ---
@@ -14,15 +14,12 @@
 | Section | Integration | E2E | Snapshot | Status |
 |---|---|---|---|---|
 | interfaceTables | ✅ thorough | ✅ good | ✅ | Good |
-| unitDiagrams | ✅ good | ✅ PNG placed | ❌ | Good, no snapshot |
+| unitDiagrams | ✅ good | ✅ PNG placed | ✅ | Good |
 | behaviourDiagram | ✅ moderate | ✅ moderate | ❌ | Moderate |
 | flowcharts | ✅ moderate | ⚠️ thin | ❌ | Moderate |
-| moduleStaticDiagram (inline) | ❌ | ⚠️ heading only, no PNG check | ❌ | Bare minimum |
-| Component/Unit table (inline) | ❌ | ❌ | ❌ | Not tested |
-| unit header table (inline) | ❌ | ❌ | ❌ | Not tested |
-
-> `moduleStaticDiagram`, Component/Unit table, and unit header table are built inline in
-> `docx_exporter.py` — not registered views.
+| moduleStaticDiagram (inline) | ❌ | ✅ PNG/Mermaid check added | ❌ | Moderate |
+| Component/Unit table (inline) | ❌ | ✅ headers + module names | ❌ | Moderate |
+| unit header table (inline) | ❌ | ✅ header row check | ❌ | Moderate |
 
 ### Pipeline Phases
 
@@ -38,8 +35,8 @@
 | Module | Status | Gap |
 |---|---|---|
 | llm_client.py | ✅ full | — |
-| utils.py | ❌ none | Comment stripping, trailing commas, config merge |
-| run.py (CLI) | ❌ none | `_parse_args`, group resolution, `--use-model` mode |
+| utils.py | ✅ full | — |
+| run.py (CLI) | ✅ `_resolve_group_name` | `--use-model` mode, from-phase logic |
 
 ---
 
@@ -53,7 +50,7 @@
 ### High priority
 - [x] `src/utils.py` unit tests — comment stripping, trailing commas, config merge
 - [x] `run.py` CLI unit tests — `_resolve_group_name`, case-insensitive group resolution
-- [ ] Snapshot for `unit_diagrams/*.mmd`
+- [x] Snapshot for `unit_diagrams/*.mmd`
 - [x] E2E: check moduleStaticDiagram PNG or Mermaid text present in Static Design section
 - [x] E2E: Component/Unit table and unit header table present and correct
 
