@@ -26,7 +26,7 @@
 | Phase | Status | Gap |
 |---|---|---|
 | Phase 1 — parser.py | Indirect only | No unit tests |
-| Phase 2 — model_deriver.py | Partial (behaviour names) | Direction, interfaceId, transitive globals untested |
+| Phase 2 — model_deriver.py | ✅ good | — |
 | Phase 3 — run_views.py | Indirect only | All-groups mode never tested |
 | Phase 4 — docx_exporter.py | ✅ good | — |
 
@@ -55,8 +55,8 @@
 - [x] E2E: Component/Unit table and unit header table present and correct
 
 ### Medium priority
-- [ ] `src/model_deriver.py` unit tests — direction, interfaceId, transitive globals
-- [ ] Validate `model/units.json`, `modules.json`, `globalVariables.json` directly
+- [x] `src/model_deriver.py` unit tests — direction, interfaceId, transitive globals
+- [x] Validate `model/units.json`, `modules.json`, `globalVariables.json` directly
 
 ### Low priority
 - [ ] Test `--use-model` / `--skip-model` mode
