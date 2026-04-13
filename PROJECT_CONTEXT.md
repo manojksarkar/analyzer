@@ -1,5 +1,5 @@
 # C++ Codebase Analyzer — Complete Project Context
-> Generated: 2026-04-08 (updated x2). Validated against current source code.
+> Generated: 2026-04-08 (updated x3). Validated against current source code.
 
 ---
 
@@ -118,6 +118,7 @@ Config supports `//` and `/* */` comments and trailing commas (`_strip_json_comm
     "timeoutSeconds": 60,
     "abbreviationsPath": "config/abbreviations.txt"
   },
+  "projectCode": "PROJECT",
   "modulesGroups": {
     "InterfaceTables": {
       "ItTypes":      ["InterfaceTables/Types"],
@@ -147,6 +148,7 @@ Config supports `//` and `/* */` comments and trailing commas (`_strip_json_comm
 - Each folder path must appear **exactly once** across all groups
 - `selectedGroup` was **intentionally removed** from config — selection is CLI-only
 - `config.modules` top-level key is supported as an alternative to `modulesGroups`; if both exist, `modules` wins for module mapping. Currently only `modulesGroups` is used.
+- `projectCode` (optional string) — overrides the project name segment in `interfaceId`. If absent, the project folder name is used (non-letters stripped). Non-letter characters are always removed from every ID segment.
 - LLM is **off by default** (`descriptions: false`, `behaviourNames: false`)
 
 ---
@@ -177,7 +179,7 @@ Example: `QsCore|Sample|MyClass::getValue|int`
 | `readsGlobalIdsTransitive` | list | Transitive reads (Phase 2 propagation) |
 | `writesGlobalIdsTransitive` | list | Transitive writes (Phase 2 propagation) |
 | `direction` | string | `In` or `Out` (never empty after Phase 2) |
-| `interfaceId` | string | `IF_<PROJECT>_<UNIT_CODE>_<INDEX>` — set in Phase 2 |
+| `interfaceId` | string | `IF_<PROJECT>_<GROUP>_<MODULE>_<UNIT>_<INDEX>` — set in Phase 2; each segment contains only uppercase letters (non-letters stripped) |
 | `description` | string | LLM-generated description (optional) |
 | `behaviourInputName` | string | Human label for input (static or LLM) |
 | `behaviourOutputName` | string | Human label for output (static or LLM) |
@@ -359,7 +361,7 @@ Assigns a per-file sequential index to every function and global. Used to build 
 
 ### `_enrich_interfaces`
 
-Assigns `interfaceId = IF_<PROJECTUPPER>_<UNITPATH_UPPER>_<INDEX>` to each function and global. Also normalizes `parameters` format (strips extra fields, keeps `name` and `type`).
+Assigns `interfaceId = IF_<PROJECT>_<GROUP>_<MODULE>_<UNIT>_<INDEX>` to each function and global. Each segment contains only uppercase letters — non-letter characters (digits, underscores, spaces) are stripped via `_id_seg()`. `GROUP` is omitted if the module has no `modulesGroups` entry. `PROJECT` comes from `config.projectCode` if set, otherwise falls back to the project folder name. Also normalizes `parameters` format (strips extra fields, keeps `name` and `type`).
 
 ### `_propagate_global_access`
 
@@ -845,10 +847,17 @@ python run.py test_cpp_project --selected-group core
 tests/
 ├── conftest.py                        — shared session fixture (run_pipeline), JSON fixtures
 ├── pytest.ini                         — testpaths = tests, -v --tb=short
-├── integration/                       — pipeline runs once, check intermediate JSON artifacts
-│   └── test_interface_tables.py       — ACTIVE: output/interface_tables.json assertions + snapshot
+├── integration/                       — pipeline runs once, check intermediate JSON/mmd artifacts
+│   ├── test_interface_tables.py       — output/interface_tables.json assertions + snapshot
+│   ├── test_unit_diagrams.py          — output/unit_diagrams/*.mmd: format, topology, direction
+│   ├── test_behaviour_diagram.py      — output/behaviour_diagrams/: files, _behaviour_pngs.json, rows
+│   ├── test_flowcharts.py             — output/flowcharts/Core.json, Lib.json, Util.json: structure + functions
+│   └── test_behaviour_names.py        — model/functions.json: Phase 2 static behaviour name enrichment
+├── unit/                              — pure Python tests, no pipeline needed
+│   └── test_llm_client.py             — src/llm_client.py: mocked Ollama, all public functions
 ├── e2e/                               — pipeline runs once, check the final DOCX
-│   └── test_docx.py                   — ACTIVE: opens DOCX with python-docx, asserts tables/images/headings
+│   └── test_docx.py                   — opens DOCX with python-docx; interface tables, images, headings,
+│                                         behaviour tables, flowchart tables, document structure
 └── snapshots/
     └── Sample/
         └── interface_tables.json      — golden snapshot (committed); regenerate with --update-snapshots
@@ -857,7 +866,7 @@ tests/
 **When to add files:**
 - New view ready to test → add `tests/integration/test_<view>.py`
 - New snapshot needed → run once with `--update-snapshots`, review `git diff tests/snapshots/`, commit
-- Pure Python utility tests (no pipeline) → add `tests/unit/` dir + `test_*.py`
+- Pure Python utility tests (no pipeline) → add `tests/unit/test_*.py`
 
 ### Test fixture project for automated tests
 
@@ -881,11 +890,18 @@ SampleCppProject/Sample/
 # All tests (pipeline runs once automatically)
 python -m pytest tests/ -v
 
-# Skip pipeline rerun — test against existing output/
+# Skip pipeline rerun — test against existing output/ and model/
 python -m pytest tests/ -v --skip-pipeline
 
-# Interface tables only
+# Unit tests only (no pipeline, instant)
+python -m pytest tests/unit/ -v
+
+# Individual views
 python -m pytest tests/integration/test_interface_tables.py -v
+python -m pytest tests/integration/test_unit_diagrams.py -v
+python -m pytest tests/integration/test_behaviour_diagram.py -v
+python -m pytest tests/integration/test_flowcharts.py -v
+python -m pytest tests/integration/test_behaviour_names.py -v
 
 # DOCX only
 python -m pytest tests/e2e/test_docx.py -v
@@ -908,12 +924,11 @@ python -m pytest tests/integration/test_interface_tables.py --update-snapshots -
 | `update_snapshots` | session | True if `--update-snapshots` passed |
 | `assert_snapshot` | function | Compares or regenerates a golden JSON snapshot |
 
-### What test_interface_tables.py checks (integration, 51 tests total)
+### What each test file checks
 
-Parametrized where applicable — adding a new unit or function only requires updating the data, not new test functions.
-
+#### test_interface_tables.py (integration, ~25 tests)
 - Structure: `unitNames` present; Core, Lib, Util units all exist and have entries
-- Required fields: every entry (`all_entries`) has `interfaceId`, `type`, `name`, `unitKey`, `unitName`, `direction`; functions also have `functionId`
+- Required fields: every entry has `interfaceId`, `type`, `name`, `unitKey`, `unitName`, `direction`; functions also have `functionId`
 - Filtering: `coreHelper`, `coreSwitch`, `libClamp`, `utilClip`, `g_count` absent (PRIVATE)
 - Direction (parametrized): `coreGetCount` → Out, `coreSetResult` → In, `utilCompute` → Out
 - Direction validity: all functions only In or Out; all globals → In/Out
@@ -922,20 +937,59 @@ Parametrized where applicable — adding a new unit or function only requires up
 - Public globals (parametrized): `g_result` (Core), `g_utilBase` (Util)
 - Snapshot: full JSON matches `tests/snapshots/Sample/interface_tables.json`
 
-### What test_docx.py checks (e2e, 51 tests total)
+#### test_unit_diagrams.py (integration, ~14 tests)
+- All three `.mmd` files exist (`Core_Core.mmd`, `Lib_Lib.mmd`, `Util_Util.mmd`)
+- Each starts with `flowchart LR` and contains `subgraph internal_mod[<Module>]`
+- Main unit styled `mainUnit`; peers are NOT styled `mainUnit`
+- Cross-module edges: every expected edge appears in both source and target unit's diagram, labeled with `IF_`
+- Direction invariants: Util never initiates cross-module calls; Core has no incoming cross-module callers
 
-Column map (`COLS` in `docx_exporter.py`):
-`0=Interface ID, 1=Interface Name, 2=Information, 3=Data Type, 4=Data Range, 5=Direction(In/Out), 6=Source/Destination, 7=Interface Type`
+#### test_behaviour_diagram.py (integration, 13 tests)
+- `output/behaviour_diagrams/` dir and `_behaviour_pngs.json` exist; `.mmd` files present
+- **External = outside Sample group**: Core has rows (called by App/Main, Cross/Hub); Lib/Util have none
+- Row structure: `currentFunctionName`, `externalUnitFunction`, `pngPath` all present
+- `externalUnitFunction` format: `"UnitName - funcName"`
+- Core's external callers are not from Core, Lib, or Util
+- `.mmd` files use `__` separator and contain `flowchart` keyword
 
-- File exists and is non-empty
-- Interface tables present (header row col-0 = "Interface ID")
-- Every data row col-0 starts with `IF_`
-- Private names (`coreHelper`, `coreSwitch`, `libClamp`, `utilClip`, `g_count`) absent from all cells
-- Public names (parametrized, 16 cases): all 10 Core, 2 Lib, 2 Util functions + `g_result`, `g_utilBase`
-- Direction (parametrized): `coreGetCount` col-5 = "Out", `coreSetResult` col-5 = "In", `g_result` col-5 = "In/Out"
+#### test_flowcharts.py (integration, 21 tests)
+- `output/flowcharts/Core.json`, `Lib.json`, `Util.json` all exist and are non-empty JSON arrays
+- Each entry has `name` and `flowchart` fields; `flowchart` starts with `"flowchart"`; `name` is non-empty
+- All expected public functions appear in each unit's JSON
+
+#### test_behaviour_names.py (integration, 11 tests)
+- Phase 2 ran guard: at least one Sample function has `behaviourInputName` set
+- Every public function has non-empty `behaviourInputName` and `behaviourOutputName` (strings)
+- `description` field is always a string when LLM off
+- Known derivations: `coreGetCount` → `"Count"` (from `g_count` global read); `coreLoopSum`/`coreOrchestrate` → `"Sum"` (from `returnExpr`)
+- Heuristic coverage: returnExpr path produces non-generic output; global-read path prevents generic fallback for getter
+
+#### test_llm_client.py (unit, 39 tests — no pipeline, mocked HTTP)
+- `load_abbreviations`: colon/equals format, comments/blanks ignored, missing file → `{}`
+- `extract_source`: line range extraction, missing file → `""`, invalid range → `""`
+- `_ollama_available`: 200 → True, non-200/error/no-requests → False
+- `_call_ollama`: response text/whitespace, retry on empty, retry on exception, model/numCtx from config
+- `get_description`: returns response, empty source guard, prompt contains source/callees/abbreviations
+- `get_behaviour_names`: parses `Input Name: X\nOutput Name: Y`, case-insensitive, empty/unparseable → `{}`, partial, prompt contains params/globals/abbreviations
+- `get_global_description`: response, empty source, prompt content
+
+#### test_docx.py (e2e, 44 tests)
+Column map: `0=Interface ID, 1=Interface Name, 2=Information, 3=Data Type, 4=Data Range, 5=Direction(In/Out), 6=Source/Destination, 7=Interface Type`
+
+- File exists, non-empty
+- Interface tables present (col-0 header = "Interface ID"); every data row col-0 starts with `IF_`
+- Private names absent; public names present (parametrized, 16 cases)
+- Direction (parametrized): `coreGetCount`→Out, `coreSetResult`→In, `g_result`→In/Out
 - Interface Type values only "Function" or "Global Variable"
-- At least one embedded image (`doc.inline_shapes`)
-- Headings (parametrized): "Dynamic Behaviour" and "Static" present
+- At least one embedded image
+- Introduction headings: Purpose, Scope, Terms
+- Module level-1 headings: Core, Lib, Util
+- "Static Design" and "Dynamic Behaviour" headings
+- Code Metrics and Appendix A headings
+- Dynamic Behaviour sub-headings for Core (external callers)
+- Behaviour description tables: `Requirements`, `Risk`, `Capacity`, `Input Name`, `Output Name` rows
+- Flowchart tables: `Capacity(Density)` row (distinguishes from behaviour tables)
+- Unit diagram images placed after each unit heading
 
 ---
 
