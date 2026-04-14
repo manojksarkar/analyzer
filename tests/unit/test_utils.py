@@ -16,6 +16,7 @@ from utils import (
     safe_filename,
     short_name,
     get_range_for_type,
+    get_range,
     init_module_mapping,
     make_unit_key,
 )
@@ -224,3 +225,69 @@ class TestMakeUnitKey:
     def test_empty_path(self):
         key = make_unit_key("")
         assert "unknown" in key
+
+
+class TestGetRange:
+    def test_empty_type_returns_na(self):
+        assert get_range("", {}) == "NA"
+
+    def test_none_type_returns_na(self):
+        assert get_range(None, {}) == "NA"
+
+    def test_empty_dict_falls_back_to_get_range_for_type(self):
+        assert get_range("uint8_t", {}) == "0-0xFF"
+
+    def test_direct_key_lookup_returns_range(self):
+        dd = {"Speed": {"range": "0-255"}}
+        assert get_range("Speed", dd) == "0-255"
+
+    def test_direct_key_lookup_case_insensitive(self):
+        dd = {"speed": {"range": "0-255"}}
+        assert get_range("Speed", dd) == "0-255"
+
+    def test_qualified_name_lookup(self):
+        dd = {"some_key": {"qualifiedName": "MyModule::Speed", "range": "0-100"}}
+        assert get_range("MyModule::Speed", dd) == "0-100"
+
+    def test_typedef_resolves_underlying_type(self):
+        dd = {"Speed_t": {"kind": "typedef", "underlyingType": "uint8_t"}}
+        assert get_range("Speed_t", dd) == "0-0xFF"
+
+    def test_typedef_chain_resolved(self):
+        dd = {
+            "Outer": {"kind": "typedef", "underlyingType": "Inner"},
+            "Inner": {"kind": "typedef", "underlyingType": "uint16_t"},
+        }
+        assert get_range("Outer", dd) == "0-0xFFFF"
+
+    def test_typedef_with_no_underlying_returns_na(self):
+        dd = {"MyType": {"kind": "typedef", "underlyingType": ""}}
+        assert get_range("MyType", dd) == "NA"
+
+    def test_typedef_depth_guard(self):
+        """Circular typedef chain must not recurse infinitely."""
+        dd = {
+            "A": {"kind": "typedef", "underlyingType": "B"},
+            "B": {"kind": "typedef", "underlyingType": "A"},
+        }
+        result = get_range("A", dd)
+        assert result == "NA"
+
+    def test_entry_with_range_preferred_over_typedef(self):
+        dd = {"MyType": {"kind": "typedef", "underlyingType": "uint8_t", "range": "0-10"}}
+        assert get_range("MyType", dd) == "0-10"
+
+    def test_pointer_type_strips_star(self):
+        dd = {"MyStruct": {"range": "0-100"}}
+        assert get_range("MyStruct*", dd) == "0-100"
+
+    def test_ref_type_strips_ampersand(self):
+        dd = {"MyStruct": {"range": "0-100"}}
+        assert get_range("MyStruct&", dd) == "0-100"
+
+    def test_const_qualified_strips_const(self):
+        dd = {"Speed": {"range": "0-255"}}
+        assert get_range("const Speed", dd) == "0-255"
+
+    def test_unknown_type_not_in_dict_returns_na(self):
+        assert get_range("SomeUnknownType", {"Other": {"range": "0-1"}}) == "NA"
