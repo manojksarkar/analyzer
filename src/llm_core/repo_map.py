@@ -201,9 +201,9 @@ class RepoMap:
         sig = fk.signature or fk.qualified_name
         ret = f" -> {fk.return_type}" if fk.return_type else ""
         desc = ""
-        if fk.comment:
+        if fk.description:
             # Take first sentence, max 60 chars
-            first = fk.comment.split(".")[0].strip()
+            first = fk.description.split(".")[0].strip()
             if len(first) > 60:
                 first = first[:57] + "..."
             desc = f"  // {first}"

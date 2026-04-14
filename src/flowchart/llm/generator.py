@@ -615,8 +615,8 @@ class LabelGenerator:
         purpose = func_entry.description or ""
         if self._pkb._knowledge:
             fk = self._pkb._knowledge.functions.get(func_entry.qualified_name)
-            if fk and fk.comment:
-                purpose = fk.comment
+            if fk and fk.description:
+                purpose = fk.description
 
         node_lines = "\n".join(
             f'  "{nid}" ({ntype}): "{lbl}"'

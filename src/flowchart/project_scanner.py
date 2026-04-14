@@ -538,21 +538,21 @@ class FileKnowledgeExtractor:
             signature=sig,
             file=rel_path,
             line=cursor.location.line,
-            comment=comment,
+            description=comment,
             calls=calls,
         )
 
         existing = knowledge.functions.get(qname)
         if existing is None:
             knowledge.functions[qname] = fk
-        elif not existing.comment and comment:
+        elif not existing.description and comment:
             # Upgrade to version that has a doc comment; preserve calls if richer
             fk.calls = fk.calls if fk.calls else existing.calls
             knowledge.functions[qname] = fk
         elif cursor.is_definition() and not existing.calls and calls:
             # Upgrade to add call-graph info from the definition
             existing.calls = calls
-        elif cursor.is_definition() and not existing.comment:
+        elif cursor.is_definition() and not existing.description:
             knowledge.functions[qname] = fk
 
     # ------------------------------------------------------------------
@@ -820,12 +820,12 @@ class HierarchySummarizer:
         seen_qnames: Set[str] = set()
         unique: List[FunctionKnowledge] = []
         for fk in self._k.functions.values():
-            if not fk.comment and fk.qualified_name not in seen_qnames:
+            if not fk.description and fk.qualified_name not in seen_qnames:
                 seen_qnames.add(fk.qualified_name)
                 unique.append(fk)
 
         if not unique:
-            logger.info("  All functions already have comments — skipping function summarization")
+            logger.info("  All functions already have descriptions — skipping function summarization")
             return
 
         logger.info("  Summarizing %d undocumented functions (batch=%d)...",
@@ -841,8 +841,8 @@ class HierarchySummarizer:
                 if summary:
                     # Update ALL entries with this qualified name
                     for stored in self._k.functions.values():
-                        if stored.qualified_name == fk.qualified_name and not stored.comment:
-                            stored.comment = summary.strip().rstrip(".")+ "."
+                        if stored.qualified_name == fk.qualified_name and not stored.description:
+                            stored.description = summary.strip().rstrip(".")+ "."
             done += len(batch)
             if done % 50 == 0 or done == len(unique):
                 logger.info("  Function summaries: %d/%d", done, len(unique))
@@ -995,8 +995,8 @@ class HierarchySummarizer:
         func_lines = []
         for fk in funcs[:30]:
             line = f"  - {fk.signature}"
-            if fk.comment:
-                line += f": {fk.comment}"
+            if fk.description:
+                line += f": {fk.description}"
             func_lines.append(line)
 
         prompt = (

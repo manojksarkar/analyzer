@@ -56,10 +56,19 @@ def timed(component: str):
 
 
 def mmdc_path(project_root: str) -> str:
-    """Path to mermaid-cli mmdc (local node_modules or system)."""
+    """Path to mermaid-cli mmdc (local node_modules, npm global, or system)."""
     ext = ".cmd" if sys.platform == "win32" else ""
     local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + ext)
-    return local if os.path.isfile(local) else "mmdc"
+    if os.path.isfile(local):
+        return local
+    # Check npm global prefix on Windows (%APPDATA%\npm\mmdc.cmd)
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            global_mmdc = os.path.join(appdata, "npm", "mmdc.cmd")
+            if os.path.isfile(global_mmdc):
+                return global_mmdc
+    return "mmdc"
 
 
 def safe_filename(s: str) -> str:

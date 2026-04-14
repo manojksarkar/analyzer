@@ -198,8 +198,8 @@ class ProjectKnowledgeBase:
         purpose = ""
         if self._knowledge:
             fk = self._knowledge.functions.get(func_entry.qualified_name)
-            if fk and fk.comment:
-                purpose = fk.comment
+            if fk and fk.description:
+                purpose = fk.description
         if not purpose and func_entry.description:
             purpose = func_entry.description
         if purpose:
@@ -304,7 +304,7 @@ class ProjectKnowledgeBase:
             fk = self._knowledge.functions.get(qname) if self._knowledge else None
             if fk:
                 sig = fk.signature or qname
-                desc = fk.comment or ""
+                desc = fk.description or ""
                 line = f"  - {sig}" + (f"  →  {desc}" if desc else "")
             else:
                 line = f"  - {qname}"
@@ -582,7 +582,7 @@ def _make_callee_info(qname: str, fk: FunctionKnowledge) -> Dict:
     """Build a callee info dict from a FunctionKnowledge entry."""
     info: Dict = {
         "signature": fk.signature or qname,
-        "description": fk.comment or "",
+        "description": fk.description or "",
         "file": fk.file,
     }
     if fk.return_type:
