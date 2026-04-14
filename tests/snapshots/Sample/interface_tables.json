@@ -11,7 +11,7 @@
         ],
         "direction": "In",
         "functionId": "Core|Core|coreAdd|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_05",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_05",
         "interfaceName": "coreAdd",
         "location": {
           "endLine": 33,
@@ -45,7 +45,7 @@
         "callerUnits": [],
         "direction": "In",
         "functionId": "Core|Core|coreCompute|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_06",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_06",
         "interfaceName": "coreCompute",
         "location": {
           "endLine": 42,
@@ -72,7 +72,7 @@
         "callerUnits": [],
         "direction": "In",
         "functionId": "Core|Core|coreLoopSum|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_07",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_07",
         "interfaceName": "coreLoopSum",
         "location": {
           "endLine": 50,
@@ -99,7 +99,7 @@
         "callerUnits": [],
         "direction": "In",
         "functionId": "Core|Core|coreCheck|Status",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_08",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_08",
         "interfaceName": "coreCheck",
         "location": {
           "endLine": 54,
@@ -126,7 +126,7 @@
         "callerUnits": [],
         "direction": "In",
         "functionId": "Core|Core|coreSumPoint|Point",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_09",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_09",
         "interfaceName": "coreSumPoint",
         "location": {
           "endLine": 58,
@@ -155,7 +155,7 @@
         ],
         "direction": "In",
         "functionId": "Core|Core|coreSetResult|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_10",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_10",
         "interfaceName": "coreSetResult",
         "location": {
           "endLine": 62,
@@ -186,7 +186,7 @@
         ],
         "direction": "In",
         "functionId": "Core|Core|coreProcess|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_11",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_11",
         "interfaceName": "coreProcess",
         "location": {
           "endLine": 66,
@@ -220,7 +220,7 @@
         ],
         "direction": "Out",
         "functionId": "Core|Core|coreGetCount|",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_12",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_12",
         "interfaceName": "coreGetCount",
         "location": {
           "endLine": 70,
@@ -246,7 +246,7 @@
         ],
         "direction": "In",
         "functionId": "Core|Core|coreOrchestrate|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_13",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_13",
         "interfaceName": "coreOrchestrate",
         "location": {
           "endLine": 79,
@@ -278,7 +278,7 @@
         "callerUnits": [],
         "direction": "In",
         "functionId": "Core|Core|coreSetMode|Mode",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_14",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_14",
         "interfaceName": "coreSetMode",
         "location": {
           "endLine": 83,
@@ -305,7 +305,7 @@
         "callerUnits": [],
         "direction": "In/Out",
         "globalId": "Core|Core|g_result",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_CORE_01",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_01",
         "interfaceName": "g_result",
         "location": {
           "file": "Sample/Core/Core",
@@ -334,7 +334,7 @@
         ],
         "direction": "In",
         "functionId": "Lib|Lib|libAdd|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_LIB_02",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_02",
         "interfaceName": "libAdd",
         "location": {
           "endLine": 12,
@@ -371,7 +371,7 @@
         ],
         "direction": "In",
         "functionId": "Lib|Lib|libNormalize|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_LIB_03",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_03",
         "interfaceName": "libNormalize",
         "location": {
           "endLine": 17,
@@ -413,7 +413,7 @@
         ],
         "direction": "Out",
         "functionId": "Util|Util|utilCompute|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_UTIL_03",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_03",
         "interfaceName": "utilCompute",
         "location": {
           "endLine": 13,
@@ -449,7 +449,7 @@
         ],
         "direction": "In",
         "functionId": "Util|Util|utilScale|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_UTIL_04",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_04",
         "interfaceName": "utilScale",
         "location": {
           "endLine": 18,
@@ -481,7 +481,7 @@
         "callerUnits": [],
         "direction": "In/Out",
         "globalId": "Util|Util|g_utilBase",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_UTIL_01",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_01",
         "interfaceName": "g_utilBase",
         "location": {
           "file": "Sample/Util/Util",

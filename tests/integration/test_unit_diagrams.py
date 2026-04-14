@@ -20,6 +20,8 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UNIT_DIAGRAMS_DIR = os.path.join(PROJECT_ROOT, "output", "unit_diagrams")
 

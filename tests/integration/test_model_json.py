@@ -11,6 +11,8 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
 

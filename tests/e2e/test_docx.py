@@ -14,6 +14,8 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.e2e
+
 try:
     from docx import Document
 except ImportError:

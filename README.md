@@ -44,6 +44,7 @@ Output: `output/software_detailed_design_{group}.docx`
 | `--clean` | Delete `model/` and `output/` before starting |
 | `--selected-group <name>` | Run views + export for one group only (case-insensitive) |
 | `--use-model` / `--skip-model` | Skip Phase 1+2, reuse existing `model/` files |
+| `--from-phase <1-4>` | Start from a specific phase (e.g. `4` = export only) |
 
 **Group behaviour:**
 - With `--selected-group`: output goes to `output/` (flat)
@@ -93,22 +94,32 @@ LLM integration (Ollama) is **off by default**. Set `"descriptions": true` to en
 
 ## Testing
 
-```bash
-# Run all tests (pipeline runs automatically — no manual setup needed)
-python -m pytest tests/ -v
+Three layers — run only what you need:
 
-# Integration only — checks intermediate JSON artifacts
+```bash
+# Unit tests — instant, no pipeline needed
+python -m pytest tests/unit/ -v
+
+# Integration — pipeline runs once, checks intermediate JSON/Mermaid artifacts
 python -m pytest tests/integration/ -v
 
-# E2E only — checks the final DOCX
+# E2E — pipeline runs once, checks the final DOCX
 python -m pytest tests/e2e/ -v
 
+# Everything
+python -m pytest tests/ -v
+
+# Reuse existing output (skip the pipeline rerun)
+python -m pytest tests/ -v --skip-pipeline
+
 # Regenerate golden snapshots after an intentional pipeline change
-python -m pytest tests/integration/test_interface_tables.py --update-snapshots
+python -m pytest tests/integration/test_interface_tables.py --update-snapshots --skip-pipeline
 ```
 
-Tests run against `SampleCppProject` with `--selected-group Sample`.  
-The pipeline runs once per session automatically before any test executes.
+Or select by marker: `-m unit`, `-m integration`, `-m e2e`.
+
+Tests run against `SampleCppProject` with `--selected-group Sample`.
+The pipeline only runs when integration or e2e tests are collected — unit tests are always instant.
 
 ---
 

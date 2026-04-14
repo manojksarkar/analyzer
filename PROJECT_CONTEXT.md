@@ -841,29 +841,44 @@ python run.py test_cpp_project --selected-group core
 
 ## 18. Test Framework
 
+### Design principles
+
+- **unit/** — pure Python logic, no pipeline, no files, no network. Instant (< 10s). Run these when iterating on logic changes.
+- **integration/** — pipeline runs once, tests inspect intermediate artifacts (`model/*.json`, `output/*.json`, `*.mmd`). These guard that each phase produces the right structure.
+- **e2e/** — pipeline runs once, tests open the final DOCX. Guards the export phase end-to-end.
+
+The pipeline only fires when `integration/` or `e2e/` tests are collected. Running `pytest tests/unit/` never triggers it.
+
 ### Directory structure
 
 ```
 tests/
-├── conftest.py                        — shared session fixture (run_pipeline), JSON fixtures, snapshot helper
-├── pytest.ini                         — testpaths = tests, -v --tb=short
-├── integration/                       — pipeline runs once, check intermediate JSON/mmd artifacts
+├── conftest.py                        — pipeline hook (runs once for integration/e2e), run_pipeline fixture
+├── pytest.ini                         — testpaths=tests, markers: unit/integration/e2e
+├── integration/
+│   ├── conftest.py                    — snapshot helpers, JSON-loading fixtures (interface_tables etc.)
+│   ├── test_model_json.py             — model/functions.json, globalVariables.json, units.json, modules.json
 │   ├── test_interface_tables.py       — output/interface_tables.json assertions + snapshot
 │   ├── test_unit_diagrams.py          — output/unit_diagrams/*.mmd: format, topology, direction + snapshot
 │   ├── test_behaviour_diagram.py      — output/behaviour_diagrams/: files, _behaviour_pngs.json, rows
 │   ├── test_flowcharts.py             — output/flowcharts/Core.json, Lib.json, Util.json: structure + functions
 │   ├── test_behaviour_names.py        — model/functions.json: Phase 2 static behaviour name enrichment
-│   └── test_model_json.py             — model/functions.json, globalVariables.json, units.json, modules.json
-├── unit/                              — pure Python tests, no pipeline needed
+├── unit/
+│   ├── conftest.py                    — empty scope guard
 │   ├── test_llm_client.py             — src/llm_client.py: mocked Ollama, all public functions
 │   ├── test_utils.py                  — src/utils.py: comment stripping, trailing commas, config merge, safe_filename
-│   ├── test_cli.py                    — run.py: _resolve_group_name (AST-extracted, no side effects)
-│   └── test_model_deriver.py          — src/model_deriver.py: _id_seg, _readable_label, transitive globals,
-│                                         _enrich_interfaces (interfaceId format), _enrich_behaviour_names
-├── e2e/                               — pipeline runs once, check the final DOCX
+│   ├── test_cli.py                    — run.py: _resolve_group_name (AST-extracted), error-path CLI args
+│   ├── test_model_deriver.py          — src/model_deriver.py: _id_seg, _readable_label, transitive globals,
+│   │                                    _enrich_interfaces (interfaceId format), _enrich_behaviour_names
+│   ├── test_flowchart_generator.py    — fake_flowchart_generator.py: key parsing, run() output contract,
+│   │                                    LLM contract (xfail until real generator wired)
+│   └── test_behaviour_diagram_generator.py — FakeBehaviourGenerator: caller filtering, file naming,
+│                                             Mermaid validity, LLM contract (xfail)
+├── e2e/
+│   ├── conftest.py                    — empty scope marker
 │   └── test_docx.py                   — opens DOCX with python-docx; interface tables, images, headings,
-│                                         behaviour tables, flowchart tables, component/unit table,
-│                                         unit header table, moduleStaticDiagram, document structure
+│                                        behaviour tables, flowchart tables, component/unit table,
+│                                        unit header table, moduleStaticDiagram, document structure
 └── snapshots/
     └── Sample/
         ├── interface_tables.json      — golden snapshot; regenerate with --update-snapshots
@@ -873,12 +888,12 @@ tests/
 **When to add files:**
 - New view ready to test → add `tests/integration/test_<view>.py`
 - New snapshot needed → run once with `--update-snapshots`, review `git diff tests/snapshots/`, commit
-- Pure Python utility tests (no pipeline) → add `tests/unit/test_*.py`
+- Pure Python utility/generator tests (no pipeline) → add `tests/unit/test_*.py`
 
 ### Test fixture project for automated tests
 
 All automated tests run against the **`SampleCppProject`** fixture (not `test_cpp_project`).
-`conftest.py` runs: `python run.py SampleCppProject --clean --selected-group Sample`
+`conftest.py` runs: `python run.py SampleCppProject --clean --selected-group Sample --no-llm-summarize`
 
 ```
 SampleCppProject/Sample/
@@ -894,14 +909,23 @@ SampleCppProject/Sample/
 ### Run commands
 
 ```bash
-# All tests (pipeline runs once automatically)
+# Unit tests only — no pipeline, instant
+python -m pytest tests/unit/ -v
+python -m pytest -m unit -v
+
+# Integration only — pipeline runs once
+python -m pytest tests/integration/ -v
+python -m pytest -m integration -v
+
+# E2E only — pipeline runs once
+python -m pytest tests/e2e/ -v
+python -m pytest -m e2e -v
+
+# All tests — pipeline runs once
 python -m pytest tests/ -v
 
 # Skip pipeline rerun — test against existing output/ and model/
 python -m pytest tests/ -v --skip-pipeline
-
-# Unit tests only (no pipeline, instant)
-python -m pytest tests/unit/ -v
 
 # Individual views
 python -m pytest tests/integration/test_interface_tables.py -v
@@ -918,75 +942,103 @@ python -m pytest tests/integration/test_interface_tables.py --update-snapshots -
 # then: git diff tests/snapshots/  → review → git commit
 ```
 
-### conftest.py fixtures
+### Fixtures
+
+#### tests/conftest.py (root — pipeline lifecycle only)
+
+| Fixture / hook | Scope | What it does |
+|---|---|---|
+| `pytest_addoption` | — | Registers `--skip-pipeline`, `-P`, `--update-snapshots` |
+| `pytest_collection_finish` | — | Runs pipeline once if any integration/e2e items collected |
+| `run_pipeline` | session | Fails all tests if pipeline failed; not autouse |
+
+#### tests/integration/conftest.py
 
 | Fixture | Scope | What it provides |
 |---|---|---|
-| `run_pipeline` | session, autouse | Runs pipeline once; skipped if `--skip-pipeline` |
+| `update_snapshots` | session | True if `--update-snapshots` passed |
+| `assert_snapshot` | function | Compares or regenerates a golden JSON snapshot |
 | `interface_tables` | session | Full `output/interface_tables.json` as dict |
 | `core_entries` | session | `interface_tables["Core|Core"]["entries"]` |
 | `lib_entries` | session | `interface_tables["Lib|Lib"]["entries"]` |
 | `util_entries` | session | `interface_tables["Util|Util"]["entries"]` |
 | `all_entries` | session | `core_entries + lib_entries + util_entries` |
-| `update_snapshots` | session | True if `--update-snapshots` passed |
-| `assert_snapshot` | function | Compares or regenerates a golden JSON snapshot |
 
 ### What each test file checks
 
-#### test_interface_tables.py (integration, ~25 tests)
+#### test_model_json.py (integration)
+- `functions.json`: non-empty, keys are `module|unit|qualifiedName|paramTypes`, required fields, `interfaceId` starts with `IF_`, `direction` In or Out, unique IDs, behaviour names set
+- `globalVariables.json`: non-empty, keys are `module|unit|qualifiedName`, required fields
+- `units.json`: Core/Lib/Util present, required fields, Core calls Lib+Util, Util has no callees
+- `modules.json`: Core/Lib/Util present, each has non-empty `units` list
+
+#### test_interface_tables.py (integration)
 - Structure: `unitNames` present; Core, Lib, Util units all exist and have entries
-- Required fields: every entry has `interfaceId`, `type`, `name`, `unitKey`, `unitName`, `direction`; functions also have `functionId`
-- Filtering: `coreHelper`, `coreSwitch`, `libClamp`, `utilClip`, `g_count` absent (PRIVATE)
-- Direction (parametrized): `coreGetCount` → Out, `coreSetResult` → In, `utilCompute` → Out
-- Direction validity: all functions only In or Out; all globals → In/Out
+- Required fields: every entry has `interfaceId`, `type`, `name`, `unitKey`, `unitName`, `direction`
+- Filtering: private functions/globals absent (`coreHelper`, `coreSwitch`, `libClamp`, `utilClip`, `g_count`)
+- Direction: `coreGetCount` → Out, `coreSetResult` → In, globals → In/Out
 - IDs: every `interfaceId` starts with `IF_`
-- Public functions (parametrized per unit): all 10 Core, 2 Lib, 2 Util
-- Public globals (parametrized): `g_result` (Core), `g_utilBase` (Util)
 - Snapshot: full JSON matches `tests/snapshots/Sample/interface_tables.json`
 
-#### test_unit_diagrams.py (integration, ~15 tests)
+#### test_unit_diagrams.py (integration)
 - All three `.mmd` files exist (`Core_Core.mmd`, `Lib_Lib.mmd`, `Util_Util.mmd`)
 - Each starts with `flowchart LR` and contains `subgraph internal_mod[<Module>]`
-- Main unit styled `mainUnit`; peers are NOT styled `mainUnit`
-- Cross-module edges: every expected edge appears in both source and target unit's diagram, labeled with `IF_`
-- Direction invariants: Util never initiates cross-module calls; Core has no incoming cross-module callers
-- Snapshot: full `.mmd` content for all three units matches `tests/snapshots/Sample/unit_diagrams.json`
+- Cross-module edges labeled with `IF_`; direction invariants (Util never calls out)
+- Snapshot: `.mmd` content for all three units matches `tests/snapshots/Sample/unit_diagrams.json`
 
-#### test_behaviour_diagram.py (integration, 13 tests)
+#### test_behaviour_diagram.py (integration)
 - `output/behaviour_diagrams/` dir and `_behaviour_pngs.json` exist; `.mmd` files present
 - **External = outside Sample group**: Core has rows (called by App/Main, Cross/Hub); Lib/Util have none
 - Row structure: `currentFunctionName`, `externalUnitFunction`, `pngPath` all present
-- `externalUnitFunction` format: `"UnitName - funcName"`
-- Core's external callers are not from Core, Lib, or Util
-- `.mmd` files use `__` separator and contain `flowchart` keyword
+- `.mmd` files use `__` separator and contain valid Mermaid (any diagram type accepted)
 
-#### test_flowcharts.py (integration, 21 tests)
+#### test_flowcharts.py (integration)
 - `output/flowcharts/Core.json`, `Lib.json`, `Util.json` all exist and are non-empty JSON arrays
-- Each entry has `name` and `flowchart` fields; `flowchart` starts with `"flowchart"`; `name` is non-empty
+- Each entry has `name` and `flowchart` fields; `flowchart` is valid Mermaid (code fences stripped before check)
 - All expected public functions appear in each unit's JSON
 
-#### test_behaviour_names.py (integration, 11 tests)
-- Phase 2 ran guard: at least one Sample function has `behaviourInputName` set
-- Every public function has non-empty `behaviourInputName` and `behaviourOutputName` (strings)
-- `description` field is always a string when LLM off
-- Known derivations: `coreGetCount` → `"Count"` (from `g_count` global read); `coreLoopSum`/`coreOrchestrate` → `"Sum"` (from `returnExpr`)
-- Heuristic coverage: returnExpr path produces non-generic output; global-read path prevents generic fallback for getter
+#### test_behaviour_names.py (integration)
+- Every public function has non-empty `behaviourInputName` and `behaviourOutputName`
+- `description` field is always a string (empty when LLM off)
+- Known derivations: `coreGetCount` → `"Count"` (global read); `coreLoopSum`/`coreOrchestrate` → `"Sum"` (returnExpr)
 
-#### test_llm_client.py (unit, 39 tests — no pipeline, mocked HTTP)
+#### test_llm_client.py (unit)
 - `load_abbreviations`: colon/equals format, comments/blanks ignored, missing file → `{}`
 - `extract_source`: line range extraction, missing file → `""`, invalid range → `""`
 - `_ollama_available`: 200 → True, non-200/error/no-requests → False
 - `_call_ollama`: response text/whitespace, retry on empty, retry on exception, model/numCtx from config
 - `get_description`: returns response, empty source guard, prompt contains source/callees/abbreviations
-- `get_behaviour_names`: parses `Input Name: X\nOutput Name: Y`, case-insensitive, empty/unparseable → `{}`, partial, prompt contains params/globals/abbreviations
+- `get_behaviour_names`: parses `Input Name: X\nOutput Name: Y`, case-insensitive, empty/unparseable → `{}`, partial
 - `get_global_description`: response, empty source, prompt content
 
-#### test_model_json.py (integration, 19 tests)
-- `functions.json`: non-empty, keys are `module|unit|qualifiedName|paramTypes`, required fields present,
-  `interfaceId` starts with `IF_`, `direction` is In or Out, unique IDs, `behaviourInputName`/`behaviourOutputName` set
-- `globalVariables.json`: non-empty, keys are `module|unit|qualifiedName`, required fields present
-- `units.json`: non-empty, Core/Lib/Util present, required fields, Core calls Lib+Util, Util has no callees
-- `modules.json`: non-empty, Core/Lib/Util present, each has non-empty `units` list
+#### test_flowchart_generator.py (unit)
+- Key parsing: `function_id_to_unit_key`, `safe_filename`
+- `run()` contract: one file per unit, `{name, flowchart}` schema, simple (not qualified) names, valid Mermaid, empty input → no files
+- LLM contract (xfail — activate when real generator wired): returns LLM text, strips code fences, fallback on empty, prompt contains source
+
+#### test_behaviour_diagram_generator.py (unit)
+- External-caller filtering: external → `.mmd` created; internal (same module) → skipped; no callers → `[]`
+- Multiple external callers → multiple files
+- File naming: `__` separator, `.mmd` extension, no pipe chars
+- Content: non-empty, valid Mermaid (any diagram type)
+- LLM contract (xfail — activate when real generator wired): LLM response written, fences stripped, fallback on empty
+
+#### test_model_deriver.py (unit)
+- `_id_seg`: uppercase-only, strips digits/underscores/spaces
+- `_readable_label`: strips g_/s_/t_ prefixes, underscores→spaces
+- `_propagate_global_access`: transitive reads/writes along call graph, multi-hop, no self-call
+- `_enrich_behaviour_names`: param→input, returnExpr→output, global-read fallback, always sets both fields
+- `_enrich_interfaces`: `IF_` prefix, project/group/module/unit segments, zero-padded index
+
+#### test_utils.py (unit)
+- Comment stripping: `//` and `/* */`, URL in string preserved, comment marker in string preserved
+- Trailing comma stripping: before `}` and `]`, comma in string preserved
+- `load_config`: comments + trailing commas, local override merge, missing file → `{}`
+- `safe_filename`, `short_name`, `get_range_for_type`, `make_unit_key`
+
+#### test_cli.py (unit)
+- `_resolve_group_name`: exact match, case-insensitive, no match → None, None inputs → None
+- Error-path CLI: `--selected-group` missing name → exit 1; `--from-phase 9` → exit 1; unknown group → exit 2 + lists valid groups
 
 #### test_llm_client.py (unit, 39 tests — no pipeline, mocked HTTP)
 - `load_abbreviations`: colon/equals format, comments/blanks ignored, missing file → `{}`

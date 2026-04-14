@@ -1,5 +1,9 @@
 """Tests for the behaviourDiagram view (output/behaviour_diagrams/).
 
+These tests are intentionally generator-agnostic: they check structure, caller
+filtering, and file naming — not diagram content. Real LLM output is
+non-deterministic; only structural Mermaid validity is asserted.
+
 "External caller" means a caller from OUTSIDE the selected group (Sample).
 The Sample group contains Core, Lib, Util — calls among them are internal.
 
@@ -14,8 +18,26 @@ Expected docxRows:
 """
 import json
 import os
+import re
 
 import pytest
+
+pytestmark = pytest.mark.integration
+
+_MERMAID_HEADERS = re.compile(
+    r"^(%%\{|flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|gitGraph)",
+    re.MULTILINE,
+)
+
+
+def _strip_fences(text: str) -> str:
+    text = text.strip()
+    m = re.match(r"^```(?:mermaid)?\s*\n?(.*?)```\s*$", text, re.DOTALL)
+    return m.group(1).strip() if m else text
+
+
+def is_valid_mermaid(text: str) -> bool:
+    return bool(_MERMAID_HEADERS.search(_strip_fences(text)))
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BD_DIR = os.path.join(PROJECT_ROOT, "output", "behaviour_diagrams")
@@ -139,11 +161,14 @@ def test_mmd_files_use_double_underscore_separator(mmd_filenames):
         assert "__" in fname, f".mmd file missing '__' separator: {fname}"
 
 
-def test_mmd_files_contain_mermaid(mmd_filenames):
+def test_mmd_files_contain_valid_mermaid(mmd_filenames):
+    """Each .mmd must contain a valid Mermaid diagram (any supported type).
+    Code fences are accepted — the content inside them is validated.
+    """
     for fname in mmd_filenames:
         path = os.path.join(BD_DIR, fname)
         with open(path, encoding="utf-8") as f:
             content = f.read()
-        assert "flowchart" in content, (
-            f"{fname} does not contain a valid Mermaid flowchart"
+        assert is_valid_mermaid(content), (
+            f"{fname} does not contain a valid Mermaid diagram: {content[:60]!r}"
         )

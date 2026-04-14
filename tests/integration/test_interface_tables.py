@@ -11,6 +11,7 @@ import copy
 
 import pytest
 
+pytestmark = pytest.mark.integration
 
 REQUIRED_ENTRY_FIELDS = {"interfaceId", "type", "name", "unitKey", "unitName", "direction"}
 FUNCTION_REQUIRED_FIELDS = REQUIRED_ENTRY_FIELDS | {"functionId"}
