@@ -32,7 +32,7 @@ class FunctionKnowledge:
     signature: str
     file: str
     line: int
-    comment: str = ""
+    description: str = ""
     return_type: str = ""
     # Structured parameter list: [{"name": "x", "type": "int"}, ...]
     parameters: List[Dict] = field(default_factory=list)
@@ -165,7 +165,7 @@ class GlobalKnowledge:
     qualified_name: str
     var_type: str
     file: str
-    comment: str = ""
+    description: str = ""
     value: str = ""
     # Qualified names of functions that read this global (transitively).
     read_by: List[str] = field(default_factory=list)
@@ -176,8 +176,8 @@ class GlobalKnowledge:
         desc = f"{self.qualified_name} ({self.var_type})"
         if self.value:
             desc += f" = {self.value}"
-        if self.comment:
-            desc += f"  [{self.comment}]"
+        if self.description:
+            desc += f"  [{self.description}]"
         return desc
 
 
@@ -240,7 +240,7 @@ def save_knowledge(knowledge: ProjectKnowledge, path: str) -> None:
                 "signature": v.signature,
                 "file": v.file,
                 "line": v.line,
-                "comment": v.comment,
+                "description": v.description,
                 "returnType": v.return_type,
                 "parameters": v.parameters,
                 "calls": v.calls,
@@ -298,7 +298,7 @@ def save_knowledge(knowledge: ProjectKnowledge, path: str) -> None:
                 "qualifiedName": v.qualified_name,
                 "type": v.var_type,
                 "file": v.file,
-                "comment": v.comment,
+                "description": v.description,
                 "value": v.value,
                 "readBy": v.read_by,
                 "writtenBy": v.written_by,
@@ -317,7 +317,7 @@ def load_knowledge(path: str) -> Optional[ProjectKnowledge]:
     """Load ProjectKnowledge from a JSON file. Returns None if file missing."""
     p = Path(path)
     if not p.exists():
-        logger.warning("Knowledge file not found: %s", path)
+        logger.info("Knowledge file not found: %s (expected on first run)", path)
         return None
     try:
         with open(p, "r", encoding="utf-8") as f:
@@ -340,7 +340,7 @@ def load_knowledge(path: str) -> Optional[ProjectKnowledge]:
             signature=v.get("signature", ""),
             file=v.get("file", ""),
             line=v.get("line", 0),
-            comment=v.get("comment", ""),
+            description=v.get("description", v.get("comment", "")),
             return_type=v.get("returnType", ""),
             parameters=v.get("parameters", []),
             calls=v.get("calls", []),
@@ -401,7 +401,7 @@ def load_knowledge(path: str) -> Optional[ProjectKnowledge]:
             qualified_name=v.get("qualifiedName", key),
             var_type=v.get("type", ""),
             file=v.get("file", ""),
-            comment=v.get("comment", ""),
+            description=v.get("description", v.get("comment", "")),
             value=v.get("value", ""),
             read_by=v.get("readBy", []),
             written_by=v.get("writtenBy", []),

@@ -587,7 +587,7 @@ def visit_definitions(cursor):
             "returnType": cursor.result_type.spelling if cursor.result_type else "",
             "endLine": end_line,
             "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
-            "comment": _preceding_comment(cursor),
+            "description": _preceding_comment(cursor),
         }
         if cursor.is_definition():
             functions[fk] = entry
@@ -828,7 +828,7 @@ def build_metadata():
             },
             "params": f["parameters"],
             "returnType": f.get("returnType", ""),
-            "comment": f.get("comment", ""),
+            "description": f.get("description", ""),
         }
         functions_dict[fid]["visibility"] = f.get("visibility", "default")
         if f.get("syntheticFromVarDecl"):

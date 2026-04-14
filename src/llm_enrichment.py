@@ -779,7 +779,7 @@ def _build_function_context(
         callee_items.append(ContextItem(
             name=callee_qn,
             signature=callee_sig,
-            description=callee_desc or callee_f.get("description", "") or callee_f.get("comment", ""),
+            description=callee_desc or callee_f.get("description", ""),
             priority=1.0,
         ))
     callee_text = builder.fit_callees(callee_items, budget.allocate("callees")) if callee_items else ""
@@ -800,7 +800,7 @@ def _build_function_context(
         caller_items.append(ContextItem(
             name=caller_qn,
             signature=caller_sig,
-            description=caller_desc or caller_f.get("description", "") or caller_f.get("comment", ""),
+            description=caller_desc or caller_f.get("description", ""),
             priority=1.0,
         ))
     caller_text = builder.fit_callers(caller_items, budget.allocate("callers")) if caller_items else ""
@@ -820,7 +820,7 @@ def _build_function_context(
                 type_global_items.append(ContextItem(
                     name=gk.qualified_name,
                     signature=f"{gk.qualified_name} : {gk.var_type}",
-                    description=gk.comment or "",
+                    description=gk.description or "",
                     priority=0.8,
                 ))
     types_text = builder.fit_globals(type_global_items, budget.allocate("types_globals")) if type_global_items else ""
@@ -835,7 +835,7 @@ def _build_function_context(
                 sibling_items.append(ContextItem(
                     name=sib_qn,
                     signature=sib_fk.signature or sib_qn,
-                    description=sib_fk.comment or "",
+                    description=sib_fk.description or "",
                     priority=0.5,
                 ))
         sibling_text = builder.fit_siblings(sibling_items, budget.allocate("siblings")) if sibling_items else ""
@@ -979,7 +979,7 @@ def enrich_functions_rich(
             processed.add(key)
 
     # Skip functions that already have a source comment
-    order = [k for k in order if not func_by_id.get(k, {}).get("comment")]
+    order = [k for k in order if not func_by_id.get(k, {}).get("description")]
 
     # ── Pass 1: initial descriptions (bottom-up) ──
     result = {}
@@ -1201,7 +1201,7 @@ def enrich_globals_rich(
             for writer_qn in (gk.written_by or [])[:5]:
                 fk = knowledge.functions.get(writer_qn)
                 if fk:
-                    desc = fk.comment or ""
+                    desc = fk.description or ""
                     write_parts.append(f"  {writer_qn}: {desc}" if desc else f"  {writer_qn}")
             write_sites = "\n".join(write_parts) if write_parts else ""
 
@@ -1210,7 +1210,7 @@ def enrich_globals_rich(
             for reader_qn in (gk.read_by or [])[:5]:
                 fk = knowledge.functions.get(reader_qn)
                 if fk:
-                    desc = fk.comment or ""
+                    desc = fk.description or ""
                     read_parts.append(f"  {reader_qn}: {desc}" if desc else f"  {reader_qn}")
             read_sites = "\n".join(read_parts) if read_parts else ""
 

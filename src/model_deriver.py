@@ -472,8 +472,7 @@ def _run_hierarchy_summarizer(
             signature=_build_signature(f),
             file=(f.get("location") or {}).get("file", ""),
             line=(f.get("location") or {}).get("line", 0),
-            # Prefer source comment; fall back to LLM description if available
-            comment=f.get("comment", "") or f.get("description", ""),
+            description=f.get("description", ""),
             calls=[
                 functions_data[c].get("qualifiedName", c)
                 for c in (f.get("callsIds") or [])
@@ -499,11 +498,11 @@ def _run_hierarchy_summarizer(
             fid = qn_to_fid.get(qn)
             if fid and fid in functions_data:
                 functions_data[fid]["phases"] = fk.phases
-        # Also back-fill comment if HierarchySummarizer added one for an undocumented function
-        if fk.comment:
+        # Also back-fill description if HierarchySummarizer added one for an undocumented function
+        if fk.description:
             fid = qn_to_fid.get(qn)
-            if fid and fid in functions_data and not functions_data[fid].get("comment"):
-                functions_data[fid]["comment"] = fk.comment
+            if fid and fid in functions_data and not functions_data[fid].get("description"):
+                functions_data[fid]["description"] = fk.description
 
     return {
         "project": knowledge.project_summary,
@@ -556,7 +555,7 @@ def _generate_knowledge_base(
             "parameters": fentry.get("parameters") or fentry.get("params") or [],
             "file": (fentry.get("location") or {}).get("file", ""),
             "line": (fentry.get("location") or {}).get("line", 0),
-            "comment": fentry.get("comment", "") or fentry.get("description", ""),
+            "description": fentry.get("description", ""),
             "calls": calls_qnames,
             "calledBy": called_by_qnames,
             "readsGlobals": reads_globals,
@@ -645,7 +644,7 @@ def _generate_knowledge_base(
             "qualifiedName": gqn,
             "type": gentry.get("type", ""),
             "file": (gentry.get("location") or {}).get("file", ""),
-            "comment": gentry.get("comment", "") or gentry.get("description", ""),
+            "description": gentry.get("description", ""),
             "value": raw_value,
             "readBy": read_by,
             "writtenBy": written_by,
@@ -681,6 +680,13 @@ def main():
     from core.model_io import read_model_file, DATA_DICTIONARY
     base_path, project_name, functions_data, global_variables_data = _load_model()
     config = app_config()
+
+    # Backward-compat: migrate old "comment" field to "description" in functions_data
+    for f in functions_data.values():
+        if "comment" in f and "description" not in f:
+            f["description"] = f.pop("comment")
+        elif "comment" in f:
+            f.pop("comment")
 
     # Load dataDictionary for knowledge_base.json generation
     data_dict = read_model_file(DATA_DICTIONARY, required=False, default={})
