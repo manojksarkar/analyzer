@@ -1,5 +1,5 @@
 # C++ Codebase Analyzer — Complete Project Context
-> Generated: 2026-04-08 (updated x4). Validated against current source code.
+> Generated: 2026-04-08 (updated x5). Validated against current source code.
 
 ---
 
@@ -854,7 +854,9 @@ The pipeline only fires when `integration/` or `e2e/` tests are collected. Runni
 ```
 tests/
 ├── conftest.py                        — pipeline hook (runs once for integration/e2e), run_pipeline fixture
-├── pytest.ini                         — testpaths=tests, markers: unit/integration/e2e
+│                                        passes COVERAGE_PROCESS_START so subprocess coverage is captured
+├── pytest.ini                         — testpaths=tests, markers: unit/integration/e2e,
+│                                        --cov=src --cov=run --cov=fake_* --cov-report=term-missing,html
 ├── integration/
 │   ├── conftest.py                    — snapshot helpers, JSON-loading fixtures (interface_tables etc.)
 │   ├── test_model_json.py             — model/functions.json, globalVariables.json, units.json, modules.json
@@ -866,10 +868,17 @@ tests/
 ├── unit/
 │   ├── conftest.py                    — empty scope guard
 │   ├── test_llm_client.py             — src/llm_client.py: mocked Ollama, all public functions
-│   ├── test_utils.py                  — src/utils.py: comment stripping, trailing commas, config merge, safe_filename
+│   ├── test_utils.py                  — src/utils.py: comment stripping, trailing commas, config merge, safe_filename, get_range
 │   ├── test_cli.py                    — run.py: _resolve_group_name (AST-extracted), error-path CLI args
 │   ├── test_model_deriver.py          — src/model_deriver.py: _id_seg, _readable_label, transitive globals,
-│   │                                    _enrich_interfaces (interfaceId format), _enrich_behaviour_names
+│   │                                    _enrich_interfaces, _enrich_behaviour_names, _build_interface_index,
+│   │                                    _propagate_global_access, _build_signature
+│   ├── test_interface_tables_view.py  — src/views/interface_tables.py: _strip_ext, _fid_to_unit,
+│   │                                    _build_interface_tables (pure function — all filtering/sorting logic)
+│   ├── test_unit_diagrams_view.py     — src/views/unit_diagrams.py: _unit_part_id, _escape_label, _fid_to_unit,
+│   │                                    _build_unit_diagram (Mermaid output structure + edge labeling)
+│   ├── test_views_registry.py         — src/views/registry.py: @register decorator, VIEW_REGISTRY;
+│   │                                    src/views/flowcharts.py: _resolve_script (pure path logic)
 │   ├── test_flowchart_generator.py    — fake_flowchart_generator.py: key parsing, run() output contract,
 │   │                                    LLM contract (xfail until real generator wired)
 │   └── test_behaviour_diagram_generator.py — FakeBehaviourGenerator: caller filtering, file naming,
@@ -889,6 +898,7 @@ tests/
 - New view ready to test → add `tests/integration/test_<view>.py`
 - New snapshot needed → run once with `--update-snapshots`, review `git diff tests/snapshots/`, commit
 - Pure Python utility/generator tests (no pipeline) → add `tests/unit/test_*.py`
+- New pure function in a view → add tests to the matching `tests/unit/test_<view>_view.py`
 
 ### Test fixture project for automated tests
 
@@ -905,6 +915,30 @@ SampleCppProject/Sample/
   Util/   — Util.h/cpp   (public: utilCompute, utilScale  private: utilClip
                            public global: g_utilBase)
 ```
+
+### Coverage
+
+Subprocess coverage is captured via `sitecustomize.py` + `COVERAGE_PROCESS_START` passed from `conftest.py`.
+`.coveragerc` has `parallel = true` so all subprocess `.coverage.*` files are merged automatically.
+
+| File | Unit-only | Full suite (integration) |
+|------|-----------|--------------------------|
+| `src/parser.py` | 0% | ~80% |
+| `src/docx_exporter.py` | 0% | ~70% |
+| `src/model_deriver.py` | 32% | ~69% |
+| `src/run_views.py` | 0% | ~85% |
+| `src/llm_client.py` | 74% | ~78% |
+| `src/utils.py` | 74% | ~83% |
+| `src/views/__init__.py` | 0% | ~87% |
+| `src/views/registry.py` | 100% | 100% |
+| `src/views/interface_tables.py` | 83% | ~95% |
+| `src/views/unit_diagrams.py` | 61% | ~88% |
+| `src/views/behaviour_diagram.py` | 0% | ~74% |
+| `src/views/flowcharts.py` | 8% | ~71% |
+| `run.py` | ~11% | ~80%+ |
+| **TOTAL** | **~26%** | **~69–76%** |
+
+Remaining uncovered lines are mostly error paths (OSError/TimeoutExpired in subprocess calls), LLM branches (disabled with `--no-llm-summarize`), and DOCX formatting edge cases.
 
 ### Run commands
 
@@ -1029,25 +1063,23 @@ python -m pytest tests/integration/test_interface_tables.py --update-snapshots -
 - `_propagate_global_access`: transitive reads/writes along call graph, multi-hop, no self-call
 - `_enrich_behaviour_names`: param→input, returnExpr→output, global-read fallback, always sets both fields
 - `_enrich_interfaces`: `IF_` prefix, project/group/module/unit segments, zero-padded index
+- `_build_interface_index`: sequential indices per file sorted by line, globals+functions share index
+- `_build_signature`: function signature string from qualifiedName/returnType/parameters
 
-#### test_utils.py (unit)
-- Comment stripping: `//` and `/* */`, URL in string preserved, comment marker in string preserved
-- Trailing comma stripping: before `}` and `]`, comma in string preserved
-- `load_config`: comments + trailing commas, local override merge, missing file → `{}`
-- `safe_filename`, `short_name`, `get_range_for_type`, `make_unit_key`
+#### test_interface_tables_view.py (unit, 18 tests — no pipeline)
+- `_strip_ext`: removes `.cpp`/`.h`; no extension unchanged; None returned as-is
+- `_fid_to_unit`: fid → set of unit keys; fid in multiple units → union
+- `_build_interface_tables`: skips non-.cpp units; filters private functions/globals; includes public functions+globals; populates unitNames; entry has all required keys; file extension stripped in location; caller units appear in sourceDest; parameters get `range` from data dictionary; `description` added when present, absent when not; functions sorted by line number; `allowed_modules` filters other modules
 
-#### test_cli.py (unit)
-- `_resolve_group_name`: exact match, case-insensitive, no match → None, None inputs → None
-- Error-path CLI: `--selected-group` missing name → exit 1; `--from-phase 9` → exit 1; unknown group → exit 2 + lists valid groups
+#### test_unit_diagrams_view.py (unit, 18 tests — no pipeline)
+- `_unit_part_id`: `|` → `_`; space → `_`; empty/None → `"u"`
+- `_escape_label`: `"` → `'`; `\n` → space; `|` → `¦`; None → `""`
+- `_fid_to_unit`: fid → first unit only (first-wins semantics, unlike interface_tables version)
+- `_build_unit_diagram`: non-.cpp returns None; .cpp returns string with `%%{init:`, `flowchart LR`, `subgraph`; unit node id present; callee edges labeled with interfaceId; self-calls omitted; `allowed_modules` scope respected
 
-#### test_llm_client.py (unit, 39 tests — no pipeline, mocked HTTP)
-- `load_abbreviations`: colon/equals format, comments/blanks ignored, missing file → `{}`
-- `extract_source`: line range extraction, missing file → `""`, invalid range → `""`
-- `_ollama_available`: 200 → True, non-200/error/no-requests → False
-- `_call_ollama`: response text/whitespace, retry on empty, retry on exception, model/numCtx from config
-- `get_description`: returns response, empty source guard, prompt contains source/callees/abbreviations
-- `get_behaviour_names`: parses `Input Name: X\nOutput Name: Y`, case-insensitive, empty/unparseable → `{}`, partial, prompt contains params/globals/abbreviations
-- `get_global_description`: response, empty source, prompt content
+#### test_views_registry.py (unit, 9 tests — no pipeline)
+- `register`: adds function to `VIEW_REGISTRY` under given name; returns original function unchanged; multiple views registered independently; fresh module starts empty
+- `_resolve_script` (flowcharts.py): empty/None → default `fake_flowchart_generator.py`; absolute path returned as-is; relative joined to project root
 
 #### test_utils.py (unit, 22 tests — no pipeline)
 - `_strip_json_comments`: `//` and `/* */` stripped; strings with URLs/comment markers preserved
@@ -1057,6 +1089,7 @@ python -m pytest tests/integration/test_interface_tables.py --update-snapshots -
 - `short_name`: `MyClass::foo` → `"foo"`; plain name unchanged; empty/None → `""`
 - `get_range_for_type`: `void` → `"VOID"`; `uint8_t` → `"0-0xFF"`; `int` → signed range; `const uint8_t` handled
 - `make_unit_key`: resolves module from path; unit name is filename without extension
+- `get_range`: direct key lookup, case-insensitive, qualified name search, typedef resolution, typedef chain, circular typedef depth guard, pointer/ref/const stripping
 
 #### test_cli.py (unit, 7 tests — AST-extracted, no pipeline)
 - `_resolve_group_name` extracted from `run.py` via AST (avoids module-level side effects)
