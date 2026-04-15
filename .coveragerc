@@ -5,6 +5,7 @@ source =
     src
     fake_flowchart_generator
     fake_behaviour_diagram_generator
+    run
 
 [report]
 exclude_lines =
