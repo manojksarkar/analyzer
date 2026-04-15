@@ -69,12 +69,15 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool) -> List[Ph
 
 def _view_export_phases(*, output_dir: Optional[str] = None,
                         selected_group: Optional[str] = None,
+                        filter_mode: Optional[str] = None,
                         docx_args: Optional[List[str]] = None) -> List[Phase]:
     views_args: List[str] = []
     if output_dir:
         views_args += ["--output-dir", output_dir]
     if selected_group:
         views_args += ["--selected-group", selected_group]
+    if filter_mode:
+        views_args += ["--filter-mode", filter_mode]
     return [
         Phase("Phase 3: Generate views", "run_views.py", views_args),
         Phase("Phase 4: Export to DOCX", "docx_exporter.py", list(docx_args or [])),
@@ -89,6 +92,7 @@ def plan_runs(
     use_model: bool,
     no_llm_summarize: bool,
     from_phase: int = 1,
+    filter_mode: Optional[str]
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -119,14 +123,14 @@ def plan_runs(
     if not group_names:
         if use_model:
             # Skip phases 1+2; runner indices 1,2 map to phases 3,4
-            phases = _view_export_phases()
+            phases = _view_export_phases(filter_mode=filter_mode)
             translated = max(1, from_phase - 2)
             plans.append(RunPlan(label="single run (use-model)",
                                  phases=phases,
                                  runner_from_phase=translated))
         else:
             phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize) \
-                     + _view_export_phases()
+                     + _view_export_phases(filter_mode=filter_mode)
             plans.append(RunPlan(label="single run",
                                  phases=phases,
                                  runner_from_phase=from_phase))
@@ -153,13 +157,14 @@ def plan_runs(
         # behaviour, run_views/docx_exporter handle output paths themselves
         # via --selected-group, so we don't pass --output-dir explicitly.
         if resolved_selected:
-            view_phases = _view_export_phases(selected_group=g,
+            view_phases = _view_export_phases(selected_group=g, filter_mode=filter_mode,
                                               docx_args=["--selected-group", g])
         else:
             group_out = os.path.join(p.output_dir, g)
             view_phases = _view_export_phases(
                 output_dir=group_out,
                 selected_group=g,
+                filter_mode=filter_mode,
                 docx_args=[
                     os.path.join(group_out, "interface_tables.json"),
                     os.path.join(group_out, f"software_detailed_design_{g}.docx"),

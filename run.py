@@ -16,6 +16,7 @@ Examples:
   python run.py --no-llm-summarize test_cpp_project
   python run.py --from-phase 3 test_cpp_project
   python run.py --selected-group MyGroup test_cpp_project
+  python run.py --filter-mode single_per_function test_cpp_project
 """
 import os
 import shutil
@@ -49,6 +50,7 @@ use_model          = False
 no_llm_summarize   = False
 from_phase         = 1
 selected_group_arg = None
+filter_mode_arg    = None
 raw_args           = []
 
 i = 1
@@ -87,10 +89,23 @@ while i < len(sys.argv):
         raw_args.append(a)
     i += 1
 
+def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
+    """Resolve requested group name against config.modulesGroups, case-insensitive."""
+    if not requested:
+        return None
+    if not isinstance(groups, dict) or not groups:
+        return None
+    if requested in groups:
+        return requested
+    req_key = requested.casefold()
+    for k in groups.keys():
+        if isinstance(k, str) and k.casefold() == req_key:
+            return k
+    return None
 
 if len(raw_args) < 1:
     print("Usage: python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
-    print("                     [--no-llm-summarize] [--from-phase N] [--quiet|--verbose] <project_path>")
+    print("                     [--no-llm-summarize] [--from-phase N] [--quiet|--verbose] [--filter-mode MODE] <project_path>")
     print("Example: python run.py test_cpp_project")
     sys.exit(1)
 
@@ -144,6 +159,7 @@ try:
         use_model=use_model,
         no_llm_summarize=no_llm_summarize,
         from_phase=from_phase,
+        filter_mode=filter_mode_arg
     )
 except ValueError as e:
     log(str(e), component="run", err=True)

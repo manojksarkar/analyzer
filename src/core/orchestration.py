@@ -25,7 +25,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from typing import List, Sequence
-
+from utils import os_type
 from .logging_setup import get_logger
 from .paths import paths
 
@@ -73,10 +73,16 @@ class PhaseRunner:
                 continue
             _log.info(f"[{idx}/{len(phases)}] === {phase.name} ===")
             t0 = time.perf_counter()
-            r = subprocess.run(
-                phase.command(self.src_dir),
-                cwd=self.project_root,
-            )
+            if os_type == "Windows":
+                r = subprocess.run(
+                    phase.command(self.src_dir),
+                    cwd=self.project_root, shell=True
+                )
+            else:
+                r = subprocess.run(
+                    phase.command(self.src_dir),
+                    cwd=self.project_root,
+                )
             elapsed = time.perf_counter() - t0
             total += elapsed
             _log.info(f"[{idx}/{len(phases)}] {phase.name} — {elapsed:.2f}s")

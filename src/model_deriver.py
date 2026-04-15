@@ -4,7 +4,7 @@ import re
 import sys
 import json
 
-from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP
+from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group
 from core.paths import paths as _paths
 
 _p = _paths()
@@ -53,7 +53,7 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
     units_data = {}
     for fp in sorted(all_files):
         base = os.path.basename(fp)
-        if not base.lower().endswith((".cpp", ".cc", ".cxx")):
+        if not base.lower().endswith((".cpp", ".cc", ".cxx", ".h", ".hpp")):
             continue
         try:
             rel = os.path.relpath(fp, base_path).replace("\\", "/")
@@ -129,9 +129,12 @@ def _build_interface_index(base_path: str, functions_data: dict, global_variable
             idx_by_id[iid] = idx
     return idx_by_id
 
+def _id_seg(s: str) -> str:
+    """Keep only uppercase letters from a segment (removes digits, underscores, spaces, etc.)."""
+    return re.sub(r'[^A-Z]', '', (s or '').upper())
 
-def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, global_variables_data: dict, idx_by_id: dict):
-    proj_code = project_name.upper()
+def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, global_variables_data: dict, idx_by_id: dict, config: dict = None):
+    proj_code = _id_seg(project_name)
     for fid, f in functions_data.items():
         loc = f.get("location") or {}
         fp = loc.get("file", "")
@@ -139,10 +142,12 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
             rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
         except ValueError:
             rel = fp or ""
-        unit = os.path.splitext(rel)[0] if rel else ""
-        unit_code = unit.replace("/", "_").upper()
+        unit_key = make_unit_key(rel) if rel else KEY_SEP
+        key_parts = unit_key.split(KEY_SEP)
+        unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
+        group_code = _id_seg(resolve_group(key_parts[0]))
         idx_code = f"{idx_by_id.get(fid, 0):02d}"
-        interface_id = f"IF_{proj_code}_{unit_code}_{idx_code}"
+        interface_id = f"IF_{proj_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"IF_{proj_code}_{unit_name_code}_{idx_code}"
         raw_params = f.get("parameters", f.get("params", []))
         params = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]
         f["interfaceId"] = interface_id
@@ -154,10 +159,12 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
             rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
         except ValueError:
             rel = fp or ""
-        unit = os.path.splitext(rel)[0] if rel else ""
-        unit_code = unit.replace("/", "_").upper()
+        unit_key = make_unit_key(rel) if rel else KEY_SEP
+        key_parts = unit_key.split(KEY_SEP)
+        unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
+        group_code = _id_seg(resolve_group(key_parts[0]))
         idx_code = f"{idx_by_id.get(vid, 0):02d}"
-        g["interfaceId"] = f"IF_{proj_code}_{unit_code}_{idx_code}"
+        g["interfaceId"] = f"IF_{proj_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"IF_{proj_code}_{unit_name_code}_{idx_code}"
 
 
 def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict):
@@ -693,7 +700,7 @@ def main():
 
     units_data, unit_by_file = _build_units_modules(base_path, functions_data, global_variables_data)
     idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data)
-    _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id)
+    _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id, config)
     # Propagate global access along call graph so outers inherit inner globals
     _propagate_global_access(functions_data)
     # Static behaviour names (Input Name / Output Name) from params/globals/returnType

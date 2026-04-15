@@ -5,6 +5,7 @@ import re
 import sys
 import time
 from datetime import datetime, timezone
+import platform
 
 # Config loading lives in core.config (these are re-exports for backward
 # compatibility with existing call sites that still `from utils import ...`).
@@ -17,7 +18,7 @@ from core.config import (  # noqa: E402,F401
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
 KEY_SEP = "|"
-
+os_type = platform.system()
 
 def _ts() -> str:
     """Current timestamp [HH:MM:SS.mmm]."""
@@ -85,7 +86,7 @@ _CONFIG_CACHE = load_config(_PROJECT_ROOT)
 
 # Module mapping cache (initialized at import).
 _MODULE_OVERRIDES: dict = {}
-
+_GROUP_MAP: dict = {} #module name -> group name
 
 def init_module_mapping(config: dict) -> None:
     """Initialize module folder mapping used by get_module_name/make_*_key helpers.
@@ -96,8 +97,10 @@ def init_module_mapping(config: dict) -> None:
     - merged union of all config.modulesGroups entries.
     """
     global _MODULE_OVERRIDES
+    global _MODULE_OVERRIDES, _GROUP_MAP
     cfg = config or {}
     _MODULE_OVERRIDES = cfg.get("modules") or {}
+    _GROUP_MAP = {}
     if _MODULE_OVERRIDES:
         return
     groups = cfg.get("modulesGroups") or {}
@@ -105,10 +108,11 @@ def init_module_mapping(config: dict) -> None:
         _MODULE_OVERRIDES = {}
         return
     merged: dict = {}
-    for _, grp in groups.items():
+    for group_name, grp in groups.items():
         if not isinstance(grp, dict):
             continue
         for module, paths in grp.items():
+            _GROUP_MAP.setdefault(module, group_name)
             if not paths:
                 continue
             if isinstance(paths, str):
@@ -133,6 +137,9 @@ def init_module_mapping(config: dict) -> None:
 # Default initialization from on-disk config.
 init_module_mapping(_CONFIG_CACHE)
 
+def resolve_group(module: str) -> str:
+    """Return the moduleGroups group name for a module, or empty string if unknown."""
+    return _GROUP_MAP.get(module, "")
 
 def _resolve_module_from_rel(rel_file: str) -> str:
     """Resolve module name for a path relative to the project base.
@@ -155,12 +162,11 @@ def _resolve_module_from_rel(rel_file: str) -> str:
             if isinstance(paths, str):
                 paths = [paths]
             for folder in paths:
-                p = (folder or "").replace("\\", "/").lstrip("./").lower()
+                p = (folder or "").replace("\\", "/").lstrip("./")
                 if not p:
                     continue
                 # Folder-based match: module is the folder and its subfolders.
-                path_lower = path.lower()
-                if path_lower == p or path_lower.startswith(p + "/"):
+                if path == p or path.lower().startswith(p.lower() + "/"):
                     return module
         return "unknown"
 

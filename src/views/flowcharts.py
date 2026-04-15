@@ -18,7 +18,7 @@ import shlex
 import subprocess
 import sys
 from .registry import register
-from utils import KEY_SEP, log, mmdc_path, safe_filename
+from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
 
 
 def _resolve_script(project_root: str, script_path: str) -> str:
@@ -49,7 +49,7 @@ def run(model, output_dir, model_dir, config):
     metadata_path = os.path.join(model_dir_abs, "metadata.json")
     allowed_modules = {m.lower() for m in ((config or {}).get("_analyzerAllowedModules") or [])}
 
-    std = "c++17"  # fixed in code
+    std = "c++14"  # fixed in code
     clang_cfg = config.get("clang") or {}
     clang_args = clang_cfg.get("clangArgs")
     if not clang_args:
@@ -131,7 +131,10 @@ def run(model, output_dir, model_dir, config):
 
     log("flowcharts cmd: " + " ".join(shlex.quote(a) for a in cmd), component="flowcharts")
     try:
-        r = subprocess.run(cmd, cwd=project_root, check=False)
+        if os_type == "Windows":
+            r = subprocess.run(cmd, cwd=project_root, check=False, shell=True)
+        else:
+            r = subprocess.run(cmd, cwd=project_root, check=False)
     except subprocess.TimeoutExpired:
         log("generator timed out", component="flowcharts", err=True)
         return
@@ -150,7 +153,10 @@ def run(model, output_dir, model_dir, config):
     mmdc = mmdc_path(project_root)
     if not os.path.isfile(mmdc):
         try:
-            subprocess.run([mmdc, "--help"], capture_output=True, timeout=5, cwd=project_root)
+            if os_type == "Windows":
+                subprocess.run([mmdc, "--help"], capture_output=True, timeout=5, cwd=project_root, shell=True)
+            else:
+                subprocess.run([mmdc, "--help"], capture_output=True, timeout=5, cwd=project_root)
         except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
             log("mmdc not found. Run: npm install @mermaid-js/mermaid-cli", component="flowcharts", err=True)
             return
@@ -194,7 +200,10 @@ def run(model, output_dir, model_dir, config):
             with open(mmd_path, "w", encoding="utf-8") as tf:
                 tf.write(flowchart)
             run_cmd = run_cmd_base + ["-i", os.path.abspath(mmd_path), "-o", png_path]
-            r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False)
+            if os_type == "Windows":
+                r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False, shell=True)
+            else:
+                r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False)
             if r.returncode != 0:
                 failed += 1
                 log("mmdc failed for %s/%s: %s" % (unit_name, func_name, (r.stderr or r.stdout or "exit " + str(r.returncode))[:200]), component="flowcharts", err=True)

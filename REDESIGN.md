@@ -721,7 +721,7 @@ Views and exporters are discovered by the engine at startup. Config controls whi
   // Project parsing
   "project": {
     "name": "MyProject",           // Optional: auto-detected from directory
-    "std": "c++17",
+    "std": "c++14",
     "clangArgs": ["-I/path/to/includes"],
     "excludeDirs": ["build", "test", ".git"],
     "modules": {                   // Optional module grouping

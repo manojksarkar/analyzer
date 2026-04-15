@@ -430,8 +430,8 @@ def main() -> int:
     ap.add_argument("--out-dir", default=None,
                     help="Directory containing generated flowchart JSON files. "
                          "When provided, Layer-2 CFG-vs-Mermaid checks are enabled.")
-    ap.add_argument("--std", default="c++17",
-                    help="C++ standard for libclang (default: c++17)")
+    ap.add_argument("--std", default="c++14",
+                    help="C++ standard for libclang (default: c++14)")
     ap.add_argument("--clang-arg", action="append", default=[], dest="clang_args",
                     help="Extra argument forwarded to libclang "
                          "(e.g. -I/path/to/headers). Repeat for multiple paths.")
