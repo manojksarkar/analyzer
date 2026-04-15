@@ -78,13 +78,18 @@ def pytest_collection_finish(session):
 
     start = time.monotonic()
 
+    # Forward COVERAGE_PROCESS_START so subprocess coverage data is captured.
+    pipeline_env = os.environ.copy()
+    coveragerc = os.path.join(PROJECT_ROOT, ".coveragerc")
+    if os.path.isfile(coveragerc):
+        pipeline_env.setdefault("COVERAGE_PROCESS_START", coveragerc)
+
+    cmd = [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group, "--no-llm-summarize"]
+
     if show_output:
         out.write(f"  Pipeline: {label}\n\n")
         out.flush()
-        result = subprocess.run(
-            [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group, "--no-llm-summarize"],
-            cwd=PROJECT_ROOT,
-        )
+        result = subprocess.run(cmd, cwd=PROJECT_ROOT, env=pipeline_env)
     else:
         done_event = threading.Event()
 
@@ -98,10 +103,11 @@ def pytest_collection_finish(session):
         t.start()
 
         result = subprocess.run(
-            [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group, "--no-llm-summarize"],
+            cmd,
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
+            env=pipeline_env,
         )
         done_event.set()
 

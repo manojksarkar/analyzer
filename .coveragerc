@@ -1,5 +1,10 @@
 [run]
 branch = true
+parallel = true
+source =
+    src
+    fake_flowchart_generator
+    fake_behaviour_diagram_generator
 
 [report]
 exclude_lines =
