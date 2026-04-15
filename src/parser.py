@@ -93,7 +93,7 @@ for _mod_paths in _modules_cfg.values():
             _MODULE_FOLDERS.append(_norm)
 
 CLANG_ARGS = [
-    "-std=c++17",
+    "-std=c++14",
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
@@ -142,14 +142,19 @@ index = cindex.Index.create()
 functions = {}
 globals_data = {}
 data_dictionary = {}
-call_graph = defaultdict(set)  # caller -> {callees}
-reverse_call_graph = defaultdict(set)  # callee -> {callers}
+call_graph = defaultdict(list)  # caller -> [callees]
+reverse_call_graph = defaultdict(list)  # callee -> [callers]
 module_functions = defaultdict(list)
 function_to_module = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
 global_access_writes = defaultdict(set)  # func_key -> set of var_id
 # First non-trivial return expression per function (for behaviour output naming)
 function_return_expr = {}
+
+# Track already-processed function keys to avoid redundant visits from header includes
+_visited_function_keys = set()
+_visited_call_keys = set()  # for visit_calls
+_visited_global_access_keys = set()  # for visit_global_access
 
 # ---------------------------------------------------------------------------
 # Comment extraction helpers
@@ -243,7 +248,7 @@ def is_project_file(file_path: str) -> bool:
             rel = abs_path.replace("\\", "/")
         for folder in _MODULE_FOLDERS:
             # Folder-based match: folder itself or any subpath under it
-            if rel == folder or rel.startswith(folder.lower() + "/"):
+            if rel == folder or rel.lower().startswith(folder.lower() + "/"):
                 return True
         return False
 
@@ -559,7 +564,17 @@ def visit_definitions(cursor):
         and cursor.semantic_parent.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE)
     )
 
-    if is_function and cursor.location.file and is_project_file(cursor.location.file.name):
+    if is_function and cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
+        func_key = get_function_key(cursor)
+
+        # Skip if already visited (from header included in another translation unit)
+        if func_key in _visited_function_keys:
+            for child in cursor.get_children():
+                visit_definitions(child)
+            return
+
+        # Mark as visited
+        _visited_function_keys.add(func_key)
         func_id = f"{cursor.location.file.name}:{cursor.location.line}"
         module_name = get_module_name(cursor.location.file.name)
         params = []
@@ -699,7 +714,15 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
 
     if kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD):
         if cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
-            current_key = get_function_key(cursor)
+            func_key = get_function_key(cursor)
+            # Skip if already visited (from header included in another translation unit)
+            if func_key in _visited_call_keys:
+                for child in cursor.get_children():
+                    visit_calls(child, current_key)
+                return
+            # Mark as visited
+            _visited_call_keys.add(func_key)
+            current_key = func_key
         is_write = False
         is_compound = False
     elif kind == cindex.CursorKind.BINARY_OPERATOR:
@@ -755,7 +778,15 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
 def visit_calls(cursor, current_key=None):
     if cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD):
         if cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
-            current_key = get_function_key(cursor)
+            func_key = get_function_key(cursor)
+            # Skip if already visited (from header included in another translation unit)
+            if func_key in _visited_call_keys:
+                for child in cursor.get_children():
+                    visit_calls(child, current_key)
+                return
+            # Mark as visited
+            _visited_call_keys.add(func_key)
+            current_key = func_key
     elif cursor.kind == cindex.CursorKind.CALL_EXPR and current_key:
         called_key = None
         if cursor.referenced:
@@ -768,8 +799,11 @@ def visit_calls(cursor, current_key=None):
                     called_key = k
                     break
         if called_key and called_key in functions:
-            call_graph[current_key].add(called_key)
-            reverse_call_graph[called_key].add(current_key)
+            # Use list to preserve insertion order, but avoid duplicates
+            if called_key not in call_graph[current_key]:
+                call_graph[current_key].append(called_key)
+            if current_key not in reverse_call_graph[called_key]:
+                reverse_call_graph[called_key].append(current_key)
 
     for child in cursor.get_children():
         visit_calls(child, current_key)
@@ -875,8 +909,8 @@ def build_metadata():
             for c in call_graph.get(func_key, [])
             if c in func_key_to_fid
         ]
-        functions_dict[fid]["calledByIds"] = sorted(called_ids)
-        functions_dict[fid]["callsIds"] = sorted(calls_ids)
+        functions_dict[fid]["calledByIds"] = called_ids
+        functions_dict[fid]["callsIds"] = calls_ids
 
         # Map raw global var ids to model keys for reads/writes
         read_raw = global_access_reads.get(func_key, set())

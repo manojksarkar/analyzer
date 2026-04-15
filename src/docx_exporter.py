@@ -4,7 +4,7 @@ import sys
 import json
 import subprocess
 from typing import Optional, Tuple, List, Dict, Any
-
+from utils import os_type
 from core.paths import paths as _paths
 
 _p = _paths()
@@ -399,9 +399,9 @@ def _parse_module_static_diagram_cfg(views_cfg: dict, export_cfg: dict = None) -
         return (
             bool(raw.get("enabled", True)),
             bool(raw.get("renderPng", True)),
-            float(raw.get("widthInches", 5.5)),
+            float(raw.get("widthInches", 1)),
         )
-    return bool(raw), True, 5.5
+    return bool(raw), True, 1
 
 
 def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bool:
@@ -417,11 +417,14 @@ def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bo
         return False
     puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
     mmdc = mmdc_path(project_root)
-    cmd = [mmdc, "-i", mmd_path, "-o", png_path]
+    cmd = [mmdc, "-i", mmd_path, "-o", png_path, "--scale", "2"]
     if os.path.isfile(puppeteer):
         cmd.extend(["-p", puppeteer])
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
+        if os_type == "Windows":
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False, shell=True)    
+        else:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
         return r.returncode == 0 and os.path.isfile(png_path)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -666,6 +669,7 @@ def _load_flowcharts(flowcharts_dir: str) -> dict:
 def _add_unit_header_table(doc, unit_header_rows: List[Dict[str, str]], font_small) -> None:
     """Add 2-column table under unit header: global variables/typedef/enum/define | information."""
     if not unit_header_rows:
+        _add_para(doc, "NA")
         return
     table = doc.add_table(rows=1, cols=2)
     table.style = "Table Grid"
@@ -693,8 +697,8 @@ def _add_interface_table(doc, interfaces, font_small):
     for iface in interfaces:
         iface_type = iface.get("type", "") or "-"
         if "variableType" in iface:
-            data_type = iface.get("variableType", "-") or "-"
-            data_range = iface.get("range", "-") or "-"
+            data_type = iface.get("variableType", "") or "-"
+            data_range = iface.get("range", "") or "NA"
         else:
             params = iface.get("parameters", [])
             data_type = "; ".join(p.get("type", "") for p in params) if params else "VOID"
@@ -834,7 +838,7 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
             description_text = _cell_trim(joined, max_len=120)
 
         # Keep output short even when the LLM returns long text.
-        description_text = _cell_trim(str(description_text or NA), max_len=140)
+        description_text = str(description_text or NA)
         if not description_text:
             description_text = NA
 
@@ -953,7 +957,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                     static_mod_png
                 ):
                     try:
-                        doc.add_picture(static_mod_png, width=Inches(msd_width_in))
+                        doc.add_picture(static_mod_png, width=Inches((len(unit_rows_module) * msd_width_in if len(unit_rows_module) * msd_width_in < 6 else 6)))
                     except Exception:
                         _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
                 else:
@@ -985,10 +989,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                     _add_para(doc, f"[Unit diagram: {unit_png}]")
 
             # 2.1.1.1 unit header
-            path_str = interfaces[0].get("location", {}).get("file", "-") if interfaces else "-"
             doc.add_heading(f"{sec_num}.1.{unit_idx}.1 unit header", level=4)
-            _add_para(doc, f"Unit: {unit_name_display}")
-            _add_para(doc, f"Path: {path_str}")
             unit_info = units_data.get(unit_key, {})
             unit_header_rows = _build_unit_header_table(
                 unit_info,

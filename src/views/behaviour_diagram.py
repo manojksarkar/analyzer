@@ -9,15 +9,15 @@ import json
 import os
 import subprocess
 import sys
-
-# fake_behaviour_diagram_generator lives in project root
+from utils import os_type
+# behaviour_diagram_generator lives in project root
 _proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _proj not in sys.path:
     sys.path.insert(0, _proj)
 
 from .registry import register
 from utils import log, mmdc_path, KEY_SEP
-from fake_behaviour_diagram_generator import FakeBehaviourGenerator
+from behaviour_diagram_generator import SequenceDiagramGenerator
 
 
 @register("behaviourDiagram")
@@ -43,14 +43,14 @@ def run(model, output_dir, model_dir, config):
     functions_path = os.path.join(model_dir, "functions.json")
     modules_path = os.path.join(model_dir, "modules.json")
     units_path = os.path.join(model_dir, "units.json")
-    gen = FakeBehaviourGenerator(modules_path, units_path, functions_path)
+    gen = SequenceDiagramGenerator(modules_path, units_path, functions_path)
 
     render_png = beh_cfg.get("renderPng", True)
     mmdc = mmdc_path(project_root)
     puppeteer = beh_cfg.get("puppeteerConfigPath") or os.path.join(project_root, "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):
         puppeteer = os.path.join(project_root, puppeteer)
-    run_cmd_base = [mmdc]
+    run_cmd_base = [mmdc, "--scale", "2"]
     if os.path.isfile(puppeteer):
         run_cmd_base.extend(["-p", puppeteer])
 
@@ -80,7 +80,7 @@ def run(model, output_dir, model_dir, config):
         progress.step()
 
         try:
-            mmd_paths = gen.generate_all_diagrams(fid, out_dir) or []
+            mmd_paths, behaviour_descriptions = gen.generate_all_diagrams(fid, out_dir) or []
         except Exception as e:
             log("generator error for %s: %s" % (fid, e), component="behaviourDiagram", err=True)
             continue
@@ -119,9 +119,12 @@ def run(model, output_dir, model_dir, config):
             if render_png and os.path.isfile(mmd_path):
                 png_base = os.path.splitext(os.path.basename(mmd_path))[0]
                 png = os.path.join(out_dir, f"{png_base}.png")
-                run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png]
+                run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png, "-s", "2"]
                 try:
-                    r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
+                    if os_type == "Windows":
+                        r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False, shell=True)
+                    else:
+                        r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
                     if r2.returncode == 0 and os.path.isfile(png):
                         png_path = png
                     elif r2.returncode != 0 and idx == 0:
@@ -138,6 +141,7 @@ def run(model, output_dir, model_dir, config):
                 "currentFunctionName": current_function_name,
                 "externalUnitFunction": external_unit_external_function,
                 "pngPath": png_path,
+                "behaviorDescription": behaviour_descriptions[idx] if idx < len(behaviour_descriptions) else [],
             })
             count += 1
 

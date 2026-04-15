@@ -24,14 +24,14 @@ project_knowledge.json, then pass it to flowchart_engine.py via
 Usage (scan only):
     python project_scanner.py \\
         --project-dir /path/to/cpp-project \\
-        --std         c++17 \\
+        --std         c++14 \\
         --clang-arg="-I/path/to/includes" \\
         --out         project_knowledge.json
 
 Usage (scan + LLM summarization):
     python project_scanner.py \\
         --project-dir /path/to/cpp-project \\
-        --std         c++17 \\
+        --std         c++14 \\
         --clang-arg="-I/path/to/includes" \\
         --out         project_knowledge.json \\
         --llm-summarize \\
@@ -1187,8 +1187,8 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--project-dir", required=True,
                    help="Root directory of the C++ project to scan")
-    p.add_argument("--std", default="c++17",
-                   help="C++ standard (default: c++17)")
+    p.add_argument("--std", default="c++14",
+                   help="C++ standard (default: c++14)")
     p.add_argument("--clang-arg", dest="clang_args", action="append",
                    default=[], metavar="ARG",
                    help="Extra clang argument (repeatable, e.g. -I/path)")

@@ -41,7 +41,7 @@ SAMPLE_MERMAID = """flowchart TD
 """
 
 
-class FakeBehaviourGenerator:
+class SequenceDiagramGenerator:
     """Fake generator that emits one .mmd per (current_function, caller_function).
     Current unit gets called by external unit.
 

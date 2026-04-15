@@ -468,7 +468,6 @@ def default_clang_macro_defs() -> list:
     visibility-macro shims and `VOID` alias.
     """
     args = [f"-D{name}=" for name in DEFAULT_VISIBILITY_MACROS]
-    args.append("-DVOID=void")
     return args
 
 

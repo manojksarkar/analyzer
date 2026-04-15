@@ -29,6 +29,7 @@ def main():
     # Optional CLI override:
     #   python src/run_views.py --output-dir output/group1
     #   python src/run_views.py --selected-group tests
+    # python src/run_views.py --filter-mode single_per_function
     output_dir = os.path.join(PROJECT_ROOT, "output")
     args = sys.argv[1:]
     if "--output-dir" in args:
@@ -40,6 +41,11 @@ def main():
         i = args.index("--selected-group")
         if i + 1 < len(args):
             selected_group = args[i + 1]
+    filter_mode_override = None
+    if "--filter-mode" in args:
+        i = args.index("--filter-mode")
+        if i + 1 < len(args):
+            filter_mode_override = args[i + 1]
     if not os.path.isabs(output_dir):
         output_dir = os.path.join(PROJECT_ROOT, output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -49,6 +55,14 @@ def main():
 
     model = _load_model()
     config = app_config()
+    # Apply filter mode override from command line
+    if filter_mode_override:
+        if "views" not in config:
+            config["views"] = {}
+        if "sequenceDiagrams" not in config["views"]:
+            config["views"]["sequenceDiagrams"] = {}
+        config["views"]["sequenceDiagrams"]["filterMode"] = filter_mode_override
+        print(f"[run_views] Using filter mode: {filter_mode_override}")
     if selected_group:
         groups = (config.get("modulesGroups") or {})
         resolved = selected_group

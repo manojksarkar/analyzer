@@ -5,6 +5,7 @@ import re
 import sys
 import time
 from datetime import datetime, timezone
+import platform
 
 # Config loading lives in core.config (these are re-exports for backward
 # compatibility with existing call sites that still `from utils import ...`).
@@ -17,7 +18,7 @@ from core.config import (  # noqa: E402,F401
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
 KEY_SEP = "|"
-
+os_type = platform.system()
 
 def _ts() -> str:
     """Current timestamp [HH:MM:SS.mmm]."""
@@ -136,6 +137,9 @@ def init_module_mapping(config: dict) -> None:
 # Default initialization from on-disk config.
 init_module_mapping(_CONFIG_CACHE)
 
+def resolve_group(module: str) -> str:
+    """Return the moduleGroups group name for a module, or empty string if unknown."""
+    return _GROUP_MAP.get(module, "")
 
 def resolve_group(module: str) -> str:
     """Return the modulesGroups group name for a module, or empty string if unknown."""
@@ -163,12 +167,11 @@ def _resolve_module_from_rel(rel_file: str) -> str:
             if isinstance(paths, str):
                 paths = [paths]
             for folder in paths:
-                p = (folder or "").replace("\\", "/").lstrip("./").lower()
+                p = (folder or "").replace("\\", "/").lstrip("./")
                 if not p:
                     continue
                 # Folder-based match: module is the folder and its subfolders.
-                path_lower = path.lower()
-                if path_lower == p or path_lower.startswith(p + "/"):
+                if path == p or path.lower().startswith(p.lower() + "/"):
                     return module
         return "unknown"
 

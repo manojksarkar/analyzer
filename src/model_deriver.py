@@ -53,7 +53,7 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
     units_data = {}
     for fp in sorted(all_files):
         base = os.path.basename(fp)
-        if not base.lower().endswith((".cpp", ".cc", ".cxx")):
+        if not base.lower().endswith((".cpp", ".cc", ".cxx", ".h", ".hpp")):
             continue
         try:
             rel = os.path.relpath(fp, base_path).replace("\\", "/")
@@ -128,7 +128,6 @@ def _build_interface_index(base_path: str, functions_data: dict, global_variable
         for idx, (_, iid, data) in enumerate(sorted(by_file[fp], key=lambda x: (x[2].get("location") or {}).get("line", 0)), 1):
             idx_by_id[iid] = idx
     return idx_by_id
-
 
 def _id_seg(s: str) -> str:
     """Keep only uppercase letters from a segment (removes digits, underscores, spaces, etc.)."""

@@ -11,10 +11,13 @@
     "behaviourDiagram": {
       "renderPng": true
     },
+    "sequenceDiagrams": {
+      "filterMode": "skip_within_unit"
+    },
     "moduleStaticDiagram": {
       "enabled": true,
       "renderPng": true,
-      "widthInches": 5.5
+      "widthInches": 1
     }
   },
   "clang": {
@@ -26,13 +29,13 @@
     // "clangIncludePath": "/usr/lib/llvm-17/include"
   },
   "llm": {
-    "descriptions": false,
-    "behaviourNames": false,
+    "descriptions": true,
+    "behaviourNames": true,
     // provider: "ollama" (local) | "openai" (OpenAI-compatible gateway)
     "provider": "ollama",
     "baseUrl": "http://localhost:11434",
     "defaultModel": "qwen2.5-coder:14b",
-    "timeoutSeconds": 120,
+    "timeoutSeconds": 600,
     "numCtx": 8192,
     // retries: number of retries (in addition to the first attempt) on
     // HTTP error or empty response. Default 1 = up to 2 total tries.
@@ -43,7 +46,7 @@
     //   - null  → auto: numCtx-512 for Ollama, 127488 (~128K) for OpenAI
     //   - int   → explicit override (e.g. 16000 for Ollama 16K, 120000 for GPT-4o)
     // For OpenAI provider, numCtx is ignored — set this field instead.
-    "maxContextTokens": null,
+    "maxContextTokens": 127488,
     // enrichment: toggle individual enrichment features.
     // All default to the cheapest safe option (off or single-pass).
     "enrichment": {
@@ -71,25 +74,14 @@
   },
   "modulesGroups": {
     "core": {
-      "core": [
-        "app",
-        "math"
-      ]
+      "core": ["app", "math"]
     },
     "support": {
       "support": "outer/inner"
     },
     "tests": {
-      "tests_a": [
-        "tests/direction",
-        "tests/enum",
-        "tests/flow"
-      ],
-      "tests_b": [
-        "tests/hub",
-        "tests/poly",
-        "tests/structs"
-      ]
+      "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
+      "tests_b": ["tests/hub", "tests/poly", "tests/structs"]
     }
   },
   "export": {

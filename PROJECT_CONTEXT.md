@@ -788,7 +788,7 @@ constraints).
   `PATH`-extension fallback.
 - Builds `_MODULE_FOLDERS` from merged `modulesGroups` (or `modules` top-level).
 - Sets `CLANG_ARGS`:
-  - `-std=c++17`
+  - `-std=c++14`
   - `-I<MODULE_BASE_PATH>`, `-I<clangIncludePath>`
   - `-DPRIVATE=` `-DPROTECTED=` `-DPUBLIC=` `-D__OVLYINIT=` (visibility macros)
   - `-DVOID=void` (handles codebases that use `VOID` as a type macro)
@@ -1137,7 +1137,7 @@ Wraps the **real flowchart engine** under `src/flowchart/`. Steps:
    python src/flowchart/flowchart_engine.py
        --interface-json <functions[_group].json>
        --metaData-json  model/metadata.json
-       --std            c++17
+       --std            c++14
        --out-dir        output/flowcharts
        --llm-url        <baseUrl>/api/generate
        --llm-model      <defaultModel>
