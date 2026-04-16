@@ -11,7 +11,7 @@ import copy
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.e2e
 
 REQUIRED_ENTRY_FIELDS = {"interfaceId", "type", "name", "unitKey", "unitName", "direction"}
 FUNCTION_REQUIRED_FIELDS = REQUIRED_ENTRY_FIELDS | {"functionId"}

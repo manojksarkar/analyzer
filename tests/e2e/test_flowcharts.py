@@ -19,7 +19,7 @@ import re
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.e2e
 
 # Valid Mermaid diagram opening keywords (LLM may produce any of these)
 _MERMAID_HEADERS = re.compile(

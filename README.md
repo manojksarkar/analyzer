@@ -94,16 +94,13 @@ LLM integration (Ollama) is **off by default**. Set `"descriptions": true` to en
 
 ## Testing
 
-Three layers — run only what you need:
+Two layers — run only what you need:
 
 ```bash
 # Unit tests — instant, no pipeline needed
 python -m pytest tests/unit/ -v
 
-# Integration — pipeline runs once, checks intermediate JSON/Mermaid artifacts
-python -m pytest tests/integration/ -v
-
-# E2E — pipeline runs once, checks the final DOCX
+# E2E — pipeline runs once, checks all artifacts (JSON, Mermaid, DOCX)
 python -m pytest tests/e2e/ -v
 
 # Everything
@@ -113,13 +110,13 @@ python -m pytest tests/ -v
 python -m pytest tests/ -v --skip-pipeline
 
 # Regenerate golden snapshots after an intentional pipeline change
-python -m pytest tests/integration/test_interface_tables.py --update-snapshots --skip-pipeline
+python -m pytest tests/e2e/test_interface_tables.py --update-snapshots --skip-pipeline
 ```
 
-Or select by marker: `-m unit`, `-m integration`, `-m e2e`.
+Or select by marker: `-m unit`, `-m e2e`.
 
 Tests run against `SampleCppProject` with `--selected-group Sample`.
-The pipeline only runs when integration or e2e tests are collected — unit tests are always instant.
+The pipeline only runs when e2e tests are collected — unit tests are always instant.
 
 **Coverage:** ~69–76% total (full suite). ~26% unit-only (no pipeline).
 Subprocess coverage is captured automatically via `sitecustomize.py` — no extra setup needed.

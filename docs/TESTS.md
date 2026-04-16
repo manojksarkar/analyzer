@@ -1,15 +1,14 @@
 # Test Inventory
 
-**349 tests total** — 235 unit · 114 integration · 0 e2e (in count below) · 7 xfail (pending real LLM generators)
+**349 tests total** — 235 unit · 114 e2e (JSON/Mermaid artifacts) · 48 e2e (DOCX) · 7 xfail (pending real LLM generators)
 
-> Note: e2e tests (`test_docx.py`) are listed at the bottom. The 235 unit count includes all xfailed tests.
+> Two layers: **unit** (instant, no pipeline) and **e2e** (pipeline runs once, checks all artifacts + DOCX).
 
 Run commands:
 ```bash
-pytest tests/unit/        # instant, no pipeline
-pytest tests/integration/ # pipeline runs once
-pytest tests/e2e/         # pipeline runs once
-pytest tests/             # everything
+pytest tests/unit/  # instant, no pipeline
+pytest tests/e2e/   # pipeline runs once, checks everything
+pytest tests/       # everything
 ```
 
 Coverage: **~69–76% total** (full suite with pipeline). Unit-only: ~26%.
@@ -338,9 +337,9 @@ No pipeline, no network. All dependencies mocked or synthetic.
 
 ---
 
-## Integration tests (`tests/integration/`)
+## E2E tests — artifacts (`tests/e2e/`)
 
-Pipeline runs once before all tests. Tests read `model/` and `output/` artifacts.
+Pipeline runs once before all tests. Tests read `model/` and `output/` artifacts, then the final DOCX.
 
 ### test_model_json.py
 
@@ -436,7 +435,7 @@ Pipeline runs once before all tests. Tests read `model/` and `output/` artifacts
 
 ---
 
-## E2E tests (`tests/e2e/`)
+## E2E tests — DOCX (`tests/e2e/test_docx.py`)
 
 Pipeline runs once. Tests open `output/software_detailed_design_Sample.docx` with python-docx.
 

@@ -1,5 +1,5 @@
 # C++ Codebase Analyzer — Complete Project Context
-> Generated: 2026-04-08 (updated x5). Validated against current source code.
+> Generated: 2026-04-08 (updated x6). Validated against current source code.
 
 ---
 
@@ -843,28 +843,21 @@ python run.py test_cpp_project --selected-group core
 
 ### Design principles
 
-- **unit/** — pure Python logic, no pipeline, no files, no network. Instant (< 10s). Run these when iterating on logic changes.
-- **integration/** — pipeline runs once, tests inspect intermediate artifacts (`model/*.json`, `output/*.json`, `*.mmd`). These guard that each phase produces the right structure.
-- **e2e/** — pipeline runs once, tests open the final DOCX. Guards the export phase end-to-end.
+Two layers:
 
-The pipeline only fires when `integration/` or `e2e/` tests are collected. Running `pytest tests/unit/` never triggers it.
+- **unit/** — pure Python logic, no pipeline, no files, no network. Instant (< 10s). Run when iterating on logic changes.
+- **e2e/** — pipeline runs once, tests inspect all artifacts: `model/*.json`, `output/*.json`, `*.mmd` files, and the final DOCX. Guards every phase end-to-end.
+
+The pipeline only fires when `e2e/` tests are collected. Running `pytest tests/unit/` never triggers it.
 
 ### Directory structure
 
 ```
 tests/
-├── conftest.py                        — pipeline hook (runs once for integration/e2e), run_pipeline fixture
+├── conftest.py                        — pipeline hook (runs once for e2e), run_pipeline fixture
 │                                        passes COVERAGE_PROCESS_START so subprocess coverage is captured
-├── pytest.ini                         — testpaths=tests, markers: unit/integration/e2e,
+├── pytest.ini                         — testpaths=tests, markers: unit/e2e,
 │                                        --cov=src --cov=run --cov=fake_* --cov-report=term-missing,html
-├── integration/
-│   ├── conftest.py                    — snapshot helpers, JSON-loading fixtures (interface_tables etc.)
-│   ├── test_model_json.py             — model/functions.json, globalVariables.json, units.json, modules.json
-│   ├── test_interface_tables.py       — output/interface_tables.json assertions + snapshot
-│   ├── test_unit_diagrams.py          — output/unit_diagrams/*.mmd: format, topology, direction + snapshot
-│   ├── test_behaviour_diagram.py      — output/behaviour_diagrams/: files, _behaviour_pngs.json, rows
-│   ├── test_flowcharts.py             — output/flowcharts/Core.json, Lib.json, Util.json: structure + functions
-│   ├── test_behaviour_names.py        — model/functions.json: Phase 2 static behaviour name enrichment
 ├── unit/
 │   ├── conftest.py                    — empty scope guard
 │   ├── test_llm_client.py             — src/llm_client.py: mocked Ollama, all public functions
@@ -884,7 +877,13 @@ tests/
 │   └── test_behaviour_diagram_generator.py — FakeBehaviourGenerator: caller filtering, file naming,
 │                                             Mermaid validity, LLM contract (xfail)
 ├── e2e/
-│   ├── conftest.py                    — empty scope marker
+│   ├── conftest.py                    — snapshot helpers, JSON-loading fixtures, pipeline output fixtures
+│   ├── test_model_json.py             — model/functions.json, globalVariables.json, units.json, modules.json
+│   ├── test_interface_tables.py       — output/interface_tables.json assertions + snapshot
+│   ├── test_unit_diagrams.py          — output/unit_diagrams/*.mmd: format, topology, direction + snapshot
+│   ├── test_behaviour_diagram.py      — output/behaviour_diagrams/: files, _behaviour_pngs.json, rows
+│   ├── test_flowcharts.py             — output/flowcharts/Core.json, Lib.json, Util.json: structure + functions
+│   ├── test_behaviour_names.py        — model/functions.json: Phase 2 static behaviour name enrichment
 │   └── test_docx.py                   — opens DOCX with python-docx; interface tables, images, headings,
 │                                        behaviour tables, flowchart tables, component/unit table,
 │                                        unit header table, moduleStaticDiagram, document structure
@@ -895,7 +894,7 @@ tests/
 ```
 
 **When to add files:**
-- New view ready to test → add `tests/integration/test_<view>.py`
+- New view ready to test → add `tests/e2e/test_<view>.py`
 - New snapshot needed → run once with `--update-snapshots`, review `git diff tests/snapshots/`, commit
 - Pure Python utility/generator tests (no pipeline) → add `tests/unit/test_*.py`
 - New pure function in a view → add tests to the matching `tests/unit/test_<view>_view.py`
@@ -921,8 +920,8 @@ SampleCppProject/Sample/
 Subprocess coverage is captured via `sitecustomize.py` + `COVERAGE_PROCESS_START` passed from `conftest.py`.
 `.coveragerc` has `parallel = true` so all subprocess `.coverage.*` files are merged automatically.
 
-| File | Unit-only | Full suite (integration) |
-|------|-----------|--------------------------|
+| File | Unit-only | Full suite (e2e) |
+|------|-----------|-----------------|
 | `src/parser.py` | 0% | ~80% |
 | `src/docx_exporter.py` | 0% | ~70% |
 | `src/model_deriver.py` | 32% | ~69% |
@@ -947,11 +946,7 @@ Remaining uncovered lines are mostly error paths (OSError/TimeoutExpired in subp
 python -m pytest tests/unit/ -v
 python -m pytest -m unit -v
 
-# Integration only — pipeline runs once
-python -m pytest tests/integration/ -v
-python -m pytest -m integration -v
-
-# E2E only — pipeline runs once
+# E2E — pipeline runs once, checks all artifacts + DOCX
 python -m pytest tests/e2e/ -v
 python -m pytest -m e2e -v
 
@@ -961,18 +956,19 @@ python -m pytest tests/ -v
 # Skip pipeline rerun — test against existing output/ and model/
 python -m pytest tests/ -v --skip-pipeline
 
-# Individual views
-python -m pytest tests/integration/test_interface_tables.py -v
-python -m pytest tests/integration/test_unit_diagrams.py -v
-python -m pytest tests/integration/test_behaviour_diagram.py -v
-python -m pytest tests/integration/test_flowcharts.py -v
-python -m pytest tests/integration/test_behaviour_names.py -v
+# Individual e2e views
+python -m pytest tests/e2e/test_interface_tables.py -v
+python -m pytest tests/e2e/test_unit_diagrams.py -v
+python -m pytest tests/e2e/test_behaviour_diagram.py -v
+python -m pytest tests/e2e/test_flowcharts.py -v
+python -m pytest tests/e2e/test_behaviour_names.py -v
+python -m pytest tests/e2e/test_model_json.py -v
 
 # DOCX only
 python -m pytest tests/e2e/test_docx.py -v
 
 # Regenerate golden snapshot after intentional pipeline change
-python -m pytest tests/integration/test_interface_tables.py --update-snapshots --skip-pipeline
+python -m pytest tests/e2e/test_interface_tables.py --update-snapshots --skip-pipeline
 # then: git diff tests/snapshots/  → review → git commit
 ```
 
@@ -983,10 +979,10 @@ python -m pytest tests/integration/test_interface_tables.py --update-snapshots -
 | Fixture / hook | Scope | What it does |
 |---|---|---|
 | `pytest_addoption` | — | Registers `--skip-pipeline`, `-P`, `--update-snapshots` |
-| `pytest_collection_finish` | — | Runs pipeline once if any integration/e2e items collected |
+| `pytest_collection_finish` | — | Runs pipeline once if any e2e items collected |
 | `run_pipeline` | session | Fails all tests if pipeline failed; not autouse |
 
-#### tests/integration/conftest.py
+#### tests/e2e/conftest.py
 
 | Fixture | Scope | What it provides |
 |---|---|---|
@@ -1000,13 +996,13 @@ python -m pytest tests/integration/test_interface_tables.py --update-snapshots -
 
 ### What each test file checks
 
-#### test_model_json.py (integration)
+#### test_model_json.py (e2e)
 - `functions.json`: non-empty, keys are `module|unit|qualifiedName|paramTypes`, required fields, `interfaceId` starts with `IF_`, `direction` In or Out, unique IDs, behaviour names set
 - `globalVariables.json`: non-empty, keys are `module|unit|qualifiedName`, required fields
 - `units.json`: Core/Lib/Util present, required fields, Core calls Lib+Util, Util has no callees
 - `modules.json`: Core/Lib/Util present, each has non-empty `units` list
 
-#### test_interface_tables.py (integration)
+#### test_interface_tables.py (e2e)
 - Structure: `unitNames` present; Core, Lib, Util units all exist and have entries
 - Required fields: every entry has `interfaceId`, `type`, `name`, `unitKey`, `unitName`, `direction`
 - Filtering: private functions/globals absent (`coreHelper`, `coreSwitch`, `libClamp`, `utilClip`, `g_count`)
@@ -1014,24 +1010,24 @@ python -m pytest tests/integration/test_interface_tables.py --update-snapshots -
 - IDs: every `interfaceId` starts with `IF_`
 - Snapshot: full JSON matches `tests/snapshots/Sample/interface_tables.json`
 
-#### test_unit_diagrams.py (integration)
+#### test_unit_diagrams.py (e2e)
 - All three `.mmd` files exist (`Core_Core.mmd`, `Lib_Lib.mmd`, `Util_Util.mmd`)
 - Each starts with `flowchart LR` and contains `subgraph internal_mod[<Module>]`
 - Cross-module edges labeled with `IF_`; direction invariants (Util never calls out)
 - Snapshot: `.mmd` content for all three units matches `tests/snapshots/Sample/unit_diagrams.json`
 
-#### test_behaviour_diagram.py (integration)
+#### test_behaviour_diagram.py (e2e)
 - `output/behaviour_diagrams/` dir and `_behaviour_pngs.json` exist; `.mmd` files present
 - **External = outside Sample group**: Core has rows (called by App/Main, Cross/Hub); Lib/Util have none
 - Row structure: `currentFunctionName`, `externalUnitFunction`, `pngPath` all present
 - `.mmd` files use `__` separator and contain valid Mermaid (any diagram type accepted)
 
-#### test_flowcharts.py (integration)
+#### test_flowcharts.py (e2e)
 - `output/flowcharts/Core.json`, `Lib.json`, `Util.json` all exist and are non-empty JSON arrays
 - Each entry has `name` and `flowchart` fields; `flowchart` is valid Mermaid (code fences stripped before check)
 - All expected public functions appear in each unit's JSON
 
-#### test_behaviour_names.py (integration)
+#### test_behaviour_names.py (e2e)
 - Every public function has non-empty `behaviourInputName` and `behaviourOutputName`
 - `description` field is always a string (empty when LLM off)
 - Known derivations: `coreGetCount` → `"Count"` (global read); `coreLoopSum`/`coreOrchestrate` → `"Sum"` (returnExpr)
