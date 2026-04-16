@@ -20,14 +20,17 @@ captures every phase header and elapsed time.
 from __future__ import annotations
 
 import os
+import platform
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
 from typing import List, Sequence
-from utils import os_type
+
 from .logging_setup import get_logger
 from .paths import paths
+
+os_type = platform.system()
 
 _log = get_logger("orchestration")
 

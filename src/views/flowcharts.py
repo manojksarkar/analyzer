@@ -24,6 +24,14 @@ from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
 def _resolve_script(project_root: str, script_path: str) -> str:
     if not script_path:
         return os.path.join(project_root, "fake_flowchart_generator.py")
+    # Recover from unescaped backslashes in config.json: JSON parses "src\flowchart"
+    # as src + FF (0x0C) + lowchart, because \f/\b/\n/\r/\t are JSON escape sequences.
+    # Reverse that so Windows paths written with single backslashes still work.
+    if any(c in script_path for c in "\b\f\n\r\t"):
+        for ctrl, letter in (("\b", "b"), ("\f", "f"), ("\n", "n"), ("\r", "r"), ("\t", "t")):
+            script_path = script_path.replace(ctrl, "/" + letter)
+        log("scriptPath had unescaped backslashes in config.json; recovered to: %s" % script_path,
+            component="flowcharts")
     return script_path if os.path.isabs(script_path) else os.path.join(project_root, script_path)
 
 
