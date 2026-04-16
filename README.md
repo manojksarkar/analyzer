@@ -121,6 +121,10 @@ Or select by marker: `-m unit`, `-m integration`, `-m e2e`.
 Tests run against `SampleCppProject` with `--selected-group Sample`.
 The pipeline only runs when integration or e2e tests are collected — unit tests are always instant.
 
+**Coverage:** ~69–76% total (full suite). ~26% unit-only (no pipeline).
+Subprocess coverage is captured automatically via `sitecustomize.py` — no extra setup needed.
+View the HTML report: `tests/coverage_html/index.html`
+
 ---
 
 ## Documentation
@@ -129,3 +133,5 @@ The pipeline only runs when integration or e2e tests are collected — unit test
 |---|---|
 | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) | Full pipeline, model schema, config, CLI, design decisions, test framework |
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture and logic flow |
+| [docs/TESTS.md](docs/TESTS.md) | Full inventory of all 349 tests with descriptions |
+| [docs/DOCX_generation_walkthrough.md](docs/DOCX_generation_walkthrough.md) | DOCX export walkthrough |

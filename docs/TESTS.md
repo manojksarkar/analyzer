@@ -1,6 +1,8 @@
 # Test Inventory
 
-**320 tests total** — 158 unit · 91 integration · 48 e2e · 7 xfail (pending real LLM generators)
+**349 tests total** — 235 unit · 114 integration · 0 e2e (in count below) · 7 xfail (pending real LLM generators)
+
+> Note: e2e tests (`test_docx.py`) are listed at the bottom. The 235 unit count includes all xfailed tests.
 
 Run commands:
 ```bash
@@ -10,7 +12,9 @@ pytest tests/e2e/         # pipeline runs once
 pytest tests/             # everything
 ```
 
-Coverage: `pytest tests/ --cov=src` (requires pipeline run for full numbers).
+Coverage: **~69–76% total** (full suite with pipeline). Unit-only: ~26%.
+Subprocess coverage is captured via `sitecustomize.py` + `COVERAGE_PROCESS_START` — no manual setup needed.
+See `.coveragerc` and `tests/coverage_html/index.html` for the full report.
 
 ---
 
@@ -182,6 +186,89 @@ No pipeline, no network. All dependencies mocked or synthetic.
 - `test_interface_id_index_zero_padded` — index is zero-padded (e.g. `01`)
 - `test_non_letter_chars_stripped_from_project` — special chars removed from all segments
 
+### test_interface_tables_view.py
+
+**TestStripExt**
+- `test_removes_cpp_extension` — `file.cpp` → `file`
+- `test_removes_h_extension` — `header.h` → `header`
+- `test_no_extension_unchanged` — `noext` → `noext`
+- `test_none_returns_none` — None → None
+- `test_empty_string` — empty → empty
+- `test_dotfile_treated_as_extension` — `.hidden` → `.hidden`
+
+**TestFidToUnit**
+- `test_maps_fid_to_unit` — functionId → set of owning unit keys
+- `test_fid_in_multiple_units` — fid in two units → union
+- `test_empty_units` — empty input → `{}`
+- `test_unit_with_no_function_ids` — unit with no functions → `{}`
+
+**TestBuildInterfaceTables**
+- `test_empty_model_returns_unit_names` — always has `unitNames` key
+- `test_skips_non_cpp_units` — `.h` units excluded
+- `test_includes_cpp_unit` — `.cpp` units included
+- `test_unit_names_populated` — unit display names correct
+- `test_public_function_included` — public function appears in entries
+- `test_private_function_excluded` — private function absent
+- `test_missing_function_id_skipped` — missing fid gracefully skipped
+- `test_global_variable_included` — public global appears, gets range
+- `test_private_global_excluded` — private global absent
+- `test_allowed_modules_filters_out_other_modules` — other modules excluded
+- `test_function_entry_has_expected_keys` — all required keys present
+- `test_file_extension_stripped_in_location` — `.cpp` stripped from `location.file`
+- `test_caller_unit_appears_in_source_dest` — external callers in sourceDest
+- `test_function_parameters_get_range` — parameters enriched with range
+- `test_description_added_when_present` — description key added when set
+- `test_no_description_key_when_absent` — no description key when unset
+- `test_functions_sorted_by_line` — entries sorted by line number
+
+### test_unit_diagrams_view.py
+
+**TestUnitPartId**
+- `test_pipe_replaced_by_underscore` — `Mod|core` → `Mod_core`
+- `test_space_replaced_by_underscore` — `My Module` → `My_Module`
+- `test_empty_string_returns_u` — empty → `u`
+- `test_none_returns_u` — None → `u`
+- `test_no_special_chars_unchanged` — plain name unchanged
+
+**TestEscapeLabel**
+- `test_double_quotes_replaced_by_single` — `"` → `'`
+- `test_newline_replaced_by_space` — `\n` → space
+- `test_pipe_replaced_by_broken_bar` — `|` → `¦`
+- `test_empty_string` — empty → empty
+- `test_none` — None → empty
+- `test_plain_text_unchanged` — safe text unchanged
+
+**TestFidToUnitDiagrams**
+- `test_maps_fid_to_first_unit` — fid → first unit key (first-wins)
+- `test_fid_first_unit_wins` — dict insertion order determines winner
+- `test_empty_units` — empty → `{}`
+
+**TestBuildUnitDiagram**
+- `test_non_cpp_unit_returns_none` — `.h` unit → None
+- `test_cpp_unit_returns_string` — `.cpp` unit → string
+- `test_output_starts_with_mermaid_init` — starts with `%%{init:`
+- `test_output_contains_flowchart_lr` — `flowchart LR` present
+- `test_output_contains_subgraph_for_module` — `subgraph` present
+- `test_unit_node_appears_in_diagram` — unit node ID in output
+- `test_callee_edge_labeled_with_interface_id` — cross-unit edge labeled with interfaceId
+- `test_self_calls_not_added_as_edges` — intra-unit calls omitted
+- `test_allowed_modules_marks_internal_units` — allowed_modules scope applied
+
+### test_views_registry.py
+
+**TestViewRegistry**
+- `test_register_adds_to_registry` — `@register("name")` inserts into VIEW_REGISTRY
+- `test_register_stores_original_function` — stored function is callable
+- `test_register_returns_original_function_unchanged` — decorator returns original fn
+- `test_multiple_views_registered` — multiple views coexist
+- `test_registry_starts_empty` — fresh module import has empty registry
+
+**TestResolveScript**
+- `test_empty_script_path_returns_default` — empty → `fake_flowchart_generator.py`
+- `test_none_script_path_returns_default` — None → `fake_flowchart_generator.py`
+- `test_absolute_path_returned_as_is` — absolute path unchanged
+- `test_relative_path_joined_to_project_root` — relative path joined to project root
+
 ### test_utils.py
 
 **TestStripJsonComments**
@@ -231,6 +318,23 @@ No pipeline, no network. All dependencies mocked or synthetic.
 - `test_unit_name_is_filename_without_extension` — `Core.cpp` → unit name `Core`
 - `test_unknown_path_returns_unknown` — unmapped path → `unknown|unknown`
 - `test_empty_path` — empty path → `unknown|unknown`
+
+**TestGetRange**
+- `test_empty_type_returns_na` — empty type → `NA`
+- `test_none_type_returns_na` — None type → `NA`
+- `test_empty_dict_falls_back_to_get_range_for_type` — `uint8_t` with no dict → `0-0xFF`
+- `test_direct_key_lookup_returns_range` — exact dict key match → range
+- `test_direct_key_lookup_case_insensitive` — lowercase key matched case-insensitively
+- `test_qualified_name_lookup` — `qualifiedName` field searched
+- `test_typedef_resolves_underlying_type` — `kind=typedef` follows `underlyingType`
+- `test_typedef_chain_resolved` — multi-hop typedef chain resolved
+- `test_typedef_with_no_underlying_returns_na` — empty underlyingType → `NA`
+- `test_typedef_depth_guard` — circular typedef chain terminates, returns `NA`
+- `test_entry_with_range_preferred_over_typedef` — explicit `range` wins over typedef resolution
+- `test_pointer_type_strips_star` — `MyStruct*` → looks up `MyStruct`
+- `test_ref_type_strips_ampersand` — `MyStruct&` → looks up `MyStruct`
+- `test_const_qualified_strips_const` — `const Speed` → looks up `Speed`
+- `test_unknown_type_not_in_dict_returns_na` — unknown type not in dict → `NA`
 
 ---
 
