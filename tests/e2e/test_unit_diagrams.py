@@ -170,5 +170,5 @@ def test_core_has_no_incoming_cross_module_callers(mmd_files):
 # Snapshot — full .mmd content for all units
 # ---------------------------------------------------------------------------
 
-def test_snapshot(mmd_files, assert_snapshot):
+def test_snapshot(mmd_files, assert_snapshot, llm_summarize_off):
     assert_snapshot(mmd_files, "Sample/unit_diagrams.json")

@@ -82,6 +82,7 @@ class TestSafeFilename:
 # build_flowchart_for_function: LLM contract
 # ---------------------------------------------------------------------------
 
+@pytest.mark.llm
 class TestBuildFlowchartForFunction:
     """Tests for what the real generator's build_flowchart_for_function must do.
 

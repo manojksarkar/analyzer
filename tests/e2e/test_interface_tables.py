@@ -172,5 +172,5 @@ def _normalize(data):
     return out
 
 
-def test_snapshot(interface_tables, assert_snapshot):
+def test_snapshot(interface_tables, assert_snapshot, llm_descriptions_off, llm_behaviour_names_off):
     assert_snapshot(_normalize(interface_tables), "Sample/interface_tables.json")

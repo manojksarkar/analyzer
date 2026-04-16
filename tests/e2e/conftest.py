@@ -1,12 +1,50 @@
 """E2E conftest — pipeline output fixtures and snapshot helpers."""
 import json
 import os
+import sys
 
 import pytest
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 SNAPSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "snapshots")
+
+
+def _load_cfg():
+    """Load config.json via the project's own utility (strips comments/trailing commas)."""
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+    from utils import load_config
+    return load_config(PROJECT_ROOT)
+
+
+@pytest.fixture(scope="session")
+def llm_behaviour_names_off():
+    """Skip the requesting test when llm.behaviourNames is enabled.
+
+    Static-heuristic assertions are not valid when the LLM overwrites the values.
+    """
+    if _load_cfg().get("llm", {}).get("behaviourNames", False):
+        pytest.skip("llm.behaviourNames is on — static heuristic assertions not valid")
+
+
+@pytest.fixture(scope="session")
+def llm_descriptions_off():
+    """Skip the requesting test when llm.descriptions is enabled.
+
+    Tests asserting the description field is absent/empty are not valid when LLM adds it.
+    """
+    if _load_cfg().get("llm", {}).get("descriptions", False):
+        pytest.skip("llm.descriptions is on — description field assertions not valid")
+
+
+@pytest.fixture(scope="session")
+def llm_summarize_off():
+    """Skip the requesting test when llm.summarize is enabled.
+
+    Snapshots generated with LLM off will not match LLM-enriched output.
+    """
+    if _load_cfg().get("llm", {}).get("summarize", False):
+        pytest.skip("llm.summarize is on — snapshot content may differ")
 
 
 @pytest.fixture(scope="session")

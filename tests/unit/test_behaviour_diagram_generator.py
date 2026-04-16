@@ -201,6 +201,7 @@ class TestMmdContent:
 # LLM content contract (requires real LLM seam — xfail until implemented)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.llm
 class TestLlmContract:
     """These tests define what the real generator must do with the LLM.
     They are marked xfail because the current generator does not call llm_client.

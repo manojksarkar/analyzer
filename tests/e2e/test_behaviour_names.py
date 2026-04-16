@@ -118,7 +118,7 @@ def test_behaviour_names_are_strings(sample_public_functions):
         )
 
 
-def test_description_field_is_string_when_llm_off(sample_public_functions):
+def test_description_field_is_string_when_llm_off(sample_public_functions, llm_descriptions_off):
     """With LLM off, description is absent or an empty string — never a non-string."""
     for fid, f in sample_public_functions.items():
         if "description" in f:
@@ -146,7 +146,7 @@ def test_description_field_is_string_when_llm_off(sample_public_functions):
     #   operators stripped → first token "sum" → "Sum"
     ("coreOrchestrate", "behaviourOutputName", "Sum"),
 ])
-def test_static_behaviour_name_derivation(sample_public_functions, func_name, field, expected_substr):
+def test_static_behaviour_name_derivation(sample_public_functions, llm_behaviour_names_off, func_name, field, expected_substr):
     match = _find(sample_public_functions, func_name)
     assert match is not None, f"Function '{func_name}' not found in Sample public functions"
     value = match.get(field, "")
@@ -159,7 +159,7 @@ def test_static_behaviour_name_derivation(sample_public_functions, func_name, fi
 # Heuristic coverage: returnExpr path fires for known functions
 # ---------------------------------------------------------------------------
 
-def test_return_expr_heuristic_produces_non_generic_output(sample_public_functions):
+def test_return_expr_heuristic_produces_non_generic_output(sample_public_functions, llm_behaviour_names_off):
     """Functions whose returnExpr starts with a word should get a non-generic output name.
     coreLoopSum (returnExpr='sum') and coreOrchestrate (returnExpr='sum+...') are
     known to trigger this path — their outputs should NOT end with ' result'.
@@ -180,7 +180,7 @@ def test_return_expr_heuristic_produces_non_generic_output(sample_public_functio
 # Heuristic coverage: global-read path fires for getter functions
 # ---------------------------------------------------------------------------
 
-def test_global_read_heuristic_for_getter_function(sample_public_functions):
+def test_global_read_heuristic_for_getter_function(sample_public_functions, llm_behaviour_names_off):
     """coreGetCount() has no params and reads g_count.
     Its input name should come from the global name ('Count'), not the generic fallback.
     """
