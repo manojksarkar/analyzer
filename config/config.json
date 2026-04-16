@@ -28,6 +28,7 @@
   "llm": {
     "descriptions": false,
     "behaviourNames": false,
+    "summarize": false,
     "baseUrl": "http://localhost:11434",
     "defaultModel": "llama",
     "timeoutSeconds": 120,

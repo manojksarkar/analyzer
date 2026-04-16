@@ -1,9 +1,10 @@
 #pragma once
 
-// Types used by Core functions — tests enum and struct params in interface table.
-enum Status { STATUS_OK = 0, STATUS_ERR = 1 };
-enum Mode   { MODE_FAST = 0, MODE_SAFE = 1 };
-struct Point { int x; int y; };
+#include "../../Types/Types.h"
+#include "../../Types/PointRect.h"
+
+// Core-local enum — tests enum params in interface table.
+enum Mode { MODE_FAST = 0, MODE_SAFE = 1 };
 
 // Globals
 PUBLIC extern int g_result;        // written by coreSetResult -> direction In

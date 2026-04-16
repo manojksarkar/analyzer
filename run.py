@@ -37,6 +37,7 @@ from utils import log, load_config
 clean_all          = False
 use_model          = False
 no_llm_summarize   = False
+llm_summarize_flag = False   # explicit --llm-summarize overrides config
 from_phase         = 1
 selected_group_arg = None
 raw_args           = []   # collects non-flag arguments (project path)
@@ -44,16 +45,17 @@ raw_args           = []   # collects non-flag arguments (project path)
 i = 1
 while i < len(sys.argv):
     a = sys.argv[i]
-    if a == "--clean":
+    if a in ("-h", "--help"):
+        print(__doc__)
+        sys.exit(0)
+    elif a == "--clean":
         clean_all = True
     elif a in ("--use-model", "--skip-model"):
         use_model = True
     elif a == "--no-llm-summarize":
         no_llm_summarize = True
     elif a == "--llm-summarize":
-        # Accepted for backwards-compatibility but has no effect: summarization
-        # is now ON by default. Use --no-llm-summarize to disable it.
-        pass
+        llm_summarize_flag = True
     elif a == "--selected-group":
         i += 1
         if i >= len(sys.argv):
@@ -116,19 +118,9 @@ if not os.path.isdir(resolved):
 
 # ---------------------------------------------------------------------------
 # Phase definitions
-# LLM summarization (phases + hierarchy summaries) is ON by default.
-# Pass --no-llm-summarize to skip it for faster runs at lower quality.
+# PHASES_DEFAULT and deriver_flags are defined after config load (see below)
+# so that llm.summarize config is respected before building the phase list.
 # ---------------------------------------------------------------------------
-
-deriver_flags = [] if no_llm_summarize else ["--llm-summarize"]
-
-PHASES_DEFAULT = [
-    ("Phase 1: Parse C++ source", "parser.py",        [resolved]),
-    ("Phase 2: Derive model",     "model_deriver.py", deriver_flags),
-    ("Phase 3: Generate views",   "run_views.py",     []),
-    ("Phase 4: Export to DOCX",   "docx_exporter.py", []),
-]
-PHASES_BUILD_MODEL = PHASES_DEFAULT[:2]
 MODEL_FILES = (
     os.path.join(SCRIPT_DIR, "model", "functions.json"),
     os.path.join(SCRIPT_DIR, "model", "globalVariables.json"),
@@ -161,6 +153,25 @@ def _run_phases(phases, from_ph: int = 1) -> float:
 total_time = 0.0
 
 cfg = load_config(SCRIPT_DIR)
+
+# Config-driven LLM summarize toggle: llm.summarize=false behaves like --no-llm-summarize.
+# --llm-summarize CLI flag overrides config; --no-llm-summarize always wins.
+if not no_llm_summarize:
+    if llm_summarize_flag:
+        no_llm_summarize = False
+    else:
+        no_llm_summarize = not cfg.get("llm", {}).get("summarize", True)
+
+deriver_flags = [] if no_llm_summarize else ["--llm-summarize"]
+
+PHASES_DEFAULT = [
+    ("Phase 1: Parse C++ source", "parser.py",        [resolved]),
+    ("Phase 2: Derive model",     "model_deriver.py", deriver_flags),
+    ("Phase 3: Generate views",   "run_views.py",     []),
+    ("Phase 4: Export to DOCX",   "docx_exporter.py", []),
+]
+PHASES_BUILD_MODEL = PHASES_DEFAULT[:2]
+
 groups_cfg = (cfg.get("modulesGroups") or {})
 group_names = sorted(groups_cfg.keys()) if isinstance(groups_cfg, dict) else []
 resolved_selected = _resolve_group_name(groups_cfg, selected_group_arg)

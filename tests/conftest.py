@@ -46,14 +46,13 @@ def pytest_addoption(parser):
 def pytest_collection_finish(session):
     """Run the pipeline after collection, before any test executes.
 
-    Skipped entirely when only unit tests are collected — no integration/e2e
+    Skipped entirely when only unit tests are collected — no e2e
     items means no pipeline output is needed.
     """
     global _pipeline_failure
 
-    # Only run the pipeline when integration or e2e tests are collected.
+    # Only run the pipeline when e2e tests are collected.
     needs_pipeline = any(
-        "integration" in str(item.fspath).replace("\\", "/") or
         "e2e" in str(item.fspath).replace("\\", "/")
         for item in session.items
     )
@@ -90,7 +89,7 @@ def pytest_collection_finish(session):
             PROJECT_ROOT + os.pathsep + existing_pypath if existing_pypath else PROJECT_ROOT
         )
 
-    cmd = [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group, "--no-llm-summarize"]
+    cmd = [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group]
 
     if show_output:
         out.write(f"  Pipeline: {label}\n\n")
