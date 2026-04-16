@@ -79,10 +79,16 @@ def pytest_collection_finish(session):
     start = time.monotonic()
 
     # Forward COVERAGE_PROCESS_START so subprocess coverage data is captured.
+    # Also ensure PROJECT_ROOT is on PYTHONPATH so sitecustomize.py is found
+    # reliably on Linux (where '' may not be in sys.path for subprocesses).
     pipeline_env = os.environ.copy()
     coveragerc = os.path.join(PROJECT_ROOT, ".coveragerc")
     if os.path.isfile(coveragerc):
         pipeline_env.setdefault("COVERAGE_PROCESS_START", coveragerc)
+        existing_pypath = pipeline_env.get("PYTHONPATH", "")
+        pipeline_env["PYTHONPATH"] = (
+            PROJECT_ROOT + os.pathsep + existing_pypath if existing_pypath else PROJECT_ROOT
+        )
 
     cmd = [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group, "--no-llm-summarize"]
 
