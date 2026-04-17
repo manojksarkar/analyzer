@@ -97,6 +97,7 @@ def _parse_args() -> EngineConfig:
     p = argparse.ArgumentParser(
         description="C++ → Mermaid flowchart generator powered by libclang + LLM",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        fromfile_prefix_chars='@',
     )
 
     p.add_argument("--interface-json", required=True,

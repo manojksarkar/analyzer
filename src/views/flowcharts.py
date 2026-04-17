@@ -132,10 +132,17 @@ def run(model, output_dir, model_dir, config):
     ]
     if os.path.isfile(kb_path):
         cmd.extend(["--knowledge-json", kb_path])
-    for a in clang_args:
-        if a:
-            # Pass as --clang-arg=... so leading '-' isn't parsed as a new option
-            cmd.append(f"--clang-arg={str(a)}")
+    # Many projects have hundreds of -I/-D clang args. Passing them all on the
+    # command line blows the Windows cmd.exe 8192-char limit (WinError 206).
+    # Write them to a response file and pass `@file` — flowchart_engine.py
+    # enables argparse's fromfile_prefix_chars='@' to read args from it.
+    non_empty_clang_args = [str(a) for a in clang_args if a]
+    if non_empty_clang_args:
+        args_file = os.path.join(model_dir_abs, ".flowcharts_clang_args.txt")
+        with open(args_file, "w", encoding="utf-8") as f:
+            for a in non_empty_clang_args:
+                f.write(f"--clang-arg={a}\n")
+        cmd.append(f"@{args_file}")
 
     log("flowcharts cmd: " + " ".join(shlex.quote(a) for a in cmd), component="flowcharts")
     try:
