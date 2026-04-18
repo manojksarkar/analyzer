@@ -9,6 +9,10 @@ Options:
   --skip-model         Alias of --use-model
   --no-llm-summarize   Skip LLM phase/hierarchy summarization (faster, lower quality)
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
+  --verbose            Enable DEBUG logs (cache hits, budgets, few-shot picks)
+  --quiet              Only log WARNINGs and above
+  --trace-prompts      Print full LLM prompts (system + user) to stdout.
+                       WARNING: large runs can emit tens of MB of prompt text.
 
 Examples:
   python run.py test_cpp_project
@@ -31,10 +35,13 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "src"))
 from core.logging_setup import configure_logging
 _quiet_flag = "--quiet" in sys.argv
 _verbose_flag = "--verbose" in sys.argv
+_trace_prompts_flag = "--trace-prompts" in sys.argv
 if _verbose_flag:
     os.environ.setdefault("LOG_LEVEL", "DEBUG")
 elif _quiet_flag:
     os.environ.setdefault("LOG_LEVEL", "WARNING")
+if _trace_prompts_flag:
+    os.environ.setdefault("LLM_TRACE_PROMPTS", "1")
 _log_path = configure_logging(project_root=SCRIPT_DIR, quiet=_quiet_flag, verbose=_verbose_flag)
 
 from utils import log, load_config
@@ -58,8 +65,8 @@ while i < len(sys.argv):
     a = sys.argv[i]
     if a == "--clean":
         clean_all = True
-    elif a in ("--quiet", "--verbose"):
-        pass  # consumed by configure_logging() above
+    elif a in ("--quiet", "--verbose", "--trace-prompts"):
+        pass  # consumed at top of file (configure_logging / env vars)
     elif a in ("--use-model", "--skip-model"):
         use_model = True
     elif a == "--no-llm-summarize":
@@ -105,7 +112,8 @@ def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
 
 if len(raw_args) < 1:
     print("Usage: python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
-    print("                     [--no-llm-summarize] [--from-phase N] [--quiet|--verbose] [--filter-mode MODE] <project_path>")
+    print("                     [--no-llm-summarize] [--from-phase N] [--quiet|--verbose]")
+    print("                     [--trace-prompts] [--filter-mode MODE] <project_path>")
     print("Example: python run.py test_cpp_project")
     sys.exit(1)
 

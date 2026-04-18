@@ -491,12 +491,13 @@ class LabelGenerator:
         total_chars = len(SYSTEM_PROMPT) + len(base_prompt)
         logger.debug("Batch prompt: %d chars (~%d tokens) for %d nodes",
                      total_chars, total_chars // 4, len(batch))
-        # Print full prompt at TRACE level (set env FLOWCHART_TRACE=1 to enable)
-        if os.environ.get("FLOWCHART_TRACE"):
+        # Print full prompt at TRACE level. Enabled by --trace-prompts CLI flag
+        # (sets LLM_TRACE_PROMPTS=1); legacy FLOWCHART_TRACE env var still works.
+        if os.environ.get("LLM_TRACE_PROMPTS") or os.environ.get("FLOWCHART_TRACE"):
             print("\n" + "="*60)
-            print(f"[TRACE] SYSTEM PROMPT:\n{SYSTEM_PROMPT[:500]}...")
-            print(f"[TRACE] USER PROMPT:\n{base_prompt}")
-            print("="*60 + "\n")
+            print(f"[TRACE][cfg_labels] SYSTEM PROMPT:\n{SYSTEM_PROMPT}")
+            print(f"[TRACE][cfg_labels] USER PROMPT:\n{base_prompt}")
+            print("="*60 + "\n", flush=True)
 
         required_ids = {n.node_id for n in batch}
         accumulated: Dict[str, str] = {}
