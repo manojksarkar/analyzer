@@ -178,6 +178,11 @@ def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "defau
         if not HAS_REQUESTS:
             _log.warning("requests not installed. pip install requests")
         return ""
+    if os.environ.get("LLM_TRACE_PROMPTS"):
+        print("\n" + "=" * 60)
+        print(f"[TRACE][{kind}] SYSTEM PROMPT:\n{system}")
+        print(f"[TRACE][{kind}] USER PROMPT:\n{prompt}")
+        print("=" * 60 + "\n", flush=True)
     text = client.generate(system, prompt)
     if not text and client.provider == "ollama":
         _log.warning(
