@@ -26,6 +26,19 @@ import os
 import shutil
 import sys
 
+# Force UTF-8 on stdout/stderr so non-ASCII source text (e.g. Korean/Chinese
+# identifiers or comments) doesn't crash prints with UnicodeEncodeError on
+# Windows (where the default code page is cp1252). Propagate via
+# PYTHONIOENCODING so every Python subprocess we spawn inherits the same
+# encoding. errors='replace' keeps the run alive even if one character is
+# un-representable in the target encoding.
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(SCRIPT_DIR)
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "src"))

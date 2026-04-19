@@ -171,6 +171,29 @@ def llm_provider_reachable(config: dict) -> bool:
         return False
 
 
+def _trace_prompt(kind: str, system: str, prompt: str) -> None:
+    """Print a traced prompt, tolerating consoles that can't encode all chars.
+
+    Windows consoles often use cp1252 and will raise UnicodeEncodeError if a
+    prompt contains non-ASCII source text (e.g. Korean identifiers from a CPP
+    codebase). Encode to whatever stdout prefers, replacing anything that
+    can't be represented, and write bytes so the run never dies on a trace.
+    """
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    body = (
+        "\n" + "=" * 60 + "\n"
+        f"[TRACE][{kind}] SYSTEM PROMPT:\n{system}\n"
+        f"[TRACE][{kind}] USER PROMPT:\n{prompt}\n"
+        + "=" * 60 + "\n"
+    )
+    try:
+        sys.stdout.write(body)
+        sys.stdout.flush()
+    except UnicodeEncodeError:
+        sys.stdout.write(body.encode(encoding, errors="replace").decode(encoding, errors="replace"))
+        sys.stdout.flush()
+
+
 def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "default") -> str:
     """Issue a single LLM call via the unified client. Returns "" on failure."""
     client = _get_client(config)
@@ -179,10 +202,7 @@ def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "defau
             _log.warning("requests not installed. pip install requests")
         return ""
     if os.environ.get("LLM_TRACE_PROMPTS"):
-        print("\n" + "=" * 60)
-        print(f"[TRACE][{kind}] SYSTEM PROMPT:\n{system}")
-        print(f"[TRACE][{kind}] USER PROMPT:\n{prompt}")
-        print("=" * 60 + "\n", flush=True)
+        _trace_prompt(kind, system, prompt)
     text = client.generate(system, prompt)
     if not text and client.provider == "ollama":
         _log.warning(
