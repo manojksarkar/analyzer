@@ -41,7 +41,6 @@ BATCH_SIZE        — default nodes per LLM call.
 
 import logging
 import os
-import sys
 from typing import Dict, List, Optional, Set, Tuple
 
 from llm_core.client import LlmClient
@@ -492,22 +491,8 @@ class LabelGenerator:
         total_chars = len(SYSTEM_PROMPT) + len(base_prompt)
         logger.debug("Batch prompt: %d chars (~%d tokens) for %d nodes",
                      total_chars, total_chars // 4, len(batch))
-        # Print full prompt at TRACE level. Enabled by --trace-prompts CLI flag
-        # (sets LLM_TRACE_PROMPTS=1); legacy FLOWCHART_TRACE env var still works.
-        if os.environ.get("LLM_TRACE_PROMPTS") or os.environ.get("FLOWCHART_TRACE"):
-            encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
-            body = (
-                "\n" + "=" * 60 + "\n"
-                f"[TRACE][cfg_labels] SYSTEM PROMPT:\n{SYSTEM_PROMPT}\n"
-                f"[TRACE][cfg_labels] USER PROMPT:\n{base_prompt}\n"
-                + "=" * 60 + "\n"
-            )
-            try:
-                sys.stdout.write(body)
-                sys.stdout.flush()
-            except UnicodeEncodeError:
-                sys.stdout.write(body.encode(encoding, errors="replace").decode(encoding, errors="replace"))
-                sys.stdout.flush()
+        # Prompt/response tracing is centralized in LlmClient.generate()
+        # (controlled by --trace-prompts / LLM_TRACE_PROMPTS).
 
         required_ids = {n.node_id for n in batch}
         accumulated: Dict[str, str] = {}

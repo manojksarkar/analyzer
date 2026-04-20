@@ -30,6 +30,8 @@ use_openai_format.
 """
 
 import logging
+import os
+import sys
 import threading
 import time
 from typing import Dict, Optional
@@ -41,6 +43,77 @@ from .think import strip_think_section
 from . import tokens as token_counter
 
 logger = logging.getLogger(__name__)
+
+
+_TRACE_COUNTER = 0
+
+
+def _trace_enabled() -> bool:
+    return bool(os.environ.get("LLM_TRACE_PROMPTS") or os.environ.get("FLOWCHART_TRACE"))
+
+
+def _safe_write(body: str) -> None:
+    """Write to stdout tolerating consoles that can't encode all characters.
+
+    Windows cp1252 can't encode e.g. Korean source comments that appear in
+    traced prompts/responses; fall back to an encode→decode(replace) round-trip
+    so tracing never aborts the run.
+    """
+    try:
+        sys.stdout.write(body)
+        sys.stdout.flush()
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        sys.stdout.write(body.encode(encoding, errors="replace").decode(encoding, errors="replace"))
+        sys.stdout.flush()
+
+
+def _trace_request(provider: str, model: str, system_prompt: str, user_prompt: str) -> int:
+    """Print the outgoing system + user prompts. Returns the call ordinal."""
+    global _TRACE_COUNTER
+    _TRACE_COUNTER += 1
+    ordinal = _TRACE_COUNTER
+    body = (
+        "\n" + "=" * 72 + "\n"
+        f"[LLM-TRACE #{ordinal}] REQUEST  provider={provider} model={model}\n"
+        + "-" * 72 + "\n"
+        f"[SYSTEM PROMPT]\n{system_prompt}\n\n"
+        f"[USER PROMPT]\n{user_prompt}\n"
+        + "=" * 72 + "\n"
+    )
+    _safe_write(body)
+    return ordinal
+
+
+def _trace_messages(provider: str, model: str, messages: list) -> int:
+    """Print the outgoing multi-message conversation."""
+    global _TRACE_COUNTER
+    _TRACE_COUNTER += 1
+    ordinal = _TRACE_COUNTER
+    parts = [
+        "\n" + "=" * 72 + "\n",
+        f"[LLM-TRACE #{ordinal}] REQUEST  provider={provider} model={model} (multi-turn)\n",
+        "-" * 72 + "\n",
+    ]
+    for m in messages:
+        role = m.get("role", "?")
+        content = m.get("content", "")
+        parts.append(f"[{role.upper()}]\n{content}\n\n")
+    parts.append("=" * 72 + "\n")
+    _safe_write("".join(parts))
+    return ordinal
+
+
+def _trace_response(ordinal: int, response: Optional[str]) -> None:
+    """Print the response that came back for a previously-traced request."""
+    body = (
+        "-" * 72 + "\n"
+        f"[LLM-TRACE #{ordinal}] RESPONSE\n"
+        + "-" * 72 + "\n"
+        f"{response if response is not None else '<empty/None>'}\n"
+        + "=" * 72 + "\n\n"
+    )
+    _safe_write(body)
 
 
 # Process-wide serialisation for OpenAI calls. Class-level so every instance
@@ -126,6 +199,8 @@ class LlmClient:
 
         Returns None on persistent failure (after retries) or empty response.
         """
+        trace_ord = _trace_request(self._provider, self._model, system_prompt, user_prompt) \
+            if _trace_enabled() else 0
         last_exc: Optional[BaseException] = None
         # max_retries=1 means: 1 initial attempt + 1 retry = 2 total tries.
         total_attempts = self._max_retries + 1
@@ -138,6 +213,8 @@ class LlmClient:
                 if raw:
                     cleaned = strip_think_section(raw)
                     if cleaned:
+                        if trace_ord:
+                            _trace_response(trace_ord, cleaned)
                         return cleaned
                 # Empty response: log and (maybe) retry
                 if attempt < total_attempts:
@@ -150,6 +227,8 @@ class LlmClient:
                     "LLM (%s/%s) returned empty response after %d attempt(s)",
                     self._provider, self._model, total_attempts,
                 )
+                if trace_ord:
+                    _trace_response(trace_ord, "")
                 return None
             except requests.Timeout as exc:
                 last_exc = exc
@@ -183,6 +262,8 @@ class LlmClient:
                 "LLM (%s/%s) failed after %d attempt(s): %s",
                 self._provider, self._model, total_attempts, last_exc,
             )
+        if trace_ord:
+            _trace_response(trace_ord, f"<failed: {last_exc}>" if last_exc else "<empty>")
         return None
 
     def call(self, messages: list, *, temperature: Optional[float] = None) -> Optional[str]:
@@ -207,6 +288,8 @@ class LlmClient:
             The (think-stripped) response text, or None on persistent failure.
         """
         temp = temperature if temperature is not None else self._temperature
+        trace_ord = _trace_messages(self._provider, self._model, messages) \
+            if _trace_enabled() else 0
         last_exc: Optional[BaseException] = None
         total_attempts = self._max_retries + 1
         for attempt in range(1, total_attempts + 1):
@@ -218,6 +301,8 @@ class LlmClient:
                 if raw:
                     cleaned = strip_think_section(raw)
                     if cleaned:
+                        if trace_ord:
+                            _trace_response(trace_ord, cleaned)
                         return cleaned
                 if attempt < total_attempts:
                     logger.warning(
@@ -229,6 +314,8 @@ class LlmClient:
                     "LLM (%s/%s) call() empty response after %d attempt(s)",
                     self._provider, self._model, total_attempts,
                 )
+                if trace_ord:
+                    _trace_response(trace_ord, "")
                 return None
             except requests.Timeout as exc:
                 last_exc = exc
@@ -261,6 +348,8 @@ class LlmClient:
                 "LLM (%s/%s) call() failed after %d attempt(s): %s",
                 self._provider, self._model, total_attempts, last_exc,
             )
+        if trace_ord:
+            _trace_response(trace_ord, f"<failed: {last_exc}>" if last_exc else "<empty>")
         return None
 
     # ------------------------------------------------------------------
