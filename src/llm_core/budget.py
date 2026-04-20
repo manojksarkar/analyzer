@@ -267,15 +267,30 @@ def resolve_max_tokens(llm_cfg: Dict) -> int:
     function does NOT silently default them.
 
     Priority:
-      1. Explicit ``maxContextTokens`` in config (int) — used as-is
+      1. Explicit ``maxContextTokens`` in config (int). For Ollama it is
+         clamped to ``numCtx - 256`` because the server-side window is
+         bounded by ``numCtx`` — a higher value would silently be truncated
+         by the runtime, producing empty responses and auto-halving retries.
       2. ``numCtx - 512`` for Ollama (reserve headroom for output)
       3. 127488 for OpenAI (128K - 512 reserve)
     """
     explicit = llm_cfg.get("maxContextTokens")
-    if explicit is not None:
-        return int(explicit)
-
     provider = llm_cfg["provider"].lower()
+
+    if explicit is not None:
+        explicit_i = int(explicit)
+        if provider == "ollama":
+            hard_cap = max(1024, int(llm_cfg["numCtx"]) - 256)
+            if explicit_i > hard_cap:
+                logger.warning(
+                    "llm.maxContextTokens=%d exceeds Ollama numCtx=%d; "
+                    "clamping to %d to avoid server-side truncation. "
+                    "Raise numCtx in config to use a larger window.",
+                    explicit_i, int(llm_cfg["numCtx"]), hard_cap,
+                )
+                return hard_cap
+        return explicit_i
+
     if provider == "openai":
         return 127488
     return max(1024, int(llm_cfg["numCtx"]) - 512)
