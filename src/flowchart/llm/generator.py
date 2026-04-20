@@ -53,15 +53,31 @@ logger = logging.getLogger(__name__)
 
 # ── Prompt-size budget constants ─────────────────────────────────────────────
 
-# Target: fits in a 2048-token model with room for ~400 tokens of JSON output.
-# System prompt ~850 tokens + user prompt ~1150 tokens = ~2000 tokens total.
-# At 4 chars/token: 2000 tokens * 4 = 8000 chars.  Use 6000 to be safe for
-# code-heavy content which tokenizes less efficiently (~2-3 chars/token).
-MAX_PROMPT_CHARS = 6000
+# Char budgets are derived per-call from the model's token window (see
+# _derive_budgets). These module-level values are only used as fallbacks when
+# a caller can't pass a token budget (e.g. legacy code paths, tests). They are
+# tuned for the worst case — a 2048-token Ollama model.
+#
+# At runtime the active budgets scale with config.llm.maxContextTokens so a
+# 128K-token model isn't artificially capped at 6000 chars of prompt / 1200
+# chars of project context.
+MAX_PROMPT_CHARS = 6000    # fallback only; real value = _derive_budgets().prompt
+CONTEXT_BUDGET = 1200      # fallback only; real value = _derive_budgets().context
 
-# Max chars for the PKB context packet (hierarchy + callee graph).
-# The 4-level BFS can be very large; cap it so it doesn't dominate.
-CONTEXT_BUDGET = 1200
+# Reserve room for JSON output (tokens). Anything above this is input budget.
+_OUTPUT_RESERVE_TOKENS = 800
+# Safety margin so we don't run right up against num_ctx (tokens).
+_SAFETY_MARGIN_TOKENS = 256
+# Approximate char/token ratio for mixed code+prose. Conservative to stay
+# below the limit even when the content tokenises less efficiently.
+_CHARS_PER_TOKEN = 3
+# Fraction of the input budget reserved for the PKB context packet (hierarchy,
+# callers, phases, globals, callees). Bigger than the old 1200/6000 = 20%
+# default so project context actually survives in models with plenty of room.
+_CONTEXT_FRACTION = 0.45
+# Absolute floors so the 2048-token worst case still works.
+_PROMPT_FLOOR = 6000
+_CONTEXT_FLOOR = 1200
 
 # Lines of source above/below the batch node range for the excerpt.
 SOURCE_PADDING = 5
@@ -486,11 +502,12 @@ class LabelGenerator:
             source_code=source_code,
             all_nodes=all_nodes,
             phases=phases,
+            max_context_tokens=self._max_context_tokens,
         )
 
         total_chars = len(SYSTEM_PROMPT) + len(base_prompt)
-        logger.debug("Batch prompt: %d chars (~%d tokens) for %d nodes",
-                     total_chars, total_chars // 4, len(batch))
+        logger.debug("Batch prompt: %d chars (~%d tokens) for %d nodes (budget=%s tokens)",
+                     total_chars, total_chars // 4, len(batch), self._max_context_tokens or "default")
         # Prompt/response tracing is centralized in LlmClient.generate()
         # (controlled by --trace-prompts / LLM_TRACE_PROMPTS).
 
@@ -716,6 +733,29 @@ class LabelGenerator:
 # Size-aware prompt builder
 # ---------------------------------------------------------------------------
 
+def _derive_budgets(max_context_tokens: Optional[int]) -> Tuple[int, int]:
+    """Return (prompt_char_budget, context_char_budget) for this call.
+
+    The flowchart generator historically hard-coded 6000/1200 char limits that
+    were tuned for a 2048-token Ollama model. When running against a 128K
+    model (OpenAI) those limits throw away ~99% of the usable context window
+    and starve the LLM of project context. This helper scales both limits
+    with the model's real token window (as resolved from
+    config.llm.maxContextTokens / numCtx), while keeping the old values as
+    hard floors for small local models.
+    """
+    if not max_context_tokens or max_context_tokens <= 0:
+        return _PROMPT_FLOOR, _CONTEXT_FLOOR
+
+    input_tokens = max(
+        max_context_tokens - _OUTPUT_RESERVE_TOKENS - _SAFETY_MARGIN_TOKENS,
+        512,
+    )
+    prompt_budget = max(_PROMPT_FLOOR, input_tokens * _CHARS_PER_TOKEN)
+    context_budget = max(_CONTEXT_FLOOR, int(prompt_budget * _CONTEXT_FRACTION))
+    return prompt_budget, context_budget
+
+
 def _build_size_aware_prompt(
     batch: List[CfgNode],
     func_entry: FunctionEntry,
@@ -723,17 +763,25 @@ def _build_size_aware_prompt(
     source_code: str,
     all_nodes: Optional[List[CfgNode]] = None,
     phases: Optional[List[Dict]] = None,
+    max_context_tokens: Optional[int] = None,
 ) -> str:
     """
-    Build a prompt that fits within MAX_PROMPT_CHARS.
+    Build a prompt that fits within the model's context window.
+
+    Budgets scale with ``max_context_tokens`` (from ``llm.maxContextTokens`` /
+    ``numCtx``) — small Ollama models stay at the legacy 6000/1200 floors,
+    while GPT-4-class models get proportionally larger project-context budgets
+    so the PKB packet isn't chopped down to 1200 chars.
 
     Strategy (applied in order until the prompt fits):
       1. Try WITHOUT source excerpt (nodes have raw_code; excerpt is a bonus).
          If this already fits, optionally add a compact source excerpt.
-      2. If still too large, trim the context packet to CONTEXT_BUDGET.
+      2. If still too large, trim the context packet.
       3. Log a warning if the prompt is still large after trimming (the
          auto-halving mechanism will handle it upstream).
     """
+    prompt_budget, context_budget = _derive_budgets(max_context_tokens)
+
     # ── Attempt 1: no source excerpt ─────────────────────────────────
     prompt_no_src = build_user_prompt(
         qualified_name=func_entry.qualified_name,
@@ -749,7 +797,7 @@ def _build_size_aware_prompt(
 
     total_no_src = len(SYSTEM_PROMPT) + len(prompt_no_src)
 
-    if total_no_src <= MAX_PROMPT_CHARS:
+    if total_no_src <= prompt_budget:
         # We have headroom — try to squeeze in a compact source excerpt
         excerpt = _extract_batch_source(source_code, batch, func_entry.line)
         prompt_with_src = build_user_prompt(
@@ -763,7 +811,7 @@ def _build_size_aware_prompt(
             phases=phases,
             func_start_line=func_entry.line,
         )
-        if len(SYSTEM_PROMPT) + len(prompt_with_src) <= MAX_PROMPT_CHARS:
+        if len(SYSTEM_PROMPT) + len(prompt_with_src) <= prompt_budget:
             return prompt_with_src   # full prompt with excerpt fits
         return prompt_no_src         # excerpt didn't fit; use version without
 
@@ -771,9 +819,9 @@ def _build_size_aware_prompt(
     user_without_context = len(prompt_no_src) - len(context_packet)
     available = max(
         300,   # always keep at least the first few hierarchy lines
-        MAX_PROMPT_CHARS - len(SYSTEM_PROMPT) - user_without_context,
+        prompt_budget - len(SYSTEM_PROMPT) - user_without_context,
     )
-    trimmed_context = _trim_context(context_packet, min(available, CONTEXT_BUDGET))
+    trimmed_context = _trim_context(context_packet, min(available, context_budget))
 
     prompt_trimmed = build_user_prompt(
         qualified_name=func_entry.qualified_name,
@@ -788,11 +836,11 @@ def _build_size_aware_prompt(
     )
 
     final_total = len(SYSTEM_PROMPT) + len(prompt_trimmed)
-    if final_total > MAX_PROMPT_CHARS:
+    if final_total > prompt_budget:
         logger.debug(
-            "Prompt is %d chars (~%d tokens) after trimming — "
+            "Prompt is %d chars (~%d tokens) after trimming (budget=%d) — "
             "auto-halving will handle it if LLM returns no response.",
-            final_total, final_total // 4,
+            final_total, final_total // 4, prompt_budget,
         )
 
     return prompt_trimmed
