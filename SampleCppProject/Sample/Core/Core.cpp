@@ -5,7 +5,26 @@
 PUBLIC int g_result = 0;
 PRIVATE int g_count = 0;
 
-// Private helpers — visible in flowchart, excluded from interface table and behaviour diagram.
+// ── Private helpers ───────────────────────────────────────────────────────────
+
+PRIVATE int coreTransform(int v) {
+    // Deepest node in the private call chain — simple arithmetic
+    if (v < 0) {
+        return -v * 2;
+    }
+    return v * 2 + 1;
+}
+
+PRIVATE int coreValidate(int v) {
+    // Middle of the private chain: guards then delegates to coreTransform
+    if (v == 0) {
+        return 0;
+    }
+    if (v < -100 || v > 100) {
+        return coreTransform(100);   // clamp extreme values
+    }
+    return coreTransform(v);
+}
 
 PRIVATE int coreHelper(int x) {
     if (x > 0) {
@@ -26,14 +45,14 @@ PRIVATE int coreSwitch(int op) {
     return result;
 }
 
-// Public / Protected functions.
+// ── Public / Protected functions ─────────────────────────────────────────────
 
 PUBLIC int coreAdd(int a, int b) {
-    return libAdd(a, b);   // cross-module: Core -> Lib (behaviour diagram arc)
+    return libAdd(a, b);   // Core -> Lib
 }
 
 PUBLIC int coreCompute(int x) {
-    int h = coreHelper(x);  // private callee -> appears in flowchart as private callee chart
+    int h = coreHelper(x);     // private callee
     if (h > 0) {
         return h * 2;
     } else {
@@ -62,22 +81,92 @@ PUBLIC void coreSetResult(int v) {
 }
 
 PUBLIC int coreProcess(int a, int b) {
-    return libNormalize(a, b);  // cross-module: Core -> Lib (behaviour diagram arc)
-}
-
-PROTECTED int coreGetCount() {
-    return g_count;  // reads global only -> direction Out
+    return libNormalize(a, b);  // Core -> Lib
 }
 
 PUBLIC int coreOrchestrate(int a, int b) {
-    // Hub function: fan-out to Lib and Util -> rich behaviour diagram
-    int sum   = libAdd(a, b);           // Core -> Lib
-    int norm  = libNormalize(sum, 100); // Core -> Lib
-    int comp  = utilCompute(a, b);      // Core -> Util
-    int scale = utilScale(norm, 2);     // Core -> Util
+    int sum   = libAdd(a, b);            // Core -> Lib
+    int norm  = libNormalize(sum, 100);  // Core -> Lib
+    int comp  = utilCompute(a, b);       // Core -> Util
+    int scale = utilScale(norm, 2);      // Core -> Util
     return sum + norm + comp + scale;
 }
 
 PUBLIC Mode coreSetMode(Mode m) {
-    return m;   // Mode enum param and return -> richer interface table types
+    return m;
+}
+
+PUBLIC int coreWhileCount(int limit) {
+    // While loop: increment until limit, with safety break
+    int count = 0;
+    while (count < limit) {
+        count++;
+        if (count > 1000) {
+            break;
+        }
+    }
+    return count;
+}
+
+PUBLIC int coreNestedBranch(int a, int b) {
+    // Nested if/else: 4 distinct paths
+    if (a > 0) {
+        if (b > 0) {
+            return libAdd(a, b);
+        } else {
+            return utilCompute(a, -b);
+        }
+    } else {
+        if (b > 0) {
+            return libNormalize(b, a < -100 ? 100 : -a);
+        } else {
+            return 0;
+        }
+    }
+}
+
+PUBLIC int coreEarlyReturn(int x) {
+    // Guard clauses with multiple early returns
+    if (x < 0) {
+        return -1;
+    }
+    if (x == 0) {
+        return 0;
+    }
+    if (x > 10000) {
+        return coreValidate(10000);
+    }
+    return coreValidate(x);
+}
+
+PUBLIC int corePipeline(int v) {
+    // Deep call chain: public -> private validate -> private transform -> cross-module
+    int validated  = coreValidate(v);
+    int normalized = libNormalize(validated, 200);
+    int scaled     = utilScale(normalized, 3);
+    return scaled;
+}
+
+PUBLIC int coreDoWhileClamp(int v, int limit) {
+    // Do-while: always executes at least once, iterates until stable
+    int result = v;
+    do {
+        result = libNormalize(result, limit);
+        limit  = limit / 2;
+    } while (limit > 1 && result > limit);
+    return result;
+}
+
+PUBLIC int coreMultiCallChain(int a, int b, int c) {
+    // Sequential cross-module calls to Lib and Util
+    int sum      = libAdd(a, b);
+    int product  = libMultiply(sum, c);
+    int computed = utilCompute(product, b);
+    int scaled   = utilScale(computed, 2);
+    int chained  = utilChain(scaled);
+    return chained;
+}
+
+PROTECTED int coreGetCount() {
+    return g_count;  // reads global only -> direction Out
 }
