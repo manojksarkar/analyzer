@@ -31,7 +31,7 @@
   "llm": {
     "descriptions": true,
     "behaviourNames": true,
-    "summarize": false,
+    "summarize": true,
     // provider: "ollama" (local) | "openai" (OpenAI-compatible gateway)
     "provider": "ollama",
     "baseUrl": "http://localhost:11434",

@@ -7,6 +7,8 @@
 #include "Hub/Hub.h"
 #include "Outer/Inner/Helper.h"
 #include "Sample/Core/Core.h"
+#include "Sample/Lib/Lib.h"
+#include "Sample/Util/Util.h"
 
 PUBLIC int g_globalResult = 0;
 
@@ -74,10 +76,31 @@ PRIVATE int runDirectionTests() {
 }
 
 PRIVATE int runSampleTests() {
-    int a = coreAdd(3, 4);           // App -> Core (external caller for behaviour diagram)
-    int b = coreProcess(10, 100);    // App -> Core
-    int c = coreOrchestrate(a, b);   // App -> Core (hub function, fan-out)
-    coreSetResult(a + b + c);
+    // Core calls — App is external caller for Sample/Core behaviour diagrams
+    int a = coreAdd(3, 4);
+    int b = coreProcess(10, 100);
+    int c = coreOrchestrate(a, b);
+    int d = corePipeline(a);
+    int e = coreNestedBranch(a, b);
+    int f = coreWhileCount(10);
+    int g = coreEarlyReturn(50);
+    int h = coreDoWhileClamp(500, 200);
+    int ii = coreMultiCallChain(a, b, 3);
+
+    // Lib calls — App is external caller for Sample/Lib behaviour diagrams
+    int la = libAdd(1, 2);
+    int lm = libMultiply(3, 4);
+    int labs = libAbs(-7);
+    int lmax = libMax(la, lm);
+    int lls = libLinearScale(50, 100, 200);
+
+    // Util calls — App is external caller for Sample/Util behaviour diagrams
+    int ua = utilAbs(-5);
+    int uc = utilChain(ua);
+    int ub = utilBlend(10, 90, 30);
+    int ul = utilLoopAccum(5);
+
+    coreSetResult(a + b + c + d + e + f + g + h + ii + la + lm + labs + lmax + lls + ua + uc + ub + ul);
     return coreGetCount();
 }
 
