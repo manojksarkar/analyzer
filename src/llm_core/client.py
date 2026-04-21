@@ -53,11 +53,13 @@ def _trace_enabled() -> bool:
 
 
 def _safe_write(body: str) -> None:
-    """Write to stdout tolerating consoles that can't encode all characters.
+    """Emit a trace block to stdout AND the log file.
 
     Windows cp1252 can't encode e.g. Korean source comments that appear in
     traced prompts/responses; fall back to an encode→decode(replace) round-trip
-    so tracing never aborts the run.
+    so tracing never aborts the run. The logger.info() call guarantees the
+    trace is captured by the file handler (logs/run_YYYYMMDD.log) even when
+    stdout is redirected or discarded (SSH, nohup, systemd, background jobs).
     """
     try:
         sys.stdout.write(body)
@@ -66,6 +68,7 @@ def _safe_write(body: str) -> None:
         encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
         sys.stdout.write(body.encode(encoding, errors="replace").decode(encoding, errors="replace"))
         sys.stdout.flush()
+    logger.info("%s", body.rstrip())
 
 
 def _trace_request(provider: str, model: str, system_prompt: str, user_prompt: str) -> int:
