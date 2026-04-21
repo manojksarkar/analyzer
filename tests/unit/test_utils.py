@@ -10,9 +10,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
 import utils
+from core.config import _strip_json_comments, _strip_trailing_commas
 from utils import (
-    _strip_json_comments,
-    _strip_trailing_commas,
     safe_filename,
     short_name,
     get_range_for_type,

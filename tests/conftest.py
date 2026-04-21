@@ -91,6 +91,9 @@ def pytest_collection_finish(session):
 
     cmd = [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group]
 
+    out.write(f"  Command: {' '.join(cmd)}\n")
+    out.flush()
+
     if show_output:
         out.write(f"  Pipeline: {label}\n\n")
         out.flush()

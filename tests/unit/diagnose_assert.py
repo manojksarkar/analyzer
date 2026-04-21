@@ -11,7 +11,7 @@ import tempfile
 import re
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src" / "flowchart"))
 import clang.cindex as ci
 
 _ASSERT_RE = re.compile(

@@ -1,14 +1,15 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-04-11 (version3 — LLM layer upgrade complete on top of version2).
-> Current active branch: `version3` (off `version2`, which is off `main`).
+> Updated: 2026-04-22 (feat/test-framework — test suite overhaul + LIBCLANG_PATH wiring + llm.summarize config flag).
+> Current active branch: `feat/test-framework` (off `version3`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
 > Quick orientation:
 > - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
 > - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
-> - All pre-existing sections have been updated in place where version3 changed the behaviour.
+> - §4c covers the feat/test-framework changes (test overhaul, LIBCLANG_PATH, llm.summarize).
+> - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
 
@@ -241,6 +242,46 @@ stderr choked on the Unicode characters.
 
 ---
 
+## 4c. Test-framework branch (`feat/test-framework`)
+
+Three categories of change landed on this branch on top of `version3`:
+
+### 1. `LIBCLANG_PATH` auto-wiring
+
+`run.py` now reads `clang.llvmLibPath` from the loaded config and, if the
+file exists, exports it as `os.environ["LIBCLANG_PATH"]` before launching any
+subprocess. `src/flowchart/flowchart_engine.py` picks it up at import time:
+
+```python
+_libclang = os.environ.get("LIBCLANG_PATH", "")
+if _libclang:
+    import clang.cindex as _ci; _ci.Config.set_library_file(_libclang)
+```
+
+This means `clang.llvmLibPath` no longer needs to be set only for
+`parser.py` — it propagates to the flowchart engine subprocess too, without
+any CLI flag change.
+
+### 2. `llm.summarize` config flag
+
+`run.py` now respects a new optional `llm.summarize` boolean in
+`config.json`. When `false`, it sets `no_llm_summarize = True` before calling
+`plan_runs`, suppressing Phase 2 hierarchy summarization. This mirrors what
+`--no-llm-summarize` does on the CLI, but can be committed in `config.local.json`
+for a permanent local preference.
+
+### 3. Unit-test suite overhaul
+
+| File | What changed |
+|---|---|
+| `tests/unit/test_llm_client.py` | Fully rewritten to test `llm_core.client.LlmClient` + `from_config` (was testing legacy `llm_client` module). Covers constructor validation, `generate()` / `call()`, retry logic, `from_config` builder. |
+| `tests/unit/test_behaviour_diagram_generator.py` | Switched from `fake_behaviour_diagram_generator.FakeBehaviourGenerator` to the real `behaviour_diagram_generator.SequenceDiagramGenerator` (alias kept as `FakeBehaviourGenerator`). Patch target updated to `behaviour_diagram_generator.llm_client`. |
+| `tests/unit/test_utils.py` | `_strip_json_comments` / `_strip_trailing_commas` now imported from `core.config`, not from `utils`. |
+| `src/flowchart/tests/test_cfg_topo.py` | Added `src/` to `sys.path` so `ast_engine.*` imports resolve when running from the project root. |
+| `tests/conftest.py` | Logs the full pipeline command string before executing it (aids debugging failed CI runs). |
+
+---
+
 ## 5. CLI — `run.py`
 
 ### Syntax
@@ -255,7 +296,7 @@ python run.py [options] <project_path>
 |---|---|
 | `--clean` | Delete `model/` and `output/` before starting |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
-| `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default** |
+| `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
 | `--selected-group <name>` | Export only the named group from `config.modulesGroups`. Case-insensitive |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
@@ -339,7 +380,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     // ── required fields — load_llm_config raises LlmConfigError if missing ──
     "provider":          "ollama",        // "ollama" | "openai"  (strictly validated)
     "baseUrl":           "http://localhost:11434",
-    "defaultModel":      "qwen2.5-coder:14b",
+    "defaultModel":      "llama3.2",          // currently set to llama3.2 in config.json
     "timeoutSeconds":    120,              // positive int
     "numCtx":            8192,             // Ollama context window (positive int)
     "retries":           1,                // >=0; up to (1+retries) total tries
@@ -347,6 +388,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     // ── optional fields ──
     "descriptions":      false,            // enable LLM function descriptions (Phase 2)
     "behaviourNames":    false,            // enable LLM behaviour input/output names
+    "summarize":         true,             // false = suppress Phase 2 hierarchy summarization (same as --no-llm-summarize)
     "abbreviationsPath": "config/abbreviations.txt",
     "apiKey":            "",               // openai bearer; prefer env LLM_API_KEY
     "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
@@ -1262,6 +1304,14 @@ src/flowchart/
     Failures are logged at WARNING but don't abort the run.
 11. **Build Mermaid** — `build_mermaid(cfg)`.
 
+### `LIBCLANG_PATH` env var (feat/test-framework)
+
+At import time, `flowchart_engine.py` checks `os.environ["LIBCLANG_PATH"]`.
+If set (and the path is a file), it calls
+`clang.cindex.Config.set_library_file(path)` before any libclang call.
+`run.py` sets this env var from `clang.llvmLibPath` in config so the value
+propagates automatically into the flowchart engine subprocess.
+
 ### LLM client construction + banner + enrichment config (version3)
 
 At the top of `run()`, [src/flowchart/flowchart_engine.py](src/flowchart/flowchart_engine.py)
@@ -1736,7 +1786,9 @@ python run.py --selected-group core test_cpp_project
 2. **Argv loop** — parses flags. Sets `selected_group_arg = "core"`,
    `from_phase = 1`, `use_model = False`, `no_llm_summarize = False`.
 3. **`load_config(SCRIPT_DIR)`** (re-exported from `core.config`) — reads
-   JSONC, merges `config.local.json` if present.
+   JSONC, merges `config.local.json` if present. Sets `LIBCLANG_PATH` env var
+   from `clang.llvmLibPath` if the file exists (propagates to all subprocesses).
+   If `llm.summarize` is `false` in config, forces `no_llm_summarize = True`.
 3a. **`load_llm_config(cfg)` + banner** — strictly validates the `llm` block
    (required: `provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`,
    `retries`; type-checked enrichment toggles; env-var overrides). Renders
