@@ -240,13 +240,10 @@ class TestEnrichInterfaces:
         }
 
     def test_interface_id_starts_with_IF(self):
-        # add is called by an external function (different file) → public → IF_ prefix
-        fns = {
-            "Core|core|add|": {**self._make_func(), "calledByIds": ["App|main|main|"]},
-            "App|main|main|": self._make_func(rel_file="App/main/main.cpp"),
-        }
+        fns = {"Core|core|add|": self._make_func()}
+        gvs = {}
         idx = {"Core|core|add|": 1}
-        _enrich_interfaces("", "MyProject", fns, {}, idx)
+        _enrich_interfaces("", "MyProject", fns, gvs, idx)
         assert fns["Core|core|add|"]["interfaceId"].startswith("IF_")
 
     def test_interface_id_contains_project_code(self):

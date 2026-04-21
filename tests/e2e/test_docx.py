@@ -111,9 +111,10 @@ def test_private_names_absent_from_docx(all_cell_text):
 
 
 @pytest.mark.parametrize("name,unit", [
-    ("coreAdd",        "Core"), ("coreSetResult",  "Core"), ("coreProcess",    "Core"),
-    ("coreOrchestrate","Core"), ("coreGetCount",   "Core"),
-    ("libAdd",         "Lib"),  ("libNormalize",   "Lib"),
+    ("coreAdd",        "Core"), ("coreCompute",    "Core"), ("coreLoopSum",  "Core"),
+    ("coreCheck",      "Core"), ("coreSumPoint",   "Core"), ("coreSetResult","Core"),
+    ("coreProcess",    "Core"), ("coreOrchestrate","Core"), ("coreSetMode",  "Core"),
+    ("coreGetCount",   "Core"), ("libAdd",         "Lib"),  ("libNormalize", "Lib"),
     ("utilCompute",    "Util"), ("utilScale",      "Util"),
     ("g_result",       "Core"), ("g_utilBase",     "Util"),
 ])
