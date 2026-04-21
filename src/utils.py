@@ -86,7 +86,8 @@ _CONFIG_CACHE = load_config(_PROJECT_ROOT)
 
 # Module mapping cache (initialized at import).
 _MODULE_OVERRIDES: dict = {}
-_GROUP_MAP: dict = {} #module name -> group name
+_GROUP_MAP: dict = {}  # module name -> group name
+
 
 def init_module_mapping(config: dict) -> None:
     """Initialize module folder mapping used by get_module_name/make_*_key helpers.
@@ -96,7 +97,6 @@ def init_module_mapping(config: dict) -> None:
     - top-level config.modules (if present), else
     - merged union of all config.modulesGroups entries.
     """
-    global _MODULE_OVERRIDES
     global _MODULE_OVERRIDES, _GROUP_MAP
     cfg = config or {}
     _MODULE_OVERRIDES = cfg.get("modules") or {}
@@ -140,6 +140,11 @@ init_module_mapping(_CONFIG_CACHE)
 def resolve_group(module: str) -> str:
     """Return the moduleGroups group name for a module, or empty string if unknown."""
     return _GROUP_MAP.get(module, "")
+
+def resolve_group(module: str) -> str:
+    """Return the modulesGroups group name for a module, or empty string if unknown."""
+    return _GROUP_MAP.get(module, "")
+
 
 def _resolve_module_from_rel(rel_file: str) -> str:
     """Resolve module name for a path relative to the project base.

@@ -133,6 +133,7 @@ def _id_seg(s: str) -> str:
     """Keep only uppercase letters from a segment (removes digits, underscores, spaces, etc.)."""
     return re.sub(r'[^A-Z]', '', (s or '').upper())
 
+
 def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, global_variables_data: dict, idx_by_id: dict, config: dict = None):
     proj_code = _id_seg(project_name)
     for fid, f in functions_data.items():
