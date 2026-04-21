@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 from .registry import register
-from utils import KEY_SEP, mmdc_path, safe_filename
+from utils import KEY_SEP, mmdc_path, safe_filename, os_type
 
 
 def _fid_to_unit(units_data):
@@ -207,9 +207,13 @@ def run(model, output_dir, model_dir, config):
     cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
     if allowed_modules:
         cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0].lower() in allowed_modules]
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
     total = len(cpp_units)
+    progress = ProgressReporter("unitDiagrams", total=total, logger=get_logger("unitDiagrams"))
+    progress.start()
     for i, unit_key in enumerate(sorted(cpp_units), 1):
-        print(f"  unitDiagrams: {i}/{total} units...", end="\r", flush=True)
+        progress.step(label=unit_key)
         unit_info = units_data[unit_key]
         mermaid = _build_unit_diagram(
             unit_key,
@@ -230,9 +234,10 @@ def run(model, output_dir, model_dir, config):
             png_path = os.path.join(out_dir, f"{safe}.png")
             run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png_path]
             try:
-                subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
+                if os_type == "Windows":
+                    subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False, shell=True)
+                else:
+                    subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 pass
-    if total:
-        print()
-    print(f"  output/unit_diagrams/ ({total} units)")
+    progress.done(summary=f"output/unit_diagrams/ ({total} units)")

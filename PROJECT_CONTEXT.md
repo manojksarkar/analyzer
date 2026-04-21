@@ -1,838 +1,1803 @@
 # C++ Codebase Analyzer — Complete Project Context
-> Generated: 2026-04-07. Validated against current source code.
+
+> Updated: 2026-04-11 (version3 — LLM layer upgrade complete on top of version2).
+> Current active branch: `version3` (off `version2`, which is off `main`).
+> Validated against current source. Reading this file end-to-end is the
+> intended way to onboard or to refresh context after compaction.
+>
+> Quick orientation:
+> - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
+> - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
+> - All pre-existing sections have been updated in place where version3 changed the behaviour.
 
 ---
 
-## 1. Repository Overview
+## 1. What this project does
 
-A Python tool that parses C++ source code using **libclang** and generates a **Software Detailed Design** document (DOCX).
+Parses a C++ source tree with **libclang**, derives a structured model of every
+function / global / type, runs a set of "views" that turn the model into JSON
++ Mermaid + PNG artifacts, and finally renders a **Software Detailed Design**
+DOCX document. An optional LLM pipeline enriches the model with descriptions,
+behaviour names, and per-function CFG flowcharts.
 
-### Top-level paths
-
-```
-run.py                          — CLI entry point (all phases)
-config/config.json              — Main config (no inline comments natively, but // and /* */ stripped at load)
-config/config.local.json        — Local overrides (not committed)
-src/parser.py                   — Phase 1: C++ AST → model/ JSON
-src/model_deriver.py            — Phase 2: enrich model (units, modules, call graph, direction, behaviour names)
-src/run_views.py                — Phase 3: load model → invoke view builders
-src/docx_exporter.py            — Phase 4: views output → DOCX
-src/utils.py                    — Shared helpers (keys, logging, config loading, path helpers)
-src/llm_client.py               — Ollama LLM integration (descriptions, behaviour names)
-src/views/
-  __init__.py                   — run_views() orchestrator + view imports
-  registry.py                   — @register decorator and VIEW_REGISTRY dict
-  interface_tables.py           — interfaceTables view
-  unit_diagrams.py              — unitDiagrams view (Mermaid + PNG per unit)
-  behaviour_diagram.py          — behaviourDiagram view (Mermaid + PNG per external caller)
-  flowcharts.py                 — flowcharts view (invokes fake_flowchart_generator.py)
-fake_flowchart_generator.py     — Generates per-unit flowchart JSON (one Mermaid per function)
-fake_behaviour_diagram_generator.py — FakeBehaviourGenerator class: one .mmd per external caller
-model/                          — Phase 1+2 output (JSON)
-output/                         — Phase 3+4 output (JSON, .mmd, .png, .docx)
-test_cpp_project/               — Fixture C++ project used for testing (only fixture; no _extend variants)
-docs/DESIGN.md                  — Design documentation
-```
-
-> **Important**: `test_cpp_project_extend` and `tes_cpp_project_extend` referenced in older docs **do NOT exist** in this repo. Only `test_cpp_project` is present.
+The pipeline is **subprocess-based and crash-recoverable**: each of the four
+phases is its own Python entry point, and `run.py` resumes from any phase via
+`--from-phase N`.
 
 ---
 
-## 2. 4-Phase Pipeline
+## 2. Top-level layout
 
 ```
-Phase 1  src/parser.py          C++ source → model/functions.json, globalVariables.json,
-                                             dataDictionary.json, metadata.json
-Phase 2  src/model_deriver.py   model/ → model/units.json, modules.json
-                                         enriches functions.json (interfaceId, direction,
-                                         behaviourNames, LLM descriptions)
-Phase 3  src/run_views.py       model/ → output/ (interface_tables.json, unit_diagrams/,
-                                         behaviour_diagrams/, flowcharts/)
-Phase 4  src/docx_exporter.py   output/ → software_detailed_design_{group}.docx
+analyzer/
+  run.py                      Entry point — argv parsing, plan + dispatch
+  config/
+    config.json               Main config (JSONC: // and /* */ comments allowed)
+    config.local.json         Local overrides (gitignored)
+    abbreviations.txt         Abbreviation expansions for LLM prompts
+    puppeteer-config.json     Optional headless-chrome args for mmdc
+  src/
+    parser.py                 Phase 1 — libclang AST → model/*.json
+    model_deriver.py          Phase 2 — units / modules / call-graph / LLM enrich
+    run_views.py              Phase 3 — load model, dispatch view registry
+    docx_exporter.py          Phase 4 — output/* → software_detailed_design_*.docx
+    utils.py                  Analyzer-specific helpers (keys, types, ranges)
+    llm_enrichment.py         Prompt builders + enrichment loops (uses llm_core)
+    core/                     Cross-cutting infrastructure (no upward imports)
+    llm_core/                 Unified LLM HTTP client (Ollama + OpenAI gateway)
+    views/                    View registry + four built-in views
+    flowchart/                Real C++ → Mermaid CFG flowchart engine
+  fake_behaviour_diagram_generator.py    Placeholder behaviour-diagram emitter
+  test_cpp_project/           Fixture C++ tree (see §15)
+  model/                      Phase 1+2 output (JSON)
+  output/                     Phase 3+4 output (JSON, .mmd, .png, .docx)
+  logs/                       Daily log files (run_YYYYMMDD.log)
+  CLAUDE.md                   Onboarding pointer (says "read PROJECT_CONTEXT.md")
+  PROJECT_CONTEXT.md          This file
 ```
 
 ---
 
-## 3. CLI — run.py
+## 3. The 4-phase pipeline
+
+```
+Phase 1  src/parser.py          C++ source → model/metadata.json,
+                                             model/functions.json,
+                                             model/globalVariables.json,
+                                             model/dataDictionary.json
+Phase 2  src/model_deriver.py   model/ → model/units.json,
+                                          model/modules.json,
+                                          model/knowledge_base.json (for flowchart engine),
+                                          model/summaries.json (LLM hierarchy summaries)
+                                  + enriches functions.json with interfaceId,
+                                    direction, transitive globals, behaviour
+                                    names, and (optionally) LLM descriptions
+Phase 3  src/run_views.py       model/ → output/interface_tables.json,
+                                          output/unit_diagrams/*.mmd|.png,
+                                          output/behaviour_diagrams/*.mmd|.png,
+                                          output/flowcharts/*.json|.png
+Phase 4  src/docx_exporter.py   output/ → software_detailed_design_<group>.docx
+```
+
+Each phase is launched as a subprocess by [src/core/orchestration.py](src/core/orchestration.py).
+That keeps the phases hermetic (separate Python processes inherit `LOG_LEVEL`)
+and lets `--from-phase N` skip earlier phases on a resume.
+
+---
+
+## 4. Refactor history (`version2` branch)
+
+Six refactor batches landed on this branch on top of `main`. Each batch is a
+self-contained consolidation; together they introduce the `src/core/` and
+`src/llm_core/` layers and shrink the legacy hot files.
+
+| # | Batch | Result |
+|---|---|---|
+| 1 | LLM Foundation | New `src/llm_core/` — single `LlmClient` for OpenAI gateway + Ollama with shared retry, think-section stripping, token tracking |
+| 2 | Progress & Logging | `core.logging_setup` (stderr + daily file), `core.progress.ProgressReporter`, `LOG_LEVEL` env propagation to subprocesses |
+| 3 | Config & Paths | `core.paths.ProjectPaths` (cached snapshot), `core.config` typed accessors with JSONC parser |
+| 4 | Model IO | `core.model_io` — canonical filename constants, `read_model_file` / `write_model_file` (opt-in atomic), `load_model(*required, optional=...)` |
+| 5 | Phase Orchestration | `core.orchestration.Phase` + `PhaseRunner` (single subprocess authority), `core.group_planner.plan_runs` (collapses 3-branch dispatch), run.py 257 → 152 lines |
+| 6 | Config Relocation | Moved `load_config` / `load_llm_config` / JSONC strippers from `utils.py` into `core.config`, leaving thin re-export shims so existing call sites keep working |
+
+The result: `src/core/` is the bottom of the dependency graph and has no
+imports from analyzer-level modules. Verified by `grep -r "from utils" src/core/`
+returning nothing.
+
+---
+
+## 4b. LLM layer upgrade (`version3` branch)
+
+Three commits on top of `version2` implement a full LLM upgrade plan. Original
+plan lives at `.claude/plans/zippy-riding-shell.md`. Shipped commits:
+
+| Commit | Title |
+|---|---|
+| `17f6636` | feat: LLM layer upgrade — budgeting, two-pass, cache, review, ensemble, CFG simplify |
+| `66cc98f` | fix: make maxContextTokens authoritative for coherence + simplify passes |
+| `4d10df6` | feat(config): strict LLM validation + startup banner |
+
+### Goals (why this exists)
+
+The version2 LLM layer shipped with hardcoded char caps (`MAX_PROMPT_CHARS=6000`,
+`CONTEXT_BUDGET=1200`), single-pass descriptions that never saw caller context,
+nearly-useless global-variable descriptions, no few-shot examples, no cache, no
+self-review, and no structured-output repair. On large models this wasted the
+context window; on small models prompts silently overflowed and returned empty.
+version3 rewrites the LLM subsystem around a token budget and a set of
+reusable helpers in `src/llm_core/`.
+
+### What was NOT adopted (explicit out-of-scope)
+
+- Tool-calling agentic loop (Ollama doesn't support it reliably).
+- YAML config migration (keep JSONC).
+- Full pipeline rewrite — still the same 4-phase subprocess architecture.
+
+### Batch matrix (what every phase delivered)
+
+| Phase | Delivered | Key files |
+|---|---|---|
+| **P1 — Foundation** | TokenCounter (tiktoken + char fallback), ContextBudget with `TASK_RATIOS`, `LlmClient.call()` multi-message API, config additions (`maxContextTokens`, `enrichment.*`, `fewShotExamplesDir`, `cacheVersion`) | `llm_core/token_counter.py`, `llm_core/budget.py`, `llm_core/client.py`, `core/config.py`, `config/config.json` |
+| **P2 — Context quality** | Degradation ladder (`ContextBuilder`), scoped `RepoMap` (neighborhood → file → module → project tiers), `get_rich_description()` with callees / callers / types / globals / siblings / repo-map, `get_rich_global_description()` for variables | `llm_core/context_builder.py`, `llm_core/repo_map.py`, `llm_enrichment.py` |
+| **P3 — Two-pass + few-shot** | Two-pass descriptions (Pass 1 bottom-up, Pass 2 refines with caller context), `FewShotPool` with keyword-overlap ranking, seed example directories (`few_shot_examples/{descriptions,labels,globals,behaviour_names}`) | `llm_core/few_shot.py`, `llm_enrichment.py`, `few_shot_examples/` |
+| **P4 — Cache + structured output** | `EntityCache` with composite hash keys (source + sorted callee hashes + version), `extract_and_validate()` (strip fences → extract JSON → repair → validate keys), `parse_label_response()` for flowchart batches | `llm_core/cache.py`, `llm_core/structured_output.py` |
+| **P5 — Self-review, ensemble, CFG simplify** | `self_review()` generate→review→revise (≥20-line functions), `ensemble_generate()` for unit/module summaries (3 temperatures + synthesis), LLM-guided CFG simplification (merge linear ACTION chains + drop single-in/single-out), strengthened coherence prompt | `llm_core/review.py`, `llm_enrichment.py`, `flowchart/llm/generator.py` |
+| **Follow-up — strict config + banner** | `LlmConfigError`, strict validation of every required and optional llm field, `format_llm_config_banner()` displayed at the start of every subprocess, removal of `getattr(client, "_num_ctx", 8192)` style hardcoded fallbacks, `LlmClient.num_ctx` property | `core/config.py`, `run.py`, `flowchart/flowchart_engine.py` |
+
+### `llm.enrichment` flag semantics
+
+Every feature ships gated behind `config.llm.enrichment.<flag>`:
+
+| Flag | Default | What it does | Cost multiplier |
+|---|---|---|---|
+| `twoPassDescriptions` | `true` | Pass 2 refines function descriptions using caller context from Pass 1 | 2x descriptions |
+| `selfReview` | `false` | generate → review → revise for function descriptions (≥20 non-blank lines) and high-visibility summaries | 3x on reviewed items |
+| `ensemble` | `false` | 3 temperatures + synthesis call for unit / module summaries | 4x on synthesized items |
+| `cfgSimplification` | `false` | LLM proposes merge/drop plan for CFGs with >15 nodes; only linear chains + single-in/single-out drops are applied, decisions/loops/returns are never touched | 1 extra call per large CFG |
+| `variableEnrichment` | `true` | Rich global-variable descriptions (write-site + read-site evidence vs. the old one-line declaration) | — |
+
+The defaults trade conservative cost for quality on the features that most
+affect DOCX output (`twoPassDescriptions`, `variableEnrichment`). The expensive
+features (`selfReview`, `ensemble`, `cfgSimplification`) are **opt-in** — set
+them in `config/config.json` or `config.local.json`.
+
+### Token budgeting — `ContextBudget` + `TASK_RATIOS`
+
+One config knob (`maxContextTokens`) now scales every prompt allocation.
+[src/llm_core/budget.py](src/llm_core/budget.py) defines `TASK_RATIOS` — a
+dict of per-task section ratios summing to ~1.0 — for:
+
+- `function_description`, `function_description_refined`
+- `variable_description`, `behaviour_names`
+- `function_summary`, `file_summary`, `module_summary`, `project_summary`
+- `cfg_node_labeling`, `cfg_coherence`, `cfg_simplification`
+- `self_review`, `ensemble_synthesis`
+
+`ContextBudget(max_tokens, task, counter)` reserves a 10 % safety margin then
+hands each named section (`system_prompt`, `few_shot`, `callees`, …) its
+absolute token budget. Callers feed content through `ContextBuilder` /
+`RepoMap` / `FewShotPool` which return text sized to fit the section budget.
+
+`resolve_max_tokens(llm_cfg)` derives `max_context_tokens`:
+1. Explicit `llm.maxContextTokens` in config → used as-is.
+2. Otherwise `openai` → 127488 (~128K − 512 reserve).
+3. Otherwise `ollama` → `numCtx − 512`.
+
+No silent default for `provider` or `numCtx` any more — the field must be
+validated first by `load_llm_config()`.
+
+### Strict config + startup banner (why runs are now self-documenting)
+
+`core.config.load_llm_config()` raises **`LlmConfigError`** with the exact
+failing field name when any required field is missing / empty / wrong type:
+`provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`, `retries`.
+Optional fields (`enrichment.*`, `descriptions`, `behaviourNames`,
+`maxContextTokens`, `cacheVersion`, `fewShotExamplesDir`, `customHeaders`)
+are type-checked the same way. `provider` is restricted to
+`"ollama"`|`"openai"`.
+
+`core.config.format_llm_config_banner(llm_cfg)` returns a multi-line summary.
+Both [run.py](run.py) and [src/flowchart/flowchart_engine.py](src/flowchart/flowchart_engine.py)
+print it at the top of every run so the user sees exactly which
+provider / baseUrl / model / `numCtx` / `maxContextTokens` (resolved, e.g.
+`auto -> 7680`) / timeout / retries / enrichment flags are active:
+
+```
+------------------------------------------------------------
+LLM configuration (will be used for this run)
+------------------------------------------------------------
+  provider          : ollama
+  baseUrl           : http://localhost:11434
+  defaultModel      : qwen2.5-coder:14b
+  numCtx            : 8192  (used)
+  maxContextTokens  : auto -> 7680
+  timeoutSeconds    : 120
+  retries           : 1
+  apiKey            : (none)
+  cacheVersion      : 1
+  fewShotExamplesDir: few_shot_examples
+  descriptions      : False
+  behaviourNames    : False
+  enrichment ON     : twoPassDescriptions, variableEnrichment
+  enrichment OFF    : cfgSimplification, ensemble, selfReview
+------------------------------------------------------------
+```
+
+The banner is ASCII-only — `─` and `→` were removed because Windows cp1252
+stderr choked on the Unicode characters.
+
+### Quality impact ranking (original plan — for reference)
+
+1. Richer description prompts (get_rich_description) — biggest DOCX impact
+2. Two-pass descriptions — fixes the biggest blind spot (no caller context)
+3. Degradation ladder — stops silently dropping callees
+4. Variable enrichment — global descriptions go from useless to useful
+5. Few-shot examples — teaches output style, helps weaker models
+6. CFG simplification — complex flowcharts become readable
+7. Scoped repo map — reduces hallucinated symbols
+8. Self-review — polish for high-visibility descriptions
+9. Entity cache — productivity (10× faster re-runs), no quality impact
+10. Structured output — robustness (fewer fallback labels)
+
+---
+
+## 5. CLI — `run.py`
 
 ### Syntax
 
 ```bash
-python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>] <project_path>
+python run.py [options] <project_path>
 ```
 
-### Argument parsing (`_parse_args`)
+### Flags
 
-Implemented with an explicit token-scanning loop (no `argparse`). Flags are consumed by name; any non-flag non-consumed token becomes `project_path` (last one wins). **This fixed an older bug** where `--selected-group core` left `core` as the project path.
-
-### Group resolution (`_resolve_group_name`)
-
-Case-insensitive match of `--selected-group` against `config.modulesGroups` keys using `.casefold()`. Logs a message if casing differs. Exits with code 2 and lists valid groups if no match.
-
-### Runtime behavior
-
-| Condition | Behavior |
+| Flag | Effect |
 |---|---|
-| `modulesGroups` in config, no `--selected-group` | Build model once (all modules), then export **each** group to `output/<group>/` |
-| `modulesGroups` in config, `--selected-group <G>` | Build model once (all modules), then export only group `G` to `output/` (no subdir) |
-| No `modulesGroups` in config | Single run over whole project, output to `output/` |
-| `--use-model` / `--skip-model` | Skip Phase 1+2, verify model files exist, then run Phase 3+4 |
 | `--clean` | Delete `model/` and `output/` before starting |
+| `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
+| `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default** |
+| `--llm-summarize` | Accepted for back-compat; no-op (already default) |
+| `--selected-group <name>` | Export only the named group from `config.modulesGroups`. Case-insensitive |
+| `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
+| `--quiet` | stderr handler raised to WARNING |
+| `--verbose` | stderr handler lowered to DEBUG |
 
-### Output path difference between modes
+`--quiet` and `--verbose` set `LOG_LEVEL` in the environment so child phases
+inherit the same verbosity.
 
-- **All-groups mode**: Phase 3 called with `--output-dir output/<group> --selected-group <G>`. Phase 4 called with explicit JSON and DOCX paths inside `output/<group>/`.
-- **Single-group mode**: Phase 3 called with just `--selected-group <G>` (no `--output-dir`). Phase 4 called with just `--selected-group <G>`. Output goes to `output/` (not a subdirectory).
+### Argument parsing
 
-### Required model files for `--use-model`
+Hand-rolled token-scanning loop in [run.py](run.py) (no `argparse`). Two
+historical bugs are guarded against here:
 
-`model/functions.json`, `model/globalVariables.json`, `model/units.json`, `model/modules.json`
+1. `--selected-group core` used to leave `core` as a positional after the flag
+   was consumed. Fix: each flag explicitly consumes its value (`i += 1`).
+2. `--from-phase` is validated to 1–4 and exits with a clear error otherwise.
+
+### Plan + dispatch
+
+After parsing flags, run.py:
+
+1. Loads `config/config.json` (+ `config.local.json`) via `load_config`.
+2. **Resolves the LLM block strictly via `load_llm_config(cfg)`** and prints the
+   `format_llm_config_banner` to the log so the operator sees exactly which
+   provider, baseUrl, model, `numCtx`, resolved `maxContextTokens`, retries,
+   cache version, and enrichment flags will be used. If the LLM block is
+   missing, malformed, or has an invalid value, `LlmConfigError` is raised and
+   `run.py` exits with code 2 — there are no silent defaults. (See §17 design
+   decision "Fail loud on config errors".)
+3. Validates `<project_path>` exists.
+4. If `--use-model` is set, verifies `model/functions.json`, `globalVariables.json`,
+   `units.json`, and `modules.json` are all present (paths via
+   `core.model_io.model_file_path`). Exits 2 if missing.
+5. Calls [core.group_planner.plan_runs(...)](src/core/group_planner.py) which
+   returns a flat `List[RunPlan]`.
+6. Iterates the plans through a single [PhaseRunner](src/core/orchestration.py)
+   instance. Each plan corresponds to one `runner.run(plan.phases, from_phase=plan.runner_from_phase)` call.
+
+The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
+(flowchart engine) starts, because that engine can be invoked standalone — see
+§13.
+
+### Three dispatch shapes (collapsed inside `plan_runs`)
+
+| Config state | CLI | Plans returned |
+|---|---|---|
+| No `modulesGroups` | (any) | One plan with all 4 phases (or just 3+4 if `--use-model`) |
+| `modulesGroups` present | no `--selected-group` | One "Build model" plan (Phases 1+2) + N "Group: <name>" plans (Phases 3+4 each, with `--output-dir output/<group>/`) |
+| `modulesGroups` present | `--selected-group <G>` | One "Build model" plan + one "Group: <G>" plan (Phases 3+4 only, **no `--output-dir`** — output goes to `output/`) |
+
+`--from-phase` translation also lives here:
+- `from_phase ≤ 2`: build-model plan starts at that index, group plans start at 1.
+- `from_phase ≥ 3`: build-model plan is **suppressed**; each group plan uses `local_from = max(1, from_phase - 2)` (so 3→1, 4→2 inside the views+export plan).
 
 ---
 
-## 4. Config — config/config.json
+## 6. Config — `config/config.json`
 
-Config supports `//` and `/* */` comments and trailing commas (`_strip_json_comments` + `_strip_trailing_commas` in `utils.py`). Local overrides via `config/config.local.json` (merged on top).
+JSONC: `//`, `/* */`, and trailing commas are tolerated by
+`core.config._strip_json_comments` + `_strip_trailing_commas`. A sibling
+`config.local.json` is merged on top if present.
 
-### Schema
+### Current schema
 
-```json
+```jsonc
 {
   "views": {
     "interfaceTables": true,
-    "unitDiagrams": { "renderPng": true },
-    "flowcharts": { "scriptPath": "fake_flowchart_generator.py", "renderPng": true },
+    "unitDiagrams":     { "renderPng": true },
+    "flowcharts":       { "scriptPath": "src/flowchart/flowchart_engine.py", "renderPng": true },
     "behaviourDiagram": { "renderPng": true },
     "moduleStaticDiagram": { "enabled": true, "renderPng": true, "widthInches": 5.5 }
   },
   "clang": {
-    "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
-    "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
-    "clangArgs": []
+    "llvmLibPath":       "C:\\Program Files\\LLVM\\bin\\libclang.dll",
+    "clangIncludePath":  "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
+    "clangArgs":         []
   },
   "llm": {
-    "descriptions": false,
-    "behaviourNames": false,
-    "baseUrl": "http://localhost:11434",
-    "defaultModel": "llama3.2",
-    "timeoutSeconds": 60,
-    "abbreviationsPath": "config/abbreviations.txt"
+    // ── required fields — load_llm_config raises LlmConfigError if missing ──
+    "provider":          "ollama",        // "ollama" | "openai"  (strictly validated)
+    "baseUrl":           "http://localhost:11434",
+    "defaultModel":      "qwen2.5-coder:14b",
+    "timeoutSeconds":    120,              // positive int
+    "numCtx":            8192,             // Ollama context window (positive int)
+    "retries":           1,                // >=0; up to (1+retries) total tries
+
+    // ── optional fields ──
+    "descriptions":      false,            // enable LLM function descriptions (Phase 2)
+    "behaviourNames":    false,            // enable LLM behaviour input/output names
+    "abbreviationsPath": "config/abbreviations.txt",
+    "apiKey":            "",               // openai bearer; prefer env LLM_API_KEY
+    "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
+
+    // version3 — token budgeting
+    // null → auto: numCtx-512 for Ollama, 127488 for OpenAI
+    // int  → explicit override (e.g. 16000 for Ollama 16K, 120000 for GPT-4o)
+    "maxContextTokens":  null,
+    "cacheVersion":      1,                // bump to invalidate llm entity cache
+    "fewShotExamplesDir": "few_shot_examples",
+
+    // version3 — enrichment feature flags (every flag must be a bool)
+    "enrichment": {
+      "twoPassDescriptions": true,   // Pass 2 refines with caller context   (2x desc cost)
+      "selfReview":          false,  // generate→review→revise (≥20-line fns) (3x cost)
+      "ensemble":            false,  // 3 temps + synthesis for unit/module summaries (4x cost)
+      "cfgSimplification":   false,  // LLM proposes merge/drop plan for >15-node CFGs
+      "variableEnrichment":  true    // rich global-variable descriptions
+    }
   },
   "modulesGroups": {
-    "InterfaceTables": {
-      "ItTypes":      ["InterfaceTables/Types"],
-      "ItVisibility": ["InterfaceTables/Visibility"],
-      "ItDirection":  ["InterfaceTables/Direction"]
-    },
-    "Flowcharts":      { "FcControl":    ["Flowcharts/ControlFlow"] },
-    "BehaviourDiagram":{ "BdCross":      ["BehaviourDiagram/CrossModule"],
-                         "BdPoly":       ["BehaviourDiagram/Polymorphism"] },
-    "UnitDiagrams":    { "UdMath":       ["UnitDiagrams/BasicMath"],
-                         "UdNested":     ["UnitDiagrams/Nested/Inner"],
-                         "UdNamespaces": ["UnitDiagrams/Namespaces"] },
-    "Diagnostics":     { "DiagParser":   ["Diagnostics/ParserEdge"] },
-    "QuickSample":     { "QsCore":       ["QuickSample/Core"],
-                         "QsUtils":      ["QuickSample/Utils"] }
+    "core":    { "core":    ["app", "math"] },
+    "support": { "support": "outer/inner" },
+    "tests":   {
+      "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
+      "tests_b": ["tests/hub", "tests/poly", "tests/structs"]
+    }
   },
   "export": {
-    "docxPath": "output/software_detailed_design_{group}.docx",
+    "docxPath":      "output/software_detailed_design_{group}.docx",
     "docxFontSize": 8
   }
 }
 ```
 
-### Key config rules
+### Environment-variable overrides for `llm`
 
-- Group names and module names: **CapitalCamelCase**
-- Each folder path must appear **exactly once** across all groups
-- `selectedGroup` was **intentionally removed** from config — selection is CLI-only
-- `config.modules` top-level key is supported as an alternative to `modulesGroups`; if both exist, `modules` wins for module mapping. Currently only `modulesGroups` is used.
-- LLM is **off by default** (`descriptions: false`, `behaviourNames: false`)
+`load_llm_config()` (in [src/core/config.py](src/core/config.py)) honors:
+
+| Env var | Wins over |
+|---|---|
+| `LLM_PROVIDER` | `llm.provider` |
+| `LLM_BASE_URL` | `llm.baseUrl` |
+| `LLM_DEFAULT_MODEL` | `llm.defaultModel` |
+| `LLM_TIMEOUT_SECONDS` | `llm.timeoutSeconds` |
+| `LLM_NUM_CTX` | `llm.numCtx` |
+| `LLM_RETRIES` | `llm.retries` |
+| `LLM_API_KEY` | `llm.apiKey` |
+
+Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
+`USER_ID`, `SEND_SYSTEM_NAME` (handled inside `llm_core.headers`).
+
+### Config rules
+
+- Group names and module names: **CapitalCamelCase or snake_case**, both are tolerated.
+- Each folder path should appear in exactly one group; the parser merges all
+  groups into one big folder set so cross-group calls are still discoverable.
+- `selectedGroup` is **not** a config key — group selection is CLI-only.
+- LLM is off by default for descriptions/behaviour names. Phase 2 hierarchy
+  summarization (which writes `summaries.json` + `knowledge_base.json`) is
+  on by default and is controlled by `--no-llm-summarize`.
+- **Strict validation** (version3): missing/empty/wrong-type required fields
+  cause `run.py` (and `flowchart_engine.py`) to print `Invalid LLM config:
+  <specific field>` and exit(2). There are no silent defaults for the required
+  fields. Fix the JSON (or the matching env var) and re-run.
+- **Startup banner** (version3): every run prints the resolved LLM
+  configuration — provider, baseUrl, model, numCtx, `maxContextTokens`
+  (resolved, e.g. `auto -> 7680`), timeout, retries, apiKey status,
+  `cacheVersion`, `fewShotExamplesDir`, and which enrichment flags are ON/OFF.
+  See §4b for an example.
 
 ---
 
-## 5. Model Schema (`model/`)
+## 7. `src/core/` — infrastructure layer
 
-### model/functions.json
+Eight modules, all with no upward imports. Anything analyzer-specific stays
+in `src/utils.py` or one of the phase scripts.
 
-Keyed as: `module|unit|qualifiedName|paramTypes`
+### `core.paths` — [src/core/paths.py](src/core/paths.py)
 
-Example: `QsCore|Sample|MyClass::getValue|int`
+- `ProjectPaths` frozen dataclass with `project_root`, `src_dir`, `config_dir`,
+  `config_path`, `config_local_path`, `model_dir`, `output_dir`, `logs_dir`,
+  `cache_dir`.
+- `paths()` returns a cached singleton; `set_project_root(path)` clears it.
+- Auto-detects root by walking two parents up from `paths.py` (so the snapshot
+  works no matter where you launch from).
 
-| Field | Type | Description |
+### `core.config` — [src/core/config.py](src/core/config.py)
+
+- `_strip_json_comments` / `_strip_trailing_commas` — JSONC parser.
+- `load_config(project_root)` — merges `config/config.json` + `config.local.json`.
+- `load_llm_config(cfg)` — env-var overlay + normalised `llm` block (see §6).
+- `app_config(*, refresh=False)` — process-cached merged dict.
+- Typed accessors: `llm_config()`, `views_config()`, `exporter_config()`,
+  `clang_config()`, `modules_groups()`.
+
+### `core.model_io` — [src/core/model_io.py](src/core/model_io.py)
+
+Canonical filenames (use these constants, never bare strings):
+`METADATA`, `FUNCTIONS`, `GLOBALS`, `UNITS`, `MODULES`, `DATA_DICTIONARY`,
+`KNOWLEDGE_BASE`, `SUMMARIES`. Tuple `ALL_MODEL_NAMES` lists them all.
+
+Functions:
+- `model_file_path(name)` → absolute path under `paths().model_dir`.
+- `model_files_present(*names)` → list of MISSING canonical names.
+- `read_model_file(name, *, required=True, default=None)` → dict, raises
+  `ModelFileMissing` if required and absent.
+- `load_model(*required, optional=None)` → `{name: data}`. Optional names
+  default to `{}` when missing.
+- `write_model_file(name, data, *, atomic=False, indent=2)` → writes JSON.
+  When `atomic=True`, writes to a sibling tempfile then `os.replace()`s into
+  place.
+- `ensure_model_dir()` → mkdirs and returns the model dir.
+
+### `core.logging_setup` — [src/core/logging_setup.py](src/core/logging_setup.py)
+
+- `configure_logging(*, project_root, quiet, verbose, log_dir)` installs:
+  - **stderr** handler at INFO (or DEBUG/WARNING based on flags + `LOG_LEVEL`)
+  - **daily file** handler at DEBUG → `<project_root>/logs/run_YYYYMMDD.log`
+- Idempotent; later calls just adjust the stderr level.
+- `get_logger(name)` auto-configures with defaults if no caller has yet.
+- `set_level(level)` re-tunes stderr after the fact.
+- Registers an `atexit` hook that dumps `llm_core.tokens.format_report()` so
+  every subprocess records its own LLM token usage to the log file.
+
+### `core.progress` — [src/core/progress.py](src/core/progress.py)
+
+`ProgressReporter(component, *, total, logger, log_every)` with `start()`,
+`step(label=...)`, `done(summary=...)`, and a context-manager API. On a TTY
+it uses `\r` for live updates; when piped it falls back to periodic INFO log
+lines (every ~10% by default). Quiet mode suppresses the live line entirely
+but still logs the final summary.
+
+### `core.orchestration` — [src/core/orchestration.py](src/core/orchestration.py)
+
+```python
+@dataclass(frozen=True)
+class Phase:
+    name: str               # "Phase 1: Parse C++ source"
+    script: str             # "parser.py"
+    args: List[str]         # CLI argv after the script
+
+class PhaseRunner:
+    def run(self, phases, *, from_phase=1) -> float
+```
+
+Single subprocess authority. Phases with `idx < from_phase` are skipped with a
+log line. On a non-zero exit code the runner emits
+`resume with: --from-phase {idx}` and raises `SystemExit(returncode)`.
+
+### `core.group_planner` — [src/core/group_planner.py](src/core/group_planner.py)
+
+Constants: `PHASE_PARSE=1`, `PHASE_DERIVE=2`, `PHASE_VIEWS=3`, `PHASE_EXPORT=4`.
+
+```python
+@dataclass
+class RunPlan:
+    label: str
+    phases: List[Phase]
+    runner_from_phase: int = 1
+
+def plan_runs(cfg, *, project_path, selected_group, use_model,
+              no_llm_summarize, from_phase=1) -> List[RunPlan]
+```
+
+Implements the three dispatch shapes from §5 in one place. Raises `ValueError`
+on unknown `--selected-group`.
+
+### `core.__init__` — [src/core/__init__.py](src/core/__init__.py)
+
+Re-exports every public symbol so call sites can write
+`from core import PhaseRunner, plan_runs, FUNCTIONS, ...`.
+
+---
+
+## 8. `src/llm_core/` — unified LLM client + token-budget toolkit
+
+Post-version3, `src/llm_core/` is a full toolkit: one HTTP client plus a set of
+composable helpers (counter, budget, context builder, repo map, few-shot,
+cache, structured output, review). Everything LLM-related in the project
+flows through this layer.
+
+```
+src/llm_core/
+  client.py              LlmClient + from_config — single HTTP client (ollama + openai)
+  headers.py             build_openai_headers + resolve_api_key
+  think.py               strip_think_section
+  tokens.py              process-wide token usage counter (record + format_report)
+  token_counter.py       TokenCounter (tiktoken wrapper + char/3.5 fallback) — version3
+  budget.py              ContextBudget + TASK_RATIOS + resolve_max_tokens      — version3
+  context_builder.py     ContextBuilder — callee/caller/types degradation ladder — version3
+  repo_map.py            RepoMap — scoped repo signature view (4 tiers)          — version3
+  few_shot.py            FewShotPool — keyword-ranked example selection          — version3
+  cache.py               EntityCache — composite-hash disk cache                 — version3
+  structured_output.py   extract_and_validate + parse_label_response             — version3
+  review.py              self_review + ensemble_generate                        — version3
+```
+
+Public API re-exported from `llm_core.__init__`:
+`LlmClient`, `from_config`, `strip_think_section`, `tokens`,
+`TokenCounter`, `get_counter`, `ContextBudget`, `resolve_max_tokens`,
+`extract_and_validate`, `parse_label_response`, `self_review`,
+`ensemble_generate`.
+
+### `llm_core.client.LlmClient` — [src/llm_core/client.py](src/llm_core/client.py)
+
+Two providers behind one interface:
+
+| Provider | Endpoint (single-call / chat) | Auth |
 |---|---|---|
-| `qualifiedName` | string | Full C++ qualified name (e.g. `MyClass::getValue`) |
-| `location.file` | string | Relative path from project root |
-| `location.line` | int | Declaration start line |
-| `location.endLine` | int | Declaration end line |
-| `params` | list | Raw list (before Phase 2 normalizes to `parameters`) |
-| `parameters` | list | Normalized: `[{name, type}]` — set in Phase 2 |
-| `returnType` | string | C++ return type string |
-| `returnExpr` | string | First return expression token(s) captured by parser |
-| `visibility` | string | `private`, `public`, `protected`, or `default` |
-| `calledByIds` | list | Function IDs that call this function |
-| `callsIds` | list | Function IDs this function calls |
-| `readsGlobalIds` | list | Direct global var reads |
-| `writesGlobalIds` | list | Direct global var writes |
-| `readsGlobalIdsTransitive` | list | Transitive reads (Phase 2 propagation) |
-| `writesGlobalIdsTransitive` | list | Transitive writes (Phase 2 propagation) |
-| `direction` | string | `In` or `Out` (never empty after Phase 2) |
-| `interfaceId` | string | `IF_<PROJECT>_<UNIT_CODE>_<INDEX>` — set in Phase 2 |
-| `description` | string | LLM-generated description (optional) |
-| `behaviourInputName` | string | Human label for input (static or LLM) |
-| `behaviourOutputName` | string | Human label for output (static or LLM) |
-| `syntheticFromVarDecl` | bool | True if recovered from misparsed VAR_DECL |
-| `declarationOnly` | bool | True if only forward declaration, no body |
+| `ollama` | `POST {baseUrl}/api/generate` and `/api/chat` | none |
+| `openai` | `POST {baseUrl}/chat/completions` | bearer + custom headers |
 
-### model/globalVariables.json
+Two public call methods:
+- `generate(system_prompt, user_prompt)` — simple system+user pair.
+- `call(messages, *, temperature=None)` (version3) — multi-message chat API
+  with per-call temperature override. Backing for ensemble + self-review.
 
-Keyed as: `module|unit|qualifiedName`
+Shared pipeline:
+1. **Retry loop** — `max_retries+1` total tries, retries on Timeout /
+   ConnectionError / HTTPError / empty response.
+2. **`strip_think_section`** — strips `<think>...</think>` blocks before returning.
+3. **Token tracking** — every successful call records prompt+completion tokens
+   into `llm_core.tokens` (process-wide counter dumped at exit).
 
-| Field | Description |
-|---|---|
-| `qualifiedName` | Full C++ name |
-| `location.file` | Relative path |
-| `location.line` | Declaration line |
-| `type` | C++ type string |
-| `value` | Initializer value (if any) |
-| `visibility` | `private`, `public`, `protected`, or `default` |
-| `interfaceId` | Set in Phase 2 |
-| `direction` | Always `In/Out` (set in Phase 2) |
-| `description` | LLM-generated (optional) |
+Hard rules baked in for the OpenAI route:
+- A class-level `_OPENAI_LOCK` serialises every OpenAI request process-wide.
+- Every OpenAI call is followed by `time.sleep(3.0)` (`_OPENAI_RATE_LIMIT_SEC`)
+  even on failure, because the corporate gateway throttles ~1 req/3s.
 
-### model/units.json
+Public properties (version3 adds `num_ctx`):
+`client.provider`, `client.model`, `client.num_ctx` — prefer these over
+poking `_provider` / `_model` / `_num_ctx`.
 
-Keyed as: `module|unitname`
+`from_config(llm_cfg)` builds an `LlmClient` from a `load_llm_config()` dict.
+Legacy positional args (`url=`, `use_openai_format=`) still accepted so the
+flowchart engine's standalone subprocess invocation keeps working.
 
-| Field | Description |
-|---|---|
-| `name` | Unit name (filename without extension) |
-| `path` | Relative path without extension |
-| `fileName` | Filename with extension |
-| `functionIds` | Ordered list of function IDs in this unit |
-| `globalVariableIds` | Ordered list of global IDs in this unit |
-| `callerUnits` | Unit keys that call into this unit |
-| `calleesUnits` | Unit keys this unit calls into |
+### `llm_core.headers`, `llm_core.think`, `llm_core.tokens`
 
-Only `.cpp`/`.cc`/`.cxx` files produce units.
+- `headers` — `build_openai_headers`, `resolve_api_key`. Resolves `LLM_API_KEY`
+  env var first, falls back to `llm.apiKey`. Handles the corporate-gateway
+  custom-header format and `X_DEP_TICKET`/`USER_TYPE`/`USER_ID`/`SEND_SYSTEM_NAME`
+  env overrides.
+- `think.strip_think_section(text)` — removes `<think>...</think>` sections
+  (gpt-oss / DeepSeek R1 style) so downstream consumers see just the answer.
+- `tokens.record(provider, model, prompt, completion)` + `format_report()` —
+  process-wide counter dumped automatically by the logging atexit hook so
+  each subprocess writes its own report into `logs/run_YYYYMMDD.log`.
 
-### model/modules.json
+### `llm_core.token_counter.TokenCounter` (version3)
 
-Keyed by module name. Contains: `{ "units": [unit_key, ...] }`
+Thin wrapper around `tiktoken.get_encoding("cl100k_base")` when tiktoken is
+installed, otherwise falls back to `len(text) / 3.5` (C++ code tokenizes at
+roughly 2–3 chars/token, so 3.5 is conservative).
 
-### model/metadata.json
+```python
+counter = TokenCounter(model="qwen2.5-coder:14b")
+counter.count(text)                          # int
+counter.fits(text, budget)                   # bool
+counter.truncate_to_budget(text, budget)     # str — binary-search by token count
+```
 
-Fields: `basePath`, `projectName`, `generatedAt`, `version`
+Module-level `get_counter(model)` caches one instance per model.
 
-### model/dataDictionary.json
+### `llm_core.budget.ContextBudget` + `TASK_RATIOS` + `resolve_max_tokens` (version3)
 
-Contains entries for:
-- `primitive` — all C/C++ primitive types with ranges
-- `struct` / `class` — fields with types and ranges
-- `enum` — enumerators with values
-- `typedef` — underlying type and range
-- `define` — `#define` macros with value and full text
+See §4b for the full story. Summary:
 
-Key format varies by kind:
-- struct/enum/typedef: qualified name (or `typedef@qn:file:line` if duplicate)
-- define: `NAME@rel_file:line_no`
+- `TASK_RATIOS: Dict[str, Dict[str, float]]` — per-task section ratios
+  (sum to ~1.0, enforced by assertion). Tasks include `function_description`,
+  `function_description_refined`, `variable_description`, `behaviour_names`,
+  `function_summary`, `file_summary`, `module_summary`, `project_summary`,
+  `cfg_node_labeling`, `cfg_coherence`, `cfg_simplification`, `self_review`,
+  `ensemble_synthesis`.
+- `ContextBudget(max_tokens, task, counter)` — holds a 10 % safety margin;
+  `.allocate(section)` returns the section's token budget.
+- `resolve_max_tokens(llm_cfg)` — priority: explicit `maxContextTokens` →
+  `numCtx − 512` (ollama) → 127488 (openai). Expects a validated llm_cfg —
+  no silent default for `provider` or `numCtx` any more.
+
+### `llm_core.context_builder.ContextBuilder` (version3)
+
+Degradation ladder: prefers breadth over depth. Starts every callee / caller /
+type at Level 0 (full source + description), and when the total exceeds the
+budget it promotes the lowest-priority items one level at a time until it
+fits. Levels:
+
+```
+Level 0: Full source + description
+Level 1: Signature + 3-line description
+Level 2: Signature + 1-line purpose
+Level 3: Signature only
+Level 4: Qualified name only
+```
+
+Public methods: `fit_callees(callees, budget)`, `fit_callers(callers, budget)`,
+`fit_types(types, budget)`. Priority ranking is by call-site count,
+public/exported status, and usage frequency in the target function.
+
+### `llm_core.repo_map.RepoMap` (version3)
+
+Compact signature-level view built from `knowledge_base.json` (no extra
+parsing). Four tiers tried from most-specific to most-general until one fits
+the budget:
+
+1. Function neighborhood — callees + callers + same-file functions
+2. File level — all functions in the same file with signatures
+3. Module level — all files in the module with function counts
+4. Project level — module names with file counts
+
+```python
+RepoMap(knowledge).for_function(qn, budget, counter) -> str
+```
+
+Injected as a new section in both `pkb/builder.build_base_context_packet()`
+(for flowchart labels) and `llm_enrichment.get_rich_description()` (for
+function descriptions).
+
+### `llm_core.few_shot.FewShotPool` (version3)
+
+Loads hand-curated examples from
+`few_shot_examples/{descriptions,labels,globals,behaviour_names}/*.json`.
+Each example: `{"tags": [...], "input_context": "...", "ideal_output": "..."}`.
+
+```python
+FewShotPool(examples_dir).select(task, target_input, budget, counter) -> str
+```
+
+Ranking: keyword overlap (callee names, param types, tags). Budget-aware
+greedy fill. Returns `""` if the directory is missing or empty — that is the
+supported off-path, not an error.
+
+### `llm_core.cache.EntityCache` (version3)
+
+Per-entity disk cache with composite hash keys. Stored at
+`.flowchart_cache/llm_descriptions/` (or whatever `cache_dir` the caller
+passes).
+
+```python
+EntityCache(cache_dir, cache_version)
+  .get(entity_id, content_hash) -> Optional[dict]
+  .put(entity_id, content_hash, value, metadata=None)
+  .stats() -> "N hits, M misses, X% hit rate"
+```
+
+Cache key = `sha256(entity_source + sorted_callee_hashes + str(cache_version))[:16]`.
+
+Dependency tracking is implicit: when function A's source changes, its hash
+changes, so its cache misses. When A's callee B changes, B's hash changes,
+so A's composite hash (which includes B's hash) also changes, causing A to
+miss too. Bumping `llm.cacheVersion` invalidates everything.
+
+### `llm_core.structured_output.extract_and_validate` (version3)
+
+```python
+extract_and_validate(raw_response, expected_keys=None) -> Optional[Dict]
+```
+
+Robust JSON extraction + repair + schema validation in one function. Handles
+markdown fences, trailing commas, single quotes, explanatory text around JSON,
+and missing closing braces. Replaces the old ad-hoc `_extract_json()` in
+`flowchart/llm/generator.py` and ad-hoc parsing paths in `llm_enrichment.py`.
+
+`parse_label_response(raw)` is the flowchart-specific helper that extracts
+a `{node_id: label}` dict from an LLM reply.
+
+### `llm_core.review` — `self_review`, `ensemble_generate` (version3)
+
+```python
+self_review(client, draft, evidence) -> str
+ensemble_generate(client, system, user, temperatures=[0.0, 0.3, 0.7]) -> str
+```
+
+- `self_review` — generate → review → revise cycle. Review prompt asks
+  "is this accurate? does it miss behaviours? are side effects listed?".
+  Returns an issues list or "OK"; revision happens only if issues are found.
+  3 LLM calls worst case. Applied to function descriptions (≥20 non-blank
+  lines) and high-visibility summaries when `llm.enrichment.selfReview=true`.
+- `ensemble_generate` — 3 temperatures + synthesis call (4 total). Only
+  applied to unit / module / project summaries when
+  `llm.enrichment.ensemble=true`. Scales to ~80 extra calls for a
+  ~20-module project.
+
+Both helpers use `extract_and_validate` when parsing verdicts.
 
 ---
 
-## 6. Phase 1: Parser (`src/parser.py`)
+## 9. `src/utils.py` — analyzer-specific helpers
+
+Post-Batch-6, this file is ~360 lines and only owns analyzer-specific logic.
+Anything that touches files or env or generic infra has moved into `core.*`.
+
+### Re-exports (back-compat shims)
+
+```python
+from core.config import load_config, load_llm_config
+```
+
+So legacy `from utils import load_config` still works.
+
+### What lives here
+
+| Function / constant | Purpose |
+|---|---|
+| `KEY_SEP = "\|"` | Separator for module / unit / function / global keys |
+| `log(msg, component, *, err=False)` | Thin wrapper around `core.logging_setup.get_logger` |
+| `timed(component)` ctx-mgr | Logs `<elapsed>s` on exit |
+| `mmdc_path(project_root)` | Local `node_modules/.bin/mmdc` or system `mmdc` |
+| `safe_filename(s)` | Replace `<>:"/\\|?*,&;` with `_` |
+| `init_module_mapping(config)` | Build `_MODULE_OVERRIDES` from `modules` or merged `modulesGroups` |
+| `_resolve_module_from_rel(rel)` | Match relative path against `_MODULE_OVERRIDES` (case-insensitive) |
+| `make_unit_key(rel_file)` | `module\|unitname` |
+| `make_global_key(rel_file, qn)` | `module\|unit\|qualifiedName` |
+| `make_function_key(module, rel_file, qn, params)` | `module\|unit\|qualifiedName\|paramTypes` |
+| `path_from_unit_rel(rel)` | Strip extension, normalise slashes |
+| `short_name(qn)` | Last `::` segment |
+| `path_is_under(base, candidate)` | Safe containment via `os.path.relpath` |
+| `get_module_name(file_path, base_path)` | Absolute path → module name (uses `path_is_under`) |
+| `norm_path(path, base_path)` | Resolve relative paths against `base_path` |
+| `PRIMITIVES` dict | C++ primitive types → range string |
+| `get_range_for_type(type_str)` | Map type to range; falls back to `NA` |
+| `get_range(type_str, data_dictionary)` | Range lookup with typedef recursion (depth 10) |
+
+Note: `init_module_mapping` runs at import time using the on-disk config, so
+`make_*_key` works immediately. `parser.py` builds its own folder list from
+the same config (kept separate to avoid the analyzer's import order
+constraints).
+
+---
+
+## 10. Phase 1 — `src/parser.py`
 
 ### Initialization
 
-- Reads `config/config.json` to get clang config
-- Loads libclang from `config.clang.llvmLibPath`; uses `os.add_dll_directory()` on Windows (Python 3.8+)
-- Builds `_MODULE_FOLDERS` from merged union of all `modulesGroups` entries
-- Sets up `CLANG_ARGS`:
-  - `-std=c++17`
-  - `-I<MODULE_BASE_PATH>`
-  - `-I<clangIncludePath>`
-  - `-DPRIVATE=` `-DPROTECTED=` `-DPUBLIC=` `-D__OVLYINIT=` (macro visibility placeholders)
-  - `-DVOID=void` (handles codebases using VOID as a macro)
-  - Any extra args from `config.clang.clangArgs`
+- Reads `core.config.app_config()` and `clang_config()`.
+- Loads libclang from `clang.llvmLibPath`. On Windows, calls
+  `os.add_dll_directory(<llvm/bin>)` so dependent DLLs are found, with a
+  `PATH`-extension fallback.
+- Builds `_MODULE_FOLDERS` from merged `modulesGroups` (or `modules` top-level).
+- Sets `CLANG_ARGS`:
+  - `-std=c++14`
+  - `-I<MODULE_BASE_PATH>`, `-I<clangIncludePath>`
+  - `-DPRIVATE=` `-DPROTECTED=` `-DPUBLIC=` `-D__OVLYINIT=` (visibility macros)
+  - `-DVOID=void` (handles codebases that use `VOID` as a type macro)
+  - Any extras from `config.clang.clangArgs`.
 
 ### Visibility detection (`_detect_visibility`)
 
-Scans backwards up to 5 lines from the declaration line, looking for a line whose first token is `PRIVATE`, `PUBLIC`, or `PROTECTED`. Returns lowercase: `private`, `public`, `protected`, or `default`.
-
-Used for both functions and global variables. Needed because visibility macros are often on the preceding line, e.g.:
-```c
-PRIVATE UNIT __OVLYINIT
-_SomeFunction(GG *gg) { ... }
-```
+Scans **backwards up to 5 source lines** from a declaration line looking for
+the first token `PRIVATE`, `PUBLIC`, or `PROTECTED`. Returns the matching
+lowercase string or `default`. Required because the visibility macros are
+expanded to nothing by `-DPRIVATE=` and Clang doesn't surface them.
 
 ### File filtering (`is_project_file`)
 
-Checks that:
-1. File is under `MODULE_BASE_PATH` via `os.path.normcase` + `startswith` (**known risk**: see Section 10)
-2. If `_MODULE_FOLDERS` is non-empty: file's relative path must start with one of the configured folder prefixes (case-insensitive after normcase)
+Rejects anything outside `MODULE_BASE_PATH` and (when `_MODULE_FOLDERS` is
+non-empty) anything whose relative path doesn't start with one of the
+configured folder prefixes (case-insensitive after `os.path.normcase`).
 
-### Three-pass parsing (`main`)
+> **Known risk** — uses `startswith` rather than `path_is_under()`, so
+> `C:\foo` and `C:\foobar` would alias. The fix is in `utils.path_is_under`;
+> migrating `is_project_file` to use it is open work.
 
-1. **`parse_file`** → `visit_definitions` + `visit_type_definitions` — collects function/global/type declarations
-2. **`parse_calls`** → `visit_calls` — builds `call_graph` (caller→callees) and `reverse_call_graph` (callee→callers)  
-3. **`parse_global_access`** → `visit_global_access` — tracks which globals each function reads/writes
+### Three traversal passes (`main`)
+
+1. `parse_file` → `visit_definitions` + `visit_type_definitions` — collects
+   functions, globals, and type declarations.
+2. `parse_calls` → `visit_calls` — builds `call_graph` (caller → callees) and
+   `reverse_call_graph` (callee → callers) by walking `CALL_EXPR` cursors
+   inside function bodies. Tries `cursor.referenced` first, falls back to
+   name match in known functions.
+3. `parse_global_access` → `visit_global_access` — for each function body,
+   walks `DECL_REF_EXPR` cursors that point at global `VAR_DECL`s. Distinguishes:
+   - Pure write (`=`) → adds to `global_access_writes`
+   - Compound op (`+=`, `-=`, …) → both reads and writes
+   - `++` / `--` → writes
+   - Otherwise → reads
+   Also captures the first `RETURN_STMT` token sequence as `returnExpr`.
 
 ### Function collection (`visit_definitions`)
 
-- Handles `FUNCTION_DECL` and `CXX_METHOD` cursors
-- Records both definitions (with body) and forward declarations (`declarationOnly: True`)
-- Internal key: `get_function_key(cursor)` uses mangled name, or `qualified@file:line` fallback
-- For each function: collects parameters via `get_arguments()`, records `endLine` from cursor extent
-- Also handles `VAR_DECL` that should be reclassified as functions (see synthetic functions below)
-
-### Synthetic function detection (`_var_decl_should_record_as_function_not_global`)
-
-Clang sometimes emits `VAR_DECL` for `TYPE FuncName(id1)` when macros expand to nothing. Detected by:
-1. Cursor is `VAR_DECL`
-2. Source text contains `name(` pattern (not `=` sign)
-3. All init args are `DECL_REF_EXPR` (identifier references, not literals)
-
-When detected: stored in `functions` dict with `syntheticFromVarDecl: True` and reconstructed parameters from the `DECL_REF_EXPR` children.
+- Cursor kinds: `FUNCTION_DECL`, `CXX_METHOD`. Forward decls are kept with
+  `declarationOnly: True`.
+- Internal key during collection: mangled name, or `qualified@file:line`.
+- Captures `parameters` via `cursor.get_arguments()`, records `extent.end.line`
+  as `endLine`.
+- Handles `_var_decl_should_record_as_function_not_global` — when Clang emits
+  a `VAR_DECL` for `TYPE FuncName(id1)` because a `__OVLYINIT`-style macro
+  expanded to nothing, it's reclassified as a function with
+  `syntheticFromVarDecl: True` and parameters reconstructed from the
+  `DECL_REF_EXPR` children.
 
 ### Global variable collection
 
-Only global-scope variables (semantic parent is `TRANSLATION_UNIT` or `NAMESPACE`). Excludes class members. Initializer value extracted by scanning source line for `=` assignment.
-
-### Call graph (`visit_calls`)
-
-Traverses all `CALL_EXPR` nodes inside function definitions. Tries cursor.referenced first; falls back to name-match in known functions. Both `call_graph[caller]` → `{callees}` and `reverse_call_graph[callee]` → `{callers}` are built.
-
-### Global access tracking (`visit_global_access`)
-
-Tracks `DECL_REF_EXPR` to global `VAR_DECL` nodes. Distinguishes:
-- Pure write (`=`): adds to `global_access_writes`
-- Compound operator (`+=`, `-=`, etc): adds to both reads and writes
-- `++`/`--` unary: adds to writes
-- Read: adds to `global_access_reads`
-- Also captures first `RETURN_STMT` token sequence as `returnExpr`
-
-### Direction assignment (in `build_metadata`)
-
-Based on direct global access per function:
-- Only writes: `direction = "In"` (setter)
-- Only reads: `direction = "Out"` (getter)
-- Both or neither: `direction = "In"`
-
-Phase 2 overrides to ensure always `"In"` or `"Out"` (never empty).
-
-### Key generation (`build_metadata` + `utils.make_function_key`)
-
-Final model key: `module|unit|qualifiedName|paramTypes`
-
-Where:
-- `module` = `get_module_name(file_path, base_path)` → `_resolve_module_from_rel(rel_path)` → matches against configured folder prefixes (case-insensitive)
-- `unit` = filename without extension
-- `qualifiedName` = full C++ qualified name including namespace/class
-- `paramTypes` = comma-joined type strings from parameters
+Only globals at translation-unit or namespace scope (excludes class members).
+The initializer value is extracted by scanning the source line for `=`.
 
 ### Type collection (`visit_type_definitions`)
 
-Collects into `data_dictionary`:
+Builds `data_dictionary`:
 - `STRUCT_DECL` / `CLASS_DECL` with field list
-- `ENUM_DECL` with enumerator values and computed range
+- `ENUM_DECL` with enumerators and computed range
 - `TYPEDEF_DECL` with underlying type and range lookup
-- `_maybe_add_typedef_for_struct`: when a struct is found inside `typedef struct { ... } Name;` pattern, adds a typedef entry too
+- Special pattern: `_maybe_add_typedef_for_struct` adds a typedef entry when
+  the source uses `typedef struct { ... } Name;`
 
 ### Define scanning (`_scan_defines`)
 
-Scans all `.cpp`, `.h`, `.hpp` files for `#define` lines. Handles backslash-continuation. Stores: name, value, full macro text, location.
+Plain text scan of every `.cpp`, `.h`, `.hpp` for `#define` lines. Honours
+backslash continuation. Stores `name`, `value`, full macro text, and
+`location`.
+
+### Direction assignment (`build_metadata`)
+
+Based purely on **direct** global access:
+- writes only → `direction = "In"` (setter)
+- reads only → `direction = "Out"` (getter)
+- both / neither → `direction = "In"`
+
+Phase 2 forces every function's direction to `"In"` or `"Out"` (never empty)
+and every global to `"In/Out"`.
+
+### Final keying (`build_metadata` + `utils.make_function_key`)
+
+Final model key: `module|unit|qualifiedName|paramTypes`.
+
+- `module` from `get_module_name(file_path, base_path)` → `_resolve_module_from_rel`.
+- `unit` from filename without extension.
+- `qualifiedName` includes namespace + class.
+- `paramTypes` is the comma-joined list of normalised parameter type strings.
+
+### Outputs
+
+`metadata.json`, `functions.json`, `globalVariables.json`, `dataDictionary.json`
+written to `model/` via plain `json.dump`.
 
 ---
 
-## 7. Phase 2: Model Deriver (`src/model_deriver.py`)
+## 11. Phase 2 — `src/model_deriver.py`
+
+Loads via `core.model_io.load_model(METADATA, FUNCTIONS, GLOBALS)` and exits
+with a clear "Run Phase 1 first" message on `ModelFileMissing`.
 
 ### `_build_units_modules`
 
-Groups all functions and globals by their file path. Creates:
-- `model/units.json` — one entry per `.cpp` file (`.h` files are excluded from unit keys)
-- `model/modules.json` — one entry per module, listing its unit keys
+Groups all functions and globals by file path. Produces:
+- `model/units.json` — one entry per `.cpp/.cc/.cxx` (headers excluded from
+  unit keys). Each entry has `name`, `path`, `fileName`, `functionIds` (sorted
+  by source line), `globalVariableIds`, `callerUnits` (set), `calleesUnits` (set).
+- `model/modules.json` — one entry per module containing its unit keys.
 
-For each unit: collects `functionIds` (sorted by source line), `globalVariableIds`, and derives `callerUnits`/`calleesUnits` by traversing `calledByIds`/`callsIds`.
+### `_build_interface_index` / `_enrich_interfaces`
 
-### `_build_interface_index`
-
-Assigns a per-file sequential index to every function and global. Used to build stable `interfaceId` codes.
-
-### `_enrich_interfaces`
-
-Assigns `interfaceId = IF_<PROJECTUPPER>_<UNITPATH_UPPER>_<INDEX>` to each function and global. Also normalizes `parameters` format (strips extra fields, keeps `name` and `type`).
+Assigns a per-file sequential index, then sets
+`interfaceId = IF_<PROJECTUPPER>_<UNITPATH_UPPER>_<INDEX>` on each function and
+global. Also normalises `parameters` to `[{name, type}]`, dropping any extra
+fields the parser captured.
 
 ### `_propagate_global_access`
 
-Fixed-point propagation: for each function, unions in its callees' read/write sets. Stores results as `readsGlobalIdsTransitive` and `writesGlobalIdsTransitive`. Used for behaviour naming (sees what a "wrapper" function ultimately touches).
+Fixed-point: each function's read/write set is unioned with each callee's
+sets. Stored as `readsGlobalIdsTransitive` / `writesGlobalIdsTransitive`.
+Used by behaviour-name heuristics so a wrapper function can be labelled by
+what it ultimately touches.
 
-### `_enrich_behaviour_names` (static)
+### `_enrich_behaviour_names` (static heuristics)
 
-Populates `behaviourInputName` and `behaviourOutputName` from heuristics:
+**Input name** priority:
+1. First parameter name (run through `_readable_label`: strip `g_`/`s_`/`t_`,
+   underscores → spaces).
+2. First written global name.
+3. First read global name.
+4. Fallback: `"<FunctionBaseName> input"`.
 
-**Input Name priority:**
-1. First parameter name → `_readable_label(name)` (strips `g_`, `s_`, `t_` prefixes; converts underscores to spaces)
-2. First written global name
-3. First read global name
-4. Fallback: `"<FunctionBaseName> input"`
+**Output name** priority:
+1. First identifier-looking token of `returnExpr`.
+2. Last word of `returnType` if non-primitive.
+3. First written global name.
+4. First read global name.
+5. Fallback: `"<FunctionBaseName> result"`.
 
-**Output Name priority:**
-1. First token of `returnExpr` if it looks like an identifier
-2. Last word of `returnType` if non-primitive
-3. First written global name
-4. First read global name
-5. Fallback: `"<FunctionBaseName> result"`
-
-### `_static_behaviour_name_is_poor`
-
-Returns True if names end with ` input` or ` result` (generic fallback). Used to decide whether to call LLM for improvement.
+`_static_behaviour_name_is_poor` returns True if the name ends with ` input`
+or ` result` (i.e. fell through to the fallback) — used to gate the LLM call.
 
 ### `_enrich_behaviour_names_llm`
 
-If LLM is available and names are poor: calls `get_behaviour_names()` with source code, params, globals read/written, return type, return expr, draft input/output, and abbreviations. Only fires when `config.llm.behaviourNames: true`.
+When `config.llm.behaviourNames: true` and the static result is poor: calls
+`llm_enrichment.get_behaviour_names(...)` with source, params, globals
+read/written, return type, return expression, draft input/output names, and
+abbreviations. The unified `LlmClient` runs the request through the
+appropriate provider.
 
-### `_enrich_from_llm`
+### `_enrich_from_llm` (version3 — rich path)
 
-Only when `config.llm.descriptions: true` and Ollama is available:
-- `enrich_functions_with_descriptions` — processes functions bottom-up through call graph, so callees are described first and passed as context to callers
-- `enrich_globals_with_descriptions` — one line of source per global; uses abbreviations
+When `config.llm.descriptions: true`:
+
+1. Tries to load `model/knowledge_base.json` (may not exist on first run —
+   the rich path still works, just without repo-map / sibling context).
+2. Calls **`enrich_functions_rich(functions_data, base_path, config, knowledge=…)`**
+   from [src/llm_enrichment.py](src/llm_enrichment.py) — the version3
+   budget-aware function enrichment path. It:
+   - Resolves `max_context_tokens` via `resolve_max_tokens(llm_cfg)`.
+   - Builds `ContextBuilder`, `RepoMap`, `FewShotPool`, `EntityCache`.
+   - Topologically orders functions (callees first) and skips any that
+     already have a source `comment`.
+   - **Pass 1 (always)** — bottom-up. Each function sees callee descriptions
+     built at this pass. Uses `get_rich_description()` with budget-allocated
+     sections: repo_map, function source, callees, types/globals, siblings,
+     few_shot, abbreviations.
+   - **Pass 2 (when `enrichment.twoPassDescriptions=true`, default true)** —
+     re-runs in the same order. Now both callee AND caller descriptions from
+     Pass 1 are available. Uses `_get_refined_description()` which compares
+     the prior description against caller context.
+   - **Self-review (when `enrichment.selfReview=true`)** — for functions with
+     ≥20 non-blank lines, runs `_run_self_review()` which wraps
+     `llm_core.review.self_review(client, draft, evidence)`. 3 LLM calls
+     worst case per reviewed function.
+   - Every result goes into `EntityCache` keyed on
+     `sha256(source + sorted_callee_hashes + cache_version)[:16]`. Re-runs
+     are 10× faster because unchanged functions (and functions whose callees
+     are unchanged) hit the cache.
+3. Calls **`enrich_globals_rich(...)`** when `enrichment.variableEnrichment=true`
+   (default true). This replaces the old one-line declaration prompt with
+   rich evidence: declaration + write-site 2–3-line snippets + read-site
+   snippets + containing-file summary + related functions. Falls back to
+   `enrich_globals_with_descriptions` (the old version2 path) when
+   `variableEnrichment=false`.
+4. A `ProgressReporter` reports `[idx/total]` progress for every pass.
+
+### `_enrich_with_hierarchy_summaries`
+
+Default-on (disabled by `--no-llm-summarize`). Uses the flowchart engine's
+`HierarchySummarizer` (in `src/flowchart/pkb/`) to produce a 4-level summary:
+
+1. Function level — one-sentence summary for any undocumented function.
+2. File level — 2–3 sentences per source file.
+3. Module level — 2–3 sentences per module directory.
+4. Project level — overall description (prefers a README if present).
+
+The summarizer is fed a `ProjectKnowledge` object built from the parsed
+`functions_data` (no extra libclang or scanning). The LLM client is built via
+`_build_llm_client_from_config(load_llm_config(config))`, so provider
+switching, custom headers, and retries all work.
+
+After the run, `phases` and `comment` fields are written back into
+`functions_data` so they're persisted in `functions.json`.
+
+### `_generate_knowledge_base`
+
+Writes `model/knowledge_base.json` in the format the flowchart engine's
+`pkb.builder.ProjectKnowledgeBase` consumes:
+
+```jsonc
+{
+  "functions": { qn: { qualifiedName, signature, file, line, comment, calls[], phases[] } },
+  "enums":     { qn: { values: { name: { value, comment } } } },
+  "macros":    { name@file:line: { value, text, comment } },
+  "typedefs":  { qn: { underlyingType, comment } },
+  "structs":   { qn: { fields: [...] } }
+}
+```
+
+This file is what `views/flowcharts.py` passes to `flowchart_engine.py` via
+`--knowledge-json` so the per-function LLM prompts get rich context.
 
 ### Final cleanup
 
-- Direction forced to `"In"` or `"Out"` for all functions (never empty)
-- Globals get `direction = "In/Out"`
-- `params` field removed (replaced by normalized `parameters`)
-- Writes back `model/functions.json` and `model/globalVariables.json`
+- Direction forced to `"In"` or `"Out"` for all functions.
+- Globals assigned `direction = "In/Out"`.
+- `params` field dropped (replaced by normalised `parameters`).
+- All four files (`functions.json`, `globalVariables.json`, `units.json`,
+  `modules.json`) plus `summaries.json` and `knowledge_base.json` written via
+  `core.model_io.write_model_file`.
 
 ---
 
-## 8. Phase 3: Views (`src/run_views.py` + `src/views/`)
+## 12. Phase 3 — `src/run_views.py` + `src/views/`
 
-### Orchestration
+### Orchestration — [src/run_views.py](src/run_views.py)
 
-`run_views.py` parses `--output-dir` and `--selected-group` from argv. For a selected group:
-1. Resolves group name case-insensitively
-2. Adds `_analyzerSelectedGroup` and `_analyzerAllowedModules` to the config dict
-3. `_analyzerAllowedModules` = sorted list of module names from that group's config entry
+CLI:
+```
+python src/run_views.py [--output-dir <dir>] [--selected-group <name>]
+```
 
-`run_views()` iterates `VIEW_REGISTRY` and calls each enabled view's `run(model, output_dir, model_dir, config)`.
+Loads model via `core.model_io.load_model(FUNCTIONS, GLOBALS, UNITS, MODULES, optional=[DATA_DICTIONARY])`.
 
-**View enable logic**: `interfaceTables` is enabled by default (no config entry needed). All other views must be explicitly configured. Setting a view to `false` disables it.
+When a group is selected, run_views resolves the name case-insensitively
+against `config.modulesGroups` and stuffs two extra keys into the config dict
+that's passed down into views:
 
-### View: `interfaceTables` (`src/views/interface_tables.py`)
+- `_analyzerSelectedGroup` = the resolved group name
+- `_analyzerAllowedModules` = sorted list of module names from that group's entry
 
-Generates `output/interface_tables.json`.
+Then it calls `views.run_views(model, output_dir, model_dir, config)`.
 
-- Iterates only `.cpp` units
-- Filters by `allowed_modules` when set
-- Excludes `private` functions and globals
-- For each function: builds caller/callee unit references and marks them as internal/external
-- Internal = same module (or within `allowed_modules` when a group is selected)
-- External caller/callee units formatted as `module/unit` strings
-- Enriches parameters with range from data dictionary via `get_range()`
-- Strips file extensions from location.file
+### View dispatch — [src/views/__init__.py](src/views/__init__.py)
 
-### View: `unitDiagrams` (`src/views/unit_diagrams.py`)
+```python
+def run_views(model, output_dir, model_dir, config):
+    views_cfg = (config or {}).get("views", {})
+    for view_name, run_fn in VIEW_REGISTRY.items():
+        default = view_name == "interfaceTables"
+        val = views_cfg.get(view_name)
+        enabled = default if view_name not in views_cfg else (val is not False)
+        if enabled:
+            with timed(view_name):
+                run_fn(model, output_dir, model_dir, config)
+```
 
-Generates one Mermaid `.mmd` (and optionally `.png`) per unit into `output/unit_diagrams/`.
+`interfaceTables` is the only view enabled by default; the others must be
+explicitly configured. Setting any view's value to `false` disables it.
 
-- Only `.cpp` units; filtered by `allowed_modules` when set
-- Diagram structure: Left-to-right flowchart with external callers on left, internal module box (yellow) in center, external callees on right
-- Edges labeled with `interfaceId` values (br-separated when multiple)
-- Main unit: blue with thick border; internal peers: blue thin border; module box: yellow
-- **Project root resolved from `model_dir` parent** (not from `output_dir`) — this avoids the broken path when running under `output/<group>/`
-- PNG rendered by `mmdc` (mermaid-cli), 60s timeout per diagram
+The four view modules are imported at the bottom of `__init__.py` so their
+`@register("name")` decorators populate `VIEW_REGISTRY`.
 
-### View: `behaviourDiagram` (`src/views/behaviour_diagram.py`)
+### View 1: `interfaceTables` — [src/views/interface_tables.py](src/views/interface_tables.py)
 
-Generates behaviour diagrams for functions called by external units. Uses `FakeBehaviourGenerator`.
+Output: `output/interface_tables.json` (or `output/<group>/interface_tables.json`).
 
-- Filters to `allowed_modules` when a group is selected
-- Excludes `private` functions
-- `FakeBehaviourGenerator.generate_all_diagrams(fid, out_dir)` creates one `.mmd` per external caller (functions whose module differs from the current function's module)
-- Each `.mmd` has a fixed sample Mermaid diagram (placeholder for real implementation)
-- Naming: `current_key__caller_key.mmd` (sanitized with `safe_filename`)
-- External = different module (or outside `allowed_modules` when group is selected)
-- Writes `output/behaviour_diagrams/_behaviour_pngs.json`: `{ "_docxRows": { module: { unit: [ {currentFunctionName, externalUnitFunction, pngPath} ] } } }`
-- **Project root from `model_dir` parent** — same fix as unit_diagrams
+- Iterates `.cpp` units only.
+- Filters by `_analyzerAllowedModules` if set.
+- Excludes `private` functions and globals.
+- For each function: builds caller/callee unit references and tags them
+  internal vs external. Internal = same module (or within `allowed_modules`
+  when a group is selected); external is rendered as `module/unit`.
+- Enriches parameters with `range` from the data dictionary via `get_range()`.
+- Strips file extensions from `location.file`.
 
-### View: `flowcharts` (`src/views/flowcharts.py`)
+### View 2: `unitDiagrams` — [src/views/unit_diagrams.py](src/views/unit_diagrams.py)
 
-Invokes `fake_flowchart_generator.py` subprocess to produce per-unit JSON flowcharts.
+One Mermaid `.mmd` (and optionally `.png`) per unit into
+`output/unit_diagrams/`.
 
-- When `allowed_modules` is set (group export): filters `model/functions.json` by `fid.split(KEY_SEP, 1)[0].lower() in allowed_modules` and writes the filtered subset to **`model/functions_<group>.json`** (persistent, not temp)
-- Passes `model/functions_<group>.json` to the generator when filtering; otherwise passes full `model/functions.json`
-- Generator writes one JSON per unit into `output/flowcharts/` (or `output/<group>/flowcharts/`)
-- Each JSON is an array of `{name, flowchart}` (Mermaid string)
-- Optionally renders each flowchart to PNG via `mmdc` (temp `.mmd` file per function, cleaned up after render)
-- **Project root from `model_dir` parent** — same fix
+- `.cpp` units only; filtered by `allowed_modules` when set.
+- Layout: external callers on the left, **yellow** module box in the centre,
+  external callees on the right, all flowing left-to-right.
+- The main unit is **blue with a thick border**; sibling units are blue thin.
+- Edges labelled with `interfaceId` values, BR-separated for multi-edge.
+- Project root resolved from `dirname(model_dir)` (NOT `output_dir`) so
+  grouped output paths work.
+- PNG rendered by `mmdc` (mermaid-cli). 60s timeout per diagram.
 
-**Current filtering implementation**: key-prefix based (`fid.split(KEY_SEP, 1)[0].lower()`), NOT units.json traversal. A better approach (traversing units.json → functionIds) was discussed but **not implemented** in the current code.
+### View 3: `behaviourDiagram` — [src/views/behaviour_diagram.py](src/views/behaviour_diagram.py)
 
-### `fake_flowchart_generator.py`
+Generates one `.mmd` per (current function, external caller) pair via the
+placeholder `FakeBehaviourGenerator` in
+[fake_behaviour_diagram_generator.py](fake_behaviour_diagram_generator.py).
 
-- Groups functions by unit (first two segments of fid: `module|unit`)
-- For each function: produces a fixed sample Mermaid diagram (`SAMPLE_FLOWCHART`)
-- Writes one JSON file per unit: `{unit_name}.json` containing array of `{name, flowchart}`
-- Output unit file name = last segment of unit_key (e.g. `Sample.json` not `QsCore_Sample.json`)
+- Filtered to `allowed_modules` (only generates diagrams for functions inside
+  the selected group, but uses the full model so external callers outside the
+  group are still discovered).
+- Excludes `private` functions.
+- Filename: `current_key__caller_key.mmd` (sanitized via `safe_filename`).
+- Each `.mmd` currently contains a fixed sample Mermaid string (placeholder).
+- Renders to PNG via `mmdc` with the puppeteer config when present.
+- Writes `output/behaviour_diagrams/_behaviour_pngs.json`:
 
-### `fake_behaviour_diagram_generator.py` — `FakeBehaviourGenerator`
+```jsonc
+{
+  "_docxRows": {
+    "<module>": {
+      "<unit>": [
+        { "currentFunctionName": "...", "externalUnitFunction": "...", "pngPath": "..." }
+      ]
+    }
+  }
+}
+```
 
-- Takes paths to `modules.json`, `units.json`, `functions.json` at init
-- `generate_all_diagrams(function_key, output_dir)` → for each external caller in `calledByIds` (different module): writes one `.mmd` with `SAMPLE_MERMAID`
-- Returns list of created `.mmd` paths (empty if no external callers)
+This file is what `docx_exporter.py` reads to build the Dynamic Behaviour
+section.
+
+### View 4: `flowcharts` — [src/views/flowcharts.py](src/views/flowcharts.py)
+
+Wraps the **real flowchart engine** under `src/flowchart/`. Steps:
+
+1. Resolves `out_dir = output_dir/flowcharts/`.
+2. Pulls `clang.clangArgs` from config; if empty, derives `-I<basePath>` from
+   `metadata.json`.
+3. If a group is selected, **filters `functions.json` by module-prefix** and
+   writes `model/functions_<group>.json`. The filtered file is passed to the
+   engine instead of the full one. (Module-prefix filtering, not units.json
+   traversal — see Risk 2 in §16.)
+4. Builds the engine command:
+   ```
+   python src/flowchart/flowchart_engine.py
+       --interface-json <functions[_group].json>
+       --metaData-json  model/metadata.json
+       --std            c++14
+       --out-dir        output/flowcharts
+       --llm-url        <baseUrl>/api/generate
+       --llm-model      <defaultModel>
+       --llm-num-ctx    <numCtx>
+       [--knowledge-json model/knowledge_base.json]
+       [--clang-arg=... ]+
+   ```
+5. Runs the subprocess with `cwd=project_root`. Logs full argv on launch.
+6. When `renderPng: true`, walks every per-unit JSON in `out_dir`, writes a
+   temp `.mmd` per `(unit, function)`, calls `mmdc` (with puppeteer config if
+   present), captures the PNG to `<unit>_<func>.png`, deletes the temp file.
+   Progress is reported via `core.progress.ProgressReporter`.
 
 ---
 
-## 9. Phase 4: DOCX Exporter (`src/docx_exporter.py`)
+## 13. The flowchart engine — `src/flowchart/`
+
+A self-contained C++ → Mermaid CFG generator. Invoked as a subprocess by the
+`flowcharts` view but can also run standalone.
+
+### Subpackage layout
+
+```
+src/flowchart/
+  flowchart_engine.py        Main entry, orchestrates per-function pipeline
+  project_scanner.py         Standalone scanner that builds project_knowledge.json
+  config.py                  EngineConfig dataclass (CLI defaults)
+  models.py                  CfgNode / CfgEdge / ControlFlowGraph / FunctionEntry / …
+  ast_engine/
+    parser.py                SourceExtractor + TranslationUnitParser
+    cfg_builder.py           libclang AST → ControlFlowGraph (handles ASSERT, goto/label, switch/break)
+    resolver.py              find_function_cursor — resolve qn+location to a cursor
+  pkb/
+    builder.py               ProjectKnowledgeBase (in-memory index, BFS callee context)
+    knowledge.py             ProjectKnowledge dataclass + load/save
+    cache.py                 PkbCache (disk cache keyed by functions.json hash)
+  enrichment/
+    enricher.py              NodeEnricher — attach PKB context to CFG nodes
+  llm/
+    prompts.py               SYSTEM_PROMPT + build_user_prompt
+    generator.py             LabelGenerator — batched LLM labeling with auto-halving
+  mermaid/
+    builder.py               build_mermaid(cfg) → Mermaid string
+    normalizer.py            label sanitisation
+    validator.py             validate_cfg + validate_mermaid
+  output/
+    writer.py                Per-file JSON output + _summary.json
+  tests/
+    test_cfg_topo.py         CFG topology asserts
+    diagnose_assert.py       Repro for the ASSERT-pollutes-CFG bug
+```
+
+### Per-function pipeline (`_process_function`)
+
+1. **Source extraction** — `SourceExtractor.extract_by_lines(file, line, end_line)`
+   reads the function body text by line range.
+2. **TU parse** — `TranslationUnitParser.get_tu_full(abs_path)` parses the
+   file with bodies (cached per-file).
+3. **Cursor resolution** — `find_function_cursor(tu, func_entry, abs_path)`.
+   Strategy 1 is direct position lookup using `loc.file.name == abs_path`;
+   fallback strategies use qualified name + line range.
+4. **CFG build** — `CFGBuilder.build(func_cursor, func_entry)`. Walks AST
+   traversal that distinguishes statement nodes (`IF_STMT`, `FOR_STMT`,
+   `WHILE_STMT`, `DO_STMT`, `CXX_FOR_RANGE_STMT`, `SWITCH_STMT`, `RETURN_STMT`,
+   `BREAK_STMT`, `CONTINUE_STMT`, `CXX_TRY_STMT`, `GOTO_STMT`, `LABEL_STMT`)
+   from sequential statement segments. Rules are absolute:
+   - structural truth comes only from the AST (no heuristics)
+   - loop back-edges are explicit
+   - `break` → after-loop / after-switch
+   - `continue` → loop head
+   - `return` → END node
+   - all open exits connect to the next sequential node
+5. **ASSERT filtering** — `_collect_assert_locations(src_lines)` pre-builds a
+   `frozenset` of `(line, col)` pairs by regex-scanning source for assert
+   macro calls (`ASSERT(`, `static_assert(`, `(?:[A-Z][A-Z0-9_]*_)*ASSERT(`).
+   The CFG traversal then does O(1) lookups against
+   `cursor.extent.start.line/.column` (NOT `get_expansion_location()`, which
+   was the original bug source) and skips ASSERTs so they don't pollute the
+   diagram. **Do not modify this code without re-running
+   `tests/diagnose_assert.py`** — the linter has previously reverted this fix.
+6. **Enrichment** — `NodeEnricher.enrich(cfg, func_entry)` attaches PKB
+   context (callee descriptions, type meanings, project-knowledge comments).
+7. **Optional CFG simplification** (version3) — if
+   `llm.enrichment.cfgSimplification=true` and the CFG has >15 labelable
+   nodes, `LabelGenerator._simplify_cfg()` asks the LLM for a merge/drop
+   plan: `{"merge": [["N3","N4"], ["N7","N8","N9"]], "drop": ["N12"]}`.
+   Safety constraints enforced AFTER the LLM replies (regardless of what it
+   proposed):
+   - Only merges **strict linear chains**: each inner node has exactly one
+     predecessor (= its prev-in-group) and one successor (= its next-in-group).
+     `_is_linear_chain()` verifies this on the live `cfg.edges`.
+   - Only drops nodes with one incoming and one outgoing edge
+     (`_has_single_in_single_out`). Merges are capped at 2–4 nodes per group.
+   - Only touches `NodeType.ACTION` — decisions, loops, switches, returns,
+     breaks, continues, and case nodes are never offered to the LLM and
+     never mutated.
+   - Uses `extract_and_validate()` to parse the JSON plan.
+8. **LLM labeling** — `LabelGenerator.label_cfg(cfg, func_entry, source, base)`
+   batches up to `BATCH_SIZE=4` nodes per LLM call. Two failure modes are
+   handled differently:
+   - Empty response (`raw=None`, prompt > num_ctx) → retry **without** any
+     "retry note" (would inflate the prompt). After all retries fail, the
+     batch is auto-halved and recursed up to depth 3. This adapts to any
+     model's actual context window without manual tuning.
+   - Bad JSON / missing nodes → append a targeted retry note with the failing
+     `node_id`s so the LLM can correct precisely.
+   Version3: JSON parsing routes through `llm_core.structured_output.parse_label_response()`
+   which handles markdown fences, trailing commas, single quotes, and
+   partial/missing braces — significantly fewer fallback labels than the
+   version2 ad-hoc `_extract_json()` path. `MAX_PROMPT_CHARS=6000` stays as
+   a legacy-standalone fallback only; the coherence pass now sizes via
+   `ContextBudget(task="cfg_coherence")` when `max_context_tokens` is
+   threaded in (it is, from `flowchart_engine.py`).
+9. **Coherence pass** — `_coherence_pass()` normalises terminology and
+   phrasing across all labels in one LLM call. Version3: prompt strengthened
+   (inconsistent terminology, passive voice, too-literal vs. too-abstract
+   labels, decision nodes without "?"). Sized via
+   `_fits_coherence_budget()` using the authoritative
+   `self._max_context_tokens` — no more `getattr(client, "_num_ctx", 8192)`
+   fallback.
+10. **Validation** — `validate_cfg(cfg)` then `validate_mermaid(script)`.
+    Failures are logged at WARNING but don't abort the run.
+11. **Build Mermaid** — `build_mermaid(cfg)`.
+
+### LLM client construction + banner + enrichment config (version3)
+
+At the top of `run()`, [src/flowchart/flowchart_engine.py](src/flowchart/flowchart_engine.py)
+calls `_load_analyzer_llm_config()` which walks `cwd` and one parent for
+`config/config.json`, loads it with `utils.load_config`, then resolves it
+strictly with `utils.load_llm_config` (raising `LlmConfigError` with the
+specific failing field on any invalid input). The resolved llm_cfg is
+displayed via `format_llm_config_banner()` before any real work begins, so
+the subprocess is self-documenting.
+
+`_build_llm_client(config, llm_cfg_resolved)` then builds the `LlmClient`:
+- When the analyzer config is reachable: `llm_core.client.from_config(llm_cfg)` —
+  provider, custom headers, retries, and API key all flow through. CLI
+  `--llm-num-ctx` still wins if it is explicitly larger than the config
+  value (useful for one-off standalone invocations).
+- When running outside the analyzer tree: falls back to the legacy
+  positional constructor (Ollama only, backwards compatible).
+
+The `LabelGenerator` is constructed with two version3 parameters threaded
+from the resolved config:
+- `enrichment_config=llm_cfg["enrichment"]` — feature flags.
+- `max_context_tokens=resolve_max_tokens(llm_cfg)` — authoritative
+  budget used by the coherence pass and CFG simplification pass. This
+  replaces the old `getattr(client, "_num_ctx", 8192)` fallback.
+
+A log line `Coherence/simplify budget = N tokens (provider=…)` is printed
+right after the banner.
+
+### PKB caching
+
+`pkb.cache.PkbCache` keys on the SHA of `functions.json` text. If unchanged,
+the in-memory PKB is restored from disk under `.flowchart_cache/`. Pass
+`--no-cache` to force rebuild.
+
+### project_scanner.py (separate tool)
+
+A standalone scanner that walks every C++ source file under `--project-dir`
+with libclang and writes a richer `project_knowledge.json`: function
+signatures + Doxygen comments + call graph + enum definitions with per-value
+comments + `#define`s with values + typedefs + struct member fields. With
+`--llm-summarize`, also runs the 4-level hierarchy summarization.
+
+This tool is **not** in the standard run.py pipeline — it's used to bootstrap
+a richer knowledge base for projects where the analyzer's `model_deriver`
+output isn't enough. The flowchart engine accepts either kind of knowledge
+file via `--knowledge-json`.
+
+### Outputs
+
+Per source file: `out_dir/<source_file_name>.json` containing
+`[{name, flowchart}, …]`. Plus `_summary.json` with per-file counts.
+
+---
+
+## 14. Phase 4 — `src/docx_exporter.py`
 
 ### Entry: `export_docx(json_path, docx_path, selected_group)`
 
-- `json_path` defaults to `output/interface_tables.json`
-- `artifacts_dir = os.path.dirname(json_path)` — **all PNGs, flowcharts, unit_diagrams resolved relative to this dir** (critical fix for grouped output)
-- Loads `model/functions.json`, `globalVariables.json`, `units.json`, `dataDictionary.json`
-- Loads abbreviations from `config.llm.abbreviationsPath`
-- Groups data by module → iterates sorted modules
+- `json_path` defaults to `output/interface_tables.json`.
+- `artifacts_dir = os.path.dirname(json_path)` — every PNG path, every
+  flowchart JSON, every behaviour-pngs file is resolved relative to this.
+  This is the critical fix for grouped output (`output/<group>/`).
+- Loads `model/functions.json`, `globalVariables.json`, `units.json`,
+  `dataDictionary.json`.
+- Loads abbreviations from `config.llm.abbreviationsPath`.
+- Iterates modules in sorted order.
 
-### CLI (`main`)
+### CLI
 
 ```
 python src/docx_exporter.py [json_path] [docx_path] [--selected-group <name>]
 ```
-`--selected-group` is stripped before positional arg parsing.
 
-### DOCX structure
+`--selected-group` is stripped before positional parsing.
+
+### DOCX section structure
 
 ```
-Software Detailed Design (H0)
-1 Introduction
+Software Detailed Design                                       (Heading 0)
+1 Introduction                                                 (Heading 1)
   1.1 Purpose
   1.2 Scope
   1.3 Terms, Abbreviations and Definitions
-2 <ModuleName>
-  2.1 Static Design
-    [Module static structure diagram: PNG or Mermaid text]
-    [Component/Unit table: Component | Unit | Description | Note]
-    2.1.1 <UnitName>
+2 <ModuleName>                                                 (Heading 1)
+  2.1 Static Design                                            (Heading 2)
+    [Module static structure diagram — PNG or Mermaid text]
+    [Component / Unit table — Component | Unit | Description | Note]
+    2.1.1 <UnitName>                                           (Heading 3)
       [Unit diagram PNG if available]
-      2.1.1.1 unit header
-        Path: ...
-        [Unit header table: global variables/typedef/enum/define | information]
-      2.1.1.2 unit interface
-        [Interface table: 8 columns]
-      2.1.1.3 <UnitName>-<InterfaceId>
-        [Flowchart table or description paragraph]
-      ... (one sub-section per interface)
-  2.2 Dynamic Behaviour
-    2.2.1 <UnitName> - <FunctionName> (<ExternalUnitFunc>)
+      2.1.1.1 unit header                                      (Heading 4)
+        Path: <path/without/extension>
+        [Unit header table — globals/typedef/enum/define | information]
+      2.1.1.2 unit interface                                   (Heading 4)
+        [Interface table — 8 cols, see below]
+      2.1.1.3 <UnitName>-<InterfaceId>                         (Heading 4)
+        [Flowchart table — 5 rows, see below]
+      ... one Heading-4 sub-section per interface ...
+  2.2 Dynamic Behaviour                                        (Heading 2)
+    2.2.1 <UnitName> - <FuncName> (<ExternalUnitFunc>)         (Heading 3)
       [Behaviour description table]
-      [Behaviour PNG]
-N Code Metrics, Coding Rule, Test Coverage
-Appendix A. Design Guideline
+      [Behaviour PNG if rendered]
+N Code Metrics, Coding Rule, Test Coverage                     (Heading 1)
+Appendix A. Design Guideline                                   (Heading 1)
 ```
 
 ### Module static structure diagram
 
-Mermaid TB flowchart: dark module box → blue unit boxes. Rendered by `mmdc` to PNG placed in `artifacts_dir/module_static_diagrams/<module>.png`.
+Mermaid TB flowchart: dark module box → blue unit boxes. Rendered by `mmdc`
+into `artifacts_dir/module_static_diagrams/<module>.png`. Width controlled
+by `views.moduleStaticDiagram.widthInches` (default 5.5).
 
 ### Component/Unit table (`_add_component_unit_table`)
 
 4 columns: Component | Unit | Description | Note
 
 Description derivation:
-1. If LLM is available: `get_unit_description(unit_name, fn_items, gv_items, config, abbreviations)` — unit summary from its function and global descriptions
-2. Fallback: join all descriptions, truncate to 120 chars
-3. Final result truncated to **140 chars max** (hardcoded)
-4. Note column: always `N/A`
+1. If LLM available → `llm_enrichment.get_unit_description(unit_name, fn_items, gv_items, config, abbreviations)` produces a summary (≤25 words).
+2. Fallback → join all function/global descriptions, truncate to 120 chars.
+3. Final result truncated to **140 chars max** (hardcoded).
+4. Note column is always `N/A`.
 
-Component column merged vertically across all unit rows.
+The Component column is merged vertically across all unit rows of a module.
 
 ### Unit header table (`_build_unit_header_table`)
 
 2 columns: `global variables / typedef / enum / define` | `information`
 
 Rows from:
-- **Globals** (from `globalVariables.json`) — private globals excluded; declaration read from source; value from `initializer`
-- **Typedefs** (from `dataDictionary`) — declaration snippet from source; info = enum values if typedef-to-enum, struct description if typedef-to-struct, else NA
-- **Enums** — declaration snippet; info = `NAME=value, ...`
-- **Defines** — stored text (full macro); info = value
+- **Globals** (`globalVariables.json`) — private excluded, declaration read
+  from source line, value from `initializer`.
+- **Typedefs** (`dataDictionary`) — declaration snippet from source; info
+  column shows enum values for typedef-to-enum, struct description for
+  typedef-to-struct, else `NA`.
+- **Enums** — declaration snippet; info column is `NAME=value, …`.
+- **Defines** — full macro text; info column is the value.
 
-Struct/class entries in dataDictionary are NOT directly shown (only typedef → struct pattern). Deduplicates by declaration text, preferring richer `name=value` info.
+Struct/class entries are NOT shown directly — only via `typedef struct {…}
+Name;`. Deduplicates by declaration text, preferring richer `name=value` info.
 
 ### Interface table (`_add_interface_table`)
 
-8 columns: Interface ID | Interface Name | Information | Data Type | Data Range | Direction(In/Out) | Source/Destination | Interface Type
+8 columns: Interface ID | Interface Name | Information | Data Type |
+Data Range | Direction(In/Out) | Source/Destination | Interface Type
 
-- For functions: Data Type = `; `.join of parameter types, Data Range = `; `.join of parameter ranges
-- For globals: Data Type = variable type, Data Range = looked up from data dictionary
-- Private functions/globals excluded (already filtered in Phase 3)
+- Functions: `Data Type` = `; `.join of param types; `Data Range` = `; `.join of param ranges from `get_range()`.
+- Globals: `Data Type` = variable type; `Data Range` from data dictionary.
+- Private functions/globals are already filtered out by Phase 3.
+- `Interface Name` is generated by `_readable_label(qn)` (strip prefixes,
+  underscores → spaces).
 
 ### Flowchart table per interface (`_add_flowchart_table`)
 
 5-row table: Requirements | Risk | Capacity(Density) | Input Name | Output Name
 
 Requirements cell contains:
-1. Function description (or function name as fallback)
-2. Own flowchart (PNG if available, else Mermaid text) labeled with signature `returnType functionName(params)`
-3. Each **private callee's** flowchart labeled with its signature (deduplicated per unit via `rendered_private_fids`)
+1. Function description (or function name as fallback).
+2. The function's own flowchart (PNG if available, else Mermaid text)
+   labelled with the signature `returnType functionName(params)`.
+3. Each **private callee's** flowchart labelled with its signature, deduped
+   per unit via a `rendered_private_fids` set so the same private helper isn't
+   embedded twice.
 
-Input Name / Output Name from `behaviourInputName` / `behaviourOutputName` in `functions.json`.
-
-Risk = "Medium" (hardcoded), Capacity(Density) = "Common" (hardcoded).
+Input/Output Name = `behaviourInputName` / `behaviourOutputName` from
+`functions.json`. Risk = `"Medium"` (hardcoded). Capacity(Density) =
+`"Common"` (hardcoded).
 
 ### Dynamic Behaviour section
 
-Reads `artifacts_dir/behaviour_diagrams/_behaviour_pngs.json`. For each entry:
-- Creates subheading: `<sec>.2.<idx> <unitName> - <functionName> (<externalUnitFunction>)`
-- Adds behaviour description table (`_add_behavior_description_table`) with behaviourInputName/behaviourOutputName from model
-- Embeds PNG if available
+Reads `artifacts_dir/behaviour_diagrams/_behaviour_pngs.json`. For every
+`(module, unit, [{currentFunctionName, externalUnitFunction, pngPath}])`:
+- Heading: `<sec>.2.<idx> <unitName> - <functionName> (<externalUnitFunction>)`
+- Behaviour description table (`_add_behavior_description_table`) with input/output names from the model.
+- Embedded PNG if `pngPath` is non-empty and exists.
 
 ---
 
-## 10. utils.py — Key Helpers
+## 15. Test fixture — `test_cpp_project/`
 
-### Key functions
+Current layout (matches `config.json` modulesGroups):
 
-| Function | Purpose |
-|---|---|
-| `KEY_SEP = "\|"` | Separator for all model keys |
-| `make_function_key(module, rel_file, full_name, parameters)` | Build `module\|unit\|qualifiedName\|paramTypes` |
-| `make_global_key(rel_file, full_name)` | Build `module\|unit\|qualifiedName` |
-| `make_unit_key(rel_file)` | Build `module\|unitname` |
-| `get_module_name(file_path, base_path)` | Absolute path → module name via `_resolve_module_from_rel` |
-| `_resolve_module_from_rel(rel_file)` | Match relative path against `_MODULE_OVERRIDES` (case-insensitive via `.lower()`) |
-| `init_module_mapping(config)` | Build `_MODULE_OVERRIDES` from config; merges all `modulesGroups` entries if no top-level `modules` |
-| `path_is_under(base, candidate)` | Safe path containment using `os.path.relpath` (not `startswith`) |
-| `mmdc_path(project_root)` | Local `node_modules/.bin/mmdc` or system `mmdc` |
-| `safe_filename(s)` | Replace unsafe chars (including `,`, `&`, `;`) with `_` |
-| `load_config(project_root)` | Loads `config/config.json` + `config.local.json`, merges |
-| `get_range(type_str, data_dictionary)` | Look up range for a type; falls back through typedefs, then to `get_range_for_type` |
-| `_strip_json_comments` | Remove `//` and `/* */` from JSON text |
-| `_strip_trailing_commas` | Remove trailing commas before `}` or `]` |
+```
+test_cpp_project/
+  app/
+    main.cpp                       — top-level entry
+  math/
+    utils.cpp                      — small math helpers
+  outer/inner/
+    helper.cpp                     — nested-directory module path
+  tests/
+    access/access_visibility.cpp   — PRIVATE/PUBLIC/PROTECTED macros
+    direction/read_write.cpp       — In/Out direction from globals
+    enum/types.cpp                 — enum / typedef coverage
+    flow/flowcharts.cpp            — control-flow patterns (if/else, switch, loops)
+    hub/hub.cpp                    — cross-module fan-out
+    poly/dispatch.cpp              — virtual dispatch / polymorphism
+    structs/point_rect.cpp         — struct + union types
+    void_alias/forward_void_decl.cpp
+    void_alias/multiline_ovlyinit.cpp
+    void_alias/preproc_if_function.cpp
+    void_alias/preproc_if_function_then.cpp
+    void_alias/void_as_var.cpp
+    void_alias/void_is_void.cpp    — synthetic-from-VAR_DECL recovery cases
+```
 
-### Module resolution behavior
+`config.json`'s `modulesGroups` maps these to three groups: `core`
+(`app` + `math`), `support` (`outer/inner`), and `tests` (split into
+`tests_a` and `tests_b`).
 
-1. `init_module_mapping` is called **at import time** with the on-disk config (default init)
-2. `parser.py` also calls its own merge logic at startup — separate from `utils.py` init
-3. Both use the same algorithm: merge all `modulesGroups` entries if no top-level `modules`
-4. Path matching: always lowercased on both sides — safe on Windows (where `normcase` lowercases anyway)
+### Quick run commands
 
----
+```bash
+# Full run, all groups
+python run.py test_cpp_project
 
-## 11. llm_client.py — LLM Integration
+# Full clean run, single group, output to output/ (not output/<group>/)
+python run.py --clean test_cpp_project --selected-group core
 
-All LLM calls use Ollama HTTP API (`POST /api/generate`). Optional dependency on `requests` library.
+# Skip the LLM hierarchy summaries (faster, lower quality)
+python run.py --no-llm-summarize test_cpp_project
 
-### `_ollama_available(config)`
+# Reuse model/, regenerate views + docx for one group
+python run.py --use-model test_cpp_project --selected-group tests
 
-Checks `GET <baseUrl>/api/tags` with 3s timeout. Returns False if `requests` not installed.
+# Resume after a Phase 4 crash without re-parsing
+python run.py --from-phase 4 test_cpp_project
 
-### Functions
-
-| Function | Purpose |
-|---|---|
-| `load_abbreviations(project_root, config)` | Load `key: value` / `key=value` lines from `config.llm.abbreviationsPath` file |
-| `extract_source(base_path, loc)` | Read function body using `line` and `endLine` from location |
-| `extract_source_line(base_path, loc)` | Read single line (for globals) |
-| `get_description(source, config, callee_descriptions, abbreviations)` | One-line function description. Callee descriptions passed as context |
-| `get_global_description(source, config, abbreviations)` | One-line global variable description. **Abbreviations are included** |
-| `get_unit_description(unit_name, fn_items, gv_items, config, abbreviations)` | Unit summary (≤25 words) from function + global descriptions |
-| `get_struct_description(struct_name, fields, config, abbreviations)` | One-line struct description using name AND fields |
-| `get_behaviour_names(source, params, globals_read, globals_written, return_type, return_expr, draft_input, draft_output, config, abbreviations)` | Returns `{behaviourInputName, behaviourOutputName}` |
-| `enrich_functions_with_descriptions(functions_data, base_path, config)` | Process all functions; bottom-up (callees first) |
-| `enrich_globals_with_descriptions(globals_data, base_path, config)` | Process all globals; sequential |
-
-### Abbreviations usage
-
-Abbreviations are now passed into **all** LLM calls:
-- `get_description` — for function descriptions
-- `get_global_description` — for global descriptions
-- `get_unit_description` — for unit summaries
-- `get_struct_description` — for struct descriptions
-- `get_behaviour_names` — for behaviour input/output naming
-
-### Processing order for functions
-
-`_enrich_functions_loop` processes functions in topological order (callees before callers) so each function's callee descriptions are available as context. Falls back to arbitrary order if cycle detected.
+# Verbose stderr (DEBUG); inherited by every subprocess phase
+python run.py --verbose test_cpp_project --selected-group core
+```
 
 ---
 
-## 12. Visibility Filtering Rules
+## 16. Known risks / technical debt
 
-| Context | Private functions | Private globals |
-|---|---|---|
-| `interfaceTables` view | Excluded | Excluded |
-| `behaviourDiagram` view | Excluded | — |
-| DOCX unit header table | — | Excluded |
-| Flowcharts / `fake_flowchart_generator` | **Included** | **Included** |
-| DOCX flowchart section | Own chart included; private callee charts shown below (dedup per unit) | — |
-
----
-
-## 13. Known Risks / Technical Debt
-
-### Risk 1: `is_project_file()` uses `startswith` for path containment
+### Risk 1 — `parser.is_project_file()` uses `startswith` for path containment
 
 ```python
-# parser.py line ~172
 abs_path = os.path.normcase(os.path.abspath(file_path))
 abs_base = os.path.normcase(os.path.abspath(MODULE_BASE_PATH))
 if not abs_path.startswith(abs_base):
     return False
 ```
 
-This can give false positives: `C:\foo` would match `C:\foobar`. The correct helper `path_is_under()` exists in `utils.py` and uses `os.path.relpath`, but `parser.py` does not use it in `is_project_file()`. Should be fixed to use `path_is_under()`.
+Allows `C:\foo` to match `C:\foobar`. The correct helper exists at
+[utils.path_is_under](src/utils.py); migrating `is_project_file` to use it
+is open work.
 
-### Risk 2: Flowchart filtering uses module prefix, not units.json
+### Risk 2 — flowchart filtering uses module prefix, not units.json
 
-Current: `fid.split(KEY_SEP, 1)[0].lower() in allowed_modules`
+`views/flowcharts.py` filters `functions.json` to a group via
+`fid.split(KEY_SEP, 1)[0].lower() in allowed_modules`. A more accurate
+approach would walk `units.json → functionIds` for the units in that group.
+The current approach can include stray functions whose key happens to start
+with the right module token but whose source file isn't in any of the
+group's configured folders.
 
-Better approach (traversing units.json → functionIds for the selected group) was discussed but never implemented. Module-prefix filtering can include stray functions that have the correct module prefix but aren't in the selected group's configured folders.
+### Risk 3 — `make_function_key` module fallback
 
-### Risk 3: `make_function_key` module fallback
+If `module` is empty when called, it falls back to `parts[0]` (first path
+segment). This shouldn't happen any more (`get_module_name` always returns a
+real module or `"unknown"`), but a regression here would silently change keys.
 
-If `module` is empty string, it falls back to `parts[0]` (first path segment) instead of a config-resolved module. This should only happen if `get_module_name` returns `""`, which is currently impossible but could regress if the function is changed.
+### Risk 4 — ASSERT-fix linter regressions
 
----
-
-## 14. Test Fixture Project (`test_cpp_project/`)
-
-### Folder structure
-
-```
-test_cpp_project/
-  InterfaceTables/
-    Types/        → Types.h/cpp (enums), PointRect.h/cpp (structs/unions)
-    Visibility/   → AccessVisibility.h/cpp (all 3 visibility macros, getter/setter patterns)
-    Direction/    → ReadWrite.h/cpp (In/Out direction from global reads/writes)
-  Flowcharts/
-    ControlFlow/  → Flowcharts.h/cpp (~20 patterns: if/else, loops, switch, nested)
-  BehaviourDiagram/
-    CrossModule/  → Hub.h/cpp (hub with 5+ module fan-out)
-    Polymorphism/ → Dispatch.h/cpp (virtual dispatch, abstract classes, callbacks)
-  UnitDiagrams/
-    BasicMath/    → Utils.h/cpp (simple functions, internal call chain)
-    Nested/Inner/ → Helper.h/cpp (nested directory path resolution)
-    Namespaces/   → Advanced.h/cpp (Vehicle namespace, overloading, default params)
-  Diagnostics/
-    ParserEdge/   → 6 .cpp files (syntheticFromVarDecl, forward decls, preprocessor splits)
-  QuickSample/
-    Core/         → Sample.h/cpp (~10 functions: types, visibility, direction, flowcharts)
-    Utils/        → SampleUtils.h/cpp (cross-module target for behaviour diagram arcs)
-```
-
-### Quick run commands
-
-```bash
-# Fastest — all views, ~10 functions, all scenarios
-python run.py --clean test_cpp_project --selected-group QuickSample
-
-# By view type
-python run.py --clean test_cpp_project --selected-group InterfaceTables
-python run.py --clean test_cpp_project --selected-group Flowcharts
-python run.py --clean test_cpp_project --selected-group BehaviourDiagram
-python run.py --clean test_cpp_project --selected-group UnitDiagrams
-
-# Everything
-python run.py --clean test_cpp_project
-
-# Reuse model, re-export one group
-python run.py --use-model test_cpp_project --selected-group QuickSample
-```
+The CFG builder skips ASSERT calls using
+`cursor.extent.start.line/.column` checked against a frozen set of
+`(line, col)` pairs from a regex source-scan. **Do not switch back to
+`get_expansion_location()`** — that's the original bug. Linters and
+auto-formatters have reverted this fix in the past. After any change to
+[src/flowchart/ast_engine/cfg_builder.py](src/flowchart/ast_engine/cfg_builder.py),
+re-run `python src/flowchart/tests/diagnose_assert.py`.
 
 ---
 
-## 15. Key Design Decisions
+## 17. Key design decisions
 
-### `PRIVATE` / `PUBLIC` / `PROTECTED` macros
+### Subprocess phases (vs in-process)
 
-Passed to Clang as `-DPRIVATE=` etc. so they expand to nothing. **Not** defined in source files. Parser recovers them by scanning raw source text (`_detect_visibility`).
+Each phase is its own process, launched by `core.orchestration.PhaseRunner`.
+Trade-off: a fresh Python interpreter per phase costs ~200ms but gives:
+- Isolated libclang state (no leaks across phases).
+- `LOG_LEVEL` env propagation just works.
+- `--from-phase N` is a one-line skip in the runner.
+- Pre-existing CLI entry points stay unchanged.
 
-### `selectedGroup` removed from config
+### Plan-once / run-many (Batch 5)
 
-Was removed intentionally to simplify code. Group selection is CLI-only (`--selected-group`). There is no env-based override either (was added then removed for same reason: preference for simplicity).
+`group_planner.plan_runs()` returns a flat `List[RunPlan]`. The runner has no
+knowledge of groups or `--from-phase` translation. Translation happens once at
+plan time:
+- `from_phase ≤ 2`: build-model plan included; group plans use local index 1.
+- `from_phase ≥ 3`: build-model plan omitted; group plans use `from_phase - 2`.
 
 ### Model always built for all groups
 
-The parser builds the model for the **union of all configured module folders**, regardless of `--selected-group`. The group filter only affects Phase 3 (views) and Phase 4 (DOCX). This ensures cross-module call edges are available even when exporting a single group.
+Phase 1 parses the **union** of all configured module folders, regardless of
+`--selected-group`. The group filter only affects Phases 3 + 4. This ensures
+cross-group call edges remain visible even when exporting one group.
 
-### Artefact path resolution in exporter
+### Artifacts dir from `json_path`, not `output_dir`
 
-All diagram paths are resolved relative to `artifacts_dir = os.path.dirname(json_path)`. This ensures grouped outputs (`output/<group>/`) work correctly. Deriving root from `output_dir` was the original bug that broke PNG embedding in grouped exports.
+`docx_exporter.export_docx` uses `os.path.dirname(json_path)` as
+`artifacts_dir`. This is what fixes embedded-PNG paths under `output/<group>/`.
 
-### Project root in views derived from `model_dir`
+### Project root in views from `model_dir`
 
-All three diagram views (`unit_diagrams`, `behaviour_diagram`, `flowcharts`) compute:
-```python
-project_root = os.path.dirname(os.path.abspath(model_dir))
-```
-This is stable regardless of `output_dir` value.
+The three diagram views all compute
+`project_root = os.path.dirname(os.path.abspath(model_dir))`. Stable
+regardless of `output_dir` value (which can be `output/<group>/`).
 
-### Case-insensitive path matching (Windows safety)
+### Single LLM client class
 
-`_resolve_module_from_rel` lowercases both the configured folder prefix and the relative file path before comparison. This is essential on Windows where `normcase` lowercases paths.
+Anything LLM goes through `llm_core.client.LlmClient`. There is no second
+HTTP client, no per-feature wrapper. Provider switching is a config change,
+not a code change. Token tracking and think-section stripping are baked in.
+
+### `selectedGroup` is CLI-only
+
+Was previously a config field; intentionally removed to keep group selection
+unambiguous. There is no env-based override either.
+
+### LLM is off by default for `descriptions` / `behaviourNames`
+
+Both default to `false`. Hierarchy summarization (`--no-llm-summarize` to
+disable) is the **only** LLM step that runs by default in Phase 2, because
+its outputs (`summaries.json`, `knowledge_base.json`) feed the flowchart
+engine.
+
+### JSONC config
+
+`//`, `/* */`, and trailing commas are accepted. The strippers live in
+`core.config` and operate before `json.loads`.
+
+### Fail loud on config errors (version3)
+
+The version2 LLM config path silently defaulted missing fields (e.g.
+`.get("provider", "ollama")`, `.get("numCtx", 8192)`). Debugging the
+difference between "what config says" and "what's actually used" wasted
+enough time that version3 replaced every silent default with a
+`LlmConfigError` that names the failing field. If a user wants a different
+provider/model/budget they must put it in the config — the tool will not
+guess. The startup banner exists so the user can verify which values were
+actually read before the long-running pipeline starts. See §4b.
+
+### One token budget, many sections (version3)
+
+Every LLM call in the project derives its section limits from one knob
+(`llm.maxContextTokens`) via `ContextBudget(task, …)` + `TASK_RATIOS`.
+Adding a new LLM task type means adding an entry in `TASK_RATIOS` — no
+other code changes. Section ratios must sum to ~1.0 (enforced by assertion).
+
+### Enrichment features are individually gated (version3)
+
+Every enrichment feature (`twoPassDescriptions`, `selfReview`, `ensemble`,
+`cfgSimplification`, `variableEnrichment`) can be turned on or off
+independently via `llm.enrichment.*`. Defaults favour the cheapest safe
+option: the two features with the biggest quality payoff for DOCX output
+(`twoPassDescriptions`, `variableEnrichment`) are ON; the expensive ones
+are OFF. Users opt into cost by flipping the flag.
 
 ---
 
-## 16. Important Lessons Learned (Past Mistakes)
+## 18. Past mistakes / lessons learned
 
-### Shell: Windows uses `cmd.exe` / PowerShell, not bash
+### Shell on this machine
 
-On this machine, `&&` chaining in shell commands does not work in PowerShell. Use `;` for sequential commands.
+Native shell is `bash` (Git Bash) on Windows 11; `&&` chaining works there
+but **not** in PowerShell. Use forward slashes for paths even on Windows.
+Use `/dev/null`, not `NUL`.
 
-### run.py arg parsing bug (fixed)
+### `run.py` arg parsing bug (fixed)
 
-An intermediate version stripped `--selected-group` from argv but left its value (`core`) as a positional, making it the project path. Fix: parse all flags explicitly in a loop, only treat truly unrecognized non-`-` tokens as positional.
+An older version stripped `--selected-group` from argv but left the value
+(e.g. `core`) as a positional, which then became `project_path`. Fix: each
+flag explicitly consumes its own value via `i += 1`.
 
 ### Broken grouped output paths (fixed in two places)
 
-**Root cause**: `output_dir` was used to infer the repo root. When group output goes to `output/<group>/`, `dirname(output_dir) = output/`, not the repo root.
-**Fix 1**: Views use `os.path.dirname(os.path.abspath(model_dir))` for project root.
-**Fix 2**: Exporter uses `os.path.dirname(json_path)` as artifacts dir.
+Root cause: `output_dir` was used to derive the repo root. When group output
+went to `output/<group>/`, `dirname(output_dir) = output/`, not the repo
+root. Fix 1: views use `dirname(abspath(model_dir))`. Fix 2: exporter uses
+`dirname(json_path)` as artifacts dir.
 
-### Flowchart filtering implementation mismatch
+### `--all-groups` removed
 
-Discussed traversing `units.json → functionIds` for building `functions_<group>.json`. Code in `flowcharts.py` still uses module-prefix filtering. Always re-read source after edits to confirm the implementation matches the discussion.
-
-### Config switching confusion
-
-Earlier docs reference group names `core`, `support`, `tests`. Current config has `InterfaceTables`, `Flowcharts`, etc. When validating CLI behavior, always confirm which config is active.
-
-### `--all-groups` flag removed
-
-Was present in an intermediate version. Removed because it was redundant (all-groups is now the default behavior when `modulesGroups` is configured and no `--selected-group` is passed).
+Was present in an intermediate version as a redundant flag. Removed because
+all-groups is the default whenever `modulesGroups` is set and no
+`--selected-group` is passed.
 
 ### Env-based group override removed
 
-An `os.environ`-based selected-group override was added then removed. Preference in this codebase: minimal optional code paths, explicit CLI-only control.
+An `os.environ`-driven selected-group was added then removed. Preference in
+this codebase: minimal optional code paths, explicit CLI control.
+
+### Linter reverts the ASSERT fix
+
+See Risk 4 in §16. The ASSERT fix in `cfg_builder.py` has been reverted by
+linters/tools more than once. Always re-run `diagnose_assert.py` after
+touching that file.
+
+### Flowchart filtering implementation mismatch
+
+Discussion in earlier sessions described traversing `units.json → functionIds`
+for the group filter. The actual code in `flowcharts.py` still uses module
+prefix matching (Risk 2). Re-read source after edits — discussion is not
+implementation.
+
+### Configs with `core` / `support` / `tests` vs `InterfaceTables` / etc.
+
+Earlier docs referenced `InterfaceTables`, `Flowcharts`, `BehaviourDiagram`,
+… as group names. The current `config.json` uses `core`, `support`, `tests`
+(matching the test fixture). When validating CLI behaviour, always check
+which config is active before quoting group names.
+
+### Do not reach into private `_attrs` on `LlmClient` (version3)
+
+The coherence pass used to have
+`int(getattr(self._client, "_num_ctx", 8192) or 8192)` as a fallback. That
+kind of access is indistinguishable from a hardcode — the config file could
+say 32000 and the pass would still silently use 8192 if anything upstream
+misreferenced the attribute. Fix: threaded `max_context_tokens` down from
+the caller via a constructor parameter, added `LlmClient.num_ctx` as a
+public property, and removed every `getattr(client, "_*", default)`. If a
+new LLM helper needs to know a budget, take it as a parameter — do not
+peek.
+
+### Windows cp1252 stderr kills Unicode box-drawing (version3)
+
+The first version of `format_llm_config_banner()` used `─` (U+2500) and
+`→` (U+2192) and crashed on Windows because Python's stderr defaults to
+cp1252. Fixed by switching to ASCII `-` and `->`. Rule of thumb: if text
+may be printed to stderr on Windows without a deliberate UTF-8 setup, keep
+it to ASCII.
+
+### Shell heredocs fail under Git Bash on Windows (ongoing)
+
+Multi-line `python -c "…"` with indented code hits
+`IndentationError: unexpected indent` because `bash.exe` (Git Bash) on
+Windows does weird things to newlines inside double-quoted strings. When
+you need a multi-line Python snippet, write a temp `.py` file and run it,
+or use a single expression with `;` separators. Do not try to fix heredocs
+on this machine — it's a known loss.
 
 ---
 
-## 17. Current Valid Example Commands
+## 19. Dependencies
+
+```
+libclang (LLVM 17)        — C++ AST parsing (clang.cindex)
+python-docx               — DOCX generation
+requests                  — HTTP client for both Ollama and OpenAI gateways
+mermaid-cli (mmdc)        — Mermaid → PNG (npm install @mermaid-js/mermaid-cli)
+```
+
+Python deps: `requirements.txt`. Node.js: `package.json` (mmdc installed
+locally into `node_modules/.bin/`). The analyzer prefers the local mmdc
+binary and falls back to system `mmdc`.
+
+---
+
+## 20. End-to-end code flow — single command, full pipeline
+
+For the literal-minded: this is what happens when you run
 
 ```bash
-# Full run, all groups
-python run.py test_cpp_project
-
-# Full run, clean + one group (output to output/, not output/<group>/)
-python run.py --clean test_cpp_project --selected-group QuickSample
-
-# Reuse model, regenerate views + docx for one group
-python run.py --use-model test_cpp_project --selected-group Flowcharts
-
-# INVALID — 'core' is not a valid group name in current config
-python run.py test_cpp_project --selected-group core
+python run.py --selected-group core test_cpp_project
 ```
 
----
+1. **`run.py` startup** — sets `cwd` to its own directory; prepends
+   `src/` to `sys.path`; calls `core.logging_setup.configure_logging` (which
+   creates `logs/run_YYYYMMDD.log` and the stderr handler).
+2. **Argv loop** — parses flags. Sets `selected_group_arg = "core"`,
+   `from_phase = 1`, `use_model = False`, `no_llm_summarize = False`.
+3. **`load_config(SCRIPT_DIR)`** (re-exported from `core.config`) — reads
+   JSONC, merges `config.local.json` if present.
+3a. **`load_llm_config(cfg)` + banner** — strictly validates the `llm` block
+   (required: `provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`,
+   `retries`; type-checked enrichment toggles; env-var overrides). Renders
+   `format_llm_config_banner` and writes it to the log so the run begins with a
+   visible record of which provider/model/budget will be used. On any
+   validation failure → `LlmConfigError` → exit 2 (no silent defaults).
+4. **`plan_runs(cfg, …)`** — sees `modulesGroups` is set and a single
+   `selected_group`. Returns two plans:
+   - Plan 1: "Build model (all modules)" → `[parser.py, model_deriver.py --llm-summarize]`
+   - Plan 2: "Group: core" → `[run_views.py --selected-group core, docx_exporter.py --selected-group core]`
+5. **`PhaseRunner.run(plan1.phases)`** — subprocess `python src/parser.py
+   <abs_project_path>`. The parser inherits `LOG_LEVEL` from env.
+6. **Parser (Phase 1)** — loads libclang, walks every `.cpp/.h` under
+   `MODULE_BASE_PATH`, runs three traversal passes, calls `build_metadata`,
+   writes `metadata.json` / `functions.json` / `globalVariables.json` /
+   `dataDictionary.json` to `model/`.
+7. **`PhaseRunner.run(plan1.phases)` continues** — subprocess
+   `python src/model_deriver.py --llm-summarize`.
+8. **Model deriver (Phase 2)** — loads model via `core.model_io.load_model`.
+   Builds units + modules, propagates global access transitively, assigns
+   interface IDs, runs static behaviour-name heuristics, optionally calls
+   the LLM for descriptions and behaviour names, runs the
+   `HierarchySummarizer` for `summaries.json`, generates `knowledge_base.json`
+   for the flowchart engine. Writes everything back to `model/`.
+9. **`PhaseRunner.run(plan2.phases)`** — subprocess
+   `python src/run_views.py --selected-group core`.
+10. **`run_views.py`** — loads model (`load_model(FUNCTIONS, GLOBALS, UNITS, MODULES, optional=[DATA_DICTIONARY])`),
+    resolves the group name case-insensitively, sets `_analyzerSelectedGroup`
+    + `_analyzerAllowedModules` on the config dict, calls
+    `views.run_views(model, output_dir, model_dir, config)`.
+11. **`interface_tables` view** — writes `output/interface_tables.json`
+    filtered to the `core` modules.
+12. **`unit_diagrams` view** — emits one `.mmd` per `.cpp` unit into
+    `output/unit_diagrams/`, then renders each with `mmdc`.
+13. **`behaviour_diagram` view** — uses `FakeBehaviourGenerator` to emit
+    `.mmd` files plus `_behaviour_pngs.json`.
+14. **`flowcharts` view** — filters `functions.json` to `functions_core.json`
+    via module prefix, launches `python src/flowchart/flowchart_engine.py …`
+    with `--knowledge-json model/knowledge_base.json`. The engine:
+    - builds (or restores from `.flowchart_cache/`) the PKB
+    - groups functions by source file
+    - for each function: source extract → libclang TU parse → cursor resolve
+      → CFG build (with ASSERT skip) → enrich with PKB → batched LLM labeling
+      with auto-halving on empty responses → validate → build Mermaid
+    - writes one JSON per source file into `output/flowcharts/`
+    - writes `_summary.json`
+    The view then walks the per-unit JSONs and renders every flowchart to
+    PNG via `mmdc`.
+15. **`PhaseRunner.run(plan2.phases)` continues** — subprocess
+    `python src/docx_exporter.py --selected-group core`.
+16. **`docx_exporter.py`** — `artifacts_dir = output/`, loads model + abbreviations,
+    iterates modules, builds the DOCX via `python-docx`. Embeds module static
+    diagrams, unit diagrams, flowchart PNGs, and behaviour-diagram PNGs from
+    paths under `artifacts_dir`. Writes
+    `output/software_detailed_design_core.docx`.
+17. **Back in `run.py`** — `runner.run` returns elapsed seconds; the loop logs
+    `Done. Total: <secs>s` and `Full log: logs/run_YYYYMMDD.log`. Each
+    subprocess's `atexit` hook has already dumped its LLM token usage to the
+    log file.
 
-## 18. Dependencies
-
-```
-libclang (LLVM 17)        — C++ AST parsing (via Python clang bindings)
-python-docx               — DOCX generation
-requests (optional)       — Ollama LLM API calls
-mermaid-cli (mmdc)        — Mermaid → PNG rendering (npm install @mermaid-js/mermaid-cli)
-```
-
-Requirements file: `requirements.txt` (Python packages)  
-Node.js: `package.json` for mmdc (local install in `node_modules/`)
+If anything in steps 5–16 fails with a non-zero exit code, the runner logs
+`<phase> failed with exit code N; resume with: --from-phase <idx>`. The user
+can fix the underlying issue and rerun with that flag, skipping straight to
+the failed step.

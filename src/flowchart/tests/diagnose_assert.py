@@ -68,7 +68,7 @@ def diagnose(label, src):
         index = ci.Index.create()
         tu = index.parse(
             tmp_path,
-            args=["-std=c++17", "-x", "c++"],
+            args=["-std=c++14", "-x", "c++"],
             options=(
                 ci.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
                 | ci.TranslationUnit.PARSE_INCOMPLETE

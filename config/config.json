@@ -11,10 +11,13 @@
     "behaviourDiagram": {
       "renderPng": true
     },
+    "sequenceDiagrams": {
+      "filterMode": "skip_within_unit"
+    },
     "moduleStaticDiagram": {
       "enabled": true,
       "renderPng": true,
-      "widthInches": 5.5
+      "widthInches": 1
     }
   },
   "clang": {
@@ -26,35 +29,59 @@
     // "clangIncludePath": "/usr/lib/llvm-17/include"
   },
   "llm": {
-    "descriptions": false,
-    "behaviourNames": false,
+    "descriptions": true,
+    "behaviourNames": true,
+    // provider: "ollama" (local) | "openai" (OpenAI-compatible gateway)
+    "provider": "ollama",
     "baseUrl": "http://localhost:11434",
     "defaultModel": "qwen2.5-coder:14b",
-    "timeoutSeconds": 120,
+    "timeoutSeconds": 600,
     "numCtx": 8192,
-    "abbreviationsPath": "config/abbreviations.txt"
+    // retries: number of retries (in addition to the first attempt) on
+    // HTTP error or empty response. Default 1 = up to 2 total tries.
+    "retries": 1,
+    "abbreviationsPath": "config/abbreviations.txt",
+    // maxContextTokens: hard limit on tokens the analyzer plans against
+    // when allocating per-section budgets (callees, callers, repo map, etc.).
+    //   - null  → auto: numCtx-512 for Ollama, 127488 (~128K) for OpenAI
+    //   - int   → explicit override (e.g. 16000 for Ollama 16K, 120000 for GPT-4o)
+    // For OpenAI provider, numCtx is ignored — set this field instead.
+    "maxContextTokens": 127488,
+    // enrichment: toggle individual enrichment features.
+    // All default to the cheapest safe option (off or single-pass).
+    "enrichment": {
+      "twoPassDescriptions": true,
+      "selfReview": false,
+      "ensemble": false,
+      "cfgSimplification": false,
+      "variableEnrichment": true
+    },
+    // fewShotExamplesDir: directory containing hand-curated few-shot examples.
+    "fewShotExamplesDir": "few_shot_examples",
+    // cacheVersion: bump to invalidate entity-level LLM cache.
+    "cacheVersion": 1,
+    // apiKey: bearer token for openai provider. Prefer env var LLM_API_KEY.
+    "apiKey": "",
+    // customHeaders: extra headers sent on every openai request. Each value
+    // can be overridden via the matching environment variable
+    // (X_DEP_TICKET, USER_TYPE, USER_ID, SEND_SYSTEM_NAME).
+    "customHeaders": {
+      "x-dep-ticket": "credential:",
+      "User-Type": "AD_ID",
+      "User-Id": "",
+      "Send-System-Name": "rvc-api-module"
+    }
   },
   "modulesGroups": {
     "core": {
-      "core": [
-        "app",
-        "math"
-      ]
+      "core": ["app", "math"]
     },
     "support": {
       "support": "outer/inner"
     },
     "tests": {
-      "tests_a": [
-        "tests/direction",
-        "tests/enum",
-        "tests/flow"
-      ],
-      "tests_b": [
-        "tests/hub",
-        "tests/poly",
-        "tests/structs"
-      ]
+      "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
+      "tests_b": ["tests/hub", "tests/poly", "tests/structs"]
     }
   },
   "export": {

@@ -4,10 +4,13 @@ import sys
 import json
 import subprocess
 from typing import Optional, Tuple, List, Dict, Any
+from utils import os_type
+from core.paths import paths as _paths
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
-MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
+_p = _paths()
+PROJECT_ROOT = _p.project_root
+OUTPUT_DIR = _p.output_dir
+MODEL_DIR = _p.model_dir
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
 # Placeholder when no value (no column may be empty)
 NA = "N/A"
@@ -276,8 +279,8 @@ def _build_unit_header_table(
                 info = _struct_info_from_name(type_name)  # fallback
                 if config:
                     try:
-                        from llm_client import get_struct_description, _ollama_available
-                        if _ollama_available(config) and config.get("llm", {}).get("descriptions", True):
+                        from llm_enrichment import get_struct_description, llm_provider_reachable
+                        if llm_provider_reachable(config) and config.get("llm", {}).get("descriptions", True):
                             llm_desc = get_struct_description(type_name, fields, config, abbreviations or {})
                             if llm_desc:
                                 info = llm_desc
@@ -396,9 +399,9 @@ def _parse_module_static_diagram_cfg(views_cfg: dict, export_cfg: dict = None) -
         return (
             bool(raw.get("enabled", True)),
             bool(raw.get("renderPng", True)),
-            float(raw.get("widthInches", 5.5)),
+            float(raw.get("widthInches", 1)),
         )
-    return bool(raw), True, 5.5
+    return bool(raw), True, 1
 
 
 def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bool:
@@ -414,11 +417,14 @@ def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bo
         return False
     puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
     mmdc = mmdc_path(project_root)
-    cmd = [mmdc, "-i", mmd_path, "-o", png_path]
+    cmd = [mmdc, "-i", mmd_path, "-o", png_path, "--scale", "2"]
     if os.path.isfile(puppeteer):
         cmd.extend(["-p", puppeteer])
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
+        if os_type == "Windows":
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False, shell=True)    
+        else:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
         return r.returncode == 0 and os.path.isfile(png_path)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -663,6 +669,7 @@ def _load_flowcharts(flowcharts_dir: str) -> dict:
 def _add_unit_header_table(doc, unit_header_rows: List[Dict[str, str]], font_small) -> None:
     """Add 2-column table under unit header: global variables/typedef/enum/define | information."""
     if not unit_header_rows:
+        _add_para(doc, "NA")
         return
     table = doc.add_table(rows=1, cols=2)
     table.style = "Table Grid"
@@ -690,8 +697,8 @@ def _add_interface_table(doc, interfaces, font_small):
     for iface in interfaces:
         iface_type = iface.get("type", "") or "-"
         if "variableType" in iface:
-            data_type = iface.get("variableType", "-") or "-"
-            data_range = iface.get("range", "-") or "-"
+            data_type = iface.get("variableType", "") or "-"
+            data_range = iface.get("range", "") or "NA"
         else:
             params = iface.get("parameters", [])
             data_type = "; ".join(p.get("type", "") for p in params) if params else "VOID"
@@ -809,9 +816,9 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
 
         description_text = NA
         try:
-            from llm_client import _ollama_available, get_unit_description
+            from llm_enrichment import llm_provider_reachable, get_unit_description
 
-            if _ollama_available(config):
+            if llm_provider_reachable(config):
                 description_text = get_unit_description(
                     unit_name_display,
                     fn_items,
@@ -831,7 +838,7 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
             description_text = _cell_trim(joined, max_len=120)
 
         # Keep output short even when the LLM returns long text.
-        description_text = _cell_trim(str(description_text or NA), max_len=140)
+        description_text = str(description_text or NA)
         if not description_text:
             description_text = NA
 
@@ -853,8 +860,9 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
 
 
 def export_docx(json_path: str = None, docx_path: str = None, selected_group: str | None = None) -> Tuple[bool, Optional[str]]:
-    from utils import load_config, safe_filename, KEY_SEP
-    config = load_config(PROJECT_ROOT)
+    from utils import safe_filename, KEY_SEP
+    from core.config import app_config
+    config = app_config()
     export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
     json_path = os.path.abspath(json_path)
@@ -925,10 +933,14 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     _add_para(doc, "[Terms, abbreviations and definitions.]")
 
     # 2, 3, ... Modules
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
     n_modules = len(sorted_modules)
+    _docx_progress = ProgressReporter("docx_exporter", total=n_modules, logger=get_logger("docx_exporter"))
+    _docx_progress.start()
     for sec_idx, module_name in enumerate(sorted_modules, start=0):
         sec_num = sec_idx + 2
-        print(f"  docx_exporter: {sec_idx + 1}/{n_modules} modules...", end="\r", flush=True)
+        _docx_progress.step(label=module_name)
         doc.add_heading(f"{sec_num} {module_name}", level=1)
 
         # 2.1 Static Design
@@ -945,7 +957,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                     static_mod_png
                 ):
                     try:
-                        doc.add_picture(static_mod_png, width=Inches(msd_width_in))
+                        doc.add_picture(static_mod_png, width=Inches((len(unit_rows_module) * msd_width_in if len(unit_rows_module) * msd_width_in < 6 else 6)))
                     except Exception:
                         _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
                 else:
@@ -977,10 +989,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                     _add_para(doc, f"[Unit diagram: {unit_png}]")
 
             # 2.1.1.1 unit header
-            path_str = interfaces[0].get("location", {}).get("file", "-") if interfaces else "-"
             doc.add_heading(f"{sec_num}.1.{unit_idx}.1 unit header", level=4)
-            _add_para(doc, f"Unit: {unit_name_display}")
-            _add_para(doc, f"Path: {path_str}")
             unit_info = units_data.get(unit_key, {})
             unit_header_rows = _build_unit_header_table(
                 unit_info,
@@ -1138,7 +1147,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 elif png_path:
                     _add_para(doc, f"[Behaviour diagram: {png_path}]")
 
-    print()  # newline after progress
+    _docx_progress.done(summary=f"{n_modules} modules written")
     # N Code Metrics, Coding rule, test coverage
     metrics_sec = len(sorted_modules) + 2
     doc.add_heading(f"{metrics_sec} Code Metrics, Coding Rule, Test Coverage", level=1)

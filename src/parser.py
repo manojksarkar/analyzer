@@ -8,8 +8,17 @@ from collections import defaultdict
 
 from clang import cindex
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+from core.paths import paths as _paths
+from core.config import (
+    DEFAULT_VISIBILITY_MACROS,
+    app_config as _app_config,
+    clang_config as _clang_config,
+    default_clang_macro_defs,
+)
+
+_p = _paths()
+SCRIPT_DIR = _p.src_dir
+PROJECT_ROOT = _p.project_root
 if len(sys.argv) < 2:
     print("Usage: python parser.py <project_path>")
     raise SystemExit(1)
@@ -26,7 +35,7 @@ from utils import (
     PRIMITIVES,
 )
 
-_config = load_config(PROJECT_ROOT)
+_config = _app_config()
 _clang = _config.get("clang") or {}
 _llvm = _clang.get("llvmLibPath") or _config.get("llvmLibPath")
 _clang_inc = _clang.get("clangIncludePath") or _config.get("clangIncludePath")
@@ -84,29 +93,18 @@ for _mod_paths in _modules_cfg.values():
             _MODULE_FOLDERS.append(_norm)
 
 CLANG_ARGS = [
-    "-std=c++17",
+    "-std=c++14",
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
-# Common visibility-like macros seen in C/C++ codebases.
-# Defining them keeps declarations such as
-# "PROTECTED DB_TYPE foo(...)" parseable even when headers don't define them.
-# __OVLYINIT: empty placeholder sometimes placed between return type and the function name, e.g.
-#   PRIVATE UNIT __OVLYINIT
-#   _SOME_FUNCTION(GG *gg){}
-_default_macro_defs = ("PRIVATE", "PROTECTED", "PUBLIC", "__OVLYINIT")
-_VISIBILITY_KEYWORDS = {"PRIVATE", "PUBLIC", "PROTECTED"}
-for _macro in _default_macro_defs:
-    _arg = f"-D{_macro}="
+# Visibility-style macros (PRIVATE/PROTECTED/PUBLIC/__OVLYINIT) and the
+# `VOID` -> `void` alias come from `core.config.default_clang_macro_defs()`
+# so the flowchart engine's per-function re-parser can reuse the same set.
+# Override locally by adding `-UPUBLIC` etc. to `clang.clangArgs` in config.
+_VISIBILITY_KEYWORDS = set(DEFAULT_VISIBILITY_MACROS) - {"__OVLYINIT"}
+for _arg in default_clang_macro_defs():
     if _arg not in CLANG_ARGS:
         CLANG_ARGS.append(_arg)
-# When sources use VOID like a typedef for void but "typedef void VOID;" never appears in
-# the translation unit, Clang otherwise sees an unknown type. This matches common builds.
-# If your project instead defines typedef void VOID in a header, add "-UVOID" to
-# clang.clangArgs so this default does not break that typedef line.
-_void_arg = "-DVOID=void"
-if _void_arg not in CLANG_ARGS:
-    CLANG_ARGS.append(_void_arg)
 _extra = _clang.get("clangArgs")
 if _extra:
     CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
@@ -144,14 +142,19 @@ index = cindex.Index.create()
 functions = {}
 globals_data = {}
 data_dictionary = {}
-call_graph = defaultdict(set)  # caller -> {callees}
-reverse_call_graph = defaultdict(set)  # callee -> {callers}
+call_graph = defaultdict(list)  # caller -> [callees]
+reverse_call_graph = defaultdict(list)  # callee -> [callers]
 module_functions = defaultdict(list)
 function_to_module = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
 global_access_writes = defaultdict(set)  # func_key -> set of var_id
 # First non-trivial return expression per function (for behaviour output naming)
 function_return_expr = {}
+
+# Track already-processed function keys to avoid redundant visits from header includes
+_visited_function_keys = set()
+_visited_call_keys = set()  # for visit_calls
+_visited_global_access_keys = set()  # for visit_global_access
 
 # ---------------------------------------------------------------------------
 # Comment extraction helpers
@@ -245,7 +248,7 @@ def is_project_file(file_path: str) -> bool:
             rel = abs_path.replace("\\", "/")
         for folder in _MODULE_FOLDERS:
             # Folder-based match: folder itself or any subpath under it
-            if rel == folder or rel.startswith(folder.lower() + "/"):
+            if rel == folder or rel.lower().startswith(folder.lower() + "/"):
                 return True
         return False
 
@@ -561,7 +564,17 @@ def visit_definitions(cursor):
         and cursor.semantic_parent.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE)
     )
 
-    if is_function and cursor.location.file and is_project_file(cursor.location.file.name):
+    if is_function and cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
+        func_key = get_function_key(cursor)
+
+        # Skip if already visited (from header included in another translation unit)
+        if func_key in _visited_function_keys:
+            for child in cursor.get_children():
+                visit_definitions(child)
+            return
+
+        # Mark as visited
+        _visited_function_keys.add(func_key)
         func_id = f"{cursor.location.file.name}:{cursor.location.line}"
         module_name = get_module_name(cursor.location.file.name)
         params = []
@@ -589,7 +602,7 @@ def visit_definitions(cursor):
             "returnType": cursor.result_type.spelling if cursor.result_type else "",
             "endLine": end_line,
             "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
-            "comment": _preceding_comment(cursor),
+            "description": _preceding_comment(cursor),
         }
         if cursor.is_definition():
             functions[fk] = entry
@@ -701,7 +714,15 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
 
     if kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD):
         if cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
-            current_key = get_function_key(cursor)
+            func_key = get_function_key(cursor)
+            # Skip if already visited (from header included in another translation unit)
+            if func_key in _visited_call_keys:
+                for child in cursor.get_children():
+                    visit_calls(child, current_key)
+                return
+            # Mark as visited
+            _visited_call_keys.add(func_key)
+            current_key = func_key
         is_write = False
         is_compound = False
     elif kind == cindex.CursorKind.BINARY_OPERATOR:
@@ -757,7 +778,15 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
 def visit_calls(cursor, current_key=None):
     if cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD):
         if cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
-            current_key = get_function_key(cursor)
+            func_key = get_function_key(cursor)
+            # Skip if already visited (from header included in another translation unit)
+            if func_key in _visited_call_keys:
+                for child in cursor.get_children():
+                    visit_calls(child, current_key)
+                return
+            # Mark as visited
+            _visited_call_keys.add(func_key)
+            current_key = func_key
     elif cursor.kind == cindex.CursorKind.CALL_EXPR and current_key:
         called_key = None
         if cursor.referenced:
@@ -770,8 +799,11 @@ def visit_calls(cursor, current_key=None):
                     called_key = k
                     break
         if called_key and called_key in functions:
-            call_graph[current_key].add(called_key)
-            reverse_call_graph[called_key].add(current_key)
+            # Use list to preserve insertion order, but avoid duplicates
+            if called_key not in call_graph[current_key]:
+                call_graph[current_key].append(called_key)
+            if current_key not in reverse_call_graph[called_key]:
+                reverse_call_graph[called_key].append(current_key)
 
     for child in cursor.get_children():
         visit_calls(child, current_key)
@@ -830,7 +862,7 @@ def build_metadata():
             },
             "params": f["parameters"],
             "returnType": f.get("returnType", ""),
-            "comment": f.get("comment", ""),
+            "description": f.get("description", ""),
         }
         functions_dict[fid]["visibility"] = f.get("visibility", "default")
         if f.get("syntheticFromVarDecl"):
@@ -877,8 +909,8 @@ def build_metadata():
             for c in call_graph.get(func_key, [])
             if c in func_key_to_fid
         ]
-        functions_dict[fid]["calledByIds"] = sorted(called_ids)
-        functions_dict[fid]["callsIds"] = sorted(calls_ids)
+        functions_dict[fid]["calledByIds"] = called_ids
+        functions_dict[fid]["callsIds"] = calls_ids
 
         # Map raw global var ids to model keys for reads/writes
         read_raw = global_access_reads.get(func_key, set())
@@ -979,25 +1011,32 @@ def _scan_defines():
 
 
 def main():
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
+    plog = get_logger("parser")
     source_files = _collect_source_files()
     total = len(source_files)
-    print(f"Parsing {total} files...")
-    for i, path in enumerate(source_files, 1):
-        print(f"  parser: {i}/{total} files...", end="\r", flush=True)
+
+    p1 = ProgressReporter("parser:parse", total=total, logger=plog)
+    p1.start(f"parsing {total} files")
+    for path in source_files:
+        p1.step()
         parse_file(path)
-    print()
+    p1.done()
 
-    print(f"Collecting calls ({total} files)...")
-    for i, path in enumerate(source_files, 1):
-        print(f"  parser: {i}/{total} files...", end="\r", flush=True)
+    p2 = ProgressReporter("parser:calls", total=total, logger=plog)
+    p2.start(f"collecting calls ({total} files)")
+    for path in source_files:
+        p2.step()
         parse_calls(path)
-    print()
+    p2.done()
 
-    print(f"Collecting global access ({total} files)...")
-    for i, path in enumerate(source_files, 1):
-        print(f"  parser: {i}/{total} files...", end="\r", flush=True)
+    p3 = ProgressReporter("parser:globals", total=total, logger=plog)
+    p3.start(f"collecting global access ({total} files)")
+    for path in source_files:
+        p3.step()
         parse_global_access(path)
-    print()
+    p3.done()
 
     metadata = build_metadata()
     model_dir = os.path.join(PROJECT_ROOT, "model")
@@ -1010,20 +1049,16 @@ def main():
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
     }
-    with open(os.path.join(model_dir, "metadata.json"), "w", encoding="utf-8") as f:
-        json.dump(meta_header, f, indent=2)
-
-    with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as f:
-        json.dump(metadata["functions"], f, indent=2)
-    with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as f:
-        json.dump(metadata["globalVariables"], f, indent=2)
+    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY
+    write_model_file(METADATA, meta_header)
+    write_model_file(FUNCTIONS, metadata["functions"])
+    write_model_file(GLOBALS, metadata["globalVariables"])
     # Add primitives (name as key)
     for name, info in PRIMITIVES.items():
         data_dictionary[name] = {"kind": "primitive", "range": info["range"]}
     # Add defines (kind=define)
     _scan_defines()
-    with open(os.path.join(model_dir, "dataDictionary.json"), "w", encoding="utf-8") as f:
-        json.dump(data_dictionary, f, indent=2)
+    write_model_file(DATA_DICTIONARY, data_dictionary)
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])

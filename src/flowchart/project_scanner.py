@@ -24,14 +24,14 @@ project_knowledge.json, then pass it to flowchart_engine.py via
 Usage (scan only):
     python project_scanner.py \\
         --project-dir /path/to/cpp-project \\
-        --std         c++17 \\
+        --std         c++14 \\
         --clang-arg="-I/path/to/includes" \\
         --out         project_knowledge.json
 
 Usage (scan + LLM summarization):
     python project_scanner.py \\
         --project-dir /path/to/cpp-project \\
-        --std         c++17 \\
+        --std         c++14 \\
         --clang-arg="-I/path/to/includes" \\
         --out         project_knowledge.json \\
         --llm-summarize \\
@@ -47,6 +47,12 @@ import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
+
+# When launched as a script, sys.path[0] is this file's directory (src/flowchart).
+# Add the analyzer's src/ directory so we can import the shared llm_core package.
+_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _SRC_DIR not in sys.path:
+    sys.path.insert(1, _SRC_DIR)
 
 import clang.cindex as ci
 
@@ -532,21 +538,21 @@ class FileKnowledgeExtractor:
             signature=sig,
             file=rel_path,
             line=cursor.location.line,
-            comment=comment,
+            description=comment,
             calls=calls,
         )
 
         existing = knowledge.functions.get(qname)
         if existing is None:
             knowledge.functions[qname] = fk
-        elif not existing.comment and comment:
+        elif not existing.description and comment:
             # Upgrade to version that has a doc comment; preserve calls if richer
             fk.calls = fk.calls if fk.calls else existing.calls
             knowledge.functions[qname] = fk
         elif cursor.is_definition() and not existing.calls and calls:
             # Upgrade to add call-graph info from the definition
             existing.calls = calls
-        elif cursor.is_definition() and not existing.comment:
+        elif cursor.is_definition() and not existing.description:
             knowledge.functions[qname] = fk
 
     # ------------------------------------------------------------------
@@ -814,12 +820,12 @@ class HierarchySummarizer:
         seen_qnames: Set[str] = set()
         unique: List[FunctionKnowledge] = []
         for fk in self._k.functions.values():
-            if not fk.comment and fk.qualified_name not in seen_qnames:
+            if not fk.description and fk.qualified_name not in seen_qnames:
                 seen_qnames.add(fk.qualified_name)
                 unique.append(fk)
 
         if not unique:
-            logger.info("  All functions already have comments — skipping function summarization")
+            logger.info("  All functions already have descriptions — skipping function summarization")
             return
 
         logger.info("  Summarizing %d undocumented functions (batch=%d)...",
@@ -835,8 +841,8 @@ class HierarchySummarizer:
                 if summary:
                     # Update ALL entries with this qualified name
                     for stored in self._k.functions.values():
-                        if stored.qualified_name == fk.qualified_name and not stored.comment:
-                            stored.comment = summary.strip().rstrip(".")+ "."
+                        if stored.qualified_name == fk.qualified_name and not stored.description:
+                            stored.description = summary.strip().rstrip(".")+ "."
             done += len(batch)
             if done % 50 == 0 or done == len(unique):
                 logger.info("  Function summaries: %d/%d", done, len(unique))
@@ -989,8 +995,8 @@ class HierarchySummarizer:
         func_lines = []
         for fk in funcs[:30]:
             line = f"  - {fk.signature}"
-            if fk.comment:
-                line += f": {fk.comment}"
+            if fk.description:
+                line += f": {fk.description}"
             func_lines.append(line)
 
         prompt = (
@@ -1181,8 +1187,8 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--project-dir", required=True,
                    help="Root directory of the C++ project to scan")
-    p.add_argument("--std", default="c++17",
-                   help="C++ standard (default: c++17)")
+    p.add_argument("--std", default="c++14",
+                   help="C++ standard (default: c++14)")
     p.add_argument("--clang-arg", dest="clang_args", action="append",
                    default=[], metavar="ARG",
                    help="Extra clang argument (repeatable, e.g. -I/path)")
@@ -1254,7 +1260,7 @@ if __name__ == "__main__":
     # Optional LLM summarization pass
     if args.llm_summarize:
         try:
-            from llm.client import LlmClient  # import here to keep scanner standalone
+            from llm_core.client import LlmClient
             llm_client = LlmClient(
                 url=args.llm_url,
                 model=args.llm_model,
@@ -1271,7 +1277,7 @@ if __name__ == "__main__":
             )
             summarizer.summarize()
         except ImportError:
-            logger.error("Cannot import LlmClient — ensure llm/client.py is accessible")
+            logger.error("Cannot import LlmClient — ensure src/llm_core/ is on sys.path")
         except Exception as exc:
             logger.error("LLM summarization failed: %s", exc, exc_info=args.verbose)
 

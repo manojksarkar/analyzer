@@ -48,7 +48,7 @@ parser.py  top-level (script body)
   load_config()                   reads config.json / config.local.json
   cindex.Config.set_library_file()  loads libclang.dll / libclang.so
   resolve selectedGroup / modulesGroups → MODULE_FOLDERS filter
-  build CLANG_ARGS: [-std=c++17, -I<project>, -I<clang_include>, ...]
+  build CLANG_ARGS: [-std=c++14, -I<project>, -I<clang_include>, ...]
 
   cindex.Index.create()           one shared libclang index
 
@@ -319,7 +319,7 @@ flowcharts.run(model, output_dir, model_dir, config)
       python src/flowchart/flowchart_engine.py
           --interface-json  model/functions.json
           --metaData-json   model/metadata.json
-          --std             c++17
+          --std             c++14
           --out-dir         output/flowcharts/
           --llm-url         <config.llm.baseUrl>/api/generate
           --llm-model       <config.llm.defaultModel>
@@ -435,7 +435,7 @@ tu_parser.get_tu_full(abs_path)
     cache key = abs_path + "__full"
     if cached: return cached TU
     else:
-        index.parse(abs_path, args=[-std=c++17, -x c++, -I...])
+        index.parse(abs_path, args=[-std=c++14, -x c++, -I...])
             options: PARSE_DETAILED_PROCESSING_RECORD | PARSE_INCOMPLETE
             NOTE: PARSE_SKIP_FUNCTION_BODIES is NOT set
                   → function bodies are fully parsed for CFG traversal

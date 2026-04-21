@@ -1,0 +1,5 @@
+{
+  "tags": ["error_handling", "cleanup", "recovery", "side_effects"],
+  "input_context": "Function: SessionManager::handleDisconnect(SessionId id)\n\n[Function Source]\n```cpp\nvoid SessionManager::handleDisconnect(SessionId id) {\n    auto it = m_sessions.find(id);\n    if (it == m_sessions.end()) {\n        LOG_WARN(\"Disconnect for unknown session {}\", id);\n        return;\n    }\n    it->second->flushPending();\n    it->second->releaseResources();\n    m_sessions.erase(it);\n    g_activeSessionCount--;\n}\n```\n\n[Global Variables Accessed]\ng_activeSessionCount : int — total number of active client sessions\n\n[Called Functions]\nSession::flushPending() -> void: writes any buffered outgoing data before shutdown\nSession::releaseResources() -> void: returns allocated buffers and handles to the pool",
+  "ideal_output": "Handles a client disconnect by flushing pending writes, releasing session resources, removing the session from the registry, and decrementing the global active session counter. Logs a warning when the session is unknown."
+}

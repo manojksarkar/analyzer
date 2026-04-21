@@ -9,6 +9,10 @@ Options:
   --skip-model         Alias of --use-model
   --no-llm-summarize   Skip LLM phase/hierarchy summarization (faster, lower quality)
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
+  --verbose            Enable DEBUG logs (cache hits, budgets, few-shot picks)
+  --quiet              Only log WARNINGs and above
+  --trace-prompts      Print full LLM prompts (system + user) to stdout.
+                       WARNING: large runs can emit tens of MB of prompt text.
 
 Examples:
   python run.py test_cpp_project
@@ -16,22 +20,49 @@ Examples:
   python run.py --no-llm-summarize test_cpp_project
   python run.py --from-phase 3 test_cpp_project
   python run.py --selected-group MyGroup test_cpp_project
+  python run.py --filter-mode single_per_function test_cpp_project
 """
 import os
 import shutil
 import sys
-import subprocess
-import time
-import json
+
+# Force UTF-8 on stdout/stderr so non-ASCII source text (e.g. Korean/Chinese
+# identifiers or comments) doesn't crash prints with UnicodeEncodeError on
+# Windows (where the default code page is cp1252). Propagate via
+# PYTHONIOENCODING so every Python subprocess we spawn inherits the same
+# encoding. errors='replace' keeps the run alive even if one character is
+# un-representable in the target encoding.
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(SCRIPT_DIR)
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "src"))
 
+# Bring up logging early so every subsequent log() call (and every subprocess
+# this script spawns inheriting LOG_LEVEL) gets the same handlers.
+from core.logging_setup import configure_logging
+_quiet_flag = "--quiet" in sys.argv
+_verbose_flag = "--verbose" in sys.argv
+_trace_prompts_flag = "--trace-prompts" in sys.argv
+if _verbose_flag:
+    os.environ.setdefault("LOG_LEVEL", "DEBUG")
+elif _quiet_flag:
+    os.environ.setdefault("LOG_LEVEL", "WARNING")
+if _trace_prompts_flag:
+    os.environ.setdefault("LLM_TRACE_PROMPTS", "1")
+_log_path = configure_logging(project_root=SCRIPT_DIR, quiet=_quiet_flag, verbose=_verbose_flag)
+
 from utils import log, load_config
+from core import PhaseRunner, plan_runs
+from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, MODULES
 
 # ---------------------------------------------------------------------------
-# Parse flags — walk argv once so every flag is handled cleanly
+# Parse flags
 # ---------------------------------------------------------------------------
 
 clean_all          = False
@@ -39,20 +70,22 @@ use_model          = False
 no_llm_summarize   = False
 from_phase         = 1
 selected_group_arg = None
-raw_args           = []   # collects non-flag arguments (project path)
+filter_mode_arg    = None
+raw_args           = []
 
 i = 1
 while i < len(sys.argv):
     a = sys.argv[i]
     if a == "--clean":
         clean_all = True
+    elif a in ("--quiet", "--verbose", "--trace-prompts"):
+        pass  # consumed at top of file (configure_logging / env vars)
     elif a in ("--use-model", "--skip-model"):
         use_model = True
     elif a == "--no-llm-summarize":
         no_llm_summarize = True
     elif a == "--llm-summarize":
-        # Accepted for backwards-compatibility but has no effect: summarization
-        # is now ON by default. Use --no-llm-summarize to disable it.
+        # Accepted for backwards-compatibility; summarization is ON by default.
         pass
     elif a == "--selected-group":
         i += 1
@@ -76,7 +109,6 @@ while i < len(sys.argv):
         raw_args.append(a)
     i += 1
 
-
 def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
     """Resolve requested group name against config.modulesGroups, case-insensitive."""
     if not requested:
@@ -91,14 +123,11 @@ def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
             return k
     return None
 
-
 if len(raw_args) < 1:
     print("Usage: python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
-    print("                     [--no-llm-summarize] [--from-phase N] <project_path>")
+    print("                     [--no-llm-summarize] [--from-phase N] [--quiet|--verbose]")
+    print("                     [--trace-prompts] [--filter-mode MODE] <project_path>")
     print("Example: python run.py test_cpp_project")
-    print("         python run.py --clean test_cpp_project")
-    print("         python run.py --no-llm-summarize test_cpp_project")
-    print("         python run.py --from-phase 3 test_cpp_project")
     sys.exit(1)
 
 if clean_all:
@@ -115,124 +144,55 @@ if not os.path.isdir(resolved):
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
-# Phase definitions
-# LLM summarization (phases + hierarchy summaries) is ON by default.
-# Pass --no-llm-summarize to skip it for faster runs at lower quality.
+# When --use-model is set, refuse early if model files are missing.
 # ---------------------------------------------------------------------------
+if use_model:
+    MODEL_FILES = (_mfp(FUNCTIONS), _mfp(GLOBALS), _mfp(UNITS), _mfp(MODULES))
+    missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
+    if missing:
+        log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
+        sys.exit(2)
+    log("Using existing model/ (skipping Phase 1/2).", component="run")
 
-deriver_flags = [] if no_llm_summarize else ["--llm-summarize"]
-
-PHASES_DEFAULT = [
-    ("Phase 1: Parse C++ source", "parser.py",        [resolved]),
-    ("Phase 2: Derive model",     "model_deriver.py", deriver_flags),
-    ("Phase 3: Generate views",   "run_views.py",     []),
-    ("Phase 4: Export to DOCX",   "docx_exporter.py", []),
-]
-PHASES_BUILD_MODEL = PHASES_DEFAULT[:2]
-MODEL_FILES = (
-    os.path.join(SCRIPT_DIR, "model", "functions.json"),
-    os.path.join(SCRIPT_DIR, "model", "globalVariables.json"),
-    os.path.join(SCRIPT_DIR, "model", "units.json"),
-    os.path.join(SCRIPT_DIR, "model", "modules.json"),
-)
-
-
-def _run_phases(phases, from_ph: int = 1) -> float:
-    """Run a list of phases. Phases with index < from_ph are skipped."""
-    total = 0.0
-    for idx, (label, script, phase_args) in enumerate(phases, 1):
-        if idx < from_ph:
-            log(f"Skipped (--from-phase {from_ph})", component=label)
-            continue
-        print(f"\n=== {label} ===" if idx > 1 else f"=== {label} ===", flush=True)
-        t0 = time.perf_counter()
-        r = subprocess.run(
-            [sys.executable, os.path.join("src", script)] + phase_args,
-            cwd=SCRIPT_DIR,
-        )
-        elapsed = time.perf_counter() - t0
-        total += elapsed
-        log(f"{elapsed:.2f}s", component=label)
-        if r.returncode != 0:
-            sys.exit(r.returncode)
-    return total
-
-
-total_time = 0.0
-
+# ---------------------------------------------------------------------------
+# Plan and run
+# ---------------------------------------------------------------------------
 cfg = load_config(SCRIPT_DIR)
-groups_cfg = (cfg.get("modulesGroups") or {})
-group_names = sorted(groups_cfg.keys()) if isinstance(groups_cfg, dict) else []
-resolved_selected = _resolve_group_name(groups_cfg, selected_group_arg)
-if selected_group_arg and not resolved_selected:
-    log(
-        f"Unknown --selected-group {selected_group_arg!r}. Valid groups: {', '.join(group_names) if group_names else '(none)'}",
-        component="run",
-        err=True,
-    )
-    sys.exit(2)
-if selected_group_arg and resolved_selected and resolved_selected != selected_group_arg:
-    log(f"--selected-group resolved to {resolved_selected!r} (case-insensitive match)", component="run")
 
-if group_names and not selected_group_arg:
-    # Default: export all groups when modulesGroups is configured.
-    if use_model:
-        missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
-        if missing:
-            log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
-            sys.exit(2)
-        log("Using existing model/ (skipping Phase 1/2).", component="run")
-    else:
-        log("Building full model once (all modules).", component="run")
-        total_time += _run_phases(PHASES_BUILD_MODEL, from_ph=from_phase)
-    for idx, g in enumerate(group_names, 1):
-        log(f"Group {idx}/{len(group_names)}: {g}", component="run")
-        group_out = os.path.join(SCRIPT_DIR, "output", g)
-        os.makedirs(group_out, exist_ok=True)
-        total_time += _run_phases(
-            [
-                ("Phase 3: Generate views", "run_views.py", ["--output-dir", group_out, "--selected-group", g]),
-                (
-                    "Phase 4: Export to DOCX",
-                    "docx_exporter.py",
-                    [
-                        os.path.join(group_out, "interface_tables.json"),
-                        os.path.join(group_out, f"software_detailed_design_{g}.docx"),
-                        "--selected-group",
-                        g,
-                    ],
-                ),
-            ],
-            from_ph=max(1, from_phase - 2),
-        )
-elif group_names and selected_group_arg:
-    # Export only one group when requested.
-    if use_model:
-        missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
-        if missing:
-            log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
-            sys.exit(2)
-        log("Using existing model/ (skipping Phase 1/2).", component="run")
-    else:
-        log("Building full model once (all modules).", component="run")
-        total_time += _run_phases(PHASES_BUILD_MODEL, from_ph=from_phase)
-    total_time += _run_phases(
-        [
-            ("Phase 3: Generate views", "run_views.py", ["--selected-group", resolved_selected]),
-            ("Phase 4: Export to DOCX", "docx_exporter.py", ["--selected-group", resolved_selected]),
-        ],
-        from_ph=max(1, from_phase - 2),
+# Resolve and display the LLM config up-front so the user sees exactly which
+# provider, endpoint, model, and token budget the run will use. Fails loud
+# (LlmConfigError) if any required field is missing or invalid — better to
+# stop here than half-way through a long run.
+from core.config import load_llm_config, format_llm_config_banner, LlmConfigError
+try:
+    _resolved_llm_cfg = load_llm_config(cfg)
+    for _line in format_llm_config_banner(_resolved_llm_cfg).splitlines():
+        log(_line, component="run")
+except LlmConfigError as e:
+    log(f"Invalid LLM config: {e}", component="run", err=True)
+    sys.exit(2)
+
+try:
+    plans = plan_runs(
+        cfg,
+        project_path=resolved,
+        selected_group=selected_group_arg,
+        use_model=use_model,
+        no_llm_summarize=no_llm_summarize,
+        from_phase=from_phase,
+        filter_mode=filter_mode_arg
     )
-else:
-    # No modulesGroups configured: just run once.
-    if use_model:
-        missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
-        if missing:
-            log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
-            sys.exit(2)
-        total_time += _run_phases(PHASES_DEFAULT[2:], from_ph=max(1, from_phase - 2))
-    else:
-        total_time += _run_phases(PHASES_DEFAULT, from_ph=from_phase)
+except ValueError as e:
+    log(str(e), component="run", err=True)
+    sys.exit(2)
+
+runner = PhaseRunner(project_root=SCRIPT_DIR)
+total_time = 0.0
+for plan in plans:
+    log(plan.label, component="run")
+    total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)
 
 print(flush=True)
 log(f"Done. Total: {total_time:.2f}s", component="run")
+if _log_path:
+    log(f"Full log: {_log_path}", component="run")

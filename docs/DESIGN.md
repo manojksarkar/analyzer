@@ -356,7 +356,7 @@ python src/flowchart/flowchart_engine.py \
     --out-dir         output/flowcharts \
     --llm-url         http://localhost:11434/api/generate \
     --llm-model       qwen2.5-coder:14b \
-    --std             c++17
+    --std             c++14
 ```
 
 Key arguments:

@@ -1,0 +1,5 @@
+{
+  "tags": ["decision", "if", "condition", "limit_check"],
+  "input_context": "Node N3 (DECISION): if (activeJRts >= MAX_IU_COUNT)\n[Project] QoS management for storage OS\n[Called functions] (none)\n[Macro context] MAX_IU_COUNT = 32 (maximum concurrent I/O units)",
+  "ideal_output": "{\"N3\": \"Is active journal task count at maximum I/O unit limit?\"}"
+}

@@ -1,0 +1,5 @@
+{
+  "tags": ["loop", "iteration", "worker", "list"],
+  "input_context": "Node N8 (LOOP_HEAD): for (auto& w : m_workers)\nParam context: m_workers : std::vector<WorkerHandle>",
+  "ideal_output": "{\"N8\": \"For each worker in worker list?\"}"
+}

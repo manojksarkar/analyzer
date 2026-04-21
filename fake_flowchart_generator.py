@@ -4,7 +4,7 @@
 Each unit JSON file contains an array of function info: name and flowchart (Mermaid string).
 
 Usage:
-  python fake_flowchart_generator.py --interface-json path/to/functions.json --std c++17 \\
+  python fake_flowchart_generator.py --interface-json path/to/functions.json --std c++14 \\
     --clang-arg "-I/path/to/include" --out-dir output/flowcharts
 """
 
@@ -54,7 +54,7 @@ def run(
     interface_json_path: str,
     out_dir: str,
     metadata_json_path: str = None,
-    _std: str = "c++17",
+    _std: str = "c++14",
     _clang_args: list = None,
 ) -> None:
     """Group functions by unit, write one JSON file per unit with name + flowchart per function."""
@@ -102,9 +102,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--std",
-        default="c++17",
+        default="c++14",
         metavar="STD",
-        help="C++ standard (e.g. c++17). Default: c++17",
+        help="C++ standard (e.g. c++14). Default: c++14",
     )
     parser.add_argument(
         "--clang-arg",

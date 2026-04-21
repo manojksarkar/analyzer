@@ -455,7 +455,7 @@ python tests/test_cfg_topo.py \
 ```
 Testing 42 function(s) from functions.json
 Layer-2 (CFG vs Mermaid) enabled — reading from: output/
-base_path=/home/user/myproject  std=c++17
+base_path=/home/user/myproject  std=c++14
 ============================================================
 
 [PASS] MyClass::processRequest

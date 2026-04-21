@@ -1,0 +1,5 @@
+{
+  "tags": ["flag", "config", "boolean", "state"],
+  "input_context": "Global variable: g_qosEnabled\n\n[Declaration]\n```cpp\nstatic bool g_qosEnabled = true;\n```\n\n[Written by]\n  QosConfig::init: sets from config dictionary at startup\n  AdminCommand::disableQos: operator command to temporarily bypass QoS\n\n[Read by]\n  IoScheduler::enqueue: skips rate limiting when the flag is false\n  StatsReporter::emitQosStats: labels metrics as enabled or disabled",
+  "ideal_output": "Master switch that enables or disables QoS rate limiting across the scheduler; set from startup config and toggleable at runtime by operator commands."
+}

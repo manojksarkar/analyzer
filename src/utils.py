@@ -3,13 +3,22 @@ import contextlib
 import os
 import re
 import sys
-import json
 import time
 from datetime import datetime, timezone
+import platform
+
+# Config loading lives in core.config (these are re-exports for backward
+# compatibility with existing call sites that still `from utils import ...`).
+from core.config import (  # noqa: E402,F401
+    LlmConfigError,
+    format_llm_config_banner,
+    load_config,
+    load_llm_config,
+)
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
 KEY_SEP = "|"
-
+os_type = platform.system()
 
 def _ts() -> str:
     """Current timestamp [HH:MM:SS.mmm]."""
@@ -17,14 +26,25 @@ def _ts() -> str:
 
 
 def log(msg: str, component: str = None, *, err: bool = False):
-    """Unified log from anywhere. component prefixes the message."""
-    stream = sys.stderr if err else sys.stdout
-    prefix = f"[{_ts()}] "
-    if component:
-        text = f"{prefix}{component}: {msg}"
-    else:
-        text = f"{prefix}{msg}"
-    print(text, file=stream, flush=True)
+    """Unified log from anywhere. component prefixes the message.
+
+    Routes through the central logging system (stderr + daily log file)
+    so every legacy caller automatically gets file capture.
+    """
+    try:
+        from core.logging_setup import get_logger
+        logger = get_logger(component or "run")
+        if err:
+            logger.error(msg)
+        else:
+            logger.info(msg)
+        return
+    except Exception:
+        # Fallback if core.logging_setup isn't importable yet (very early bootstrap)
+        stream = sys.stderr if err else sys.stdout
+        prefix = f"[{_ts()}] "
+        text = f"{prefix}{component}: {msg}" if component else f"{prefix}{msg}"
+        print(text, file=stream, flush=True)
 
 
 @contextlib.contextmanager
@@ -37,10 +57,19 @@ def timed(component: str):
 
 
 def mmdc_path(project_root: str) -> str:
-    """Path to mermaid-cli mmdc (local node_modules or system)."""
+    """Path to mermaid-cli mmdc (local node_modules, npm global, or system)."""
     ext = ".cmd" if sys.platform == "win32" else ""
     local = os.path.join(project_root, "node_modules", ".bin", "mmdc" + ext)
-    return local if os.path.isfile(local) else "mmdc"
+    if os.path.isfile(local):
+        return local
+    # Check npm global prefix on Windows (%APPDATA%\npm\mmdc.cmd)
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            global_mmdc = os.path.join(appdata, "npm", "mmdc.cmd")
+            if os.path.isfile(global_mmdc):
+                return global_mmdc
+    return "mmdc"
 
 
 def safe_filename(s: str) -> str:
@@ -49,107 +78,6 @@ def safe_filename(s: str) -> str:
     """
     return re.sub(r'[<>:"/\\|?*,&;]', "_", s or "")
 
-
-
-def _strip_json_comments(text: str) -> str:
-    """Strip // and /* */ so config files can use comments."""
-    result = []
-    i = 0
-    in_string = False
-    escape = False
-    while i < len(text):
-        c = text[i]
-        if escape:
-            result.append(c)
-            escape = False
-            i += 1
-            continue
-        if c == "\\" and in_string:
-            escape = True
-            result.append(c)
-            i += 1
-            continue
-        if c == '"' and not escape:
-            in_string = not in_string
-            result.append(c)
-            i += 1
-            continue
-        if in_string:
-            result.append(c)
-            i += 1
-            continue
-        if c == "/" and i + 1 < len(text):
-            if text[i + 1] == "/":
-                i += 2
-                while i < len(text) and text[i] != "\n":
-                    i += 1
-                continue
-            if text[i + 1] == "*":
-                i += 2
-                while i + 1 < len(text) and (text[i] != "*" or text[i + 1] != "/"):
-                    i += 1
-                i += 2
-                continue
-        result.append(c)
-        i += 1
-    return "".join(result)
-
-
-def _strip_trailing_commas(text: str) -> str:
-    """Remove trailing commas before } or ] (JSON5-style), outside strings."""
-    out = []
-    i = 0
-    in_string = False
-    escape = False
-    n = len(text)
-    while i < n:
-        c = text[i]
-        if escape:
-            out.append(c)
-            escape = False
-            i += 1
-            continue
-        if c == "\\" and in_string:
-            escape = True
-            out.append(c)
-            i += 1
-            continue
-        if c == '"':
-            in_string = not in_string
-            out.append(c)
-            i += 1
-            continue
-        if not in_string and c == ",":
-            # If next non-whitespace is } or ], drop this comma.
-            j = i + 1
-            while j < n and text[j] in (" ", "\t", "\r", "\n"):
-                j += 1
-            if j < n and text[j] in ("}", "]"):
-                i += 1
-                continue
-        out.append(c)
-        i += 1
-    return "".join(out)
-
-
-def load_config(project_root: str) -> dict:
-    """Load config from config/config.json, then config.local.json overrides."""
-    config = {}
-    config_dir = os.path.join(project_root, "config")
-    for name in ("config.json", "config.local.json"):
-        path = os.path.join(config_dir, name)
-        if not os.path.isfile(path):
-            path = os.path.join(project_root, name)
-        if os.path.isfile(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    raw = f.read()
-                    stripped = _strip_json_comments(raw)
-                    stripped = _strip_trailing_commas(stripped)
-                    config.update(json.loads(stripped))
-            except (json.JSONDecodeError, IOError):
-                pass
-    return config
 
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -209,6 +137,9 @@ def init_module_mapping(config: dict) -> None:
 # Default initialization from on-disk config.
 init_module_mapping(_CONFIG_CACHE)
 
+def resolve_group(module: str) -> str:
+    """Return the moduleGroups group name for a module, or empty string if unknown."""
+    return _GROUP_MAP.get(module, "")
 
 def resolve_group(module: str) -> str:
     """Return the modulesGroups group name for a module, or empty string if unknown."""
@@ -236,12 +167,11 @@ def _resolve_module_from_rel(rel_file: str) -> str:
             if isinstance(paths, str):
                 paths = [paths]
             for folder in paths:
-                p = (folder or "").replace("\\", "/").lstrip("./").lower()
+                p = (folder or "").replace("\\", "/").lstrip("./")
                 if not p:
                     continue
                 # Folder-based match: module is the folder and its subfolders.
-                path_lower = path.lower()
-                if path_lower == p or path_lower.startswith(p + "/"):
+                if path == p or path.lower().startswith(p.lower() + "/"):
                     return module
         return "unknown"
 

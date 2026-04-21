@@ -10,7 +10,7 @@ class EngineConfig:
     metadata_json_path: str
     out_dir: str
 
-    std: str = "c++17"
+    std: str = "c++14"
     clang_args: List[str] = field(default_factory=list)
 
     llm_url: str = "http://localhost:11434/api/generate"

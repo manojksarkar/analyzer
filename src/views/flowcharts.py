@@ -18,12 +18,20 @@ import shlex
 import subprocess
 import sys
 from .registry import register
-from utils import KEY_SEP, log, mmdc_path, safe_filename
+from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
 
 
 def _resolve_script(project_root: str, script_path: str) -> str:
     if not script_path:
         return os.path.join(project_root, "fake_flowchart_generator.py")
+    # Recover from unescaped backslashes in config.json: JSON parses "src\flowchart"
+    # as src + FF (0x0C) + lowchart, because \f/\b/\n/\r/\t are JSON escape sequences.
+    # Reverse that so Windows paths written with single backslashes still work.
+    if any(c in script_path for c in "\b\f\n\r\t"):
+        for ctrl, letter in (("\b", "b"), ("\f", "f"), ("\n", "n"), ("\r", "r"), ("\t", "t")):
+            script_path = script_path.replace(ctrl, "/" + letter)
+        log("scriptPath had unescaped backslashes in config.json; recovered to: %s" % script_path,
+            component="flowcharts")
     return script_path if os.path.isabs(script_path) else os.path.join(project_root, script_path)
 
 
@@ -49,7 +57,7 @@ def run(model, output_dir, model_dir, config):
     metadata_path = os.path.join(model_dir_abs, "metadata.json")
     allowed_modules = {m.lower() for m in ((config or {}).get("_analyzerAllowedModules") or [])}
 
-    std = "c++17"  # fixed in code
+    std = "c++14"  # fixed in code
     clang_cfg = config.get("clang") or {}
     clang_args = clang_cfg.get("clangArgs")
     if not clang_args:
@@ -124,14 +132,24 @@ def run(model, output_dir, model_dir, config):
     ]
     if os.path.isfile(kb_path):
         cmd.extend(["--knowledge-json", kb_path])
-    for a in clang_args:
-        if a:
-            # Pass as --clang-arg=... so leading '-' isn't parsed as a new option
-            cmd.append(f"--clang-arg={str(a)}")
+    # Many projects have hundreds of -I/-D clang args. Passing them all on the
+    # command line blows the Windows cmd.exe 8192-char limit (WinError 206).
+    # Write them to a response file and pass `@file` — flowchart_engine.py
+    # enables argparse's fromfile_prefix_chars='@' to read args from it.
+    non_empty_clang_args = [str(a) for a in clang_args if a]
+    if non_empty_clang_args:
+        args_file = os.path.join(model_dir_abs, ".flowcharts_clang_args.txt")
+        with open(args_file, "w", encoding="utf-8") as f:
+            for a in non_empty_clang_args:
+                f.write(f"--clang-arg={a}\n")
+        cmd.append(f"@{args_file}")
 
     log("flowcharts cmd: " + " ".join(shlex.quote(a) for a in cmd), component="flowcharts")
     try:
-        r = subprocess.run(cmd, cwd=project_root, check=False)
+        if os_type == "Windows":
+            r = subprocess.run(cmd, cwd=project_root, check=False, shell=True)
+        else:
+            r = subprocess.run(cmd, cwd=project_root, check=False)
     except subprocess.TimeoutExpired:
         log("generator timed out", component="flowcharts", err=True)
         return
@@ -150,7 +168,10 @@ def run(model, output_dir, model_dir, config):
     mmdc = mmdc_path(project_root)
     if not os.path.isfile(mmdc):
         try:
-            subprocess.run([mmdc, "--help"], capture_output=True, timeout=5, cwd=project_root)
+            if os_type == "Windows":
+                subprocess.run([mmdc, "--help"], capture_output=True, timeout=5, cwd=project_root, shell=True)
+            else:
+                subprocess.run([mmdc, "--help"], capture_output=True, timeout=5, cwd=project_root)
         except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
             log("mmdc not found. Run: npm install @mermaid-js/mermaid-cli", component="flowcharts", err=True)
             return
@@ -179,10 +200,14 @@ def run(model, output_dir, model_dir, config):
         except (json.JSONDecodeError, OSError):
             pass
 
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
     total = len(items)
     failed = 0
+    progress = ProgressReporter("flowcharts:PNG", total=total, logger=get_logger("flowcharts"))
+    progress.start()
     for i, (unit_name, func_name, flowchart) in enumerate(items, 1):
-        print(f"  flowcharts: PNG {i}/{total} {unit_name}/{func_name}...", end="\r", flush=True)
+        progress.step(label=f"{unit_name}/{func_name}")
         png_name = f"{unit_name}_{safe_filename(func_name)}.png"
         png_path = os.path.abspath(os.path.join(out_dir, png_name))
         mmd_path = os.path.join(out_dir, f".tmp_{unit_name}_{safe_filename(func_name)}.mmd")
@@ -190,7 +215,10 @@ def run(model, output_dir, model_dir, config):
             with open(mmd_path, "w", encoding="utf-8") as tf:
                 tf.write(flowchart)
             run_cmd = run_cmd_base + ["-i", os.path.abspath(mmd_path), "-o", png_path]
-            r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False)
+            if os_type == "Windows":
+                r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False, shell=True)
+            else:
+                r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False)
             if r.returncode != 0:
                 failed += 1
                 log("mmdc failed for %s/%s: %s" % (unit_name, func_name, (r.stderr or r.stdout or "exit " + str(r.returncode))[:200]), component="flowcharts", err=True)
@@ -206,9 +234,5 @@ def run(model, output_dir, model_dir, config):
                     os.unlink(mmd_path)
             except OSError:
                 pass
-    if total:
-        msg = "%d PNGs rendered" % total
-        if failed:
-            msg += " (%d failed)" % failed
-        log(msg, component="flowcharts")
+    progress.done(summary=("%d PNGs rendered%s" % (total, (" (%d failed)" % failed) if failed else "")) if total else None)
 
