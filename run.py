@@ -106,6 +106,14 @@ while i < len(sys.argv):
             log(f"--from-phase must be 1, 2, 3, or 4 (got: {sys.argv[i]})", component="run", err=True)
             sys.exit(1)
     else:
+        if a.startswith("-"):
+            log(
+                f"Unknown argument: {a!r}. "
+                "Valid flags: --clean, --use-model/--skip-model, --selected-group <name>, "
+                "--no-llm-summarize, --from-phase N, --quiet, --verbose, --trace-prompts.",
+                component="run", err=True,
+            )
+            sys.exit(2)
         raw_args.append(a)
     i += 1
 
