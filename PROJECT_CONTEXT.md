@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-04-11 (version3 — LLM layer upgrade complete on top of version2).
+> Updated: 2026-04-21 (version3 — LLM layer upgrade + observability refinements).
 > Current active branch: `version3` (off `version2`, which is off `main`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -8,6 +8,7 @@
 > Quick orientation:
 > - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
 > - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
+> - §4c covers the version3 observability + cross-platform refinements (prompt/response tracing, UTF-8 output, token-budget-scaled flowchart prompts, Ollama budget clamp).
 > - All pre-existing sections have been updated in place where version3 changed the behaviour.
 
 ---
@@ -116,6 +117,11 @@ plan lives at `.claude/plans/zippy-riding-shell.md`. Shipped commits:
 | `17f6636` | feat: LLM layer upgrade — budgeting, two-pass, cache, review, ensemble, CFG simplify |
 | `66cc98f` | fix: make maxContextTokens authoritative for coherence + simplify passes |
 | `4d10df6` | feat(config): strict LLM validation + startup banner |
+| `1f9f1a4` | feat: add --trace-prompts CLI flag for cross-platform prompt tracing |
+| `c0c32f4` | feat: force UTF-8 on stdout/stderr so --trace-prompts works on Windows |
+| `2b771f6` | feat: centralize LLM prompt+response tracing in LlmClient |
+| `5050aed` | feat: scale flowchart prompt/context budgets with model token window |
+| `cf73814` | feat: clamp Ollama maxContextTokens to numCtx to avoid silent truncation |
 
 ### Goals (why this exists)
 
@@ -241,6 +247,102 @@ stderr choked on the Unicode characters.
 
 ---
 
+## 4c. Observability & cross-platform refinements (`version3`)
+
+These features sit on top of §4b and focus on visibility into the LLM layer and
+correctness across OS / provider combinations.
+
+### Prompt + response tracing (`--trace-prompts`)
+
+New CLI flag on `run.py`. When set, every LLM request and its matching response
+are printed to stdout with a shared ordinal so request/response pairs can be
+correlated even when calls interleave across subprocesses.
+
+- `run.py` propagates the flag to children via `LLM_TRACE_PROMPTS=1` in the
+  environment (`FLOWCHART_TRACE=1` is also honoured for backward compatibility).
+- Tracing lives in one place: [src/llm_core/client.py](src/llm_core/client.py)
+  instruments both `LlmClient.generate(system, user)` and
+  `LlmClient.call(messages, temperature=…)`. Every success, every empty reply,
+  and every failure path emits a paired `[LLM-TRACE #N] REQUEST` /
+  `[LLM-TRACE #N] RESPONSE` block.
+- Call sites do **not** re-trace — `llm_enrichment.py` and
+  `flowchart/llm/generator.py` delegate to the client and stay silent.
+- Output uses an encoding-safe writer that falls back to `encoding='replace'`
+  when stdout can't encode a character, so non-ASCII source text
+  (e.g. identifiers or comments in any encoding) never aborts a trace.
+
+> **Warning.** Traces can be very large — a full run on a medium project can
+> emit tens of MB. Use selectively (`--selected-group <name>`) and pipe to a
+> file when needed.
+
+### UTF-8 stdout/stderr in `run.py`
+
+`run.py` reconfigures `sys.stdout` / `sys.stderr` to UTF-8 with
+`errors='replace'` and sets `PYTHONIOENCODING=utf-8` before importing anything
+else. Every phase subprocess inherits the environment variable, so prompts,
+logs, and traces render the same on Windows (default cp1252) and Linux (UTF-8
+by default). This is the cross-platform foundation that makes `--trace-prompts`
+usable on Windows.
+
+### Token-budget-scaled flowchart prompts
+
+The flowchart engine's per-function labelling prompt used to cap at hardcoded
+char limits (`MAX_PROMPT_CHARS=6000`, `CONTEXT_BUDGET=1200` for the enrichment
+packet). Those caps were sized for small Ollama windows and silently capped
+context for large models.
+
+[src/flowchart/llm/generator.py](src/flowchart/llm/generator.py) now derives
+prompt and context budgets from the resolved `max_context_tokens`:
+
+```python
+_OUTPUT_RESERVE_TOKENS = 800      # completion headroom
+_SAFETY_MARGIN_TOKENS  = 256      # rounding / tokenizer skew
+_CHARS_PER_TOKEN       = 3        # conservative for C++ code
+_CONTEXT_FRACTION      = 0.45     # context packet ≤ 45% of prompt
+_PROMPT_FLOOR          = 6000     # legacy floor preserved
+_CONTEXT_FLOOR         = 1200     # legacy floor preserved
+
+def _derive_budgets(max_context_tokens):
+    input_tokens   = max_context_tokens - _OUTPUT_RESERVE_TOKENS - _SAFETY_MARGIN_TOKENS
+    prompt_budget  = max(_PROMPT_FLOOR,  input_tokens * _CHARS_PER_TOKEN)
+    context_budget = max(_CONTEXT_FLOOR, int(prompt_budget * _CONTEXT_FRACTION))
+    return prompt_budget, context_budget
+```
+
+The budgets are threaded into `_build_size_aware_prompt()` and the batched
+label call. Small models keep the old floors (so nothing regresses); a 128K
+model now uses ~379 K chars for prompt + ~170 K chars for context packet.
+
+### Ollama `maxContextTokens` clamp
+
+`resolve_max_tokens(llm_cfg)` in [src/llm_core/budget.py](src/llm_core/budget.py)
+protects against a common mis-configuration: an explicit
+`maxContextTokens` larger than the server's `numCtx` on Ollama. That window is
+bounded by `numCtx`, so the extra budget would silently be truncated by the
+runtime, producing empty responses and auto-halving retries.
+
+Behaviour:
+
+| Provider | Explicit `maxContextTokens` | Result |
+|---|---|---|
+| Ollama | `≤ numCtx - 256` | used as-is |
+| Ollama | `> numCtx - 256` | clamped to `numCtx - 256`, WARNING logged with both values + the "raise numCtx to use a larger window" hint |
+| OpenAI | any | used as-is (server-side window is model-bound, not config-bound) |
+| Ollama / OpenAI | `null` / absent | auto: `numCtx - 512` (ollama) or `127488` (openai) |
+
+### Recommended config values
+
+| Provider | `numCtx` | `maxContextTokens` |
+|---|---|---|
+| Ollama (any model) | Model's trained context length (8192 / 32768 / 131072 …) that fits GPU/RAM | **leave `null`** — auto-derives `numCtx - 512` |
+| OpenAI | (ignored on openai — leave whatever is there) | `null` for 128K-window models (auto → 127488); explicit for smaller (`gpt-4`: 7680) or larger (`o1`: 199488) |
+
+Rule of thumb: keeping `maxContextTokens: null` on both providers makes the
+code pick the right value per provider automatically and eliminates the
+switch-provider mis-config path entirely.
+
+---
+
 ## 5. CLI — `run.py`
 
 ### Syntax
@@ -261,9 +363,11 @@ python run.py [options] <project_path>
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
 | `--quiet` | stderr handler raised to WARNING |
 | `--verbose` | stderr handler lowered to DEBUG |
+| `--trace-prompts` | Print every LLM request **and** response to stdout with a shared ordinal. Sets `LLM_TRACE_PROMPTS=1` for all child subprocesses. Can emit tens of MB on large runs — use `--selected-group` to narrow scope. See §4c |
 
 `--quiet` and `--verbose` set `LOG_LEVEL` in the environment so child phases
-inherit the same verbosity.
+inherit the same verbosity. `--trace-prompts` similarly sets
+`LLM_TRACE_PROMPTS=1` so the tracing is active in every subprocess.
 
 ### Argument parsing
 
@@ -417,6 +521,11 @@ Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
   (resolved, e.g. `auto -> 7680`), timeout, retries, apiKey status,
   `cacheVersion`, `fewShotExamplesDir`, and which enrichment flags are ON/OFF.
   See §4b for an example.
+- **Ollama `maxContextTokens` clamp** (version3): an explicit value greater
+  than `numCtx - 256` on Ollama is clamped to `numCtx - 256` with a WARNING
+  log (the Ollama runtime caps the window at `numCtx`). OpenAI is never
+  clamped. Recommended: leave `maxContextTokens: null` and control the
+  window via `numCtx`. See §4c.
 
 ---
 
@@ -571,6 +680,13 @@ Shared pipeline:
 2. **`strip_think_section`** — strips `<think>...</think>` blocks before returning.
 3. **Token tracking** — every successful call records prompt+completion tokens
    into `llm_core.tokens` (process-wide counter dumped at exit).
+4. **Centralised tracing (version3)** — when `LLM_TRACE_PROMPTS=1` or
+   `FLOWCHART_TRACE=1` is set in the environment, both `generate()` and
+   `call()` print paired `[LLM-TRACE #N] REQUEST` / `[LLM-TRACE #N] RESPONSE`
+   blocks with a monotonic ordinal for every success, empty reply, and failure.
+   Printing uses an encoding-safe writer with `errors='replace'` fallback so
+   non-ASCII identifiers / comments cannot abort a trace on Windows. Callers
+   never re-trace — the client is the single source of truth. See §4c.
 
 Hard rules baked in for the OpenAI route:
 - A class-level `_OPENAI_LOCK` serialises every OpenAI request process-wide.
@@ -627,6 +743,11 @@ See §4b for the full story. Summary:
 - `resolve_max_tokens(llm_cfg)` — priority: explicit `maxContextTokens` →
   `numCtx − 512` (ollama) → 127488 (openai). Expects a validated llm_cfg —
   no silent default for `provider` or `numCtx` any more.
+  On Ollama, an explicit `maxContextTokens` that exceeds `numCtx - 256` is
+  clamped to `numCtx - 256` with a WARNING log, because the server-side
+  window is bounded by `numCtx` — a larger value would be silently truncated
+  by the Ollama runtime. OpenAI is never clamped (server-side window is
+  model-bound). See §4c.
 
 ### `llm_core.context_builder.ContextBuilder` (version3)
 
@@ -1247,10 +1368,11 @@ src/flowchart/
    Version3: JSON parsing routes through `llm_core.structured_output.parse_label_response()`
    which handles markdown fences, trailing commas, single quotes, and
    partial/missing braces — significantly fewer fallback labels than the
-   version2 ad-hoc `_extract_json()` path. `MAX_PROMPT_CHARS=6000` stays as
-   a legacy-standalone fallback only; the coherence pass now sizes via
-   `ContextBudget(task="cfg_coherence")` when `max_context_tokens` is
-   threaded in (it is, from `flowchart_engine.py`).
+   version2 ad-hoc `_extract_json()` path. `MAX_PROMPT_CHARS=6000` /
+   `CONTEXT_BUDGET=1200` are now **floors**, not caps: `_derive_budgets(max_context_tokens)`
+   scales both values with the model's token window (see §4c). The coherence
+   pass sizes via `ContextBudget(task="cfg_coherence")` using the authoritative
+   `max_context_tokens` threaded in from `flowchart_engine.py`.
 9. **Coherence pass** — `_coherence_pass()` normalises terminology and
    phrasing across all labels in one LLM call. Version3: prompt strengthened
    (inconsistent terminology, passive voice, too-literal vs. too-abstract
