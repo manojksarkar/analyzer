@@ -158,6 +158,8 @@ if use_model:
 # Plan and run
 # ---------------------------------------------------------------------------
 cfg = load_config(SCRIPT_DIR)
+if not (cfg.get("llm") or {}).get("summarize", True):
+    no_llm_summarize = True
 
 # Resolve and display the LLM config up-front so the user sees exactly which
 # provider, endpoint, model, and token budget the run will use. Fails loud
