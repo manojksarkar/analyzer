@@ -158,6 +158,9 @@ if use_model:
 # Plan and run
 # ---------------------------------------------------------------------------
 cfg = load_config(SCRIPT_DIR)
+_llvm = (cfg.get("clang") or {}).get("llvmLibPath", "")
+if _llvm and os.path.isfile(_llvm):
+    os.environ["LIBCLANG_PATH"] = _llvm
 
 # Resolve and display the LLM config up-front so the user sees exactly which
 # provider, endpoint, model, and token budget the run will use. Fails loud

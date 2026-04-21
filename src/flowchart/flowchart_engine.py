@@ -44,6 +44,10 @@ _SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SRC_DIR not in sys.path:
     sys.path.insert(1, _SRC_DIR)
 
+_libclang = os.environ.get("LIBCLANG_PATH", "")
+if _libclang:
+    import clang.cindex as _ci; _ci.Config.set_library_file(_libclang)
+
 from ast_engine.cfg_builder import CFGBuilder
 from ast_engine.parser import SourceExtractor, TranslationUnitParser
 from ast_engine.resolver import find_function_cursor, get_function_body
