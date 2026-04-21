@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-04-11 (version3 — LLM layer upgrade complete on top of version2).
+> Updated: 2026-04-21 (version3 + Streamlit UI redesigned to two-column layout; last_run persistence; LLM baseUrl fix; Reset button).
 > Current active branch: `version3` (off `version2`, which is off `main`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -49,6 +49,9 @@ analyzer/
     flowchart/                Real C++ → Mermaid CFG flowchart engine
   fake_behaviour_diagram_generator.py    Placeholder behaviour-diagram emitter
   test_cpp_project/           Fixture C++ tree (see §15)
+  ui/
+    app.py                    Streamlit GUI — config editor + pipeline runner (see §21)
+    requirements.txt          streamlit>=1.35.0
   model/                      Phase 1+2 output (JSON)
   output/                     Phase 3+4 output (JSON, .mmd, .png, .docx)
   logs/                       Daily log files (run_YYYYMMDD.log)
@@ -1651,6 +1654,14 @@ Was present in an intermediate version as a redundant flag. Removed because
 all-groups is the default whenever `modulesGroups` is set and no
 `--selected-group` is passed.
 
+### `pytest.ini` must be at project root
+
+If `pytest.ini` is inside `tests/`, pytest uses it as config but rootdir becomes the project root, causing `norecursedirs` and `testpaths` to misbehave — pytest scans `src/` and collects `src/flowchart/tests/`. Always keep `pytest.ini` at the repo root.
+
+### Core.h redefinition of `Status` and `Point`
+
+`SampleCppProject/Sample/Core/Core.h` originally redefined `Status` (enum) and `Point` (struct). When `App/Main.cpp` included both `Core.h` and `Types/Types.h` + `Types/PointRect.h`, clang reported redefinition errors. Fix: `Core.h` now `#include`s `../../Types/Types.h` and `../../Types/PointRect.h` instead of redefining these types.
+
 ### Env-based group override removed
 
 An `os.environ`-driven selected-group was added then removed. Preference in
@@ -1704,6 +1715,295 @@ Windows does weird things to newlines inside double-quoted strings. When
 you need a multi-line Python snippet, write a temp `.py` file and run it,
 or use a single expression with `;` separators. Do not try to fix heredocs
 on this machine — it's a known loss.
+
+---
+
+## 18. Test Framework
+
+### Design principles
+
+Two layers:
+
+- **unit/** — pure Python logic, no pipeline, no files, no network. Instant (< 10s). Run when iterating on logic changes.
+- **e2e/** — pipeline runs once, tests inspect all artifacts: `model/*.json`, `output/*.json`, `*.mmd` files, and the final DOCX. Guards every phase end-to-end.
+
+The pipeline only fires when `e2e/` tests are collected. Running `pytest tests/unit/` never triggers it.
+
+### Directory structure
+
+```
+pytest.ini                             — project root; testpaths=tests, norecursedirs=src,
+│                                        markers: unit/e2e/llm/slow,
+│                                        --cov=src --cov=run --cov=fake_* --cov-report=term-missing,html
+tests/
+├── conftest.py                        — pipeline hook (runs once for e2e), run_pipeline fixture
+│                                        passes COVERAGE_PROCESS_START so subprocess coverage is captured
+├── unit/
+│   ├── conftest.py                    — empty scope guard
+│   ├── test_llm_client.py             — src/llm_client.py: mocked Ollama, all public functions
+│   ├── test_utils.py                  — src/utils.py: comment stripping, trailing commas, config merge, safe_filename, get_range
+│   ├── test_cli.py                    — run.py: _resolve_group_name (AST-extracted), error-path CLI args
+│   ├── test_model_deriver.py          — src/model_deriver.py: _id_seg, _readable_label, transitive globals,
+│   │                                    _enrich_interfaces, _enrich_behaviour_names, _build_interface_index,
+│   │                                    _propagate_global_access, _build_signature
+│   ├── test_interface_tables_view.py  — src/views/interface_tables.py: _strip_ext, _fid_to_unit,
+│   │                                    _build_interface_tables (pure function — all filtering/sorting logic)
+│   ├── test_unit_diagrams_view.py     — src/views/unit_diagrams.py: _unit_part_id, _escape_label, _fid_to_unit,
+│   │                                    _build_unit_diagram (Mermaid output structure + edge labeling)
+│   ├── test_views_registry.py         — src/views/registry.py: @register decorator, VIEW_REGISTRY;
+│   │                                    src/views/flowcharts.py: _resolve_script (pure path logic)
+│   ├── test_flowchart_generator.py    — fake_flowchart_generator.py: key parsing, run() output contract,
+│   │                                    LLM contract (xfail until real generator wired)
+│   └── test_behaviour_diagram_generator.py — FakeBehaviourGenerator: caller filtering, file naming,
+│                                             Mermaid validity, LLM contract (xfail)
+├── e2e/
+│   ├── conftest.py                    — snapshot helpers, JSON-loading fixtures, pipeline output fixtures
+│   ├── test_model_json.py             — model/functions.json, globalVariables.json, units.json, modules.json
+│   ├── test_interface_tables.py       — output/interface_tables.json assertions + snapshot
+│   ├── test_unit_diagrams.py          — output/unit_diagrams/*.mmd: format, topology, direction + snapshot
+│   ├── test_behaviour_diagram.py      — output/behaviour_diagrams/: files, _behaviour_pngs.json, rows
+│   ├── test_flowcharts.py             — output/flowcharts/Core.json, Lib.json, Util.json: structure + functions
+│   ├── test_behaviour_names.py        — model/functions.json: Phase 2 static behaviour name enrichment
+│   └── test_docx.py                   — opens DOCX with python-docx; interface tables, images, headings,
+│                                        behaviour tables, flowchart tables, component/unit table,
+│                                        unit header table, moduleStaticDiagram, document structure
+└── snapshots/
+    └── Sample/
+        ├── interface_tables.json      — golden snapshot; regenerate with --update-snapshots
+        └── unit_diagrams.json         — golden snapshot for all three unit .mmd files
+```
+
+**When to add files:**
+- New view ready to test → add `tests/e2e/test_<view>.py`
+- New snapshot needed → run once with `--update-snapshots`, review `git diff tests/snapshots/`, commit
+- Pure Python utility/generator tests (no pipeline) → add `tests/unit/test_*.py`
+- New pure function in a view → add tests to the matching `tests/unit/test_<view>_view.py`
+
+### Test fixture project for automated tests
+
+All automated tests run against the **`SampleCppProject`** fixture (not `test_cpp_project`).
+`conftest.py` runs: `python run.py SampleCppProject --clean --selected-group Sample`
+LLM is off because `config.json` has `llm.descriptions/behaviourNames/summarize: false`. No CLI flag needed.
+
+```
+SampleCppProject/Sample/
+  Core/   — Core.h/cpp   (public: coreAdd, coreCompute, coreLoopSum, coreCheck, coreSumPoint,
+                           coreSetResult, coreProcess, coreOrchestrate, coreSetMode, coreGetCount
+                           private: coreHelper, coreSwitch
+                           public global: g_result  private global: g_count)
+  Lib/    — Lib.h/cpp    (public: libAdd, libNormalize  private: libClamp)
+  Util/   — Util.h/cpp   (public: utilCompute, utilScale  private: utilClip
+                           public global: g_utilBase)
+```
+
+### Coverage
+
+Subprocess coverage is captured via `sitecustomize.py` + `COVERAGE_PROCESS_START` passed from `conftest.py`.
+`.coveragerc` has `parallel = true` so all subprocess `.coverage.*` files are merged automatically.
+
+| File | Unit-only | Full suite (e2e) |
+|------|-----------|-----------------|
+| `src/parser.py` | 0% | ~80% |
+| `src/docx_exporter.py` | 0% | ~70% |
+| `src/model_deriver.py` | 32% | ~69% |
+| `src/run_views.py` | 0% | ~85% |
+| `src/llm_client.py` | 74% | ~78% |
+| `src/utils.py` | 74% | ~83% |
+| `src/views/__init__.py` | 0% | ~87% |
+| `src/views/registry.py` | 100% | 100% |
+| `src/views/interface_tables.py` | 83% | ~95% |
+| `src/views/unit_diagrams.py` | 61% | ~88% |
+| `src/views/behaviour_diagram.py` | 0% | ~74% |
+| `src/views/flowcharts.py` | 8% | ~71% |
+| `run.py` | ~11% | ~80%+ |
+| **TOTAL** | **~26%** | **~69–76%** |
+
+Remaining uncovered lines are mostly error paths (OSError/TimeoutExpired in subprocess calls), LLM branches (disabled via config), and DOCX formatting edge cases.
+
+### Run commands
+
+```bash
+# Unit tests only — no pipeline, instant
+python -m pytest tests/unit/ -v
+python -m pytest -m unit -v
+
+# E2E — pipeline runs once, checks all artifacts + DOCX
+python -m pytest tests/e2e/ -v
+python -m pytest -m e2e -v
+
+# All tests — pipeline runs once
+python -m pytest tests/ -v
+
+# Skip pipeline rerun — test against existing output/ and model/
+python -m pytest tests/ -v --skip-pipeline
+
+# Individual e2e views
+python -m pytest tests/e2e/test_interface_tables.py -v
+python -m pytest tests/e2e/test_unit_diagrams.py -v
+python -m pytest tests/e2e/test_behaviour_diagram.py -v
+python -m pytest tests/e2e/test_flowcharts.py -v
+python -m pytest tests/e2e/test_behaviour_names.py -v
+python -m pytest tests/e2e/test_model_json.py -v
+
+# DOCX only
+python -m pytest tests/e2e/test_docx.py -v
+
+# Regenerate golden snapshot after intentional pipeline change
+python -m pytest tests/e2e/test_interface_tables.py --update-snapshots --skip-pipeline
+# then: git diff tests/snapshots/  → review → git commit
+```
+
+### Fixtures
+
+#### tests/conftest.py (root — pipeline lifecycle only)
+
+| Fixture / hook | Scope | What it does |
+|---|---|---|
+| `pytest_addoption` | — | Registers `--skip-pipeline`, `-P`, `--update-snapshots` |
+| `pytest_collection_finish` | — | Runs pipeline once if any e2e items collected |
+| `run_pipeline` | session | Fails all tests if pipeline failed; not autouse |
+
+#### tests/e2e/conftest.py
+
+| Fixture | Scope | What it provides |
+|---|---|---|
+| `update_snapshots` | session | True if `--update-snapshots` passed |
+| `assert_snapshot` | function | Compares or regenerates a golden JSON snapshot |
+| `interface_tables` | session | Full `output/interface_tables.json` as dict |
+| `core_entries` | session | `interface_tables["Core|Core"]["entries"]` |
+| `lib_entries` | session | `interface_tables["Lib|Lib"]["entries"]` |
+| `util_entries` | session | `interface_tables["Util|Util"]["entries"]` |
+| `all_entries` | session | `core_entries + lib_entries + util_entries` |
+| `llm_behaviour_names_off` | session | Skips test if `llm.behaviourNames=true` |
+| `llm_descriptions_off` | session | Skips test if `llm.descriptions=true` |
+| `llm_summarize_off` | session | Skips test if `llm.summarize=true` |
+
+**LLM-sensitive test guards**: tests that assert static-derived behaviour names, absence of `description` fields, or exact snapshot content will incorrectly fail when LLM is on. Apply the relevant skip fixture as a parameter — it calls `pytest.skip()` automatically. Applied to: `test_static_behaviour_name_derivation`, `test_return_expr_heuristic_produces_non_generic_output`, `test_global_read_heuristic_for_getter_function`, `test_description_field_is_string_when_llm_off` (in `test_behaviour_names.py`), `test_snapshot` in `test_interface_tables.py` and `test_unit_diagrams.py`.
+
+### What each test file checks
+
+#### test_model_json.py (e2e)
+- `functions.json`: non-empty, keys are `module|unit|qualifiedName|paramTypes`, required fields, `interfaceId` starts with `IF_`, `direction` In or Out, unique IDs, behaviour names set
+- `globalVariables.json`: non-empty, keys are `module|unit|qualifiedName`, required fields
+- `units.json`: Core/Lib/Util present, required fields, Core calls Lib+Util, Util has no callees
+- `modules.json`: Core/Lib/Util present, each has non-empty `units` list
+
+#### test_interface_tables.py (e2e)
+- Structure: `unitNames` present; Core, Lib, Util units all exist and have entries
+- Required fields: every entry has `interfaceId`, `type`, `name`, `unitKey`, `unitName`, `direction`
+- Filtering: private functions/globals absent (`coreHelper`, `coreSwitch`, `libClamp`, `utilClip`, `g_count`)
+- Direction: `coreGetCount` → Out, `coreSetResult` → In, globals → In/Out
+- IDs: every `interfaceId` starts with `IF_`
+- Snapshot: full JSON matches `tests/snapshots/Sample/interface_tables.json`
+
+#### test_unit_diagrams.py (e2e)
+- All three `.mmd` files exist (`Core_Core.mmd`, `Lib_Lib.mmd`, `Util_Util.mmd`)
+- Each starts with `flowchart LR` and contains `subgraph internal_mod[<Module>]`
+- Cross-module edges labeled with `IF_`; direction invariants (Util never calls out)
+- Snapshot: `.mmd` content for all three units matches `tests/snapshots/Sample/unit_diagrams.json`
+
+#### test_behaviour_diagram.py (e2e)
+- `output/behaviour_diagrams/` dir and `_behaviour_pngs.json` exist; `.mmd` files present
+- **External = outside Sample group**: Core has rows (called by App/Main, Cross/Hub); Lib/Util have none
+- Row structure: `currentFunctionName`, `externalUnitFunction`, `pngPath` all present
+- `.mmd` files use `__` separator and contain valid Mermaid (any diagram type accepted)
+
+#### test_flowcharts.py (e2e)
+- `output/flowcharts/Core.json`, `Lib.json`, `Util.json` all exist and are non-empty JSON arrays
+- Each entry has `name` and `flowchart` fields; `flowchart` is valid Mermaid (code fences stripped before check)
+- All expected public functions appear in each unit's JSON
+
+#### test_behaviour_names.py (e2e)
+- Every public function has non-empty `behaviourInputName` and `behaviourOutputName`
+- `description` field is always a string (empty when LLM off)
+- Known derivations: `coreGetCount` → `"Count"` (global read); `coreLoopSum`/`coreOrchestrate` → `"Sum"` (returnExpr)
+
+#### test_llm_client.py (unit)
+- `load_abbreviations`: colon/equals format, comments/blanks ignored, missing file → `{}`
+- `extract_source`: line range extraction, missing file → `""`, invalid range → `""`
+- `_ollama_available`: 200 → True, non-200/error/no-requests → False
+- `_call_ollama`: response text/whitespace, retry on empty, retry on exception, model/numCtx from config
+- `get_description`: returns response, empty source guard, prompt contains source/callees/abbreviations
+- `get_behaviour_names`: parses `Input Name: X\nOutput Name: Y`, case-insensitive, empty/unparseable → `{}`, partial
+- `get_global_description`: response, empty source, prompt content
+
+#### test_flowchart_generator.py (unit)
+- Key parsing: `function_id_to_unit_key`, `safe_filename`
+- `run()` contract: one file per unit, `{name, flowchart}` schema, simple (not qualified) names, valid Mermaid, empty input → no files
+- LLM contract (xfail — activate when real generator wired): returns LLM text, strips code fences, fallback on empty, prompt contains source
+
+#### test_behaviour_diagram_generator.py (unit)
+- External-caller filtering: external → `.mmd` created; internal (same module) → skipped; no callers → `[]`
+- Multiple external callers → multiple files
+- File naming: `__` separator, `.mmd` extension, no pipe chars
+- Content: non-empty, valid Mermaid (any diagram type)
+- LLM contract (xfail — activate when real generator wired): LLM response written, fences stripped, fallback on empty
+
+#### test_model_deriver.py (unit)
+- `_id_seg`: uppercase-only, strips digits/underscores/spaces
+- `_readable_label`: strips g_/s_/t_ prefixes, underscores→spaces
+- `_propagate_global_access`: transitive reads/writes along call graph, multi-hop, no self-call
+- `_enrich_behaviour_names`: param→input, returnExpr→output, global-read fallback, always sets both fields
+- `_enrich_interfaces`: `IF_` prefix, project/group/module/unit segments, zero-padded index
+- `_build_interface_index`: sequential indices per file sorted by line, globals+functions share index
+- `_build_signature`: function signature string from qualifiedName/returnType/parameters
+
+#### test_interface_tables_view.py (unit, 18 tests — no pipeline)
+- `_strip_ext`: removes `.cpp`/`.h`; no extension unchanged; None returned as-is
+- `_fid_to_unit`: fid → set of unit keys; fid in multiple units → union
+- `_build_interface_tables`: skips non-.cpp units; filters private functions/globals; includes public functions+globals; populates unitNames; entry has all required keys; file extension stripped in location; caller units appear in sourceDest; parameters get `range` from data dictionary; `description` added when present, absent when not; functions sorted by line number; `allowed_modules` filters other modules
+
+#### test_unit_diagrams_view.py (unit, 18 tests — no pipeline)
+- `_unit_part_id`: `|` → `_`; space → `_`; empty/None → `"u"`
+- `_escape_label`: `"` → `'`; `\n` → space; `|` → `¦`; None → `""`
+- `_fid_to_unit`: fid → first unit only (first-wins semantics, unlike interface_tables version)
+- `_build_unit_diagram`: non-.cpp returns None; .cpp returns string with `%%{init:`, `flowchart LR`, `subgraph`; unit node id present; callee edges labeled with interfaceId; self-calls omitted; `allowed_modules` scope respected
+
+#### test_views_registry.py (unit, 9 tests — no pipeline)
+- `register`: adds function to `VIEW_REGISTRY` under given name; returns original function unchanged; multiple views registered independently; fresh module starts empty
+- `_resolve_script` (flowcharts.py): empty/None → default `fake_flowchart_generator.py`; absolute path returned as-is; relative joined to project root
+
+#### test_utils.py (unit, 22 tests — no pipeline)
+- `_strip_json_comments`: `//` and `/* */` stripped; strings with URLs/comment markers preserved
+- `_strip_trailing_commas`: trailing commas before `}` / `]` removed; in-string commas preserved; nested
+- `load_config`: comments + trailing commas in JSON loaded correctly; local override merges on top; missing → `{}`
+- `safe_filename`: `|`, `/`, `\` → `_`; unsafe chars replaced; `None` → `""`
+- `short_name`: `MyClass::foo` → `"foo"`; plain name unchanged; empty/None → `""`
+- `get_range_for_type`: `void` → `"VOID"`; `uint8_t` → `"0-0xFF"`; `int` → signed range; `const uint8_t` handled
+- `make_unit_key`: resolves module from path; unit name is filename without extension
+- `get_range`: direct key lookup, case-insensitive, qualified name search, typedef resolution, typedef chain, circular typedef depth guard, pointer/ref/const stripping
+
+#### test_cli.py (unit, 7 tests — AST-extracted, no pipeline)
+- `_resolve_group_name` extracted from `run.py` via AST (avoids module-level side effects)
+- Exact match, case-insensitive match (`sample` → `Sample`), no match → None, None/empty groups → None
+
+#### test_model_deriver.py (unit, 32 tests — no pipeline)
+- `_id_seg`: keeps uppercase letters only; strips digits, underscores, spaces
+- `_readable_label`: strips `g_`/`s_`/`t_` prefixes; underscores → spaces; short names → `""`
+- `_propagate_global_access`: direct reads/writes stored; transitive via call graph; multi-hop; no globals → no transitive fields; recursive function safe
+- `_enrich_behaviour_names`: param → input name; returnExpr → output name; global read fallback; function name fallback; short param skipped; fields always set
+- `_enrich_interfaces`: `interfaceId` starts with `IF_`; contains project code; contains group code; index zero-padded; non-letters stripped from project segment
+
+#### test_docx.py (e2e, 50 tests)
+Column map: `0=Interface ID, 1=Interface Name, 2=Information, 3=Data Type, 4=Data Range, 5=Direction(In/Out), 6=Source/Destination, 7=Interface Type`
+
+- File exists, non-empty
+- Interface tables present (col-0 header = "Interface ID"); every data row col-0 starts with `IF_`
+- Private names absent; public names present (parametrized, 16 cases)
+- Direction (parametrized): `coreGetCount`→Out, `coreSetResult`→In, `g_result`→In/Out
+- Interface Type values only "Function" or "Global Variable"
+- At least one embedded image
+- Introduction headings: Purpose, Scope, Terms
+- Module level-1 headings: Core, Lib, Util
+- "Static Design" and "Dynamic Behaviour" headings
+- Code Metrics and Appendix A headings
+- Dynamic Behaviour sub-headings for Core (external callers)
+- Behaviour description tables: `Requirements`, `Risk`, `Capacity`, `Input Name`, `Output Name` rows
+- Flowchart tables: `Capacity(Density)` row (distinguishes from behaviour tables)
+- Unit diagram images placed after each unit heading
+- Component/Unit table: headers `Component`, `Unit`, `Description`, `Note`; Core/Lib/Util in cells
+- Unit header table: first-column header `"global variables / typedef / enum / define"`
+- moduleStaticDiagram: PNG or Mermaid text present in each Static Design section
 
 ---
 
@@ -1801,3 +2101,180 @@ If anything in steps 5–16 fails with a non-zero exit code, the runner logs
 `<phase> failed with exit code N; resume with: --from-phase <idx>`. The user
 can fix the underlying issue and rerun with that flag, skipping straight to
 the failed step.
+
+---
+
+## 21. Streamlit UI — `ui/app.py`
+
+### Purpose
+
+A single-file Streamlit app that lets users configure and run the full pipeline
+without touching JSON files or the CLI. It writes `config/config.local.json`,
+launches `run.py` in a background thread, streams live log output, and presents
+download buttons for the generated DOCX files.
+
+Launch with:
+
+```bash
+streamlit run ui/app.py
+```
+
+### Layout
+
+No sidebar. Two-column layout (`st.columns([2, 3])`), both independently scrollable:
+
+```
+┌─ LEFT (40%) — Run ─────────────┬─ RIGHT (60%) — Settings ──────────────────┐
+│  ## C++ Analyzer               │  ## Settings        [ Save ] [ Reset ]     │
+│  [Project folder]  [Browse]    │                                             │
+│                                │  [Module Groups][Clang][Views & Export]     │
+│  [ ] --clean  [ ] --use-model  │  [LLM][Config Preview]                     │
+│  Phase [1–Parse]  Group [(all)]│                                             │
+│                                │  (tab content — scrolls independently)      │
+│  [ Generate DOCX ]  (primary)  │                                             │
+│                                │                                             │
+│  (when running:)               │                                             │
+│  [ Stop pipeline ]             │                                             │
+│  ✓ Parse  ⟳ Derive  Pending…  │                                             │
+│  <last activity line>          │                                             │
+│  ✅ Completed / ❌ Failed      │                                             │
+│  ▶ Command (collapsed)         │                                             │
+│  ▶ Pipeline log — N lines      │                                             │
+│  [ ⬇ file.docx ]              │                                             │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+```
+
+- Left column scrolls independently (pipeline log can be long).
+- Right column scrolls independently (settings tabs can be long).
+- Left panel has a distinct shade; right panel matches the default page background.
+- **Generate DOCX** auto-saves settings to `config.local.json` before running.
+- **Save** button in Settings header saves without running.
+- **Reset** button deletes `config.local.json` and reloads session state from `config.json`.
+
+### Key design decisions
+
+| Decision | Rationale |
+|---|---|
+| Two-column layout, no sidebar | Eliminates tab-switching — run controls always visible alongside settings |
+| Left = primary (Run), Right = secondary (Settings) | Mirrors natural left-to-right reading; action before configuration |
+| Both columns independently scrollable | Pipeline log in left can be long; LLM/Module Groups tabs in right can be long |
+| Generate DOCX auto-saves config | No extra "Save" click required for the primary workflow |
+| Separate Save button in Settings | Allows saving config changes without triggering a pipeline run |
+| Reset button deletes `config.local.json` | One-click restore to committed `config.json` defaults without manual file deletion |
+| Left panel shaded, right matches page background | Visually separates run controls from settings without making settings feel "boxed in" |
+| `@st.cache_resource` for `_get_runs` | The dict survives Streamlit's script reruns; writing pipeline state to `st.session_state` (which is per-script-run) was the original bug causing "Generate does nothing" |
+| Background thread writing to `_RUNS[sid]` | `st.session_state` is not visible across threads; module-level dict is |
+| Per-session UUID (`_sid`) | Allows multiple browser tabs to run independent pipelines without state collision |
+| `vertical_alignment="bottom"` on Browse columns | Replaces the old `margin-top` markdown div hack; aligns button flush with text input bottom without raw HTML |
+| `st.container(border=True)` nesting | Gives group → module → path visual hierarchy without fragile CSS class injection |
+| `config.local.json` as write target, never `config.json` | Local overrides only; committed config is never modified by the UI |
+| Only write clang fields when non-empty | Avoids overwriting correct defaults from `config.json` with empty strings |
+
+### Session state schema
+
+`_init()` populates all keys once per browser session (guarded by `_init_done`).
+
+| Key | Type | Source |
+|---|---|---|
+| `project_path` | str | `last_run.json` → SampleCppProject fallback |
+| `flag_clean`, `flag_use_model` | bool | `last_run.json` → False |
+| `from_phase` | int | `last_run.json` → 1 |
+| `llvm_lib`, `clang_include`, `clang_args` | str | merged `clang.*` |
+| `groups` | list[dict] | converted from `modulesGroups` (see below) |
+| `_next_gid`, `_next_mid`, `_next_pid` | int | stable ID counters |
+| `v_unit_png`, `v_flow_png`, `v_flow_script`, `v_behav_png` | bool/str | merged `views.*` |
+| `v_msd_enabled`, `v_msd_png`, `v_msd_width` | bool/float | merged `views.moduleStaticDiagram` |
+| `export_docx_path`, `export_font_size` | str/int | merged `export.*` |
+| `llm_*` (20+ keys) | various | merged `llm.*` |
+
+### Module groups data model
+
+Config format (`modulesGroups`) uses a `{groupName: {moduleName: path_or_list}}` dict.
+The UI converts this to a list of dicts for stable editing:
+
+```python
+groups = [
+    {
+        "gid": 0,          # stable ID — never changes even after sibling deletion
+        "name": "core",
+        "modules": [
+            {
+                "mid": 0,
+                "mod": "Core",
+                "paths": [
+                    {"pid": 0, "path": "SampleCppProject/Core"},
+                    {"pid": 1, "path": "SampleCppProject/Extra"},
+                ]
+            }
+        ]
+    }
+]
+```
+
+`_groups_to_config()` reverses this: reads `g{gid}_name`, `m{mid}_name`,
+`p{pid}_path` from `st.session_state`, collapses single-path modules to a
+string, multi-path to a list, and returns the `modulesGroups` dict format.
+
+### JSONC comment stripping
+
+`_strip_comments(text)` is a character-by-character parser that tracks
+`in_string` state. It only strips `//` that appear outside double-quoted
+strings, preserving `"http://..."` URLs. A previous regex-based approach
+(`r"//[^\n]*"`) broke config parsing by stripping the `//` in Ollama's
+base URL.
+
+### Pipeline threading
+
+```
+Browser rerun loop (0.8 s)
+    │
+    ├─ st.session_state["_sid"] → UUID per browser tab
+    │
+    ├─ _get_runs()[sid]  →  { lines[], running, returncode, proc, cmd }
+    │   (survives reruns via @st.cache_resource)
+    │
+    └─ _pipeline_thread(cmd, sid)  ← daemon Thread
+           Popen → stdout readline loop → appends to _RUNS[sid]["lines"]
+           On exit: sets returncode, running=False
+```
+
+Stop uses `taskkill /F /T /PID` on Windows to kill the full process tree
+(not just the top-level Python process), then falls back to `proc.kill()`.
+
+### Phase stepper
+
+During a run the left column renders four coloured chips from `PHASE_ORDER =
+["Parse", "Derive", "Views", "Export"]`:
+- `chip-done` (green) — phases before the current one
+- `chip-active` (blue, pulsing border) — current phase (parsed from `=== Phase N: Name ===` log lines)
+- `chip-pending` (grey) — phases not yet started
+
+### `_write_config_local()` rules
+
+- **clang**: only written when non-empty (blank = inherit from `config.json`).
+- **views**: always written (all keys present).
+- **export**: always written.
+- **modulesGroups**: only written when at least one named group with at least one module+path exists.
+- **llm**: always written (controls `descriptions`, `behaviourNames`, `summarize`).
+- **llm.baseUrl**: always written, falling back to `"http://localhost:11434"` if blank — prevents a shallow-merging pipeline from losing the base URL from `config.json`.
+- **apiKey**: only added when `provider == "openai"`.
+- **customHeaders**: only added when the JSON parses to a non-empty dict.
+- **maxContextTokens**: written as `int` when the field is a digit string, else `null`.
+
+`_write_config_local()` also calls `_save_last_run()`.
+
+### `config/last_run.json` — run-parameter persistence
+
+Stores the four values that live outside `config.local.json`:
+
+```json
+{ "project_path": "...", "flag_clean": false, "flag_use_model": false, "from_phase": 1 }
+```
+
+Written by `_save_last_run()` (called from `_write_config_local()`).  
+Read by `_load_last_run()` inside `_init()` as the first-priority default for those four keys.  
+Rationale: project path and CLI flags are not config — they don't belong in `config.local.json`, but users expect them to survive a page reload.
+
+### Reset button
+
+Deletes `config.local.json` (if it exists) and pops `_init_done` from `st.session_state`, then calls `st.rerun()`. On the next render `_init()` re-reads `config.json` only (no local overrides), restoring all settings to the committed defaults. The `last_run.json` is not deleted, so project path and run flags are preserved across a reset.
