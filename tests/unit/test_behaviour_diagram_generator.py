@@ -28,7 +28,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
-from fake_behaviour_diagram_generator import FakeBehaviourGenerator
+from behaviour_diagram_generator import SequenceDiagramGenerator as FakeBehaviourGenerator
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ class TestLlmContract:
             "App|Main|main|": {"qualifiedName": "main", "calledByIds": []},
         }
         gen = _make_generator(tmp_path, functions)
-        with patch("fake_behaviour_diagram_generator.llm_client") as mock_llm:
+        with patch("behaviour_diagram_generator.llm_client") as mock_llm:
             mock_llm._call_ollama.return_value = llm_response
             return gen.generate_all_diagrams("Core|Core|compute|", str(tmp_path / "bd"))
 
