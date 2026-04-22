@@ -9,14 +9,14 @@
           "App|Main",
           "Cross|Hub"
         ],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Core|Core|coreAdd|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_05",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_07",
         "interfaceName": "coreAdd",
         "location": {
-          "endLine": 33,
+          "endLine": 52,
           "file": "Sample/Core/Core",
-          "line": 31
+          "line": 50
         },
         "name": "coreAdd",
         "parameters": [
@@ -43,14 +43,14 @@
           "Core|Core"
         ],
         "callerUnits": [],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Core|Core|coreCompute|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_06",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_08",
         "interfaceName": "coreCompute",
         "location": {
-          "endLine": 42,
+          "endLine": 61,
           "file": "Sample/Core/Core",
-          "line": 35
+          "line": 54
         },
         "name": "coreCompute",
         "parameters": [
@@ -70,14 +70,14 @@
       {
         "calleesUnits": [],
         "callerUnits": [],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Core|Core|coreLoopSum|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_07",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_09",
         "interfaceName": "coreLoopSum",
         "location": {
-          "endLine": 50,
+          "endLine": 69,
           "file": "Sample/Core/Core",
-          "line": 44
+          "line": 63
         },
         "name": "coreLoopSum",
         "parameters": [
@@ -97,14 +97,14 @@
       {
         "calleesUnits": [],
         "callerUnits": [],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Core|Core|coreCheck|Status",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_08",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_10",
         "interfaceName": "coreCheck",
         "location": {
-          "endLine": 54,
+          "endLine": 73,
           "file": "Sample/Core/Core",
-          "line": 52
+          "line": 71
         },
         "name": "coreCheck",
         "parameters": [
@@ -124,14 +124,14 @@
       {
         "calleesUnits": [],
         "callerUnits": [],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Core|Core|coreSumPoint|Point",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_09",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_11",
         "interfaceName": "coreSumPoint",
         "location": {
-          "endLine": 58,
+          "endLine": 77,
           "file": "Sample/Core/Core",
-          "line": 56
+          "line": 75
         },
         "name": "coreSumPoint",
         "parameters": [
@@ -155,12 +155,12 @@
         ],
         "direction": "In",
         "functionId": "Core|Core|coreSetResult|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_10",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_12",
         "interfaceName": "coreSetResult",
         "location": {
-          "endLine": 62,
+          "endLine": 81,
           "file": "Sample/Core/Core",
-          "line": 60
+          "line": 79
         },
         "name": "coreSetResult",
         "parameters": [
@@ -182,16 +182,17 @@
           "Lib|Lib"
         ],
         "callerUnits": [
-          "App|Main"
+          "App|Main",
+          "Cross|Hub"
         ],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Core|Core|coreProcess|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_11",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_13",
         "interfaceName": "coreProcess",
         "location": {
-          "endLine": 66,
+          "endLine": 85,
           "file": "Sample/Core/Core",
-          "line": 64
+          "line": 83
         },
         "name": "coreProcess",
         "parameters": [
@@ -208,30 +209,7 @@
         ],
         "qualifiedName": "coreProcess",
         "reason": "",
-        "sourceDest": "App/Main",
-        "type": "Function",
-        "unitKey": "Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "calleesUnits": [],
-        "callerUnits": [
-          "App|Main"
-        ],
-        "direction": "Out",
-        "functionId": "Core|Core|coreGetCount|",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_12",
-        "interfaceName": "coreGetCount",
-        "location": {
-          "endLine": 70,
-          "file": "Sample/Core/Core",
-          "line": 68
-        },
-        "name": "coreGetCount",
-        "parameters": [],
-        "qualifiedName": "coreGetCount",
-        "reason": "",
-        "sourceDest": "App/Main",
+        "sourceDest": "App/Main, Cross/Hub",
         "type": "Function",
         "unitKey": "Core|Core",
         "unitName": "Core"
@@ -242,16 +220,17 @@
           "Util|Util"
         ],
         "callerUnits": [
-          "App|Main"
+          "App|Main",
+          "Cross|Hub"
         ],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Core|Core|coreOrchestrate|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_13",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_14",
         "interfaceName": "coreOrchestrate",
         "location": {
-          "endLine": 79,
+          "endLine": 93,
           "file": "Sample/Core/Core",
-          "line": 72
+          "line": 87
         },
         "name": "coreOrchestrate",
         "parameters": [
@@ -268,7 +247,7 @@
         ],
         "qualifiedName": "coreOrchestrate",
         "reason": "",
-        "sourceDest": "App/Main",
+        "sourceDest": "App/Main, Cross/Hub",
         "type": "Function",
         "unitKey": "Core|Core",
         "unitName": "Core"
@@ -276,14 +255,14 @@
       {
         "calleesUnits": [],
         "callerUnits": [],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Core|Core|coreSetMode|Mode",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_14",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_15",
         "interfaceName": "coreSetMode",
         "location": {
-          "endLine": 83,
+          "endLine": 97,
           "file": "Sample/Core/Core",
-          "line": 81
+          "line": 95
         },
         "name": "coreSetMode",
         "parameters": [
@@ -296,6 +275,241 @@
         "qualifiedName": "coreSetMode",
         "reason": "",
         "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub"
+        ],
+        "direction": "Out",
+        "functionId": "Core|Core|coreWhileCount|int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_16",
+        "interfaceName": "coreWhileCount",
+        "location": {
+          "endLine": 109,
+          "file": "Sample/Core/Core",
+          "line": 99
+        },
+        "name": "coreWhileCount",
+        "parameters": [
+          {
+            "name": "limit",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "coreWhileCount",
+        "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
+        "type": "Function",
+        "unitKey": "Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [
+          "Lib|Lib",
+          "Util|Util"
+        ],
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub"
+        ],
+        "direction": "Out",
+        "functionId": "Core|Core|coreNestedBranch|int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_17",
+        "interfaceName": "coreNestedBranch",
+        "location": {
+          "endLine": 126,
+          "file": "Sample/Core/Core",
+          "line": 111
+        },
+        "name": "coreNestedBranch",
+        "parameters": [
+          {
+            "name": "a",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "coreNestedBranch",
+        "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
+        "type": "Function",
+        "unitKey": "Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [
+          "Core|Core"
+        ],
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub"
+        ],
+        "direction": "Out",
+        "functionId": "Core|Core|coreEarlyReturn|int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_18",
+        "interfaceName": "coreEarlyReturn",
+        "location": {
+          "endLine": 140,
+          "file": "Sample/Core/Core",
+          "line": 128
+        },
+        "name": "coreEarlyReturn",
+        "parameters": [
+          {
+            "name": "x",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "coreEarlyReturn",
+        "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
+        "type": "Function",
+        "unitKey": "Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [
+          "Core|Core",
+          "Lib|Lib",
+          "Util|Util"
+        ],
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub"
+        ],
+        "direction": "Out",
+        "functionId": "Core|Core|corePipeline|int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_19",
+        "interfaceName": "corePipeline",
+        "location": {
+          "endLine": 148,
+          "file": "Sample/Core/Core",
+          "line": 142
+        },
+        "name": "corePipeline",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "corePipeline",
+        "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
+        "type": "Function",
+        "unitKey": "Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [
+          "Lib|Lib"
+        ],
+        "callerUnits": [
+          "App|Main"
+        ],
+        "direction": "Out",
+        "functionId": "Core|Core|coreDoWhileClamp|int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_20",
+        "interfaceName": "coreDoWhileClamp",
+        "location": {
+          "endLine": 158,
+          "file": "Sample/Core/Core",
+          "line": 150
+        },
+        "name": "coreDoWhileClamp",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "limit",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "coreDoWhileClamp",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "type": "Function",
+        "unitKey": "Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [
+          "Lib|Lib",
+          "Util|Util"
+        ],
+        "callerUnits": [
+          "App|Main"
+        ],
+        "direction": "Out",
+        "functionId": "Core|Core|coreMultiCallChain|int,int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_21",
+        "interfaceName": "coreMultiCallChain",
+        "location": {
+          "endLine": 168,
+          "file": "Sample/Core/Core",
+          "line": 160
+        },
+        "name": "coreMultiCallChain",
+        "parameters": [
+          {
+            "name": "a",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "c",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "coreMultiCallChain",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "type": "Function",
+        "unitKey": "Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [
+          "App|Main"
+        ],
+        "direction": "Out",
+        "functionId": "Core|Core|coreGetCount|",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_22",
+        "interfaceName": "coreGetCount",
+        "location": {
+          "endLine": 172,
+          "file": "Sample/Core/Core",
+          "line": 170
+        },
+        "name": "coreGetCount",
+        "parameters": [],
+        "qualifiedName": "coreGetCount",
+        "reason": "",
+        "sourceDest": "App/Main",
         "type": "Function",
         "unitKey": "Core|Core",
         "unitName": "Core"
@@ -330,16 +544,18 @@
       {
         "calleesUnits": [],
         "callerUnits": [
-          "Core|Core"
+          "App|Main",
+          "Core|Core",
+          "Cross|Hub"
         ],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Lib|Lib|libAdd|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_02",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_04",
         "interfaceName": "libAdd",
         "location": {
-          "endLine": 12,
+          "endLine": 28,
           "file": "Sample/Lib/Lib",
-          "line": 10
+          "line": 26
         },
         "name": "libAdd",
         "parameters": [
@@ -356,6 +572,173 @@
         ],
         "qualifiedName": "libAdd",
         "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
+        "type": "Function",
+        "unitKey": "Lib|Lib",
+        "unitName": "Lib"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Lib|Lib|libSubtract|int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_05",
+        "interfaceName": "libSubtract",
+        "location": {
+          "endLine": 32,
+          "file": "Sample/Lib/Lib",
+          "line": 30
+        },
+        "name": "libSubtract",
+        "parameters": [
+          {
+            "name": "a",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "libSubtract",
+        "reason": "",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Lib|Lib",
+        "unitName": "Lib"
+      },
+      {
+        "calleesUnits": [
+          "Lib|Lib"
+        ],
+        "callerUnits": [
+          "App|Main",
+          "Core|Core",
+          "Cross|Hub",
+          "Lib|Lib"
+        ],
+        "direction": "Out",
+        "functionId": "Lib|Lib|libMultiply|int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_06",
+        "interfaceName": "libMultiply",
+        "location": {
+          "endLine": 38,
+          "file": "Sample/Lib/Lib",
+          "line": 34
+        },
+        "name": "libMultiply",
+        "parameters": [
+          {
+            "name": "a",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "libMultiply",
+        "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
+        "type": "Function",
+        "unitKey": "Lib|Lib",
+        "unitName": "Lib"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [
+          "App|Main",
+          "Lib|Lib"
+        ],
+        "direction": "Out",
+        "functionId": "Lib|Lib|libAbs|int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_07",
+        "interfaceName": "libAbs",
+        "location": {
+          "endLine": 45,
+          "file": "Sample/Lib/Lib",
+          "line": 40
+        },
+        "name": "libAbs",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "libAbs",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "type": "Function",
+        "unitKey": "Lib|Lib",
+        "unitName": "Lib"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [
+          "App|Main"
+        ],
+        "direction": "Out",
+        "functionId": "Lib|Lib|libMax|int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_08",
+        "interfaceName": "libMax",
+        "location": {
+          "endLine": 52,
+          "file": "Sample/Lib/Lib",
+          "line": 47
+        },
+        "name": "libMax",
+        "parameters": [
+          {
+            "name": "a",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "libMax",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "type": "Function",
+        "unitKey": "Lib|Lib",
+        "unitName": "Lib"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Lib|Lib|libMin|int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_09",
+        "interfaceName": "libMin",
+        "location": {
+          "endLine": 59,
+          "file": "Sample/Lib/Lib",
+          "line": 54
+        },
+        "name": "libMin",
+        "parameters": [
+          {
+            "name": "a",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "libMin",
+        "reason": "",
         "sourceDest": "-",
         "type": "Function",
         "unitKey": "Lib|Lib",
@@ -367,16 +750,18 @@
           "Util|Util"
         ],
         "callerUnits": [
-          "Core|Core"
+          "Core|Core",
+          "Cross|Hub",
+          "Lib|Lib"
         ],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Lib|Lib|libNormalize|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_03",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_10",
         "interfaceName": "libNormalize",
         "location": {
-          "endLine": 17,
+          "endLine": 64,
           "file": "Sample/Lib/Lib",
-          "line": 14
+          "line": 61
         },
         "name": "libNormalize",
         "parameters": [
@@ -393,7 +778,49 @@
         ],
         "qualifiedName": "libNormalize",
         "reason": "",
-        "sourceDest": "-",
+        "sourceDest": "Cross/Hub",
+        "type": "Function",
+        "unitKey": "Lib|Lib",
+        "unitName": "Lib"
+      },
+      {
+        "calleesUnits": [
+          "Lib|Lib"
+        ],
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub"
+        ],
+        "direction": "Out",
+        "functionId": "Lib|Lib|libLinearScale|int,int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_11",
+        "interfaceName": "libLinearScale",
+        "location": {
+          "endLine": 73,
+          "file": "Sample/Lib/Lib",
+          "line": 66
+        },
+        "name": "libLinearScale",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "from_max",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "to_max",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "libLinearScale",
+        "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
         "type": "Function",
         "unitKey": "Lib|Lib",
         "unitName": "Lib"
@@ -409,16 +836,17 @@
         ],
         "callerUnits": [
           "Core|Core",
-          "Lib|Lib"
+          "Lib|Lib",
+          "Util|Util"
         ],
         "direction": "Out",
         "functionId": "Util|Util|utilCompute|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_03",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_05",
         "interfaceName": "utilCompute",
         "location": {
-          "endLine": 13,
+          "endLine": 27,
           "file": "Sample/Util/Util",
-          "line": 11
+          "line": 24
         },
         "name": "utilCompute",
         "parameters": [
@@ -445,16 +873,17 @@
           "Util|Util"
         ],
         "callerUnits": [
-          "Core|Core"
+          "Core|Core",
+          "Util|Util"
         ],
-        "direction": "In",
+        "direction": "Out",
         "functionId": "Util|Util|utilScale|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_04",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_06",
         "interfaceName": "utilScale",
         "location": {
-          "endLine": 18,
+          "endLine": 32,
           "file": "Sample/Util/Util",
-          "line": 15
+          "line": 29
         },
         "name": "utilScale",
         "parameters": [
@@ -472,6 +901,220 @@
         "qualifiedName": "utilScale",
         "reason": "",
         "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Util|Util",
+        "unitName": "Util"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub",
+          "Util|Util"
+        ],
+        "direction": "Out",
+        "functionId": "Util|Util|utilAbs|int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_07",
+        "interfaceName": "utilAbs",
+        "location": {
+          "endLine": 39,
+          "file": "Sample/Util/Util",
+          "line": 34
+        },
+        "name": "utilAbs",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "utilAbs",
+        "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
+        "type": "Function",
+        "unitKey": "Util|Util",
+        "unitName": "Util"
+      },
+      {
+        "calleesUnits": [
+          "Util|Util"
+        ],
+        "callerUnits": [
+          "Util|Util"
+        ],
+        "direction": "Out",
+        "functionId": "Util|Util|utilClamp|int,int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_08",
+        "interfaceName": "utilClamp",
+        "location": {
+          "endLine": 44,
+          "file": "Sample/Util/Util",
+          "line": 41
+        },
+        "name": "utilClamp",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "lo",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "hi",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "utilClamp",
+        "reason": "",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Util|Util",
+        "unitName": "Util"
+      },
+      {
+        "calleesUnits": [
+          "Util|Util"
+        ],
+        "callerUnits": [
+          "Util|Util"
+        ],
+        "direction": "Out",
+        "functionId": "Util|Util|utilNorm|int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_09",
+        "interfaceName": "utilNorm",
+        "location": {
+          "endLine": 50,
+          "file": "Sample/Util/Util",
+          "line": 46
+        },
+        "name": "utilNorm",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "max",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "utilNorm",
+        "reason": "",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Util|Util",
+        "unitName": "Util"
+      },
+      {
+        "calleesUnits": [
+          "Util|Util"
+        ],
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub"
+        ],
+        "direction": "Out",
+        "functionId": "Util|Util|utilBlend|int,int,int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_10",
+        "interfaceName": "utilBlend",
+        "location": {
+          "endLine": 58,
+          "file": "Sample/Util/Util",
+          "line": 52
+        },
+        "name": "utilBlend",
+        "parameters": [
+          {
+            "name": "a",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "utilBlend",
+        "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
+        "type": "Function",
+        "unitKey": "Util|Util",
+        "unitName": "Util"
+      },
+      {
+        "calleesUnits": [
+          "Util|Util"
+        ],
+        "callerUnits": [
+          "App|Main"
+        ],
+        "direction": "Out",
+        "functionId": "Util|Util|utilLoopAccum|int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_11",
+        "interfaceName": "utilLoopAccum",
+        "location": {
+          "endLine": 67,
+          "file": "Sample/Util/Util",
+          "line": 60
+        },
+        "name": "utilLoopAccum",
+        "parameters": [
+          {
+            "name": "n",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "utilLoopAccum",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "type": "Function",
+        "unitKey": "Util|Util",
+        "unitName": "Util"
+      },
+      {
+        "calleesUnits": [
+          "Util|Util"
+        ],
+        "callerUnits": [
+          "App|Main",
+          "Core|Core",
+          "Cross|Hub"
+        ],
+        "direction": "Out",
+        "functionId": "Util|Util|utilChain|int",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_12",
+        "interfaceName": "utilChain",
+        "location": {
+          "endLine": 75,
+          "file": "Sample/Util/Util",
+          "line": 69
+        },
+        "name": "utilChain",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "utilChain",
+        "reason": "",
+        "sourceDest": "App/Main, Cross/Hub",
         "type": "Function",
         "unitKey": "Util|Util",
         "unitName": "Util"
