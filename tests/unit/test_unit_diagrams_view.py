@@ -47,6 +47,9 @@ class TestUnitPartId:
     def test_space_replaced_by_underscore(self):
         assert _unit_part_id("My Module") == "My_Module"
 
+    def test_pipe_and_space_combined(self):
+        assert _unit_part_id("My|core unit") == "My_core_unit"
+
     def test_empty_string_returns_u(self):
         assert _unit_part_id("") == "u"
 
@@ -72,6 +75,12 @@ class TestEscapeLabel:
         result = _escape_label("a|b")
         assert "|" not in result
         assert "\u00a6" in result
+
+    def test_multiple_escapes_combined(self):
+        result = _escape_label('"a|b\nc"')
+        assert '"' not in result
+        assert "|" not in result
+        assert "\n" not in result
 
     def test_empty_string(self):
         assert _escape_label("") == ""
@@ -104,6 +113,9 @@ class TestFidToUnitDiagrams:
 
     def test_empty_units(self):
         assert _fid_to_unit({}) == {}
+
+    def test_unit_with_no_function_ids_key(self):
+        assert _fid_to_unit({"Mod|x": {}}) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -145,10 +157,20 @@ class TestBuildUnitDiagram:
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert "subgraph" in result
 
+    def test_subgraph_labelled_with_module_name(self):
+        unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
+        result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        assert "subgraph internal_mod[Mod]" in result
+
     def test_unit_node_appears_in_diagram(self):
         unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert "Mod_core" in result
+
+    def test_mainunit_class_applied_to_current_unit(self):
+        unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
+        result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        assert "class Mod_core mainUnit" in result
 
     def test_callee_edge_labeled_with_interface_id(self):
         unit_key = "Mod|core"
@@ -177,6 +199,52 @@ class TestBuildUnitDiagram:
         result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert "IFC_002" in result
 
+    def test_incoming_caller_edge_labeled_with_interface_id(self):
+        unit_key = "Mod|core"
+        caller_key = "Ext|service"
+        unit_info = {"fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}
+        units_data = {
+            unit_key: unit_info,
+            caller_key: {"fileName": "service.cpp", "functionIds": ["f2"], "globalVariableIds": []},
+        }
+        functions_data = {
+            "f1": {
+                "qualifiedName": "Mod::process",
+                "callsIds": [],
+                "calledByIds": ["f2"],
+                "interfaceId": "IFC_001",
+            },
+            "f2": {
+                "qualifiedName": "Ext::doWork",
+                "callsIds": ["f1"],
+                "calledByIds": [],
+                "interfaceId": "IFC_002",
+            },
+        }
+        fid_to_unit = {"f1": unit_key, "f2": caller_key}
+        unit_names = {unit_key: "core", caller_key: "service"}
+        result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        assert "IFC_001" in result
+
+    def test_multiple_ifaces_on_same_edge_both_appear(self):
+        unit_key = "Mod|core"
+        callee_key = "Ext|svc"
+        unit_info = {"fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}
+        units_data = {
+            unit_key: unit_info,
+            callee_key: {"fileName": "svc.cpp", "functionIds": ["f2", "f3"], "globalVariableIds": []},
+        }
+        functions_data = {
+            "f1": {"qualifiedName": "Mod::run", "callsIds": ["f2", "f3"], "calledByIds": [], "interfaceId": "IFC_A"},
+            "f2": {"qualifiedName": "Ext::alpha", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_B"},
+            "f3": {"qualifiedName": "Ext::beta", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_C"},
+        }
+        fid_to_unit = {"f1": unit_key, "f2": callee_key, "f3": callee_key}
+        unit_names = {unit_key: "core", callee_key: "svc"}
+        result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        assert "IFC_B" in result
+        assert "IFC_C" in result
+
     def test_self_calls_not_added_as_edges(self):
         unit_key = "Mod|core"
         unit_info = {"fileName": "core.cpp", "functionIds": ["f1", "f2"], "globalVariableIds": []}
@@ -190,6 +258,64 @@ class TestBuildUnitDiagram:
         result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
         # self-calls should be omitted — IFC_SELF must not appear as an edge
         assert "IFC_SELF" not in (result or "")
+
+    def test_external_caller_node_appears_before_subgraph(self):
+        unit_key = "Mod|core"
+        caller_key = "Ext|service"
+        unit_info = {"fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}
+        units_data = {
+            unit_key: unit_info,
+            caller_key: {"fileName": "service.cpp", "functionIds": ["f2"], "globalVariableIds": []},
+        }
+        functions_data = {
+            "f1": {"qualifiedName": "Mod::process", "callsIds": [], "calledByIds": ["f2"], "interfaceId": "IFC_001"},
+            "f2": {"qualifiedName": "Ext::doWork", "callsIds": ["f1"], "calledByIds": [], "interfaceId": "IFC_002"},
+        }
+        fid_to_unit = {"f1": unit_key, "f2": caller_key}
+        unit_names = {unit_key: "core", caller_key: "service"}
+        result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        ext_idx = result.find("Ext_service[")
+        sub_idx = result.find("subgraph")
+        assert ext_idx != -1, "External caller node declaration not found"
+        assert ext_idx < sub_idx, "External caller should appear before subgraph"
+
+    def test_external_callee_node_appears_after_subgraph(self):
+        unit_key = "Mod|core"
+        callee_key = "Ext|svc"
+        unit_info = {"fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}
+        units_data = {
+            unit_key: unit_info,
+            callee_key: {"fileName": "svc.cpp", "functionIds": ["f2"], "globalVariableIds": []},
+        }
+        functions_data = {
+            "f1": {"qualifiedName": "Mod::run", "callsIds": ["f2"], "calledByIds": [], "interfaceId": "IFC_A"},
+            "f2": {"qualifiedName": "Ext::work", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_B"},
+        }
+        fid_to_unit = {"f1": unit_key, "f2": callee_key}
+        unit_names = {unit_key: "core", callee_key: "svc"}
+        result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        lines = result.splitlines()
+        end_idx = next((i for i, l in enumerate(lines) if l.strip() == "end"), None)
+        assert end_idx is not None, "Subgraph 'end' not found"
+        after_end = "\n".join(lines[end_idx:])
+        assert "Ext_svc[" in after_end, "External callee node should appear after subgraph end"
+
+    def test_internal_peer_gets_internal_class(self):
+        unit_key = "Mod|core"
+        peer_key = "Mod|peer"
+        unit_info = {"fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}
+        peer_info = {"fileName": "peer.cpp", "functionIds": ["f2"], "globalVariableIds": []}
+        units_data = {unit_key: unit_info, peer_key: peer_info}
+        functions_data = {
+            "f1": {"qualifiedName": "Mod::run", "callsIds": ["f2"], "calledByIds": [], "interfaceId": "IFC_A"},
+            "f2": {"qualifiedName": "Mod::work", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_B"},
+        }
+        fid_to_unit = {"f1": unit_key, "f2": peer_key}
+        unit_names = {unit_key: "core", peer_key: "peer"}
+        result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        assert "Mod_peer" in result
+        assert "class Mod_peer internal" in result
+        assert "class Mod_peer mainUnit" not in result
 
     def test_allowed_modules_marks_internal_units(self):
         unit_key = "Mod|core"

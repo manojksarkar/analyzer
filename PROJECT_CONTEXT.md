@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-04-22 (feat/test-framework — direction logic fixes, lambda propagation, DESIGN_SPEC + TEST_INVENTORY docs, interface table test overhaul).
+> Updated: 2026-04-22 (feat/test-framework — direction logic fixes, lambda propagation, DESIGN_SPEC + TEST_INVENTORY docs, interface table test overhaul, unit diagrams test expansion + DESIGN_SPEC REQ-UD-XX, snapshot refresh).
 > Current active branch: `feat/test-framework` (off `version3`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -279,6 +279,7 @@ for a permanent local preference.
 | `tests/unit/test_utils.py` | `_strip_json_comments` / `_strip_trailing_commas` now imported from `core.config`, not from `utils`. |
 | `src/flowchart/tests/test_cfg_topo.py` | Added `src/` to `sys.path` so `ast_engine.*` imports resolve when running from the project root. |
 | `tests/conftest.py` | Logs the full pipeline command string before executing it (aids debugging failed CI runs). |
+| `tests/unit/test_unit_diagrams_view.py` | Expanded with 10 new tests covering: subgraph module label, `mainUnit`/`internal` CSS classes, incoming caller edges, multi-iface edge joining, external caller/callee layout (before-subgraph / after-end), combined escape sequences, `_fid_to_unit` with missing key. Snapshot `tests/snapshots/Sample/unit_diagrams.json` refreshed to match current output. |
 
 ---
 
@@ -1131,12 +1132,14 @@ Full logic and column definitions: `docs/DESIGN_SPEC.md` — Interface Tables.
 
 One Mermaid `.mmd` (and optionally `.png`) per unit into
 `output/unit_diagrams/`.
+Full logic and layout rules: `docs/DESIGN_SPEC.md` — Unit Diagrams (REQ-UD-XX).
 
 - `.cpp` units only; filtered by `allowed_modules` when set.
 - Layout: external callers on the left, **yellow** module box in the centre,
   external callees on the right, all flowing left-to-right.
-- The main unit is **blue with a thick border**; sibling units are blue thin.
-- Edges labelled with `interfaceId` values, BR-separated for multi-edge.
+- The main unit is **blue with a thick border** (`mainUnit` class); sibling units in the module subgraph are blue thin (`internal` class).
+- Edges labelled with `interfaceId` values, `<br/>`-separated for multi-edge.
+- Self-calls (callee in the same unit) produce no edge.
 - Project root resolved from `dirname(model_dir)` (NOT `output_dir`) so
   grouped output paths work.
 - PNG rendered by `mmdc` (mermaid-cli). 60s timeout per diagram.
@@ -1530,7 +1533,7 @@ test_cpp_project/
 
 ### Key docs
 
-- `docs/DESIGN_SPEC.md` — view logic requirements with verification criteria (REQ-IT-XX). Update first before changing any view logic.
+- `docs/DESIGN_SPEC.md` — view logic requirements with verification criteria (REQ-IT-XX for Interface Tables, REQ-UD-XX for Unit Diagrams). Update first before changing any view logic.
 - `TEST_INVENTORY.md` — maps every DESIGN_SPEC requirement to its test case. Update after adding/changing tests.
 - `.coveragerc` — `parallel = false` (removed); single `.coverage` file written per run.
 

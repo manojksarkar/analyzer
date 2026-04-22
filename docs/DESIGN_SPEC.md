@@ -140,3 +140,77 @@ Global variable entries always have empty `callerUnits` and `calleesUnits`.
 **Verification:** Functions with known external callers show them in `sourceDest`. Functions with no external connections show `"-"`. Global entries have empty lists.
 
 ---
+
+## Unit Diagrams
+
+**Output:** `output/unit_diagrams/<unit_key>.mmd` (one file per `.cpp`-backed unit)
+
+---
+
+### REQ-UD-01 — Unit inclusion
+
+The view produces one Mermaid diagram per `.cpp`-backed unit. Header-only units (`.h`, `.hpp`) are skipped.
+When the run is module-scoped (`allowed_modules`), only units from those modules are generated.
+
+**Verification:** Only `.cpp` units produce `.mmd` files. Header-only units produce no output.
+
+---
+
+### REQ-UD-02 — Node identity
+
+Each unit maps to a safe Mermaid node ID via `_unit_part_id`: pipe (`|`) and space characters are replaced with underscores. An empty key maps to `"u"`.
+
+**Verification:** Node IDs in the diagram contain no `|` or space. `Mod|core` → `Mod_core`.
+
+---
+
+### REQ-UD-03 — Label escaping
+
+Text labels are escaped for Mermaid compatibility via `_escape_label`: double-quotes become single-quotes, newlines become spaces, pipe characters become broken-bar (`¦`).
+
+**Verification:** Labels containing `"`, `\n`, or `|` are rendered without breaking the Mermaid syntax.
+
+---
+
+### REQ-UD-04 — Diagram format
+
+Each diagram is a `flowchart LR` Mermaid string prefixed with an `%%{init: {'flowchart': {'splines': 'ortho'}}}%%` block. The current unit's module is wrapped in a `subgraph internal_mod[<Module>]` block with `direction TB`.
+
+**Verification:** Every `.mmd` file starts with `%%{init:` and contains `flowchart LR` and `subgraph internal_mod`.
+
+---
+
+### REQ-UD-05 — Edge construction
+
+An edge is drawn between units for every cross-unit function call. The edge label is the callee function's `interfaceId`. Self-calls (callee in the same unit as the caller) are excluded. When multiple calls exist between two units, all interfaceIds appear on the edge label, joined with `<br/>`.
+
+**Verification:** Known cross-unit calls produce labeled edges with `IF_` prefixed IDs. Same-unit calls produce no edge. Multi-call edges contain all IDs.
+
+---
+
+### REQ-UD-06 — Node layout
+
+- **External callers** (outside the allowed/same-module set) appear to the left of the subgraph, before the `subgraph` line.
+- **Internal nodes** (current unit + same-module peers involved in edges) appear inside the `subgraph` block.
+- **External callees** appear to the right, after the `end` line.
+- External connection edges appear after the subgraph `end`.
+
+**Verification:** External caller node declaration precedes `subgraph`. External callee node declaration follows `end`.
+
+---
+
+### REQ-UD-07 — Styling
+
+The current unit node is styled with the `mainUnit` class (thick border). Peer internal units involved in edges are styled with the `internal` class.
+
+**Verification:** `class <unit_id> mainUnit` appears for the current unit. `class <peer_id> internal` appears for peer units. Peer nodes are never marked `mainUnit`.
+
+---
+
+### REQ-UD-08 — Module-scoped runs
+
+When `allowed_modules` is supplied, "internal" means any unit whose module (first segment of the unit key) is in `allowed_modules`, not just same-module peers of the current unit.
+
+**Verification:** With `allowed_modules={"mod"}`, units from module `Mod` are treated as internal regardless of which unit is being rendered.
+
+---

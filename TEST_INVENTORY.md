@@ -1,6 +1,6 @@
 # Test Inventory
 
-**411 tests total** — 258 unit (7 xfail) · 145 e2e passing · 8 e2e failing (flowcharts — fake generator) · 18 e2e errors (flowchart fixture setup)
+**421 tests total** — 268 unit (7 xfail) · 145 e2e passing · 8 e2e failing (flowcharts — fake generator) · 18 e2e errors (flowchart fixture setup)
 
 > Two layers: **unit** (instant, no pipeline) and **e2e** (pipeline runs once, checks all artifacts + DOCX).
 
@@ -31,7 +31,7 @@ No pipeline, no network. All external calls mocked.
 | `test_llm_client.py` | Constructor · GenerateOllama · GenerateOpenAI · Call · FromConfig | `LlmClient`: provider validation, endpoint building, generate/call/retry logic, from_config builder |
 | `test_llm_core_budget.py` | TaskRatios · ContextBudgetConstruction · Allocate · Sections · Remaining · ResolveMaxTokens | `TASK_RATIOS` sum invariants; `ContextBudget` arithmetic; `resolve_max_tokens` for Ollama/OpenAI/explicit/clamp |
 | `test_model_deriver.py` | IdSeg · ReadableLabel · PropagateGlobalAccess · EnrichBehaviourNames · EnrichInterfaces | Pure model-deriver helpers: identifier transformations, transitive global propagation, behaviour name heuristics, interfaceId format |
-| `test_unit_diagrams_view.py` | UnitPartId · EscapeLabel · FidToUnit · BuildUnitDiagram | `_build_unit_diagram`: Mermaid LR output, subgraph structure, cross-unit edges, self-call exclusion |
+| `test_unit_diagrams_view.py` | UnitPartId · EscapeLabel · FidToUnit · BuildUnitDiagram | `_build_unit_diagram`: Mermaid LR output, subgraph label, mainUnit/internal classes, outgoing/incoming cross-unit edges, multi-iface edges, self-call exclusion, external caller/callee layout, allowed_modules |
 | `test_utils.py` | StripJsonComments · StripTrailingCommas · LoadConfig · SafeFilename · ShortName · GetRangeForType · MakeUnitKey · GetRange | All pure helpers in `utils.py` and `core.config` JSONC parsers |
 | `test_views_registry.py` | ViewRegistry · ResolveScript | `@register` decorator behaviour; `_resolve_script` default/absolute/relative path logic |
 
@@ -118,3 +118,42 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 | REQ-IT-05 | Nested lambda writes → enclosing `In` | Needs a C++ fixture with a lambda writing a global |
 | REQ-IT-07 | Information field when LLM is on | LLM disabled in CI |
 | REQ-IT-11 | `<GROUP>` omitted when no group resolves | Needs a project with no `modulesGroups` config |
+
+---
+
+### Unit Diagrams — `tests/unit/test_unit_diagrams_view.py` + `tests/e2e/test_unit_diagrams.py`
+
+| Requirement | Rule | Test | Status |
+|---|---|---|---|
+| REQ-UD-01 | Only `.cpp`-backed units produce a diagram | `test_non_cpp_unit_returns_none` (unit) | Covered |
+| REQ-UD-01 | `.cpp` unit returns a diagram | `test_cpp_unit_returns_string` (unit) | Covered |
+| REQ-UD-01 | Module-scoped: only allowed units generated | `test_allowed_modules_marks_internal_units` (unit) | Covered |
+| REQ-UD-02 | Pipe replaced by underscore in node ID | `test_pipe_replaced_by_underscore` | Covered |
+| REQ-UD-02 | Space replaced by underscore in node ID | `test_space_replaced_by_underscore` | Covered |
+| REQ-UD-02 | Empty key maps to `"u"` | `test_empty_string_returns_u`, `test_none_returns_u` | Covered |
+| REQ-UD-02 | Combined pipe + space | `test_pipe_and_space_combined` | Covered |
+| REQ-UD-03 | Double-quotes → single-quotes | `test_double_quotes_replaced_by_single` | Covered |
+| REQ-UD-03 | Newline → space | `test_newline_replaced_by_space` | Covered |
+| REQ-UD-03 | Pipe → broken-bar | `test_pipe_replaced_by_broken_bar` | Covered |
+| REQ-UD-03 | Multiple escapes combined | `test_multiple_escapes_combined` | Covered |
+| REQ-UD-04 | Diagram starts with `%%{init:` | `test_output_starts_with_mermaid_init` (unit), `test_flowchart_direction_is_lr` (e2e) | Covered |
+| REQ-UD-04 | `flowchart LR` present | `test_output_contains_flowchart_lr` (unit) | Covered |
+| REQ-UD-04 | `subgraph internal_mod` present | `test_output_contains_subgraph_for_module` (unit), `test_subgraph_present` (e2e) | Covered |
+| REQ-UD-04 | Subgraph label matches module name | `test_subgraph_labelled_with_module_name` (unit), `test_subgraph_label_matches_module` (e2e) | Covered |
+| REQ-UD-05 | Outgoing cross-unit call edge labeled with callee interfaceId | `test_callee_edge_labeled_with_interface_id` (unit), `test_cross_module_edge_with_if_label` (e2e) | Covered |
+| REQ-UD-05 | Incoming call edge labeled with callee interfaceId | `test_incoming_caller_edge_labeled_with_interface_id` (unit) | Covered |
+| REQ-UD-05 | Self-calls produce no edge | `test_self_calls_not_added_as_edges` (unit) | Covered |
+| REQ-UD-05 | Multi-call edges contain all interfaceIds | `test_multiple_ifaces_on_same_edge_both_appear` (unit) | Covered |
+| REQ-UD-06 | External caller node before subgraph | `test_external_caller_node_appears_before_subgraph` (unit) | Covered |
+| REQ-UD-06 | External callee node after subgraph `end` | `test_external_callee_node_appears_after_subgraph` (unit) | Covered |
+| REQ-UD-07 | Current unit gets `mainUnit` class | `test_mainunit_class_applied_to_current_unit` (unit), `test_main_unit_has_main_unit_class` (e2e) | Covered |
+| REQ-UD-07 | Peer units get `internal` class | `test_internal_peer_gets_internal_class` (unit) | Covered |
+| REQ-UD-07 | Peers not marked `mainUnit` | `test_internal_peer_gets_internal_class` (unit), `test_peer_not_styled_as_main_unit` (e2e) | Covered |
+| REQ-UD-08 | `allowed_modules` defines "internal" boundary | `test_allowed_modules_marks_internal_units` (unit) | Covered |
+
+#### Gaps
+
+| Requirement | Gap | Reason |
+|---|---|---|
+| REQ-UD-01 | Header-only unit excluded from e2e output | No header-only unit in SampleCppProject fixture |
+| REQ-UD-06 | Internal peer nodes appear inside subgraph (e2e) | All modules are in the same group, so all are internal — covered implicitly |
