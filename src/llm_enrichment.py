@@ -952,9 +952,12 @@ def enrich_functions_rich(
     fs_dir = fs_dir_cfg if os.path.isabs(fs_dir_cfg) else os.path.join(base_path, fs_dir_cfg)
     few_shot_pool = FewShotPool(fs_dir)
 
-    # Entity cache for description results
+    # Entity cache for description results. Lives under the analyzer root so two
+    # analyzer copies pointed at the same C++ project keep independent caches —
+    # otherwise parallel runs clobber each other via the shared project directory.
     cache_version = int(llm_cfg.get("cacheVersion", 1))
-    cache_dir = os.path.join(base_path, ".flowchart_cache", "llm_descriptions")
+    from core.paths import paths as _paths
+    cache_dir = os.path.join(_paths().cache_dir, "llm_descriptions")
     entity_cache = EntityCache(cache_dir, cache_version=cache_version)
     # Track content hashes for dependency-tracked cache keys
     source_hashes: Dict[str, str] = {}

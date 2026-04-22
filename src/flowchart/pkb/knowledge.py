@@ -32,6 +32,9 @@ class FunctionKnowledge:
     signature: str
     file: str
     line: int
+    # Last source line of the function body (inclusive). 0 means unknown.
+    # Needed by _read_body so phase/summary prompts don't spill into the next function.
+    end_line: int = 0
     description: str = ""
     return_type: str = ""
     # Structured parameter list: [{"name": "x", "type": "int"}, ...]
@@ -240,6 +243,7 @@ def save_knowledge(knowledge: ProjectKnowledge, path: str) -> None:
                 "signature": v.signature,
                 "file": v.file,
                 "line": v.line,
+                "endLine": v.end_line,
                 "description": v.description,
                 "returnType": v.return_type,
                 "parameters": v.parameters,
@@ -340,6 +344,7 @@ def load_knowledge(path: str) -> Optional[ProjectKnowledge]:
             signature=v.get("signature", ""),
             file=v.get("file", ""),
             line=v.get("line", 0),
+            end_line=v.get("endLine", 0),
             description=v.get("description", v.get("comment", "")),
             return_type=v.get("returnType", ""),
             parameters=v.get("parameters", []),

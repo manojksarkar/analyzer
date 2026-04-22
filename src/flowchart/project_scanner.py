@@ -533,11 +533,28 @@ class FileKnowledgeExtractor:
         if cursor.is_definition():
             calls = _collect_calls(cursor)
 
+        # End line of the function body. Only trust extent.end when it stays in
+        # the same file as cursor.location (libclang occasionally reports an end
+        # location in a different TU on malformed code).
+        end_line = 0
+        try:
+            if (
+                cursor.extent
+                and cursor.extent.end
+                and cursor.extent.end.file
+                and cursor.location.file
+                and cursor.extent.end.file.name == cursor.location.file.name
+            ):
+                end_line = int(cursor.extent.end.line)
+        except Exception:
+            end_line = 0
+
         fk = FunctionKnowledge(
             qualified_name=qname,
             signature=sig,
             file=rel_path,
             line=cursor.location.line,
+            end_line=end_line,
             description=comment,
             calls=calls,
         )
@@ -552,8 +569,13 @@ class FileKnowledgeExtractor:
         elif cursor.is_definition() and not existing.calls and calls:
             # Upgrade to add call-graph info from the definition
             existing.calls = calls
+            if not existing.end_line and end_line:
+                existing.end_line = end_line
         elif cursor.is_definition() and not existing.description:
             knowledge.functions[qname] = fk
+        elif cursor.is_definition() and not existing.end_line and end_line:
+            # Declaration was seen first (end_line=0); fill it in from the definition.
+            existing.end_line = end_line
 
     # ------------------------------------------------------------------
     # Enum extraction
@@ -1103,7 +1125,12 @@ class HierarchySummarizer:
     # ------------------------------------------------------------------
 
     def _read_body(self, fk: FunctionKnowledge, max_lines: int = 12) -> List[str]:
-        """Read the first max_lines of a function body from source."""
+        """Read up to max_lines of a function body from source.
+
+        Clipped at fk.end_line when known so short functions don't spill into
+        the next one. max_lines still caps long functions for prompt-budget
+        reasons; end_line only prevents overruns, not truncation.
+        """
         try:
             file_path = Path(self._project_dir) / fk.file
             if not file_path.exists():
@@ -1111,7 +1138,11 @@ class HierarchySummarizer:
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 all_lines = f.readlines()
             start_idx = max(0, fk.line - 1)
-            end_idx = min(len(all_lines), start_idx + max_lines + 3)
+            if fk.end_line and fk.end_line >= fk.line:
+                func_end_idx = min(len(all_lines), fk.end_line)
+            else:
+                func_end_idx = len(all_lines)
+            end_idx = min(func_end_idx, start_idx + max_lines + 3)
             return [l.rstrip() for l in all_lines[start_idx:end_idx]]
         except Exception:
             return []

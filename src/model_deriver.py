@@ -475,11 +475,13 @@ def _run_hierarchy_summarizer(
         qn = f.get("qualifiedName", "")
         if not qn:
             continue
+        _loc = f.get("location") or {}
         fk = FunctionKnowledge(
             qualified_name=qn,
             signature=_build_signature(f),
-            file=(f.get("location") or {}).get("file", ""),
-            line=(f.get("location") or {}).get("line", 0),
+            file=_loc.get("file", ""),
+            line=_loc.get("line", 0),
+            end_line=_loc.get("endLine", 0),
             description=f.get("description", ""),
             calls=[
                 functions_data[c].get("qualifiedName", c)
