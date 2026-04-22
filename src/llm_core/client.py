@@ -1,11 +1,12 @@
 """Unified LLM HTTP client.
 
-Supports two providers:
-  - "ollama"  : POST {baseUrl}/api/generate  (local Ollama)
-  - "openai"  : POST {baseUrl}/chat/completions  (OpenAI-compatible gateway)
+Supports three providers:
+  - "ollama"    : POST {baseUrl}/api/generate  (local Ollama)
+  - "openai"    : POST {baseUrl}/chat/completions  (OpenAI-compatible gateway)
+  - "anthropic" : POST {baseUrl}/messages  (Anthropic Messages API)
 
 Selected via config['llm']['provider'] or the explicit `provider=` ctor arg.
-Both providers go through the same `generate(system, user)` interface and the
+All providers go through the same `generate(system, user)` interface and the
 same response post-processing (strip_think_section + token tracking).
 
 Hard rules baked in:
@@ -14,7 +15,7 @@ Hard rules baked in:
     corporate gateway throttles ~1 request per 3 seconds.
   - Configurable retry. Default = 1 retry on (HTTP error | empty response).
   - All responses pass through strip_think_section() before being returned.
-  - Token usage from both providers is recorded into llm.tokens.
+  - Token usage from all providers is recorded into llm.tokens.
 
 Backwards compat
 ----------------
@@ -147,7 +148,7 @@ class LlmClient:
         if provider is None:
             provider = "openai" if use_openai_format else "ollama"
         provider = provider.lower()
-        if provider not in ("ollama", "openai"):
+        if provider not in ("ollama", "openai", "anthropic"):
             raise ValueError(f"Unknown LLM provider: {provider!r}")
         self._provider = provider
         self._model = model or ""
@@ -168,6 +169,8 @@ class LlmClient:
             base = base_url.rstrip("/")
             if provider == "openai":
                 self._endpoint = f"{base}/chat/completions"
+            elif provider == "anthropic":
+                self._endpoint = f"{base}/messages"
             else:
                 self._endpoint = f"{base}/api/generate"
         else:
@@ -208,6 +211,8 @@ class LlmClient:
             try:
                 if self._provider == "openai":
                     raw = self._call_openai(system_prompt, user_prompt)
+                elif self._provider == "anthropic":
+                    raw = self._call_anthropic(system_prompt, user_prompt)
                 else:
                     raw = self._call_ollama(system_prompt, user_prompt)
                 if raw:
@@ -296,6 +301,8 @@ class LlmClient:
             try:
                 if self._provider == "openai":
                     raw = self._call_openai_messages(messages, temp)
+                elif self._provider == "anthropic":
+                    raw = self._call_anthropic_messages(messages, temp)
                 else:
                     raw = self._call_ollama_messages(messages, temp)
                 if raw:
@@ -498,6 +505,91 @@ class LlmClient:
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
         token_counter.record("openai", self._model, prompt_tokens, completion_tokens)
+        return text or None
+
+    # ------------------------------------------------------------------
+    # Anthropic Messages API
+    # ------------------------------------------------------------------
+
+    def _anthropic_headers(self) -> Dict[str, str]:
+        headers: Dict[str, str] = {
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+        }
+        if self._api_key:
+            headers["x-api-key"] = self._api_key
+        return headers
+
+    def _call_anthropic(self, system: str, user: str) -> Optional[str]:
+        payload: Dict = {
+            "model": self._model,
+            "max_tokens": 2048,
+            "temperature": self._temperature,
+            "messages": [{"role": "user", "content": user}],
+        }
+        if system:
+            payload["system"] = system
+        resp = requests.post(
+            self._endpoint,
+            headers=self._anthropic_headers(),
+            json=payload,
+            timeout=self._timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = ""
+        for block in data.get("content") or []:
+            if block.get("type") == "text":
+                text += block.get("text") or ""
+        text = text.strip()
+        usage = data.get("usage") or {}
+        token_counter.record(
+            "anthropic", self._model,
+            int(usage.get("input_tokens") or 0),
+            int(usage.get("output_tokens") or 0),
+        )
+        return text or None
+
+    def _call_anthropic_messages(self, messages: list, temperature: float) -> Optional[str]:
+        """POST to Anthropic /messages with a pre-formed messages list.
+
+        Splits out a leading system message if present, as Anthropic requires
+        system content in a top-level field rather than in the messages array.
+        """
+        system = ""
+        chat_messages = []
+        for m in messages:
+            if m.get("role") == "system" and not chat_messages:
+                system = m.get("content") or ""
+            else:
+                chat_messages.append(m)
+        payload: Dict = {
+            "model": self._model,
+            "max_tokens": 2048,
+            "temperature": temperature,
+            "messages": chat_messages,
+        }
+        if system:
+            payload["system"] = system
+        resp = requests.post(
+            self._endpoint,
+            headers=self._anthropic_headers(),
+            json=payload,
+            timeout=self._timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = ""
+        for block in data.get("content") or []:
+            if block.get("type") == "text":
+                text += block.get("text") or ""
+        text = text.strip()
+        usage = data.get("usage") or {}
+        token_counter.record(
+            "anthropic", self._model,
+            int(usage.get("input_tokens") or 0),
+            int(usage.get("output_tokens") or 0),
+        )
         return text or None
 
 

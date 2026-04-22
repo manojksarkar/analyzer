@@ -149,7 +149,7 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
     Required fields (no silent defaults — raises LlmConfigError if missing
     or invalid):
-        provider          - "ollama" | "openai"
+        provider          - "ollama" | "openai" | "anthropic"
         baseUrl           - non-empty endpoint base URL
         defaultModel      - non-empty model name
         timeoutSeconds    - positive int
@@ -221,9 +221,9 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── Required fields ──
     provider = _require_str("provider", "LLM_PROVIDER").lower()
-    if provider not in ("ollama", "openai"):
+    if provider not in ("ollama", "openai", "anthropic"):
         raise LlmConfigError(
-            f"llm.provider must be 'ollama' or 'openai' (got {provider!r})"
+            f"llm.provider must be 'ollama', 'openai', or 'anthropic' (got {provider!r})"
         )
 
     base_url = _require_str("baseUrl", "LLM_BASE_URL").rstrip("/")
@@ -384,7 +384,7 @@ def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
         f"  baseUrl           : {llm_cfg.get('baseUrl')}",
         f"  defaultModel      : {llm_cfg.get('defaultModel')}",
         f"  numCtx            : {llm_cfg.get('numCtx')}  "
-        f"({'used' if llm_cfg.get('provider') == 'ollama' else 'ignored on openai'})",
+        f"({'used' if llm_cfg.get('provider') == 'ollama' else 'ignored on ' + llm_cfg.get('provider', 'openai')})",
         f"  maxContextTokens  : {max_ctx_display}",
         f"  timeoutSeconds    : {llm_cfg.get('timeoutSeconds')}",
         f"  retries           : {llm_cfg.get('retries')}",
