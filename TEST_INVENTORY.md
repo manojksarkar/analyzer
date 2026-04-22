@@ -1,6 +1,6 @@
 # Test Inventory
 
-**612 tests total** — 418 unit (411 passing · 7 xfail) · 114 e2e artifacts · 48 e2e DOCX · 32 e2e behaviour names
+**411 tests total** — 258 unit (7 xfail) · 145 e2e passing · 8 e2e failing (flowcharts — fake generator) · 18 e2e errors (flowchart fixture setup)
 
 > Two layers: **unit** (instant, no pipeline) and **e2e** (pipeline runs once, checks all artifacts + DOCX).
 
@@ -44,7 +44,7 @@ Pipeline runs **once** before the suite against `SampleCppProject`. Tests read `
 | File | What it checks |
 |---|---|
 | `test_model_json.py` | `functions.json`, `globalVariables.json`, `units.json`, `modules.json` — field presence, key format, interfaceId uniqueness, call-graph topology |
-| `test_interface_tables.py` | `output/interface_tables.json` — unit presence, entry types, direction values, public/private filtering, parameter ranges, golden snapshot |
+| `test_interface_tables.py` | `output/interface_tables.json` — see rule coverage below |
 | `test_unit_diagrams.py` | `output/unit_diagrams/*.mmd` — Mermaid LR direction, subgraph labels, cross-module edge labels, Util/Core call-direction invariants, golden snapshot |
 | `test_behaviour_diagram.py` | `output/behaviour_diagrams/` — .mmd existence, `_behaviour_pngs.json` structure, external vs internal caller filtering, Mermaid validity |
 | `test_flowcharts.py` | `output/flowcharts/*.json` — one file per unit, `[{name, flowchart}]` shape, Mermaid validity, all expected public functions present |
@@ -66,3 +66,55 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 | `TestBuildFlowchartForFunction::test_strips_code_fences` | `fake_flowchart_generator` LLM seam |
 | `TestBuildFlowchartForFunction::test_fallback_on_empty_llm_response` | `fake_flowchart_generator` LLM seam |
 | `TestBuildFlowchartForFunction::test_prompt_contains_source_code` | `fake_flowchart_generator` LLM seam |
+
+---
+
+## Rule coverage (from DESIGN_SPEC.md)
+
+### Interface Tables — `tests/e2e/test_interface_tables.py`
+
+| Requirement | Rule | Test | Status |
+|---|---|---|---|
+| REQ-IT-01 | Only `.cpp`-backed units included | `test_expected_units_present` | Covered |
+| REQ-IT-01 | Header-only units excluded | — | Not tested |
+| REQ-IT-01 | Module-scoped run filters units | — | Not tested |
+| REQ-IT-02 | PUBLIC functions included | `test_public_functions_present` | Covered |
+| REQ-IT-02 | PROTECTED functions included | `test_protected_functions_included` | Covered |
+| REQ-IT-02 | PUBLIC globals included | `test_public_global_present` | Covered |
+| REQ-IT-02 | PRIVATE functions excluded | `test_private_functions_excluded` | Covered |
+| REQ-IT-02 | PRIVATE globals excluded | `test_private_globals_excluded` | Covered |
+| REQ-IT-03 | Entries sorted by source line order | `test_function_entries_sorted_by_line` | Covered (functions only) |
+| REQ-IT-04 | All column fields present on every entry | `test_required_fields_present` | Covered |
+| REQ-IT-04 | Entry type is `Function` or `Global Variable` | `test_entry_types_valid` | Covered |
+| REQ-IT-05 | Writes any global → `In` | `test_function_direction[coreSetResult-In]` | Covered |
+| REQ-IT-05 | Reads globals, writes none → `Out` | `test_function_direction[coreGetCount-Out]`, `test_function_direction[utilCompute-Out]` | Covered |
+| REQ-IT-05 | No global access → `Out` | `test_function_direction[coreAdd-Out]`, `test_function_direction[libAdd-Out]` | Covered |
+| REQ-IT-05 | Nested lambda writes → enclosing gets `In` | — | Not tested |
+| REQ-IT-05 | Direction value is `In` or `Out` only | `test_function_direction_values_valid` | Covered |
+| REQ-IT-05 | Global variables always `In/Out` | `test_global_variable_direction_is_inout` | Covered |
+| REQ-IT-06 | Interface Name is short unqualified name | `test_public_functions_present`, `test_public_global_present` | Covered (presence) |
+| REQ-IT-07 | Information is `-` when LLM off | — | Not tested (LLM off in CI) |
+| REQ-IT-08 | Data Type — param types or `VOID` for functions | `test_interface_tables_view.py::BuildInterfaceTables` (unit) | Covered (unit) |
+| REQ-IT-08 | Data Type — variable type for globals | `test_interface_tables_view.py::BuildInterfaceTables` (unit) | Covered (unit) |
+| REQ-IT-09 | Data Range — from data dictionary, `NA` if none | `test_interface_tables_view.py::BuildInterfaceTables` (unit) | Covered (unit) |
+| REQ-IT-10 | Interface Type is `Function` or `Global Variable` | `test_entry_types_valid` | Covered |
+| REQ-IT-11 | Interface ID starts with `IF_` | `test_interface_ids_start_with_IF` | Covered |
+| REQ-IT-11 | Interface ID matches `IF_<UPPER>..._<NN>` format | `test_interface_id_segments_uppercase` | Covered |
+| REQ-IT-11 | `<GROUP>` omitted when no group resolves | — | Not tested |
+| REQ-IT-12 | `callerUnits` and `calleesUnits` present | `test_required_fields_present` | Covered |
+| REQ-IT-12 | `callerUnits` populated for called functions | `test_caller_units_populated` | Covered |
+| REQ-IT-12 | `calleesUnits` populated for calling functions | `test_callee_units_populated` | Covered |
+| REQ-IT-12 | Both lists include same-module units | `test_callee_units_populated` | Covered |
+| REQ-IT-12 | `sourceDest` shows external units only | `test_sourcedest_dash_when_no_external_connections` | Covered (negative) |
+| REQ-IT-12 | `sourceDest` is `"-"` when no external connections | `test_sourcedest_dash_when_no_external_connections` | Covered |
+| REQ-IT-12 | Global entries have empty caller/callee lists | `test_global_entries_have_empty_caller_callee` | Covered |
+
+#### Gaps
+
+| Requirement | Gap | Reason |
+|---|---|---|
+| REQ-IT-01 | Header-only units excluded | Needs a header-only unit in SampleCppProject |
+| REQ-IT-01 | Module-scoped filtering | Needs a separate run fixture scoped to one module |
+| REQ-IT-05 | Nested lambda writes → enclosing `In` | Needs a C++ fixture with a lambda writing a global |
+| REQ-IT-07 | Information field when LLM is on | LLM disabled in CI |
+| REQ-IT-11 | `<GROUP>` omitted when no group resolves | Needs a project with no `modulesGroups` config |

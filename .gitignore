@@ -24,6 +24,9 @@ Thumbs.db
 model*
 output*
 
+.coverage
+logs
+
 # Local config overrides (optional)
 config/config.local.json
 

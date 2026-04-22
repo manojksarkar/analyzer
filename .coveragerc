@@ -1,6 +1,5 @@
 [run]
 branch = true
-parallel = true
 source =
     src
     fake_flowchart_generator

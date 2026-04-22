@@ -715,14 +715,17 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
     if kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD):
         if cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
             func_key = get_function_key(cursor)
-            # Skip if already visited (from header included in another translation unit)
-            if func_key in _visited_call_keys:
-                for child in cursor.get_children():
-                    visit_calls(child, current_key)
+            outer_key = current_key
+            if func_key in _visited_global_access_keys:
                 return
-            # Mark as visited
-            _visited_call_keys.add(func_key)
-            current_key = func_key
+            _visited_global_access_keys.add(func_key)
+            for child in cursor.get_children():
+                visit_global_access(child, func_key, False, False)
+            # Propagate inner writes to outer function so outer becomes "In"
+            if outer_key:
+                for v in global_access_writes.get(func_key, set()):
+                    global_access_writes[outer_key].add(v)
+            return
         is_write = False
         is_compound = False
     elif kind == cindex.CursorKind.BINARY_OPERATOR:
@@ -925,10 +928,10 @@ def build_metadata():
         # Direction: Get=Out, Set=In, both=In. No direct global access -> In.
         if write_raw and not read_raw:
             functions_dict[fid]["direction"] = "In"
-        elif read_raw and not write_raw:
-            functions_dict[fid]["direction"] = "Out"
-        else:
+        elif write_raw and read_raw:
             functions_dict[fid]["direction"] = "In"
+        else:
+            functions_dict[fid]["direction"] = "Out"
 
     return {
         "version": 1,
