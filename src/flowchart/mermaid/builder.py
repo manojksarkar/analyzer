@@ -47,7 +47,44 @@ def build_mermaid(cfg: ControlFlowGraph) -> str:
     Render a ControlFlowGraph as a Mermaid flowchart TD script.
     Returns the complete Mermaid string.
     """
-    lines: List[str] = ["flowchart TD"]
+
+    MERMAID_CONFIG = """---
+config:
+  flowchart:
+    defaultRenderer: elk
+---
+%%{
+  init: {
+    "flowchart": {
+      "padding": 0,
+      "nodeSpacing": 10,
+      "rankSpacing": 20,
+      "wrappingWidth": 500,
+      "curve": "linear"
+    },
+    "sequence": {
+      "padding": 0,
+      "nodeMargin": 10,
+      "noteMargin": 10,
+      "messageMargin": 40,
+      "actorMargin": 50,
+      "mirrorActors": false
+    },
+    "theme": "base",
+    "themeVariables": {
+      "primaryColor": "#fff",
+      "nodeBorder": "#000",
+      "strokeWidth": "1px",
+      "fontSize": "12px",
+      "padding": 0
+    }
+  }
+}%%"""
+
+    MERMAID_CONFIG_LINES = [line for line in
+    MERMAID_CONFIG.strip().split('\n') if line]
+
+    lines: List[str] = MERMAID_CONFIG_LINES + ["flowchart TD"]
 
     # Node definitions
     for node in _topo_order(cfg):

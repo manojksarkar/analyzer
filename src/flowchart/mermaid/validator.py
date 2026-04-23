@@ -87,21 +87,40 @@ def validate_cfg(cfg: ControlFlowGraph) -> ValidationResult:
 
 
 def validate_mermaid(script: str) -> ValidationResult:
-    """Validate a rendered Mermaid script for basic syntax."""
+    """Validate a rendered Mermaid script for basic syntax.
+
+    Tolerates an optional YAML frontmatter block (``---\\n...\\n---``) and any
+    number of ``%%{...}%%`` init directives before the ``flowchart`` keyword,
+    both of which are legitimate Mermaid prefixes.
+    """
     result = ValidationResult()
 
-    if not script.strip():
+    text = script.strip()
+    if not text:
         result.errors.append("Mermaid script is empty")
         return result
 
-    if not script.strip().startswith("flowchart"):
+    # Strip an optional YAML frontmatter block.
+    if text.startswith("---"):
+        closing = text.find("\n---", 3)
+        if closing != -1:
+            text = text[closing + 4:].lstrip()
+
+    # Strip any number of leading %%{...}%% init directives.
+    while text.startswith("%%{"):
+        end = text.find("}%%")
+        if end == -1:
+            break
+        text = text[end + 3:].lstrip()
+
+    if not text.startswith("flowchart"):
         result.errors.append("Mermaid script does not start with 'flowchart'")
 
-    # Check for unmatched quotes (crude but catches common escaping errors)
+    # Check for unmatched quotes. Encoded quotes (#quot;) must not count as
+    # real double quotes — the previous `* 0` multiplier made the subtraction
+    # a no-op, so even well-escaped labels tripped the odd-count heuristic.
     for i, line in enumerate(script.splitlines(), 1):
-        # Count unescaped double quotes outside of node defs
-        # Simple heuristic: odd count of " on a line is suspicious
-        dq_count = line.count('"') - line.count('#quot;') * 0
+        dq_count = line.count('"') - line.count('#quot;')
         if dq_count % 2 != 0:
             result.warnings.append(f"Possible unmatched quote on line {i}: {line.strip()[:60]}")
 
