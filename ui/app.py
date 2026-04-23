@@ -301,6 +301,23 @@ def _save_last_run():
 def _load_last_run() -> dict:
     return _load_json(LAST_RUN)
 
+def _save_function_description(fid: str, description: str):
+    funcs_path = ROOT / "model" / "functions.json"
+    funcs = _load_json(funcs_path)
+    if fid in funcs:
+        funcs[fid]["description"] = description
+        funcs_path.write_text(json.dumps(funcs, indent=2), encoding="utf-8")
+
+    iface_path = ROOT / "output" / "interface_tables.json"
+    iface = _load_json(iface_path)
+    for key, unit in iface.items():
+        if key == "unitNames" or not isinstance(unit, dict):
+            continue
+        for entry in unit.get("entries", []):
+            if entry.get("functionId") == fid:
+                entry["description"] = description
+    iface_path.write_text(json.dumps(iface, indent=2), encoding="utf-8")
+
 # ── pipeline helpers ──────────────────────────────────────────────────────────
 
 
@@ -346,19 +363,17 @@ def _stop_pipeline():
     state["lines"].append("— stopped by user —")
 
 @st.dialog("Function", width="extra-large")
-def _function_dialog(fid: str, units_all, func_iface):
+def _function_dialog(fid: str, units_all, funcs_all):
 
-    entry = func_iface.get(fid)
+    entry = funcs_all.get(fid)
 
     if not entry:
-        st.info("No data")
+        st.info("No data for this function.")
         return
 
-    fname = entry.get("name", fid)
+    fname = entry.get("qualifiedName", fid.split("|")[2] if "|" in fid else fid)
 
-    # ─────────────────────────────────────────────
-    # HEADER
-    # ─────────────────────────────────────────────
+    # ── header ──
     st.markdown(f"### `{fname}()`")
 
     meta = []
@@ -366,61 +381,63 @@ def _function_dialog(fid: str, units_all, func_iface):
         meta.append(f"`{entry['interfaceId']}`")
     if entry.get("direction"):
         meta.append(entry["direction"])
-    if entry.get("type"):
-        meta.append(entry["type"])
-
+    if entry.get("visibility"):
+        meta.append(entry["visibility"])
     if meta:
         st.caption(" · ".join(meta))
 
     loc = entry.get("location", {})
     if loc:
-        st.caption(f"{loc.get('file','?')}:{loc.get('line','?')}")
+        st.caption(f"{loc.get('file','?')}:{loc.get('line','?')}–{loc.get('endLine','?')}")
 
     st.divider()
 
-    # ─────────────────────────────────────────────
-    # MAIN SPLIT
-    # ─────────────────────────────────────────────
-    left, right = st.columns([2, 3])  # 👈 flowchart gets more space
+    left, right = st.columns([2, 3])
 
-    # =================================================
-    # LEFT SIDE — DETAILS (compact)
-    # =================================================
     with left:
-
-        # Signature
+        # signature
         params = entry.get("parameters", [])
+        ret = entry.get("returnType", "")
         if params:
             sig_parts = []
             for p in params:
-                pname = p.get("name", "") if isinstance(p, dict) else str(p)
-                ptype = p.get("type", "") if isinstance(p, dict) else ""
-                sig_parts.append(f"{ptype} {pname}".strip())
-
-            st.code(f"{fname}({', '.join(sig_parts)})")
+                if isinstance(p, dict):
+                    sig_parts.append(f"{p.get('type','')} {p.get('name','')}".strip())
+                else:
+                    sig_parts.append(str(p))
+            st.code(f"{ret} {fname}({', '.join(sig_parts)})")
         else:
-            st.code(f"{fname}()")
+            st.code(f"{ret} {fname}()")
 
-        # Call graph
-        callers = entry.get("callerUnits", [])
-        callees = entry.get("calleesUnits", [])
+        st.caption("Description")
+        desc = st.text_area("Description", value=entry.get("description", ""),
+                            placeholder="Describe what this function does…",
+                            label_visibility="collapsed", height=120,
+                            key=f"desc_{fid}")
+        if st.button("Save description", key=f"save_desc_{fid}", type="primary"):
+            _save_function_description(fid, desc)
+            st.success("Saved — will apply on next Phase 4 export.")
 
-        if callers:
+        # callers
+        caller_ids = entry.get("calledByIds", [])
+        if caller_ids:
             st.caption("Called by")
-            st.code(", ".join(callers))
+            caller_names = [cid.split("|")[2] for cid in caller_ids if "|" in cid]
+            st.code(", ".join(caller_names) or ", ".join(caller_ids))
 
-        if callees:
+        # callees
+        callee_ids = entry.get("callsIds", [])
+        if callee_ids:
             st.caption("Calls")
-            st.code(", ".join(callees))
+            callee_names = [cid.split("|")[2] for cid in callee_ids if "|" in cid]
+            st.code(", ".join(callee_names) or ", ".join(callee_ids))
 
-        # Extra
-        if entry.get("sourceDest"):
-            st.caption("Source / Dest")
-            st.code(entry["sourceDest"])
-
-        if entry.get("reason"):
-            st.caption("Reason")
-            st.write(entry["reason"])
+        if entry.get("behaviourInputName"):
+            st.caption("Behaviour input")
+            st.write(entry["behaviourInputName"])
+        if entry.get("behaviourOutputName"):
+            st.caption("Behaviour output")
+            st.write(entry["behaviourOutputName"])
 
     # =================================================
     # RIGHT SIDE — FLOWCHART (hero)
@@ -1101,16 +1118,7 @@ with tab_mg:
         # ── load model data ───────────────────────────────
         _units_all   = _load_json(ROOT / "model" / "units.json")
         _modules_all = _load_json(ROOT / "model" / "modules.json")
-        _iface_all   = _load_json(ROOT / "output" / "interface_tables.json")
-
-        # map function → interface
-        _func_iface = {}
-        for _ik, _iv in _iface_all.items():
-            if _ik == "unitNames" or not isinstance(_iv, dict):
-                continue
-            for _e in _iv.get("entries", []):
-                if _fid := _e.get("functionId", ""):
-                    _func_iface[_fid] = _e
+        _funcs_all   = _load_json(ROOT / "model" / "functions.json")
 
         # Header
         hc1, hc2 = st.columns([6, 1])
@@ -1151,7 +1159,16 @@ with tab_mg:
                                     fname = parts[2] if len(parts) > 2 else fid
 
                                     if st.button(f"⚡ {fname}()", key=f"fn_{fid}", use_container_width=True):
-                                        _function_dialog(fid, _units_all, _func_iface)
+                                        _function_dialog(fid, _units_all, _funcs_all)
+
+with tab_output:
+    cmd_str = _rs.get("cmd", "")
+    if cmd_str:
+        st.code(cmd_str, language="bash")
+    if log_lines:
+        st.code("\n".join(reversed(log_lines[-120:])), language="bash")
+    else:
+        st.caption("No output yet — run the pipeline to see output here.")
 
 
 # ── floating settings button ─────────────────────────────────────────────────
