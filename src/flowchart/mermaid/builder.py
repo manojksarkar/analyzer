@@ -48,6 +48,17 @@ def build_mermaid(cfg: ControlFlowGraph) -> str:
     Returns the complete Mermaid string.
     """
 
+    # Layout tuning for edge-crossing reduction:
+    # - nodeSpacing/rankSpacing bumped from 10/20 to 50/60. ELK cannot route
+    #   orthogonal edges through a cramped grid without overlap; giving layers
+    #   breathing room is the single highest-leverage knob.
+    # - `elk` block forwards layered-algorithm hints to Mermaid's ELK shim:
+    #   mergeEdges=false keeps parallel edges visually distinct (merged edges
+    #   look like a single arrow with multiple heads and confuse readers);
+    #   nodePlacementStrategy=BRANDES_KOEPF is robust for graphs with back-edges
+    #   (CFGs with loops) where NETWORK_SIMPLEX can force long detours.
+    # These options reduce — but do not eliminate — crossings; non-planar
+    # graphs have crossings that are mathematically unavoidable.
     MERMAID_CONFIG = """---
 config:
   flowchart:
@@ -57,10 +68,15 @@ config:
   init: {
     "flowchart": {
       "padding": 0,
-      "nodeSpacing": 10,
-      "rankSpacing": 20,
+      "nodeSpacing": 50,
+      "rankSpacing": 60,
       "wrappingWidth": 500,
       "curve": "linear"
+    },
+    "elk": {
+      "mergeEdges": false,
+      "nodePlacementStrategy": "BRANDES_KOEPF",
+      "cycleBreakingStrategy": "GREEDY"
     },
     "sequence": {
       "padding": 0,
