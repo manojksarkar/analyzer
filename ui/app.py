@@ -4,6 +4,7 @@ Run with: streamlit run ui/app.py
 """
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 import sys
@@ -344,59 +345,186 @@ def _stop_pipeline():
     state.update(running=False, returncode=-1)
     state["lines"].append("— stopped by user —")
 
+@st.dialog("Function", width="extra-large")
+def _function_dialog(fid: str, units_all, func_iface):
+
+    entry = func_iface.get(fid)
+
+    if not entry:
+        st.info("No data")
+        return
+
+    fname = entry.get("name", fid)
+
+    # ─────────────────────────────────────────────
+    # HEADER
+    # ─────────────────────────────────────────────
+    st.markdown(f"### `{fname}()`")
+
+    meta = []
+    if entry.get("interfaceId"):
+        meta.append(f"`{entry['interfaceId']}`")
+    if entry.get("direction"):
+        meta.append(entry["direction"])
+    if entry.get("type"):
+        meta.append(entry["type"])
+
+    if meta:
+        st.caption(" · ".join(meta))
+
+    loc = entry.get("location", {})
+    if loc:
+        st.caption(f"{loc.get('file','?')}:{loc.get('line','?')}")
+
+    st.divider()
+
+    # ─────────────────────────────────────────────
+    # MAIN SPLIT
+    # ─────────────────────────────────────────────
+    left, right = st.columns([2, 3])  # 👈 flowchart gets more space
+
+    # =================================================
+    # LEFT SIDE — DETAILS (compact)
+    # =================================================
+    with left:
+
+        # Signature
+        params = entry.get("parameters", [])
+        if params:
+            sig_parts = []
+            for p in params:
+                pname = p.get("name", "") if isinstance(p, dict) else str(p)
+                ptype = p.get("type", "") if isinstance(p, dict) else ""
+                sig_parts.append(f"{ptype} {pname}".strip())
+
+            st.code(f"{fname}({', '.join(sig_parts)})")
+        else:
+            st.code(f"{fname}()")
+
+        # Call graph
+        callers = entry.get("callerUnits", [])
+        callees = entry.get("calleesUnits", [])
+
+        if callers:
+            st.caption("Called by")
+            st.code(", ".join(callers))
+
+        if callees:
+            st.caption("Calls")
+            st.code(", ".join(callees))
+
+        # Extra
+        if entry.get("sourceDest"):
+            st.caption("Source / Dest")
+            st.code(entry["sourceDest"])
+
+        if entry.get("reason"):
+            st.caption("Reason")
+            st.write(entry["reason"])
+
+    # =================================================
+    # RIGHT SIDE — FLOWCHART (hero)
+    # =================================================
+    with right:
+
+        parts = fid.split("|")
+        fname2 = parts[2] if len(parts) > 2 else ""
+
+        unit_name = ""
+        for u in units_all.values():
+            if fid in u.get("functionIds", []):
+                unit_name = u.get("name", "")
+                break
+
+        png_path = ROOT / "output" / "flowcharts" / f"{unit_name}_{fname2}.png"
+
+        if png_path.exists():
+            img_b64 = base64.b64encode(png_path.read_bytes()).decode()
+            st.markdown(
+                f'<div style="display:flex;align-items:center;justify-content:center;height:72vh;">'
+                f'<img src="data:image/png;base64,{img_b64}" style="max-height:70vh;max-width:100%;object-fit:contain;">'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            fc_json = ROOT / "output" / "flowcharts" / f"{unit_name}.json"
+            if fc_json.exists():
+                fc_data = _load_json(fc_json)
+                fc_entry = next(
+                    (e for e in (fc_data if isinstance(fc_data, list) else [])
+                     if e.get("name") == fname2),
+                    None,
+                )
+                if fc_entry:
+                    st.code(fc_entry["flowchart"], language="text")
+                else:
+                    st.caption("No flowchart")
+            else:
+                st.caption("No flowchart")
 
 @st.dialog("Module Groups", width="large")
 def _groups_dialog():
-    st.caption("One DOCX per group · paths relative to project root.")
     groups = st.session_state.get("groups", [])
 
-    add_col, _ = st.columns([1, 4])
-    with add_col:
-        st.button("＋ Add Group", on_click=_add_group, use_container_width=True)
+    h1, h2 = st.columns([5, 1], vertical_alignment="bottom")
+    with h1:
+        st.caption("One DOCX per group · paths relative to project root.")
+    with h2:
+        st.button("＋ Group", on_click=_add_group, use_container_width=True)
 
     if not groups:
-        st.info("No groups yet — click **＋ Add Group** to get started.", icon="ℹ️")
+        st.info("No groups yet — click **＋ Group** to get started.", icon="ℹ️")
 
     for group in groups:
         gid = group["gid"]
-        with st.container(border=True):
-            gc1, gc2 = st.columns([5, 1])
-            with gc1:
-                st.text_input("Group", key=f"g{gid}_name", value=group["name"],
-                              placeholder="e.g. core", label_visibility="collapsed")
-            with gc2:
-                st.button("Remove", key=f"del_g{gid}", on_click=_remove_group,
-                          args=(gid,), use_container_width=True)
-            for mod in group["modules"]:
-                mid = mod["mid"]
-                with st.container(border=True):
-                    mm1, mm2 = st.columns([4, 1])
-                    with mm1:
-                        st.text_input("Module", key=f"m{mid}_name", value=mod["mod"],
-                                      placeholder="e.g. Core", label_visibility="collapsed")
-                    with mm2:
-                        st.button("Remove", key=f"del_m{mid}", on_click=_remove_module,
-                                  args=(gid, mid), use_container_width=True)
-                    for path_entry in mod["paths"]:
-                        pid = path_entry["pid"]
-                        pc1, pc2, pc3 = st.columns([4, 0.85, 0.45])
-                        with pc1:
-                            st.text_input("Path", key=f"p{pid}_path", value=path_entry["path"],
-                                          placeholder="relative/path", label_visibility="collapsed")
-                        with pc2:
-                            st.button("Browse", key=f"_browse_p{pid}_path",
-                                      on_click=_pick_folder, args=(f"p{pid}_path",), use_container_width=True)
-                        with pc3:
-                            st.button("✕", key=f"del_p{pid}", on_click=_remove_path,
-                                      args=(mid, pid), use_container_width=True,
-                                      disabled=len(mod["paths"]) <= 1)
-                    st.button("＋ Add path", key=f"add_p_{mid}", on_click=_add_path, args=(mid,))
-            st.button("＋ Add module", key=f"add_m_{gid}", on_click=_add_module, args=(gid,))
+        st.markdown("---")
 
+        # group name row
+        ga, gb = st.columns([5, 1], vertical_alignment="bottom")
+        with ga:
+            st.text_input("Group", key=f"g{gid}_name", value=group["name"],
+                          placeholder="group-name")
+        with gb:
+            st.button("🗑 Delete", key=f"del_g{gid}", on_click=_remove_group,
+                      args=(gid,), use_container_width=True)
+
+        for mod in group["modules"]:
+            mid = mod["mid"]
+            with st.container():
+                # module name row
+                ma, mb = st.columns([5, 1], vertical_alignment="bottom")
+                with ma:
+                    st.text_input("Module", key=f"m{mid}_name", value=mod["mod"],
+                                  placeholder="module-name")
+                with mb:
+                    st.button("✕", key=f"del_m{mid}", on_click=_remove_module,
+                              args=(gid, mid), use_container_width=True, help="Remove module")
+
+                # paths
+                for path_entry in mod["paths"]:
+                    pid = path_entry["pid"]
+                    pa, pb, pc = st.columns([5, 1, 0.5], vertical_alignment="bottom")
+                    with pa:
+                        st.text_input("Path", key=f"p{pid}_path", value=path_entry["path"],
+                                      placeholder="relative/path/to/sources",
+                                      label_visibility="collapsed")
+                    with pb:
+                        st.button("Browse", key=f"_browse_p{pid}_path",
+                                  on_click=_pick_folder, args=(f"p{pid}_path",),
+                                  use_container_width=True)
+                    with pc:
+                        st.button("✕", key=f"del_p{pid}", on_click=_remove_path,
+                                  args=(mid, pid), use_container_width=True,
+                                  disabled=len(mod["paths"]) <= 1)
+
+                st.button("＋ path", key=f"add_p_{mid}", on_click=_add_path, args=(mid,))
+
+        st.button("＋ module", key=f"add_m_{gid}", on_click=_add_module, args=(gid,))
+
+    st.markdown("---")
     if st.button("Save", type="primary", use_container_width=True):
         _write_config_local()
         st.rerun()
-
 
 @st.dialog("Settings", width="large")
 def _settings_dialog():
@@ -711,6 +839,16 @@ button[kind="secondary"] {
     overflow: hidden !important;
 }
 
+/* Widen the actual dialog box */
+div[role="dialog"] {
+    max-width: min(95vw, 1400px) !important;
+    width: min(95vw, 1400px) !important;
+}
+div[role="dialog"] > div {
+    max-width: 100% !important;
+    width: 100% !important;
+}
+
 /* Outer dialog scroll */
 [data-testid="stDialog"] > div:last-child {
     overflow-y: auto !important;
@@ -725,17 +863,31 @@ button[kind="secondary"] {
     padding-bottom: 0.4rem !important;
 }
 
-/* Tight vertical rhythm */
+/* Tighten vertical rhythm inside dialogs */
 [data-testid="stDialog"] [data-testid="stVerticalBlock"] {
-    gap: 0.25rem !important;
+    gap: 0.4rem !important;
 }
 
-/* Remove extra spacing from containers */
+/* Reduce element container padding */
 [data-testid="stDialog"] [data-testid="stElementContainer"] {
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
+    padding-top: 0.1rem !important;
+    padding-bottom: 0.1rem !important;
     margin-top: 0 !important;
     margin-bottom: 0 !important;
+}
+
+/* Compact labels */
+[data-testid="stDialog"] label {
+    margin-bottom: 0.1rem !important;
+    padding-bottom: 0 !important;
+    font-size: 0.72rem !important;
+    opacity: 0.6 !important;
+}
+
+/* Compact inputs */
+[data-testid="stDialog"] input {
+    padding-top: 0.3rem !important;
+    padding-bottom: 0.3rem !important;
 }
 
 /* Section headers ONLY (not widget labels) */
@@ -751,6 +903,17 @@ button[kind="secondary"] {
     margin-top: 0.4rem !important;
     margin-bottom: 0.2rem !important;
 }
+
+/* Flowchart image — fit and center inside dialog */
+[data-testid="stDialog"] img {
+    max-height: 72vh !important;
+    object-fit: contain !important;
+    width: auto !important;
+    max-width: 100% !important;
+    display: block !important;
+    margin: auto !important;
+}
+
 
 /* Remove widget spacing noise */
 [data-testid="stDialog"] [data-testid="stRadio"],
@@ -929,52 +1092,67 @@ with col_right:
     if st.session_state.pop("_switch_to_preview", False):
         _js_click_tab("Modules Groups")
 
-    with tab_mg:
-        _all_groups = st.session_state.get("groups", [])
-        _sel = st.session_state.get("export_group_sel", "(all groups)")
-        _visible = [
-            g for g in _all_groups
-            if _sel == "(all groups)"
-            or st.session_state.get(f"g{g['gid']}_name", g["name"]).strip() == _sel
-        ]
+with tab_mg:
 
-        # ── Section 1: summary + edit ────────────────────────────────────────
-        with st.container(border=True):
-            hc1, hc2, hc3 = st.columns([3, 3, 1])
-            total_mods = sum(len(g["modules"]) for g in _all_groups)
-            _total_str = f"{len(_all_groups)} group{'s' if len(_all_groups) != 1 else ''} · {total_mods} module{'s' if total_mods != 1 else ''}" if _all_groups else "No groups yet"
-            with hc1:
-                st.caption("TOTAL")
-                st.markdown(f"**{_total_str}**")
-            with hc2:
-                st.caption("SELECTED GROUP")
-                st.markdown(f"**{_sel}**")
-            with hc3:
-                if st.button("Edit", key="_mg_open", use_container_width=True):
-                    _groups_dialog()
+    if running:
+        st.info("Pipeline is running — content unavailable until complete.", icon="⏳")
 
-        # ── Section 2: selected group preview ────────────────────────────────
-        for group in _visible:
-            gid   = group["gid"]
-            gname = st.session_state.get(f"g{gid}_name", group["name"]).strip() or "(unnamed)"
-            with st.container(border=True):
-                st.markdown(f"**{gname}**")
-                for mod in group["modules"]:
-                    mid   = mod["mid"]
-                    mname = st.session_state.get(f"m{mid}_name", mod["mod"]).strip() or "(unnamed)"
-                    paths = [st.session_state.get(f"p{p['pid']}_path", p["path"]).strip() for p in mod["paths"]]
-                    paths = [p for p in paths if p] or ["(no path)"]
-                    st.markdown(f"&nbsp;&nbsp;`{mname}` &nbsp;→&nbsp; " + "  ·  ".join(f"`{p}`" for p in paths),
-                                unsafe_allow_html=True)
+    else:
+        # ── load model data ───────────────────────────────
+        _units_all   = _load_json(ROOT / "model" / "units.json")
+        _modules_all = _load_json(ROOT / "model" / "modules.json")
+        _iface_all   = _load_json(ROOT / "output" / "interface_tables.json")
 
-    with tab_output:
-        cmd_str = _rs.get("cmd", "")
-        if cmd_str:
-            st.code(cmd_str, language="bash")
-        if log_lines:
-            st.code("\n".join(reversed(log_lines[-120:])), language="bash")
-        else:
-            st.caption("No output yet — run the pipeline to see output here.")
+        # map function → interface
+        _func_iface = {}
+        for _ik, _iv in _iface_all.items():
+            if _ik == "unitNames" or not isinstance(_iv, dict):
+                continue
+            for _e in _iv.get("entries", []):
+                if _fid := _e.get("functionId", ""):
+                    _func_iface[_fid] = _e
+
+        # Header
+        hc1, hc2 = st.columns([6, 1])
+        with hc1:
+            st.caption("MODULE GROUPS")
+        with hc2:
+            if st.button("Edit", key="_mg_open", use_container_width=True):
+                _groups_dialog()
+
+        st.divider()
+
+        groups = st.session_state.get("groups", [])
+
+        for g in groups:
+            gid   = g["gid"]
+            gname = st.session_state.get(f"g{gid}_name", g["name"]).strip() or "(unnamed)"
+
+            with st.expander(f"📁 {gname}", expanded=True):
+
+                for m in g["modules"]:
+                    mid   = m["mid"]
+                    mname = st.session_state.get(f"m{mid}_name", m["mod"]).strip() or "(unnamed)"
+
+                    with st.expander(f"📦 {mname}"):
+
+                        unit_ids = _modules_all.get(mname, {}).get("units", [])
+
+                        for uid in unit_ids:
+                            udata = _units_all.get(uid, {})
+                            uname = udata.get("name", uid)
+
+                            with st.expander(f"📄 {uname}"):
+
+                                fids = udata.get("functionIds", [])
+
+                                for fid in fids:
+                                    parts = fid.split("|")
+                                    fname = parts[2] if len(parts) > 2 else fid
+
+                                    if st.button(f"⚡ {fname}()", key=f"fn_{fid}", use_container_width=True):
+                                        _function_dialog(fid, _units_all, _func_iface)
+
 
 # ── floating settings button ─────────────────────────────────────────────────
 
