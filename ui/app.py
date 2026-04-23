@@ -118,8 +118,7 @@ def _init():
     sample = ROOT / "SampleCppProject"
 
     last = _load_last_run()
-    st.session_state.setdefault("project_path",  last.get("project_path") or (str(sample) if sample.exists() else ""))
-    st.session_state.setdefault("from_phase",     last.get("from_phase",    1))
+    st.session_state.setdefault("project_path", last.get("project_path") or (str(sample) if sample.exists() else ""))
 
     st.session_state.setdefault("llvm_lib",      clang.get("llvmLibPath", ""))
     st.session_state.setdefault("clang_include", clang.get("clangIncludePath", ""))
@@ -362,6 +361,55 @@ def _stop_pipeline():
     state.update(running=False, returncode=-1)
     state["lines"].append("— stopped by user —")
 
+def _run_full(selected_group):
+    proj = (st.session_state.get("project_path") or "").strip()
+    if not proj or not Path(proj).exists():
+        st.error("Invalid project path")
+        return
+
+    _write_config_local()
+
+    cmd = [sys.executable, str(ROOT / "run.py")]
+
+    if not any(st.session_state.get(k) for k in (
+        "llm_descriptions", "llm_behav_names", "llm_summarize"
+    )):
+        cmd.append("--no-llm-summarize")
+
+    if selected_group:
+        cmd += ["--selected-group", selected_group]
+
+    cmd.append(proj)
+
+    _start_pipeline(cmd)
+    st.session_state["_switch_to_log"] = True
+    st.session_state["_run_type"] = "full"
+
+
+def _run_export(selected_group):
+    proj = (st.session_state.get("project_path") or "").strip()
+    if not proj or not Path(proj).exists():
+        st.error("Invalid project path")
+        return
+
+    _write_config_local()
+
+    cmd = [
+        sys.executable,
+        str(ROOT / "run.py"),
+        "--from-phase", "4",
+        "--use-model"
+    ]
+
+    if selected_group:
+        cmd += ["--selected-group", selected_group]
+
+    cmd.append(proj)
+
+    _start_pipeline(cmd)
+    st.session_state["_switch_to_log"] = True
+    st.session_state["_run_type"] = "export"
+
 @st.dialog("Function", width="extra-large")
 def _function_dialog(fid: str, units_all, funcs_all):
 
@@ -457,12 +505,69 @@ def _function_dialog(fid: str, units_all, funcs_all):
 
         if png_path.exists():
             img_b64 = base64.b64encode(png_path.read_bytes()).decode()
-            st.markdown(
-                f'<div style="display:flex;align-items:center;justify-content:center;height:72vh;">'
-                f'<img src="data:image/png;base64,{img_b64}" style="max-height:70vh;max-width:100%;object-fit:contain;">'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+            components.html(f"""
+<style>
+  #wrap {{
+    width:100%; height:72vh;
+    overflow:hidden; position:relative;
+    display:flex; align-items:center; justify-content:center;
+    cursor:grab; user-select:none;
+    background:transparent;
+  }}
+  #wrap.dragging {{ cursor:grabbing; }}
+  #img {{
+    transform-origin:center center;
+    max-width:100%; max-height:70vh;
+    pointer-events:none;
+    transition:transform 0.05s linear;
+  }}
+  #hint {{
+    position:absolute; bottom:8px; right:10px;
+    font-size:11px; opacity:0.4; pointer-events:none;
+    font-family:sans-serif;
+  }}
+</style>
+<div id="wrap">
+  <img id="img" src="data:image/png;base64,{img_b64}">
+  <span id="hint">scroll to zoom · drag to pan · dbl-click to reset</span>
+</div>
+<script>
+(function(){{
+  var wrap=document.getElementById('wrap'),
+      img=document.getElementById('img'),
+      scale=1, tx=0, ty=0,
+      dragging=false, sx=0, sy=0, stx=0, sty=0;
+
+  function apply(){{
+    img.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';
+  }}
+
+  wrap.addEventListener('wheel',function(e){{
+    e.preventDefault();
+    var delta=e.deltaY>0?-0.1:0.1;
+    scale=Math.min(Math.max(scale+delta,0.3),8);
+    apply();
+  }},{{passive:false}});
+
+  wrap.addEventListener('mousedown',function(e){{
+    dragging=true; sx=e.clientX; sy=e.clientY; stx=tx; sty=ty;
+    wrap.classList.add('dragging');
+  }});
+  window.addEventListener('mousemove',function(e){{
+    if(!dragging) return;
+    tx=stx+(e.clientX-sx); ty=sty+(e.clientY-sy);
+    apply();
+  }});
+  window.addEventListener('mouseup',function(){{
+    dragging=false; wrap.classList.remove('dragging');
+  }});
+
+  wrap.addEventListener('dblclick',function(){{
+    scale=1; tx=0; ty=0; apply();
+  }});
+}})();
+</script>
+""", height=580, scrolling=False)
         else:
             fc_json = ROOT / "output" / "flowcharts" / f"{unit_name}.json"
             if fc_json.exists():
@@ -483,65 +588,128 @@ def _function_dialog(fid: str, units_all, funcs_all):
 def _groups_dialog():
     groups = st.session_state.get("groups", [])
 
-    h1, h2 = st.columns([5, 1], vertical_alignment="bottom")
-    with h1:
-        st.caption("One DOCX per group · paths relative to project root.")
-    with h2:
-        st.button("＋ Group", on_click=_add_group, use_container_width=True)
+    # ── header actions ──
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.caption("Define groups, modules, and paths")
+    with c2:
+        st.button("＋ Add Group", on_click=_add_group, use_container_width=True)
 
     if not groups:
-        st.info("No groups yet — click **＋ Group** to get started.", icon="ℹ️")
+        st.info("No groups yet")
 
-    for group in groups:
-        gid = group["gid"]
-        st.markdown("---")
+    # ─────────────────────────────
+    # GROUPS
+    # ─────────────────────────────
+    for g in groups:
+        gid = g["gid"]
 
-        # group name row
-        ga, gb = st.columns([5, 1], vertical_alignment="bottom")
-        with ga:
-            st.text_input("Group", key=f"g{gid}_name", value=group["name"],
-                          placeholder="group-name")
-        with gb:
-            st.button("🗑 Delete", key=f"del_g{gid}", on_click=_remove_group,
-                      args=(gid,), use_container_width=True)
+        with st.container(border=True):
 
-        for mod in group["modules"]:
-            mid = mod["mid"]
-            with st.container():
-                # module name row
-                ma, mb = st.columns([5, 1], vertical_alignment="bottom")
-                with ma:
-                    st.text_input("Module", key=f"m{mid}_name", value=mod["mod"],
-                                  placeholder="module-name")
-                with mb:
-                    st.button("✕", key=f"del_m{mid}", on_click=_remove_module,
-                              args=(gid, mid), use_container_width=True, help="Remove module")
+            # ── group header ──
+            g1, g2 = st.columns([5, 1])
+            with g1:
+                st.text_input(
+                    "Group",
+                    key=f"g{gid}_name",
+                    value=g["name"],
+                    placeholder="group-name",
+                    label_visibility="collapsed"
+                )
+            with g2:
+                st.button(
+                    "✕",
+                    key=f"del_g{gid}",
+                    on_click=_remove_group,
+                    args=(gid,),
+                    use_container_width=True
+                )
 
-                # paths
-                for path_entry in mod["paths"]:
-                    pid = path_entry["pid"]
-                    pa, pb, pc = st.columns([5, 1, 0.5], vertical_alignment="bottom")
-                    with pa:
-                        st.text_input("Path", key=f"p{pid}_path", value=path_entry["path"],
-                                      placeholder="relative/path/to/sources",
-                                      label_visibility="collapsed")
-                    with pb:
-                        st.button("Browse", key=f"_browse_p{pid}_path",
-                                  on_click=_pick_folder, args=(f"p{pid}_path",),
-                                  use_container_width=True)
-                    with pc:
-                        st.button("✕", key=f"del_p{pid}", on_click=_remove_path,
-                                  args=(mid, pid), use_container_width=True,
-                                  disabled=len(mod["paths"]) <= 1)
+            # ── modules ──
+            for m in g["modules"]:
+                mid = m["mid"]
 
-                st.button("＋ path", key=f"add_p_{mid}", on_click=_add_path, args=(mid,))
+                m1, m2 = st.columns([5, 1])
+                with m1:
+                    st.text_input(
+                        "Module",
+                        key=f"m{mid}_name",
+                        value=m["mod"],
+                        placeholder="module-name",
+                        label_visibility="collapsed"
+                    )
+                with m2:
+                    st.button(
+                        "–",
+                        key=f"del_m{mid}",
+                        on_click=_remove_module,
+                        args=(gid, mid),
+                        use_container_width=True
+                    )
 
-        st.button("＋ module", key=f"add_m_{gid}", on_click=_add_module, args=(gid,))
+                # ── paths ──
+                for p in m["paths"]:
+                    pid = p["pid"]
 
-    st.markdown("---")
-    if st.button("Save", type="primary", use_container_width=True):
-        _write_config_local()
-        st.rerun()
+                    p1, p2, p3 = st.columns([5, 1, 0.7])
+                    with p1:
+                        st.text_input(
+                            "Path",
+                            key=f"p{pid}_path",
+                            value=p["path"],
+                            placeholder="relative/path",
+                            label_visibility="collapsed"
+                        )
+                    with p2:
+                        st.button(
+                            "…",
+                            key=f"_browse_p{pid}",
+                            on_click=_pick_folder,
+                            args=(f"p{pid}_path",),
+                            use_container_width=True
+                        )
+                    with p3:
+                        st.button(
+                            "✕",
+                            key=f"del_p{pid}",
+                            on_click=_remove_path,
+                            args=(mid, pid),
+                            disabled=len(m["paths"]) <= 1,
+                            use_container_width=True
+                        )
+
+                # add path
+                st.button(
+                    "+ path",
+                    key=f"add_p_{mid}",
+                    on_click=_add_path,
+                    args=(mid,)
+                )
+
+                st.markdown("")  # small spacing
+
+            # add module
+            st.button(
+                "+ module",
+                key=f"add_m_{gid}",
+                on_click=_add_module,
+                args=(gid,),
+                use_container_width=True
+            )
+
+    st.divider()
+
+    # ── footer ──
+    c1, c2 = st.columns(2)
+    with c1:
+        st.button("Cancel", use_container_width=True, on_click=st.rerun)
+    with c2:
+        st.button(
+            "Save",
+            type="primary",
+            use_container_width=True,
+            on_click=lambda: (_write_config_local(), st.rerun())
+        )
 
 @st.dialog("Settings", width="large")
 def _settings_dialog():
@@ -825,6 +993,64 @@ button[kind="secondary"] {
     white-space: nowrap !important;
 }
 
+/* Global theme — replace Streamlit red with indigo */
+:root {
+    --primary-color: #4F6EF7 !important;
+}
+
+/* Tabs — active underline, text, and hover */
+[data-baseweb="tab-highlight"] {
+    background-color: #4F6EF7 !important;
+}
+[data-baseweb="tab"][aria-selected="true"],
+[data-baseweb="tab"]:hover {
+    color: #4F6EF7 !important;
+}
+[data-baseweb="tab"]:focus {
+    box-shadow: inset 0 -3px 0 0 #4F6EF7 !important;
+}
+[data-baseweb="tab-border"] {
+    background-color: rgba(79, 110, 247, 0.2) !important;
+}
+
+/* Input focus ring */
+input:focus, textarea:focus, [data-baseweb="input"]:focus-within {
+    border-color: #4F6EF7 !important;
+    box-shadow: 0 0 0 1px #4F6EF7 !important;
+}
+
+/* Links */
+a { color: #4F6EF7 !important; }
+
+/* Primary buttons — indigo */
+button[kind="primary"],
+button[kind="primaryFormSubmit"] {
+    background-color: #4F6EF7 !important;
+    border-color: #4F6EF7 !important;
+    color: #fff !important;
+}
+button[kind="primary"]:hover,
+button[kind="primaryFormSubmit"]:hover {
+    background-color: #3B5BDB !important;
+    border-color: #3B5BDB !important;
+}
+button[kind="primary"]:active,
+button[kind="primaryFormSubmit"]:active {
+    background-color: #364FC7 !important;
+    border-color: #364FC7 !important;
+}
+
+/* Stop button — light red */
+.st-key-_stop_btn button {
+    background-color: rgba(220, 53, 69, 0.15) !important;
+    border-color: rgba(220, 53, 69, 0.5) !important;
+    color: #f08090 !important;
+}
+.st-key-_stop_btn button:hover {
+    background-color: rgba(220, 53, 69, 0.28) !important;
+    border-color: rgba(220, 53, 69, 0.7) !important;
+}
+
 /* Floating settings button — zero-height anchor so panels stay full width */
 .st-key-_settings_fab {
     position: fixed !important;
@@ -882,29 +1108,32 @@ div[role="dialog"] > div {
 
 /* Tighten vertical rhythm inside dialogs */
 [data-testid="stDialog"] [data-testid="stVerticalBlock"] {
-    gap: 0.4rem !important;
+    gap: 0.25rem !important;
 }
-
-/* Reduce element container padding */
 [data-testid="stDialog"] [data-testid="stElementContainer"] {
-    padding-top: 0.1rem !important;
-    padding-bottom: 0.1rem !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
     margin-top: 0 !important;
     margin-bottom: 0 !important;
 }
-
-/* Compact labels */
-[data-testid="stDialog"] label {
-    margin-bottom: 0.1rem !important;
-    padding-bottom: 0 !important;
-    font-size: 0.72rem !important;
-    opacity: 0.6 !important;
+[data-testid="stDialog"] [data-testid="stVerticalBlockBorderWrapper"] > div {
+    padding: 0.5rem 0.75rem !important;
+    gap: 0.25rem !important;
 }
-
+[data-testid="stDialog"] [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] {
+    gap: 0.2rem !important;
+}
 /* Compact inputs */
 [data-testid="stDialog"] input {
     padding-top: 0.3rem !important;
     padding-bottom: 0.3rem !important;
+}
+/* Labels — only show when visible */
+[data-testid="stDialog"] label {
+    font-size: 0.72rem !important;
+    opacity: 0.6 !important;
+    margin-bottom: 0 !important;
+    line-height: 1.2 !important;
 }
 
 /* Section headers ONLY (not widget labels) */
@@ -1017,70 +1246,64 @@ col_left, col_right = st.columns([1, 1])
 
 with col_left:
 
-    # ── Card 1: Project ──────────────────────────────────────────────────────
-    with st.container(border=True):
-        st.caption("PROJECT")
-        _path_row("Project folder", "project_path", is_dir=True,
-                  help="Root folder of the C++ source project")
+    # ── 1. PROJECT ──────────────────
+    st.caption("Project")
+    _path_row("", "project_path", is_dir=True)
 
-    # ── Card 2: Run ──────────────────────────────────────────────────────────
-    current_group_names = [st.session_state.get(f"g{g['gid']}_name", g["name"]).strip() for g in st.session_state.get("groups", [])]
-    current_group_names = [n for n in current_group_names if n]
-    selected_group: str | None = None
+    # ── 2. GROUP ──────────────────
+    st.caption("Select group")
 
-    with st.container(border=True):
-        st.caption("RUN")
-        s1, s2 = st.columns(2)
-        with s1:
-            st.selectbox("Start from phase", options=[1, 2, 3, 4], key="from_phase",
-                         format_func=lambda n: f"Phase {n} — {PHASE_NAMES[n]}",
-                         )
-        with s2:
-            if current_group_names:
-                sel = st.selectbox("Export group", options=["(all groups)"] + current_group_names,
-                                   key="export_group_sel",
-                                   on_change=lambda: st.session_state.update(_switch_to_preview=True))
-                selected_group = None if sel == "(all groups)" else sel
-            else:
-                st.selectbox("Export group", options=["(all groups)"], disabled=True,
-                             help="Define groups in Module Groups above")
-                st.session_state["export_group_sel"] = "(all groups)"
+    groups = [
+        st.session_state.get(f"g{g['gid']}_name", g["name"]).strip()
+        for g in st.session_state.get("groups", [])
+    ]
+    groups = [g for g in groups if g]
 
-        if not running:
-            if st.button("Generate DOCX", type="primary", use_container_width=True):
-                proj = (st.session_state.get("project_path") or "").strip()
-                if not proj:
-                    st.error("Project path is required."); st.stop()
-                if not Path(proj).exists():
-                    st.error(f"Path does not exist:\n{proj}"); st.stop()
+    c1, c2 = st.columns([4,1])
+    with c1:
+        sel = st.selectbox(
+            "",
+            options=["All"] + groups if groups else ["All"],
+            key="export_group_sel",
+            label_visibility="collapsed"
+        )
+    with c2:
+        st.button("✎", on_click=_groups_dialog, use_container_width=True)
 
-                _write_config_local()
-                cmd = [sys.executable, str(ROOT / "run.py")]
-                phase = st.session_state.get("from_phase", 1)
-                if phase in (2, 3): cmd.append("--use-model")
-                if phase > 1: cmd += ["--from-phase", str(phase)]
-                if selected_group: cmd += ["--selected-group", selected_group]
-                if not any(st.session_state.get(k) for k in ("llm_descriptions", "llm_behav_names", "llm_summarize")):
-                    cmd.append("--no-llm-summarize")
-                cmd.append(proj)
-                _start_pipeline(cmd)
-                st.session_state["_switch_to_log"] = True
-                st.rerun()
-        else:
-            st.button("Stop", type="secondary", on_click=_stop_pipeline, use_container_width=True)
+    selected_group = None if sel == "All" else sel
 
-        # ── Downloads (shown after successful run) ────────────────────────────
-        if not running and returncode == 0:
-            docx_files = sorted((ROOT / "output").rglob("*.docx")) if (ROOT / "output").exists() else []
-            if docx_files:
-                st.success("Completed — download below.")
-                dl_cols = st.columns(min(len(docx_files), 2))
-                for i, dp in enumerate(docx_files):
-                    with dl_cols[i % 2]:
-                        with open(dp, "rb") as fh:
-                            st.download_button(f"⬇ {dp.name}", data=fh, file_name=dp.name,
-                                               mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                               key=f"dl_{dp}", use_container_width=True, type="primary")
+    st.divider()
+
+    # ── 3. RUN ──────────────────
+    st.markdown("**Run**")
+    st.caption("Full pipeline (Parse → DOCX)")
+
+    if not running:
+        st.button(
+            "Run full",
+            type="primary",
+            use_container_width=True,
+            on_click=lambda: _run_full(selected_group)
+        )
+
+        st.caption("Use existing model → DOCX only")
+
+        st.button(
+            "Export only",
+            use_container_width=True,
+            on_click=lambda: _run_export(selected_group)
+        )
+    else:
+        st.button(
+            "Stop",
+            key="_stop_btn",
+            use_container_width=True,
+            on_click=_stop_pipeline
+        )
+
+        log_text = "\n".join(log_lines)
+        phases_done = sum(f"Phase {n}" in log_text for n in [1,2,3,4])
+        st.progress(phases_done / 4)
 
 # ════════════════════════════════════════════════════════════════════════════
 # RIGHT — preview
@@ -1110,25 +1333,12 @@ with col_right:
         _js_click_tab("Modules Groups")
 
 with tab_mg:
-
-    if running:
+    if running and st.session_state.get("_run_type") == "full":
         st.info("Pipeline is running — content unavailable until complete.", icon="⏳")
-
     else:
-        # ── load model data ───────────────────────────────
         _units_all   = _load_json(ROOT / "model" / "units.json")
         _modules_all = _load_json(ROOT / "model" / "modules.json")
         _funcs_all   = _load_json(ROOT / "model" / "functions.json")
-
-        # Header
-        hc1, hc2 = st.columns([6, 1])
-        with hc1:
-            st.caption("MODULE GROUPS")
-        with hc2:
-            if st.button("Edit", key="_mg_open", use_container_width=True):
-                _groups_dialog()
-
-        st.divider()
 
         groups = st.session_state.get("groups", [])
 
@@ -1158,7 +1368,7 @@ with tab_mg:
                                     parts = fid.split("|")
                                     fname = parts[2] if len(parts) > 2 else fid
 
-                                    if st.button(f"⚡ {fname}()", key=f"fn_{fid}", use_container_width=True):
+                                    if st.button(f"{fname}()", key=f"fn_{fid}", use_container_width=True):
                                         _function_dialog(fid, _units_all, _funcs_all)
 
 with tab_output:
@@ -1168,7 +1378,22 @@ with tab_output:
     if log_lines:
         st.code("\n".join(reversed(log_lines[-120:])), language="bash")
     else:
-        st.caption("No output yet — run the pipeline to see output here.")
+        st.markdown(
+            """
+            <div style="
+                height: 60vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                opacity: 0.6;
+                font-size: 0.9rem;
+                text-align: center;
+            ">
+                No output yet — run the pipeline to see output here.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 # ── floating settings button ─────────────────────────────────────────────────
