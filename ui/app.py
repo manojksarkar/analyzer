@@ -419,20 +419,20 @@ def _function_dialog(fid: str, units_all, funcs_all):
         st.info("No data for this function.")
         return
 
-    fname = entry.get("qualifiedName", fid.split("|")[2] if "|" in fid else fid)
+    parts = fid.split("|")
+    fname = entry.get("qualifiedName", parts[2] if len(parts) > 2 else fid)
 
-    # ── header ──
-    st.markdown(f"### `{fname}()`")
+    # ───────────────────────── HEADER (COMPACT)
+    st.markdown(f"## `{fname}()`")
 
-    meta = []
-    if entry.get("interfaceId"):
-        meta.append(f"`{entry['interfaceId']}`")
-    if entry.get("direction"):
-        meta.append(entry["direction"])
-    if entry.get("visibility"):
-        meta.append(entry["visibility"])
+    meta = " · ".join(filter(None, [
+        entry.get("interfaceId"),
+        entry.get("direction"),
+        entry.get("visibility")
+    ]))
+
     if meta:
-        st.caption(" · ".join(meta))
+        st.caption(meta)
 
     loc = entry.get("location", {})
     if loc:
@@ -440,149 +440,144 @@ def _function_dialog(fid: str, units_all, funcs_all):
 
     st.divider()
 
-    left, right = st.columns([2, 3])
+    left, right = st.columns([1.2, 2.2], gap="medium")
 
+    # ───────────────────────── LEFT — INSPECTOR
     with left:
-        # signature
+
+        # ── signature (compact)
         params = entry.get("parameters", [])
         ret = entry.get("returnType", "")
-        if params:
-            sig_parts = []
-            for p in params:
-                if isinstance(p, dict):
-                    sig_parts.append(f"{p.get('type','')} {p.get('name','')}".strip())
-                else:
-                    sig_parts.append(str(p))
-            st.code(f"{ret} {fname}({', '.join(sig_parts)})")
-        else:
-            st.code(f"{ret} {fname}()")
 
+        sig = []
+        for p in params:
+            if isinstance(p, dict):
+                sig.append(f"{p.get('type','')} {p.get('name','')}".strip())
+            else:
+                sig.append(str(p))
+
+        st.code(f"{ret} {fname}({', '.join(sig)})", language="cpp")
+
+        # ── DESCRIPTION (PRIMARY EDIT)
         st.caption("Description")
-        desc = st.text_area("Description", value=entry.get("description", ""),
-                            placeholder="Describe what this function does…",
-                            label_visibility="collapsed", height=120,
-                            key=f"desc_{fid}")
-        if st.button("Save description", key=f"save_desc_{fid}", type="primary"):
+
+        desc = st.text_area(
+            "",
+            value=entry.get("description", ""),
+            placeholder="Describe function…",
+            height=110,
+            key=f"desc_{fid}"
+        )
+
+        if st.button("Save", key=f"save_desc_{fid}", type="primary"):
             _save_function_description(fid, desc)
-            st.success("Saved — will apply on next Phase 4 export.")
+            st.success("Saved")
 
-        # callers
-        caller_ids = entry.get("calledByIds", [])
-        if caller_ids:
-            st.caption("Called by")
-            caller_names = [cid.split("|")[2] for cid in caller_ids if "|" in cid]
-            st.code(", ".join(caller_names) or ", ".join(caller_ids))
+        st.divider()
 
-        # callees
-        callee_ids = entry.get("callsIds", [])
-        if callee_ids:
-            st.caption("Calls")
-            callee_names = [cid.split("|")[2] for cid in callee_ids if "|" in cid]
-            st.code(", ".join(callee_names) or ", ".join(callee_ids))
+        # ── RELATIONS (COLLAPSIBLE STYLE)
+        with st.expander("Calls", expanded=False):
+            callee_ids = entry.get("callsIds", [])
+            callee_names = [c.split("|")[2] for c in callee_ids if "|" in c]
+            st.write(", ".join(callee_names) if callee_names else "—")
 
-        if entry.get("behaviourInputName"):
-            st.caption("Behaviour input")
-            st.write(entry["behaviourInputName"])
-        if entry.get("behaviourOutputName"):
-            st.caption("Behaviour output")
-            st.write(entry["behaviourOutputName"])
+        with st.expander("Called by", expanded=False):
+            caller_ids = entry.get("calledByIds", [])
+            caller_names = [c.split("|")[2] for c in caller_ids if "|" in c]
+            st.write(", ".join(caller_names) if caller_names else "—")
 
-    # =================================================
-    # RIGHT SIDE — FLOWCHART (hero)
-    # =================================================
+        # behaviour (compact)
+        if entry.get("behaviourInputName") or entry.get("behaviourOutputName"):
+            with st.expander("Behaviour", expanded=False):
+                if entry.get("behaviourInputName"):
+                    st.caption("Input")
+                    st.write(entry["behaviourInputName"])
+                if entry.get("behaviourOutputName"):
+                    st.caption("Output")
+                    st.write(entry["behaviourOutputName"])
+
+    # ========================= RIGHT PANEL: FLOWCHART VIEWER =========================
     with right:
-
-        parts = fid.split("|")
-        fname2 = parts[2] if len(parts) > 2 else ""
-
         unit_name = ""
         for u in units_all.values():
             if fid in u.get("functionIds", []):
                 unit_name = u.get("name", "")
                 break
 
+        fname2 = parts[2] if len(parts) > 2 else ""
         png_path = ROOT / "output" / "flowcharts" / f"{unit_name}_{fname2}.png"
 
+        st.markdown("**Flowchart**")
         if png_path.exists():
             img_b64 = base64.b64encode(png_path.read_bytes()).decode()
+            # Improved canvas viewer with loading spinner and shadow
+            st.markdown(
+                f"""
+                <style>
+                .flowchart-container {{
+                    background: #1e1e1e;
+                    border-radius: 12px;
+                    overflow: hidden;
+                    box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+                    margin-top: 6px;
+                }}
+                </style>
+                <div class="flowchart-container">
+                """, unsafe_allow_html=True
+            )
             components.html(f"""
-<style>
-  #wrap {{
-    width:100%; height:72vh;
-    overflow:hidden; position:relative;
-    display:flex; align-items:center; justify-content:center;
-    cursor:grab; user-select:none;
-    background:transparent;
-  }}
-  #wrap.dragging {{ cursor:grabbing; }}
-  #img {{
-    transform-origin:center center;
-    max-width:100%; max-height:70vh;
-    pointer-events:none;
-    transition:transform 0.05s linear;
-  }}
-  #hint {{
-    position:absolute; bottom:8px; right:10px;
-    font-size:11px; opacity:0.4; pointer-events:none;
-    font-family:sans-serif;
-  }}
-</style>
-<div id="wrap">
-  <img id="img" src="data:image/png;base64,{img_b64}">
-  <span id="hint">scroll to zoom · drag to pan · dbl-click to reset</span>
-</div>
-<script>
-(function(){{
-  var wrap=document.getElementById('wrap'),
-      img=document.getElementById('img'),
-      scale=1, tx=0, ty=0,
-      dragging=false, sx=0, sy=0, stx=0, sty=0;
-
-  function apply(){{
-    img.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';
-  }}
-
-  wrap.addEventListener('wheel',function(e){{
-    e.preventDefault();
-    var delta=e.deltaY>0?-0.1:0.1;
-    scale=Math.min(Math.max(scale+delta,0.3),8);
-    apply();
-  }},{{passive:false}});
-
-  wrap.addEventListener('mousedown',function(e){{
-    dragging=true; sx=e.clientX; sy=e.clientY; stx=tx; sty=ty;
-    wrap.classList.add('dragging');
-  }});
-  window.addEventListener('mousemove',function(e){{
-    if(!dragging) return;
-    tx=stx+(e.clientX-sx); ty=sty+(e.clientY-sy);
-    apply();
-  }});
-  window.addEventListener('mouseup',function(){{
-    dragging=false; wrap.classList.remove('dragging');
-  }});
-
-  wrap.addEventListener('dblclick',function(){{
-    scale=1; tx=0; ty=0; apply();
-  }});
-}})();
-</script>
-""", height=580, scrolling=False)
+            <div style="width:100%; height:70vh; position:relative; background:#fff; border-radius:8px;">
+              <div id="wrap" style="width:100%; height:100%; overflow:hidden; cursor:grab; user-select:none; display:flex; align-items:center; justify-content:center; position:relative;">
+                <img id="img" src="data:image/png;base64,{img_b64}" style="max-width:100%; max-height:100%; transform-origin:center; pointer-events:none;">
+                <div id="hint" style="position:absolute; bottom:10px; right:12px; font-size:11px; font-family:sans-serif; background:rgba(0,0,0,0.6); color:white; padding:3px 8px; border-radius:6px; opacity:0.45; transition:opacity 0.3s; pointer-events:none;">🖱️ scroll zoom · drag pan · double click reset</div>
+              </div>
+            </div>
+            <script>
+            (function() {{
+              const wrap = document.getElementById('wrap');
+              const img = document.getElementById('img');
+              let scale = 1, tx = 0, ty = 0;
+              let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+              function apply() {{
+                img.style.transform = `translate(${{tx}}px, ${{ty}}px) scale(${{scale}})`;
+              }}
+              wrap.addEventListener('wheel', function(e) {{
+                e.preventDefault();
+                scale += e.deltaY > 0 ? -0.1 : 0.1;
+                scale = Math.min(Math.max(scale, 0.3), 8);
+                apply();
+              }}, {{ passive: false }});
+              wrap.addEventListener('mousedown', function(e) {{
+                dragging = true;
+                sx = e.clientX; sy = e.clientY;
+                ox = tx; oy = ty;
+                wrap.style.cursor = 'grabbing';
+              }});
+              window.addEventListener('mousemove', function(e) {{
+                if (!dragging) return;
+                tx = ox + (e.clientX - sx);
+                ty = oy + (e.clientY - sy);
+                apply();
+              }});
+              window.addEventListener('mouseup', function() {{
+                dragging = false;
+                wrap.style.cursor = 'grab';
+              }});
+              wrap.addEventListener('dblclick', function() {{
+                scale = 1; tx = 0; ty = 0;
+                apply();
+              }});
+              setTimeout(() => {{
+                const hint = document.getElementById('hint');
+                if (hint) hint.style.opacity = '0';
+              }}, 4000);
+            }})();
+            </script>
+            """, height=600)
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
-            fc_json = ROOT / "output" / "flowcharts" / f"{unit_name}.json"
-            if fc_json.exists():
-                fc_data = _load_json(fc_json)
-                fc_entry = next(
-                    (e for e in (fc_data if isinstance(fc_data, list) else [])
-                     if e.get("name") == fname2),
-                    None,
-                )
-                if fc_entry:
-                    st.code(fc_entry["flowchart"], language="text")
-                else:
-                    st.caption("No flowchart")
-            else:
-                st.caption("No flowchart")
+            st.info("📷 No flowchart available for this function.")
+
 
 @st.dialog("Module Groups", width="large")
 def _groups_dialog():
@@ -877,7 +872,7 @@ st.markdown("""
 <style>
 
 /* ─────────────────────────────────────────────
-   MAIN LAYOUT (2-PANE)
+   MAIN LAYOUT
 ───────────────────────────────────────────── */
 
 section.main, [data-testid="stMain"] {
@@ -897,8 +892,7 @@ section.main, [data-testid="stMain"] {
     padding-bottom: 0 !important;
 }
 
-
-/* App title in the Streamlit toolbar (where Deploy lives) */
+/* App title */
 [data-testid="stHeader"]::before {
     content: "C++ Analyzer";
     position: absolute;
@@ -912,93 +906,94 @@ section.main, [data-testid="stMain"] {
 }
 
 /* ─────────────────────────────────────────────
-   SPLIT PANES (FIXED HEIGHT ISSUE)
+   SPLIT PANES (UNIFIED SYSTEM)
 ───────────────────────────────────────────── */
 
 [data-testid="stHorizontalBlock"] {
     align-items: stretch !important;
 }
 
-/* 🚨 FIX: remove forced full-height */
+/* BOTH PANES SAME RULES (NO FIRST/LAST CHILD) */
 [data-testid="stHorizontalBlock"] > div {
     background: transparent !important;
+
     height: auto !important;
     min-height: unset !important;
-}
 
-/* Left panel */
-[data-testid="stHorizontalBlock"] > div:first-child {
     overflow-y: auto !important;
     max-height: calc(100vh - 5rem);
-    border-right: 1px solid rgba(128,128,128,0.25) !important;
-    padding: 1.25rem 1.5rem 2rem 1.5rem !important;
+
+    padding: 1rem !important;
+    box-sizing: border-box !important;
 }
 
-/* Card spacing — gap between Project / Module Groups / Run cards */
-[data-testid="stHorizontalBlock"] > div:first-child > [data-testid="stVerticalBlock"] {
-    gap: 0.75rem !important;
+/* ─────────────────────────────────────────────
+   GLOBAL SPACING SYSTEM (BOTH PANES)
+───────────────────────────────────────────── */
+
+[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlock"] {
+    gap: 0.5rem !important;
 }
 
-/* Card internal padding */
-[data-testid="stHorizontalBlock"] > div:first-child [data-testid="stVerticalBlockBorderWrapper"] > div {
-    padding: 0.75rem 1rem !important;
+/* Card padding consistency */
+[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlockBorderWrapper"] > div {
+    padding: 0.5rem 1rem !important;
 }
 
-/* Tighten elements inside left panel cards */
-[data-testid="stHorizontalBlock"] > div:first-child [data-testid="stElementContainer"] {
+/* Tight widgets */
+[data-testid="stHorizontalBlock"] [data-testid="stElementContainer"] {
     padding-top: 0.1rem !important;
     padding-bottom: 0.1rem !important;
 }
 
-/* Section caption labels */
-[data-testid="stHorizontalBlock"] > div:first-child [data-testid="stCaptionContainer"] p {
+/* ─────────────────────────────────────────────
+   CAPTIONS (GLOBAL)
+───────────────────────────────────────────── */
+
+[data-testid="stCaptionContainer"] p {
     font-size: 0.68rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.07em !important;
     text-transform: uppercase !important;
-    opacity: 0.5 !important;
-    margin-bottom: 0.35rem !important;
-    margin-top: 0 !important;
-}
-
-/* Right panel — prevent outer scroll */
-[data-testid="stHorizontalBlock"] > div:last-child {
-    overflow: hidden !important;
-    max-height: calc(100vh - 5rem);
-}
-
-/* Tab content scrolls; tab bar stays fixed */
-[data-testid="stHorizontalBlock"] > div:last-child [role="tabpanel"] {
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    max-height: calc(100vh - 11rem) !important;
-}
-
-/* Nested layouts reset */
-[data-testid="stHorizontalBlock"] div [data-testid="stHorizontalBlock"] > div {
-    height: auto !important;
-    min-height: unset !important;
-    overflow-y: visible !important;
-    background: transparent !important;
-    border-right: none !important;
-    padding: unset !important;
+    opacity: 0.55 !important;
+    margin: 0 0 0.35rem 0 !important;
 }
 
 /* ─────────────────────────────────────────────
-   SMALL UI ELEMENTS
+   RIGHT PANEL SCROLL BEHAVIOR
 ───────────────────────────────────────────── */
 
+[data-testid="stHorizontalBlock"] > div:last-child {
+    overflow: hidden !important;
+}
 
-button[kind="secondary"] {
+[data-testid="stHorizontalBlock"] > div:last-child [role="tabpanel"] {
+    overflow-y: auto !important;
+    max-height: calc(100vh - 11rem) !important;
+}
+
+/* ─────────────────────────────────────────────
+   INPUT + BUTTON DENSITY
+───────────────────────────────────────────── */
+
+input, textarea {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+}
+
+button {
     white-space: nowrap !important;
 }
 
-/* Global theme — replace Streamlit red with indigo */
+/* ─────────────────────────────────────────────
+   THEME
+───────────────────────────────────────────── */
+
 :root {
     --primary-color: #4F6EF7 !important;
 }
 
-/* Tabs — active underline, text, and hover */
+/* Tabs */
 [data-baseweb="tab-highlight"] {
     background-color: #4F6EF7 !important;
 }
@@ -1013,7 +1008,7 @@ button[kind="secondary"] {
     background-color: rgba(79, 110, 247, 0.2) !important;
 }
 
-/* Input focus ring */
+/* Inputs */
 input:focus, textarea:focus, [data-baseweb="input"]:focus-within {
     border-color: #4F6EF7 !important;
     box-shadow: 0 0 0 1px #4F6EF7 !important;
@@ -1022,7 +1017,7 @@ input:focus, textarea:focus, [data-baseweb="input"]:focus-within {
 /* Links */
 a { color: #4F6EF7 !important; }
 
-/* Primary buttons — indigo */
+/* Primary buttons */
 button[kind="primary"],
 button[kind="primaryFormSubmit"] {
     background-color: #4F6EF7 !important;
@@ -1040,8 +1035,10 @@ button[kind="primaryFormSubmit"]:active {
     border-color: #364FC7 !important;
 }
 
-/* Stop button — light red */
+/* Stop button */
 .st-key-_stop_btn button {
+    margin: 0.75rem !important;
+    width: calc(100% - 1.5rem) !important;
     background-color: rgba(220, 53, 69, 0.15) !important;
     border-color: rgba(220, 53, 69, 0.5) !important;
     color: #f08090 !important;
@@ -1051,7 +1048,7 @@ button[kind="primaryFormSubmit"]:active {
     border-color: rgba(220, 53, 69, 0.7) !important;
 }
 
-/* Floating settings button — zero-height anchor so panels stay full width */
+/* Floating settings button */
 .st-key-_settings_fab {
     position: fixed !important;
     bottom: 1.5rem !important;
@@ -1059,9 +1056,6 @@ button[kind="primaryFormSubmit"]:active {
     z-index: 9999 !important;
     height: 0 !important;
     overflow: visible !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    width: auto !important;
 }
 .st-key-_settings_fab button {
     border-radius: 50% !important;
@@ -1070,144 +1064,50 @@ button[kind="primaryFormSubmit"]:active {
     padding: 0 !important;
     font-size: 1.2rem !important;
     box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important;
-    min-width: unset !important;
-    position: relative !important;
 }
 
 /* ─────────────────────────────────────────────
-   SETTINGS DIALOG (FIXED HEIGHT + GAPS)
+   DIALOG (UNCHANGED BUT CLEANED)
 ───────────────────────────────────────────── */
+
+div[role="dialog"] {
+    max-width: min(95vw, 1400px) !important;
+    width: min(95vw, 1400px) !important;
+}
 
 [data-testid="stDialog"] {
     overflow: hidden !important;
 }
 
-/* Widen the actual dialog box */
-div[role="dialog"] {
-    max-width: min(95vw, 1400px) !important;
-    width: min(95vw, 1400px) !important;
-}
-div[role="dialog"] > div {
-    max-width: 100% !important;
-    width: 100% !important;
-}
-
-/* Outer dialog scroll */
 [data-testid="stDialog"] > div:last-child {
     overflow-y: auto !important;
     max-height: 82vh !important;
 }
 
-/* Tabs content */
 [data-testid="stDialog"] div[role="tabpanel"] {
     overflow-y: auto !important;
-    overflow-x: hidden !important;
     max-height: 70vh !important;
-    padding-bottom: 0.4rem !important;
 }
 
-/* Tighten vertical rhythm inside dialogs */
 [data-testid="stDialog"] [data-testid="stVerticalBlock"] {
     gap: 0.25rem !important;
 }
-[data-testid="stDialog"] [data-testid="stElementContainer"] {
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-    margin-top: 0 !important;
-    margin-bottom: 0 !important;
-}
+
 [data-testid="stDialog"] [data-testid="stVerticalBlockBorderWrapper"] > div {
     padding: 0.5rem 0.75rem !important;
-    gap: 0.25rem !important;
 }
-[data-testid="stDialog"] [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] {
-    gap: 0.2rem !important;
-}
-/* Compact inputs */
-[data-testid="stDialog"] input {
-    padding-top: 0.3rem !important;
-    padding-bottom: 0.3rem !important;
-}
-/* Labels — only show when visible */
+
 [data-testid="stDialog"] label {
     font-size: 0.72rem !important;
     opacity: 0.6 !important;
-    margin-bottom: 0 !important;
-    line-height: 1.2 !important;
 }
 
-/* Section headers ONLY (not widget labels) */
-[data-testid="stDialog"] 
-[data-testid="stMarkdown"] 
-[data-testid="stMarkdownContainer"] > p {
-    margin-top: 0.35rem !important;
-    margin-bottom: 0.1rem !important;
-}
-
-/* Dividers */
 [data-testid="stDialog"] hr {
-    margin-top: 0.4rem !important;
-    margin-bottom: 0.2rem !important;
-}
-
-/* Flowchart image — fit and center inside dialog */
-[data-testid="stDialog"] img {
-    max-height: 72vh !important;
-    object-fit: contain !important;
-    width: auto !important;
-    max-width: 100% !important;
-    display: block !important;
-    margin: auto !important;
-}
-
-
-/* Remove widget spacing noise */
-[data-testid="stDialog"] [data-testid="stRadio"],
-[data-testid="stDialog"] [data-testid="stCheckbox"],
-[data-testid="stDialog"] [data-testid="stTextInput"],
-[data-testid="stDialog"] [data-testid="stNumberInput"] {
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* Captions (if used) */
-[data-testid="stDialog"] [data-testid="stCaptionContainer"] {
-    margin-top: 0.3rem !important;
-    margin-bottom: 0 !important;
+    margin: 0.4rem 0 !important;
 }
 
 /* ─────────────────────────────────────────────
-   LEFT PANEL CARD HIERARCHY
-───────────────────────────────────────────── */
-
-/* Sticky title block */
-[data-testid="stHorizontalBlock"] > div:first-child > [data-testid="stVerticalBlock"] > div:first-child {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: inherit;
-    padding-bottom: 0.25rem;
-}
-
-/* Section caption labels */
-[data-testid="stHorizontalBlock"] [data-testid="stCaptionContainer"] p {
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    opacity: 0.55;
-    margin-bottom: 0.4rem !important;
-}
-
-/* Tighten left panel input density */
-[data-testid="stHorizontalBlock"] > div:first-child input {
-    padding-top: 0.25rem !important;
-    padding-bottom: 0.25rem !important;
-}
-
-
-/* ─────────────────────────────────────────────
-   SCROLLBAR CLEANUP (OPTIONAL)
+   SCROLLBAR CLEAN
 ───────────────────────────────────────────── */
 
 * {
@@ -1240,18 +1140,17 @@ returncode = _rs["returncode"]
 
 col_left, col_right = st.columns([1, 1])
 
-# ════════════════════════════════════════════════════════════════════════════
-# LEFT — workflow
-# ════════════════════════════════════════════════════════════════════════════
-
 with col_left:
 
-    # ── 1. PROJECT ──────────────────
-    st.caption("Project")
-    _path_row("", "project_path", is_dir=True)
+    # ───────────────────────── PROJECT ─────────────────────────
+    with st.container():
+        st.caption("Project")
+        _path_row("", "project_path", is_dir=True)
 
-    # ── 2. GROUP ──────────────────
-    st.caption("Select group")
+    st.divider()
+
+    # ───────────────────────── GROUP ─────────────────────────
+    st.caption("Group")
 
     groups = [
         st.session_state.get(f"g{g['gid']}_name", g["name"]).strip()
@@ -1259,14 +1158,16 @@ with col_left:
     ]
     groups = [g for g in groups if g]
 
-    c1, c2 = st.columns([4,1])
+    c1, c2 = st.columns([5, 1])
+
     with c1:
         sel = st.selectbox(
-            "",
+            "Select group",
             options=["All"] + groups if groups else ["All"],
             key="export_group_sel",
             label_visibility="collapsed"
         )
+
     with c2:
         st.button("✎", on_click=_groups_dialog, use_container_width=True)
 
@@ -1274,36 +1175,88 @@ with col_left:
 
     st.divider()
 
-    # ── 3. RUN ──────────────────
-    st.markdown("**Run**")
-    st.caption("Full pipeline (Parse → DOCX)")
+    # ───────────────────────── RUN ─────────────────────────
+    st.caption("Run")
 
-    if not running:
-        st.button(
-            "Run full",
-            type="primary",
-            use_container_width=True,
-            on_click=lambda: _run_full(selected_group)
-        )
+    run_type = st.session_state.get("_run_type")
 
-        st.caption("Use existing model → DOCX only")
-
-        st.button(
-            "Export only",
-            use_container_width=True,
-            on_click=lambda: _run_export(selected_group)
-        )
-    else:
+    # RUNNING STATE
+    if running:
+        
         st.button(
             "Stop",
             key="_stop_btn",
             use_container_width=True,
+            type="secondary",
             on_click=_stop_pipeline
         )
 
-        log_text = "\n".join(log_lines)
-        phases_done = sum(f"Phase {n}" in log_text for n in [1,2,3,4])
-        st.progress(phases_done / 4)
+        if run_type == "full":
+            log_text = "\n".join(log_lines)
+            phases_done = sum(f"Phase {n}" in log_text for n in [1, 2, 3, 4])
+            current_phase = min(phases_done + 1, 4)
+
+            st.progress(phases_done / 4)
+            st.caption(f"{PHASE_NAMES.get(current_phase, '')}")
+        else:
+            st.progress(0.5)
+            st.caption("Exporting DOCX…")
+
+
+    # IDLE STATE (COMPACT SINGLE LINE)
+    else:
+
+        c1, c2 = st.columns([1, 1])
+
+        with c1:
+            st.button(
+                "Run full",
+                type="primary",
+                use_container_width=True,
+                on_click=lambda: _run_full(selected_group)
+            )
+            st.caption("Full pipeline → DOCX")
+
+        with c2:
+            st.button(
+                "Export Only",
+                type="secondary",
+                use_container_width=True,
+                on_click=lambda: _run_export(selected_group)
+            )
+            st.caption("Existing model → DOCX")
+
+
+    # RESULT STATE
+    if not running and returncode is not None:
+        if returncode == 0:
+            st.success("Done")
+            st.session_state["_run_success"] = True
+        else:
+            st.error("Failed")
+
+        st.session_state["_run_type"] = None
+
+    # ───────────────────────── OUTPUT ─────────────────────────
+    docx_files = sorted((ROOT / "output").rglob("*.docx")) if (ROOT / "output").exists() else []
+
+    if st.session_state.get("_run_success") and docx_files:
+
+        st.divider()
+        st.caption("Outputs")
+
+        for dp in docx_files:
+            with open(dp, "rb") as fh:
+                st.download_button(
+                    f"⬇ {dp.name}",
+                    data=fh,
+                    file_name=dp.name,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"dl_{dp}",
+                    use_container_width=True
+                )
+    
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # RIGHT — preview
