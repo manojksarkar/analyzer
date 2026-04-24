@@ -1,5 +1,6 @@
 """Export interface_tables.json -> Software Detailed Design DOCX. Unit header table built from model."""
 import os
+import re
 import sys
 import json
 import subprocess
@@ -666,6 +667,67 @@ def _load_flowcharts(flowcharts_dir: str) -> dict:
     return result
 
 
+def _resolve_flowchart_pngs(flowcharts_dir: str, base_stem: str) -> List[Tuple[str, str]]:
+    """Return per-image [(png_path, part_label)] for a flowchart base stem.
+
+    Sliced parts produced by views/flowcharts.py ({stem}__part_K_of_N.png)
+    take precedence over the single {stem}.png. The single file is returned
+    when no slices exist. Empty list when neither is present.
+    """
+    if not flowcharts_dir or not base_stem:
+        return []
+    part_re = re.compile(
+        r"^" + re.escape(base_stem) + r"__part_(\d+)_of_(\d+)\.png$",
+        re.IGNORECASE,
+    )
+    try:
+        names = os.listdir(flowcharts_dir)
+    except OSError:
+        return []
+    parts: List[Tuple[int, int, str]] = []
+    for name in names:
+        m = part_re.match(name)
+        if m:
+            parts.append((int(m.group(1)), int(m.group(2)), os.path.join(flowcharts_dir, name)))
+    if parts:
+        parts.sort(key=lambda t: t[0])
+        return [(p[2], f"Part {p[0]} of {p[1]}") for p in parts]
+    single = os.path.join(flowcharts_dir, f"{base_stem}.png")
+    if os.path.isfile(single):
+        return [(single, "")]
+    return []
+
+
+def _append_flowchart_entries(flowcharts_list: list, flowcharts_dir: str,
+                              base_stems, mermaid: str, label: str) -> None:
+    """Append (png_path, mermaid, label) tuples to flowcharts_list for a function.
+
+    Tries each base stem in order; the first that resolves to at least one PNG
+    wins. When the result is multi-slice, emits one tuple per slice — the first
+    slice carries the full label + "Part K of N" hint and the mermaid text
+    (as a fallback if the PNG is missing); subsequent slices carry only
+    "continued — Part K of N" and no mermaid (they're not independent diagrams).
+    If no PNG resolves, appends a single entry with png_path=None so the
+    mermaid-text fallback still runs.
+    """
+    entries: List[Tuple[str, str]] = []
+    if flowcharts_dir:
+        for stem in base_stems:
+            entries = _resolve_flowchart_pngs(flowcharts_dir, stem)
+            if entries:
+                break
+    if not entries:
+        flowcharts_list.append((None, mermaid, label))
+        return
+    for k, (png_path, part_label) in enumerate(entries):
+        if part_label:
+            combined = f"{label}  —  {part_label}" if k == 0 else f"(continued — {part_label})"
+        else:
+            combined = label
+        mm = mermaid if k == 0 else ""
+        flowcharts_list.append((png_path, mm, combined))
+
+
 def _add_unit_header_table(doc, unit_header_rows: List[Dict[str, str]], font_small) -> None:
     """Add 2-column table under unit header: global variables/typedef/enum/define | information."""
     if not unit_header_rows:
@@ -1021,20 +1083,23 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 # Build flowcharts list: own flowchart + private callee flowcharts
                 flowcharts_list = []
                 if flowchart:
-                    png_path = None
-                    if flowcharts_render_png:
-                        png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
-                        if not os.path.isfile(png_path):
-                            png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
-                        if not os.path.isfile(png_path):
-                            png_path = None
                     iface_params = ", ".join(
                         f"{p.get('type', '')} {p.get('name', '')}".strip()
                         for p in (iface.get("parameters") or [])
                     )
                     iface_return = iface.get("returnType", "") or ""
                     iface_signature = f"{iface_return} {func_name}({iface_params})".strip()
-                    flowcharts_list.append((png_path, flowchart, iface_signature))
+                    base_stems = [
+                        f"{unit_prefix}_{safe_filename(func_name)}",
+                        f"{unit_name_flowchart}_{safe_filename(func_name)}",
+                    ]
+                    _append_flowchart_entries(
+                        flowcharts_list,
+                        flowcharts_dir if flowcharts_render_png else "",
+                        base_stems,
+                        flowchart,
+                        iface_signature,
+                    )
 
                 if flowcharts_enabled:
                     callee_fids = (functions_data.get(iface.get("functionId")) or {}).get("callsIds") or []
@@ -1059,20 +1124,23 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         if callee_fid in rendered_private_fids:
                             continue
                         rendered_private_fids.add(callee_fid)
-                        callee_png = None
-                        if flowcharts_render_png:
-                            callee_png = os.path.join(flowcharts_dir, f"{callee_unit_prefix}_{safe_filename(callee_func_name)}.png")
-                            if not os.path.isfile(callee_png):
-                                callee_png = os.path.join(flowcharts_dir, f"{callee_unit_name}_{safe_filename(callee_func_name)}.png")
-                            if not os.path.isfile(callee_png):
-                                callee_png = None
                         callee_params = ", ".join(
                             f"{p.get('type', '')} {p.get('name', '')}".strip()
                             for p in (callee.get("params") or callee.get("parameters") or [])
                         )
                         callee_return = callee.get("returnType", "")
                         callee_signature = f"{callee_return} {callee_func_name}({callee_params})".strip()
-                        flowcharts_list.append((callee_png, callee_flowchart, callee_signature))
+                        callee_stems = [
+                            f"{callee_unit_prefix}_{safe_filename(callee_func_name)}",
+                            f"{callee_unit_name}_{safe_filename(callee_func_name)}",
+                        ]
+                        _append_flowchart_entries(
+                            flowcharts_list,
+                            flowcharts_dir if flowcharts_render_png else "",
+                            callee_stems,
+                            callee_flowchart,
+                            callee_signature,
+                        )
 
                 if flowcharts_list:
                     input_label = (functions_data.get(iface.get("functionId")) or {}).get("behaviourInputName") or \

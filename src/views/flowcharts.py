@@ -13,12 +13,195 @@ The -I include path is derived from metadata.json basePath when not set in confi
 """
 
 import json
+import math
 import os
+import re
 import shlex
 import subprocess
 import sys
 from .registry import register
 from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
+
+
+# ---------------------------------------------------------------------------
+# Flowchart PNG slicer
+#
+# mmdc renders the full flowchart at its natural aspect ratio. When a function
+# has many nodes the PNG becomes much taller than wide, Word embeds it at a
+# fixed 4" width (see docx_exporter._add_flowchart_table), and the bottom of
+# the image falls off the page. We split the PNG horizontally at whitespace
+# bands between rank layers so each part fits on one page.
+#
+# Constants are keyed to the Word embed geometry:
+#   _SLICE_EMBED_WIDTH_IN — Inches(4.0) in _add_flowchart_table
+#   _SLICE_USABLE_HEIGHT_IN — conservative per-page height after margins,
+#     description paragraph, labels, and table overhead above the image
+# ---------------------------------------------------------------------------
+
+_SLICE_EMBED_WIDTH_IN      = 4.0
+_SLICE_USABLE_HEIGHT_IN    = 7.5
+_SLICE_MAX_ASPECT          = _SLICE_USABLE_HEIGHT_IN / _SLICE_EMBED_WIDTH_IN  # ~1.875
+_SLICE_THRESHOLD_FACTOR    = 1.15   # tolerate up to this × max before slicing
+_SLICE_WIDE_LIMIT          = 1.50   # W/H over this → width is the bottleneck, skip
+_SLICE_WHITE_CUTOFF        = 250    # channel value > this counts as white
+_SLICE_WINDOW_PRIMARY      = 0.15   # ±15% of H for primary whitespace search
+_SLICE_WINDOW_FALLBACK     = 0.20   # ±20% fallback
+_SLICE_MIN_TAIL_FRACTION   = 0.20   # merge tail slice if smaller than 20% of a target slice
+
+
+def _cleanup_stale_slice_parts(png_path: str) -> None:
+    """Remove any {stem}__part_*_of_*.png siblings so state is consistent before (re-)slicing."""
+    out_dir = os.path.dirname(png_path)
+    stem = os.path.splitext(os.path.basename(png_path))[0]
+    pattern = re.compile(
+        r"^" + re.escape(stem) + r"__part_\d+_of_\d+\.png$",
+        re.IGNORECASE,
+    )
+    try:
+        for name in os.listdir(out_dir):
+            if pattern.match(name):
+                try:
+                    os.unlink(os.path.join(out_dir, name))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
+def _pick_cut_ys(white_ys, H: int, N: int):
+    """Given an array of white-row Y indices, pick N-1 cut points targeting
+    evenly spaced boundaries. Falls back to the exact target Y if no white row
+    is within ±20% of H. Returns a sorted list of ints."""
+    import numpy as np
+    primary = int(H * _SLICE_WINDOW_PRIMARY)
+    fallback = int(H * _SLICE_WINDOW_FALLBACK)
+    slice_h = H / N
+    cuts = []
+    for k in range(1, N):
+        target = int(k * slice_h)
+        chosen = target
+        if len(white_ys):
+            mask = (white_ys >= target - primary) & (white_ys <= target + primary)
+            cands = white_ys[mask]
+            if not len(cands):
+                mask = (white_ys >= target - fallback) & (white_ys <= target + fallback)
+                cands = white_ys[mask]
+            if len(cands):
+                idx = int(np.argmin(np.abs(cands.astype(np.int64) - target)))
+                chosen = int(cands[idx])
+        cuts.append(chosen)
+    return sorted(set(cuts))
+
+
+def _maybe_slice_tall_png(png_path: str) -> int:
+    """If `png_path`'s aspect would overflow one Word page at 4" wide, split it
+    horizontally at whitespace bands and write {stem}__part_K_of_N.png siblings.
+
+    The original PNG is removed when slicing happens so the state is either
+    "single original" OR "N parts" — never both. Slicing is best-effort:
+    any error keeps the original intact and returns 1.
+
+    Returns the number of parts produced (1 means no slice happened).
+    """
+    try:
+        import numpy as np
+        from PIL import Image
+    except ImportError as exc:
+        log("slice: PIL/numpy unavailable, skipping slice (%s)" % exc, component="flowcharts")
+        return 1
+
+    try:
+        img = Image.open(png_path)
+        img.load()
+    except Exception as exc:
+        log("slice: cannot open %s: %s" % (png_path, exc), component="flowcharts")
+        return 1
+    try:
+        rgb = img.convert("RGB")
+    except Exception as exc:
+        log("slice: convert RGB failed for %s: %s" % (png_path, exc), component="flowcharts")
+        try:
+            img.close()
+        except Exception:
+            pass
+        return 1
+
+    W, H = rgb.size
+    try:
+        img.close()
+    except Exception:
+        pass
+
+    if W <= 0 or H <= 0:
+        return 1
+
+    # Always scrub stale parts first so a previous longer/shorter run doesn't
+    # leave mismatched parts alongside the fresh original.
+    _cleanup_stale_slice_parts(png_path)
+
+    # Width-bottleneck: height-slicing can't help a wide-and-short image.
+    if W / H > _SLICE_WIDE_LIMIT:
+        log("slice: %s is wide (W/H=%.2f), skipping" % (os.path.basename(png_path), W / H),
+            component="flowcharts")
+        return 1
+
+    aspect = H / W
+    if aspect <= _SLICE_MAX_ASPECT * _SLICE_THRESHOLD_FACTOR:
+        return 1  # fits on one page, possibly after minor Word scaling
+
+    N = max(2, int(math.ceil(aspect / _SLICE_MAX_ASPECT)))
+
+    # Find rows that are entirely near-white. min over width AND channels → (H,)
+    arr = np.asarray(rgb, dtype=np.uint8)
+    row_min = arr.min(axis=(1, 2))
+    white_ys = np.nonzero(row_min > _SLICE_WHITE_CUTOFF)[0]
+
+    cut_ys = _pick_cut_ys(white_ys, H, N)
+    boundaries = [0] + cut_ys + [H]
+
+    # Merge a too-small tail slice into its predecessor.
+    target_slice_h = H / N
+    if len(boundaries) >= 3:
+        tail_h = boundaries[-1] - boundaries[-2]
+        if tail_h < _SLICE_MIN_TAIL_FRACTION * target_slice_h:
+            boundaries = boundaries[:-2] + [boundaries[-1]]
+
+    n_parts = len(boundaries) - 1
+    if n_parts < 2:
+        return 1
+
+    stem, ext = os.path.splitext(png_path)
+    written = []
+    try:
+        for i in range(n_parts):
+            y0, y1 = boundaries[i], boundaries[i + 1]
+            crop = rgb.crop((0, y0, W, y1))
+            out_path = f"{stem}__part_{i + 1}_of_{n_parts}{ext}"
+            crop.save(out_path)
+            written.append(out_path)
+    except Exception as exc:
+        log("slice: write failed for %s: %s — keeping original" % (png_path, exc),
+            component="flowcharts")
+        for p in written:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+        return 1
+
+    try:
+        rgb.close()
+    except Exception:
+        pass
+    try:
+        os.unlink(png_path)
+    except OSError:
+        pass
+
+    log("slice: %s -> %d parts (aspect=%.2f, W=%d H=%d)" %
+        (os.path.basename(png_path), n_parts, aspect, W, H),
+        component="flowcharts")
+    return n_parts
 
 
 def _resolve_script(project_root: str, script_path: str) -> str:
@@ -222,6 +405,9 @@ def run(model, output_dir, model_dir, config):
             if r.returncode != 0:
                 failed += 1
                 log("mmdc failed for %s/%s: %s" % (unit_name, func_name, (r.stderr or r.stdout or "exit " + str(r.returncode))[:200]), component="flowcharts", err=True)
+            elif os.path.isfile(png_path):
+                # Split oversize flowcharts into per-page slices so Word doesn't clip them.
+                _maybe_slice_tall_png(png_path)
         except (subprocess.TimeoutExpired, OSError) as e:
             failed += 1
             log("mmdc error for %s/%s: %s" % (unit_name, func_name, e), component="flowcharts", err=True)
