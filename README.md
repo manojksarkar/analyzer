@@ -10,6 +10,27 @@ python run.py test_cpp_project
 
 Config: [config/config.json](config/config.json) (override with `config.local.json`).
 
+## UI
+
+A Streamlit web interface for configuring, running the pipeline, and viewing results.
+
+### Install
+
+```bash
+pip install -r requirements.txt
+pip install -r ui/requirements.txt
+```
+
+### Run
+
+```bash
+streamlit run ui/app.py
+```
+
+Opens at `http://localhost:8501` in your browser.
+
+> The UI reads and writes `config/config.json`. Set your project path, configure groups/modules, then click **Run full** to execute the pipeline.
+
 ## Documentation
 
 | Document | Description |

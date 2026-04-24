@@ -1299,13 +1299,13 @@ with tab_mg:
             gid   = g["gid"]
             gname = st.session_state.get(f"g{gid}_name", g["name"]).strip() or "(unnamed)"
 
-            with st.expander(f"📁 {gname}", expanded=True):
+            with st.expander(f"◆ {gname}", expanded=True):
 
                 for m in g["modules"]:
                     mid   = m["mid"]
                     mname = st.session_state.get(f"m{mid}_name", m["mod"]).strip() or "(unnamed)"
 
-                    with st.expander(f"📦 {mname}"):
+                    with st.expander(f"◇ {mname}"):
 
                         unit_ids = _modules_all.get(mname, {}).get("units", [])
 
