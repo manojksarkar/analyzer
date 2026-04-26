@@ -67,6 +67,7 @@ config:
 %%{
   init: {
     "flowchart": {
+      "defaultRenderer": "elk",
       "padding": 0,
       "nodeSpacing": 50,
       "rankSpacing": 60,

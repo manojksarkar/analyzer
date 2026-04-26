@@ -139,14 +139,21 @@ def _maybe_slice_tall_png(png_path: str) -> int:
     # leave mismatched parts alongside the fresh original.
     _cleanup_stale_slice_parts(png_path)
 
+    name = os.path.basename(png_path)
+    threshold = _SLICE_MAX_ASPECT * _SLICE_THRESHOLD_FACTOR
+
     # Width-bottleneck: height-slicing can't help a wide-and-short image.
     if W / H > _SLICE_WIDE_LIMIT:
-        log("slice: %s is wide (W/H=%.2f), skipping" % (os.path.basename(png_path), W / H),
+        log("slice: %s W=%d H=%d aspect=%.2f W/H=%.2f -> skipped (wide layout, threshold W/H>%.2f)"
+            % (name, W, H, H / W, W / H, _SLICE_WIDE_LIMIT),
             component="flowcharts")
         return 1
 
     aspect = H / W
-    if aspect <= _SLICE_MAX_ASPECT * _SLICE_THRESHOLD_FACTOR:
+    if aspect <= threshold:
+        log("slice: %s W=%d H=%d aspect=%.2f -> not sliced (fits, threshold=%.2f)"
+            % (name, W, H, aspect, threshold),
+            component="flowcharts")
         return 1  # fits on one page, possibly after minor Word scaling
 
     N = max(2, int(math.ceil(aspect / _SLICE_MAX_ASPECT)))
@@ -198,8 +205,8 @@ def _maybe_slice_tall_png(png_path: str) -> int:
     except OSError:
         pass
 
-    log("slice: %s -> %d parts (aspect=%.2f, W=%d H=%d)" %
-        (os.path.basename(png_path), n_parts, aspect, W, H),
+    log("slice: %s W=%d H=%d aspect=%.2f -> sliced into %d parts (threshold=%.2f)"
+        % (name, W, H, aspect, n_parts, threshold),
         component="flowcharts")
     return n_parts
 
