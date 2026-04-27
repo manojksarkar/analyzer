@@ -77,7 +77,11 @@ config:
     "elk": {
       "mergeEdges": false,
       "nodePlacementStrategy": "BRANDES_KOEPF",
-      "cycleBreakingStrategy": "GREEDY"
+      "cycleBreakingStrategy": "GREEDY",
+      "feedbackEdges": true,
+      "elk.layered.feedbackEdges": true,
+      "elk.layered.thoroughness": 50,
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP"
     },
     "sequence": {
       "padding": 0,
