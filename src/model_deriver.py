@@ -110,6 +110,21 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
     return units_data, unit_by_file
 
 
+def _has_external_caller(f: dict, functions_data: dict, base_path: str) -> bool:
+    own_file = _file_path(f, base_path)
+    for caller_id in f.get("calledByIds", []):
+        caller = functions_data.get(caller_id)
+        if caller and _file_path(caller, base_path) != own_file:
+            return True
+    return False
+
+
+def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
+    if (f.get("visibility") or "").lower() == "private":
+        return True
+    return not _has_external_caller(f, functions_data, base_path)
+
+
 def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict):
     public_fns_by_file = {}
     private_fns_by_file = {}
@@ -119,7 +134,7 @@ def _build_interface_index(base_path: str, functions_data: dict, global_variable
         fp = _file_path(f, base_path)
         if not fp:
             continue
-        bucket = private_fns_by_file if (f.get("visibility") or "").lower() == "private" else public_fns_by_file
+        bucket = private_fns_by_file if _fn_is_private(f, functions_data, base_path) else public_fns_by_file
         bucket.setdefault(fp, []).append((fid, f))
     for vid, g in global_variables_data.items():
         fp = _file_path(g, base_path)
@@ -160,8 +175,7 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
         group_code = _id_seg(resolve_group(key_parts[0]))
         idx_code = f"{idx_by_id.get(fid, 0):02d}"
-        is_private = (f.get("visibility") or "").lower() == "private"
-        prefix = "PIF" if is_private else "IF"
+        prefix = "PIF" if _fn_is_private(f, functions_data, base_path) else "IF"
         interface_id = f"{prefix}_{proj_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{proj_code}_{unit_name_code}_{idx_code}"
         raw_params = f.get("parameters", f.get("params", []))
         params = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]

@@ -901,10 +901,25 @@ Groups all functions and globals by file path. Produces:
 
 ### `_build_interface_index` / `_enrich_interfaces`
 
-Assigns a per-file sequential index, then sets
-`interfaceId = IF_<PROJECTUPPER>_<UNITPATH_UPPER>_<INDEX>` on each function and
-global. Also normalises `parameters` to `[{name, type}]`, dropping any extra
-fields the parser captured.
+Assigns a per-file sequential index and sets `interfaceId` on each function and global. Rules:
+
+- **Functions are numbered first** (sorted by line), then **globals continue the same counter** — so globals always have higher indices than functions in the same file.
+- **Public entries** use prefix `IF_` → `IF_<PROJ>_<GROUP>_<UNIT>_<NN>`
+- **Private entries** use prefix `PIF_` → `PIF_<PROJ>_<GROUP>_<UNIT>_<NN>`, numbered in a separate independent sequence (so public IDs have no gaps).
+- Private functions/globals are excluded from `output/interface_tables.json` (view filter unchanged).
+
+**Function privacy rule (call-graph based, `_fn_is_private`):**
+A function is private if either condition holds:
+1. Its source-level `visibility` is `"private"` (detected by `_detect_visibility` in parser.py), OR
+2. None of its `calledByIds` entries belong to a different file — i.e. it has no cross-unit callers (including the case of zero callers).
+
+Explicit `PUBLIC` source annotation does **not** protect a function from being classified private — the call graph is authoritative. Two helpers implement this:
+- `_has_external_caller(f, functions_data, base_path)` — returns `True` if any caller lives in a different file.
+- `_fn_is_private(f, functions_data, base_path)` — combines the two conditions above.
+
+Globals use the old visibility-only rule (they have no call graph).
+
+Also normalises `parameters` to `[{name, type}]`, dropping any extra fields the parser captured.
 
 ### `_propagate_global_access`
 
@@ -1356,7 +1371,7 @@ Software Detailed Design                                       (Heading 0)
         [Unit header table — globals/typedef/enum/define | information]
       2.1.1.2 unit interface                                   (Heading 4)
         [Interface table — 8 cols, see below]
-      2.1.1.3 <UnitName>-<InterfaceId>                         (Heading 4)
+      2.1.1.3 <UnitName>-<FuncName>                            (Heading 4)
         [Flowchart table — 5 rows, see below]
       ... one Heading-4 sub-section per interface ...
   2.2 Dynamic Behaviour                                        (Heading 2)

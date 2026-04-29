@@ -1010,9 +1010,8 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
             rendered_private_fids = set()  # track private flowcharts already shown in this unit
             for iface_idx, iface in enumerate(interfaces, start=3):
-                iface_id = iface.get("interfaceId", "")
-                doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{iface_id}", level=4)
                 func_name = iface.get("name", "")
+                doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{func_name}", level=4)
                 unit_prefix = unit_key.replace(KEY_SEP, "_")
                 flowchart = (
                     flowcharts_map.get(unit_prefix, {}).get(func_name)
