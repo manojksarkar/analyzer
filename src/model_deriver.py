@@ -175,7 +175,11 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
         group_code = _id_seg(resolve_group(key_parts[0]))
         idx_code = f"{idx_by_id.get(fid, 0):02d}"
-        prefix = "PIF" if _fn_is_private(f, functions_data, base_path) else "IF"
+        if _fn_is_private(f, functions_data, base_path):
+            f["visibility"] = "private"
+            prefix = "PIF"
+        else:
+            prefix = "IF"
         interface_id = f"{prefix}_{proj_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{proj_code}_{unit_name_code}_{idx_code}"
         raw_params = f.get("parameters", f.get("params", []))
         params = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]
