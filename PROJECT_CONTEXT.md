@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-04 (feat/test-framework — direction logic fixes, lambda propagation, DESIGN_SPEC + TEST_INVENTORY docs, interface table test overhaul, unit diagrams test expansion + DESIGN_SPEC REQ-UD-XX, snapshot refresh, behaviour diagram test no-LLM cleanup).
+> Updated: 2026-05-04 (feat/test-framework — direction logic fixes, lambda propagation, test overhaul, no-LLM cleanup on behaviour diagram + flowchart tests, DESIGN_SPEC fully rewritten: all rules are output/DOCX-focused with no code logic — REQ-DS-XX, REQ-IT-XX, REQ-UD-XX, REQ-BD-XX, REQ-FC-XX, REQ-CO-XX; TEST_INVENTORY rule coverage tables updated to match).
 > Current active branch: `feat/test-framework` (off `version3`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.

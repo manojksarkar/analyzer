@@ -1,15 +1,18 @@
 """Unit tests for the flowchart generator.
 
-Tests the generator contract independently of the pipeline.
-LLM calls are mocked via the llm_client seam so tests are fast and deterministic.
+No LLM required — three classes test the current static implementation:
+  TestFunctionIdToUnitKey  key extraction logic (pure)
+  TestSafeFilename         filename sanitization (pure)
+  TestRun                  run() output: one JSON per unit, {name, flowchart} entries
+
+One class requires LLM (all xfail until the seam is wired):
+  TestBuildFlowchartForFunction  LLM called with source, response returned, fences stripped
 
 Contract the real generator must satisfy:
-- build_flowchart_for_function(func_data, source) calls LLM with a prompt
-  that contains the source code and returns the Mermaid diagram as a string.
+- build_flowchart_for_function(func_data, source) calls LLM with source in prompt,
+  returns the Mermaid string, strips code fences, falls back on empty response.
 - run() groups functions by unit, writes one JSON file per unit,
   each file is a list of {name, flowchart} objects.
-- Graceful fallback when LLM returns empty string.
-- Code fences (```mermaid```) in LLM response are stripped before storing.
 """
 import json
 import os

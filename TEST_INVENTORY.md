@@ -71,43 +71,61 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 
 ## Rule coverage (from DESIGN_SPEC.md)
 
-### Interface Tables — `tests/e2e/test_interface_tables.py`
+### Document Structure — `tests/e2e/test_docx.py`
 
 | Requirement | Rule | Test | Status |
 |---|---|---|---|
-| REQ-IT-01 | Only `.cpp`-backed units included | `test_expected_units_present` | Covered |
+| REQ-DS-01 | Introduction sub-headings present (Purpose, Scope, Terms) | `test_introduction_section_headings` (parametrized) | Covered |
+| REQ-DS-01 | Code Metrics heading present | `test_code_metrics_heading_present` | Covered |
+| REQ-DS-01 | Appendix heading present | `test_appendix_heading_present` | Covered |
+| REQ-DS-02 | Module names as Heading 1 | `test_module_level1_heading_present` (parametrized) | Covered |
+| REQ-DS-02 | Unit diagram present after unit heading | `test_unit_diagram_image_placed_after_heading` (parametrized) | Covered |
+| REQ-DS-02 | Unit header table present | `test_unit_header_table_present` | Covered |
+| REQ-DS-03 | Static Design heading present | `test_heading_present[Static]` | Covered |
+| REQ-DS-03 | Flowchart tables present | `test_flowchart_tables_present` | Covered |
+| REQ-DS-03 | Component/unit table present | `test_component_unit_table_present` | Covered |
+| REQ-DS-03 | Module architecture diagram present | `test_module_static_diagram_content_present` | Covered |
+| REQ-DS-04 | Dynamic Behaviour heading present | `test_heading_present[Dynamic Behaviour]` | Covered |
+| REQ-DS-04 | Scenario sub-headings present for Core | `test_dynamic_behaviour_sub_headings_for_core` | Covered |
+
+---
+
+### Interface Tables — `tests/unit/test_interface_tables_view.py` + `tests/e2e/test_interface_tables.py`
+
+| Requirement | Rule | Test | Status |
+|---|---|---|---|
+| REQ-IT-01 | Only source-backed units included | `test_expected_units_present` (e2e) | Covered |
 | REQ-IT-01 | Header-only units excluded | — | Not tested |
 | REQ-IT-01 | Module-scoped run filters units | — | Not tested |
-| REQ-IT-02 | PUBLIC functions included | `test_public_functions_present` | Covered |
-| REQ-IT-02 | PROTECTED functions included | `test_protected_functions_included` | Covered |
-| REQ-IT-02 | PUBLIC globals included | `test_public_global_present` | Covered |
-| REQ-IT-02 | PRIVATE functions excluded | `test_private_functions_excluded` | Covered |
-| REQ-IT-02 | PRIVATE globals excluded | `test_private_globals_excluded` | Covered |
-| REQ-IT-03 | Entries sorted by source line order | `test_function_entries_sorted_by_line` | Covered (functions only) |
-| REQ-IT-04 | All column fields present on every entry | `test_required_fields_present` | Covered |
-| REQ-IT-04 | Entry type is `Function` or `Global Variable` | `test_entry_types_valid` | Covered |
-| REQ-IT-05 | Writes any global → `In` | `test_function_direction[coreSetResult-In]` | Covered |
-| REQ-IT-05 | Reads globals, writes none → `Out` | `test_function_direction[coreGetCount-Out]`, `test_function_direction[utilCompute-Out]` | Covered |
-| REQ-IT-05 | No global access → `Out` | `test_function_direction[coreAdd-Out]`, `test_function_direction[libAdd-Out]` | Covered |
-| REQ-IT-05 | Nested lambda writes → enclosing gets `In` | — | Not tested |
-| REQ-IT-05 | Direction value is `In` or `Out` only | `test_function_direction_values_valid` | Covered |
-| REQ-IT-05 | Global variables always `In/Out` | `test_global_variable_direction_is_inout` | Covered |
-| REQ-IT-06 | Interface Name is short unqualified name | `test_public_functions_present`, `test_public_global_present` | Covered (presence) |
+| REQ-IT-02 | Public functions included | `test_public_functions_present` (e2e) | Covered |
+| REQ-IT-02 | Protected functions included | `test_protected_functions_included` (e2e) | Covered |
+| REQ-IT-02 | Public globals included | `test_public_global_present` (e2e) | Covered |
+| REQ-IT-02 | Private functions excluded | `test_private_functions_excluded` (e2e) | Covered |
+| REQ-IT-02 | Private globals excluded | `test_private_globals_excluded` (e2e) | Covered |
+| REQ-IT-03 | Entries sorted by source line order | `test_function_entries_sorted_by_line` (e2e) | Covered (functions only) |
+| REQ-IT-04 | All column fields present on every entry | `test_required_fields_present` (e2e) | Covered |
+| REQ-IT-04 | Entry type is `Function` or `Global Variable` | `test_entry_types_valid` (e2e) | Covered |
+| REQ-IT-05 | Modifier function → `In` | `test_function_direction[coreSetResult-In]` (e2e) | Covered |
+| REQ-IT-05 | Read-only function → `Out` | `test_function_direction[coreGetCount-Out]`, `test_function_direction[utilCompute-Out]` (e2e) | Covered |
+| REQ-IT-05 | Pure function (no globals) → `Out` | `test_function_direction[coreAdd-Out]`, `test_function_direction[libAdd-Out]` (e2e) | Covered |
+| REQ-IT-05 | Nested lambda modifier → enclosing gets `In` | — | Not tested |
+| REQ-IT-05 | Direction value is `In` or `Out` only | `test_function_direction_values_valid` (e2e) | Covered |
+| REQ-IT-05 | Global variables always `In/Out` | `test_global_variable_direction_is_inout` (e2e) | Covered |
+| REQ-IT-06 | Interface Name is short unqualified name | `test_public_functions_present`, `test_public_global_present` (e2e) | Covered (presence) |
 | REQ-IT-07 | Information is `-` when LLM off | — | Not tested (LLM off in CI) |
-| REQ-IT-08 | Data Type — param types or `VOID` for functions | `test_interface_tables_view.py::BuildInterfaceTables` (unit) | Covered (unit) |
-| REQ-IT-08 | Data Type — variable type for globals | `test_interface_tables_view.py::BuildInterfaceTables` (unit) | Covered (unit) |
-| REQ-IT-09 | Data Range — from data dictionary, `NA` if none | `test_interface_tables_view.py::BuildInterfaceTables` (unit) | Covered (unit) |
-| REQ-IT-10 | Interface Type is `Function` or `Global Variable` | `test_entry_types_valid` | Covered |
-| REQ-IT-11 | Interface ID starts with `IF_` | `test_interface_ids_start_with_IF` | Covered |
-| REQ-IT-11 | Interface ID matches `IF_<UPPER>..._<NN>` format | `test_interface_id_segments_uppercase` | Covered |
+| REQ-IT-08 | Data Type — param types or `VOID` | `BuildInterfaceTables` (unit) | Covered (unit) |
+| REQ-IT-08 | Data Type — variable type for globals | `BuildInterfaceTables` (unit) | Covered (unit) |
+| REQ-IT-09 | Data Range — from data dictionary, `NA` if none | `BuildInterfaceTables` (unit) | Covered (unit) |
+| REQ-IT-10 | Interface Type is `Function` or `Global Variable` | `test_entry_types_valid` (e2e) | Covered |
+| REQ-IT-11 | Interface ID starts with `IF_` | `test_interface_ids_start_with_IF` (e2e) | Covered |
+| REQ-IT-11 | Interface ID segments are uppercase | `test_interface_id_segments_uppercase` (e2e) | Covered |
 | REQ-IT-11 | `<GROUP>` omitted when no group resolves | — | Not tested |
-| REQ-IT-12 | `callerUnits` and `calleesUnits` present | `test_required_fields_present` | Covered |
-| REQ-IT-12 | `callerUnits` populated for called functions | `test_caller_units_populated` | Covered |
-| REQ-IT-12 | `calleesUnits` populated for calling functions | `test_callee_units_populated` | Covered |
-| REQ-IT-12 | Both lists include same-module units | `test_callee_units_populated` | Covered |
-| REQ-IT-12 | `sourceDest` shows external units only | `test_sourcedest_dash_when_no_external_connections` | Covered (negative) |
-| REQ-IT-12 | `sourceDest` is `"-"` when no external connections | `test_sourcedest_dash_when_no_external_connections` | Covered |
-| REQ-IT-12 | Global entries have empty caller/callee lists | `test_global_entries_have_empty_caller_callee` | Covered |
+| REQ-IT-12 | `callerUnits` and `calleesUnits` present | `test_required_fields_present` (e2e) | Covered |
+| REQ-IT-12 | `callerUnits` populated for called functions | `test_caller_units_populated` (e2e) | Covered |
+| REQ-IT-12 | `calleesUnits` populated for calling functions | `test_callee_units_populated` (e2e) | Covered |
+| REQ-IT-12 | `sourceDest` shows external units only | `test_sourcedest_dash_when_no_external_connections` (e2e) | Covered (negative) |
+| REQ-IT-12 | `sourceDest` is `-` when no external connections | `test_sourcedest_dash_when_no_external_connections` (e2e) | Covered |
+| REQ-IT-12 | Global entries have empty caller/callee lists | `test_global_entries_have_empty_caller_callee` (e2e) | Covered |
 
 #### Gaps
 
@@ -115,68 +133,64 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 |---|---|---|
 | REQ-IT-01 | Header-only units excluded | Needs a header-only unit in SampleCppProject |
 | REQ-IT-01 | Module-scoped filtering | Needs a separate run fixture scoped to one module |
-| REQ-IT-05 | Nested lambda writes → enclosing `In` | Needs a C++ fixture with a lambda writing a global |
+| REQ-IT-05 | Nested lambda modifier → enclosing `In` | Needs a C++ fixture with a lambda writing a global |
 | REQ-IT-07 | Information field when LLM is on | LLM disabled in CI |
 | REQ-IT-11 | `<GROUP>` omitted when no group resolves | Needs a project with no `modulesGroups` config |
 
 ---
 
-### Unit Diagrams — `tests/unit/test_unit_diagrams_view.py` + `tests/e2e/test_unit_diagrams.py`
+### Unit Architecture Diagrams — `tests/unit/test_unit_diagrams_view.py` + `tests/e2e/test_unit_diagrams.py`
 
 | Requirement | Rule | Test | Status |
 |---|---|---|---|
-| REQ-UD-01 | Only `.cpp`-backed units produce a diagram | `test_non_cpp_unit_returns_none` (unit) | Covered |
-| REQ-UD-01 | `.cpp` unit returns a diagram | `test_cpp_unit_returns_string` (unit) | Covered |
-| REQ-UD-01 | Module-scoped: only allowed units generated | `test_allowed_modules_marks_internal_units` (unit) | Covered |
-| REQ-UD-02 | Pipe replaced by underscore in node ID | `test_pipe_replaced_by_underscore` | Covered |
-| REQ-UD-02 | Space replaced by underscore in node ID | `test_space_replaced_by_underscore` | Covered |
-| REQ-UD-02 | Empty key maps to `"u"` | `test_empty_string_returns_u`, `test_none_returns_u` | Covered |
-| REQ-UD-02 | Combined pipe + space | `test_pipe_and_space_combined` | Covered |
-| REQ-UD-03 | Double-quotes → single-quotes | `test_double_quotes_replaced_by_single` | Covered |
-| REQ-UD-03 | Newline → space | `test_newline_replaced_by_space` | Covered |
-| REQ-UD-03 | Pipe → broken-bar | `test_pipe_replaced_by_broken_bar` | Covered |
-| REQ-UD-03 | Multiple escapes combined | `test_multiple_escapes_combined` | Covered |
-| REQ-UD-04 | Diagram starts with `%%{init:` | `test_output_starts_with_mermaid_init` (unit), `test_flowchart_direction_is_lr` (e2e) | Covered |
-| REQ-UD-04 | `flowchart LR` present | `test_output_contains_flowchart_lr` (unit) | Covered |
-| REQ-UD-04 | `subgraph internal_mod` present | `test_output_contains_subgraph_for_module` (unit), `test_subgraph_present` (e2e) | Covered |
+| REQ-UD-01 | Only source-backed units produce a diagram | `test_non_cpp_unit_returns_none` (unit) | Covered |
+| REQ-UD-01 | Source-backed unit returns a diagram | `test_cpp_unit_returns_string` (unit) | Covered |
+| REQ-UD-01 | Group-scoped: only allowed units generated | `test_allowed_modules_marks_internal_units` (unit) | Covered |
+| REQ-UD-02 | Node IDs contain no invalid characters | `test_pipe_replaced_by_underscore`, `test_space_replaced_by_underscore` (unit) | Covered |
+| REQ-UD-02 | Empty key maps to safe fallback `"u"` | `test_empty_string_returns_u`, `test_none_returns_u` (unit) | Covered |
+| REQ-UD-03 | Double-quotes → single-quotes in labels | `test_double_quotes_replaced_by_single` (unit) | Covered |
+| REQ-UD-03 | Newline → space in labels | `test_newline_replaced_by_space` (unit) | Covered |
+| REQ-UD-03 | Pipe → broken-bar in labels | `test_pipe_replaced_by_broken_bar` (unit) | Covered |
+| REQ-UD-03 | Multiple escapes combined | `test_multiple_escapes_combined` (unit) | Covered |
+| REQ-UD-04 | Diagram direction is left-to-right | `test_output_contains_flowchart_lr` (unit), `test_flowchart_direction_is_lr` (e2e) | Covered |
+| REQ-UD-04 | Subgraph present | `test_output_contains_subgraph_for_module` (unit), `test_subgraph_present` (e2e) | Covered |
 | REQ-UD-04 | Subgraph label matches module name | `test_subgraph_labelled_with_module_name` (unit), `test_subgraph_label_matches_module` (e2e) | Covered |
-| REQ-UD-05 | Outgoing cross-unit call edge labeled with callee interfaceId | `test_callee_edge_labeled_with_interface_id` (unit), `test_cross_module_edge_with_if_label` (e2e) | Covered |
-| REQ-UD-05 | Incoming call edge labeled with callee interfaceId | `test_incoming_caller_edge_labeled_with_interface_id` (unit) | Covered |
-| REQ-UD-05 | Self-calls produce no edge | `test_self_calls_not_added_as_edges` (unit) | Covered |
-| REQ-UD-05 | Multi-call edges contain all interfaceIds | `test_multiple_ifaces_on_same_edge_both_appear` (unit) | Covered |
-| REQ-UD-06 | External caller node before subgraph | `test_external_caller_node_appears_before_subgraph` (unit) | Covered |
-| REQ-UD-06 | External callee node after subgraph `end` | `test_external_callee_node_appears_after_subgraph` (unit) | Covered |
-| REQ-UD-07 | Current unit gets `mainUnit` class | `test_mainunit_class_applied_to_current_unit` (unit), `test_main_unit_has_main_unit_class` (e2e) | Covered |
-| REQ-UD-07 | Peer units get `internal` class | `test_internal_peer_gets_internal_class` (unit) | Covered |
-| REQ-UD-07 | Peers not marked `mainUnit` | `test_internal_peer_gets_internal_class` (unit), `test_peer_not_styled_as_main_unit` (e2e) | Covered |
-| REQ-UD-08 | `allowed_modules` defines "internal" boundary | `test_allowed_modules_marks_internal_units` (unit) | Covered |
+| REQ-UD-05 | Outgoing cross-unit call edge labelled with `IF_` ID | `test_callee_edge_labeled_with_interface_id` (unit), `test_cross_module_edge_with_if_label` (e2e) | Covered |
+| REQ-UD-05 | Incoming call edge labelled with `IF_` ID | `test_incoming_caller_edge_labeled_with_interface_id` (unit) | Covered |
+| REQ-UD-05 | Same-unit calls produce no edge | `test_self_calls_not_added_as_edges` (unit) | Covered |
+| REQ-UD-05 | Multiple calls share one edge with all IDs | `test_multiple_ifaces_on_same_edge_both_appear` (unit) | Covered |
+| REQ-UD-06 | External caller node appears left of subgraph | `test_external_caller_node_appears_before_subgraph` (unit) | Covered |
+| REQ-UD-06 | External callee node appears right of subgraph | `test_external_callee_node_appears_after_subgraph` (unit) | Covered |
+| REQ-UD-07 | Current unit has `mainUnit` style | `test_mainunit_class_applied_to_current_unit` (unit), `test_main_unit_has_main_unit_class` (e2e) | Covered |
+| REQ-UD-07 | Same-module peers have `internal` style | `test_internal_peer_gets_internal_class` (unit) | Covered |
+| REQ-UD-07 | Peers not styled as `mainUnit` | `test_internal_peer_gets_internal_class` (unit), `test_peer_not_styled_as_main_unit` (e2e) | Covered |
+| REQ-UD-08 | Group boundary defines internal vs external | `test_allowed_modules_marks_internal_units` (unit) | Covered |
 
 #### Gaps
 
 | Requirement | Gap | Reason |
 |---|---|---|
 | REQ-UD-01 | Header-only unit excluded from e2e output | No header-only unit in SampleCppProject fixture |
-| REQ-UD-06 | Internal peer nodes appear inside subgraph (e2e) | All modules are in the same group, so all are internal — covered implicitly |
 
 ---
 
-### Behaviour Diagrams — `tests/unit/test_behaviour_diagram_generator.py` + `tests/e2e/test_behaviour_diagram.py`
+### Dynamic Behaviour — `tests/unit/test_behaviour_diagram_generator.py` + `tests/e2e/test_behaviour_diagram.py`
 
 | Requirement | Rule | Test | Status |
 |---|---|---|---|
-| REQ-BD-01 | External caller produces a `.mmd` file | `test_external_caller_produces_mmd_file` (unit) | Covered |
-| REQ-BD-01 | Internal caller (same module) produces no file | `test_internal_caller_produces_no_file` (unit) | Covered |
-| REQ-BD-01 | No callers → returns `[]` | `test_no_callers_returns_empty_list` (unit) | Covered |
-| REQ-BD-01 | Internal callers excluded from e2e output | `test_lib_has_no_docx_rows`, `test_util_has_no_docx_rows` (e2e) | Covered |
+| REQ-BD-01 | Function with external caller has a scenario entry | `test_external_caller_produces_mmd_file` (unit), `test_core_has_docx_rows` (e2e) | Covered |
+| REQ-BD-01 | Function with no external callers has no entry | `test_no_callers_returns_empty_list` (unit) | Covered |
+| REQ-BD-01 | Functions only called internally have no entry | `test_internal_caller_produces_no_file` (unit), `test_lib_has_no_docx_rows`, `test_util_has_no_docx_rows` (e2e) | Covered |
+| REQ-BD-01 | Multiple external callers produce multiple entries | `test_multiple_external_callers_produce_multiple_files` (unit) | Covered |
 | REQ-BD-01 | All external callers are outside the selected group | `test_core_external_callers_are_outside_sample` (e2e) | Covered |
-| REQ-BD-02 | Two external callers → two `.mmd` files | `test_multiple_external_callers_produce_multiple_files` (unit) | Covered |
-| REQ-BD-02 | External callers produce rows in `_docxRows` | `test_core_has_docx_rows` (e2e) | Covered |
-| REQ-BD-03 | Filename contains `__` separator | `test_files_use_double_underscore_separator` (unit), `test_mmd_files_use_double_underscore_separator` (e2e) | Covered |
-| REQ-BD-03 | Filename ends with `.mmd` | `test_files_have_mmd_extension` (unit) | Covered |
-| REQ-BD-03 | Filename contains no `\|` characters | `test_pipe_chars_sanitized_in_filename` (unit) | Covered |
-| REQ-BD-04 | `.mmd` file is non-empty | `test_mmd_files_are_non_empty` (unit) | Covered |
-| REQ-BD-04 | `.mmd` file contains valid Mermaid | `test_mmd_files_contain_valid_mermaid` (unit), `test_mmd_files_contain_valid_mermaid` (e2e) | Covered |
-| REQ-BD-05 | LLM response written to `.mmd` | `TestLlmContract::test_llm_response_written_to_mmd` *(xfail)* | Not yet |
+| REQ-BD-02 | Scenario heading identifies function and caller | `test_external_unit_function_format` (e2e) | Covered |
+| REQ-BD-03 | Each scenario contains a valid Mermaid diagram | `test_mmd_files_contain_valid_mermaid` (unit), `test_mmd_files_contain_valid_mermaid` (e2e) | Covered |
+| REQ-BD-03 | Diagram file is non-empty | `test_mmd_files_are_non_empty` (unit) | Covered |
+| REQ-BD-04 | Scenario description table present in DOCX | `test_behaviour_description_tables_present` (e2e/docx) | Covered |
+| REQ-BD-04 | All five row labels present (Requirements, Risk, Capacity, Input Name, Output Name) | `test_behaviour_description_tables_present` (e2e/docx) | Covered |
+| REQ-BD-05 | Input Name and Output Name are non-empty strings | `test_all_public_functions_have_behaviour_input_name`, `test_all_public_functions_have_behaviour_output_name` (e2e) | Covered |
+| REQ-BD-05 | Both fields are always strings | `test_behaviour_names_are_strings` (e2e) | Covered |
+| REQ-BD-05 | LLM response written as diagram content | `TestLlmContract::test_llm_response_written_to_mmd` *(xfail)* | Not yet |
 | REQ-BD-05 | Code fences stripped from LLM response | `TestLlmContract::test_code_fences_stripped_from_llm_response` *(xfail)* | Not yet |
 | REQ-BD-05 | Fallback diagram on empty LLM response | `TestLlmContract::test_fallback_on_empty_llm_response` *(xfail)* | Not yet |
 
@@ -184,4 +198,40 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 
 | Requirement | Gap | Reason |
 |---|---|---|
-| REQ-BD-05 | All three LLM contract rules | `behaviour_diagram_generator` LLM seam not yet wired |
+| REQ-BD-05 | LLM seam contract (3 tests) | `behaviour_diagram_generator` LLM seam not yet wired |
+
+---
+
+### Static Design / Flowcharts — `tests/unit/test_flowchart_generator.py` + `tests/e2e/test_flowcharts.py`
+
+| Requirement | Rule | Test | Status |
+|---|---|---|---|
+| REQ-FC-01 | Every expected function has a flowchart entry | `test_expected_functions_present` (e2e) | Covered |
+| REQ-FC-01 | Every unit has a flowchart file | `test_flowchart_file_exists` (e2e), `test_creates_one_file_per_unit` (unit) | Covered |
+| REQ-FC-01 | Empty input produces no output | `test_empty_functions_json_produces_no_files` (unit) | Covered |
+| REQ-FC-02 | Entry labelled with short function name | `test_function_names_are_simple_not_qualified` (unit) | Covered |
+| REQ-FC-02 | Entry name is non-empty | `test_function_names_are_nonempty` (e2e) | Covered |
+| REQ-FC-03 | Every flowchart is a valid Mermaid diagram | `test_flowchart_content_is_valid_mermaid` (unit), `test_flowchart_strings_are_valid_mermaid` (e2e) | Covered |
+| REQ-FC-03 | Flowchart content is non-empty | `test_flowchart_content_is_valid_mermaid` (unit) | Covered |
+| REQ-FC-04 | Flowchart metadata table present in DOCX | `test_flowchart_tables_present` (e2e/docx) | Covered |
+| REQ-FC-04 | `Capacity(Density)` row label present | `test_flowchart_tables_present` (e2e/docx) | Covered |
+| REQ-FC-04 | LLM called with function source in prompt | `TestBuildFlowchartForFunction::test_prompt_contains_source_code` *(xfail)* | Not yet |
+| REQ-FC-04 | LLM response used as flowchart content | `TestBuildFlowchartForFunction::test_returns_llm_response` *(xfail)* | Not yet |
+| REQ-FC-04 | Code fences stripped from LLM response | `TestBuildFlowchartForFunction::test_strips_code_fences` *(xfail)* | Not yet |
+| REQ-FC-04 | Fallback on empty LLM response | `TestBuildFlowchartForFunction::test_fallback_on_empty_llm_response` *(xfail)* | Not yet |
+
+#### Gaps
+
+| Requirement | Gap | Reason |
+|---|---|---|
+| REQ-FC-04 | LLM seam contract (4 tests) | `fake_flowchart_generator` LLM seam not yet wired |
+
+---
+
+### Component Overview — `tests/e2e/test_docx.py`
+
+| Requirement | Rule | Test | Status |
+|---|---|---|---|
+| REQ-CO-01 | Component/unit table present with correct headers | `test_component_unit_table_present` | Covered |
+| REQ-CO-02 | All module names in Component column | `test_component_unit_table_has_module_names` | Covered |
+| REQ-CO-03 | Module architecture diagram present in Static Design | `test_module_static_diagram_content_present` | Covered |
