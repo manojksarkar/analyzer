@@ -214,3 +214,49 @@ When `allowed_modules` is supplied, "internal" means any unit whose module (firs
 **Verification:** With `allowed_modules={"mod"}`, units from module `Mod` are treated as internal regardless of which unit is being rendered.
 
 ---
+
+## Behaviour Diagrams
+
+**Output:** `output/behaviour_diagrams/<current_key>__<caller_key>.mmd` (one per external caller)
+
+---
+
+### REQ-BD-01 — External caller filtering
+
+`generate_all_diagrams(function_key, output_dir)` produces one `.mmd` file for each caller whose **module** (first `|`-segment of the caller key) differs from the current function's module. Callers in the same module are silently skipped. Returns `[]` when the function has no external callers.
+
+**Verification:** An external caller produces a file. An internal caller (same module) produces no file. A function with no callers returns `[]`.
+
+---
+
+### REQ-BD-02 — Output count
+
+Exactly one `.mmd` file is written per external caller. Multiple external callers produce multiple files.
+
+**Verification:** Two external callers produce exactly two `.mmd` files.
+
+---
+
+### REQ-BD-03 — File naming
+
+Each file is named `<current_key_sanitized>__<caller_key_sanitized>.mmd`. Before sanitization, pipe characters (`|`) in both keys are replaced with underscores. The resulting filename contains no pipe characters.
+
+**Verification:** Filename contains `__` separator. Filename ends with `.mmd`. Filename contains no `|` characters.
+
+---
+
+### REQ-BD-04 — File content
+
+Each `.mmd` file is non-empty and contains a valid Mermaid diagram (starts with a recognized Mermaid keyword after stripping any code fences).
+
+**Verification:** File is non-empty. Content passes Mermaid header check.
+
+---
+
+### REQ-BD-05 — LLM contract *(xfail — seam not yet wired)*
+
+When the LLM seam is wired: the diagram content is the LLM response. Code fences (` ```mermaid ``` `) are stripped before writing. An empty LLM response produces a valid fallback diagram rather than an empty file.
+
+**Verification:** xfail tests in `TestLlmContract` define this contract.
+
+---

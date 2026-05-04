@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-04-22 (feat/test-framework — direction logic fixes, lambda propagation, DESIGN_SPEC + TEST_INVENTORY docs, interface table test overhaul, unit diagrams test expansion + DESIGN_SPEC REQ-UD-XX, snapshot refresh).
+> Updated: 2026-05-04 (feat/test-framework — direction logic fixes, lambda propagation, DESIGN_SPEC + TEST_INVENTORY docs, interface table test overhaul, unit diagrams test expansion + DESIGN_SPEC REQ-UD-XX, snapshot refresh, behaviour diagram test no-LLM cleanup).
 > Current active branch: `feat/test-framework` (off `version3`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -275,7 +275,7 @@ for a permanent local preference.
 | File | What changed |
 |---|---|
 | `tests/unit/test_llm_client.py` | Fully rewritten to test `llm_core.client.LlmClient` + `from_config` (was testing legacy `llm_client` module). Covers constructor validation, `generate()` / `call()`, retry logic, `from_config` builder. |
-| `tests/unit/test_behaviour_diagram_generator.py` | Switched from `fake_behaviour_diagram_generator.FakeBehaviourGenerator` to the real `behaviour_diagram_generator.SequenceDiagramGenerator` (alias kept as `FakeBehaviourGenerator`). Patch target updated to `behaviour_diagram_generator.llm_client`. |
+| `tests/unit/test_behaviour_diagram_generator.py` | Switched from `fake_behaviour_diagram_generator.FakeBehaviourGenerator` to the real `behaviour_diagram_generator.SequenceDiagramGenerator` (alias kept as `FakeBehaviourGenerator`). Patch target updated to `behaviour_diagram_generator.llm_client`. No-LLM pass: module docstring now lists which classes need no LLM (ExternalCallerFiltering, FileNaming, MmdContent) vs which are xfail (LlmContract); repeated `functions` dict extracted into `_ONE_EXTERNAL_CALLER` module-level constant; stale fence-strip comment removed from `TestMmdContent`. |
 | `tests/unit/test_utils.py` | `_strip_json_comments` / `_strip_trailing_commas` now imported from `core.config`, not from `utils`. |
 | `src/flowchart/tests/test_cfg_topo.py` | Added `src/` to `sys.path` so `ast_engine.*` imports resolve when running from the project root. |
 | `tests/conftest.py` | Logs the full pipeline command string before executing it (aids debugging failed CI runs). |

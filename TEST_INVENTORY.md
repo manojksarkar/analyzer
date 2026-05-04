@@ -21,7 +21,7 @@ No pipeline, no network. All external calls mocked.
 
 | File | Classes | What it tests |
 |---|---|---|
-| `test_behaviour_diagram_generator.py` | ExternalCallerFiltering · FileNaming · MmdContent · LlmContract*(xfail)* | SequenceDiagramGenerator: caller filtering, file naming, Mermaid content, LLM seam contract |
+| `test_behaviour_diagram_generator.py` | ExternalCallerFiltering · FileNaming · MmdContent *(no LLM)* · LlmContract*(xfail)* | SequenceDiagramGenerator: caller filtering, file naming, Mermaid content (static, no LLM), LLM seam contract (xfail until seam wired) |
 | `test_cli.py` | ResolveGroupName · RunPyCli | `_resolve_group_name` case-insensitivity; CLI exit codes and error messages for bad flags |
 | `test_core_config.py` | LoadLlmConfigValid · LoadLlmConfigErrors · EnvOverrides · FormatBanner | `load_llm_config`: all required/optional fields, all `LlmConfigError` cases, every env-var override, banner format |
 | `test_core_group_planner.py` | ResolveGroupName · PlanRunsNoGroups · PlanRunsAllGroups · PlanRunsSelectedGroup | `plan_runs`: all three dispatch shapes, `--from-phase` translation, `--use-model`, unknown group error |
@@ -157,3 +157,31 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 |---|---|---|
 | REQ-UD-01 | Header-only unit excluded from e2e output | No header-only unit in SampleCppProject fixture |
 | REQ-UD-06 | Internal peer nodes appear inside subgraph (e2e) | All modules are in the same group, so all are internal — covered implicitly |
+
+---
+
+### Behaviour Diagrams — `tests/unit/test_behaviour_diagram_generator.py` + `tests/e2e/test_behaviour_diagram.py`
+
+| Requirement | Rule | Test | Status |
+|---|---|---|---|
+| REQ-BD-01 | External caller produces a `.mmd` file | `test_external_caller_produces_mmd_file` (unit) | Covered |
+| REQ-BD-01 | Internal caller (same module) produces no file | `test_internal_caller_produces_no_file` (unit) | Covered |
+| REQ-BD-01 | No callers → returns `[]` | `test_no_callers_returns_empty_list` (unit) | Covered |
+| REQ-BD-01 | Internal callers excluded from e2e output | `test_lib_has_no_docx_rows`, `test_util_has_no_docx_rows` (e2e) | Covered |
+| REQ-BD-01 | All external callers are outside the selected group | `test_core_external_callers_are_outside_sample` (e2e) | Covered |
+| REQ-BD-02 | Two external callers → two `.mmd` files | `test_multiple_external_callers_produce_multiple_files` (unit) | Covered |
+| REQ-BD-02 | External callers produce rows in `_docxRows` | `test_core_has_docx_rows` (e2e) | Covered |
+| REQ-BD-03 | Filename contains `__` separator | `test_files_use_double_underscore_separator` (unit), `test_mmd_files_use_double_underscore_separator` (e2e) | Covered |
+| REQ-BD-03 | Filename ends with `.mmd` | `test_files_have_mmd_extension` (unit) | Covered |
+| REQ-BD-03 | Filename contains no `\|` characters | `test_pipe_chars_sanitized_in_filename` (unit) | Covered |
+| REQ-BD-04 | `.mmd` file is non-empty | `test_mmd_files_are_non_empty` (unit) | Covered |
+| REQ-BD-04 | `.mmd` file contains valid Mermaid | `test_mmd_files_contain_valid_mermaid` (unit), `test_mmd_files_contain_valid_mermaid` (e2e) | Covered |
+| REQ-BD-05 | LLM response written to `.mmd` | `TestLlmContract::test_llm_response_written_to_mmd` *(xfail)* | Not yet |
+| REQ-BD-05 | Code fences stripped from LLM response | `TestLlmContract::test_code_fences_stripped_from_llm_response` *(xfail)* | Not yet |
+| REQ-BD-05 | Fallback diagram on empty LLM response | `TestLlmContract::test_fallback_on_empty_llm_response` *(xfail)* | Not yet |
+
+#### Gaps
+
+| Requirement | Gap | Reason |
+|---|---|---|
+| REQ-BD-05 | All three LLM contract rules | `behaviour_diagram_generator` LLM seam not yet wired |
