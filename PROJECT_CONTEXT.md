@@ -1410,9 +1410,12 @@ Rows from:
 - **Typedefs** (`dataDictionary`) — declaration snippet from source; info
   column shows enum values for typedef-to-enum, struct description for
   typedef-to-struct, else `NA`. Multiple aliases from the same declaration
-  (`typedef struct {…} one_s, *one_s_2;`) are deduplicated by tracking
-  `(file, line)` pairs — only the first alias encountered produces a row,
-  so the full typedef text appears exactly once.
+  (`typedef struct {…} one_s, *one_s_2;`) are suppressed: libclang stores
+  each alias as a separate `TYPEDEF_DECL` at the line where the alias name
+  appears (e.g. `} one_s, *one_s_2;`), so `_read_decl_snippet` returns
+  `"-"` for those entries (line doesn't start with `typedef`). Any typedef
+  whose snippet is `"-"` is skipped entirely — the full declaration is
+  always emitted by the entry at the actual `typedef struct` line.
 - **Enums** — declaration snippet; info column is `NAME=value, …`.
 - **Defines** — full macro text; info column is the value. Include guards
   (`#define __FILE_NAME_H__` — empty value, name matches
