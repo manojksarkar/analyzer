@@ -273,6 +273,12 @@ def _build_unit_header_table(
         decl = _read_decl_snippet(abs_file, line, kind=kind)
 
         if kind == "typedef":
+            # If the snippet didn't start with "typedef", this entry is an alias
+            # at a non-start position (e.g. "} one_s, *one_s_2;" line).  The full
+            # declaration is emitted by the entry at the actual "typedef struct" line,
+            # so skip this one entirely rather than falling back to just the name.
+            if (decl or "").strip() in ("", "-"):
+                continue
 
             underlying = (t.get("underlyingType", "") or "").strip()
 
