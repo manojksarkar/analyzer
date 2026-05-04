@@ -1409,9 +1409,14 @@ Rows from:
   from source line, value from `initializer`.
 - **Typedefs** (`dataDictionary`) — declaration snippet from source; info
   column shows enum values for typedef-to-enum, struct description for
-  typedef-to-struct, else `NA`.
+  typedef-to-struct, else `NA`. Multiple aliases from the same declaration
+  (`typedef struct {…} one_s, *one_s_2;`) are deduplicated by tracking
+  `(file, line)` pairs — only the first alias encountered produces a row,
+  so the full typedef text appears exactly once.
 - **Enums** — declaration snippet; info column is `NAME=value, …`.
-- **Defines** — full macro text; info column is the value.
+- **Defines** — full macro text; info column is the value. Include guards
+  (`#define __FILE_NAME_H__` — empty value, name matches
+  `^_*[A-Z][A-Z0-9_]*(?:_H|_HPP)_*$`) are skipped.
 
 Struct/class entries are NOT shown directly — only via `typedef struct {…}
 Name;`. Deduplicates by declaration text, preferring richer `name=value` info.
