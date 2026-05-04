@@ -377,7 +377,7 @@ def _build_module_container_mermaid(
     mod_label = _escape_mermaid_label_for_structure(module_name)
     lines = [
         "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
-        "flowchart LR",
+        "flowchart TB",
         f'  subgraph MOD["{mod_label}"]',
     ]
     unit_ids = []
