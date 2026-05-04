@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-04-11 (version3 — LLM layer upgrade complete on top of version2).
+> Updated: 2026-05-04 (feat/unit-diagram — module container diagram added before module static diagram in Static Design).
 > Current active branch: `version3` (off `version2`, which is off `main`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -1362,7 +1362,9 @@ Software Detailed Design                                       (Heading 0)
   1.3 Terms, Abbreviations and Definitions
 2 <ModuleName>                                                 (Heading 1)
   2.1 Static Design                                            (Heading 2)
-    [Module static structure diagram — PNG or Mermaid text]
+    [Module container diagram — light-yellow subgraph box, blue unit nodes inside]
+    [Horizontal rule]
+    [Module static structure diagram — dark module box → blue unit boxes (arrows)]
     [Component / Unit table — Component | Unit | Description | Note]
     2.1.1 <UnitName>                                           (Heading 3)
       [Unit diagram PNG if available]
@@ -1382,11 +1384,19 @@ N Code Metrics, Coding Rule, Test Coverage                     (Heading 1)
 Appendix A. Design Guideline                                   (Heading 1)
 ```
 
-### Module static structure diagram
+### Module container diagram (`_build_module_container_mermaid`)
 
-Mermaid TB flowchart: dark module box → blue unit boxes. Rendered by `mmdc`
+Mermaid LR `subgraph` — light-yellow container (`fill:#fef9c3, stroke:#fbbf24`)
+holding all unit nodes as blue boxes (`fill:#2563eb`). Rendered into
+`artifacts_dir/module_container_diagrams/<module>.png` at 6 inches wide.
+Appears first under `{N}.1 Static Design`, followed by a horizontal rule.
+
+### Module static structure diagram (`_build_module_static_structure_mermaid`)
+
+Mermaid TB flowchart: dark module box → blue unit boxes (arrow edges). Rendered
 into `artifacts_dir/module_static_diagrams/<module>.png`. Width controlled
-by `views.moduleStaticDiagram.widthInches` (default 5.5).
+by `views.moduleStaticDiagram.widthInches` (default 5.5). Appears after the
+container diagram and horizontal rule.
 
 ### Component/Unit table (`_add_component_unit_table`)
 

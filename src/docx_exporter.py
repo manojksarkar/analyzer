@@ -336,6 +336,21 @@ def _set_cell_font(cell, font_pt, bold=False):
             r.font.bold = bold
 
 
+def _add_horizontal_rule(doc) -> None:
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    p = doc.add_paragraph()
+    pPr = p._p.get_or_add_pPr()
+    pBdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")
+    bottom.set(qn("w:space"), "1")
+    bottom.set(qn("w:color"), "auto")
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+
+
 def _add_para(doc, text, style="Normal"):
     p = doc.add_paragraph(text, style=style)
     return p
@@ -352,6 +367,31 @@ def _add_mermaid_as_text(doc, mermaid: str, font_small):
 def _escape_mermaid_label_for_structure(text: str) -> str:
     t = (text or "").replace('"', "'").replace("\n", " ").replace("|", "\u00a6")
     return t
+
+
+def _build_module_container_mermaid(
+    module_name: str,
+    unit_rows: List[Tuple[Any, str, Any]],
+) -> str:
+    """Mermaid subgraph: blue module box containing all unit nodes."""
+    mod_label = _escape_mermaid_label_for_structure(module_name)
+    lines = [
+        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
+        "flowchart LR",
+        f'  subgraph MOD["{mod_label}"]',
+    ]
+    unit_ids = []
+    for i, row in enumerate(unit_rows):
+        disp = row[1] if len(row) > 1 else str(row[0])
+        uid = f"U{i}"
+        unit_ids.append(uid)
+        lines.append(f'    {uid}["{_escape_mermaid_label_for_structure(disp)}"]')
+    lines.append("  end")
+    lines.append("  classDef unitNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff")
+    if unit_ids:
+        lines.append(f"  class {','.join(unit_ids)} unitNode")
+    lines.append("  style MOD fill:#fef9c3,stroke:#fbbf24,color:#1e293b")
+    return "\n".join(lines)
 
 
 def _build_module_static_structure_mermaid(
@@ -948,6 +988,24 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
 
         unit_rows_module = sorted(by_module[module_name])
         if msd_enabled and unit_rows_module:
+            # Container diagram: blue module subgraph with all units inside
+            container_mmd = _build_module_container_mermaid(module_name, unit_rows_module)
+            container_png = os.path.join(
+                artifacts_dir, "module_container_diagrams", f"{safe_filename(module_name)}.png"
+            )
+            if msd_render_png:
+                if _render_mermaid_to_png(PROJECT_ROOT, container_mmd, container_png) and os.path.isfile(container_png):
+                    try:
+                        doc.add_picture(container_png, width=Inches(6))
+                    except Exception:
+                        _add_mermaid_as_text(doc, container_mmd, font_small)
+                else:
+                    _add_mermaid_as_text(doc, container_mmd, font_small)
+            else:
+                _add_mermaid_as_text(doc, container_mmd, font_small)
+            _add_horizontal_rule(doc)
+
+            # Module static structure diagram: module node → unit nodes (arrows)
             mod_structure_mmd = _build_module_static_structure_mermaid(module_name, unit_rows_module)
             static_mod_png = os.path.join(
                 artifacts_dir, "module_static_diagrams", f"{safe_filename(module_name)}.png"
