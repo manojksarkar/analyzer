@@ -1,5 +1,6 @@
 """Export interface_tables.json -> Software Detailed Design DOCX. Unit header table built from model."""
 import os
+import re
 import sys
 import json
 import subprocess
@@ -14,6 +15,8 @@ MODEL_DIR = _p.model_dir
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
 # Placeholder when no value (no column may be empty)
 NA = "N/A"
+# Include-guard defines (#define FILE_NAME_H) — no value, name ends with _H/_HPP
+_INCLUDE_GUARD_RE = re.compile(r"^_*[A-Z][A-Z0-9_]*(?:_H|_HPP)_*$")
 
 
 def _readable_label(name: str) -> str:
@@ -231,6 +234,10 @@ def _build_unit_header_table(
         rows.append({"declaration": decl or NA, "information": info})
 
     # typedef, enum, define: match by unit file(s)
+    # Track (file, line) already emitted for typedefs so that multiple aliases
+    # from the same declaration (e.g. "} one_s, *one_s_2;") don't produce
+    # extra rows.
+    _typedef_locations_seen: set = set()
     for _type_name, t in dd.items():
         loc = t.get("location") or {}
         rel_file = (loc.get("file") or "").replace("\\", "/")
@@ -243,19 +250,35 @@ def _build_unit_header_table(
         if kind not in ("typedef", "enum", "define"):
             continue
         line = int(loc.get("line") or 0)
+        if kind == "typedef":
+            loc_key = (rel_file, line)
+            if loc_key in _typedef_locations_seen:
+                continue
+            _typedef_locations_seen.add(loc_key)
         abs_file = os.path.join(base_path, rel_file) if base_path and rel_file else ""
         # Defines: use stored text/value from parser for exact macro
         if kind == "define":
+            macro_name = t.get("name") or _type_name or ""
+            macro_value = t.get("value", "") or ""
+            # Skip include guards (#define FILE_NAME_H with no value)
+            if not macro_value and _INCLUDE_GUARD_RE.match(macro_name):
+                continue
             decl = t.get("text") or _read_decl_snippet(abs_file, line, kind="var")
-            info = t.get("value", "") or NA
+            info = macro_value or NA
             if (decl or "").strip() in ("", "-"):
-                decl = t.get("name") or _type_name or NA
+                decl = macro_name or NA
             rows.append({"declaration": decl or NA, "information": info})
             continue
 
         decl = _read_decl_snippet(abs_file, line, kind=kind)
 
         if kind == "typedef":
+            # If the snippet didn't start with "typedef", this entry is an alias
+            # at a non-start position (e.g. "} one_s, *one_s_2;" line).  The full
+            # declaration is emitted by the entry at the actual "typedef struct" line,
+            # so skip this one entirely rather than falling back to just the name.
+            if (decl or "").strip() in ("", "-"):
+                continue
 
             underlying = (t.get("underlyingType", "") or "").strip()
 
