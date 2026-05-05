@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-04 (feat/unit-diagram — module container diagram added before module static diagram in Static Design).
+> Updated: 2026-05-05 (feat/unit-diagram — header dependency diagram replaces module static structure diagram; container diagram added; includedHeaders in units.json).
 > Current active branch: `version3` (off `version2`, which is off `main`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -1362,9 +1362,9 @@ Software Detailed Design                                       (Heading 0)
   1.3 Terms, Abbreviations and Definitions
 2 <ModuleName>                                                 (Heading 1)
   2.1 Static Design                                            (Heading 2)
-    [Module container diagram — light-yellow subgraph box, blue unit nodes inside]
+    [Module container diagram — light-yellow subgraph box, blue unit nodes inside (TB)]
     [Horizontal rule]
-    [Module static structure diagram — dark module box → blue unit boxes (arrows)]
+    [Header dependency diagram — BT flowchart, header nodes at top, source nodes below]
     [Component / Unit table — Component | Unit | Description | Note]
     2.1.1 <UnitName>                                           (Heading 3)
       [Unit diagram PNG if available]
@@ -1386,17 +1386,22 @@ Appendix A. Design Guideline                                   (Heading 1)
 
 ### Module container diagram (`_build_module_container_mermaid`)
 
-Mermaid LR `subgraph` — light-yellow container (`fill:#fef9c3, stroke:#fbbf24`)
+Mermaid TB `subgraph` — light-yellow container (`fill:#fef9c3, stroke:#fbbf24`)
 holding all unit nodes as blue boxes (`fill:#2563eb`). Rendered into
 `artifacts_dir/module_container_diagrams/<module>.png` at 6 inches wide.
 Appears first under `{N}.1 Static Design`, followed by a horizontal rule.
 
-### Module static structure diagram (`_build_module_static_structure_mermaid`)
+### Header dependency diagram (`_build_module_header_dependency_mermaid`)
 
-Mermaid TB flowchart: dark module box → blue unit boxes (arrow edges). Rendered
-into `artifacts_dir/module_static_diagrams/<module>.png`. Width controlled
-by `views.moduleStaticDiagram.widthInches` (default 5.5). Appears after the
-container diagram and horizontal rule.
+Mermaid BT flowchart (no outer box): header nodes at top (dark, `fill:#1e293b`),
+source file nodes at bottom (blue, `fill:#2563eb`), edges `source → header`.
+Node labels strip extensions — headers show `<name>\nHeader`, sources show `<name>`.
+Only same-module headers are shown; folder prefix is derived from unit paths
+(not module name, since config module name ≠ filesystem folder). Rendered into
+`artifacts_dir/module_header_dependency_diagrams/<module>.png` at 6 inches wide.
+Appears after the horizontal rule, before the Component/Unit table.
+`includedHeaders` field populated in `units.json` by `model_deriver._read_local_includes`
+during Phase 2 — re-run from Phase 2 after any source tree changes.
 
 ### Component/Unit table (`_add_component_unit_table`)
 

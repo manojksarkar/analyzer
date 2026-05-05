@@ -417,6 +417,69 @@ def _build_module_container_mermaid(
     return "\n".join(lines)
 
 
+def _build_module_header_dependency_mermaid(
+    module_name: str,
+    unit_rows: List[Tuple[Any, str, Any]],
+    units_data: dict,
+    modules_data: dict,
+) -> str:
+    """Mermaid BT chart: header nodes at top, source nodes below, same-module headers only."""
+    module_headers: set = set(
+        (modules_data.get(module_name) or {}).get("headerFiles") or []
+    )
+
+    lines = [
+        "%%{init: {'flowchart': {'ranksep': '0.5', 'nodesep': '0.35'}}}%%",
+        "flowchart BT",
+    ]
+
+    cpp_ids: Dict[str, str] = {}
+    h_ids: Dict[str, str] = {}
+    edges: List[Tuple[str, str]] = []
+    counter = [0]
+
+    def _nid() -> str:
+        counter[0] += 1
+        return f"N{counter[0]}"
+
+    for unit_key, _, _ in unit_rows:
+        unit_info = units_data.get(unit_key) or {}
+        file_name = unit_info.get("fileName") or ""
+        path_no_ext = unit_info.get("path") or ""
+        if not file_name:
+            continue
+
+        cpp_rel = (path_no_ext + os.path.splitext(file_name)[1]).replace("\\", "/")
+        cpp_label = _escape_mermaid_label_for_structure(os.path.splitext(file_name)[0])
+        if cpp_rel not in cpp_ids:
+            nid = _nid()
+            cpp_ids[cpp_rel] = nid
+            lines.append(f'  {nid}["{cpp_label}"]')
+
+        for h_rel in (unit_info.get("includedHeaders") or []):
+            h_rel = h_rel.replace("\\", "/")
+            if h_rel not in module_headers:
+                continue
+            h_base = os.path.basename(h_rel)
+            h_label = _escape_mermaid_label_for_structure(os.path.splitext(h_base)[0]) + "\nHeader"
+            if h_rel not in h_ids:
+                nid = _nid()
+                h_ids[h_rel] = nid
+                lines.append(f'  {nid}["{h_label}"]')
+            edges.append((cpp_ids[cpp_rel], h_ids[h_rel]))
+
+    for src, dst in edges:
+        lines.append(f"  {src} --> {dst}")
+
+    if cpp_ids:
+        lines.append("  classDef cppNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff")
+        lines.append(f"  class {','.join(cpp_ids.values())} cppNode")
+    if h_ids:
+        lines.append("  classDef hNode fill:#1e293b,stroke:#334155,color:#ffffff")
+        lines.append(f"  class {','.join(h_ids.values())} hNode")
+    return "\n".join(lines)
+
+
 def _build_module_static_structure_mermaid(
     module_name: str,
     unit_rows: List[Tuple[Any, str, Any]],
@@ -963,6 +1026,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
 
     abbreviations = _load_abbreviations(PROJECT_ROOT, config)
     units_data, data_dictionary = _load_model_for_unit_headers()
+    modules_data = _load_model_json("modules")
     global_variables_data = _load_model_json("globalVariables")
     functions_data = _load_model_json("functions")
     base_path = _load_base_path()
@@ -1028,23 +1092,21 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 _add_mermaid_as_text(doc, container_mmd, font_small)
             _add_horizontal_rule(doc)
 
-            # Module static structure diagram: module node → unit nodes (arrows)
-            mod_structure_mmd = _build_module_static_structure_mermaid(module_name, unit_rows_module)
-            static_mod_png = os.path.join(
-                artifacts_dir, "module_static_diagrams", f"{safe_filename(module_name)}.png"
+            # File dependency diagram: .cpp → .h include edges inside module
+            dep_mmd = _build_module_header_dependency_mermaid(module_name, unit_rows_module, units_data, modules_data)
+            dep_png = os.path.join(
+                artifacts_dir, "module_header_dependency_diagrams", f"{safe_filename(module_name)}.png"
             )
             if msd_render_png:
-                if _render_mermaid_to_png(PROJECT_ROOT, mod_structure_mmd, static_mod_png) and os.path.isfile(
-                    static_mod_png
-                ):
+                if _render_mermaid_to_png(PROJECT_ROOT, dep_mmd, dep_png) and os.path.isfile(dep_png):
                     try:
-                        doc.add_picture(static_mod_png, width=Inches((len(unit_rows_module) * msd_width_in if len(unit_rows_module) * msd_width_in < 6 else 6)))
+                        doc.add_picture(dep_png, width=Inches(6))
                     except Exception:
-                        _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
+                        _add_mermaid_as_text(doc, dep_mmd, font_small)
                 else:
-                    _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
+                    _add_mermaid_as_text(doc, dep_mmd, font_small)
             else:
-                _add_mermaid_as_text(doc, mod_structure_mmd, font_small)
+                _add_mermaid_as_text(doc, dep_mmd, font_small)
 
         # Module-level index table (Component/Unit/Description/Note)
         _add_component_unit_table(

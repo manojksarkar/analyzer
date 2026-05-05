@@ -31,7 +31,142 @@ def _file_path(data: dict, base_path: str) -> str:
     return norm_path((data.get("location") or {}).get("file", ""), base_path)
 
 
+def _defined_macros_from_config() -> set:
+    """Extract macro names defined via -D flags in config clang.clangArgs."""
+    cfg = load_config(PROJECT_ROOT)
+    args = (cfg.get("clang") or {}).get("clangArgs") or []
+    if isinstance(args, str):
+        args = [args]
+    macros = set()
+    for arg in args:
+        # Accept both "-DFOO" and "-DFOO=VALUE" forms
+        if arg.startswith("-D"):
+            name = arg[2:].split("=", 1)[0]
+            if name:
+                macros.add(name)
+    return macros
+
+
+def _read_local_includes(fp: str, base_path: str, defined_macros: set = None) -> list:
+    """Return #include "..." paths from fp, resolved relative to base_path.
+
+    Respects #ifdef/#ifndef/#if/#else/#elif/#endif blocks: only includes from
+    the branch that is active given the supplied set of defined macro names are
+    returned.  Also implicitly adds the same-named .h/.hpp companion when the
+    developer omits the explicit #include.
+    """
+    if not os.path.isfile(fp):
+        return []
+    if defined_macros is None:
+        defined_macros = set()
+
+    result = []
+    result_set = set()
+
+    # Each stack frame: [branch_active, had_true_branch]
+    # branch_active    – whether the current branch should emit includes
+    # had_true_branch  – whether any branch in this block already evaluated true
+    cond_stack = []
+
+    def _active():
+        return all(frame[0] for frame in cond_stack)
+
+    def _eval_defined(expr):
+        """True if 'defined(MACRO)' or bare 'MACRO' in expr is in defined_macros."""
+        m = re.search(r'defined\s*\(\s*(\w+)\s*\)', expr)
+        if m:
+            return m.group(1) in defined_macros
+        m = re.match(r'\s*(\w+)\s*$', expr)
+        if m:
+            return m.group(1) in defined_macros
+        return True  # unknown expression — assume active to avoid hiding includes
+
+    try:
+        with open(fp, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped.startswith("#"):
+                    continue
+
+                directive = stripped[1:].lstrip()
+
+                if directive.startswith("ifdef"):
+                    macro = directive[5:].strip().split()[0] if directive[5:].strip() else ""
+                    active = macro in defined_macros
+                    cond_stack.append([active, active])
+                    continue
+
+                if directive.startswith("ifndef"):
+                    macro = directive[6:].strip().split()[0] if directive[6:].strip() else ""
+                    active = macro not in defined_macros
+                    cond_stack.append([active, active])
+                    continue
+
+                if directive.startswith("if") and not directive.startswith("ifdef") and not directive.startswith("ifndef"):
+                    expr = directive[2:].strip()
+                    active = _eval_defined(expr)
+                    cond_stack.append([active, active])
+                    continue
+
+                if directive.startswith("elif"):
+                    if cond_stack:
+                        frame = cond_stack[-1]
+                        if frame[1]:  # a true branch already ran — skip rest
+                            frame[0] = False
+                        else:
+                            expr = directive[4:].strip()
+                            new_active = _eval_defined(expr)
+                            frame[0] = new_active
+                            if new_active:
+                                frame[1] = True
+                    continue
+
+                if directive.startswith("else"):
+                    if cond_stack:
+                        frame = cond_stack[-1]
+                        frame[0] = not frame[1]  # active only if no true branch yet
+                    continue
+
+                if directive.startswith("endif"):
+                    if cond_stack:
+                        cond_stack.pop()
+                    continue
+
+                # #include "..." — only emit when in an active branch
+                if _active():
+                    m = re.match(r'include\s+"([^"]+)"', directive)
+                    if m:
+                        abs_inc = os.path.normpath(os.path.join(os.path.dirname(fp), m.group(1)))
+                        try:
+                            rel = os.path.relpath(abs_inc, base_path).replace("\\", "/")
+                        except ValueError:
+                            rel = m.group(1)
+                        if rel not in result_set:
+                            result.append(rel)
+                            result_set.add(rel)
+    except OSError:
+        pass
+
+    # Implicit companion header: foo.cpp always depends on foo.h / foo.hpp
+    # even when the developer omits the explicit #include.
+    stem, ext = os.path.splitext(fp)
+    if ext.lower() in (".cpp", ".cc", ".cxx"):
+        for h_ext in (".h", ".hpp"):
+            companion = stem + h_ext
+            if os.path.isfile(companion):
+                try:
+                    rel = os.path.relpath(companion, base_path).replace("\\", "/")
+                except ValueError:
+                    rel = os.path.basename(companion)
+                if rel not in result_set:
+                    result.append(rel)
+                    result_set.add(rel)
+
+    return result
+
+
 def _build_units_modules(base_path: str, functions_data: dict, global_variables_data: dict):
+    defined_macros = _defined_macros_from_config()
     all_files = set()
     for f in functions_data.values():
         fp = _file_path(f, base_path)
@@ -82,12 +217,14 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
                     callee_units.add(u)
 
         unitname = os.path.splitext(base)[0]
+        included_headers = _read_local_includes(fp, base_path, defined_macros)
         if unit_key in units_data:
             u = units_data[unit_key]
             u["functionIds"] = u["functionIds"] + func_ids
             u["globalVariableIds"] = u["globalVariableIds"] + var_ids
             u["callerUnits"] = sorted(set(u["callerUnits"]) | caller_units)
             u["calleesUnits"] = sorted(set(u["calleesUnits"]) | callee_units)
+            u["includedHeaders"] = sorted(set(u.get("includedHeaders", [])) | set(included_headers))
         else:
             units_data[unit_key] = {
                 "name": unitname,
@@ -97,10 +234,49 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
                 "globalVariableIds": var_ids,
                 "callerUnits": sorted(caller_units),
                 "calleesUnits": sorted(callee_units),
+                "includedHeaders": included_headers,
             }
 
     module_names = sorted({u.split(KEY_SEP)[0] for u in units_data if KEY_SEP in u})
-    modules_data = {m: {"units": [u for u in units_data if u.split(KEY_SEP)[0] == m]} for m in module_names}
+
+    # Collect directories that belong to each module (from source file locations).
+    module_source_dirs: dict = {}
+    for fp in sorted(all_files):
+        base = os.path.basename(fp)
+        if not base.lower().endswith((".cpp", ".cc", ".cxx")):
+            continue
+        try:
+            rel = os.path.relpath(fp, base_path).replace("\\", "/")
+        except ValueError:
+            rel = fp.replace("\\", "/")
+        m = make_unit_key(rel).split(KEY_SEP)[0]
+        module_source_dirs.setdefault(m, set()).add(os.path.dirname(fp))
+
+    # Scan those directories for header files to build an authoritative list.
+    module_header_files: dict = {}
+    for m, dirs in module_source_dirs.items():
+        headers = set()
+        for d in dirs:
+            try:
+                for fname in os.listdir(d):
+                    if fname.lower().endswith((".h", ".hpp")):
+                        abs_h = os.path.join(d, fname)
+                        try:
+                            rel_h = os.path.relpath(abs_h, base_path).replace("\\", "/")
+                        except ValueError:
+                            rel_h = fname
+                        headers.add(rel_h)
+            except OSError:
+                pass
+        module_header_files[m] = sorted(headers)
+
+    modules_data = {
+        m: {
+            "units": [u for u in units_data if u.split(KEY_SEP)[0] == m],
+            "headerFiles": module_header_files.get(m, []),
+        }
+        for m in module_names
+    }
 
     from core.model_io import write_model_file, UNITS, MODULES
     write_model_file(UNITS, units_data)
