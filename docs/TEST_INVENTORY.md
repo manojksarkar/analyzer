@@ -21,7 +21,6 @@ No pipeline, no network. All external calls mocked.
 
 | File | Classes | What it tests |
 |---|---|---|
-| `test_behaviour_diagram_generator.py` | ExternalCallerFiltering · FileNaming · MmdContent *(no LLM)* · LlmContract*(xfail)* | SequenceDiagramGenerator: caller filtering, file naming, Mermaid content (static, no LLM), LLM seam contract (xfail until seam wired) |
 | `test_cli.py` | ResolveGroupName · RunPyCli | `_resolve_group_name` case-insensitivity; CLI exit codes and error messages for bad flags |
 | `test_core_config.py` | LoadLlmConfigValid · LoadLlmConfigErrors · EnvOverrides · FormatBanner | `load_llm_config`: all required/optional fields, all `LlmConfigError` cases, every env-var override, banner format |
 | `test_core_group_planner.py` | ResolveGroupName · PlanRunsNoGroups · PlanRunsAllGroups · PlanRunsSelectedGroup | `plan_runs`: all three dispatch shapes, `--from-phase` translation, `--use-model`, unknown group error |
@@ -46,9 +45,7 @@ Pipeline runs **once** before the suite against `SampleCppProject`. Tests read `
 | `test_model_json.py` | `functions.json`, `globalVariables.json`, `units.json`, `modules.json` — field presence, key format, interfaceId uniqueness, call-graph topology |
 | `test_interface_tables.py` | `output/interface_tables.json` — see rule coverage below |
 | `test_unit_diagrams.py` | `output/unit_diagrams/*.mmd` — Mermaid LR direction, subgraph labels, cross-module edge labels, Util/Core call-direction invariants, golden snapshot |
-| `test_behaviour_diagram.py` | `output/behaviour_diagrams/` — .mmd existence, `_behaviour_pngs.json` structure, external vs internal caller filtering, Mermaid validity |
 | `test_flowcharts.py` | `output/flowcharts/*.json` — one file per unit, `[{name, flowchart}]` shape, Mermaid validity, all expected public functions present |
-| `test_behaviour_names.py` | `model/functions.json` Phase 2 fields — all public functions have behaviourInput/OutputName; static derivation heuristics (param, returnExpr, global read, fallback) |
 | `test_docx.py` | `output/software_detailed_design_Sample.docx` — file exists, tables present, IF_ IDs, public names, direction values, embedded images, all section headings, flowchart/behaviour tables |
 
 ---
@@ -59,9 +56,6 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 
 | Test | Waiting on |
 |---|---|
-| `TestLlmContract::test_llm_response_written_to_mmd` | `behaviour_diagram_generator` LLM seam |
-| `TestLlmContract::test_code_fences_stripped_from_llm_response` | `behaviour_diagram_generator` LLM seam |
-| `TestLlmContract::test_fallback_on_empty_llm_response` | `behaviour_diagram_generator` LLM seam |
 | `TestBuildFlowchartForFunction::test_returns_llm_response` | `fake_flowchart_generator` LLM seam |
 | `TestBuildFlowchartForFunction::test_strips_code_fences` | `fake_flowchart_generator` LLM seam |
 | `TestBuildFlowchartForFunction::test_fallback_on_empty_llm_response` | `fake_flowchart_generator` LLM seam |
@@ -171,34 +165,6 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 | Requirement | Gap | Reason |
 |---|---|---|
 | REQ-UD-01 | Header-only unit excluded from e2e output | No header-only unit in SampleCppProject fixture |
-
----
-
-### Dynamic Behaviour — `tests/unit/test_behaviour_diagram_generator.py` + `tests/e2e/test_behaviour_diagram.py`
-
-| Requirement | Rule | Test | Status |
-|---|---|---|---|
-| REQ-BD-01 | Function with external caller has a scenario entry | `test_external_caller_produces_mmd_file` (unit), `test_core_has_docx_rows` (e2e) | Covered |
-| REQ-BD-01 | Function with no external callers has no entry | `test_no_callers_returns_empty_list` (unit) | Covered |
-| REQ-BD-01 | Functions only called internally have no entry | `test_internal_caller_produces_no_file` (unit), `test_lib_has_no_docx_rows`, `test_util_has_no_docx_rows` (e2e) | Covered |
-| REQ-BD-01 | Multiple external callers produce multiple entries | `test_multiple_external_callers_produce_multiple_files` (unit) | Covered |
-| REQ-BD-01 | All external callers are outside the selected group | `test_core_external_callers_are_outside_sample` (e2e) | Covered |
-| REQ-BD-02 | Scenario heading identifies function and caller | `test_external_unit_function_format` (e2e) | Covered |
-| REQ-BD-03 | Each scenario contains a valid Mermaid diagram | `test_mmd_files_contain_valid_mermaid` (unit), `test_mmd_files_contain_valid_mermaid` (e2e) | Covered |
-| REQ-BD-03 | Diagram file is non-empty | `test_mmd_files_are_non_empty` (unit) | Covered |
-| REQ-BD-04 | Scenario description table present in DOCX | `test_behaviour_description_tables_present` (e2e/docx) | Covered |
-| REQ-BD-04 | All five row labels present (Requirements, Risk, Capacity, Input Name, Output Name) | `test_behaviour_description_tables_present` (e2e/docx) | Covered |
-| REQ-BD-05 | Input Name and Output Name are non-empty strings | `test_all_public_functions_have_behaviour_input_name`, `test_all_public_functions_have_behaviour_output_name` (e2e) | Covered |
-| REQ-BD-05 | Both fields are always strings | `test_behaviour_names_are_strings` (e2e) | Covered |
-| REQ-BD-05 | LLM response written as diagram content | `TestLlmContract::test_llm_response_written_to_mmd` *(xfail)* | Not yet |
-| REQ-BD-05 | Code fences stripped from LLM response | `TestLlmContract::test_code_fences_stripped_from_llm_response` *(xfail)* | Not yet |
-| REQ-BD-05 | Fallback diagram on empty LLM response | `TestLlmContract::test_fallback_on_empty_llm_response` *(xfail)* | Not yet |
-
-#### Gaps
-
-| Requirement | Gap | Reason |
-|---|---|---|
-| REQ-BD-05 | LLM seam contract (3 tests) | `behaviour_diagram_generator` LLM seam not yet wired |
 
 ---
 
