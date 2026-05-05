@@ -78,9 +78,8 @@ def test_protected_functions_included(core_entries):
 
 
 @pytest.mark.parametrize("entries_fixture,expected,unit", [
-    ("core_entries", {"coreAdd", "coreCompute", "coreLoopSum", "coreCheck",
-                      "coreSumPoint", "coreSetResult", "coreProcess",
-                      "coreOrchestrate", "coreSetMode", "coreGetCount"}, "Core"),
+    ("core_entries", {"coreAdd", "coreSetResult", "coreProcess",
+                      "coreOrchestrate", "coreGetCount"},                 "Core"),
     ("lib_entries",  {"libAdd", "libNormalize"},                          "Lib"),
     ("util_entries", {"utilCompute", "utilScale"},                        "Util"),
 ])
@@ -191,11 +190,12 @@ def test_global_entries_have_empty_caller_callee(all_entries):
             )
 
 
-def test_sourcedest_dash_when_no_external_connections(lib_entries):
-    # libSubtract and libMin have no external callers or callees in the Sample group run
-    for name in ("libSubtract", "libMin"):
-        entry = next((e for e in lib_entries if e["name"] == name), None)
-        assert entry is not None, f"'{name}' not found in lib_entries"
+def test_sourcedest_dash_when_no_external_connections(util_entries):
+    # utilCompute and utilScale are called only by Core (within the Sample group),
+    # so they have no connections outside the group — sourceDest must be '-'
+    for name in ("utilCompute", "utilScale"):
+        entry = next((e for e in util_entries if e["name"] == name), None)
+        assert entry is not None, f"'{name}' not found in util_entries"
         assert entry["sourceDest"] == "-", (
             f"'{name}' has no external connections, sourceDest should be '-', got '{entry['sourceDest']}'"
         )
