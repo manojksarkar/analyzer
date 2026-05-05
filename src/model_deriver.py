@@ -147,7 +147,45 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
             }
 
     module_names = sorted({u.split(KEY_SEP)[0] for u in units_data if KEY_SEP in u})
-    modules_data = {m: {"units": [u for u in units_data if u.split(KEY_SEP)[0] == m]} for m in module_names}
+
+    # Collect directories that belong to each module (from source file locations).
+    module_source_dirs: dict = {}
+    for fp in sorted(all_files):
+        base = os.path.basename(fp)
+        if not base.lower().endswith((".cpp", ".cc", ".cxx")):
+            continue
+        try:
+            rel = os.path.relpath(fp, base_path).replace("\\", "/")
+        except ValueError:
+            rel = fp.replace("\\", "/")
+        m = make_unit_key(rel).split(KEY_SEP)[0]
+        module_source_dirs.setdefault(m, set()).add(os.path.dirname(fp))
+
+    # Scan those directories for header files to build an authoritative list.
+    module_header_files: dict = {}
+    for m, dirs in module_source_dirs.items():
+        headers = set()
+        for d in dirs:
+            try:
+                for fname in os.listdir(d):
+                    if fname.lower().endswith((".h", ".hpp")):
+                        abs_h = os.path.join(d, fname)
+                        try:
+                            rel_h = os.path.relpath(abs_h, base_path).replace("\\", "/")
+                        except ValueError:
+                            rel_h = fname
+                        headers.add(rel_h)
+            except OSError:
+                pass
+        module_header_files[m] = sorted(headers)
+
+    modules_data = {
+        m: {
+            "units": [u for u in units_data if u.split(KEY_SEP)[0] == m],
+            "headerFiles": module_header_files.get(m, []),
+        }
+        for m in module_names
+    }
 
     from core.model_io import write_model_file, UNITS, MODULES
     write_model_file(UNITS, units_data)

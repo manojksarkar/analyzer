@@ -421,16 +421,12 @@ def _build_module_header_dependency_mermaid(
     module_name: str,
     unit_rows: List[Tuple[Any, str, Any]],
     units_data: dict,
+    modules_data: dict,
 ) -> str:
     """Mermaid BT chart: header nodes at top, source nodes below, same-module headers only."""
-    # Derive folder prefixes from unit paths (module name ≠ folder name in config)
-    module_dirs: set = set()
-    for unit_key, _, _ in unit_rows:
-        p = (units_data.get(unit_key) or {}).get("path") or ""
-        if "/" in p:
-            module_dirs.add(p.rsplit("/", 1)[0].lower() + "/")
-        elif p:
-            module_dirs.add(p.lower() + "/")
+    module_headers: set = set(
+        (modules_data.get(module_name) or {}).get("headerFiles") or []
+    )
 
     lines = [
         "%%{init: {'flowchart': {'ranksep': '0.5', 'nodesep': '0.35'}}}%%",
@@ -462,7 +458,7 @@ def _build_module_header_dependency_mermaid(
 
         for h_rel in (unit_info.get("includedHeaders") or []):
             h_rel = h_rel.replace("\\", "/")
-            if not any(h_rel.lower().startswith(d) for d in module_dirs):
+            if h_rel not in module_headers:
                 continue
             h_base = os.path.basename(h_rel)
             h_label = _escape_mermaid_label_for_structure(os.path.splitext(h_base)[0]) + "\nHeader"
@@ -1030,6 +1026,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
 
     abbreviations = _load_abbreviations(PROJECT_ROOT, config)
     units_data, data_dictionary = _load_model_for_unit_headers()
+    modules_data = _load_model_json("modules")
     global_variables_data = _load_model_json("globalVariables")
     functions_data = _load_model_json("functions")
     base_path = _load_base_path()
@@ -1096,7 +1093,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             _add_horizontal_rule(doc)
 
             # File dependency diagram: .cpp → .h include edges inside module
-            dep_mmd = _build_module_header_dependency_mermaid(module_name, unit_rows_module, units_data)
+            dep_mmd = _build_module_header_dependency_mermaid(module_name, unit_rows_module, units_data, modules_data)
             dep_png = os.path.join(
                 artifacts_dir, "module_header_dependency_diagrams", f"{safe_filename(module_name)}.png"
             )
