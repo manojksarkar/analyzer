@@ -423,13 +423,12 @@ def _build_module_header_dependency_mermaid(
     units_data: dict,
 ) -> List[Tuple[str, str]]:
     """Return one (header_stem, mermaid_str) per same-module header, each showing that header and its includers."""
-    module_dirs: set = set()
+    # Only headers whose path (no ext) matches a unit path in this module
+    module_unit_paths: set = set()
     for unit_key, _, _ in unit_rows:
         p = (units_data.get(unit_key) or {}).get("path") or ""
-        if "/" in p:
-            module_dirs.add(p.rsplit("/", 1)[0].lower() + "/")
-        elif p:
-            module_dirs.add(p.lower() + "/")
+        if p:
+            module_unit_paths.add(p.lower())
 
     # Build map: h_rel -> list of (cpp_rel, cpp_label)
     header_to_cpps: Dict[str, List[Tuple[str, str]]] = {}
@@ -443,7 +442,7 @@ def _build_module_header_dependency_mermaid(
         cpp_label = _escape_mermaid_label_for_structure(os.path.splitext(file_name)[0])
         for h_rel in (unit_info.get("includedHeaders") or []):
             h_rel = h_rel.replace("\\", "/")
-            if not any(h_rel.lower().startswith(d) for d in module_dirs):
+            if os.path.splitext(h_rel)[0].lower() not in module_unit_paths:
                 continue
             header_to_cpps.setdefault(h_rel, [])
             if not any(c[0] == cpp_rel for c in header_to_cpps[h_rel]):
