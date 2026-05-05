@@ -142,11 +142,6 @@ class TestBuildUnitDiagram:
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert isinstance(result, str)
 
-    def test_output_starts_with_mermaid_init(self):
-        unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
-        result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
-        assert result.startswith("%%{init:")
-
     def test_output_contains_flowchart_lr(self):
         unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)

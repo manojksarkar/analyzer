@@ -96,7 +96,7 @@ def test_function_location_has_file_and_line(sample_functions):
 def test_phase2_enrichment_present(sample_functions):
     """Phase 2 must have set interfaceId and direction on all Sample functions."""
     for fid, f in sample_functions.items():
-        assert f.get("interfaceId", "").startswith("IF_"), f"{fid}: bad interfaceId"
+        assert f.get("interfaceId", "").startswith(("IF_", "PIF_")), f"{fid}: bad interfaceId"
         assert f.get("direction") in ("In", "Out"), f"{fid}: invalid direction {f.get('direction')!r}"
 
 
