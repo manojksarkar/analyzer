@@ -1572,7 +1572,7 @@ test_cpp_project/
 ### Key docs
 
 - `docs/DESIGN_SPEC.md` — view logic requirements with verification criteria (REQ-IT-XX for Interface Tables, REQ-UD-XX for Unit Diagrams). Update first before changing any view logic.
-- `TEST_INVENTORY.md` — maps every DESIGN_SPEC requirement to its test case. Update after adding/changing tests.
+- `docs/TEST_INVENTORY.md` — maps every DESIGN_SPEC requirement to its test case. Update after adding/changing tests.
 - `.coveragerc` — `parallel = false` (removed); single `.coverage` file written per run.
 
 ### Quick run commands
