@@ -421,56 +421,67 @@ def _build_module_header_dependency_mermaid(
     module_name: str,
     unit_rows: List[Tuple[Any, str, Any]],
     units_data: dict,
-) -> List[Tuple[str, str]]:
-    """Return one (header_stem, mermaid_str) per same-module header, each showing that header and its includers."""
-    # Only headers whose path (no ext) matches a unit path in this module
-    module_unit_paths: set = set()
+) -> str:
+    """Mermaid BT chart: header nodes at top, source nodes below, same-module headers only."""
+    # Derive folder prefixes from unit paths (module name ≠ folder name in config)
+    module_dirs: set = set()
     for unit_key, _, _ in unit_rows:
         p = (units_data.get(unit_key) or {}).get("path") or ""
-        if p:
-            module_unit_paths.add(p.lower())
+        if "/" in p:
+            module_dirs.add(p.rsplit("/", 1)[0].lower() + "/")
+        elif p:
+            module_dirs.add(p.lower() + "/")
 
-    # Build map: h_rel -> list of (cpp_rel, cpp_label)
-    header_to_cpps: Dict[str, List[Tuple[str, str]]] = {}
+    lines = [
+        "%%{init: {'flowchart': {'ranksep': '0.5', 'nodesep': '0.35'}}}%%",
+        "flowchart BT",
+    ]
+
+    cpp_ids: Dict[str, str] = {}
+    h_ids: Dict[str, str] = {}
+    edges: List[Tuple[str, str]] = []
+    counter = [0]
+
+    def _nid() -> str:
+        counter[0] += 1
+        return f"N{counter[0]}"
+
     for unit_key, _, _ in unit_rows:
         unit_info = units_data.get(unit_key) or {}
         file_name = unit_info.get("fileName") or ""
         path_no_ext = unit_info.get("path") or ""
         if not file_name:
             continue
+
         cpp_rel = (path_no_ext + os.path.splitext(file_name)[1]).replace("\\", "/")
         cpp_label = _escape_mermaid_label_for_structure(os.path.splitext(file_name)[0])
+        if cpp_rel not in cpp_ids:
+            nid = _nid()
+            cpp_ids[cpp_rel] = nid
+            lines.append(f'  {nid}["{cpp_label}"]')
+
         for h_rel in (unit_info.get("includedHeaders") or []):
             h_rel = h_rel.replace("\\", "/")
-            if os.path.splitext(h_rel)[0].lower() not in module_unit_paths:
+            if not any(h_rel.lower().startswith(d) for d in module_dirs):
                 continue
-            header_to_cpps.setdefault(h_rel, [])
-            if not any(c[0] == cpp_rel for c in header_to_cpps[h_rel]):
-                header_to_cpps[h_rel].append((cpp_rel, cpp_label))
+            h_base = os.path.basename(h_rel)
+            h_label = _escape_mermaid_label_for_structure(os.path.splitext(h_base)[0]) + "\nHeader"
+            if h_rel not in h_ids:
+                nid = _nid()
+                h_ids[h_rel] = nid
+                lines.append(f'  {nid}["{h_label}"]')
+            edges.append((cpp_ids[cpp_rel], h_ids[h_rel]))
 
-    results: List[Tuple[str, str]] = []
-    for h_rel in sorted(header_to_cpps):
-        h_base = os.path.basename(h_rel)
-        h_stem = os.path.splitext(h_base)[0]
-        h_label = _escape_mermaid_label_for_structure(h_stem) + "\nHeader"
-        lines = [
-            "%%{init: {'flowchart': {'ranksep': '0.5', 'nodesep': '0.35'}}}%%",
-            "flowchart BT",
-            f'  H["{h_label}"]',
-        ]
-        cpp_node_ids = []
-        for i, (_, cpp_label) in enumerate(header_to_cpps[h_rel]):
-            nid = f"C{i}"
-            cpp_node_ids.append(nid)
-            lines.append(f'  {nid}["{cpp_label}"]')
-        for nid in cpp_node_ids:
-            lines.append(f"  {nid} --> H")
+    for src, dst in edges:
+        lines.append(f"  {src} --> {dst}")
+
+    if cpp_ids:
         lines.append("  classDef cppNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff")
-        lines.append(f"  class {','.join(cpp_node_ids)} cppNode")
+        lines.append(f"  class {','.join(cpp_ids.values())} cppNode")
+    if h_ids:
         lines.append("  classDef hNode fill:#1e293b,stroke:#334155,color:#ffffff")
-        lines.append("  class H hNode")
-        results.append((h_stem, "\n".join(lines)))
-    return results
+        lines.append(f"  class {','.join(h_ids.values())} hNode")
+    return "\n".join(lines)
 
 
 def _build_module_static_structure_mermaid(
@@ -1084,22 +1095,21 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 _add_mermaid_as_text(doc, container_mmd, font_small)
             _add_horizontal_rule(doc)
 
-            # Header dependency diagrams: one per same-module header
-            for h_stem, dep_mmd in _build_module_header_dependency_mermaid(module_name, unit_rows_module, units_data):
-                dep_png = os.path.join(
-                    artifacts_dir, "module_header_dependency_diagrams",
-                    f"{safe_filename(module_name)}_{safe_filename(h_stem)}.png"
-                )
-                if msd_render_png:
-                    if _render_mermaid_to_png(PROJECT_ROOT, dep_mmd, dep_png) and os.path.isfile(dep_png):
-                        try:
-                            doc.add_picture(dep_png, width=Inches(6))
-                        except Exception:
-                            _add_mermaid_as_text(doc, dep_mmd, font_small)
-                    else:
+            # File dependency diagram: .cpp → .h include edges inside module
+            dep_mmd = _build_module_header_dependency_mermaid(module_name, unit_rows_module, units_data)
+            dep_png = os.path.join(
+                artifacts_dir, "module_header_dependency_diagrams", f"{safe_filename(module_name)}.png"
+            )
+            if msd_render_png:
+                if _render_mermaid_to_png(PROJECT_ROOT, dep_mmd, dep_png) and os.path.isfile(dep_png):
+                    try:
+                        doc.add_picture(dep_png, width=Inches(6))
+                    except Exception:
                         _add_mermaid_as_text(doc, dep_mmd, font_small)
                 else:
                     _add_mermaid_as_text(doc, dep_mmd, font_small)
+            else:
+                _add_mermaid_as_text(doc, dep_mmd, font_small)
 
         # Module-level index table (Component/Unit/Description/Note)
         _add_component_unit_table(

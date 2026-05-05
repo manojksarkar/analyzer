@@ -32,10 +32,15 @@ def _file_path(data: dict, base_path: str) -> str:
 
 
 def _read_local_includes(fp: str, base_path: str) -> list:
-    """Return #include "..." paths from fp, resolved relative to base_path."""
+    """Return #include "..." paths from fp, resolved relative to base_path.
+
+    Also implicitly adds the same-named .h/.hpp if it exists alongside the
+    .cpp but is not explicitly #included (a common C++ convention).
+    """
     if not os.path.isfile(fp):
         return []
     result = []
+    result_set = set()
     try:
         with open(fp, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -46,9 +51,27 @@ def _read_local_includes(fp: str, base_path: str) -> list:
                         rel = os.path.relpath(abs_inc, base_path).replace("\\", "/")
                     except ValueError:
                         rel = m.group(1)
-                    result.append(rel)
+                    if rel not in result_set:
+                        result.append(rel)
+                        result_set.add(rel)
     except OSError:
         pass
+
+    # Implicit companion header: foo.cpp always depends on foo.h / foo.hpp
+    # even when the developer omits the explicit #include.
+    stem, ext = os.path.splitext(fp)
+    if ext.lower() in (".cpp", ".cc", ".cxx"):
+        for h_ext in (".h", ".hpp"):
+            companion = stem + h_ext
+            if os.path.isfile(companion):
+                try:
+                    rel = os.path.relpath(companion, base_path).replace("\\", "/")
+                except ValueError:
+                    rel = os.path.basename(companion)
+                if rel not in result_set:
+                    result.append(rel)
+                    result_set.add(rel)
+
     return result
 
 
