@@ -9,9 +9,10 @@
           "App|Main",
           "Cross|Hub"
         ],
+        "description": "Calls a library function to add two numbers.",
         "direction": "Out",
         "functionId": "Core|Core|coreAdd|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_07",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_01",
         "interfaceName": "coreAdd",
         "location": {
           "endLine": 52,
@@ -39,123 +40,14 @@
         "unitName": "Core"
       },
       {
-        "calleesUnits": [
-          "Core|Core"
-        ],
-        "callerUnits": [],
-        "direction": "Out",
-        "functionId": "Core|Core|coreCompute|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_08",
-        "interfaceName": "coreCompute",
-        "location": {
-          "endLine": 61,
-          "file": "Sample/Core/Core",
-          "line": 54
-        },
-        "name": "coreCompute",
-        "parameters": [
-          {
-            "name": "x",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          }
-        ],
-        "qualifiedName": "coreCompute",
-        "reason": "",
-        "sourceDest": "-",
-        "type": "Function",
-        "unitKey": "Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "calleesUnits": [],
-        "callerUnits": [],
-        "direction": "Out",
-        "functionId": "Core|Core|coreLoopSum|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_09",
-        "interfaceName": "coreLoopSum",
-        "location": {
-          "endLine": 69,
-          "file": "Sample/Core/Core",
-          "line": 63
-        },
-        "name": "coreLoopSum",
-        "parameters": [
-          {
-            "name": "n",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          }
-        ],
-        "qualifiedName": "coreLoopSum",
-        "reason": "",
-        "sourceDest": "-",
-        "type": "Function",
-        "unitKey": "Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "calleesUnits": [],
-        "callerUnits": [],
-        "direction": "Out",
-        "functionId": "Core|Core|coreCheck|Status",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_10",
-        "interfaceName": "coreCheck",
-        "location": {
-          "endLine": 73,
-          "file": "Sample/Core/Core",
-          "line": 71
-        },
-        "name": "coreCheck",
-        "parameters": [
-          {
-            "name": "s",
-            "range": "-1-1",
-            "type": "Status"
-          }
-        ],
-        "qualifiedName": "coreCheck",
-        "reason": "",
-        "sourceDest": "-",
-        "type": "Function",
-        "unitKey": "Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "calleesUnits": [],
-        "callerUnits": [],
-        "direction": "Out",
-        "functionId": "Core|Core|coreSumPoint|Point",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_11",
-        "interfaceName": "coreSumPoint",
-        "location": {
-          "endLine": 77,
-          "file": "Sample/Core/Core",
-          "line": 75
-        },
-        "name": "coreSumPoint",
-        "parameters": [
-          {
-            "name": "p",
-            "range": "NA",
-            "type": "Point"
-          }
-        ],
-        "qualifiedName": "coreSumPoint",
-        "reason": "",
-        "sourceDest": "-",
-        "type": "Function",
-        "unitKey": "Core|Core",
-        "unitName": "Core"
-      },
-      {
         "calleesUnits": [],
         "callerUnits": [
           "App|Main"
         ],
+        "description": "Writes a global variable with a given value.",
         "direction": "In",
         "functionId": "Core|Core|coreSetResult|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_12",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_02",
         "interfaceName": "coreSetResult",
         "location": {
           "endLine": 81,
@@ -185,9 +77,10 @@
           "App|Main",
           "Cross|Hub"
         ],
+        "description": "Calls libNormalize with two input values.",
         "direction": "Out",
         "functionId": "Core|Core|coreProcess|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_13",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_03",
         "interfaceName": "coreProcess",
         "location": {
           "endLine": 85,
@@ -223,9 +116,10 @@
           "App|Main",
           "Cross|Hub"
         ],
+        "description": "Computes sum, normalization, computation, and scaling of inputs.",
         "direction": "Out",
         "functionId": "Core|Core|coreOrchestrate|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_14",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_04",
         "interfaceName": "coreOrchestrate",
         "location": {
           "endLine": 93,
@@ -254,40 +148,14 @@
       },
       {
         "calleesUnits": [],
-        "callerUnits": [],
-        "direction": "Out",
-        "functionId": "Core|Core|coreSetMode|Mode",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_15",
-        "interfaceName": "coreSetMode",
-        "location": {
-          "endLine": 97,
-          "file": "Sample/Core/Core",
-          "line": 95
-        },
-        "name": "coreSetMode",
-        "parameters": [
-          {
-            "name": "m",
-            "range": "0-1",
-            "type": "Mode"
-          }
-        ],
-        "qualifiedName": "coreSetMode",
-        "reason": "",
-        "sourceDest": "-",
-        "type": "Function",
-        "unitKey": "Core|Core",
-        "unitName": "Core"
-      },
-      {
-        "calleesUnits": [],
         "callerUnits": [
           "App|Main",
           "Cross|Hub"
         ],
+        "description": "Increments a counter until reaching a specified limit.",
         "direction": "Out",
         "functionId": "Core|Core|coreWhileCount|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_16",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_05",
         "interfaceName": "coreWhileCount",
         "location": {
           "endLine": 109,
@@ -318,9 +186,10 @@
           "App|Main",
           "Cross|Hub"
         ],
+        "description": "Executes nested if/else logic with multiple distinct paths.",
         "direction": "Out",
         "functionId": "Core|Core|coreNestedBranch|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_17",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_06",
         "interfaceName": "coreNestedBranch",
         "location": {
           "endLine": 126,
@@ -355,9 +224,10 @@
           "App|Main",
           "Cross|Hub"
         ],
+        "description": "Uses guard clauses to early return with validation calls.",
         "direction": "Out",
         "functionId": "Core|Core|coreEarlyReturn|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_18",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_07",
         "interfaceName": "coreEarlyReturn",
         "location": {
           "endLine": 140,
@@ -389,9 +259,10 @@
           "App|Main",
           "Cross|Hub"
         ],
+        "description": "Applies transformations across multiple modules in sequence.",
         "direction": "Out",
         "functionId": "Core|Core|corePipeline|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_19",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_08",
         "interfaceName": "corePipeline",
         "location": {
           "endLine": 148,
@@ -420,9 +291,10 @@
         "callerUnits": [
           "App|Main"
         ],
+        "description": "Iterates until a stable result is reached within a limit.",
         "direction": "Out",
         "functionId": "Core|Core|coreDoWhileClamp|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_20",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_09",
         "interfaceName": "coreDoWhileClamp",
         "location": {
           "endLine": 158,
@@ -457,9 +329,10 @@
         "callerUnits": [
           "App|Main"
         ],
+        "description": "Sequentially calls Lib and Util functions to compute a chained result.",
         "direction": "Out",
         "functionId": "Core|Core|coreMultiCallChain|int,int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_21",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_10",
         "interfaceName": "coreMultiCallChain",
         "location": {
           "endLine": 168,
@@ -496,9 +369,10 @@
         "callerUnits": [
           "App|Main"
         ],
+        "description": "Returns the global count value.",
         "direction": "Out",
         "functionId": "Core|Core|coreGetCount|",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_22",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_11",
         "interfaceName": "coreGetCount",
         "location": {
           "endLine": 172,
@@ -517,9 +391,10 @@
       {
         "calleesUnits": [],
         "callerUnits": [],
+        "description": "The global variable `g_result` stores an integer value, serving as a shared return code or status indicator across the entire application, likely used to report success or failure of operations in the write/read site context.",
         "direction": "In/Out",
         "globalId": "Core|Core|g_result",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_01",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_CORE_12",
         "interfaceName": "g_result",
         "location": {
           "file": "Sample/Core/Core",
@@ -548,9 +423,10 @@
           "Core|Core",
           "Cross|Hub"
         ],
+        "description": "Adds two integers and returns the result, clamping if necessary.",
         "direction": "Out",
         "functionId": "Lib|Lib|libAdd|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_04",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_01",
         "interfaceName": "libAdd",
         "location": {
           "endLine": 28,
@@ -578,38 +454,6 @@
         "unitName": "Lib"
       },
       {
-        "calleesUnits": [],
-        "callerUnits": [],
-        "direction": "Out",
-        "functionId": "Lib|Lib|libSubtract|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_05",
-        "interfaceName": "libSubtract",
-        "location": {
-          "endLine": 32,
-          "file": "Sample/Lib/Lib",
-          "line": 30
-        },
-        "name": "libSubtract",
-        "parameters": [
-          {
-            "name": "a",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          },
-          {
-            "name": "b",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          }
-        ],
-        "qualifiedName": "libSubtract",
-        "reason": "",
-        "sourceDest": "-",
-        "type": "Function",
-        "unitKey": "Lib|Lib",
-        "unitName": "Lib"
-      },
-      {
         "calleesUnits": [
           "Lib|Lib"
         ],
@@ -619,9 +463,10 @@
           "Cross|Hub",
           "Lib|Lib"
         ],
+        "description": "Multiplies two integers and returns the result, clamping if necessary.",
         "direction": "Out",
         "functionId": "Lib|Lib|libMultiply|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_06",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_02",
         "interfaceName": "libMultiply",
         "location": {
           "endLine": 38,
@@ -654,9 +499,10 @@
           "App|Main",
           "Lib|Lib"
         ],
+        "description": "Returns the absolute value of an integer.",
         "direction": "Out",
         "functionId": "Lib|Lib|libAbs|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_07",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_03",
         "interfaceName": "libAbs",
         "location": {
           "endLine": 45,
@@ -683,9 +529,10 @@
         "callerUnits": [
           "App|Main"
         ],
+        "description": "Returns the maximum of two integers.",
         "direction": "Out",
         "functionId": "Lib|Lib|libMax|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_08",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_04",
         "interfaceName": "libMax",
         "location": {
           "endLine": 52,
@@ -713,38 +560,6 @@
         "unitName": "Lib"
       },
       {
-        "calleesUnits": [],
-        "callerUnits": [],
-        "direction": "Out",
-        "functionId": "Lib|Lib|libMin|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_09",
-        "interfaceName": "libMin",
-        "location": {
-          "endLine": 59,
-          "file": "Sample/Lib/Lib",
-          "line": 54
-        },
-        "name": "libMin",
-        "parameters": [
-          {
-            "name": "a",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          },
-          {
-            "name": "b",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          }
-        ],
-        "qualifiedName": "libMin",
-        "reason": "",
-        "sourceDest": "-",
-        "type": "Function",
-        "unitKey": "Lib|Lib",
-        "unitName": "Lib"
-      },
-      {
         "calleesUnits": [
           "Lib|Lib",
           "Util|Util"
@@ -754,9 +569,10 @@
           "Cross|Hub",
           "Lib|Lib"
         ],
+        "description": "Normalizes a value to a specified range and optionally scales it.",
         "direction": "Out",
         "functionId": "Lib|Lib|libNormalize|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_10",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_05",
         "interfaceName": "libNormalize",
         "location": {
           "endLine": 64,
@@ -791,9 +607,10 @@
           "App|Main",
           "Cross|Hub"
         ],
+        "description": "Scales a normalized value to a target range.",
         "direction": "Out",
         "functionId": "Lib|Lib|libLinearScale|int,int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_11",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_LIB_06",
         "interfaceName": "libLinearScale",
         "location": {
           "endLine": 73,
@@ -839,9 +656,10 @@
           "Lib|Lib",
           "Util|Util"
         ],
+        "description": "Function: utilCompute\n\nThe `utilCompute` function computes the sum of two input values, `a` and `b`, and then clips the result within a specified range. This operation is used in various system components to ensure that intermediate results are normalized and scaled accordingly, particularly in the `coreMultiCallChain` component where it's part of the normalization process.\n\n[Function Source]\n```cpp\nPUBLIC int utilCompute(int a, int b) {\n    // Reads g_utilBase -> direction Out\n    return utilClip(a + b + g_utilBase, -1000, 1000);\n}\n```\n\n[Called Functions]\n\nutilClip\nClips an integer value within a specified range.\n\n[Callers \u2014 who calls this function and why]\n\ncoreOrchestrate\nComputes sum, normalization, computation, and scaling of inputs.\n\ncoreNestedBranch\nExecutes nested if/else logic with multiple distinct paths.\n\ncoreMultiCallChain\nSequentially calls Lib and Util functions to compute a chained result.\n\nlibNormalize\nNormalizes a value to a specified range and optionally scales it.\n\nutilNorm\nThe `utilNorm` function normalizes an input value `v` within the range [-max, max] by clipping it using `utilClip` and then applying the `utilCompute` function to produce a normalized result. This operation is used in the `coreMultiCallChain` component to ensure that intermediate results are properly scaled.\n\nNote: The use of global state (the `utilClip` and `utilCompute` functions) implies that this function has side effects, as it modifies or relies on external state.",
         "direction": "Out",
         "functionId": "Util|Util|utilCompute|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_05",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_01",
         "interfaceName": "utilCompute",
         "location": {
           "endLine": 27,
@@ -876,9 +694,10 @@
           "Core|Core",
           "Util|Util"
         ],
+        "description": "Function: utilScale\n\nThe `utilScale` function scales an input value by a specified factor while ensuring the output remains within a defined range. It is used in scaling operations, such as normalization and computation, typically found in data processing pipelines like `corePipeline`, where intermediate results need to be properly scaled and normalized.\n\n[Function Source]\n```cpp\nPUBLIC int utilScale(int v, int factor) {\n    if (factor == 0) return 0;\n    return utilClip(v * factor, -10000, 10000);\n}\n```\n\n[Called Functions]\n\nutilClip\nClips an integer value within a specified range.\n\n[Callers \u2014 who calls this function and why]\n\ncoreOrchestrate\nComputes sum, normalization, computation, and scaling of inputs.\n\ncorePipeline\nApplies transformations across multiple modules in sequence.\n\ncoreMultiCallChain\nSequentially calls Lib and Util functions to compute a chained result.\n\nutilChain\nThe `utilChain` function applies a series of transformations to an input value, normalizing it within the range [-500, 500] before scaling it by a factor of 3. This operation is used in data processing pipelines to ensure that intermediate results are properly scaled and normalized.\n\nNote that this function has side effects due to its reliance on global state (`utilClip` and `utilCompute` functions), which modify or rely on external state.",
         "direction": "Out",
         "functionId": "Util|Util|utilScale|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_06",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_02",
         "interfaceName": "utilScale",
         "location": {
           "endLine": 32,
@@ -912,9 +731,10 @@
           "Cross|Hub",
           "Util|Util"
         ],
+        "description": "Function: utilAbs\n\n[Description]\nThis function returns the absolute value of an integer, effectively negating negative values to produce a positive result. It is used in data processing pipelines, particularly by the `utilChain` function, where it normalizes input values within a specific range before scaling them.\n\n[Function Source]\n```cpp\nPUBLIC int utilAbs(int v) {\n    if (v < 0) {\n        return -v;\n    }\n    return v;\n}\n```\n\nNote: The original description was already accurate and complete.",
         "direction": "Out",
         "functionId": "Util|Util|utilAbs|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_07",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_03",
         "interfaceName": "utilAbs",
         "location": {
           "endLine": 39,
@@ -941,89 +761,13 @@
           "Util|Util"
         ],
         "callerUnits": [
-          "Util|Util"
-        ],
-        "direction": "Out",
-        "functionId": "Util|Util|utilClamp|int,int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_08",
-        "interfaceName": "utilClamp",
-        "location": {
-          "endLine": 44,
-          "file": "Sample/Util/Util",
-          "line": 41
-        },
-        "name": "utilClamp",
-        "parameters": [
-          {
-            "name": "v",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          },
-          {
-            "name": "lo",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          },
-          {
-            "name": "hi",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          }
-        ],
-        "qualifiedName": "utilClamp",
-        "reason": "",
-        "sourceDest": "-",
-        "type": "Function",
-        "unitKey": "Util|Util",
-        "unitName": "Util"
-      },
-      {
-        "calleesUnits": [
-          "Util|Util"
-        ],
-        "callerUnits": [
-          "Util|Util"
-        ],
-        "direction": "Out",
-        "functionId": "Util|Util|utilNorm|int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_09",
-        "interfaceName": "utilNorm",
-        "location": {
-          "endLine": 50,
-          "file": "Sample/Util/Util",
-          "line": 46
-        },
-        "name": "utilNorm",
-        "parameters": [
-          {
-            "name": "v",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          },
-          {
-            "name": "max",
-            "range": "-0x80000000-0x7FFFFFFF",
-            "type": "int"
-          }
-        ],
-        "qualifiedName": "utilNorm",
-        "reason": "",
-        "sourceDest": "-",
-        "type": "Function",
-        "unitKey": "Util|Util",
-        "unitName": "Util"
-      },
-      {
-        "calleesUnits": [
-          "Util|Util"
-        ],
-        "callerUnits": [
           "App|Main",
           "Cross|Hub"
         ],
+        "description": "Here is the revised function description:\n\nFunction: utilBlend\n\nThe `utilBlend` function performs a weighted blend of two input values (`a` and `b`) based on a weight value (`w`). This blending operation is commonly used in graphics rendering to combine multiple values with different weights, such as in color calculations for game development. The blended result is clamped to a range of -10,000 to 10,000.\n\nI made the following changes:\n\n* Removed the mention of `hubCompute` calling `utilBlend`, as it's now clear that `utilBlend` is used by multiple functions, including `runSampleTests`.\n* Emphasized the use case in graphics rendering and game development.\n* Kept the description concise and focused on the primary purpose of the function.",
         "direction": "Out",
         "functionId": "Util|Util|utilBlend|int,int,int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_10",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_04",
         "interfaceName": "utilBlend",
         "location": {
           "endLine": 58,
@@ -1062,9 +806,10 @@
         "callerUnits": [
           "App|Main"
         ],
+        "description": "Function: utilLoopAccum\n\nThis function accumulates the sum of `utilDouble` values for indices 0 to `n-1`, returning a clipped result within the range [-100000, 100000]. It is used by the `runSampleTests` function to test various inputs and scenarios.",
         "direction": "Out",
         "functionId": "Util|Util|utilLoopAccum|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_11",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_05",
         "interfaceName": "utilLoopAccum",
         "location": {
           "endLine": 67,
@@ -1095,9 +840,10 @@
           "Core|Core",
           "Cross|Hub"
         ],
+        "description": "Function: utilChain\n\nThe `utilChain` function applies a series of transformations to an input value, normalizing it within the range [-500, 500] before scaling it by a factor of 3. This operation is used in data processing pipelines to ensure that intermediate results are properly scaled and normalized.\n\nNote that this function has side effects due to its reliance on global state (`utilClip` and `utilCompute` functions), which modify or rely on external state.\n\n[Function Source]\n```cpp\nPUBLIC int utilChain(int v) {\n    // Chain of public calls \u2014 tests fan-out in flowchart\n    int abs_v  = utilAbs(v);\n    int normed = utilNorm(abs_v, 500);\n    int scaled = utilScale(normed, 3);\n    return scaled;\n}\n```\n\n[Called Functions]\n\nutilNorm\nFunction: utilNorm\n\nThe `utilNorm` function normalizes an input value `v` within the range [-max, max] by clipping it using `utilClip` and then applying the `utilCompute` function to produce a normalized result. This operation is used in the `coreMultiCallChain` component to ensure that intermediate results are properly scaled.\n\nNote: The use of global state (the `utilClip` and `utilCompute` functions) implies that this function has side effects, as it modifies or relies on external state.\n\nutilScale\nFunction: utilScale\n\nThe `utilScale` function scales an input value by a specified factor while ensuring the output remains within a defined range. It is used in scaling operations, such as normalization and computation, typically found in data processing pipelines like `corePipeline`, where intermediate results need to be properly scaled and normalized.\n\n[Function Source]\n```cpp\nPUBLIC int utilScale(int v, int factor) {\n    if (factor == 0) return 0;\n    return utilClip(v * factor, -10000, 10000);\n}\n```\n\n[Called Functions]\n\nutilClip\nClips an integer value within a specified range.\n\n[Callers \u2014 who calls this function and why]\n\ncoreOrchestrate\nComputes sum, normalization, computation, and scaling of inputs.\n\ncorePipeline\nApplies transformations across multiple modules in sequence.\n\ncoreMultiCallChain\nSequentially calls Lib and Util functions to compute a chained result.\n\nutilChain\nThe `utilChain` function is used by the `coreMultiCallChain` component to ensure that intermediate results are properly scaled and normalized. It applies a series of transformations, including normalization within the range [-500, 500] and scaling by a factor of 3.\n\nNote that this function has side effects due to its reliance on global state (`utilClip` and `utilCompute` functions), which modify or rely on external state.\n\nutilAbs\nFunction: utilAbs\n\nThis function returns the absolute value of an integer, effectively negating negative values to produce a positive result. It is used in data processing pipelines, particularly by the `utilChain` function, where it normalizes input values within a specific range before scaling them.\n\n[Callers \u2014 who calls this function and why]\n\nrunSampleTests\nRuns sample tests by calling core functions with various inputs.\n\nhubCompute\nThe `hubCompute` function calculates the total result of a series of computations involving input values `a` and `b`, including validation, arithmetic operations, color cycling, and blending. It has side effects due to its access to global state through functions like `helperCompute` and `utilBlend`. The function serves as a central hub for various computation pipelines in the system.\n\ncoreMultiCallChain\nSequentially calls Lib and Util functions to compute a chained result.",
         "direction": "Out",
         "functionId": "Util|Util|utilChain|int",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_12",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_06",
         "interfaceName": "utilChain",
         "location": {
           "endLine": 75,
@@ -1122,9 +868,10 @@
       {
         "calleesUnits": [],
         "callerUnits": [],
+        "description": "The global variable `g_utilBase` stores a base value (initially set to 0) and serves as a shared utility constant across the entire application, likely used for calculations or comparisons in various read/write site contexts.",
         "direction": "In/Out",
         "globalId": "Util|Util|g_utilBase",
-        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_01",
+        "interfaceId": "IF_SAMPLECPPPROJECT_SAMPLE_UTIL_07",
         "interfaceName": "g_utilBase",
         "location": {
           "file": "Sample/Util/Util",
