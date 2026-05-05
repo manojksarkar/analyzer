@@ -31,29 +31,119 @@ def _file_path(data: dict, base_path: str) -> str:
     return norm_path((data.get("location") or {}).get("file", ""), base_path)
 
 
-def _read_local_includes(fp: str, base_path: str) -> list:
+def _defined_macros_from_config() -> set:
+    """Extract macro names defined via -D flags in config clang.clangArgs."""
+    cfg = load_config(PROJECT_ROOT)
+    args = (cfg.get("clang") or {}).get("clangArgs") or []
+    if isinstance(args, str):
+        args = [args]
+    macros = set()
+    for arg in args:
+        # Accept both "-DFOO" and "-DFOO=VALUE" forms
+        if arg.startswith("-D"):
+            name = arg[2:].split("=", 1)[0]
+            if name:
+                macros.add(name)
+    return macros
+
+
+def _read_local_includes(fp: str, base_path: str, defined_macros: set = None) -> list:
     """Return #include "..." paths from fp, resolved relative to base_path.
 
-    Also implicitly adds the same-named .h/.hpp if it exists alongside the
-    .cpp but is not explicitly #included (a common C++ convention).
+    Respects #ifdef/#ifndef/#if/#else/#elif/#endif blocks: only includes from
+    the branch that is active given the supplied set of defined macro names are
+    returned.  Also implicitly adds the same-named .h/.hpp companion when the
+    developer omits the explicit #include.
     """
     if not os.path.isfile(fp):
         return []
+    if defined_macros is None:
+        defined_macros = set()
+
     result = []
     result_set = set()
+
+    # Each stack frame: [branch_active, had_true_branch]
+    # branch_active    – whether the current branch should emit includes
+    # had_true_branch  – whether any branch in this block already evaluated true
+    cond_stack = []
+
+    def _active():
+        return all(frame[0] for frame in cond_stack)
+
+    def _eval_defined(expr):
+        """True if 'defined(MACRO)' or bare 'MACRO' in expr is in defined_macros."""
+        m = re.search(r'defined\s*\(\s*(\w+)\s*\)', expr)
+        if m:
+            return m.group(1) in defined_macros
+        m = re.match(r'\s*(\w+)\s*$', expr)
+        if m:
+            return m.group(1) in defined_macros
+        return True  # unknown expression — assume active to avoid hiding includes
+
     try:
         with open(fp, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
-                m = re.match(r'#\s*include\s+"([^"]+)"', line.strip())
-                if m:
-                    abs_inc = os.path.normpath(os.path.join(os.path.dirname(fp), m.group(1)))
-                    try:
-                        rel = os.path.relpath(abs_inc, base_path).replace("\\", "/")
-                    except ValueError:
-                        rel = m.group(1)
-                    if rel not in result_set:
-                        result.append(rel)
-                        result_set.add(rel)
+                stripped = line.strip()
+                if not stripped.startswith("#"):
+                    continue
+
+                directive = stripped[1:].lstrip()
+
+                if directive.startswith("ifdef"):
+                    macro = directive[5:].strip().split()[0] if directive[5:].strip() else ""
+                    active = macro in defined_macros
+                    cond_stack.append([active, active])
+                    continue
+
+                if directive.startswith("ifndef"):
+                    macro = directive[6:].strip().split()[0] if directive[6:].strip() else ""
+                    active = macro not in defined_macros
+                    cond_stack.append([active, active])
+                    continue
+
+                if directive.startswith("if") and not directive.startswith("ifdef") and not directive.startswith("ifndef"):
+                    expr = directive[2:].strip()
+                    active = _eval_defined(expr)
+                    cond_stack.append([active, active])
+                    continue
+
+                if directive.startswith("elif"):
+                    if cond_stack:
+                        frame = cond_stack[-1]
+                        if frame[1]:  # a true branch already ran — skip rest
+                            frame[0] = False
+                        else:
+                            expr = directive[4:].strip()
+                            new_active = _eval_defined(expr)
+                            frame[0] = new_active
+                            if new_active:
+                                frame[1] = True
+                    continue
+
+                if directive.startswith("else"):
+                    if cond_stack:
+                        frame = cond_stack[-1]
+                        frame[0] = not frame[1]  # active only if no true branch yet
+                    continue
+
+                if directive.startswith("endif"):
+                    if cond_stack:
+                        cond_stack.pop()
+                    continue
+
+                # #include "..." — only emit when in an active branch
+                if _active():
+                    m = re.match(r'include\s+"([^"]+)"', directive)
+                    if m:
+                        abs_inc = os.path.normpath(os.path.join(os.path.dirname(fp), m.group(1)))
+                        try:
+                            rel = os.path.relpath(abs_inc, base_path).replace("\\", "/")
+                        except ValueError:
+                            rel = m.group(1)
+                        if rel not in result_set:
+                            result.append(rel)
+                            result_set.add(rel)
     except OSError:
         pass
 
@@ -76,6 +166,7 @@ def _read_local_includes(fp: str, base_path: str) -> list:
 
 
 def _build_units_modules(base_path: str, functions_data: dict, global_variables_data: dict):
+    defined_macros = _defined_macros_from_config()
     all_files = set()
     for f in functions_data.values():
         fp = _file_path(f, base_path)
@@ -126,7 +217,7 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
                     callee_units.add(u)
 
         unitname = os.path.splitext(base)[0]
-        included_headers = _read_local_includes(fp, base_path)
+        included_headers = _read_local_includes(fp, base_path, defined_macros)
         if unit_key in units_data:
             u = units_data[unit_key]
             u["functionIds"] = u["functionIds"] + func_ids
