@@ -31,6 +31,27 @@ def _file_path(data: dict, base_path: str) -> str:
     return norm_path((data.get("location") or {}).get("file", ""), base_path)
 
 
+def _read_local_includes(fp: str, base_path: str) -> list:
+    """Return #include "..." paths from fp, resolved relative to base_path."""
+    if not os.path.isfile(fp):
+        return []
+    result = []
+    try:
+        with open(fp, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = re.match(r'#\s*include\s+"([^"]+)"', line.strip())
+                if m:
+                    abs_inc = os.path.normpath(os.path.join(os.path.dirname(fp), m.group(1)))
+                    try:
+                        rel = os.path.relpath(abs_inc, base_path).replace("\\", "/")
+                    except ValueError:
+                        rel = m.group(1)
+                    result.append(rel)
+    except OSError:
+        pass
+    return result
+
+
 def _build_units_modules(base_path: str, functions_data: dict, global_variables_data: dict):
     all_files = set()
     for f in functions_data.values():
@@ -82,12 +103,14 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
                     callee_units.add(u)
 
         unitname = os.path.splitext(base)[0]
+        included_headers = _read_local_includes(fp, base_path)
         if unit_key in units_data:
             u = units_data[unit_key]
             u["functionIds"] = u["functionIds"] + func_ids
             u["globalVariableIds"] = u["globalVariableIds"] + var_ids
             u["callerUnits"] = sorted(set(u["callerUnits"]) | caller_units)
             u["calleesUnits"] = sorted(set(u["calleesUnits"]) | callee_units)
+            u["includedHeaders"] = sorted(set(u.get("includedHeaders", [])) | set(included_headers))
         else:
             units_data[unit_key] = {
                 "name": unitname,
@@ -97,6 +120,7 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
                 "globalVariableIds": var_ids,
                 "callerUnits": sorted(caller_units),
                 "calleesUnits": sorted(callee_units),
+                "includedHeaders": included_headers,
             }
 
     module_names = sorted({u.split(KEY_SEP)[0] for u in units_data if KEY_SEP in u})
