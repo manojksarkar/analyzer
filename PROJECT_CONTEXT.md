@@ -1,7 +1,7 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-04 (feat/test-framework — direction logic fixes, lambda propagation, test overhaul, no-LLM cleanup on behaviour diagram + flowchart tests, DESIGN_SPEC fully rewritten: all rules are output/DOCX-focused with no code logic — REQ-DS-XX, REQ-IT-XX, REQ-UD-XX, REQ-BD-XX, REQ-FC-XX, REQ-CO-XX; TEST_INVENTORY rule coverage tables updated to match).
-> Current active branch: `feat/test-framework` (off `version3`).
+> Updated: 2026-05-06 (feat/architecture-design — ADD pipeline: per-layer model dirs, Architecture Design Document export, layer static SVG/PNG diagrams).
+> Current active branch: `feat/architecture-design` (off `feat/test-framework`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
@@ -9,6 +9,7 @@
 > - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
 > - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
 > - §4c covers the feat/test-framework changes (test overhaul, LIBCLANG_PATH, llm.summarize).
+> - §4d covers the feat/architecture-design ADD pipeline (per-layer model dirs, ADD views, architecture_docx_exporter).
 > - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
@@ -18,8 +19,9 @@
 Parses a C++ source tree with **libclang**, derives a structured model of every
 function / global / type, runs a set of "views" that turn the model into JSON
 + Mermaid + PNG artifacts, and finally renders a **Software Detailed Design**
-DOCX document. An optional LLM pipeline enriches the model with descriptions,
-behaviour names, and per-function CFG flowcharts.
+DOCX document (SDD) and/or an **Architecture Design Document** (ADD). An
+optional LLM pipeline enriches the model with descriptions, behaviour names,
+and per-function CFG flowcharts.
 
 The pipeline is **subprocess-based and crash-recoverable**: each of the four
 phases is its own Python entry point, and `run.py` resumes from any phase via
@@ -38,20 +40,29 @@ analyzer/
     abbreviations.txt         Abbreviation expansions for LLM prompts
     puppeteer-config.json     Optional headless-chrome args for mmdc
   src/
-    parser.py                 Phase 1 — libclang AST → model/*.json
+    parser.py                 Phase 1 — libclang AST → model/LayerN/*.json
     model_deriver.py          Phase 2 — units / modules / call-graph / LLM enrich
-    run_views.py              Phase 3 — load model, dispatch view registry
-    docx_exporter.py          Phase 4 — output/* → software_detailed_design_*.docx
+    run_views.py              Phase 3 (SDD) — load layer model, dispatch view registry
+    run_add_views.py          Phase 3 (ADD) — load merged model, dispatch ADD view registry
+    docx_exporter.py          Phase 4 (SDD) — output/* → software_detailed_design_*.docx
+    architecture_docx_exporter.py  Phase 4 (ADD) — add/* → architecture_design.docx
     utils.py                  Analyzer-specific helpers (keys, types, ranges)
     llm_enrichment.py         Prompt builders + enrichment loops (uses llm_core)
     core/                     Cross-cutting infrastructure (no upward imports)
     llm_core/                 Unified LLM HTTP client (Ollama + OpenAI gateway)
-    views/                    View registry + four built-in views
+    views/                    SDD view registry + four built-in views
+    add_views/                ADD view registry (layer static diagram)
     flowchart/                Real C++ → Mermaid CFG flowchart engine
   fake_behaviour_diagram_generator.py    Placeholder behaviour-diagram emitter
   test_cpp_project/           Fixture C++ tree (see §15)
-  model/                      Phase 1+2 output (JSON)
-  output/                     Phase 3+4 output (JSON, .mmd, .png, .docx)
+  SampleCppProject/           Sample C++ project (Layer1/, Layer2/, Layer3/)
+  model/
+    Layer1/                   Phase 1+2 output for Layer1 (JSON)
+    Layer2/                   Phase 1+2 output for Layer2 (JSON)
+  output/
+    add/                      ADD Phase 3+4 output (SVG, PNG, docx)
+      layer_static_diagrams/  Per-layer static SVG + PNG + _layer_static_data.json
+    <group>/                  SDD Phase 3+4 output per group
   logs/                       Daily log files (run_YYYYMMDD.log)
   CLAUDE.md                   Onboarding pointer (says "read PROJECT_CONTEXT.md")
   PROJECT_CONTEXT.md          This file
@@ -61,23 +72,39 @@ analyzer/
 
 ## 3. The 4-phase pipeline
 
+### SDD pipeline
+
 ```
-Phase 1  src/parser.py          C++ source → model/metadata.json,
-                                             model/functions.json,
-                                             model/globalVariables.json,
-                                             model/dataDictionary.json
-Phase 2  src/model_deriver.py   model/ → model/units.json,
-                                          model/modules.json,
-                                          model/knowledge_base.json (for flowchart engine),
-                                          model/summaries.json (LLM hierarchy summaries)
+Phase 1  src/parser.py          C++ source (filtered to LayerN/) →
+                                  model/LayerN/metadata.json,
+                                  model/LayerN/functions.json,
+                                  model/LayerN/globalVariables.json,
+                                  model/LayerN/dataDictionary.json
+Phase 2  src/model_deriver.py   model/LayerN/ → model/LayerN/units.json,
+                                                  model/LayerN/modules.json,
+                                                  model/LayerN/knowledge_base.json,
+                                                  model/LayerN/summaries.json
                                   + enriches functions.json with interfaceId,
                                     direction, transitive globals, behaviour
                                     names, and (optionally) LLM descriptions
-Phase 3  src/run_views.py       model/ → output/interface_tables.json,
-                                          output/unit_diagrams/*.mmd|.png,
-                                          output/behaviour_diagrams/*.mmd|.png,
-                                          output/flowcharts/*.json|.png
-Phase 4  src/docx_exporter.py   output/ → software_detailed_design_<group>.docx
+Phase 3  src/run_views.py       model/LayerN/ → output/<group>/interface_tables.json,
+                                                  output/<group>/unit_diagrams/*.mmd|.png,
+                                                  output/<group>/behaviour_diagrams/*.mmd|.png,
+                                                  output/<group>/flowcharts/*.json|.png
+Phase 4  src/docx_exporter.py   output/<group>/ → software_detailed_design_<group>.docx
+```
+
+### ADD pipeline
+
+```
+Phase 1  src/parser.py (per layer)          same as SDD Phase 1, repeated for each LayerN
+Phase 2  src/model_deriver.py (per layer)   same as SDD Phase 2, repeated for each LayerN
+Phase 3  src/run_add_views.py   merges all model/LayerN/ →
+                                  output/add/layer_static_diagrams/
+                                    <LayerN>_static.svg
+                                    <LayerN>_static.png
+                                    _layer_static_data.json
+Phase 4  src/architecture_docx_exporter.py  output/add/ → architecture_design.docx
 ```
 
 Each phase is launched as a subprocess by [src/core/orchestration.py](src/core/orchestration.py).
@@ -283,6 +310,120 @@ for a permanent local preference.
 
 ---
 
+## 4d. Architecture Design Document pipeline (`feat/architecture-design`)
+
+### Goals
+
+Adds a parallel ADD pipeline alongside the existing SDD pipeline:
+- Parses each layer independently into `model/LayerN/` (per-layer model dirs).
+- ADD Phase 3 merges all layer model dirs via `load_merged_model()` to produce
+  cross-layer views.
+- ADD Phase 4 exports `output/architecture_design.docx`.
+
+### Per-layer model dirs
+
+Previously `model/` was a flat directory for one run. Now each layer writes to its own
+subdirectory so multiple layers can coexist:
+
+```
+model/
+  Layer1/    functions.json, globalVariables.json, units.json, modules.json, …
+  Layer2/    functions.json, globalVariables.json, units.json, modules.json, …
+```
+
+`set_model_dir(d)` (in `core.model_io`) sets a module-level override so all model
+read/write calls in that subprocess redirect to `d`. Each phase entry point calls it
+when `--layer LayerN` is present on `sys.argv`:
+
+| Script | Calls set_model_dir when |
+|---|---|
+| `parser.py` | `--layer` arg present → `layer_model_dir(layer_name)` |
+| `model_deriver.py` | `--layer` arg present → `layer_model_dir(layer_name)` |
+| `run_views.py` | `--layer` arg present → `set_model_dir(layer_model_dir(…))` |
+| `docx_exporter.py` | `--layer` arg present → `set_model_dir(layer_model_dir(…))` |
+| `run_add_views.py` | uses `load_merged_model()` — reads from ALL layer dirs |
+
+### ADD views — `src/add_views/`
+
+```
+src/add_views/
+  __init__.py             registry + run_add_views() dispatcher
+  registry.py             @register("viewName") decorator
+  layer_static_diagram.py layerStaticDiagram view (SVG + PNG per layer)
+```
+
+**`layerStaticDiagram`** view ([src/add_views/layer_static_diagram.py](src/add_views/layer_static_diagram.py)):
+
+For each layer in `config.layers`, generates an SVG showing the layer's structural
+hierarchy: groups → modules → units, laid out as **three separate flat rows** (no nesting):
+
+```
+[Group label box — full-width orange header            ]
+[Module A box]  [Module B box]  [Module C box]
+[Unit1][Unit2]  [Unit3][Unit4]  [Unit5]
+```
+
+- Group label: light orange fill (`#FFF3E0`) + orange stroke (`#FB8C00`)
+- Module boxes: light green fill (`#E8F5E9`) + green stroke (`#43A047`)
+- Unit boxes: light violet fill (`#EDE7F6`) + purple stroke (`#7C4DFF`)
+- Box widths: fit to content (`len(name)*7 + 24`, min 80px for units)
+- Puppeteer renders each SVG to a same-named PNG at 2× device pixel ratio
+
+Unit names come from `model.get("units", {})` (the merged model). Key format is
+`ModuleName|UnitName`; the view strips the module prefix. If a module has no units
+in the model (e.g. layer not yet parsed), the module name itself is used as a
+placeholder unit.
+
+Outputs written to `output/add/layer_static_diagrams/`:
+- `<LayerN>_static.svg` — raw SVG
+- `<LayerN>_static.png` — Puppeteer-rendered PNG
+- `_layer_static_data.json` — summary of all layers' group/module/unit structure
+
+### ADD exporter — `src/architecture_docx_exporter.py`
+
+Entry: `python src/architecture_docx_exporter.py <output_add_dir> <docx_path>`
+
+Builds `architecture_design.docx` with:
+- Heading 1: "Software Architecture Design Specification"
+- Section 1: Introduction
+- Section 3: Layer Design
+  - Section 3.N: LayerN (one subsection per layer from `_layer_static_data.json`)
+    - Section 3.N.1: Static Design — embeds PNG + 3-column table (Group | Module | Units)
+
+SVG→PNG conversion uses an inline Puppeteer Node.js script written to `PROJECT_ROOT`
+and run with `cwd=PROJECT_ROOT` so `node_modules/puppeteer` is resolvable.
+
+### Config additions
+
+```jsonc
+"layers": {
+  "Layer1": {
+    "path": "Layer1",
+    "groups": {
+      "Sample": { "Core": "Sample/Core", "Lib": "Sample/Lib", … },
+      …
+    }
+  },
+  "Layer2": {
+    "path": "Layer2",
+    "groups": {
+      "Platform": { "Gpio": "Platform/Gpio", "Uart": "Platform/Uart", … }
+    }
+  }
+},
+"architectureDoc": {
+  "enabled": false,          // informational; actual control is --doc-type
+  "views": {
+    "layerStaticDiagram": true
+  }
+}
+```
+
+`layers_config()` (in `core.config`) returns the `layers` block. `get_flat_groups(cfg)`
+flattens all layers' groups into one dict for the SDD planner.
+
+---
+
 ## 5. CLI — `run.py`
 
 ### Syntax
@@ -299,8 +440,9 @@ python run.py [options] <project_path>
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
-| `--selected-group <name>` | Export only the named group from `config.modulesGroups`. Case-insensitive |
+| `--selected-group <name>` | Export only the named group from `config.layers`. Case-insensitive. Only valid with `--doc-type sdd` or `both`. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
+| `--doc-type TYPE` | Which document(s) to generate: `sdd` (default), `add`, `both`. `add` runs the ADD pipeline (merge all layers → architecture_design.docx). |
 | `--quiet` | stderr handler raised to WARNING |
 | `--verbose` | stderr handler lowered to DEBUG |
 
@@ -341,17 +483,26 @@ The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
 (flowchart engine) starts, because that engine can be invoked standalone — see
 §13.
 
-### Three dispatch shapes (collapsed inside `plan_runs`)
+### Dispatch shapes (collapsed inside `plan_runs`)
 
-| Config state | CLI | Plans returned |
-|---|---|---|
-| No `modulesGroups` | (any) | One plan with all 4 phases (or just 3+4 if `--use-model`) |
-| `modulesGroups` present | no `--selected-group` | One "Build model" plan (Phases 1+2) + N "Group: <name>" plans (Phases 3+4 each, with `--output-dir output/<group>/`) |
-| `modulesGroups` present | `--selected-group <G>` | One "Build model" plan + one "Group: <G>" plan (Phases 3+4 only, **no `--output-dir`** — output goes to `output/`) |
+`plan_runs(cfg, *, project_path, selected_group, use_model, no_llm_summarize, from_phase, filter_mode, doc_type)` returns a `List[RunPlan]`.
 
-`--from-phase` translation also lives here:
+`doc_type` ∈ `"sdd"` | `"add"` | `"both"` (default `"sdd"`).
+
+| Config state | doc_type | CLI | Plans returned |
+|---|---|---|---|
+| No `layers` | sdd | (any) | One plan with all 4 phases (or just 3+4 if `--use-model`) |
+| No `layers` | add | — | Build model once + ADD plan (phase 3+4) |
+| `layers` present | sdd | no `--selected-group` | Per-layer build plans (Phases 1+2 each) + N "Group: <name>" SDD plans |
+| `layers` present | sdd | `--selected-group <G>` | Build plan for the group's layer + one "Group: <G>" SDD plan |
+| `layers` present | add | — | Per-layer build plans for ALL layers + one ADD plan |
+| `layers` present | both | — | All SDD plans + any remaining layer build plans + one ADD plan |
+
+**Per-layer model dirs**: each "Build model (LayerN)" plan passes `--layer LayerN` to both `parser.py` and `model_deriver.py`, which redirect writes to `model/LayerN/`. SDD phase 3+4 plans also pass `--layer LayerN` to `run_views.py` and `docx_exporter.py` so they read from `model/LayerN/`.
+
+`--from-phase` translation:
 - `from_phase ≤ 2`: build-model plan starts at that index, group plans start at 1.
-- `from_phase ≥ 3`: build-model plan is **suppressed**; each group plan uses `local_from = max(1, from_phase - 2)` (so 3→1, 4→2 inside the views+export plan).
+- `from_phase ≥ 3`: build-model plan is **suppressed**; each view/export plan uses `local_from = max(1, from_phase - 2)` (so 3→1, 4→2).
 
 ---
 
@@ -410,17 +561,28 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
       "variableEnrichment":  true    // rich global-variable descriptions
     }
   },
-  "modulesGroups": {
-    "core":    { "core":    ["app", "math"] },
-    "support": { "support": "outer/inner" },
-    "tests":   {
-      "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
-      "tests_b": ["tests/hub", "tests/poly", "tests/structs"]
+  "layers": {
+    "Layer1": {
+      "path": "Layer1",
+      "groups": {
+        "Sample": { "Core": "Sample/Core", "Lib": "Sample/Lib", "Util": "Sample/Util" },
+        "Full":   { "Iface": ["Direction", "Types", "Flow"], "Cross": ["Hub", "Poly"] }
+      }
+    },
+    "Layer2": {
+      "path": "Layer2",
+      "groups": {
+        "Platform": { "Gpio": "Platform/Gpio", "Uart": "Platform/Uart", … }
+      }
     }
   },
   "export": {
     "docxPath":      "output/software_detailed_design_{group}.docx",
     "docxFontSize": 8
+  },
+  "architectureDoc": {
+    "enabled": false,
+    "views": { "layerStaticDiagram": true }
   }
 }
 ```
@@ -492,8 +654,19 @@ Canonical filenames (use these constants, never bare strings):
 `METADATA`, `FUNCTIONS`, `GLOBALS`, `UNITS`, `MODULES`, `DATA_DICTIONARY`,
 `KNOWLEDGE_BASE`, `SUMMARIES`. Tuple `ALL_MODEL_NAMES` lists them all.
 
+**Per-layer model dir support** (feat/architecture-design):
+- `layer_model_dir(layer_name)` → `model/LayerN/` absolute path (auto-creates on first write).
+- `set_model_dir(d)` → module-level override; all subsequent `model_file_path` /
+  `read_model_file` / `write_model_file` / `ensure_model_dir` calls use `d` instead of
+  `paths().model_dir`. Called once at each phase entry point when `--layer` is given.
+- `_effective_model_dir()` → the override dir if set, else `paths().model_dir`.
+- `load_merged_model(*required, optional=None)` → when `layers_config()` is non-empty, loads
+  each `model/LayerN/<name>.json` and `dict.update()`-merges them; raises `ModelFileMissing`
+  if any required name has no data across all layers. Falls back to `load_model()` when no
+  layers are configured.
+
 Functions:
-- `model_file_path(name)` → absolute path under `paths().model_dir`.
+- `model_file_path(name)` → absolute path under `_effective_model_dir()`.
 - `model_files_present(*names)` → list of MISSING canonical names.
 - `read_model_file(name, *, required=True, default=None)` → dict, raises
   `ModelFileMissing` if required and absent.
@@ -543,6 +716,7 @@ log line. On a non-zero exit code the runner emits
 ### `core.group_planner` — [src/core/group_planner.py](src/core/group_planner.py)
 
 Constants: `PHASE_PARSE=1`, `PHASE_DERIVE=2`, `PHASE_VIEWS=3`, `PHASE_EXPORT=4`.
+Doc-type constants: `DOC_TYPE_SDD="sdd"`, `DOC_TYPE_ADD="add"`, `DOC_TYPE_BOTH="both"`.
 
 ```python
 @dataclass
@@ -552,11 +726,20 @@ class RunPlan:
     runner_from_phase: int = 1
 
 def plan_runs(cfg, *, project_path, selected_group, use_model,
-              no_llm_summarize, from_phase=1) -> List[RunPlan]
+              no_llm_summarize, from_phase=1, filter_mode, doc_type="sdd") -> List[RunPlan]
 ```
 
-Implements the three dispatch shapes from §5 in one place. Raises `ValueError`
-on unknown `--selected-group`.
+Implements the dispatch shapes from §5 in one place. Raises `ValueError` on unknown
+`--selected-group` or `--selected-group` combined with `--doc-type add`.
+
+Internal helpers:
+- `_build_model_phases(project_path, *, no_llm_summarize, layer_name=None)` — produces
+  `[parser.py, model_deriver.py]` Phase objects; appends `--layer LayerN` to both when
+  `layer_name` is given.
+- `_view_export_phases(*, output_dir, selected_group, filter_mode, layer_name, docx_args)` —
+  produces `[run_views.py, docx_exporter.py]` Phase objects for SDD; appends `--layer LayerN`.
+- `_add_doc_phases(*, output_dir=None)` — produces `[run_add_views.py, architecture_docx_exporter.py]`
+  Phase objects for ADD.
 
 ### `core.__init__` — [src/core/__init__.py](src/core/__init__.py)
 
@@ -800,7 +983,7 @@ So legacy `from utils import load_config` still works.
 | `timed(component)` ctx-mgr | Logs `<elapsed>s` on exit |
 | `mmdc_path(project_root)` | Local `node_modules/.bin/mmdc` or system `mmdc` |
 | `safe_filename(s)` | Replace `<>:"/\\|?*,&;` with `_` |
-| `init_module_mapping(config)` | Build `_MODULE_OVERRIDES` from `modules` or merged `modulesGroups` |
+| `init_module_mapping(config)` | Build `_MODULE_OVERRIDES` from `modules` or merged `layer` |
 | `_resolve_module_from_rel(rel)` | Match relative path against `_MODULE_OVERRIDES` (case-insensitive) |
 | `make_unit_key(rel_file)` | `module\|unitname` |
 | `make_global_key(rel_file, qn)` | `module\|unit\|qualifiedName` |
@@ -829,7 +1012,7 @@ constraints).
 - Loads libclang from `clang.llvmLibPath`. On Windows, calls
   `os.add_dll_directory(<llvm/bin>)` so dependent DLLs are found, with a
   `PATH`-extension fallback.
-- Builds `_MODULE_FOLDERS` from merged `modulesGroups` (or `modules` top-level).
+- Builds `_MODULE_FOLDERS` from merged `layer` (or `modules` top-level).
 - Sets `CLANG_ARGS`:
   - `-std=c++14`
   - `-I<MODULE_BASE_PATH>`, `-I<clangIncludePath>`
@@ -1099,7 +1282,7 @@ python src/run_views.py [--output-dir <dir>] [--selected-group <name>]
 Loads model via `core.model_io.load_model(FUNCTIONS, GLOBALS, UNITS, MODULES, optional=[DATA_DICTIONARY])`.
 
 When a group is selected, run_views resolves the name case-insensitively
-against `config.modulesGroups` and stuffs two extra keys into the config dict
+against `config.layer` and stuffs two extra keys into the config dict
 that's passed down into views:
 
 - `_analyzerSelectedGroup` = the resolved group name
@@ -1539,7 +1722,7 @@ Reads `artifacts_dir/behaviour_diagrams/_behaviour_pngs.json`. For every
 
 ## 15. Test fixture — `test_cpp_project/`
 
-Current layout (matches `config.json` modulesGroups):
+Current layout (matches `config.json` layer):
 
 ```
 test_cpp_project/
@@ -1565,7 +1748,7 @@ test_cpp_project/
     void_alias/void_is_void.cpp    — synthetic-from-VAR_DECL recovery cases
 ```
 
-`config.json`'s `modulesGroups` maps these to three groups: `core`
+`config.json`'s `layer` maps these to three groups: `core`
 (`app` + `math`), `support` (`outer/inner`), and `tests` (split into
 `tests_a` and `tests_b`).
 
@@ -1767,7 +1950,7 @@ root. Fix 1: views use `dirname(abspath(model_dir))`. Fix 2: exporter uses
 ### `--all-groups` removed
 
 Was present in an intermediate version as a redundant flag. Removed because
-all-groups is the default whenever `modulesGroups` is set and no
+all-groups is the default whenever `layer` is set and no
 `--selected-group` is passed.
 
 ### Env-based group override removed
@@ -1864,7 +2047,7 @@ python run.py --selected-group core test_cpp_project
    `format_llm_config_banner` and writes it to the log so the run begins with a
    visible record of which provider/model/budget will be used. On any
    validation failure → `LlmConfigError` → exit 2 (no silent defaults).
-4. **`plan_runs(cfg, …)`** — sees `modulesGroups` is set and a single
+4. **`plan_runs(cfg, …)`** — sees `layer` is set and a single
    `selected_group`. Returns two plans:
    - Plan 1: "Build model (all modules)" → `[parser.py, model_deriver.py --llm-summarize]`
    - Plan 2: "Group: core" → `[run_views.py --selected-group core, docx_exporter.py --selected-group core]`

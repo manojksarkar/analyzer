@@ -35,8 +35,8 @@
     // provider: "ollama" (local) | "openai" (OpenAI-compatible gateway)
     "provider": "ollama",
     "baseUrl": "http://localhost:11434",
-    "defaultModel": "qwen2.5-coder:14b",
-    "timeoutSeconds": 600,
+    "defaultModel": "llama3.2",
+    "timeoutSeconds": 300,
     "numCtx": 8192,
     // retries: number of retries (in addition to the first attempt) on
     // HTTP error or empty response. Default 1 = up to 2 total tries.
@@ -73,30 +73,69 @@
       "Send-System-Name": "rvc-api-module"
     }
   },
-  "modulesGroups": {
-    "Sample": {
-      "Core": "Sample/Core",
-      "Lib":  "Sample/Lib",
-      "Util": "Sample/Util"
+  "layers": {
+    "Layer1": {
+      "path": "Layer1",
+      "groups": {
+        "Sample": {
+          "Core": "Sample/Core",
+          "Lib":  "Sample/Lib",
+          "Util": "Sample/Util"
+        },
+        "Full": {
+          "Iface": ["Direction", "Types", "Flow"],
+          "Cross": ["Hub", "Poly"]
+        },
+        "Support": {
+          "Math":  "Math",
+          "App":   "App",
+          "Outer": "Outer/Inner"
+        },
+        "Access": {
+          "Access": "Access"
+        },
+        "Diag": {
+          "Diag": "Diag"
+        }
+      }
     },
-    "Full": {
-      "Iface": ["Direction", "Types", "Flow"],
-      "Cross": ["Hub", "Poly"]
+    "Layer2": {
+      "path": "Layer2",
+      "groups": {
+        "Platform": {
+          "Gpio":      "Platform/Gpio",
+          "Uart":      "Platform/Uart",
+          "Spi":       "Platform/Spi",
+          "I2c":       "Platform/I2c",
+          "Adc":       "Platform/Adc",
+          "Display":   "Platform/Display",
+          "Storage":   "Platform/Storage",
+          "Network":   "Platform/Network",
+          "Logger":    "Platform/Logger",
+          "Config":    "Platform/Config",
+          "EventBus":  "Platform/EventBus",
+          "Timer":     "Platform/Timer",
+          "Protocol":  "Platform/Protocol",
+          "Scheduler": "Platform/Scheduler",
+          "Cache":     "Platform/Cache"
+        }
+      }
     },
-    "Support": {
-      "Math":  "Math",
-      "App":   "App",
-      "Outer": "Outer/Inner"
-    },
-    "Access": {
-      "Access": "Access"
-    },
-    "Diag": {
-      "Diag": "Diag"
+    "Layer3": {
+      "path": "Layer3",
+      "groups": {}
     }
   },
   "export": {
     "docxPath": "output/software_detailed_design_{group}.docx",
     "docxFontSize": 8
+  },
+  "architectureDoc": {
+    // enabled: set to true to generate the Architecture Design Document.
+    // Use --doc-type add (or both) on the CLI to control which docs are produced.
+    "enabled": false,
+    "views": {
+      "layerStaticDiagram": true
+    }
   }
 }

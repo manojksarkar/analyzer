@@ -28,6 +28,27 @@ from typing import Any, Dict, Iterable, List, Optional
 from .paths import paths
 
 # ---------------------------------------------------------------------------
+# Per-layer model dir override
+# ---------------------------------------------------------------------------
+
+_override_model_dir: Optional[str] = None
+
+
+def set_model_dir(d: Optional[str]) -> None:
+    """Override the model directory for this process (call once at entry point)."""
+    global _override_model_dir
+    _override_model_dir = os.path.abspath(d) if d else None
+
+
+def _effective_model_dir() -> str:
+    return _override_model_dir or paths().model_dir
+
+
+def layer_model_dir(layer_name: str) -> str:
+    """Return abs path to model/<layer_name>/."""
+    return os.path.join(paths().model_dir, layer_name)
+
+# ---------------------------------------------------------------------------
 # Canonical filenames
 # ---------------------------------------------------------------------------
 
@@ -58,7 +79,7 @@ ALL_MODEL_NAMES = (
 
 def model_file_path(name: str) -> str:
     """Return the absolute path of a model file by canonical name (no extension)."""
-    return os.path.join(paths().model_dir, f"{name}.json")
+    return os.path.join(_effective_model_dir(), f"{name}.json")
 
 
 def model_files_present(*names: str) -> List[str]:
@@ -67,8 +88,8 @@ def model_files_present(*names: str) -> List[str]:
 
 
 def ensure_model_dir() -> str:
-    """Make sure the model directory exists. Returns its absolute path."""
-    md = paths().model_dir
+    """Make sure the active model directory exists. Returns its absolute path."""
+    md = _effective_model_dir()
     os.makedirs(md, exist_ok=True)
     return md
 
@@ -160,3 +181,47 @@ def write_model_file(
             pass
         raise
     return path
+
+
+# ---------------------------------------------------------------------------
+# Merged model (ADD pipeline: combine all layer subdirs into one model)
+# ---------------------------------------------------------------------------
+
+def load_merged_model(
+    *required: str,
+    optional: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """Load and merge model files from all layer subdirs (for the ADD pipeline).
+
+    If no per-layer dirs exist, falls back to the flat model/ directory.
+    Dict-valued files (functions, units, etc.) are merged with update().
+    """
+    from .config import layers_config
+    layers = layers_config()
+
+    if not layers:
+        return load_model(*required, optional=optional)
+
+    all_names = list(required) + list(optional or [])
+    merged: Dict[str, Any] = {n: {} for n in all_names}
+
+    for layer_name in layers:
+        ldir = layer_model_dir(layer_name)
+        for name in all_names:
+            fpath = os.path.join(ldir, f"{name}.json")
+            if not os.path.isfile(fpath):
+                continue
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                merged[name].update(data)
+
+    # Validate required names are non-empty after merge
+    for name in required:
+        if not merged.get(name):
+            raise ModelFileMissing(
+                f"No data for '{name}' in any layer model dir. "
+                f"Run Phase 1+2 per layer first."
+            )
+
+    return merged

@@ -20,11 +20,23 @@ _p = _paths()
 SCRIPT_DIR = _p.src_dir
 PROJECT_ROOT = _p.project_root
 if len(sys.argv) < 2:
-    print("Usage: python parser.py <project_path>")
+    print("Usage: python parser.py <project_path> [--layer LAYER_NAME]")
     raise SystemExit(1)
 proj_arg = sys.argv[1]
 MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.path.join(PROJECT_ROOT, proj_arg)
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
+
+# --layer LayerN: restrict parsing to that layer and write to model/LayerN/
+_layer_arg: str | None = None
+_argv_rest = sys.argv[2:]
+if "--layer" in _argv_rest:
+    _li = _argv_rest.index("--layer")
+    if _li + 1 < len(_argv_rest):
+        _layer_arg = _argv_rest[_li + 1]
+
+if _layer_arg:
+    from core.model_io import set_model_dir, layer_model_dir
+    set_model_dir(layer_model_dir(_layer_arg))
 
 from utils import (
     get_module_name as _get_module,
@@ -52,9 +64,10 @@ if _llvm and os.path.isfile(_llvm):
             os.environ["PATH"] = _llvm_bin_dir + os.pathsep + os.environ.get("PATH", "")
     cindex.Config.set_library_file(_llvm)
 
-_modules_groups = _config.get("modulesGroups") or {}
+from core.config import get_flat_groups as _get_flat_groups
+_modules_groups = _get_flat_groups(_config)
 _modules_cfg = _config.get("modules") or {}
-# If modulesGroups exists but no explicit "modules" is provided, merge all groups.
+# If layer exists but no explicit "modules" is provided, merge all groups.
 # This makes the model parse only the union of all configured module folders.
 if not _modules_cfg and isinstance(_modules_groups, dict) and _modules_groups:
     merged = {}
@@ -228,7 +241,7 @@ def is_project_file(file_path: str) -> bool:
 
     - The file must lie under ``MODULE_BASE_PATH``.
     - Folder allowlists come only from config: optional top-level ``modules`` map, or
-      (if not present) the merged union of all ``modulesGroups``.
+      (if not present) the merged union of all ``layer`` groups.
     - If ``_MODULE_FOLDERS`` is non-empty, only files whose path relative to the project
       root matches one of those entries (or a subpath) are included.
     - If ``_MODULE_FOLDERS`` is empty, any file under the project root passes this check
@@ -943,12 +956,25 @@ def build_metadata():
     }
 
 
+def _layer_prefix() -> str | None:
+    """Return the abs path prefix to restrict parsing to when --layer is given."""
+    if not _layer_arg:
+        return None
+    from core.config import layers_config
+    layer_cfg = layers_config().get(_layer_arg, {})
+    layer_path = layer_cfg.get("path", _layer_arg)
+    return os.path.join(MODULE_BASE_PATH, layer_path)
+
+
 def _collect_source_files():
+    prefix = _layer_prefix()
     files = []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
             if f.endswith((".cpp", ".cc", ".cxx")):  # exclude .h/.hpp (often fail as translation units)
                 path = os.path.join(root, f)
+                if prefix and not path.startswith(prefix):
+                    continue
                 if is_project_file(path):
                     files.append(path)
     return files
@@ -956,12 +982,15 @@ def _collect_source_files():
 
 def _collect_define_files():
     """Files to scan for #define (includes headers)."""
+    prefix = _layer_prefix()
     exts = (".cpp", ".cc", ".cxx", ".h", ".hpp")
     files = []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
             if f.endswith(exts):
                 path = os.path.join(root, f)
+                if prefix and not path.startswith(prefix):
+                    continue
                 if is_project_file(path):
                     files.append(path)
     return files

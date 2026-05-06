@@ -95,7 +95,7 @@ def init_module_mapping(config: dict) -> None:
     This project no longer uses config.selectedGroup to affect module mapping.
     Module mapping is derived from:
     - top-level config.modules (if present), else
-    - merged union of all config.modulesGroups entries.
+    - merged union of all config.layer entries.
     """
     global _MODULE_OVERRIDES, _GROUP_MAP
     cfg = config or {}
@@ -103,7 +103,8 @@ def init_module_mapping(config: dict) -> None:
     _GROUP_MAP = {}
     if _MODULE_OVERRIDES:
         return
-    groups = cfg.get("modulesGroups") or {}
+    from core.config import get_flat_groups
+    groups = get_flat_groups(cfg)
     if not isinstance(groups, dict) or not groups:
         _MODULE_OVERRIDES = {}
         return
@@ -142,7 +143,7 @@ def resolve_group(module: str) -> str:
     return _GROUP_MAP.get(module, "")
 
 def resolve_group(module: str) -> str:
-    """Return the modulesGroups group name for a module, or empty string if unknown."""
+    """Return the layer group name for a module, or empty string if unknown."""
     return _GROUP_MAP.get(module, "")
 
 

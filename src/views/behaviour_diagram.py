@@ -80,7 +80,8 @@ def run(model, output_dir, model_dir, config):
         progress.step()
 
         try:
-            mmd_paths, behaviour_descriptions = gen.generate_all_diagrams(fid, out_dir) or []
+            mmd_paths = gen.generate_all_diagrams(fid, out_dir) or []
+            behaviour_descriptions = []
         except Exception as e:
             log("generator error for %s: %s" % (fid, e), component="behaviourDiagram", err=True)
             continue
