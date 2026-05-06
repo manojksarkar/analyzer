@@ -223,8 +223,8 @@ class TestEnrichBehaviourNames:
 class TestEnrichInterfaces:
     def setup_method(self):
         init_module_mapping({
-            "modulesGroups": {
-                "Sample": {"Core": "Sample/Core"}
+            "layers": {
+                "Layer1": {"path": "Layer1", "groups": {"Sample": {"Core": "Sample/Core"}}}
             }
         })
 

@@ -20,6 +20,8 @@ import streamlit.components.v1 as components
 # ── constants ─────────────────────────────────────────────────────────────────
 
 ROOT         = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+from core.config import get_flat_groups as _get_flat_groups  # noqa: E402
 CONFIG_JSON  = ROOT / "config" / "config.json"
 CONFIG_LOCAL = ROOT / "config" / "config.local.json"
 LAST_RUN     = ROOT / "config" / "last_run.json"
@@ -136,7 +138,7 @@ def _init():
     st.session_state.setdefault("export_docx_path", export.get("docxPath", "output/software_detailed_design_{group}.docx"))
     st.session_state.setdefault("export_font_size", int(export.get("docxFontSize", 8)))
 
-    mg = cfg.get("modulesGroups", {})
+    mg = _get_flat_groups(cfg)
     gid = 0; mid = 0; pid = 0; groups: list[dict] = []
     for gname, mods in mg.items():
         g_modules = []
@@ -254,7 +256,7 @@ def _write_config_local():
     }
     cfg["export"] = {"docxPath": st.session_state.get("export_docx_path", "").strip() or "output/software_detailed_design_{group}.docx", "docxFontSize": st.session_state["export_font_size"]}
     mg = _groups_to_config()
-    if mg: cfg["modulesGroups"] = mg
+    if mg: cfg["layer"] = mg
 
     provider = st.session_state.get("llm_provider", "ollama")
     llm_block: dict[str, Any] = {

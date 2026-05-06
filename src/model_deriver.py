@@ -10,7 +10,20 @@ from core.paths import paths as _paths
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
 PROJECT_ROOT = _p.project_root
-MODEL_DIR = _p.model_dir
+
+# --layer LayerN: read/write model/LayerN/ instead of model/
+_layer_arg: str | None = None
+for _i, _a in enumerate(sys.argv[1:], 1):
+    if _a == "--layer" and _i + 1 < len(sys.argv):
+        _layer_arg = sys.argv[_i + 1]
+        break
+
+if _layer_arg:
+    from core.model_io import set_model_dir, layer_model_dir
+    set_model_dir(layer_model_dir(_layer_arg))
+
+from core.model_io import _effective_model_dir  # noqa: E402 (after set_model_dir)
+MODEL_DIR = _effective_model_dir()
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 

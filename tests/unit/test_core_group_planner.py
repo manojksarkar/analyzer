@@ -25,7 +25,7 @@ def _run(cfg, **kwargs):
         return plan_runs(cfg, **defaults)
 
 def _groups(*names):
-    return {"modulesGroups": {n: {} for n in names}}
+    return {"layers": {"L": {"path": "", "groups": {n: {} for n in names}}}}
 
 
 class TestResolveGroupName:

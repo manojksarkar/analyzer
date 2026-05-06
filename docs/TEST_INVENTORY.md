@@ -129,7 +129,7 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 | REQ-IT-01 | Module-scoped filtering | Needs a separate run fixture scoped to one module |
 | REQ-IT-05 | Nested lambda modifier → enclosing `In` | Needs a C++ fixture with a lambda writing a global |
 | REQ-IT-07 | Information field when LLM is on | LLM disabled in CI |
-| REQ-IT-11 | `<GROUP>` omitted when no group resolves | Needs a project with no `modulesGroups` config |
+| REQ-IT-11 | `<GROUP>` omitted when no group resolves | Needs a project with no `layer` config |
 
 ---
 

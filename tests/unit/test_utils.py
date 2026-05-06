@@ -197,10 +197,15 @@ class TestMakeUnitKey:
     def setup_method(self):
         """Reset module mapping to a known state before each test."""
         init_module_mapping({
-            "modulesGroups": {
-                "Sample": {
-                    "Core": "Sample/Core",
-                    "Lib":  "Sample/Lib",
+            "layers": {
+                "Layer1": {
+                    "path": "Layer1",
+                    "groups": {
+                        "Sample": {
+                            "Core": "Sample/Core",
+                            "Lib":  "Sample/Lib",
+                        }
+                    }
                 }
             }
         })
