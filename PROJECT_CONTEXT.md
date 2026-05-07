@@ -45,7 +45,7 @@ analyzer/
     run_views.py              Phase 3 (SDD) — load layer model, dispatch view registry
     run_add_views.py          Phase 3 (ADD) — load merged model, dispatch ADD view registry
     docx_exporter.py          Phase 4 (SDD) — output/* → software_detailed_design_*.docx
-    architecture_docx_exporter.py  Phase 4 (ADD) — add/* → architecture_design.docx
+    architecture_docx_exporter.py  Phase 4 (ADD) — add/* → Software Architecture Design Specification.docx
     utils.py                  Analyzer-specific helpers (keys, types, ranges)
     llm_enrichment.py         Prompt builders + enrichment loops (uses llm_core)
     core/                     Cross-cutting infrastructure (no upward imports)
@@ -81,7 +81,7 @@ Phase 1  src/parser.py          C++ source (filtered to LayerN/) →
                                   model/LayerN/globalVariables.json,
                                   model/LayerN/dataDictionary.json
 Phase 2  src/model_deriver.py   model/LayerN/ → model/LayerN/units.json,
-                                                  model/LayerN/modules.json,
+                                                  model/LayerN/components.json,
                                                   model/LayerN/knowledge_base.json,
                                                   model/LayerN/summaries.json
                                   + enriches functions.json with interfaceId,
@@ -104,7 +104,7 @@ Phase 3  src/run_add_views.py   merges all model/LayerN/ →
                                     <LayerN>_static.svg
                                     <LayerN>_static.png
                                     _layer_static_data.json
-Phase 4  src/architecture_docx_exporter.py  output/add/ → architecture_design.docx
+Phase 4  src/architecture_docx_exporter.py  output/add/ → Software Architecture Design Specification.docx
 ```
 
 Each phase is launched as a subprocess by [src/core/orchestration.py](src/core/orchestration.py).
@@ -197,7 +197,7 @@ dict of per-task section ratios summing to ~1.0 — for:
 
 - `function_description`, `function_description_refined`
 - `variable_description`, `behaviour_names`
-- `function_summary`, `file_summary`, `module_summary`, `project_summary`
+- `function_summary`, `file_summary`, `component_summary`, `project_summary`
 - `cfg_node_labeling`, `cfg_coherence`, `cfg_simplification`
 - `self_review`, `ensemble_synthesis`
 
@@ -318,7 +318,7 @@ Adds a parallel ADD pipeline alongside the existing SDD pipeline:
 - Parses each layer independently into `model/LayerN/` (per-layer model dirs).
 - ADD Phase 3 merges all layer model dirs via `load_merged_model()` to produce
   cross-layer views.
-- ADD Phase 4 exports `output/architecture_design.docx`.
+- ADD Phase 4 exports `output/Software Architecture Design Specification.docx`.
 
 ### Per-layer model dirs
 
@@ -327,8 +327,8 @@ subdirectory so multiple layers can coexist:
 
 ```
 model/
-  Layer1/    functions.json, globalVariables.json, units.json, modules.json, …
-  Layer2/    functions.json, globalVariables.json, units.json, modules.json, …
+  Layer1/    functions.json, globalVariables.json, units.json, components.json, …
+  Layer2/    functions.json, globalVariables.json, units.json, components.json, …
 ```
 
 `set_model_dir(d)` (in `core.model_io`) sets a module-level override so all model
@@ -383,7 +383,7 @@ Outputs written to `output/add/layer_static_diagrams/`:
 
 Entry: `python src/architecture_docx_exporter.py <output_add_dir> <docx_path>`
 
-Builds `architecture_design.docx` with:
+Builds `Software Architecture Design Specification.docx` with:
 - Heading 1: "Software Architecture Design Specification"
 - Section 1: Introduction
 - Section 3: Layer Design
@@ -442,7 +442,7 @@ python run.py [options] <project_path>
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
 | `--selected-group <name>` | Export only the named group from `config.layers`. Case-insensitive. Only valid with `--doc-type sdd` or `both`. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
-| `--doc-type TYPE` | Which document(s) to generate: `sdd` (default), `add`, `both`. `add` runs the ADD pipeline (merge all layers → architecture_design.docx). |
+| `--doc-type TYPE` | Which document(s) to generate: `sdd` (default), `add`, `both`. `add` runs the ADD pipeline (merge all layers → Software Architecture Design Specification.docx). |
 | `--quiet` | stderr handler raised to WARNING |
 | `--verbose` | stderr handler lowered to DEBUG |
 
@@ -472,7 +472,7 @@ After parsing flags, run.py:
    decision "Fail loud on config errors".)
 3. Validates `<project_path>` exists.
 4. If `--use-model` is set, verifies `model/functions.json`, `globalVariables.json`,
-   `units.json`, and `modules.json` are all present (paths via
+   `units.json`, and `components.json` are all present (paths via
    `core.model_io.model_file_path`). Exits 2 if missing.
 5. Calls [core.group_planner.plan_runs(...)](src/core/group_planner.py) which
    returns a flat `List[RunPlan]`.
@@ -521,7 +521,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     "unitDiagrams":     { "renderPng": true },
     "flowcharts":       { "scriptPath": "src/flowchart/flowchart_engine.py", "renderPng": true },
     "behaviourDiagram": { "renderPng": true },
-    "moduleStaticDiagram": { "enabled": true, "renderPng": true, "widthInches": 5.5 }
+    "componentStaticDiagram": { "enabled": true, "renderPng": true, "widthInches": 5.5 }
   },
   "clang": {
     "llvmLibPath":       "C:\\Program Files\\LLVM\\bin\\libclang.dll",
@@ -983,21 +983,21 @@ So legacy `from utils import load_config` still works.
 | `timed(component)` ctx-mgr | Logs `<elapsed>s` on exit |
 | `mmdc_path(project_root)` | Local `node_modules/.bin/mmdc` or system `mmdc` |
 | `safe_filename(s)` | Replace `<>:"/\\|?*,&;` with `_` |
-| `init_module_mapping(config)` | Build `_MODULE_OVERRIDES` from `modules` or merged `layer` |
-| `_resolve_module_from_rel(rel)` | Match relative path against `_MODULE_OVERRIDES` (case-insensitive) |
-| `make_unit_key(rel_file)` | `module\|unitname` |
-| `make_global_key(rel_file, qn)` | `module\|unit\|qualifiedName` |
-| `make_function_key(module, rel_file, qn, params)` | `module\|unit\|qualifiedName\|paramTypes` |
+| `init_component_mapping(config)` | Build `_COMPONENT_OVERRIDES` from `components`/`modules` or merged `layer` |
+| `_resolve_component_from_rel(rel)` | Match relative path against `_COMPONENT_OVERRIDES` (case-insensitive) |
+| `make_unit_key(rel_file)` | `component\|unitname` |
+| `make_global_key(rel_file, qn)` | `component\|unit\|qualifiedName` |
+| `make_function_key(component, rel_file, qn, params)` | `component\|unit\|qualifiedName\|paramTypes` |
 | `path_from_unit_rel(rel)` | Strip extension, normalise slashes |
 | `short_name(qn)` | Last `::` segment |
 | `path_is_under(base, candidate)` | Safe containment via `os.path.relpath` |
-| `get_module_name(file_path, base_path)` | Absolute path → module name (uses `path_is_under`) |
+| `get_component_name(file_path, base_path)` | Absolute path → component name (uses `path_is_under`) |
 | `norm_path(path, base_path)` | Resolve relative paths against `base_path` |
 | `PRIMITIVES` dict | C++ primitive types → range string |
 | `get_range_for_type(type_str)` | Map type to range; falls back to `NA` |
 | `get_range(type_str, data_dictionary)` | Range lookup with typedef recursion (depth 10) |
 
-Note: `init_module_mapping` runs at import time using the on-disk config, so
+Note: `init_component_mapping` runs at import time using the on-disk config, so
 `make_*_key` works immediately. `parser.py` builds its own folder list from
 the same config (kept separate to avoid the analyzer's import order
 constraints).
@@ -1012,7 +1012,7 @@ constraints).
 - Loads libclang from `clang.llvmLibPath`. On Windows, calls
   `os.add_dll_directory(<llvm/bin>)` so dependent DLLs are found, with a
   `PATH`-extension fallback.
-- Builds `_MODULE_FOLDERS` from merged `layer` (or `modules` top-level).
+- Builds `_COMPONENT_FOLDERS` from merged `layer` (or `components`/`modules` top-level).
 - Sets `CLANG_ARGS`:
   - `-std=c++14`
   - `-I<MODULE_BASE_PATH>`, `-I<clangIncludePath>`
@@ -1029,7 +1029,7 @@ expanded to nothing by `-DPRIVATE=` and Clang doesn't surface them.
 
 ### File filtering (`is_project_file`)
 
-Rejects anything outside `MODULE_BASE_PATH` and (when `_MODULE_FOLDERS` is
+Rejects anything outside `MODULE_BASE_PATH` and (when `_COMPONENT_FOLDERS` is
 non-empty) anything whose relative path doesn't start with one of the
 configured folder prefixes (case-insensitive after `os.path.normcase`).
 
@@ -1103,9 +1103,9 @@ and every global to `"In/Out"`.
 
 ### Final keying (`build_metadata` + `utils.make_function_key`)
 
-Final model key: `module|unit|qualifiedName|paramTypes`.
+Final model key: `component|unit|qualifiedName|paramTypes`.
 
-- `module` from `get_module_name(file_path, base_path)` → `_resolve_module_from_rel`.
+- `component` from `get_component_name(file_path, base_path)` → `_resolve_component_from_rel`.
 - `unit` from filename without extension.
 - `qualifiedName` includes namespace + class.
 - `paramTypes` is the comma-joined list of normalised parameter type strings.
@@ -1122,13 +1122,13 @@ written to `model/` via plain `json.dump`.
 Loads via `core.model_io.load_model(METADATA, FUNCTIONS, GLOBALS)` and exits
 with a clear "Run Phase 1 first" message on `ModelFileMissing`.
 
-### `_build_units_modules`
+### `_build_units_components`
 
 Groups all functions and globals by file path. Produces:
 - `model/units.json` — one entry per `.cpp/.cc/.cxx` (headers excluded from
   unit keys). Each entry has `name`, `path`, `fileName`, `functionIds` (sorted
   by source line), `globalVariableIds`, `callerUnits` (set), `calleesUnits` (set).
-- `model/modules.json` — one entry per module containing its unit keys.
+- `model/components.json` — one entry per component containing its unit keys.
 
 ### `_build_interface_index` / `_enrich_interfaces`
 
@@ -1265,7 +1265,7 @@ This file is what `views/flowcharts.py` passes to `flowchart_engine.py` via
 - Globals assigned `direction = "In/Out"`.
 - `params` field dropped (replaced by normalised `parameters`).
 - All four files (`functions.json`, `globalVariables.json`, `units.json`,
-  `modules.json`) plus `summaries.json` and `knowledge_base.json` written via
+  `components.json`) plus `summaries.json` and `knowledge_base.json` written via
   `core.model_io.write_model_file`.
 
 ---
@@ -1286,7 +1286,7 @@ against `config.layer` and stuffs two extra keys into the config dict
 that's passed down into views:
 
 - `_analyzerSelectedGroup` = the resolved group name
-- `_analyzerAllowedModules` = sorted list of module names from that group's entry
+- `_analyzerAllowedComponents` = sorted list of component names from that group's entry
 
 Then it calls `views.run_views(model, output_dir, model_dir, config)`.
 
@@ -1316,7 +1316,7 @@ Output: `output/interface_tables.json` (or `output/<group>/interface_tables.json
 Full logic and column definitions: `docs/DESIGN_SPEC.md` — Interface Tables.
 
 - Iterates `.cpp` units only; header-only units skipped.
-- Filters by `_analyzerAllowedModules` if set.
+- Filters by `_analyzerAllowedComponents` if set.
 - Includes `PUBLIC` and `PROTECTED` functions and globals; excludes `PRIVATE`.
 - Entries sorted by source line number within each unit.
 - For each function: builds `callerUnits` / `calleesUnits` (all units including
@@ -1332,10 +1332,10 @@ One Mermaid `.mmd` (and optionally `.png`) per unit into
 `output/unit_diagrams/`.
 Full logic and layout rules: `docs/DESIGN_SPEC.md` — Unit Diagrams (REQ-UD-XX).
 
-- `.cpp` units only; filtered by `allowed_modules` when set.
-- Layout: external callers on the left, **yellow** module box in the centre,
+- `.cpp` units only; filtered by `allowed_components` when set.
+- Layout: external callers on the left, **yellow** component box in the centre,
   external callees on the right, all flowing left-to-right.
-- The main unit is **blue with a thick border** (`mainUnit` class); sibling units in the module subgraph are blue thin (`internal` class).
+- The main unit is **blue with a thick border** (`mainUnit` class); sibling units in the component subgraph are blue thin (`internal` class).
 - Edges labelled with `interfaceId` values, `<br/>`-separated for multi-edge.
 - Self-calls (callee in the same unit) produce no edge.
 - Project root resolved from `dirname(model_dir)` (NOT `output_dir`) so
@@ -1348,7 +1348,7 @@ Generates one `.mmd` per (current function, external caller) pair via the
 placeholder `FakeBehaviourGenerator` in
 [fake_behaviour_diagram_generator.py](fake_behaviour_diagram_generator.py).
 
-- Filtered to `allowed_modules` (only generates diagrams for functions inside
+- Filtered to `allowed_components` (only generates diagrams for functions inside
   the selected group, but uses the full model so external callers outside the
   group are still discovered).
 - Excludes `private` functions.
@@ -1628,14 +1628,14 @@ N Code Metrics, Coding Rule, Test Coverage                     (Heading 1)
 Appendix A. Design Guideline                                   (Heading 1)
 ```
 
-### Module container diagram (`_build_module_container_mermaid`)
+### Component container diagram (`_build_component_container_mermaid`)
 
 Mermaid TB `subgraph` — light-yellow container (`fill:#fef9c3, stroke:#fbbf24`)
 holding all unit nodes as blue boxes (`fill:#2563eb`). Rendered into
-`artifacts_dir/module_container_diagrams/<module>.png` at 6 inches wide.
+`artifacts_dir/component_container_diagrams/<component>.png` at 6 inches wide.
 Appears first under `{N}.1 Static Design`, followed by a horizontal rule.
 
-### Header dependency diagram (`_build_module_header_dependency_mermaid`)
+### Header dependency diagram (`_build_component_header_dependency_mermaid`)
 
 Mermaid BT flowchart (no outer box): header nodes at top (dark, `fill:#1e293b`),
 source file nodes at bottom (blue, `fill:#2563eb`), edges `source → header`.
@@ -1797,20 +1797,20 @@ Allows `C:\foo` to match `C:\foobar`. The correct helper exists at
 [utils.path_is_under](src/utils.py); migrating `is_project_file` to use it
 is open work.
 
-### Risk 2 — flowchart filtering uses module prefix, not units.json
+### Risk 2 — flowchart filtering uses component prefix, not units.json
 
 `views/flowcharts.py` filters `functions.json` to a group via
-`fid.split(KEY_SEP, 1)[0].lower() in allowed_modules`. A more accurate
+`fid.split(KEY_SEP, 1)[0].lower() in allowed_components`. A more accurate
 approach would walk `units.json → functionIds` for the units in that group.
 The current approach can include stray functions whose key happens to start
-with the right module token but whose source file isn't in any of the
+with the right component token but whose source file isn't in any of the
 group's configured folders.
 
-### Risk 3 — `make_function_key` module fallback
+### Risk 3 — `make_function_key` component fallback
 
-If `module` is empty when called, it falls back to `parts[0]` (first path
-segment). This shouldn't happen any more (`get_module_name` always returns a
-real module or `"unknown"`), but a regression here would silently change keys.
+If `component` is empty when called, it falls back to `parts[0]` (first path
+segment). This shouldn't happen any more (`get_component_name` always returns a
+real component or `"unknown"`), but a regression here would silently change keys.
 
 ### Risk 4 — ASSERT-fix linter regressions
 
@@ -2067,12 +2067,12 @@ python run.py --selected-group core test_cpp_project
    for the flowchart engine. Writes everything back to `model/`.
 9. **`PhaseRunner.run(plan2.phases)`** — subprocess
    `python src/run_views.py --selected-group core`.
-10. **`run_views.py`** — loads model (`load_model(FUNCTIONS, GLOBALS, UNITS, MODULES, optional=[DATA_DICTIONARY])`),
+10. **`run_views.py`** — loads model (`load_model(FUNCTIONS, GLOBALS, UNITS, COMPONENTS, optional=[DATA_DICTIONARY])`),
     resolves the group name case-insensitively, sets `_analyzerSelectedGroup`
-    + `_analyzerAllowedModules` on the config dict, calls
+    + `_analyzerAllowedComponents` on the config dict, calls
     `views.run_views(model, output_dir, model_dir, config)`.
 11. **`interface_tables` view** — writes `output/interface_tables.json`
-    filtered to the `core` modules.
+    filtered to the `core` components.
 12. **`unit_diagrams` view** — emits one `.mmd` per `.cpp` unit into
     `output/unit_diagrams/`, then renders each with `mmdc`.
 13. **`behaviour_diagram` view** — uses `FakeBehaviourGenerator` to emit

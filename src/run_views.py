@@ -12,11 +12,11 @@ PROJECT_ROOT = _p.project_root
 
 def _load_model():
     from core.model_io import (
-        load_model, FUNCTIONS, GLOBALS, UNITS, MODULES, DATA_DICTIONARY, ModelFileMissing,
+        load_model, FUNCTIONS, GLOBALS, UNITS, COMPONENTS, DATA_DICTIONARY, ModelFileMissing,
     )
     try:
         return load_model(
-            FUNCTIONS, GLOBALS, UNITS, MODULES,
+            FUNCTIONS, GLOBALS, UNITS, COMPONENTS,
             optional=[DATA_DICTIONARY],
         )
     except ModelFileMissing as e:
@@ -56,8 +56,10 @@ def main():
     from core.config import app_config
     from views import run_views
 
+    from core.model_io import _effective_model_dir
     model = _load_model()
     config = app_config()
+    model_dir = _effective_model_dir()
     # Apply filter mode override from command line
     if filter_mode_override:
         if "views" not in config:
@@ -82,8 +84,8 @@ def main():
         if isinstance(grp, dict):
             config = dict(config)
             config["_analyzerSelectedGroup"] = resolved
-            config["_analyzerAllowedModules"] = sorted(grp.keys())
-    run_views(model, output_dir, MODEL_DIR, config)
+            config["_analyzerAllowedComponents"] = sorted(grp.keys())
+    run_views(model, output_dir, model_dir, config)
 
 
 if __name__ == "__main__":

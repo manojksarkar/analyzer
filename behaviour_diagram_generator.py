@@ -5,10 +5,10 @@ Two ways to use this module:
 
 1) As a small library from `src/views/behaviour_diagram.py`:
 
-   gen = FakeBehaviourGenerator(modules_path, units_path, functions_path)
+   gen = FakeBehaviourGenerator(components_path, units_path, functions_path)
    mermaid_paths = gen.generate_all_diagrams(function_key, output_dir)
 
-   Takes paths to model JSON files (modules, units, functions).
+   Takes paths to model JSON files (components, units, functions).
    Output: one .mmd file per external caller, named
    current_function_key__caller_function_key.mmd (current gets called by external unit)
    e.g. app_main_calculate___math_utils_add_int_int.mmd
@@ -45,13 +45,13 @@ class SequenceDiagramGenerator:
     """Fake generator that emits one .mmd per (current_function, caller_function).
     Current unit gets called by external unit.
 
-    Takes paths to modules.json, units.json, functions.json.
+    Takes paths to components.json, units.json, functions.json.
     Output naming: current_key__caller_key.mmd (sanitized)
     No output when the function has no external callers.
     """
 
-    def __init__(self, modules_path: str, units_path: str, functions_path: str) -> None:
-        self.modules_path = modules_path
+    def __init__(self, components_path: str, units_path: str, functions_path: str) -> None:
+        self.components_path = components_path
         self.units_path = units_path
         self.functions_path = functions_path
 
@@ -72,13 +72,13 @@ class SequenceDiagramGenerator:
             except (json.JSONDecodeError, OSError):
                 pass
 
-        self_module = (function_key or "").split("|")[0] if "|" in (function_key or "") else ""
+        self_component = (function_key or "").split("|")[0] if "|" in (function_key or "") else ""
         called_by_ids = functions_data.get(function_key, {}).get("calledByIds", []) or []
         paths = []
 
         for caller_key in called_by_ids:
-            caller_module = (caller_key or "").split("|")[0] if "|" in (caller_key or "") else ""
-            if caller_module == self_module:
+            caller_component = (caller_key or "").split("|")[0] if "|" in (caller_key or "") else ""
+            if caller_component == self_component:
                 continue
             safe_c = safe_filename((function_key or "").replace("|", "_"))
             safe_k = safe_filename((caller_key or "").replace("|", "_"))

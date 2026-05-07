@@ -14,7 +14,7 @@
     "sequenceDiagrams": {
       "filterMode": "skip_within_unit"
     },
-    "moduleStaticDiagram": {
+    "componentStaticDiagram": {
       "enabled": true,
       "renderPng": true,
       "widthInches": 1

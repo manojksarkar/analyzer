@@ -6,7 +6,7 @@ user can change anything by editing the JSON file. This module:
   2. Loads + merges config.json + config.local.json once per process.
   3. Resolves the LLM config block, applying environment-variable overrides.
   4. Provides typed helpers (llm_config, views_config, exporter_config,
-     modules_groups) so call sites stop typing `cfg.get("llm", {}).get(...)`.
+     components_groups) so call sites stop typing `cfg.get("llm", {}).get(...)`.
   5. Re-exports the raw dict via `app_config()` for code that still wants the
      dict-style access.
 
@@ -472,7 +472,7 @@ def default_clang_macro_defs() -> list:
 
 
 def _resolve_layer_paths(layers_cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Flatten layers into {groupName: {moduleName: resolvedPaths}} with layer path prefix applied."""
+    """Flatten layers into {groupName: {componentName: resolvedPaths}} with layer path prefix applied."""
     result: Dict[str, Any] = {}
     for layer_name, layer in (layers_cfg or {}).items():
         if not isinstance(layer, dict):
@@ -494,7 +494,7 @@ def _resolve_layer_paths(layers_cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def get_flat_groups(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Return {groupName: {moduleName: paths}} from config, with layer paths resolved.
+    """Return {groupName: {componentName: paths}} from config, with layer paths resolved.
 
     Reads `layers` (new schema). Falls back to `layer` for old configs.
     """
@@ -508,6 +508,6 @@ def layers_config() -> Dict[str, Any]:
     return app_config().get("layers") or {}
 
 
-def modules_groups() -> Dict[str, Any]:
+def components_groups() -> Dict[str, Any]:
     """Return flattened groups across all layers with paths resolved."""
     return get_flat_groups(app_config())

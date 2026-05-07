@@ -26,11 +26,11 @@ No pipeline, no network. All external calls mocked.
 | `test_core_group_planner.py` | ResolveGroupName · PlanRunsNoGroups · PlanRunsAllGroups · PlanRunsSelectedGroup | `plan_runs`: all three dispatch shapes, `--from-phase` translation, `--use-model`, unknown group error |
 | `test_core_model_io.py` | Constants · ModelFileMissing · ModelFilePath · ModelFilesPresent · ReadModelFile · LoadModel · WriteInPlace · WriteAtomic | Every public function in `model_io`: path helpers, read/write, required vs optional, atomic write, round-trip |
 | `test_flowchart_generator.py` | FunctionIdToUnitKey · SafeFilename · BuildFlowchartForFunction*(xfail)* · Run | `fake_flowchart_generator`: key splitting, filename sanitization, run() output shape and Mermaid validity |
-| `test_interface_tables_view.py` | StripExt · FidToUnit · BuildInterfaceTables | `_build_interface_tables`: public/private filtering, range enrichment, sorting, allowed_modules, all entry keys |
+| `test_interface_tables_view.py` | StripExt · FidToUnit · BuildInterfaceTables | `_build_interface_tables`: public/private filtering, range enrichment, sorting, allowed_components, all entry keys |
 | `test_llm_client.py` | Constructor · GenerateOllama · GenerateOpenAI · Call · FromConfig | `LlmClient`: provider validation, endpoint building, generate/call/retry logic, from_config builder |
 | `test_llm_core_budget.py` | TaskRatios · ContextBudgetConstruction · Allocate · Sections · Remaining · ResolveMaxTokens | `TASK_RATIOS` sum invariants; `ContextBudget` arithmetic; `resolve_max_tokens` for Ollama/OpenAI/explicit/clamp |
 | `test_model_deriver.py` | IdSeg · ReadableLabel · PropagateGlobalAccess · EnrichBehaviourNames · EnrichInterfaces | Pure model-deriver helpers: identifier transformations, transitive global propagation, behaviour name heuristics, interfaceId format |
-| `test_unit_diagrams_view.py` | UnitPartId · EscapeLabel · FidToUnit · BuildUnitDiagram | `_build_unit_diagram`: Mermaid LR output, subgraph label, mainUnit/internal classes, outgoing/incoming cross-unit edges, multi-iface edges, self-call exclusion, external caller/callee layout, allowed_modules |
+| `test_unit_diagrams_view.py` | UnitPartId · EscapeLabel · FidToUnit · BuildUnitDiagram | `_build_unit_diagram`: Mermaid LR output, subgraph label, mainUnit/internal classes, outgoing/incoming cross-unit edges, multi-iface edges, self-call exclusion, external caller/callee layout, allowed_components |
 | `test_utils.py` | StripJsonComments · StripTrailingCommas · LoadConfig · SafeFilename · ShortName · GetRangeForType · MakeUnitKey · GetRange | All pure helpers in `utils.py` and `core.config` JSONC parsers |
 | `test_views_registry.py` | ViewRegistry · ResolveScript | `@register` decorator behaviour; `_resolve_script` default/absolute/relative path logic |
 
@@ -42,7 +42,7 @@ Pipeline runs **once** before the suite against `SampleCppProject`. Tests read `
 
 | File | What it checks |
 |---|---|
-| `test_model_json.py` | `functions.json`, `globalVariables.json`, `units.json`, `modules.json` — field presence, key format, interfaceId uniqueness, call-graph topology |
+| `test_model_json.py` | `functions.json`, `globalVariables.json`, `units.json`, `components.json` — field presence, key format, interfaceId uniqueness, call-graph topology |
 | `test_interface_tables.py` | `output/interface_tables.json` — see rule coverage below |
 | `test_unit_diagrams.py` | `output/unit_diagrams/*.mmd` — Mermaid LR direction, subgraph labels, cross-module edge labels, Util/Core call-direction invariants, golden snapshot |
 | `test_flowcharts.py` | `output/flowcharts/*.json` — one file per unit, `[{name, flowchart}]` shape, Mermaid validity, all expected public functions present |

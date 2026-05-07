@@ -21,7 +21,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
 import utils
-from utils import init_module_mapping, KEY_SEP
+from utils import init_component_mapping, KEY_SEP
 import model_deriver
 from model_deriver import (
     _id_seg,
@@ -222,14 +222,14 @@ class TestEnrichBehaviourNames:
 
 class TestEnrichInterfaces:
     def setup_method(self):
-        init_module_mapping({
+        init_component_mapping({
             "layers": {
                 "Layer1": {"path": "Layer1", "groups": {"Sample": {"Core": "Sample/Core"}}}
             }
         })
 
     def teardown_method(self):
-        init_module_mapping(utils._CONFIG_CACHE)
+        init_component_mapping(utils._CONFIG_CACHE)
 
     def _make_func(self, rel_file="Sample/Core/core.cpp"):
         return {

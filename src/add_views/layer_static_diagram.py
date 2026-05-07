@@ -5,7 +5,7 @@ For each layer in the `layers` config block, generates an SVG showing:
   - Module boxes       (light green)
   - Unit boxes         (light violet)
 
-Both modules within a group and units within a module wrap to the next row
+Both components within a group and units within a component wrap to the next row
 when their combined width exceeds _MAX_ROW_W. All boxes are separate (not
 nested). The SVG is written to
   output/add/layer_static_diagrams/<LayerName>_static.svg
@@ -25,18 +25,18 @@ from core.config import layers_config
 _CHAR_W        = 7
 _MIN_UNIT_W    = 80
 _UNIT_GAP      = 8
-_UNIT_ROW_GAP  = 4   # vertical gap between wrapped unit rows within a module
-_MODULE_GAP    = 12
-_ROW_GAP       = 10  # vertical gap between wrapped module rows within a group
+_UNIT_ROW_GAP  = 4   # vertical gap between wrapped unit rows within a component
+_COMPONENT_GAP    = 12
+_ROW_GAP       = 10  # vertical gap between wrapped component rows within a group
 _GROUP_GAP     = 24
 _SVG_MARGIN    = 20
 _MAX_ROW_W     = 900
 
 _GROUP_BOX_H      = 28
-_MODULE_BOX_H     = 26
+_COMPONENT_BOX_H     = 26
 _UNIT_BOX_H       = 24
-_GAP_GROUP_MODULE = 8
-_GAP_MODULE_UNIT  = 6
+_GAP_GROUP_COMPONENT = 8
+_GAP_COMPONENT_UNIT  = 6
 
 # ── colors ────────────────────────────────────────────────────────────────────
 _C_GROUP_FILL   = "#FFF3E0"
@@ -57,7 +57,7 @@ def _uw(name: str) -> int:
 
 
 def _unit_rows_for(units: list) -> list:
-    """Split a module's units into rows, each fitting within _MAX_ROW_W."""
+    """Split a component's units into rows, each fitting within _MAX_ROW_W."""
     rows, cur, cur_w = [], [], 0
     for u in units:
         uw = _uw(u)
@@ -77,31 +77,31 @@ def _unit_row_w(row: list) -> int:
     return sum(_uw(u) for u in row) + max(0, len(row) - 1) * _UNIT_GAP
 
 
-def _mod_w(unit_rows: list) -> int:
+def _comp_w(unit_rows: list) -> int:
     return max((_unit_row_w(r) for r in unit_rows), default=_MIN_UNIT_W)
 
 
-def _mod_section_h(unit_rows: list) -> int:
+def _comp_section_h(unit_rows: list) -> int:
     n = len(unit_rows)
-    return _MODULE_BOX_H + _GAP_MODULE_UNIT + n * _UNIT_BOX_H + max(0, n - 1) * _UNIT_ROW_GAP
+    return _COMPONENT_BOX_H + _GAP_COMPONENT_UNIT + n * _UNIT_BOX_H + max(0, n - 1) * _UNIT_ROW_GAP
 
 
-def _mod_row_w(mods: list) -> int:
-    """Width of one group module-row (list of (mod_name, unit_rows))."""
-    return sum(_mod_w(ur) for _, ur in mods) + max(0, len(mods) - 1) * _MODULE_GAP
+def _comp_row_w(comps: list) -> int:
+    """Width of one group component-row (list of (comp_name, unit_rows))."""
+    return sum(_comp_w(ur) for _, ur in comps) + max(0, len(comps) - 1) * _COMPONENT_GAP
 
 
-def _mod_row_h(mods: list) -> int:
-    """Height of one group module-row = tallest module section."""
-    return max((_mod_section_h(ur) for _, ur in mods), default=_MODULE_BOX_H)
+def _comp_row_h(comps: list) -> int:
+    """Height of one group component-row = tallest component section."""
+    return max((_comp_section_h(ur) for _, ur in comps), default=_COMPONENT_BOX_H)
 
 
-def _split_module_rows(mods: list) -> list:
-    """Wrap modules into rows fitting _MAX_ROW_W."""
+def _split_component_rows(comps: list) -> list:
+    """Wrap components into rows fitting _MAX_ROW_W."""
     rows, cur, cur_w = [], [], 0
-    for item in mods:
-        mw = _mod_w(item[1])
-        gap = _MODULE_GAP if cur else 0
+    for item in comps:
+        mw = _comp_w(item[1])
+        gap = _COMPONENT_GAP if cur else 0
         if cur and cur_w + gap + mw > _MAX_ROW_W:
             rows.append(cur)
             cur, cur_w = [item], mw
@@ -113,10 +113,10 @@ def _split_module_rows(mods: list) -> list:
     return rows
 
 
-def _group_section_h(module_rows: list) -> int:
-    n = len(module_rows)
-    return (_GROUP_BOX_H + _GAP_GROUP_MODULE
-            + sum(_mod_row_h(r) for r in module_rows)
+def _group_section_h(component_rows: list) -> int:
+    n = len(component_rows)
+    return (_GROUP_BOX_H + _GAP_GROUP_COMPONENT
+            + sum(_comp_row_h(r) for r in component_rows)
             + max(0, n - 1) * _ROW_GAP)
 
 
@@ -136,18 +136,18 @@ def _text(x, y, s, size, weight, color, anchor="middle") -> str:
 
 def _build_svg(groups: list) -> str:
     """
-    groups: [(group_name, [(module_name, [unit_name, ...]), ...]), ...]
+    groups: [(group_name, [(component_name, [unit_name, ...]), ...]), ...]
     Returns SVG string.
     """
-    # Pre-process: compute unit_rows per module, then split into module rows
+    # Pre-process: compute unit_rows per component, then split into component rows
     processed = []
-    for g_name, modules in groups:
-        mods_ur = [(m, _unit_rows_for(units)) for m, units in modules]
-        module_rows = _split_module_rows(mods_ur)
-        processed.append((g_name, module_rows))
+    for g_name, components in groups:
+        comps_ur = [(m, _unit_rows_for(units)) for m, units in components]
+        component_rows = _split_component_rows(comps_ur)
+        processed.append((g_name, component_rows))
 
     content_w = max(
-        (_mod_row_w(row) for _, mr in processed for row in mr),
+        (_comp_row_w(row) for _, mr in processed for row in mr),
         default=200,
     )
     svg_w = _SVG_MARGIN * 2 + content_w
@@ -162,8 +162,8 @@ def _build_svg(groups: list) -> str:
     ]
 
     gy = _SVG_MARGIN
-    for g_name, module_rows in processed:
-        gw = max((_mod_row_w(row) for row in module_rows), default=200)
+    for g_name, component_rows in processed:
+        gw = max((_comp_row_w(row) for row in component_rows), default=200)
 
         # group label
         parts.append(_rect(_SVG_MARGIN, gy, gw, _GROUP_BOX_H,
@@ -171,20 +171,20 @@ def _build_svg(groups: list) -> str:
         parts.append(_text(_SVG_MARGIN + 10, gy + 18, g_name,
                             size=12, weight="bold", color=_C_GROUP_TEXT, anchor="start"))
 
-        row_y = gy + _GROUP_BOX_H + _GAP_GROUP_MODULE
-        for mod_row in module_rows:
+        row_y = gy + _GROUP_BOX_H + _GAP_GROUP_COMPONENT
+        for mod_row in component_rows:
             mx = _SVG_MARGIN
             for m_name, unit_rows in mod_row:
-                mw = _mod_w(unit_rows)
+                mw = _comp_w(unit_rows)
 
-                # module box
-                parts.append(_rect(mx, row_y, mw, _MODULE_BOX_H,
+                # component box
+                parts.append(_rect(mx, row_y, mw, _COMPONENT_BOX_H,
                                    _C_MOD_FILL, _C_MOD_STROKE, rx=3))
                 parts.append(_text(mx + mw // 2, row_y + 17, m_name,
                                    size=10, weight="bold", color=_C_MOD_TEXT))
 
                 # unit rows (wrapped)
-                uy = row_y + _MODULE_BOX_H + _GAP_MODULE_UNIT
+                uy = row_y + _COMPONENT_BOX_H + _GAP_COMPONENT_UNIT
                 for urow in unit_rows:
                     ux = mx
                     for u_name in urow:
@@ -196,11 +196,11 @@ def _build_svg(groups: list) -> str:
                         ux += uw_ + _UNIT_GAP
                     uy += _UNIT_BOX_H + _UNIT_ROW_GAP
 
-                mx += mw + _MODULE_GAP
+                mx += mw + _COMPONENT_GAP
 
-            row_y += _mod_row_h(mod_row) + _ROW_GAP
+            row_y += _comp_row_h(mod_row) + _ROW_GAP
 
-        gy += _group_section_h(module_rows) + _GROUP_GAP
+        gy += _group_section_h(component_rows) + _GROUP_GAP
 
     parts.append("</svg>")
     return "\n".join(parts)
@@ -208,12 +208,12 @@ def _build_svg(groups: list) -> str:
 
 # ── model helpers ─────────────────────────────────────────────────────────────
 
-def _units_for_module(module_name: str, units_data: dict) -> list:
-    """Return unit names belonging to module_name (first KEY_SEP segment of unit key)."""
+def _units_for_component(component_name: str, units_data: dict) -> list:
+    """Return unit names belonging to component_name (first KEY_SEP segment of unit key)."""
     return [
         uk.split(KEY_SEP, 1)[1] if KEY_SEP in uk else uk
         for uk in units_data
-        if uk.split(KEY_SEP, 1)[0] == module_name
+        if uk.split(KEY_SEP, 1)[0] == component_name
     ]
 
 
@@ -236,15 +236,15 @@ def run(model, output_dir, model_dir, config):
         groups_cfg = layer.get("groups") or {}
 
         groups = []
-        for group_name, modules_cfg in groups_cfg.items():
-            modules = []
-            for mod_name in modules_cfg:
-                unit_names = _units_for_module(mod_name, units_data)
+        for group_name, components_cfg in groups_cfg.items():
+            components = []
+            for comp_name in components_cfg:
+                unit_names = _units_for_component(comp_name, units_data)
                 if not unit_names:
-                    unit_names = [mod_name]
-                modules.append((mod_name, unit_names))
-            if modules:
-                groups.append((group_name, modules))
+                    unit_names = [comp_name]
+                components.append((comp_name, unit_names))
+            if components:
+                groups.append((group_name, components))
 
         if not groups:
             log(f"layer {layer_name} has no groups, skipping", component="layerStaticDiagram")
@@ -258,8 +258,8 @@ def run(model, output_dir, model_dir, config):
         summary[layer_name] = {
             "svgPath": svg_path,
             "groups": {
-                g: {m: units for m, units in mods}
-                for g, mods in groups
+                g: {m: units for m, units in comps}
+                for g, comps in groups
             },
         }
         log(f"{layer_name}: {len(groups)} groups", component="layerStaticDiagram")

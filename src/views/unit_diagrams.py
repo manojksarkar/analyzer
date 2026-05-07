@@ -37,15 +37,15 @@ def _build_unit_diagram(
     fid_to_unit,
     unit_names,
     *,
-    allowed_modules: set | None = None,
+    allowed_components: set | None = None,
 ):
     """Build Mermaid flowchart for one unit: one box per unit, edges labeled with interfaceIds.
-    If allowed_modules is provided, "internal" means: units whose module is in allowed_modules."""
+    If allowed_components is provided, "internal" means: units whose module is in allowed_components."""
     if not (unit_info.get("fileName") or "").endswith(".cpp"):
         return None
 
     this_id = _unit_part_id(unit_key)
-    this_module = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
+    this_component = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
 
     edges = {}
     for fid in unit_info.get("functionIds", []):
@@ -81,12 +81,12 @@ def _build_unit_diagram(
     internal_set = set()
     for uk in units_data:
         pid = _unit_part_id(uk)
-        uk_module = uk.split(KEY_SEP)[0] if KEY_SEP in uk else ""
-        if allowed_modules:
-            if uk_module.lower() in allowed_modules:
+        uk_component = uk.split(KEY_SEP)[0] if KEY_SEP in uk else ""
+        if allowed_components:
+            if uk_component.lower() in allowed_components:
                 internal_set.add(pid)
         else:
-            if uk_module == this_module:
+            if uk_component == this_component:
                 internal_set.add(pid)
     internal_callers = sorted(caller_ids & internal_set)
     external_callers = sorted(caller_ids - internal_set)
@@ -121,7 +121,7 @@ def _build_unit_diagram(
         lines.append("  " + _node_line(pid).strip())
 
     # Internal module (yellow box)
-    mod_label = (this_module or "Internal").replace("]", "'").replace("[", "'")
+    mod_label = (this_component or "Internal").replace("]", "'").replace("[", "'")
     lines.append(f"  subgraph internal_mod[{mod_label}]")
     lines.append("    direction TB")
     lines.append("    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px")
@@ -175,7 +175,7 @@ def run(model, output_dir, model_dir, config):
     functions_data = model.get("functions", {})
     if not units_data or not functions_data:
         return
-    allowed_modules = {m.lower() for m in (config.get("_analyzerAllowedModules") or [])}
+    allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
 
     fid_to_unit = _fid_to_unit(units_data)
     unit_names = {
@@ -205,8 +205,8 @@ def run(model, output_dir, model_dir, config):
         run_cmd_base.extend(["-p", puppeteer])
 
     cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
-    if allowed_modules:
-        cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0].lower() in allowed_modules]
+    if allowed_components:
+        cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0].lower() in allowed_components]
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
     total = len(cpp_units)
@@ -222,7 +222,7 @@ def run(model, output_dir, model_dir, config):
             functions_data,
             fid_to_unit,
             unit_names,
-            allowed_modules=allowed_modules or None,
+            allowed_components=allowed_components or None,
         )
         if not mermaid:
             continue
