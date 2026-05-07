@@ -116,7 +116,7 @@ def _init():
     ud     = views.get("unitDiagrams", {})
     fc     = views.get("flowcharts", {})
     bd     = views.get("behaviourDiagram", {})
-    msd    = views.get("moduleStaticDiagram", {})
+    msd    = views.get("componentStaticDiagram", {})
     sample = ROOT / "SampleCppProject"
 
     last = _load_last_run()
@@ -139,20 +139,20 @@ def _init():
     st.session_state.setdefault("export_font_size", int(export.get("docxFontSize", 8)))
 
     mg = _get_flat_groups(cfg)
-    gid = 0; mid = 0; pid = 0; groups: list[dict] = []
+    gid = 0; cid = 0; pid = 0; groups: list[dict] = []
     for gname, mods in mg.items():
-        g_modules = []
+        g_components = []
         for mname, mpath in mods.items():
             paths_list = mpath if isinstance(mpath, list) else ([mpath] if mpath else [""])
             paths = [{"pid": pid + i, "path": p} for i, p in enumerate(paths_list)]
             pid += len(paths_list)
-            g_modules.append({"mid": mid, "mod": mname, "paths": paths})
-            mid += 1
-        groups.append({"gid": gid, "name": gname, "modules": g_modules})
+            g_components.append({"cid": cid, "comp": mname, "paths": paths})
+            cid += 1
+        groups.append({"gid": gid, "name": gname, "components": g_components})
         gid += 1
     st.session_state["groups"]    = groups
     st.session_state["_next_gid"] = gid
-    st.session_state["_next_mid"] = mid
+    st.session_state["_next_cid"] = cid
     st.session_state["_next_pid"] = pid
 
     enr = llm.get("enrichment", {})
@@ -180,41 +180,41 @@ def _init():
     st.session_state.setdefault("llm_custom_headers",   json.dumps(ch, indent=2) if ch else "{}")
     st.session_state["_init_done"] = True
 
-# ── module group helpers ──────────────────────────────────────────────────────
+# ── component group helpers ───────────────────────────────────────────────────
 
 def _add_group():
-    gid = st.session_state["_next_gid"]; mid = st.session_state["_next_mid"]; pid = st.session_state["_next_pid"]
-    st.session_state["groups"].append({"gid": gid, "name": "", "modules": [{"mid": mid, "mod": "", "paths": [{"pid": pid, "path": ""}]}]})
-    st.session_state["_next_gid"] = gid + 1; st.session_state["_next_mid"] = mid + 1; st.session_state["_next_pid"] = pid + 1
+    gid = st.session_state["_next_gid"]; cid = st.session_state["_next_cid"]; pid = st.session_state["_next_pid"]
+    st.session_state["groups"].append({"gid": gid, "name": "", "components": [{"cid": cid, "comp": "", "paths": [{"pid": pid, "path": ""}]}]})
+    st.session_state["_next_gid"] = gid + 1; st.session_state["_next_cid"] = cid + 1; st.session_state["_next_pid"] = pid + 1
 
 def _remove_group(gid: int):
     st.session_state["groups"] = [g for g in st.session_state["groups"] if g["gid"] != gid]
 
-def _add_module(gid: int):
-    mid = st.session_state["_next_mid"]; pid = st.session_state["_next_pid"]
+def _add_component(gid: int):
+    cid = st.session_state["_next_cid"]; pid = st.session_state["_next_pid"]
     for g in st.session_state["groups"]:
         if g["gid"] == gid:
-            g["modules"].append({"mid": mid, "mod": "", "paths": [{"pid": pid, "path": ""}]})
-    st.session_state["_next_mid"] = mid + 1; st.session_state["_next_pid"] = pid + 1
+            g["components"].append({"cid": cid, "comp": "", "paths": [{"pid": pid, "path": ""}]})
+    st.session_state["_next_cid"] = cid + 1; st.session_state["_next_pid"] = pid + 1
 
-def _remove_module(gid: int, mid: int):
+def _remove_component(gid: int, cid: int):
     for g in st.session_state["groups"]:
         if g["gid"] == gid:
-            g["modules"] = [m for m in g["modules"] if m["mid"] != mid]
+            g["components"] = [c for c in g["components"] if c["cid"] != cid]
 
-def _add_path(mid: int):
+def _add_path(cid: int):
     pid = st.session_state["_next_pid"]
     for g in st.session_state["groups"]:
-        for m in g["modules"]:
-            if m["mid"] == mid:
-                m["paths"].append({"pid": pid, "path": ""})
+        for c in g["components"]:
+            if c["cid"] == cid:
+                c["paths"].append({"pid": pid, "path": ""})
     st.session_state["_next_pid"] = pid + 1
 
-def _remove_path(mid: int, pid: int):
+def _remove_path(cid: int, pid: int):
     for g in st.session_state["groups"]:
-        for m in g["modules"]:
-            if m["mid"] == mid:
-                m["paths"] = [p for p in m["paths"] if p["pid"] != pid]
+        for c in g["components"]:
+            if c["cid"] == cid:
+                c["paths"] = [p for p in c["paths"] if p["pid"] != pid]
 
 def _groups_to_config() -> dict[str, Any]:
     result: dict[str, Any] = {}
@@ -222,18 +222,18 @@ def _groups_to_config() -> dict[str, Any]:
         gname = st.session_state.get(f"g{g['gid']}_name", g["name"]).strip()
         if not gname:
             continue
-        mods: dict[str, Any] = {}
-        for m in g["modules"]:
-            mname = st.session_state.get(f"m{m['mid']}_name", m["mod"]).strip()
-            if not mname:
+        comps: dict[str, Any] = {}
+        for c in g["components"]:
+            cname = st.session_state.get(f"c{c['cid']}_name", c["comp"]).strip()
+            if not cname:
                 continue
-            paths = [st.session_state.get(f"p{p['pid']}_path", p["path"]).strip() for p in m["paths"]]
+            paths = [st.session_state.get(f"p{p['pid']}_path", p["path"]).strip() for p in c["paths"]]
             paths = [p for p in paths if p]
             if not paths:
                 continue
-            mods[mname] = paths[0] if len(paths) == 1 else paths
-        if mods:
-            result[gname] = mods
+            comps[cname] = paths[0] if len(paths) == 1 else paths
+        if comps:
+            result[gname] = comps
     return result
 
 # ── config writer ─────────────────────────────────────────────────────────────
@@ -252,7 +252,7 @@ def _write_config_local():
         "unitDiagrams":    {"renderPng": st.session_state["v_unit_png"]},
         "flowcharts":      {"scriptPath": st.session_state["v_flow_script"], "renderPng": st.session_state["v_flow_png"]},
         "behaviourDiagram":    {"renderPng": st.session_state["v_behav_png"]},
-        "moduleStaticDiagram": {"enabled": st.session_state["v_msd_enabled"], "renderPng": st.session_state["v_msd_png"], "widthInches": st.session_state["v_msd_width"]},
+        "componentStaticDiagram": {"enabled": st.session_state["v_msd_enabled"], "renderPng": st.session_state["v_msd_png"], "widthInches": st.session_state["v_msd_width"]},
     }
     cfg["export"] = {"docxPath": st.session_state.get("export_docx_path", "").strip() or "output/software_detailed_design_{group}.docx", "docxFontSize": st.session_state["export_font_size"]}
     mg = _groups_to_config()
@@ -581,14 +581,14 @@ def _function_dialog(fid: str, units_all, funcs_all):
             st.info("📷 No flowchart available for this function.")
 
 
-@st.dialog("Module Groups", width="large")
+@st.dialog("Component Groups", width="large")
 def _groups_dialog():
     groups = st.session_state.get("groups", [])
 
     # ── header actions ──
     c1, c2 = st.columns([3, 1])
     with c1:
-        st.caption("Define groups, modules, and paths")
+        st.caption("Define groups, components, and paths")
     with c2:
         st.button("＋ Add Group", on_click=_add_group, use_container_width=True)
 
@@ -622,30 +622,30 @@ def _groups_dialog():
                     use_container_width=True
                 )
 
-            # ── modules ──
-            for m in g["modules"]:
-                mid = m["mid"]
+            # ── components ──
+            for c in g["components"]:
+                cid = c["cid"]
 
-                m1, m2 = st.columns([5, 1])
-                with m1:
+                c1, c2 = st.columns([5, 1])
+                with c1:
                     st.text_input(
-                        "Module",
-                        key=f"m{mid}_name",
-                        value=m["mod"],
-                        placeholder="module-name",
+                        "Component",
+                        key=f"c{cid}_name",
+                        value=c["comp"],
+                        placeholder="component-name",
                         label_visibility="collapsed"
                     )
-                with m2:
+                with c2:
                     st.button(
                         "–",
-                        key=f"del_m{mid}",
-                        on_click=_remove_module,
-                        args=(gid, mid),
+                        key=f"del_c{cid}",
+                        on_click=_remove_component,
+                        args=(gid, cid),
                         use_container_width=True
                     )
 
                 # ── paths ──
-                for p in m["paths"]:
+                for p in c["paths"]:
                     pid = p["pid"]
 
                     p1, p2, p3 = st.columns([5, 1, 0.7])
@@ -670,26 +670,26 @@ def _groups_dialog():
                             "✕",
                             key=f"del_p{pid}",
                             on_click=_remove_path,
-                            args=(mid, pid),
-                            disabled=len(m["paths"]) <= 1,
+                            args=(cid, pid),
+                            disabled=len(c["paths"]) <= 1,
                             use_container_width=True
                         )
 
                 # add path
                 st.button(
                     "+ path",
-                    key=f"add_p_{mid}",
+                    key=f"add_p_{cid}",
                     on_click=_add_path,
-                    args=(mid,)
+                    args=(cid,)
                 )
 
                 st.markdown("")  # small spacing
 
-            # add module
+            # add component
             st.button(
-                "+ module",
-                key=f"add_m_{gid}",
-                on_click=_add_module,
+                "+ component",
+                key=f"add_c_{gid}",
+                on_click=_add_component,
                 args=(gid,),
                 use_container_width=True
             )
@@ -828,7 +828,7 @@ def _settings_dialog():
                 st.toggle("Render PNG", key="v_behav_png")
 
             with st.container(border=True):
-                st.markdown("**Module Static Diagram**")
+                st.markdown("**Component Static Diagram**")
                 st.toggle("Enabled", key="v_msd_enabled")
                 msd_on = st.session_state.get("v_msd_enabled", True)
 
@@ -1266,7 +1266,7 @@ with col_left:
 
 with col_right:
 
-    tab_mg, tab_output = st.tabs(["Modules Groups", "Pipeline Output"])
+    tab_mg, tab_output = st.tabs(["Components Groups", "Pipeline Output"])
 
     def _js_click_tab(label: str):
         components.html(f"""<script>
@@ -1285,15 +1285,15 @@ with col_right:
         _js_click_tab("Pipeline Output")
 
     if st.session_state.pop("_switch_to_preview", False):
-        _js_click_tab("Modules Groups")
+        _js_click_tab("Components Groups")
 
 with tab_mg:
     if running and st.session_state.get("_run_type") == "full":
         st.info("Pipeline is running — content unavailable until complete.", icon="⏳")
     else:
-        _units_all   = _load_json(ROOT / "model" / "units.json")
-        _modules_all = _load_json(ROOT / "model" / "modules.json")
-        _funcs_all   = _load_json(ROOT / "model" / "functions.json")
+        _units_all      = _load_json(ROOT / "model" / "units.json")
+        _components_all = _load_json(ROOT / "model" / "components.json")
+        _funcs_all      = _load_json(ROOT / "model" / "functions.json")
 
         groups = st.session_state.get("groups", [])
 
@@ -1303,13 +1303,13 @@ with tab_mg:
 
             with st.expander(f"◆ {gname}", expanded=True):
 
-                for m in g["modules"]:
-                    mid   = m["mid"]
-                    mname = st.session_state.get(f"m{mid}_name", m["mod"]).strip() or "(unnamed)"
+                for c in g["components"]:
+                    cid   = c["cid"]
+                    cname = st.session_state.get(f"c{cid}_name", c["comp"]).strip() or "(unnamed)"
 
-                    with st.expander(f"◇ {mname}"):
+                    with st.expander(f"◇ {cname}"):
 
-                        unit_ids = _modules_all.get(mname, {}).get("units", [])
+                        unit_ids = _components_all.get(cname, {}).get("units", [])
 
                         for uid in unit_ids:
                             udata = _units_all.get(uid, {})

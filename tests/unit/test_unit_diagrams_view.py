@@ -152,7 +152,7 @@ class TestBuildUnitDiagram:
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert "subgraph" in result
 
-    def test_subgraph_labelled_with_module_name(self):
+    def test_subgraph_labelled_with_component_name(self):
         unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert "subgraph internal_mod[Mod]" in result
@@ -312,7 +312,7 @@ class TestBuildUnitDiagram:
         assert "class Mod_peer internal" in result
         assert "class Mod_peer mainUnit" not in result
 
-    def test_allowed_modules_marks_internal_units(self):
+    def test_allowed_components_marks_internal_units(self):
         unit_key = "Mod|core"
         peer_key = "Mod|peer"
         unit_info = {"fileName": "core.cpp", "functionIds": [], "globalVariableIds": []}
@@ -321,7 +321,7 @@ class TestBuildUnitDiagram:
         unit_names = {unit_key: "core", peer_key: "peer"}
         result = _build_unit_diagram(
             unit_key, unit_info, units_data, {}, {}, unit_names,
-            allowed_modules={"mod"}
+            allowed_components={"mod"}
         )
         assert result is not None
-        assert "Mod" in result  # module subgraph label
+        assert "Mod" in result  # component subgraph label

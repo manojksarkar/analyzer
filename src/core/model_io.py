@@ -56,7 +56,7 @@ METADATA = "metadata"
 FUNCTIONS = "functions"
 GLOBALS = "globalVariables"
 UNITS = "units"
-MODULES = "modules"
+COMPONENTS = "components"
 DATA_DICTIONARY = "dataDictionary"
 KNOWLEDGE_BASE = "knowledge_base"
 SUMMARIES = "summaries"
@@ -66,7 +66,7 @@ ALL_MODEL_NAMES = (
     FUNCTIONS,
     GLOBALS,
     UNITS,
-    MODULES,
+    COMPONENTS,
     DATA_DICTIONARY,
     KNOWLEDGE_BASE,
     SUMMARIES,

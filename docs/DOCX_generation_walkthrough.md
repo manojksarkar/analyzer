@@ -11,9 +11,9 @@ This document explains how `software_detailed_design.docx` is created section-by
 
 The exporter loads these files:
 
-- `output/interface_tables.json` (view output; drives the module/unit/interface table content)
+- `output/interface_tables.json` (view output; drives the component/unit/interface table content)
 - `model/units.json` (used to find unit-related metadata for “unit header”)
-- `model/modules.json` (indirectly; module grouping happens from keys in `interface_tables.json`)
+- `model/components.json` (indirectly; component grouping happens from keys in `interface_tables.json`)
 - `model/dataDictionary.json` (used when building “unit header” type/enum/typedef snippets and for range lookups)
 - `model/globalVariables.json` (used by `unit header` table content)
 - `model/functions.json` (used for behaviour diagram input/output naming)
@@ -25,7 +25,7 @@ The exporter loads these files:
 
 Important config keys (from `config/config.json`):
 
-- `views.moduleStaticDiagram.enabled`, `views.moduleStaticDiagram.renderPng`, `views.moduleStaticDiagram.widthInches`
+- `views.componentStaticDiagram.enabled`, `views.componentStaticDiagram.renderPng`, `views.componentStaticDiagram.widthInches`
 - `views.flowcharts.renderPng` (controls whether flowchart PNGs are used)
 - `export.docxPath`, `export.docxFontSize`
 

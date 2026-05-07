@@ -83,25 +83,25 @@ def _add_image(doc, png_path: str | None, inches: float = 5.0):
         _add_para(doc, "[Diagram not available]")
 
 
-def _add_module_table(doc, groups: dict, font_pt):
-    """Table: Group | Module | Units."""
+def _add_component_table(doc, groups: dict, font_pt):
+    """Table: Group | Component | Units."""
     from docx.shared import Pt
     from docx.enum.table import WD_ALIGN_VERTICAL
 
     table = doc.add_table(rows=1, cols=3)
     table.style = "Table Grid"
     hdr = table.rows[0].cells
-    for i, label in enumerate(("Group", "Module", "Units")):
+    for i, label in enumerate(("Group", "Component", "Units")):
         hdr[i].text = label
         for run in hdr[i].paragraphs[0].runs:
             run.font.bold = True
             run.font.size = font_pt
 
-    for group_name, modules in groups.items():
-        for mod_name, units in modules.items():
+    for group_name, components in groups.items():
+        for comp_name, units in components.items():
             row = table.add_row().cells
             row[0].text = group_name
-            row[1].text = mod_name
+            row[1].text = comp_name
             row[2].text = ", ".join(units) if isinstance(units, list) else str(units)
             for cell in row:
                 for run in cell.paragraphs[0].runs:
@@ -158,10 +158,10 @@ def export_architecture_docx(output_dir: str, docx_path: str) -> None:
         png_path = _svg_to_png(svg_path) if svg_path else None
         _add_image(doc, png_path)
 
-        # module listing table
+        # component listing table
         if groups:
             doc.add_paragraph()  # spacer
-            _add_module_table(doc, groups, font_pt)
+            _add_component_table(doc, groups, font_pt)
 
     os.makedirs(os.path.dirname(docx_path), exist_ok=True)
     doc.save(docx_path)

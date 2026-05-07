@@ -10,11 +10,11 @@ Built entirely from ProjectKnowledge (no extra parsing needed).
 Tiers (tried from most specific to most general until one fits budget):
   1. Function neighborhood — callees + callers + same-file functions
   2. File level — all functions in the target file
-  3. Module level — all files in the module with function counts
-  4. Project level — module names with file counts
+  3. Component level — all files in the component with function counts
+  4. Project level — component names with file counts
 
 Example output (tier 1):
-    ## Module: math/
+    ## Component: math/
     ### File: math/utils.cpp [4 functions, 1 global]
       fn add(int, int) -> int
       fn subtract(int, int) -> int          ← callee
@@ -51,11 +51,11 @@ class RepoMap:
         for qn, fk in self._k.functions.items():
             if fk.file:
                 self._file_funcs[fk.file].append(qn)
-        # Pre-build module → files index
-        self._module_files: Dict[str, Set[str]] = defaultdict(set)
+        # Pre-build component → files index
+        self._component_files: Dict[str, Set[str]] = defaultdict(set)
         for file_path in self._file_funcs:
-            module = os.path.dirname(file_path) or "."
-            self._module_files[module].add(file_path)
+            component = os.path.dirname(file_path) or "."
+            self._component_files[component].add(file_path)
 
     def for_function(
         self,
@@ -73,7 +73,7 @@ class RepoMap:
             return ""
 
         # Try tiers in order — return the first that fits
-        for tier_fn in (self._tier_neighborhood, self._tier_file, self._tier_module, self._tier_project):
+        for tier_fn in (self._tier_neighborhood, self._tier_file, self._tier_component, self._tier_project):
             text = tier_fn(fk, qualified_name)
             if text and counter.fits(text, budget):
                 return text
@@ -150,16 +150,16 @@ class RepoMap:
     # Tier 3: Module level
     # ------------------------------------------------------------------
 
-    def _tier_module(self, fk, qualified_name: str) -> str:
-        """All files in the target module with function counts."""
+    def _tier_component(self, fk, qualified_name: str) -> str:
+        """All files in the target component with function counts."""
         if not fk.file:
             return ""
-        module = os.path.dirname(fk.file) or "."
-        files = sorted(self._module_files.get(module, set()))
+        component = os.path.dirname(fk.file) or "."
+        files = sorted(self._component_files.get(component, set()))
         if not files:
             return ""
 
-        lines = [f"## Module: {module}/"]
+        lines = [f"## Component: {component}/"]
         for f in files:
             func_count = len(self._file_funcs.get(f, []))
             globals_count = sum(1 for gk in self._k.globals.values() if gk.file == f)
@@ -183,12 +183,12 @@ class RepoMap:
     # ------------------------------------------------------------------
 
     def _tier_project(self, fk, qualified_name: str) -> str:
-        """Module names with file and function counts."""
+        """Component names with file and function counts."""
         lines = [f"# Project: {self._k.project_name or 'unknown'}"]
-        for module in sorted(self._module_files):
-            files = self._module_files[module]
+        for component in sorted(self._component_files):
+            files = self._component_files[component]
             func_count = sum(len(self._file_funcs.get(f, [])) for f in files)
-            lines.append(f"  {module}/ [{len(files)} files, {func_count} functions]")
+            lines.append(f"  {component}/ [{len(files)} files, {func_count} functions]")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -215,9 +215,9 @@ class RepoMap:
         """Format grouped file entries into a repo map string."""
         lines = []
         for file_path in sorted(file_entries):
-            module = os.path.dirname(file_path) or "."
+            component = os.path.dirname(file_path) or "."
             fname = os.path.basename(file_path)
             func_count = len(file_entries[file_path])
-            lines.append(f"## {module}/{fname} [{func_count} entries]")
+            lines.append(f"## {component}/{fname} [{func_count} entries]")
             lines.extend(file_entries[file_path])
         return "\n".join(lines)

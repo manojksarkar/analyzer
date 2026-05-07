@@ -87,7 +87,7 @@ def _add_doc_phases(*, output_dir: Optional[str] = None) -> List[Phase]:
     p = paths()
     if output_dir is None:
         output_dir = os.path.join(p.output_dir, "add")
-    docx_path = os.path.join(p.output_dir, "architecture_design.docx")
+    docx_path = os.path.join(p.output_dir, "Software Architecture Design Specification.docx")
     return [
         Phase("Phase 3: Generate ADD views", "run_add_views.py",
               ["--output-dir", output_dir]),

@@ -16,7 +16,7 @@ from utils import (
     short_name,
     get_range_for_type,
     get_range,
-    init_module_mapping,
+    init_component_mapping,
     make_unit_key,
 )
 
@@ -190,13 +190,13 @@ class TestGetRangeForType:
 
 
 # ---------------------------------------------------------------------------
-# make_unit_key / init_module_mapping
+# make_unit_key / init_component_mapping
 # ---------------------------------------------------------------------------
 
 class TestMakeUnitKey:
     def setup_method(self):
-        """Reset module mapping to a known state before each test."""
-        init_module_mapping({
+        """Reset component mapping to a known state before each test."""
+        init_component_mapping({
             "layers": {
                 "Layer1": {
                     "path": "Layer1",
@@ -212,9 +212,9 @@ class TestMakeUnitKey:
 
     def teardown_method(self):
         """Restore default mapping after each test."""
-        init_module_mapping(utils._CONFIG_CACHE)
+        init_component_mapping(utils._CONFIG_CACHE)
 
-    def test_resolves_module_from_path(self):
+    def test_resolves_component_from_path(self):
         key = make_unit_key("Sample/Core/core.cpp")
         assert key.startswith("Core|")
 

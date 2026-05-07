@@ -21,11 +21,11 @@ run.py
   │
   ├─ Phase 2: src/model_deriver.py  [--llm-summarize ON by default]
   │    Standard enrichment:
-  │      → model/units.json, model/modules.json
+  │      → model/units.json, model/components.json
   │      → interfaceIds, direction, behaviourNames, LLM descriptions
   │    LLM summarization (skipped only with --no-llm-summarize):
   │      → model/functions.json  += phases[]
-  │      → model/summaries.json  (file/module/project hierarchy summaries)
+  │      → model/summaries.json  (file/component/project hierarchy summaries)
   │    Always:
   │      → model/knowledge_base.json  (rich context for Flowchart Engine)
   │
@@ -34,7 +34,7 @@ run.py
   │    │    reads: functions.json + metadata.json + knowledge_base.json
   │    │    CFG build (libclang, statement-level) + LLM labeling
   │    │    writes: output/flowcharts/{unit}.json  (Mermaid strings)
-  │    ├─ unitDiagrams, behaviourDiagram, moduleStaticDiagram, interfaceTables
+  │    ├─ unitDiagrams, behaviourDiagram, componentStaticDiagram, interfaceTables
   │    └─ renderPng (mmdc) for each enabled view
   │
   └─ Phase 4: src/docx_exporter.py
@@ -50,7 +50,7 @@ run.py
 | **flowchart_engine.py** | Phase 3 sub-process: CFG flowcharts | functions.json + knowledge_base.json → output/flowcharts/ |
 | **docx_exporter.py** | Phase 4: DOCX export | output/ → .docx |
 
-**Model (single source of truth):** functions.json, globalVariables.json, units.json, modules.json, dataDictionary.json, metadata.json. See [Model Format](#model-format) below.
+**Model (single source of truth):** functions.json, globalVariables.json, units.json, components.json, dataDictionary.json, metadata.json. See [Model Format](#model-format) below.
 
 **Call graph (DAG):** The parser builds `call_graph` and `reverse_call_graph` and stores them per function as `calledByIds` and `callsIds` in functions.json. Phase 2 (model_deriver) uses these for unit aggregation (caller/callee units) and direction inference. Phase 3 (interface_tables) uses them for `callerUnits` and `calleesUnits` in the view output.
 
@@ -60,7 +60,7 @@ run.py
 
 **Visibility filtering:** Functions and global variables tagged `PRIVATE` are excluded from the interface table, unit header table, and behaviour diagrams. The DOCX flowchart section renders a non-private function's own flowchart followed by flowcharts of any private functions it calls — each private function flowchart is rendered at most once per unit (deduplication via `rendered_private_fids` set). `PUBLIC` and `PROTECTED` entries are included everywhere.
 
-**Output:** software_detailed_design.docx — structure spec in [software_detailed_design.json](software_detailed_design.json): 1 Introduction, 2..N Modules (Static Design with unit interface tables, Dynamic Behaviour), Code Metrics, Appendix A.
+**Output:** software_detailed_design.docx — structure spec in [software_detailed_design.json](software_detailed_design.json): 1 Introduction, 2..N Components (Static Design with unit interface tables, Dynamic Behaviour), Code Metrics, Appendix A.
 
 ---
 
@@ -72,8 +72,8 @@ run.py
 | `views.flowcharts.renderPng` | `true` | Render flowchart Mermaid → PNG via mmdc |
 | `views.unitDiagrams.renderPng` | `true` | Render unit diagrams to PNG |
 | `views.behaviourDiagram.renderPng` | `true` | Render behaviour diagrams to PNG |
-| `views.moduleStaticDiagram.enabled` | `true` | Generate module static diagrams |
-| `views.moduleStaticDiagram.renderPng` | `true` | Render module diagrams to PNG |
+| `views.componentStaticDiagram.enabled` | `true` | Generate component static diagrams |
+| `views.componentStaticDiagram.renderPng` | `true` | Render component diagrams to PNG |
 | `clang.llvmLibPath` | — | Path to libclang.dll / libclang.so |
 | `clang.clangIncludePath` | — | Path to clang system headers |
 | `clang.clangArgs` | `[]` | Extra clang arguments (e.g. `-I/path`) |
@@ -196,12 +196,12 @@ the right phase description into each node's LLM prompt.
 | `callerUnits` | string[] | Units that call into this unit |
 | `calleesUnits` | string[] | Units this unit calls into |
 
-### modules.json
-**Key format:** module name (first path segment, e.g. `app`, `math`)
+### components.json
+**Key format:** component name (first path segment, e.g. `app`, `math`)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `units` | string[] | Unit keys belonging to this module |
+| `units` | string[] | Unit keys belonging to this component |
 
 ### dataDictionary.json
 Keyed by type name or qualified name. Contains structs, classes, enums, typedefs, macros,
@@ -229,7 +229,7 @@ is richer when `--llm-summarize` is active (default).
   "project_name":    "my_project",
   "base_path":       "/abs/path/to/project",
   "project_summary": "One-paragraph project description (LLM, --llm-summarize)",
-  "module_summaries": { "app": "...", "math": "..." },
+  "component_summaries": { "app": "...", "math": "..." },
   "file_summaries":   { "app/main.cpp": "..." },
   "functions": {
     "MyClass::myMethod": {
@@ -279,7 +279,7 @@ is richer when `--llm-summarize` is active (default).
 ### Phase 2 — Derive model (model_deriver.py)
 
 1. Load functions, globals, metadata.
-2. `_build_units_modules` → `units.json`, `modules.json`.
+2. `_build_units_components` → `units.json`, `components.json`.
 3. `_build_interface_index` → stable per-file index (01, 02, …).
 4. `_enrich_interfaces` → `interfaceId`, `parameters`.
 5. `_propagate_global_access` → transitive global read/write sets.
@@ -289,9 +289,9 @@ is richer when `--llm-summarize` is active (default).
    - Imports `HierarchySummarizer` from `src/flowchart/project_scanner.py`.
    - Builds `ProjectKnowledge` from model data (no extra libclang parse).
    - Runs 4-level LLM summarization: function summaries → phase breakdowns →
-     file summaries → module summaries → project summary.
+     file summaries → component summaries → project summary.
    - Writes phases back into `functions_data` in place.
-   - Returns `{project, modules, files}` dict → written to `summaries.json`.
+   - Returns `{project, components, files}` dict → written to `summaries.json`.
 9. **`_enrich_from_llm`**: generates LLM descriptions for functions that have **no source
    comment** (functions with a `comment` field from parser.py are skipped — their source
    comment is already the best description available).
@@ -307,16 +307,16 @@ Loads model from `model/` then calls each enabled view in `config.views`:
 - `interfaceTables`: skips functions and globals where `visibility == "private"`
 - `behaviourDiagram`: skips functions where `visibility == "private"`
 - `flowcharts`: generates for all functions (no filtering)
-- `unitDiagrams`, `moduleStaticDiagram`: no function-level filtering
+- `unitDiagrams`, `componentStaticDiagram`: no function-level filtering
 
-**Case-insensitive module matching:** `_analyzerAllowedModules` is normalised to lowercase when the `allowed_modules` set is built; extracted module names are compared with `.lower()` throughout all views.
+**Case-insensitive component matching:** `_analyzerAllowedComponents` is normalised to lowercase when the `allowed_components` set is built; extracted component names are compared with `.lower()` throughout all views.
 
 ### Phase 4 — Export (docx_exporter.py)
 
 1. Load interface_tables.json.
 2. Build Software Detailed Design structure:
    - 1 Introduction (Purpose, Scope, Terms)
-   - 2..N Modules (Static Design: module overview diagram, per-unit unit diagram, unit header, unit interface table, per-interface sections; Dynamic Behaviour per function with behaviour diagram)
+   - 2..N Components (Static Design: component overview diagram, per-unit unit diagram, unit header, unit interface table, per-interface sections; Dynamic Behaviour per function with behaviour diagram)
    - Code Metrics, Coding Rule, Test Coverage; Appendix A
 3. **Unit header table:** skips global variables where `visibility == "private"`.
 4. **Per-interface flowchart rendering:** for each non-private interface, renders its own flowchart then renders flowcharts of any private functions it calls (`callsIds`) that have not yet been rendered in this unit. Deduplication tracked per unit via `rendered_private_fids` set.
@@ -326,7 +326,7 @@ Loads model from `model/` then calls each enabled view in `config.views`:
 - **interfaceTables** → `output/interface_tables.json`
 - **unitDiagrams** → per-unit Mermaid diagrams → `output/unit_diagrams/`
 - **behaviourDiagram** → per-function Mermaid behaviour diagrams
-- **moduleStaticDiagram** → module→units tree diagram
+- **componentStaticDiagram** → component→units tree diagram
 
 ### Phase 4 — Export (docx_exporter.py)
 
@@ -472,7 +472,7 @@ injecting the entire 4-level BFS call graph at once.
 | Function summary | `project_scanner.HierarchySummarizer` | Phase 2 + `--llm-summarize` | Function-level comment for knowledge_base |
 | Phase breakdown | `project_scanner.HierarchySummarizer` | Phase 2 + `--llm-summarize` | `phases[]` in functions.json |
 | File summary | `project_scanner.HierarchySummarizer` | Phase 2 + `--llm-summarize` | `file_summaries` in knowledge_base |
-| Module summary | `project_scanner.HierarchySummarizer` | Phase 2 + `--llm-summarize` | `module_summaries` in knowledge_base |
+| Component summary | `project_scanner.HierarchySummarizer` | Phase 2 + `--llm-summarize` | `component_summaries` in knowledge_base |
 | Project summary | `project_scanner.HierarchySummarizer` | Phase 2 + `--llm-summarize` | `project_summary` in knowledge_base |
 | CFG node labels | `llm/generator.py` | Phase 3, per function | Mermaid node labels in flowchart |
 

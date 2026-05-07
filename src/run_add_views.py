@@ -12,11 +12,11 @@ MODEL_DIR = _p.model_dir
 
 def _load_model():
     from core.model_io import (
-        load_merged_model, FUNCTIONS, GLOBALS, UNITS, MODULES, DATA_DICTIONARY, ModelFileMissing,
+        load_merged_model, FUNCTIONS, GLOBALS, UNITS, COMPONENTS, DATA_DICTIONARY, ModelFileMissing,
     )
     try:
         return load_merged_model(
-            FUNCTIONS, GLOBALS, UNITS, MODULES,
+            FUNCTIONS, GLOBALS, UNITS, COMPONENTS,
             optional=[DATA_DICTIONARY],
         )
     except ModelFileMissing as e:
