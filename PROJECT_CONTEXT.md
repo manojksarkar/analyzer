@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-06 (feat/architecture-design — ADD pipeline: per-layer model dirs, Architecture Design Document export, layer static SVG/PNG diagrams).
+> Updated: 2026-05-09 (feat/architecture-design — ADD pipeline: per-layer model dirs, Architecture Design Document export, layer static SVG/PNG diagrams; Component Information table with merged group cells and LLM descriptions).
 > Current active branch: `feat/architecture-design` (off `feat/test-framework`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -355,29 +355,34 @@ src/add_views/
 **`layerStaticDiagram`** view ([src/add_views/layer_static_diagram.py](src/add_views/layer_static_diagram.py)):
 
 For each layer in `config.layers`, generates an SVG showing the layer's structural
-hierarchy: groups → modules → units, laid out as **three separate flat rows** (no nesting):
+hierarchy: groups → components → units, laid out as **three separate flat rows** (no nesting):
 
 ```
-[Group label box — full-width orange header            ]
-[Module A box]  [Module B box]  [Module C box]
-[Unit1][Unit2]  [Unit3][Unit4]  [Unit5]
+[Group label box — full-width orange header                  ]
+[Component A box]  [Component B box]  [Component C box]
+[Unit1][Unit2]     [Unit3][Unit4]     [Unit5]
 ```
 
 - Group label: light orange fill (`#FFF3E0`) + orange stroke (`#FB8C00`)
-- Module boxes: light green fill (`#E8F5E9`) + green stroke (`#43A047`)
+- Component boxes: light green fill (`#E8F5E9`) + green stroke (`#43A047`)
 - Unit boxes: light violet fill (`#EDE7F6`) + purple stroke (`#7C4DFF`)
 - Box widths: fit to content (`len(name)*7 + 24`, min 80px for units)
 - Puppeteer renders each SVG to a same-named PNG at 2× device pixel ratio
 
 Unit names come from `model.get("units", {})` (the merged model). Key format is
-`ModuleName|UnitName`; the view strips the module prefix. If a module has no units
-in the model (e.g. layer not yet parsed), the module name itself is used as a
+`ComponentName|UnitName`; the view strips the component prefix. If a component has no
+units in the model (e.g. layer not yet parsed), the component name itself is used as a
 placeholder unit.
+
+Component descriptions are loaded from each layer's `model/LayerN/knowledge_base.json`
+(`component_summaries` dict, keyed by `"LayerN/relative/comp/path"`). They are stored
+in `_layer_static_data.json` and appear in the Component Information table in the DOCX.
 
 Outputs written to `output/add/layer_static_diagrams/`:
 - `<LayerN>_static.svg` — raw SVG
 - `<LayerN>_static.png` — Puppeteer-rendered PNG
-- `_layer_static_data.json` — summary of all layers' group/module/unit structure
+- `_layer_static_data.json` — summary of all layers; per-component data is
+  `{comp: {"units": [...], "description": "..."}}`
 
 ### ADD exporter — `src/architecture_docx_exporter.py`
 
@@ -388,7 +393,14 @@ Builds `Software Architecture Design Specification.docx` with:
 - Section 1: Introduction
 - Section 3: Layer Design
   - Section 3.N: LayerN (one subsection per layer from `_layer_static_data.json`)
-    - Section 3.N.1: Static Design — embeds PNG + 3-column table (Group | Module | Units)
+    - Section 3.N.1: Static Design
+      - Embeds the layer PNG (Puppeteer-rendered from SVG)
+      - Horizontal rule + "Component Information" heading (level 4)
+      - 5-column table: **Component Group | Component | Description | Development Type | Note**
+        - Component Group cells are **vertically merged** (python-docx `.merge()`) when a
+          group contains more than one component; merged cells are center-aligned via `w:vAlign`
+        - Description is populated from `_layer_static_data.json` (`component.description`)
+        - Development Type is always `"New"` for now; Note column is empty
 
 SVG→PNG conversion uses an inline Puppeteer Node.js script written to `PROJECT_ROOT`
 and run with `cwd=PROJECT_ROOT` so `node_modules/puppeteer` is resolvable.
@@ -845,7 +857,7 @@ See §4b for the full story. Summary:
 - `TASK_RATIOS: Dict[str, Dict[str, float]]` — per-task section ratios
   (sum to ~1.0, enforced by assertion). Tasks include `function_description`,
   `function_description_refined`, `variable_description`, `behaviour_names`,
-  `function_summary`, `file_summary`, `module_summary`, `project_summary`,
+  `function_summary`, `file_summary`, `component_summary`, `project_summary`,
   `cfg_node_labeling`, `cfg_coherence`, `cfg_simplification`, `self_review`,
   `ensemble_synthesis`.
 - `ContextBudget(max_tokens, task, counter)` — holds a 10 % safety margin;
@@ -1230,8 +1242,14 @@ Default-on (disabled by `--no-llm-summarize`). Uses the flowchart engine's
 
 1. Function level — one-sentence summary for any undocumented function.
 2. File level — 2–3 sentences per source file.
-3. Module level — 2–3 sentences per module directory.
+3. Component level — 2–3 sentences per component directory.
 4. Project level — overall description (prefers a README if present).
+
+Results are stored in `model/LayerN/knowledge_base.json` as `component_summaries`
+(keyed by `"LayerN/relative/comp/path"`). The ADD pipeline's `layerStaticDiagram`
+view reads these summaries to populate the Description column in the Component
+Information table — so `llm.summarize: true` (the default) is the only flag
+required for descriptions to appear in the ADD DOCX.
 
 The summarizer is fed a `ProjectKnowledge` object built from the parsed
 `functions_data` (no extra libclang or scanning). The LLM client is built via
