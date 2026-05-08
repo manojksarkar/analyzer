@@ -85,6 +85,7 @@ def _add_image(doc, png_path: str | None, inches: float = 5.0):
 
 def _add_component_table(doc, groups: dict, font_pt):
     """Table: Component Group | Component | Description | Development Type | Note."""
+    from docx.oxml.ns import qn
     headers = ("Component Group", "Component", "Description", "Development Type", "Note")
     table = doc.add_table(rows=1, cols=len(headers))
     table.style = "Table Grid"
@@ -95,7 +96,11 @@ def _add_component_table(doc, groups: dict, font_pt):
             run.font.bold = True
             run.font.size = font_pt
 
+    # Track the first row index for each group (row 0 is the header)
+    group_start: dict[str, int] = {}
+
     for group_name, components in groups.items():
+        group_start[group_name] = len(table.rows)  # record before adding rows
         for comp_name, comp_data in components.items():
             description = comp_data.get("description", "") if isinstance(comp_data, dict) else ""
             row = table.add_row().cells
@@ -107,6 +112,26 @@ def _add_component_table(doc, groups: dict, font_pt):
             for cell in row:
                 for run in cell.paragraphs[0].runs:
                     run.font.size = font_pt
+
+    # Merge Component Group cells vertically for groups with >1 component
+    for group_name, components in groups.items():
+        count = len(components)
+        if count < 2:
+            continue
+        start_idx = group_start[group_name]
+        end_idx = start_idx + count - 1
+        top_cell = table.rows[start_idx].cells[0]
+        bot_cell = table.rows[end_idx].cells[0]
+        merged = top_cell.merge(bot_cell)
+        # Center text vertically in merged cell
+        tc = merged._tc
+        tcPr = tc.get_or_add_tcPr()
+        vAlign = tcPr.find(qn("w:vAlign"))
+        if vAlign is None:
+            from docx.oxml import OxmlElement
+            vAlign = OxmlElement("w:vAlign")
+            tcPr.append(vAlign)
+        vAlign.set(qn("w:val"), "center")
 
 
 # ── main export ───────────────────────────────────────────────────────────────
