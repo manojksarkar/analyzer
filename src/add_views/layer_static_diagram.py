@@ -235,14 +235,36 @@ def run(model, output_dir, model_dir, config):
     for layer_name, layer in layers.items():
         groups_cfg = layer.get("groups") or {}
 
+        # Load component summaries from this layer's knowledge_base.json
+        from core.model_io import layer_model_dir
+        kb_path = os.path.join(layer_model_dir(layer_name), "knowledge_base.json")
+        comp_summaries: dict = {}
+        if os.path.isfile(kb_path):
+            try:
+                import json as _json
+                with open(kb_path, "r", encoding="utf-8") as _f:
+                    _kb = _json.load(_f)
+                comp_summaries = _kb.get("component_summaries", {})
+            except Exception:
+                pass
+
         groups = []
         for group_name, components_cfg in groups_cfg.items():
             components = []
-            for comp_name in components_cfg:
+            for comp_name, comp_path in components_cfg.items():
                 unit_names = _units_for_component(comp_name, units_data)
                 if not unit_names:
                     unit_names = [comp_name]
-                components.append((comp_name, unit_names))
+                # Resolve description: keys in component_summaries are layer-prefixed
+                # e.g. "Layer2/Platform/Adc", but comp_path is "Platform/Adc"
+                desc = ""
+                paths = comp_path if isinstance(comp_path, list) else [str(comp_path)]
+                for p in paths:
+                    key = f"{layer_name}/{p}".replace("\\", "/")
+                    desc = comp_summaries.get(key, "")
+                    if desc:
+                        break
+                components.append((comp_name, unit_names, desc))
             if components:
                 groups.append((group_name, components))
 
@@ -250,7 +272,7 @@ def run(model, output_dir, model_dir, config):
             log(f"layer {layer_name} has no groups, skipping", component="layerStaticDiagram")
             continue
 
-        svg = _build_svg(groups)
+        svg = _build_svg([(g, [(c, u) for c, u, _ in comps]) for g, comps in groups])
         svg_path = os.path.join(out_dir, f"{layer_name}_static.svg")
         with open(svg_path, "w", encoding="utf-8") as f:
             f.write(svg)
@@ -258,7 +280,7 @@ def run(model, output_dir, model_dir, config):
         summary[layer_name] = {
             "svgPath": svg_path,
             "groups": {
-                g: {m: units for m, units in comps}
+                g: {c: {"units": u, "description": d} for c, u, d in comps}
                 for g, comps in groups
             },
         }

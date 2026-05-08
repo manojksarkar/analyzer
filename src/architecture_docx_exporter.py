@@ -84,25 +84,26 @@ def _add_image(doc, png_path: str | None, inches: float = 5.0):
 
 
 def _add_component_table(doc, groups: dict, font_pt):
-    """Table: Group | Component | Units."""
-    from docx.shared import Pt
-    from docx.enum.table import WD_ALIGN_VERTICAL
-
-    table = doc.add_table(rows=1, cols=3)
+    """Table: Component Group | Component | Description | Development Type | Note."""
+    headers = ("Component Group", "Component", "Description", "Development Type", "Note")
+    table = doc.add_table(rows=1, cols=len(headers))
     table.style = "Table Grid"
     hdr = table.rows[0].cells
-    for i, label in enumerate(("Group", "Component", "Units")):
+    for i, label in enumerate(headers):
         hdr[i].text = label
         for run in hdr[i].paragraphs[0].runs:
             run.font.bold = True
             run.font.size = font_pt
 
     for group_name, components in groups.items():
-        for comp_name, units in components.items():
+        for comp_name, comp_data in components.items():
+            description = comp_data.get("description", "") if isinstance(comp_data, dict) else ""
             row = table.add_row().cells
             row[0].text = group_name
             row[1].text = comp_name
-            row[2].text = ", ".join(units) if isinstance(units, list) else str(units)
+            row[2].text = description
+            row[3].text = "New"
+            row[4].text = ""
             for cell in row:
                 for run in cell.paragraphs[0].runs:
                     run.font.size = font_pt
@@ -160,7 +161,19 @@ def export_architecture_docx(output_dir: str, docx_path: str) -> None:
 
         # component listing table
         if groups:
-            doc.add_paragraph()  # spacer
+            from docx.oxml.ns import qn
+            from docx.oxml import OxmlElement
+            hr = doc.add_paragraph()
+            pPr = hr._p.get_or_add_pPr()
+            pBdr = OxmlElement("w:pBdr")
+            bottom = OxmlElement("w:bottom")
+            bottom.set(qn("w:val"), "single")
+            bottom.set(qn("w:sz"), "6")
+            bottom.set(qn("w:space"), "1")
+            bottom.set(qn("w:color"), "auto")
+            pBdr.append(bottom)
+            pPr.append(pBdr)
+            doc.add_heading("Component Information", level=4)
             _add_component_table(doc, groups, font_pt)
 
     os.makedirs(os.path.dirname(docx_path), exist_ok=True)
