@@ -13,7 +13,7 @@ Options:
   --quiet              Only log WARNINGs and above
   --trace-prompts      Print full LLM prompts (system + user) to stdout.
                        WARNING: large runs can emit tens of MB of prompt text.
-  --doc-type TYPE      Which document(s) to generate: sdd (default), add, both.
+  --doc-type TYPE      Which document(s) to generate: sddd (default), sad, both.
 
 Examples:
   python run.py test_cpp_project
@@ -72,7 +72,7 @@ no_llm_summarize   = False
 from_phase         = 1
 selected_group_arg = None
 filter_mode_arg    = None
-doc_type_arg       = "sdd"
+doc_type_arg       = "sddd"
 raw_args           = []
 
 i = 1
@@ -110,11 +110,11 @@ while i < len(sys.argv):
     elif a == "--doc-type":
         i += 1
         if i >= len(sys.argv):
-            log("--doc-type requires a value: sdd, add, or both", component="run", err=True)
+            log("--doc-type requires a value: sddd, sad, or both", component="run", err=True)
             sys.exit(1)
         doc_type_arg = sys.argv[i].lower()
-        if doc_type_arg not in ("sdd", "add", "both"):
-            log(f"--doc-type must be sdd, add, or both (got: {sys.argv[i]})", component="run", err=True)
+        if doc_type_arg not in ("sddd", "sad", "both"):
+            log(f"--doc-type must be sddd, sad, or both (got: {sys.argv[i]})", component="run", err=True)
             sys.exit(1)
     else:
         raw_args.append(a)
