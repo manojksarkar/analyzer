@@ -1,77 +1,18 @@
 {
-  "views": {
-    "interfaceTables": true,
-    "unitDiagrams": {
-      "renderPng": true
-    },
-    // "flowcharts": {
-    //   "scriptPath": "src/flowchart/flowchart_engine.py",
-    //   "renderPng": true
-    // },
-    "behaviourDiagram": {
-      "renderPng": true
-    },
-    "sequenceDiagrams": {
-      "filterMode": "skip_within_unit"
-    },
-    "componentStaticDiagram": {
-      "enabled": true,
-      "renderPng": true,
-      "widthInches": 1
-    }
-  },
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
-    "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
-    "clangArgs": []
-    // Linux (uncomment and replace above, or use config.local.json):
-    // "llvmLibPath": "/usr/lib/llvm-17/lib/libclang.so",
-    // "clangIncludePath": "/usr/lib/llvm-17/include"
+    "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   },
-  "llm": {
-    "descriptions": false,
-    "behaviourNames": false,
-    "summarize": true,
-    // provider: "ollama" (local) | "openai" (OpenAI-compatible gateway)
-    "provider": "ollama",
-    "baseUrl": "http://localhost:11434",
-    "defaultModel": "llama3.2",
-    "timeoutSeconds": 300,
-    "numCtx": 8192,
-    // retries: number of retries (in addition to the first attempt) on
-    // HTTP error or empty response. Default 1 = up to 2 total tries.
-    "retries": 1,
-    "abbreviationsPath": "config/abbreviations.txt",
-    // maxContextTokens: hard limit on tokens the analyzer plans against
-    // when allocating per-section budgets (callees, callers, repo map, etc.).
-    //   - null  → auto: numCtx-512 for Ollama, 127488 (~128K) for OpenAI
-    //   - int   → explicit override (e.g. 16000 for Ollama 16K, 120000 for GPT-4o)
-    // For OpenAI provider, numCtx is ignored — set this field instead.
-    "maxContextTokens": 127488,
-    // enrichment: toggle individual enrichment features.
-    // All default to the cheapest safe option (off or single-pass).
-    "enrichment": {
-      "twoPassDescriptions": true,
-      "selfReview": false,
-      "ensemble": false,
-      "cfgSimplification": false,
-      "variableEnrichment": true
-    },
-    // fewShotExamplesDir: directory containing hand-curated few-shot examples.
-    "fewShotExamplesDir": "few_shot_examples",
-    // cacheVersion: bump to invalidate entity-level LLM cache.
-    "cacheVersion": 1,
-    // apiKey: bearer token for openai provider. Prefer env var LLM_API_KEY.
-    "apiKey": "",
-    // customHeaders: extra headers sent on every openai request. Each value
-    // can be overridden via the matching environment variable
-    // (X_DEP_TICKET, USER_TYPE, USER_ID, SEND_SYSTEM_NAME).
-    "customHeaders": {
-      "x-dep-ticket": "credential:",
-      "User-Type": "AD_ID",
-      "User-Id": "",
-      "Send-System-Name": "rvc-api-module"
-    }
+  "views": {
+    "interfaceTables": true,
+    "unitDiagrams": true,
+    "flowcharts": false,
+    "behaviourDiagram": true,
+    "componentStaticDiagram": true
+  },
+  "export": {
+    "docxPath": "output/software_detailed_design_{group}.docx",
+    "docxFontSize": 8
   },
   "layers": {
     "Layer1": {
@@ -79,16 +20,23 @@
       "groups": {
         "Sample": {
           "Core": "Sample/Core",
-          "Lib":  "Sample/Lib",
+          "Lib": "Sample/Lib",
           "Util": "Sample/Util"
         },
         "Full": {
-          "Iface": ["Direction", "Types", "Flow"],
-          "Cross": ["Hub", "Poly"]
+          "Iface": [
+            "Direction",
+            "Types",
+            "Flow"
+          ],
+          "Cross": [
+            "Hub",
+            "Poly"
+          ]
         },
         "Support": {
-          "Math":  "Math",
-          "App":   "App",
+          "Math": "Math",
+          "App": "App",
           "Outer": "Outer/Inner"
         },
         "Access": {
@@ -103,21 +51,21 @@
       "path": "Layer2",
       "groups": {
         "Platform": {
-          "Gpio":      "Platform/Gpio",
-          "Uart":      "Platform/Uart",
-          "Spi":       "Platform/Spi",
-          "I2c":       "Platform/I2c",
-          "Adc":       "Platform/Adc",
-          "Display":   "Platform/Display",
-          "Storage":   "Platform/Storage",
-          "Network":   "Platform/Network",
-          "Logger":    "Platform/Logger",
-          "Config":    "Platform/Config",
-          "EventBus":  "Platform/EventBus",
-          "Timer":     "Platform/Timer",
-          "Protocol":  "Platform/Protocol",
+          "Gpio": "Platform/Gpio",
+          "Uart": "Platform/Uart",
+          "Spi": "Platform/Spi",
+          "I2c": "Platform/I2c",
+          "Adc": "Platform/Adc",
+          "Display": "Platform/Display",
+          "Storage": "Platform/Storage",
+          "Network": "Platform/Network",
+          "Logger": "Platform/Logger",
+          "Config": "Platform/Config",
+          "EventBus": "Platform/EventBus",
+          "Timer": "Platform/Timer",
+          "Protocol": "Platform/Protocol",
           "Scheduler": "Platform/Scheduler",
-          "Cache":     "Platform/Cache"
+          "Cache": "Platform/Cache"
         }
       }
     },
@@ -126,16 +74,34 @@
       "groups": {}
     }
   },
-  "export": {
-    "docxPath": "output/software_detailed_design_{group}.docx",
-    "docxFontSize": 8
-  },
-  "architectureDoc": {
-    // enabled: set to true to generate the Architecture Design Document.
-    // Use --doc-type add (or both) on the CLI to control which docs are produced.
-    "enabled": false,
-    "views": {
-      "layerStaticDiagram": true
+  "llm": {
+    "descriptions": false,
+    "behaviourNames": false,
+    "summarize": false,
+    "provider": "ollama",
+    "baseUrl": "http://localhost:11434",
+    "defaultModel": "llama3.2",
+    "timeoutSeconds": 300,
+    "numCtx": 8192,
+    "retries": 1,
+    "fewShotExamplesDir": "few_shot_examples",
+    "cacheVersion": 1,
+    "enrichment": {
+      "twoPassDescriptions": true,
+      "selfReview": false,
+      "ensemble": false,
+      "cfgSimplification": false,
+      "variableEnrichment": true
+    },
+    "maxContextTokens": 127488,
+    "customHeaders": {
+      "x-dep-ticket": "credential:",
+      "User-Type": "AD_ID",
+      "User-Id": "",
+      "Send-System-Name": "rvc-api-module"
     }
+  },
+  "ui": {
+    "theme": "Light"
   }
 }

@@ -192,12 +192,11 @@ def run(model, output_dir, model_dir, config):
                 pass
     os.makedirs(out_dir, exist_ok=True)
 
-    ud_cfg = views_cfg.get("unitDiagrams") if isinstance(views_cfg.get("unitDiagrams"), dict) else {}
-    render_png = ud_cfg.get("renderPng", True)
+    render_png = True
     # Project root must not be derived from output_dir: with --all-groups output is output/<group>/.
     project_root = os.path.dirname(os.path.abspath(model_dir))
     mmdc = mmdc_path(project_root)
-    puppeteer = ud_cfg.get("puppeteerConfigPath") or os.path.join(project_root, "config", "puppeteer-config.json")
+    puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):
         puppeteer = os.path.join(project_root, puppeteer)
     run_cmd_base = [mmdc]
