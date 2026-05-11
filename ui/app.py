@@ -143,12 +143,13 @@ def _save_last_run():
     )
 
 
-def _save_function_description(fid: str, description: str):
-    """Save function description to the correct model file."""
+def _save_function_edits(fid: str, description: str, visibility: str):
+    """Save function description and visibility to the correct model file."""
     funcs_path = _model_file_for_function(fid)
     funcs = _load_json(funcs_path)
     if fid in funcs:
         funcs[fid]["description"] = description
+        funcs[fid]["visibility"] = visibility
         _save_json(funcs_path, funcs)
 
     # Also update interface tables if they exist
@@ -162,6 +163,7 @@ def _save_function_description(fid: str, description: str):
             for entry in unit.get("entries", []):
                 if entry.get("functionId") == fid:
                     entry["description"] = description
+                    entry["visibility"] = visibility
                     changed = True
         if changed:
             _save_json(iface_path, iface)
@@ -538,8 +540,16 @@ def _function_dialog(fid: str):
         desc = st.text_area("##", value=entry.get("description", ""), 
                             height=120, label_visibility="collapsed", key=f"tx_{fid}")
         
+        # Visibility Edit
+        st.markdown('<div class="f-label" style="margin-top:10px;">Visibility</div>', unsafe_allow_html=True)
+        current_vis = entry.get("visibility", "default").lower()
+        vis_options = ["public", "private", "protected", "default"]
+        if current_vis not in vis_options:
+            vis_options.append(current_vis)
+        new_vis = st.selectbox("Visibility", vis_options, index=vis_options.index(current_vis), key=f"vis_{fid}", label_visibility="collapsed")
+        
         if st.button("Save", type="primary", use_container_width=True):
-            _save_function_description(fid, desc)
+            _save_function_edits(fid, desc, new_vis)
             get_funcs_all.clear()
             st.success("Saved")
 
@@ -627,63 +637,223 @@ def _set_group_dialog_index(index: int):
 
 @st.dialog("Component Groups", width="large")
 def _groups_dialog():
-    groups = st.session_state.get("groups", [])
-    st.session_state.setdefault("_group_dialog_index", 0)
-    selected = min(st.session_state["_group_dialog_index"], max(0, len(groups) - 1))
-    st.session_state["_group_dialog_index"] = selected
+    # ── Force compact scrolling with CSS ──
+    st.markdown(
+        """
+        <style>
+        /* Dialog body fixed height + scroll */
+        div[role="dialog"] > div:first-child {
+            max-height: 70vh !important;
+            overflow-y: auto !important;
+            padding: 0.25rem 0.75rem 0.5rem 0.75rem !important;
+        }
+        div[role="dialog"] {
+            padding: 0 !important;
+        }
+        /* Remove all extra margins/paddings from Streamlit blocks */
+        div[role="dialog"] .stMarkdown,
+        div[role="dialog"] .stVerticalBlock,
+        div[role="dialog"] .stHorizontalBlock,
+        div[role="dialog"] .stElementContainer {
+            margin: 0 !important;
+            padding: 0 !important;
+            gap: 0 !important;
+        }
+        div[role="dialog"] [data-testid="column"] {
+            padding: 0 0.25rem !important;
+        }
+        div[role="dialog"] .stButton button {
+            min-height: 28px !important;
+            margin: 0.1rem 0 !important;
+        }
+        div[role="dialog"] hr {
+            margin: 0.3rem 0 !important;
+        }
+        div[role="dialog"] .stTextInput > div {
+            margin-bottom: 0.2rem !important;
+        }
+        div[role="dialog"] [data-testid="stExpander"] {
+            margin: 0 0 0.25rem 0 !important;
+            padding: 0 !important;
+        }
+        div[role="dialog"] [data-testid="stExpander"] details {
+            margin: 0 !important;
+        }
+        div[role="dialog"] [data-testid="stExpander"] summary {
+            padding: 0.2rem 0.5rem !important;
+            min-height: 32px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    left, right = st.columns([1, 2.5], gap="medium")
-    with left:
-        st.caption("Groups")
-        for i, group in enumerate(groups):
-            gid = group["gid"]
-            name = st.session_state.get(f"g{gid}_name", group["name"]).strip() or "(unnamed)"
-            meta = f"{len(group['components'])} comps"
-            layer = st.session_state.get("_gid_to_layer", {}).get(gid)
-            if layer:
-                meta += f" | {layer}"
+    # ── Initialise state ──
+    layers_raw = st.session_state.get("_layers_raw", {})
+    layer_names = list(layers_raw.keys())
+    if not layer_names:
+        layers_raw["Layer1"] = {"path": "Layer1", "groups": {}}
+        layer_names = ["Layer1"]
+        st.session_state["_layers_raw"] = layers_raw
+
+    st.session_state.setdefault("_selected_layer", layer_names[0])
+    selected_layer = st.session_state["_selected_layer"]
+    if selected_layer not in layer_names:
+        selected_layer = layer_names[0]
+        st.session_state["_selected_layer"] = selected_layer
+
+    gid_to_layer = st.session_state.get("_gid_to_layer", {})
+
+    # ── Layout: left layers, right groups ──
+    left_col, right_col = st.columns([1, 2.5], gap="medium")
+
+    # ======================= LEFT PANEL: LAYERS =======================
+    with left_col:
+        st.markdown(
+            '<div style="font-size:10px; font-weight:700; letter-spacing:1.5px; color:var(--faint); margin-bottom:12px;">🗂️ LAYERS</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Simple callback – only updates state
+        def _set_selected_layer(lname: str):
+            st.session_state["_selected_layer"] = lname
+
+        for lname in layer_names:
+            display = st.session_state.get(f"lname_{lname}", lname)
+            n_groups = sum(1 for ln in gid_to_layer.values() if ln == lname)
             st.button(
-                f"{name}  |  {meta}",
-                key=f"group_select_{i}",
-                type="primary" if selected == i else "secondary",
-                on_click=_set_group_dialog_index,
-                args=(i,),
+                f"{display}  ·  {n_groups} grp",
+                key=f"layer_btn_{lname}",   # stable key using raw layer name
+                type="primary" if selected_layer == lname else "secondary",
                 use_container_width=True,
+                on_click=_set_selected_layer,
+                args=(lname,)
             )
         st.divider()
-        st.button("➕ Add Group", on_click=_add_group, use_container_width=True)
+        if st.button("➕ Add Layer", key="add_layer_btn", use_container_width=True):
+            _add_layer()
 
-    with right:
-        if not groups:
-            st.info("No groups yet. Click 'Add Group' to start.")
-        else:
-            group = groups[selected]
-            gid = group["gid"]
-            h1, h2 = st.columns([4, 1])
-            with h1:
-                st.text_input("Group name", key=f"g{gid}_name", value=group["name"], label_visibility="collapsed")
-            with h2:
-                if st.button("Delete Group", key=f"delete_group_{gid}"):
-                    _remove_group(gid)
+    # ======================= RIGHT PANEL: GROUPS IN SELECTED LAYER =======================
+    with right_col:
+        # Layer name + path + delete (if >1 layer)
+        col_name, col_del = st.columns([3, 1])
+        with col_name:
+            new_name = st.text_input(
+                "Layer name",
+                value=st.session_state.get(f"lname_{selected_layer}", selected_layer),
+                key=f"lname_{selected_layer}",
+                label_visibility="collapsed"
+            )
+        with col_del:
+            if len(layer_names) > 1:
+                if st.button("🗑️ Delete", key=f"del_layer_{selected_layer}", use_container_width=True):
+                    _delete_layer(selected_layer)
                     st.rerun()
-            st.divider()
+        new_path = st.text_input(
+            "Subdirectory path",
+            value=layers_raw[selected_layer].get("path", selected_layer),
+            key=f"lpath_{selected_layer}",
+            placeholder="relative to project root"
+        )
+        st.session_state["_layers_raw"][selected_layer]["path"] = new_path if new_path else selected_layer
 
-            for comp in group["components"]:
-                cid = comp["cid"]
-                with st.expander(st.session_state.get(f"c{cid}_name", comp["comp"]).strip() or "(unnamed)", expanded=True):
+        st.markdown("---")
+
+        # ── GROUPS in this layer ──
+        groups = st.session_state.get("groups", [])
+        groups_in_layer = [g for g in groups if gid_to_layer.get(g["gid"]) == selected_layer]
+
+        if not groups_in_layer:
+            st.info("No groups assigned to this layer.")
+        else:
+            for group in groups_in_layer:
+                gid = group["gid"]
+                gname_key = f"g{gid}_name"
+                current_gname = st.session_state.get(gname_key, group["name"]).strip()
+                if not current_gname:
+                    current_gname = "(unnamed)"
+                with st.expander(f"📁 {current_gname}  ({len(group['components'])} comps)", expanded=False):
+                    # Group name & delete
                     c1, c2 = st.columns([4, 1])
-                    c1.text_input("Component", key=f"c{cid}_name", value=comp["comp"], label_visibility="collapsed")
-                    c2.button("❌", key=f"delete_comp_{cid}", on_click=_remove_component, args=(gid, cid))
-                    for path in comp["paths"]:
-                        pid = path["pid"]
-                        p1, p2 = st.columns([5, 1])
-                        p1.text_input("Path", key=f"p{pid}_path", value=path["path"], label_visibility="collapsed")
-                        p2.button("✖", key=f"delete_path_{pid}", on_click=_remove_path, args=(cid, pid), disabled=len(comp["paths"]) <= 1)
-                    st.button("➕ Add path", key=f"add_path_{cid}", on_click=_add_path, args=(cid,))
-            st.button("➕ Add component", key=f"add_comp_{gid}", on_click=_add_component, args=(gid,), use_container_width=True)
+                    with c1:
+                        st.text_input("Group name", value=group["name"], key=gname_key, label_visibility="collapsed")
+                    with c2:
+                        if st.button("Delete", key=f"del_group_{gid}"):
+                            _remove_group(gid)
+                            st.rerun()
+                    # Layer selector (reassign group)
+                    current_layer = gid_to_layer.get(gid, selected_layer)
+                    new_layer = st.selectbox(
+                        "Layer",
+                        layer_names,
+                        index=layer_names.index(current_layer) if current_layer in layer_names else 0,
+                        key=f"g{gid}_layer_sel"
+                    )
+                    if new_layer != current_layer:
+                        gid_to_layer[gid] = new_layer
+                        st.session_state["_gid_to_layer"] = gid_to_layer
+                        st.rerun()
+                    # Components
+                    st.markdown("**Components**")
+                    for comp in group["components"]:
+                        cid = comp["cid"]
+                        comp_name_key = f"c{cid}_name"
+                        with st.container(border=True):
+                            col_c1, col_c2 = st.columns([4, 1])
+                            with col_c1:
+                                st.text_input(
+                                    "Component name",
+                                    value=comp["comp"],
+                                    key=comp_name_key,
+                                    label_visibility="collapsed",
+                                    placeholder="Component name"
+                                )
+                            with col_c2:
+                                st.button("✖", key=f"del_comp_{cid}", on_click=_remove_component, args=(gid, cid))
+                            # Paths
+                            st.caption("Source paths")
+                            for path in comp["paths"]:
+                                pid = path["pid"]
+                                p1, p2 = st.columns([5, 1])
+                                with p1:
+                                    st.text_input(
+                                        "Path",
+                                        value=path["path"],
+                                        key=f"p{pid}_path",
+                                        label_visibility="collapsed",
+                                        placeholder="relative path"
+                                    )
+                                with p2:
+                                    st.button("x", key=f"del_path_{pid}", on_click=_remove_path, args=(cid, pid), disabled=len(comp["paths"]) <= 1)
+                            st.button("➕ Add path", key=f"add_path_{cid}", on_click=_add_path, args=(cid,), use_container_width=True)
+                    st.button("➕ Add component", key=f"add_comp_{gid}", on_click=_add_component, args=(gid,), use_container_width=True)
 
+        # Add new group button
+        st.markdown("---")
+        if st.button("➕ Add new group", key="add_new_group_btn", use_container_width=True):
+            _add_group()
+            new_gid = st.session_state["_next_gid"] - 1
+            gid_to_layer[new_gid] = selected_layer
+            st.session_state["_gid_to_layer"] = gid_to_layer
+            st.rerun()
+
+    # ── SAVE & CLOSE ──
     st.divider()
-    if st.button("Save & Close", type="primary", use_container_width=True):
+    if st.button("💾 Save & Close", type="primary", use_container_width=True):
+        # Persist layer renames and paths
+        final_layers = {}
+        for lname in list(st.session_state["_layers_raw"].keys()):
+            new_display = st.session_state.get(f"lname_{lname}", lname).strip()
+            if not new_display:
+                new_display = lname
+            final_layers[new_display] = {
+                "path": st.session_state.get(f"lpath_{lname}", lname).strip() or lname,
+                "groups": {}
+            }
+        st.session_state["_layers_raw"] = final_layers
+        # Update gid_to_layer with new layer names
+        old_to_new = {old: new for old, new in zip(layer_names, [st.session_state.get(f"lname_{ln}", ln).strip() or ln for ln in layer_names])}
+        st.session_state["_gid_to_layer"] = {gid: old_to_new.get(ln, ln) for gid, ln in gid_to_layer.items()}
         _write_config()
         st.rerun()
 
@@ -699,7 +869,7 @@ def _settings_dialog():
     nav_col, content_col = st.columns([1, 3], gap="medium")
 
     with nav_col:
-        for section in ("Appearance", "LLM", "Parser", "Views & Export", "Config"):
+        for section in ("LLM", "Parser", "Views & Export", "Config"):
             st.button(
                 section,
                 key=f"settings_{section}",
@@ -711,10 +881,10 @@ def _settings_dialog():
 
     with content_col:
         if nav == "Appearance":
-            st.markdown("**Theme**")
-            st.radio("Theme", ["Dark", "Light"], key="ui_theme", horizontal=True, label_visibility="collapsed")
+            st.session_state["_settings_nav"] = "LLM"
+            st.rerun()
 
-        elif nav == "LLM":
+        if nav == "LLM" or nav == "Appearance":
             st.markdown("**Features**")
             f1, f2, f3 = st.columns(3)
             f1.toggle("Descriptions", key="llm_descriptions")
@@ -796,6 +966,32 @@ def _remove_group(gid: int):
     st.session_state["groups"] = [g for g in st.session_state["groups"] if g["gid"] != gid]
 
 
+def _add_layer():
+    layers_raw = dict(st.session_state.get("_layers_raw", {}))
+    i = 1
+    while f"Layer{i}" in layers_raw:
+        i += 1
+    new_key = f"Layer{i}"
+    layers_raw[new_key] = {"path": new_key, "groups": {}}
+    st.session_state["_layers_raw"] = layers_raw
+    st.session_state["_layers_tab_sel"] = new_key
+
+
+def _delete_layer(layer_key: str):
+    layers_raw = dict(st.session_state.get("_layers_raw", {}))
+    if len(layers_raw) <= 1:
+        return
+    del layers_raw[layer_key]
+    st.session_state["_layers_raw"] = layers_raw
+    fallback = next(iter(layers_raw.keys()))
+    gid_to_layer = dict(st.session_state.get("_gid_to_layer", {}))
+    for gid, ln in gid_to_layer.items():
+        if ln == layer_key:
+            gid_to_layer[gid] = fallback
+    st.session_state["_gid_to_layer"] = gid_to_layer
+    st.session_state["_layers_tab_sel"] = fallback
+
+
 def _add_component(gid: int):
     cid = st.session_state["_next_cid"]
     pid = st.session_state["_next_pid"]
@@ -836,6 +1032,8 @@ def _inject_css(colors: dict[str, str]):
     st.markdown(
         f"""
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
         :root {{
           --app-bg: {colors['app_bg']};
           --side-bg: {colors['side_bg']};
@@ -853,11 +1051,25 @@ def _inject_css(colors: dict[str, str]):
           --status-bg: {colors['status_bg']};
           --panel-bg: {colors['panel_bg']};
           --primary-color: #6366f1 !important;
+          --primary-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+        }}
+
+        * {{
+            font-family: 'Outfit', sans-serif !important;
+            transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }}
+        .material-icons, .material-symbols-rounded, .material-icons-outlined, [data-testid="stIconMaterial"], .st-emotion-cache-1n76uvr {{
+            font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif !important;
         }}
 
         /* Hide native Streamlit chrome */
         [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stHeaderActionElements"] {{
             display: none !important;
+        }}
+
+        @keyframes fadeIn {{
+            from {{ opacity: 0; transform: translateY(5px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
         }}
 
         /* Main layout */
@@ -869,11 +1081,14 @@ def _inject_css(colors: dict[str, str]):
             max-width: 100% !important;
             padding: 3.25rem 0 1.5rem 0 !important;
             background: transparent !important;
+            animation: fadeIn 0.4s ease-out forwards;
         }}
 
-        /* Sidebar styling */
+        /* Sidebar styling - Glassmorphism */
         [data-testid="stHorizontalBlock"] > div:first-child {{
             background: var(--side-bg) !important;
+            backdrop-filter: blur(16px) !important;
+            -webkit-backdrop-filter: blur(16px) !important;
             border-right: 1px solid var(--border) !important;
             min-height: calc(100vh - 3.25rem) !important;
             max-height: calc(100vh - 3.25rem) !important;
@@ -886,76 +1101,98 @@ def _inject_css(colors: dict[str, str]):
             background: var(--app-bg) !important;
             min-height: calc(100vh - 3.25rem) !important;
             max-height: calc(100vh - 3.25rem) !important;
-            overflow: hidden !important;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
         }}
 
-        /* Tabs styling */
+        /* Tabs styling - Glassmorphism */
         [data-baseweb="tab-list"] {{
             background: var(--tab-bg) !important;
+            backdrop-filter: blur(12px) !important;
+            -webkit-backdrop-filter: blur(12px) !important;
             border-bottom: 1px solid var(--border) !important;
-            height: 42px !important;
+            height: 48px !important;
             padding: 0 1.5rem !important;
-            gap: 1.5rem !important;
+            gap: 2rem !important;
         }}
         [data-baseweb="tab"] {{
-            height: 42px !important;
+            height: 48px !important;
             color: var(--muted) !important;
-            font-size: 0.82rem !important;
+            font-size: 0.85rem !important;
             font-weight: 500 !important;
         }}
         [data-baseweb="tab"][aria-selected="true"] {{
             color: var(--text) !important;
+            font-weight: 600 !important;
         }}
         [data-baseweb="tab-highlight"] {{
-            background: #6366f1 !important;
-            height: 2px !important;
+            background: var(--primary-gradient) !important;
+            height: 3px !important;
+            border-radius: 3px 3px 0 0 !important;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
         }}
 
         /* Buttons */
         button[kind="primary"] {{
-            background: #6366f1 !important;
-            border-color: #6366f1 !important;
+            background: var(--primary-gradient) !important;
+            border: none !important;
             color: #fff !important;
+            border-radius: 8px !important;
+            box-shadow: 0 2px 6px rgba(99,102,241,0.2) !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }}
+        button[kind="primary"]:hover {{
+            transform: translateY(-1px) scale(1.02) !important;
+            box-shadow: 0 4px 12px rgba(99,102,241,0.4) !important;
         }}
         button[kind="secondary"] {{
             background: var(--control-bg) !important;
             border: 1px solid var(--border) !important;
             color: var(--text) !important;
+            border-radius: 8px !important;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
         }}
         button[kind="secondary"]:hover {{
             border-color: var(--muted) !important;
             background: var(--hover-bg) !important;
+            transform: translateY(-1px) !important;
         }}
 
         /* Inputs */
         input, textarea {{
             background: var(--input-bg) !important;
-            border-color: var(--border) !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 6px !important;
             color: var(--text) !important;
+            transition: all 0.2s ease !important;
+        }}
+        input:focus, textarea:focus {{
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 1px #6366f1 !important;
         }}
 
         /* Expanders for component groups */
         [role="tabpanel"] [data-testid="stExpander"] {{
             border: 0 !important;
-            border-radius: 0 !important;
+            border-radius: 8px !important;
             background: transparent !important;
-            margin: 0 0 2px 0 !important;
+            margin: 0 0 4px 0 !important;
+            overflow: hidden !important;
         }}
         [role="tabpanel"] [data-testid="stExpander"] > details > summary {{
             background: var(--row-bg) !important;
             border-bottom: 1px solid var(--border-soft) !important;
-            height: 36px !important;
+            height: 40px !important;
             padding: 0 1rem 0 2rem !important;
             color: var(--text) !important;
-            font-size: 0.72rem !important;
-            font-weight: 700 !important;
+            font-size: 0.75rem !important;
+            font-weight: 600 !important;
             text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+            transition: background-color 0.2s ease !important;
         }}
-        [role="tabpanel"] [data-testid="stExpander"] > details > summary::before {{
-            content: "◆";
-            font-size: 7px;
-            margin-right: 6px;
-            color: #6366f1;
+        [role="tabpanel"] [data-testid="stExpander"] > details > summary:hover {{
+            background: var(--hover-bg) !important;
         }}
 
         /* Component buttons */
@@ -1007,17 +1244,36 @@ def _inject_css(colors: dict[str, str]):
         }}
 
         /* Floating buttons */
-        .st-key-_settings_fab {{
+        .st-key-_settings_fab, .st-key-_theme_toggle {{
             position: fixed !important;
-            top: 12px !important;
-            right: 16px !important;
             z-index: 100000 !important;
         }}
+        .st-key-_settings_fab {{
+            top: 8px !important;
+            right: 16px !important;
+        }}
         .st-key-_theme_toggle {{
-            position: fixed !important;
-            bottom: 0 !important;
-            right: 0 !important;
-            z-index: 100001 !important;
+            top: 8px !important;
+            right: 64px !important;
+        }}
+        .st-key-_settings_fab button, .st-key-_theme_toggle button {{
+            border-radius: 50% !important;
+            width: 36px !important;
+            height: 36px !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 1.1rem !important;
+            background: var(--control-bg) !important;
+            border: 1px solid var(--border) !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+            backdrop-filter: blur(8px) !important;
+            -webkit-backdrop-filter: blur(8px) !important;
+        }}
+        .st-key-_settings_fab button:hover, .st-key-_theme_toggle button:hover {{
+            background: var(--hover-bg) !important;
+            transform: scale(1.05) !important;
         }}
 
         /* Dialog */
@@ -1028,6 +1284,19 @@ def _inject_css(colors: dict[str, str]):
         }}
         div[role="dialog"] > div {{
             background: {colors["side_bg"]} !important;
+        }}
+        /* Reset outer sidebar column styles bleeding into dialog columns */
+        div[role="dialog"] [data-testid="stHorizontalBlock"] > div {{
+            background: transparent !important;
+            border: none !important;
+            min-height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            padding: 0.25rem 0.5rem !important;
+        }}
+        div[role="dialog"] [data-testid="stHorizontalBlock"] > div:first-child {{
+            border-right: 1px solid {colors["border"]} !important;
+            padding-right: 0.75rem !important;
         }}
         [data-testid="stModal"] > div {{
             background: rgba(0,0,0,0.55) !important;
@@ -1049,39 +1318,39 @@ def main():
     _theme = st.session_state.get("ui_theme", "Dark")
     if _theme == "Light":
         colors = {
-            "app_bg": "#f5f5f7",
-            "side_bg": "#ffffff",
-            "top_bg": "#ffffff",
-            "tab_bg": "#ffffff",
-            "row_bg": "#eeeef1",
-            "text": "#18181b",
-            "muted": "rgba(24,24,27,0.45)",
-            "faint": "rgba(24,24,27,0.30)",
-            "border": "rgba(0,0,0,0.08)",
-            "border_soft": "rgba(0,0,0,0.05)",
+            "app_bg": "#fafafa",
+            "side_bg": "rgba(255,255,255,0.85)",
+            "top_bg": "rgba(255,255,255,0.85)",
+            "tab_bg": "rgba(255,255,255,0.8)",
+            "row_bg": "#f4f4f5",
+            "text": "#09090b",
+            "muted": "rgba(9,9,11,0.6)",
+            "faint": "rgba(9,9,11,0.35)",
+            "border": "rgba(0,0,0,0.1)",
+            "border_soft": "rgba(0,0,0,0.06)",
             "control_bg": "#ffffff",
-            "input_bg": "#f4f4f6",
-            "hover_bg": "rgba(99,102,241,0.06)",
-            "status_bg": "#ffffff",
-            "panel_bg": "#f4f4f6",
+            "input_bg": "#f4f4f5",
+            "hover_bg": "rgba(99,102,241,0.1)",
+            "status_bg": "rgba(255,255,255,0.85)",
+            "panel_bg": "#f4f4f5",
         }
     else:
         colors = {
-            "app_bg": "#0a0a0c",
-            "side_bg": "#111115",
-            "top_bg": "#111115",
-            "tab_bg": "#0f0f12",
-            "row_bg": "#131318",
-            "text": "#e4e4e7",
-            "muted": "rgba(228,228,231,0.45)",
-            "faint": "rgba(228,228,231,0.30)",
-            "border": "rgba(255,255,255,0.08)",
-            "border_soft": "rgba(255,255,255,0.05)",
+            "app_bg": "#000000",
+            "side_bg": "rgba(9,9,11,0.85)",
+            "top_bg": "rgba(9,9,11,0.85)",
+            "tab_bg": "rgba(9,9,11,0.8)",
+            "row_bg": "#18181b",
+            "text": "#fafafa",
+            "muted": "rgba(250,250,250,0.6)",
+            "faint": "rgba(250,250,250,0.35)",
+            "border": "rgba(255,255,255,0.12)",
+            "border_soft": "rgba(255,255,255,0.06)",
             "control_bg": "transparent",
-            "input_bg": "rgba(255,255,255,0.04)",
-            "hover_bg": "rgba(255,255,255,0.035)",
-            "status_bg": "#0d0d10",
-            "panel_bg": "#0d0d10",
+            "input_bg": "rgba(255,255,255,0.05)",
+            "hover_bg": "rgba(255,255,255,0.06)",
+            "status_bg": "rgba(9,9,11,0.85)",
+            "panel_bg": "#09090b",
         }
 
     _inject_css(colors)
@@ -1090,8 +1359,8 @@ def main():
     _proj_crumb = Path((st.session_state.get("project_path") or "")).name or ""
     st.markdown(
         f"""
-        <div style="position:fixed;top:0;left:0;right:0;height:52px;background:{colors["top_bg"]};border-bottom:1px solid {colors["border"]};z-index:99999;display:flex;align-items:center;padding:0 56px 0 16px;">
-            <div style="width:24px;height:24px;background:#6366f1;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:800;">✓</div>
+        <div style="position:fixed;top:0;left:0;right:0;height:52px;background:{colors["top_bg"]};backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid {colors["border"]};z-index:99999;display:flex;align-items:center;padding:0 56px 0 16px;">
+            <div style="width:24px;height:24px;background:linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:800;box-shadow:0 2px 4px rgba(99,102,241,0.3);">✓</div>
             <div style="font-size:14px;font-weight:700;color:{colors["text"]};margin-left:12px;">C++ Analyzer</div>
             {f'<div style="width:1px;height:16px;background:{colors["border"]};margin:0 12px;"></div><div style="font-size:12px;color:{colors["muted"]};overflow:hidden;text-overflow:ellipsis;max-width:300px;">{_proj_crumb}</div>' if _proj_crumb else ''}
         </div>
@@ -1200,7 +1469,7 @@ def main():
         total_comps = sum(len(g["components"]) for g in st.session_state.get("groups", []))
         group_label = selected_group or "All groups"
         st.markdown(
-            f'<div style="position:fixed;bottom:0;left:0;right:0;height:28px;background:{colors["status_bg"]};border-top:1px solid {colors["border"]};display:flex;align-items:center;padding:0 12px;font-size:9px;z-index:9998;">'
+            f'<div style="position:fixed;bottom:0;left:0;right:0;height:28px;background:{colors["status_bg"]};backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid {colors["border"]};display:flex;align-items:center;padding:0 12px;font-size:9px;z-index:9998;">'
             f'<span style="width:6px;height:6px;border-radius:50%;background:{dot};margin-right:6px;"></span>'
             f'<span style="color:{colors["muted"]};">{label}</span>'
             f'<span style="width:1px;height:12px;background:{colors["border"]};margin:0 8px;"></span>'
@@ -1309,7 +1578,7 @@ def main():
                         # Filter functions
                         vis_filter = st.radio(
                             "Filter",
-                            ["All", "Public", "Private"],
+                            ["All", "Non-Private", "Private"],
                             horizontal=True,
                             key="_fn_vis_filter",
                             label_visibility="collapsed",
@@ -1325,7 +1594,8 @@ def main():
                             filtered_fids = [
                                 fid for fid in fids
                                 if vis_filter == "All"
-                                or funcs_all.get(fid, {}).get("visibility", "public").lower() == vis_filter.lower()
+                                or (vis_filter == "Private" and funcs_all.get(fid, {}).get("visibility", "default").lower() == "private")
+                                or (vis_filter == "Non-Private" and funcs_all.get(fid, {}).get("visibility", "default").lower() != "private")
                             ]
                             if not filtered_fids:
                                 continue
@@ -1422,8 +1692,7 @@ def main():
         st.session_state["ui_theme"] = "Light" if current == "Dark" else "Dark"
 
     theme_icon = "☀️" if _theme == "Dark" else "🌙"
-    theme_label = "Light" if _theme == "Dark" else "Dark"
-    st.button(f"{theme_icon} {theme_label}", key="_theme_toggle", on_click=_toggle_theme)
+    st.button(f"{theme_icon}", key="_theme_toggle", on_click=_toggle_theme, help="Toggle Theme")
 
     # Auto-refresh when pipeline running
     if _run_state()["running"]:
