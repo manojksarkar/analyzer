@@ -29,7 +29,7 @@ from .paths import paths
 # phase list it produces.
 PHASE_PARSE = 1     # Phase 1: Parse C++ source         -> parser.py
 PHASE_DERIVE = 2    # Phase 2: Derive model             -> model_deriver.py
-PHASE_VIEWS = 3     # Phase 3: Generate views           -> run_views.py / run_add_views.py
+PHASE_VIEWS = 3     # Phase 3: Generate views           -> run_views.py / run_sad_views.py
 PHASE_EXPORT = 4    # Phase 4: Export to DOCX           -> docx_exporter.py / architecture_docx_exporter.py
 
 # Valid doc_type values for plan_runs().
@@ -89,7 +89,7 @@ def _add_doc_phases(*, output_dir: Optional[str] = None) -> List[Phase]:
         output_dir = os.path.join(p.output_dir, "sad")
     docx_path = os.path.join(p.output_dir, "Software Architecture Design Specification.docx")
     return [
-        Phase("Phase 3: Generate SAD views", "run_add_views.py",
+        Phase("Phase 3: Generate SAD views", "run_sad_views.py",
               ["--output-dir", output_dir]),
         Phase("Phase 4: Export Software Architecture Design", "architecture_docx_exporter.py",
               [output_dir, docx_path]),
