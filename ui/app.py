@@ -196,7 +196,6 @@ def _init():
     clang = cfg.get("clang", {})
     llm = cfg.get("llm", {})
     views = cfg.get("views", {})
-    export = cfg.get("export", {})
     ui = cfg.get("ui", {})
     layers_raw = cfg.get("layers", {})
     sample = ROOT / "SampleCppProject"
@@ -248,8 +247,6 @@ def _init():
     st.session_state.setdefault("v_flow", bool(views.get("flowcharts", True)))
     st.session_state.setdefault("v_behav", bool(views.get("behaviourDiagram", True)))
     st.session_state.setdefault("v_msd", bool(views.get("componentStaticDiagram", True)))
-    st.session_state.setdefault("export_docx_path", export.get("docxPath", "output/software_detailed_design_{group}.docx"))
-    st.session_state.setdefault("export_font_size", int(export.get("docxFontSize", 8)))
 
     # LLM settings
     enrichment = llm.get("enrichment", {})
@@ -340,10 +337,6 @@ def _write_config():
         "flowcharts": st.session_state["v_flow"],
         "behaviourDiagram": st.session_state["v_behav"],
         "componentStaticDiagram": st.session_state["v_msd"],
-    }
-    cfg["export"] = {
-        "docxPath": st.session_state.get("export_docx_path", "").strip() or "output/software_detailed_design_{group}.docx",
-        "docxFontSize": st.session_state["export_font_size"],
     }
     cfg["layers"] = _groups_to_layers_config()
 
@@ -912,9 +905,6 @@ def _settings_dialog():
             d1.toggle("Flowcharts", key="v_flow")
             d2.toggle("Behaviour diagrams", key="v_behav")
             d2.toggle("Static component diagram", key="v_msd")
-            st.divider()
-            st.text_input("DOCX output pattern", key="export_docx_path")
-            st.number_input("DOCX font size", key="export_font_size", min_value=6, max_value=16)
 
         else:  # Config
             st.json(_merged_config())

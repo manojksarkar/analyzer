@@ -526,11 +526,9 @@ def _build_component_static_structure_mermaid(
     return "\n".join(lines)
 
 
-def _parse_component_static_diagram_cfg(views_cfg: dict, export_cfg: dict = None) -> Tuple[bool, bool, float]:
+def _parse_component_static_diagram_cfg(views_cfg: dict) -> Tuple[bool, bool, float]:
     """enabled, renderPng, widthInches for Static Design component→units diagram (config.views.componentStaticDiagram)."""
     raw = (views_cfg or {}).get("componentStaticDiagram")
-    if raw is None and export_cfg:
-        raw = export_cfg.get("componentStaticDiagram")
     if raw is None:
         raw = True
     return bool(raw), True, 5.5
@@ -995,20 +993,16 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     from utils import safe_filename, KEY_SEP
     from core.config import app_config
     config = app_config()
-    export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
     json_path = os.path.abspath(json_path)
     # Views write next to interface_tables.json (e.g. output/<group>/); do not use output/ only.
     artifacts_dir = os.path.dirname(json_path)
-    # Allow group-specific filenames via {group} placeholder.
     group_name = selected_group or "all"
-    raw_docx = export_cfg.get("docxPath", "output/software_detailed_design.docx")
-    raw_docx = raw_docx.replace("{group}", group_name)
     if not docx_path:
-        docx_path = os.path.join(PROJECT_ROOT, raw_docx)
-    font_size = int(export_cfg.get("docxFontSize", 8))
+        docx_path = os.path.join(PROJECT_ROOT, f"output/software_detailed_design_{group_name}.docx")
+    font_size = 8
     views_cfg = config.get("views", {})
-    msd_enabled, msd_render_png, msd_width_in = _parse_component_static_diagram_cfg(views_cfg, export_cfg)
+    msd_enabled, msd_render_png, msd_width_in = _parse_component_static_diagram_cfg(views_cfg)
     fc_cfg = views_cfg.get("flowcharts") if isinstance(views_cfg.get("flowcharts"), dict) else {}
     flowcharts_enabled = bool(views_cfg.get("flowcharts"))
     flowcharts_render_png = fc_cfg.get("renderPng", True)

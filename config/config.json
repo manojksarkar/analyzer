@@ -10,10 +10,6 @@
     "behaviourDiagram": true,
     "componentStaticDiagram": true
   },
-  "export": {
-    "docxPath": "output/software_detailed_design_{group}.docx",
-    "docxFontSize": 8
-  },
   "layers": {
     "Layer1": {
       "path": "Layer1",
