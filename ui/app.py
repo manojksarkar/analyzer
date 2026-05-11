@@ -45,6 +45,27 @@ def _pick_folder(key: str):
         st.session_state[key] = path
 
 
+def _pick_relative_folder(key: str, base: str = ""):
+    """Open folder picker and store path relative to base (or project_path)."""
+    import tkinter as tk
+    from tkinter import filedialog
+
+    base_path = Path(base) if base else Path(st.session_state.get("project_path", "") or "")
+    initial = str(base_path) if base_path.exists() else None
+
+    root = tk.Tk()
+    root.withdraw()
+    root.wm_attributes("-topmost", True)
+    path = filedialog.askdirectory(initialdir=initial)
+    root.destroy()
+    if path:
+        try:
+            rel = Path(path).relative_to(base_path)
+            st.session_state[key] = str(rel).replace("\\", "/")
+        except ValueError:
+            st.session_state[key] = str(Path(path)).replace("\\", "/")
+
+
 def _strip_comments(text: str) -> str:
     """Strip C++ style comments from JSON content."""
     result: list[str] = []
@@ -218,23 +239,25 @@ def _init():
     }
     st.session_state["_group_to_layer"] = group_to_layer
 
-    # Build groups from config
+    # Build groups from config — iterate raw layers so paths stay layer-relative (no prefix)
     gid = cid = pid = 0
     groups: list[dict[str, Any]] = []
     gid_to_layer: dict[int, str] = {}
-    flat_groups = _get_flat_groups(cfg)
     default_layer = next(iter(layers_raw.keys()), "Layer1")
-    for gname, mods in flat_groups.items():
-        components_list = []
-        for cname, paths_raw in mods.items():
-            paths_raw = paths_raw if isinstance(paths_raw, list) else ([paths_raw] if paths_raw else [""])
-            paths = [{"pid": pid + i, "path": p} for i, p in enumerate(paths_raw)]
-            pid += len(paths)
-            components_list.append({"cid": cid, "comp": cname, "paths": paths})
-            cid += 1
-        groups.append({"gid": gid, "name": gname, "components": components_list})
-        gid_to_layer[gid] = group_to_layer.get(gname, default_layer)
-        gid += 1
+    for lname, ldata in layers_raw.items():
+        for gname, mods in (ldata.get("groups") or {}).items():
+            if not isinstance(mods, dict):
+                continue
+            components_list = []
+            for cname, paths_raw in mods.items():
+                paths_raw = paths_raw if isinstance(paths_raw, list) else ([paths_raw] if paths_raw else [""])
+                paths = [{"pid": pid + i, "path": p} for i, p in enumerate(paths_raw)]
+                pid += len(paths)
+                components_list.append({"cid": cid, "comp": cname, "paths": paths})
+                cid += 1
+            groups.append({"gid": gid, "name": gname, "components": components_list})
+            gid_to_layer[gid] = lname
+            gid += 1
 
     st.session_state["groups"] = groups
     st.session_state["_next_gid"] = gid
@@ -293,7 +316,7 @@ def _groups_to_layers_config() -> dict[str, Any]:
             cname = st.session_state.get(f"c{cid}_name", comp["comp"]).strip()
             if not cname:
                 continue
-            paths = [st.session_state.get(f"p{p['pid']}_path", p["path"]).strip() for p in comp["paths"]]
+            paths = [p["path"].strip() for p in comp["paths"]]
             paths = [p for p in paths if p]
             if paths:
                 comps[cname] = paths[0] if len(paths) == 1 else paths
@@ -728,12 +751,24 @@ def _groups_dialog():
                 if st.button("🗑️ Delete", key=f"del_layer_{selected_layer}", use_container_width=True):
                     _delete_layer(selected_layer)
                     st.rerun()
-        new_path = st.text_input(
-            "Subdirectory path",
-            value=layers_raw[selected_layer].get("path", selected_layer),
-            key=f"lpath_{selected_layer}",
-            placeholder="relative to project root"
-        )
+        _lpath_cols = st.columns([4, 1])
+        with _lpath_cols[0]:
+            new_path = st.text_input(
+                "Subdirectory path",
+                value=layers_raw[selected_layer].get("path", selected_layer),
+                key=f"lpath_{selected_layer}",
+                placeholder="relative to project root",
+                label_visibility="collapsed",
+            )
+        with _lpath_cols[1]:
+            st.button(
+                "📂",
+                key=f"browse_lpath_{selected_layer}",
+                on_click=_pick_relative_folder,
+                args=(f"lpath_{selected_layer}",),
+                use_container_width=True,
+                help="Browse for folder",
+            )
         st.session_state["_layers_raw"][selected_layer]["path"] = new_path if new_path else selected_layer
 
         st.markdown("---")
@@ -777,34 +812,26 @@ def _groups_dialog():
                     for comp in group["components"]:
                         cid = comp["cid"]
                         comp_name_key = f"c{cid}_name"
-                        with st.container(border=True):
-                            col_c1, col_c2 = st.columns([4, 1])
-                            with col_c1:
-                                st.text_input(
-                                    "Component name",
-                                    value=comp["comp"],
-                                    key=comp_name_key,
-                                    label_visibility="collapsed",
-                                    placeholder="Component name"
-                                )
-                            with col_c2:
-                                st.button("✖", key=f"del_comp_{cid}", on_click=_remove_component, args=(gid, cid))
-                            # Paths
-                            st.caption("Source paths")
-                            for path in comp["paths"]:
-                                pid = path["pid"]
-                                p1, p2 = st.columns([5, 1])
-                                with p1:
-                                    st.text_input(
-                                        "Path",
-                                        value=path["path"],
-                                        key=f"p{pid}_path",
-                                        label_visibility="collapsed",
-                                        placeholder="relative path"
-                                    )
-                                with p2:
-                                    st.button("x", key=f"del_path_{pid}", on_click=_remove_path, args=(cid, pid), disabled=len(comp["paths"]) <= 1)
-                            st.button("➕ Add path", key=f"add_path_{cid}", on_click=_add_path, args=(cid,), use_container_width=True)
+                        col_c1, col_c2 = st.columns([4, 1])
+                        with col_c1:
+                            st.text_input(
+                                "Component name",
+                                value=comp["comp"],
+                                key=comp_name_key,
+                                label_visibility="collapsed",
+                                placeholder="Component name"
+                            )
+                        with col_c2:
+                            st.button("✖", key=f"del_comp_{cid}", on_click=_remove_component, args=(gid, cid))
+                        for path in comp["paths"]:
+                            pid = path["pid"]
+                            pa, pb = st.columns([5, 1])
+                            with pa:
+                                st.caption(path["path"] or "—")
+                            with pb:
+                                st.button("✕", key=f"del_path_{pid}", on_click=_remove_path, args=(cid, pid), disabled=len(comp["paths"]) <= 1)
+                        st.button("➕ Add path", key=f"add_path_{cid}", on_click=_add_path_browse, args=(cid,))
+                        st.divider()
                     st.button("➕ Add component", key=f"add_comp_{gid}", on_click=_add_component, args=(gid,), use_container_width=True)
 
         # Add new group button
@@ -987,6 +1014,41 @@ def _add_path(cid: int):
         for comp in group["components"]:
             if comp["cid"] == cid:
                 comp["paths"].append({"pid": pid, "path": ""})
+    st.session_state["_next_pid"] = pid + 1
+
+
+def _add_path_browse(cid: int):
+    """Open folder picker and add the selected path; does nothing on cancel."""
+    import tkinter as tk
+    from tkinter import filedialog
+
+    _proj = st.session_state.get("project_path", "") or ""
+    _layers_raw = st.session_state.get("_layers_raw", {})
+    _selected_layer = st.session_state.get("_selected_layer", "")
+    _layer_path = _layers_raw.get(_selected_layer, {}).get("path", "")
+
+    base_path = Path(_proj) / _layer_path if _proj and _layer_path else (Path(_proj) if _proj else Path("."))
+    initial = str(base_path) if base_path.exists() else None
+
+    root = tk.Tk()
+    root.withdraw()
+    root.wm_attributes("-topmost", True)
+    chosen = filedialog.askdirectory(initialdir=initial)
+    root.destroy()
+
+    if not chosen:
+        return
+
+    try:
+        rel_str = str(Path(chosen).relative_to(base_path)).replace("\\", "/")
+    except ValueError:
+        rel_str = str(Path(chosen)).replace("\\", "/")
+
+    pid = st.session_state["_next_pid"]
+    for group in st.session_state["groups"]:
+        for comp in group["components"]:
+            if comp["cid"] == cid:
+                comp["paths"].append({"pid": pid, "path": rel_str})
     st.session_state["_next_pid"] = pid + 1
 
 
@@ -1416,8 +1478,8 @@ def main():
         if running:
             st.button("⏹  Stop", key="_stop_btn", on_click=_stop_pipeline, use_container_width=True)
         else:
-            st.button("▶  Run", key="_run_trigger", type="primary", on_click=lambda: _run_full(selected_group), use_container_width=True)
-            st.button("↑  Export DOCX", key="_export_trigger", type="secondary", on_click=lambda: _run_export(selected_group), use_container_width=True)
+            st.button("▶  Run", key="_run_trigger", type="primary", on_click=lambda: _run_full(selected_group, doc_type), use_container_width=True)
+            st.button("↑  Export DOCX", key="_export_trigger", type="secondary", on_click=lambda: _run_export(selected_group, doc_type), use_container_width=True)
 
         # ----- Output Downloads (compact list) -----
         docx_files = sorted((ROOT / "output").rglob("*.docx"), key=lambda p: p.stat().st_mtime, reverse=True) if (ROOT / "output").exists() else []
@@ -1668,8 +1730,12 @@ def main():
     st.button(f"{theme_icon}", key="_theme_toggle", on_click=_toggle_theme, help="Toggle Theme")
 
     # Auto-refresh when pipeline running
-    if _run_state()["running"]:
+    current_running = _run_state()["running"]
+    if current_running:
         time.sleep(0.5)
+        st.rerun()
+    elif running:
+        # Pipeline finished between render start and here — one final rerun to show completion
         st.rerun()
 
     if st.session_state.get("_init_done"):
