@@ -33,8 +33,8 @@ PHASE_VIEWS = 3     # Phase 3: Generate views           -> run_views.py / run_ad
 PHASE_EXPORT = 4    # Phase 4: Export to DOCX           -> docx_exporter.py / architecture_docx_exporter.py
 
 # Valid doc_type values for plan_runs().
-DOC_TYPE_SDD  = "sdd"
-DOC_TYPE_ADD  = "add"
+DOC_TYPE_SDDD = "sddd"
+DOC_TYPE_SAD  = "sad"
 DOC_TYPE_BOTH = "both"
 
 
@@ -86,12 +86,12 @@ def _add_doc_phases(*, output_dir: Optional[str] = None) -> List[Phase]:
     """Phases 3+4 for the Architecture Design Document (runs once, no group loop)."""
     p = paths()
     if output_dir is None:
-        output_dir = os.path.join(p.output_dir, "add")
+        output_dir = os.path.join(p.output_dir, "sad")
     docx_path = os.path.join(p.output_dir, "Software Architecture Design Specification.docx")
     return [
-        Phase("Phase 3: Generate ADD views", "run_add_views.py",
+        Phase("Phase 3: Generate SAD views", "run_add_views.py",
               ["--output-dir", output_dir]),
-        Phase("Phase 4: Export Architecture Design Document", "architecture_docx_exporter.py",
+        Phase("Phase 4: Export Software Architecture Design", "architecture_docx_exporter.py",
               [output_dir, docx_path]),
     ]
 
@@ -128,7 +128,7 @@ def plan_runs(
     no_llm_summarize: bool,
     from_phase: int = 1,
     filter_mode: Optional[str],
-    doc_type: str = DOC_TYPE_SDD,
+    doc_type: str = DOC_TYPE_SDDD,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -154,12 +154,12 @@ def plan_runs(
 
     plans: List[RunPlan] = []
 
-    generate_sdd = doc_type in (DOC_TYPE_SDD, DOC_TYPE_BOTH)
-    generate_add = doc_type in (DOC_TYPE_ADD, DOC_TYPE_BOTH)
+    generate_sddd = doc_type in (DOC_TYPE_SDDD, DOC_TYPE_BOTH)
+    generate_sad = doc_type in (DOC_TYPE_SAD, DOC_TYPE_BOTH)
 
-    # --selected-group only applies to SDD; flag it early when ADD-only.
-    if selected_group and not generate_sdd:
-        raise ValueError("--selected-group is only valid for SDD (doc-type sdd or both)")
+    # --selected-group only applies to SDDD; flag it early when SAD-only.
+    if selected_group and not generate_sddd:
+        raise ValueError("--selected-group is only valid for SDDD (doc-type sddd or both)")
 
     # Build layer -> [group] and group -> layer mappings
     from .config import layers_config
@@ -173,7 +173,7 @@ def plan_runs(
     # No layer: single flat run, all 4 phases (backward compat)
     # ------------------------------------------------------------------
     if not group_names:
-        if generate_sdd:
+        if generate_sddd:
             if use_model:
                 phases = _view_export_phases(filter_mode=filter_mode)
                 translated = max(1, from_phase - 2)
@@ -186,8 +186,8 @@ def plan_runs(
                 plans.append(RunPlan(label="single run",
                                      phases=phases,
                                      runner_from_phase=from_phase))
-        if generate_add:
-            if not use_model and not generate_sdd:
+        if generate_sad:
+            if not use_model and not generate_sddd:
                 build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize)
                 if from_phase <= 2:
                     plans.append(RunPlan(label="Build model (all modules)",
@@ -229,7 +229,7 @@ def plan_runs(
                                  phases=build_phases,
                                  runner_from_phase=from_phase))
 
-    if generate_sdd:
+    if generate_sddd:
         for g in target_groups:
             ln = group_to_layer.get(g)
             group_out = os.path.join(p.output_dir, g)
@@ -249,8 +249,8 @@ def plan_runs(
                                  phases=view_phases,
                                  runner_from_phase=local_from))
 
-    if generate_add:
-        # ADD builds model for ALL layers (not just target_layers)
+    if generate_sad:
+        # SAD builds model for ALL layers (not just target_layers)
         if not use_model and from_phase <= 2:
             all_layers = [ln for ln in layers_cfg if ln not in seen_layers]
             for ln in all_layers:

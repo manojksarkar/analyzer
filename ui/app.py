@@ -292,7 +292,7 @@ def _init():
     st.session_state.setdefault("llm_enr_cfg_simplify", bool(enrichment.get("cfgSimplification", False)))
     st.session_state.setdefault("llm_enr_var_enrich", bool(enrichment.get("variableEnrichment", True)))
     st.session_state.setdefault("llm_custom_headers", json.dumps(llm.get("customHeaders", {}) or {}, indent=2))
-    st.session_state.setdefault("_doc_type", "SDD")
+    st.session_state.setdefault("_doc_type", "SDDD")
     st.session_state["_init_done"] = True
 
 
@@ -456,32 +456,32 @@ def _stop_pipeline():
     st.toast("Pipeline stopped", icon="⏹")
 
 
-def _run_full(selected_group: str | None, doc_type: str = "SDD"):
+def _run_full(selected_group: str | None, doc_type: str = "SDDD"):
     project_path = (st.session_state.get("project_path") or "").strip()
     if not project_path or not Path(project_path).exists():
         st.error("Invalid project path", icon="❌")
         return
     _write_config()
     cmd = [sys.executable, str(ROOT / "run.py")]
-    if doc_type != "SDD":
+    if doc_type != "SDDD":
         cmd += ["--doc-type", doc_type.lower()]
-    if selected_group and doc_type in ("SDD", "Both"):
+    if selected_group and doc_type in ("SDDD", "Both"):
         cmd += ["--selected-group", selected_group]
     cmd.append(project_path)
     _start_pipeline(cmd, "full")
     st.toast(f"Pipeline started: {doc_type}", icon="▶")
 
 
-def _run_export(selected_group: str | None, doc_type: str = "SDD"):
+def _run_export(selected_group: str | None, doc_type: str = "SDDD"):
     project_path = (st.session_state.get("project_path") or "").strip()
     if not project_path or not Path(project_path).exists():
         st.error("Invalid project path", icon="❌")
         return
     _write_config()
     cmd = [sys.executable, str(ROOT / "run.py"), "--from-phase", "4", "--use-model"]
-    if doc_type != "SDD":
+    if doc_type != "SDDD":
         cmd += ["--doc-type", doc_type.lower()]
-    if selected_group and doc_type in ("SDD", "Both"):
+    if selected_group and doc_type in ("SDDD", "Both"):
         cmd += ["--selected-group", selected_group]
     cmd.append(project_path)
     _start_pipeline(cmd, "export")
@@ -1425,13 +1425,13 @@ def main():
             f'<div style="font-size:9px; font-weight:600; letter-spacing:1px; color:{colors["faint"]}; margin:10px 0 4px 0;">📄 DOC TYPE</div>',
             unsafe_allow_html=True,
         )
-        doc_type = st.radio("Doc type", ["SDD", "ADD", "Both"], key="_doc_type", horizontal=True, label_visibility="collapsed")
+        doc_type = st.radio("Doc type", ["SDDD", "SAD", "Both"], key="_doc_type", horizontal=True, label_visibility="collapsed")
 
         # ----- Group Selection (if applicable) -----
         group_names = [st.session_state.get(f"g{g['gid']}_name", g["name"]).strip() for g in st.session_state.get("groups", [])]
         group_names = [g for g in group_names if g]
         selected_group = None
-        if doc_type != "ADD":
+        if doc_type != "SAD":
             st.markdown(
                 f'<div style="font-size:9px; font-weight:600; letter-spacing:1px; color:{colors["faint"]}; margin:10px 0 4px 0;">🎯 GROUP</div>',
                 unsafe_allow_html=True,
@@ -1655,7 +1655,7 @@ def main():
 
         # Tab 2: Architecture
         with tab_arch:
-            add_dir = ROOT / "output" / "add" / "layer_static_diagrams"
+            add_dir = ROOT / "output" / "sad" / "layer_static_diagrams"
             layer_data_path = add_dir / "_layer_static_data.json"
             layer_data = _load_json(layer_data_path) if layer_data_path.exists() else {}
 
@@ -1663,7 +1663,7 @@ def main():
                 st.markdown(
                     f'<div style="height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:{colors["faint"]};">'
                     f'<div style="font-size:0.9rem;font-weight:600;">No architecture output yet</div>'
-                    f'<div style="font-size:0.78rem;">Select doc type <b>ADD</b> or <b>Both</b> and run the pipeline.</div>'
+                    f'<div style="font-size:0.78rem;">Select doc type <b>SAD</b> or <b>Both</b> and run the pipeline.</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
