@@ -27,7 +27,6 @@ def run(model, output_dir, model_dir, config):
     if beh_val is None or beh_val is False:
         log("skipped (views.behaviourDiagram not enabled)", component="behaviourDiagram")
         return
-    beh_cfg = beh_val if isinstance(beh_val, dict) else {}
 
     project_root = os.path.dirname(os.path.abspath(model_dir))
     out_dir = os.path.join(output_dir, "behaviour_diagrams")
@@ -45,9 +44,9 @@ def run(model, output_dir, model_dir, config):
     units_path = os.path.join(model_dir, "units.json")
     gen = SequenceDiagramGenerator(components_path, units_path, functions_path)
 
-    render_png = beh_cfg.get("renderPng", True)
+    render_png = True
     mmdc = mmdc_path(project_root)
-    puppeteer = beh_cfg.get("puppeteerConfigPath") or os.path.join(project_root, "config", "puppeteer-config.json")
+    puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):
         puppeteer = os.path.join(project_root, puppeteer)
     run_cmd_base = [mmdc, "--scale", "2"]

@@ -244,17 +244,10 @@ def _init():
     st.session_state["_gid_to_layer"] = gid_to_layer
 
     # View settings
-    ud = views.get("unitDiagrams", {})
-    fc = views.get("flowcharts", {})
-    bd = views.get("behaviourDiagram", {})
-    msd = views.get("componentStaticDiagram", {})
-    st.session_state.setdefault("v_unit_png", bool(ud.get("renderPng", True)))
-    st.session_state.setdefault("v_flow_png", bool(fc.get("renderPng", True)))
-    st.session_state.setdefault("v_flow_script", fc.get("scriptPath", "fake_flowchart_generator.py"))
-    st.session_state.setdefault("v_behav_png", bool(bd.get("renderPng", True)))
-    st.session_state.setdefault("v_msd_enabled", bool(msd.get("enabled", True)))
-    st.session_state.setdefault("v_msd_png", bool(msd.get("renderPng", True)))
-    st.session_state.setdefault("v_msd_width", float(msd.get("widthInches", 5.5)))
+    st.session_state.setdefault("v_unit", bool(views.get("unitDiagrams", True)))
+    st.session_state.setdefault("v_flow", bool(views.get("flowcharts", True)))
+    st.session_state.setdefault("v_behav", bool(views.get("behaviourDiagram", True)))
+    st.session_state.setdefault("v_msd", bool(views.get("componentStaticDiagram", True)))
     st.session_state.setdefault("export_docx_path", export.get("docxPath", "output/software_detailed_design_{group}.docx"))
     st.session_state.setdefault("export_font_size", int(export.get("docxFontSize", 8)))
 
@@ -343,17 +336,10 @@ def _write_config():
     # Views & Export
     cfg["views"] = {
         "interfaceTables": True,
-        "unitDiagrams": {"renderPng": st.session_state["v_unit_png"]},
-        "flowcharts": {
-            **( {"scriptPath": st.session_state["v_flow_script"]} if st.session_state.get("v_flow_script", "").strip() else {}),
-            "renderPng": st.session_state["v_flow_png"]
-        },
-        "behaviourDiagram": {"renderPng": st.session_state["v_behav_png"]},
-        "componentStaticDiagram": {
-            "enabled": st.session_state["v_msd_enabled"],
-            "renderPng": st.session_state["v_msd_png"],
-            "widthInches": st.session_state["v_msd_width"]
-        },
+        "unitDiagrams": st.session_state["v_unit"],
+        "flowcharts": st.session_state["v_flow"],
+        "behaviourDiagram": st.session_state["v_behav"],
+        "componentStaticDiagram": st.session_state["v_msd"],
     }
     cfg["export"] = {
         "docxPath": st.session_state.get("export_docx_path", "").strip() or "output/software_detailed_design_{group}.docx",
@@ -922,13 +908,10 @@ def _settings_dialog():
 
         elif nav == "Views & Export":
             d1, d2 = st.columns(2)
-            d1.toggle("Unit diagrams (PNG)", key="v_unit_png")
-            d1.toggle("Flowcharts (PNG)", key="v_flow_png")
-            d1.text_input("Flowchart script path", key="v_flow_script")
-            d2.toggle("Behaviour diagrams (PNG)", key="v_behav_png")
-            d2.toggle("Static component diagram", key="v_msd_enabled")
-            d2.toggle("Static diagram (PNG)", key="v_msd_png")
-            d2.number_input("Static diagram width (inches)", key="v_msd_width", min_value=1.0, max_value=20.0, step=0.5)
+            d1.toggle("Unit diagrams", key="v_unit")
+            d1.toggle("Flowcharts", key="v_flow")
+            d2.toggle("Behaviour diagrams", key="v_behav")
+            d2.toggle("Static component diagram", key="v_msd")
             st.divider()
             st.text_input("DOCX output pattern", key="export_docx_path")
             st.number_input("DOCX font size", key="export_font_size", min_value=6, max_value=16)

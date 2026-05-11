@@ -533,13 +533,7 @@ def _parse_component_static_diagram_cfg(views_cfg: dict, export_cfg: dict = None
         raw = export_cfg.get("componentStaticDiagram")
     if raw is None:
         raw = True
-    if isinstance(raw, dict):
-        return (
-            bool(raw.get("enabled", True)),
-            bool(raw.get("renderPng", True)),
-            float(raw.get("widthInches", 1)),
-        )
-    return bool(raw), True, 1
+    return bool(raw), True, 5.5
 
 
 def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bool:

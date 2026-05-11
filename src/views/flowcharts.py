@@ -42,7 +42,6 @@ def run(model, output_dir, model_dir, config):
     if val is None or val is False:
         # Not enabled
         return
-    fc_cfg = val if isinstance(val, dict) else {}
 
     # Be robust to callers passing relative output_dir/model_dir.
     output_dir_abs = os.path.abspath(output_dir)
@@ -78,7 +77,7 @@ def run(model, output_dir, model_dir, config):
     if not isinstance(clang_args, list):
         clang_args = [clang_args] if clang_args else []
 
-    script = _resolve_script(project_root, fc_cfg.get("scriptPath"))
+    script = _resolve_script(project_root, "fake_flowchart_generator.py")
     if not os.path.isfile(script):
         log("generator not found: %s" % script, component="flowcharts", err=True)
         return
@@ -164,9 +163,7 @@ def run(model, output_dir, model_dir, config):
         log("generator exited with code %s" % r.returncode, component="flowcharts", err=True)
         return
 
-    # Render flowcharts to PNG when renderPng is true
-    if not fc_cfg.get("renderPng", False):
-        return
+    # Always render flowcharts to PNG
 
     mmdc = mmdc_path(project_root)
     if not os.path.isfile(mmdc):
