@@ -1,4 +1,4 @@
-"""ADD view: Layer Static Diagram.
+"""SAD view: Layer Static Diagram.
 
 For each layer in the `layers` config block, generates an SVG showing:
   - Group label boxes  (light orange)
