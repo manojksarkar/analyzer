@@ -29,7 +29,7 @@ const fs = require('fs');
     const browser = await puppeteer.launch({args:['--no-sandbox','--disable-setuid-sandbox']});
     const page = await browser.newPage();
     await page.setViewport({width:w+1,height:h+1,deviceScaleFactor:2});
-    await page.setContent(html,{waitUntil:'networkidle0'});
+    await page.setContent(html,{waitUntil:'load'});
     await page.screenshot({path:process.argv[3],clip:{x:0,y:0,width:w,height:h}});
     await browser.close();
 })();
@@ -47,7 +47,7 @@ def _svg_to_png(svg_path: str) -> str | None:
             f.write(_NODE_RENDER)
         cmd = ["node", tmp, svg_path, png_path]
         r = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60,
+            cmd, capture_output=True, text=True, timeout=180,
             shell=(os_type == "Windows"), check=False,
             cwd=PROJECT_ROOT,
         )

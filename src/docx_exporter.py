@@ -552,11 +552,19 @@ def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bo
         cmd.extend(["-p", puppeteer])
     try:
         if os_type == "Windows":
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False, shell=True)    
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False, shell=True)
         else:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
-        return r.returncode == 0 and os.path.isfile(png_path)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+        if r.returncode == 0 and os.path.isfile(png_path):
+            return True
+        err = (r.stderr or r.stdout or f"exit {r.returncode}").strip()
+        print(f"[docx_exporter] warning: mmdc failed for {os.path.basename(png_path)}: {err[:120]}")
+        return False
+    except FileNotFoundError:
+        print(f"[docx_exporter] warning: mmdc not found — {mmdc}")
+        return False
+    except subprocess.TimeoutExpired:
+        print(f"[docx_exporter] warning: mmdc timed out for {os.path.basename(png_path)}")
         return False
 
 def _add_flowchart_table(doc, func_name: str, description: str, input_name: str,
@@ -1081,12 +1089,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 artifacts_dir, "component_container_diagrams", f"{safe_filename(component_name)}.png"
             )
             if msd_render_png:
-                if _render_mermaid_to_png(PROJECT_ROOT, container_mmd, container_png) and os.path.isfile(container_png):
-                    try:
-                        doc.add_picture(container_png, width=Inches(6))
-                    except Exception:
-                        _add_mermaid_as_text(doc, container_mmd, font_small)
-                else:
+                _render_mermaid_to_png(PROJECT_ROOT, container_mmd, container_png)
+            if os.path.isfile(container_png):
+                try:
+                    doc.add_picture(container_png, width=Inches(6))
+                except Exception:
                     _add_mermaid_as_text(doc, container_mmd, font_small)
             else:
                 _add_mermaid_as_text(doc, container_mmd, font_small)
@@ -1098,12 +1105,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 artifacts_dir, "component_header_dependency_diagrams", f"{safe_filename(component_name)}.png"
             )
             if msd_render_png:
-                if _render_mermaid_to_png(PROJECT_ROOT, dep_mmd, dep_png) and os.path.isfile(dep_png):
-                    try:
-                        doc.add_picture(dep_png, width=Inches(6))
-                    except Exception:
-                        _add_mermaid_as_text(doc, dep_mmd, font_small)
-                else:
+                _render_mermaid_to_png(PROJECT_ROOT, dep_mmd, dep_png)
+            if os.path.isfile(dep_png):
+                try:
+                    doc.add_picture(dep_png, width=Inches(6))
+                except Exception:
                     _add_mermaid_as_text(doc, dep_mmd, font_small)
             else:
                 _add_mermaid_as_text(doc, dep_mmd, font_small)
