@@ -1,14 +1,15 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-05 (feat/unit-diagram — header dependency diagram replaces module static structure diagram; container diagram added; includedHeaders in units.json).
-> Current active branch: `version3` (off `version2`, which is off `main`).
+> Updated: 2026-05-04 (feat/test-framework — direction logic fixes, lambda propagation, test overhaul, no-LLM cleanup on behaviour diagram + flowchart tests, DESIGN_SPEC fully rewritten: all rules are output/DOCX-focused with no code logic — REQ-DS-XX, REQ-IT-XX, REQ-UD-XX, REQ-BD-XX, REQ-FC-XX, REQ-CO-XX; TEST_INVENTORY rule coverage tables updated to match).
+> Current active branch: `feat/test-framework` (off `version3`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
 > Quick orientation:
 > - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
 > - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
-> - All pre-existing sections have been updated in place where version3 changed the behaviour.
+> - §4c covers the feat/test-framework changes (test overhaul, LIBCLANG_PATH, llm.summarize).
+> - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
 
@@ -241,6 +242,47 @@ stderr choked on the Unicode characters.
 
 ---
 
+## 4c. Test-framework branch (`feat/test-framework`)
+
+Three categories of change landed on this branch on top of `version3`:
+
+### 1. `LIBCLANG_PATH` auto-wiring
+
+`run.py` now reads `clang.llvmLibPath` from the loaded config and, if the
+file exists, exports it as `os.environ["LIBCLANG_PATH"]` before launching any
+subprocess. `src/flowchart/flowchart_engine.py` picks it up at import time:
+
+```python
+_libclang = os.environ.get("LIBCLANG_PATH", "")
+if _libclang:
+    import clang.cindex as _ci; _ci.Config.set_library_file(_libclang)
+```
+
+This means `clang.llvmLibPath` no longer needs to be set only for
+`parser.py` — it propagates to the flowchart engine subprocess too, without
+any CLI flag change.
+
+### 2. `llm.summarize` config flag
+
+`run.py` now respects a new optional `llm.summarize` boolean in
+`config.json`. When `false`, it sets `no_llm_summarize = True` before calling
+`plan_runs`, suppressing Phase 2 hierarchy summarization. This mirrors what
+`--no-llm-summarize` does on the CLI, but can be committed in `config.local.json`
+for a permanent local preference.
+
+### 3. Unit-test suite overhaul
+
+| File | What changed |
+|---|---|
+| `tests/unit/test_llm_client.py` | Fully rewritten to test `llm_core.client.LlmClient` + `from_config` (was testing legacy `llm_client` module). Covers constructor validation, `generate()` / `call()`, retry logic, `from_config` builder. |
+| `tests/unit/test_behaviour_diagram_generator.py` | Switched from `fake_behaviour_diagram_generator.FakeBehaviourGenerator` to the real `behaviour_diagram_generator.SequenceDiagramGenerator` (alias kept as `FakeBehaviourGenerator`). Patch target updated to `behaviour_diagram_generator.llm_client`. No-LLM pass: module docstring now lists which classes need no LLM (ExternalCallerFiltering, FileNaming, MmdContent) vs which are xfail (LlmContract); repeated `functions` dict extracted into `_ONE_EXTERNAL_CALLER` module-level constant; stale fence-strip comment removed from `TestMmdContent`. |
+| `tests/unit/test_utils.py` | `_strip_json_comments` / `_strip_trailing_commas` now imported from `core.config`, not from `utils`. |
+| `src/flowchart/tests/test_cfg_topo.py` | Added `src/` to `sys.path` so `ast_engine.*` imports resolve when running from the project root. |
+| `tests/conftest.py` | Logs the full pipeline command string before executing it (aids debugging failed CI runs). |
+| `tests/unit/test_unit_diagrams_view.py` | Expanded with 10 new tests covering: subgraph module label, `mainUnit`/`internal` CSS classes, incoming caller edges, multi-iface edge joining, external caller/callee layout (before-subgraph / after-end), combined escape sequences, `_fid_to_unit` with missing key. Snapshot `tests/snapshots/Sample/unit_diagrams.json` refreshed to match current output. |
+
+---
+
 ## 5. CLI — `run.py`
 
 ### Syntax
@@ -255,7 +297,7 @@ python run.py [options] <project_path>
 |---|---|
 | `--clean` | Delete `model/` and `output/` before starting |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
-| `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default** |
+| `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
 | `--selected-group <name>` | Export only the named group from `config.modulesGroups`. Case-insensitive |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
@@ -339,7 +381,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     // ── required fields — load_llm_config raises LlmConfigError if missing ──
     "provider":          "ollama",        // "ollama" | "openai"  (strictly validated)
     "baseUrl":           "http://localhost:11434",
-    "defaultModel":      "qwen2.5-coder:14b",
+    "defaultModel":      "llama3.2",          // currently set to llama3.2 in config.json
     "timeoutSeconds":    120,              // positive int
     "numCtx":            8192,             // Ollama context window (positive int)
     "retries":           1,                // >=0; up to (1+retries) total tries
@@ -347,6 +389,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     // ── optional fields ──
     "descriptions":      false,            // enable LLM function descriptions (Phase 2)
     "behaviourNames":    false,            // enable LLM behaviour input/output names
+    "summarize":         true,             // false = suppress Phase 2 hierarchy summarization (same as --no-llm-summarize)
     "abbreviationsPath": "config/abbreviations.txt",
     "apiKey":            "",               // openai bearer; prefer env LLM_API_KEY
     "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
@@ -825,6 +868,11 @@ configured folder prefixes (case-insensitive after `os.path.normcase`).
    - Compound op (`+=`, `-=`, …) → both reads and writes
    - `++` / `--` → writes
    - Otherwise → reads
+   Uses its own `_visited_global_access_keys` set (separate from `visit_calls`)
+   so function bodies are not skipped. When a nested `FUNCTION_DECL` or
+   `CXX_METHOD` (e.g. a lambda) is encountered inside an outer function, its
+   children are visited under the inner key and any writes are propagated back
+   to the outer function's `global_access_writes`.
    Also captures the first `RETURN_STMT` token sequence as `returnExpr`.
 
 ### Function collection (`visit_definitions`)
@@ -862,10 +910,10 @@ backslash continuation. Stores `name`, `value`, full macro text, and
 
 ### Direction assignment (`build_metadata`)
 
-Based purely on **direct** global access:
-- writes only → `direction = "In"` (setter)
-- reads only → `direction = "Out"` (getter)
-- both / neither → `direction = "In"`
+Based on direct global access recorded by `visit_global_access`:
+- writes any global (including via nested lambda) → `direction = "In"`
+- reads globals, writes none → `direction = "Out"`
+- no global access → `direction = "Out"` (pure function)
 
 Phase 2 forces every function's direction to `"In"` or `"Out"` (never empty)
 and every global to `"In/Out"`.
@@ -1082,26 +1130,31 @@ The four view modules are imported at the bottom of `__init__.py` so their
 ### View 1: `interfaceTables` — [src/views/interface_tables.py](src/views/interface_tables.py)
 
 Output: `output/interface_tables.json` (or `output/<group>/interface_tables.json`).
+Full logic and column definitions: `docs/DESIGN_SPEC.md` — Interface Tables.
 
-- Iterates `.cpp` units only.
+- Iterates `.cpp` units only; header-only units skipped.
 - Filters by `_analyzerAllowedModules` if set.
-- Excludes `private` functions and globals.
-- For each function: builds caller/callee unit references and tags them
-  internal vs external. Internal = same module (or within `allowed_modules`
-  when a group is selected); external is rendered as `module/unit`.
+- Includes `PUBLIC` and `PROTECTED` functions and globals; excludes `PRIVATE`.
+- Entries sorted by source line number within each unit.
+- For each function: builds `callerUnits` / `calleesUnits` (all units including
+  same-module), and `sourceDest` (external units only; `"-"` if none).
 - Enriches parameters with `range` from the data dictionary via `get_range()`.
 - Strips file extensions from `location.file`.
+- Columns: Interface ID, Interface Name, Information, Data Type, Data Range,
+  Direction (In/Out), Source/Destination, Interface Type.
 
 ### View 2: `unitDiagrams` — [src/views/unit_diagrams.py](src/views/unit_diagrams.py)
 
 One Mermaid `.mmd` (and optionally `.png`) per unit into
 `output/unit_diagrams/`.
+Full logic and layout rules: `docs/DESIGN_SPEC.md` — Unit Diagrams (REQ-UD-XX).
 
 - `.cpp` units only; filtered by `allowed_modules` when set.
 - Layout: external callers on the left, **yellow** module box in the centre,
   external callees on the right, all flowing left-to-right.
-- The main unit is **blue with a thick border**; sibling units are blue thin.
-- Edges labelled with `interfaceId` values, BR-separated for multi-edge.
+- The main unit is **blue with a thick border** (`mainUnit` class); sibling units in the module subgraph are blue thin (`internal` class).
+- Edges labelled with `interfaceId` values, `<br/>`-separated for multi-edge.
+- Self-calls (callee in the same unit) produce no edge.
 - Project root resolved from `dirname(model_dir)` (NOT `output_dir`) so
   grouped output paths work.
 - PNG rendered by `mmdc` (mermaid-cli). 60s timeout per diagram.
@@ -1276,6 +1329,14 @@ src/flowchart/
 10. **Validation** — `validate_cfg(cfg)` then `validate_mermaid(script)`.
     Failures are logged at WARNING but don't abort the run.
 11. **Build Mermaid** — `build_mermaid(cfg)`.
+
+### `LIBCLANG_PATH` env var (feat/test-framework)
+
+At import time, `flowchart_engine.py` checks `os.environ["LIBCLANG_PATH"]`.
+If set (and the path is a file), it calls
+`clang.cindex.Config.set_library_file(path)` before any libclang call.
+`run.py` sets this env var from `clang.llvmLibPath` in config so the value
+propagates automatically into the flowchart engine subprocess.
 
 ### LLM client construction + banner + enrichment config (version3)
 
@@ -1508,6 +1569,12 @@ test_cpp_project/
 (`app` + `math`), `support` (`outer/inner`), and `tests` (split into
 `tests_a` and `tests_b`).
 
+### Key docs
+
+- `docs/DESIGN_SPEC.md` — view logic requirements with verification criteria (REQ-IT-XX for Interface Tables, REQ-UD-XX for Unit Diagrams). Update first before changing any view logic.
+- `docs/TEST_INVENTORY.md` — maps every DESIGN_SPEC requirement to its test case. Update after adding/changing tests.
+- `.coveragerc` — `parallel = false` (removed); single `.coverage` file written per run.
+
 ### Quick run commands
 
 ```bash
@@ -1664,6 +1731,20 @@ are OFF. Users opt into cost by flipping the flag.
 
 ## 18. Past mistakes / lessons learned
 
+### `visit_global_access` used wrong visited-set (fixed)
+
+`visit_global_access` was checking `_visited_call_keys` (shared with `visit_calls`)
+instead of its own `_visited_global_access_keys`. Since `visit_calls` runs first and
+adds every function, `visit_global_access` skipped every function body — no global
+reads were ever recorded, so every function defaulted to `"In"`. Fixed by using
+`_visited_global_access_keys` (which already existed but was never used).
+
+### Direction default was wrong (fixed)
+
+Functions with no global access were assigned `"In"` (the `else` branch fallback).
+The correct value is `"Out"` — a pure function that touches no globals provides a
+result without side effects. Fixed by making the `else` branch return `"Out"`.
+
 ### Shell on this machine
 
 Native shell is `bash` (Git Bash) on Windows 11; `&&` chaining works there
@@ -1774,7 +1855,9 @@ python run.py --selected-group core test_cpp_project
 2. **Argv loop** — parses flags. Sets `selected_group_arg = "core"`,
    `from_phase = 1`, `use_model = False`, `no_llm_summarize = False`.
 3. **`load_config(SCRIPT_DIR)`** (re-exported from `core.config`) — reads
-   JSONC, merges `config.local.json` if present.
+   JSONC, merges `config.local.json` if present. Sets `LIBCLANG_PATH` env var
+   from `clang.llvmLibPath` if the file exists (propagates to all subprocesses).
+   If `llm.summarize` is `false` in config, forces `no_llm_summarize = True`.
 3a. **`load_llm_config(cfg)` + banner** — strictly validates the `llm` block
    (required: `provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`,
    `retries`; type-checked enrichment toggles; env-var overrides). Renders

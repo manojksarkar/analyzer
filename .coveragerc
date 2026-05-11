@@ -1,0 +1,15 @@
+[run]
+branch = true
+source =
+    src
+    fake_flowchart_generator
+    fake_behaviour_diagram_generator
+    run
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    def main\(\)
+    raise SystemExit
+    raise NotImplementedError
