@@ -14,7 +14,7 @@ import json
 import os
 
 from .registry import register
-from utils import log, KEY_SEP
+from utils import get_range, log, short_name, KEY_SEP
 from core.config import layers_config
 from core.model_io import layer_model_dir
 
@@ -191,6 +191,88 @@ def _units_for_component(comp_name: str, units_data: dict) -> list:
     ]
 
 
+# ── interface builder ─────────────────────────────────────────────────────────
+
+def _build_interfaces_for_component(comp_name, group_name, layer_name,
+                                     units_data, layer_functions, global_vars, dd,
+                                     comp_to_group):
+    """Return list of interface dicts for one component (functions + globals)."""
+    entries = []
+    idx = 1
+
+    # Functions whose key starts with comp_name (same filter as _build_call_graph)
+    for fid, f in sorted(layer_functions.items(),
+                          key=lambda kv: kv[1].get("location", {}).get("line", 0)):
+        segs = fid.split(KEY_SEP)
+        if len(segs) < 2 or segs[0] != comp_name:
+            continue
+        if (f.get("visibility") or "").lower() == "private":
+            continue
+
+        iface_id = f"{''.join(layer_name.split())}_{(''.join(group_name.split()))}_IF_{idx:02d}".upper()
+        idx += 1
+
+        qn = f.get("qualifiedName", "")
+        name = short_name(qn) if qn else f.get("name", "")
+
+        params = [
+            {"type": p.get("type", ""), "name": p.get("name", ""),
+             "range": get_range(p.get("type", ""), dd)}
+            for p in f.get("parameters", [])
+        ]
+
+        interacting_groups = set()
+        for cid in (f.get("calledByIds") or []) + (f.get("callsIds") or []):
+            csegs = cid.split(KEY_SEP)
+            if csegs:
+                grp = comp_to_group.get(csegs[0])
+                if grp:
+                    interacting_groups.add(grp)
+        src_dest = ", ".join(sorted(interacting_groups)) if interacting_groups else "-"
+
+        entries.append({
+            "interfaceId": iface_id,
+            "interfaceName": name,
+            "description": f.get("description", "") or "-",
+            "type": "Function",
+            "parameters": params,
+            "direction": f.get("direction") or "In",
+            "sourceDest": src_dest,
+        })
+
+    # Globals via units belonging to this component
+    seen_vids: set = set()
+    for unit_key, unit_info in units_data.items():
+        if unit_key.split(KEY_SEP, 1)[0] != comp_name:
+            continue
+        for vid in unit_info.get("globalVariableIds", []):
+            if vid in seen_vids or vid not in global_vars:
+                continue
+            seen_vids.add(vid)
+            g = global_vars[vid]
+            if (g.get("visibility") or "").lower() == "private":
+                continue
+
+            iface_id = f"{''.join(layer_name.split())}_{(''.join(group_name.split()))}_IF_{idx:02d}".upper()
+            idx += 1
+
+            qn = g.get("qualifiedName", "")
+            name = short_name(qn) if qn else g.get("name", "")
+
+            entries.append({
+                "interfaceId": iface_id,
+                "interfaceName": name,
+                "description": g.get("description", "") or "-",
+                "type": "Global Variable",
+                "variableType": g.get("type", ""),
+                "range": get_range(g.get("type", ""), dd),
+                "direction": g.get("direction") or "In/Out",
+                "sourceDest": group_name,
+            })
+
+    return entries
+
+
 # ── view entry point ──────────────────────────────────────────────────────────
 
 @register("componentDesignDiagram")
@@ -216,7 +298,8 @@ def run(model, output_dir, model_dir, config):
         if not layer_comp_names:
             continue
 
-        func_path = os.path.join(layer_model_dir(layer_name), "functions.json")
+        lmd = layer_model_dir(layer_name)
+        func_path = os.path.join(lmd, "functions.json")
         if not os.path.isfile(func_path):
             log(f"{layer_name}: functions.json not found, skipping",
                 component="componentDesignDiagram")
@@ -225,10 +308,28 @@ def run(model, output_dir, model_dir, config):
         with open(func_path, "r", encoding="utf-8") as f:
             layer_functions = json.load(f)
 
+        global_vars = {}
+        gv_path = os.path.join(lmd, "globalVariables.json")
+        if os.path.isfile(gv_path):
+            with open(gv_path, "r", encoding="utf-8") as f:
+                global_vars = json.load(f)
+
+        dd = {}
+        dd_path = os.path.join(lmd, "dataDictionary.json")
+        if os.path.isfile(dd_path):
+            with open(dd_path, "r", encoding="utf-8") as f:
+                dd = json.load(f)
+
+        # comp_name → group_name reverse map for Source/Destination
+        comp_to_group = {}
+        for grp_name, comps_in_grp in groups_cfg.items():
+            for c in comps_in_grp:
+                comp_to_group[c] = grp_name
+
         callers_of, callees_of = _build_call_graph(layer_comp_names, layer_functions)
 
         layer_summary = {}
-        for comps_cfg in groups_cfg.values():
+        for grp_name, comps_cfg in groups_cfg.items():
             for comp_name in comps_cfg:
                 unit_names = _units_for_component(comp_name, units_data)
                 if not unit_names:
@@ -244,9 +345,14 @@ def run(model, output_dir, model_dir, config):
                 with open(svg_path, "w", encoding="utf-8") as f:
                     f.write(svg)
 
-                layer_summary[comp_name] = {"svgPath": svg_path}
+                interfaces = _build_interfaces_for_component(
+                    comp_name, grp_name, layer_name,
+                    units_data, layer_functions, global_vars, dd, comp_to_group,
+                )
+
+                layer_summary[comp_name] = {"svgPath": svg_path, "interfaces": interfaces}
                 log(f"{layer_name}/{comp_name}: {len(callers)} caller(s), "
-                    f"{len(callees)} callee(s)",
+                    f"{len(callees)} callee(s), {len(interfaces)} interface(s)",
                     component="componentDesignDiagram")
 
         summary[layer_name] = layer_summary
