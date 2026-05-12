@@ -1,7 +1,7 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-12 (feat/architecture-design — ADD pipeline: per-layer model dirs, Architecture Design Document export, layer static SVG/PNG diagrams; Component Information table with merged group cells and LLM descriptions; V3 Streamlit UI redesign: sidebar reorder, inline component detail panel with visibility filter, config.local.json removed, flowchart PNG path fix, output sorted by mtime; architecture_docx_exporter Component Group cell fix; docx_exporter flowcharts_render_png removal).
-> Current active branch: `feat/architecture-design` (off `feat/test-framework`).
+> Updated: 2026-05-12 (feat/component-design — SAD 3.N.3 Component Design: new componentDesignDiagram view in src/sad_views/, per-component SVG showing same-layer callers/callees with ⇨ arrows, stacked unit boxes; architecture_docx_exporter gains section 3.N.3 with one subsection per component. Also corrects context: views live in src/sad_views/ (not add_views/), output goes to output/sad/ (not output/add/), runner is run_sad_views.py).
+> Current active branch: `feat/component-design` (off `feat/architecture-design`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
@@ -9,7 +9,8 @@
 > - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
 > - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
 > - §4c covers the feat/test-framework changes (test overhaul, LIBCLANG_PATH, llm.summarize).
-> - §4d covers the feat/architecture-design ADD pipeline (per-layer model dirs, ADD views, architecture_docx_exporter).
+> - §4d covers the feat/architecture-design ADD pipeline (per-layer model dirs, SAD views, architecture_docx_exporter).
+> - §4e covers the feat/component-design SAD 3.N.3 Component Design view.
 > - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
@@ -341,18 +342,19 @@ when `--layer LayerN` is present on `sys.argv`:
 | `model_deriver.py` | `--layer` arg present → `layer_model_dir(layer_name)` |
 | `run_views.py` | `--layer` arg present → `set_model_dir(layer_model_dir(…))` |
 | `docx_exporter.py` | `--layer` arg present → `set_model_dir(layer_model_dir(…))` |
-| `run_add_views.py` | uses `load_merged_model()` — reads from ALL layer dirs |
+| `run_sad_views.py` | uses `load_merged_model()` — reads from ALL layer dirs |
 
-### ADD views — `src/add_views/`
+### SAD views — `src/sad_views/`
 
 ```
-src/add_views/
-  __init__.py             registry + run_add_views() dispatcher
-  registry.py             @register("viewName") decorator
-  layer_static_diagram.py layerStaticDiagram view (SVG + PNG per layer)
+src/sad_views/
+  __init__.py                registry + run_sad_views() dispatcher
+  registry.py                @register("viewName") decorator
+  layer_static_diagram.py    layerStaticDiagram view (SVG per layer)
+  component_design_diagram.py componentDesignDiagram view (SVG per component)
 ```
 
-**`layerStaticDiagram`** view ([src/add_views/layer_static_diagram.py](src/add_views/layer_static_diagram.py)):
+**`layerStaticDiagram`** view ([src/sad_views/layer_static_diagram.py](src/sad_views/layer_static_diagram.py)):
 
 For each layer in `config.layers`, generates an SVG showing the layer's structural
 hierarchy: groups → components → units, laid out as **three separate flat rows** (no nesting):
@@ -378,15 +380,43 @@ Component descriptions are loaded from each layer's `model/LayerN/knowledge_base
 (`component_summaries` dict, keyed by `"LayerN/relative/comp/path"`). They are stored
 in `_layer_static_data.json` and appear in the Component Information table in the DOCX.
 
-Outputs written to `output/add/layer_static_diagrams/`:
+Outputs written to `output/sad/layer_static_diagrams/`:
 - `<LayerN>_static.svg` — raw SVG
 - `<LayerN>_static.png` — Puppeteer-rendered PNG
 - `_layer_static_data.json` — summary of all layers; per-component data is
   `{comp: {"units": [...], "description": "..."}}`
 
-### ADD exporter — `src/architecture_docx_exporter.py`
+**`componentDesignDiagram`** view ([src/sad_views/component_design_diagram.py](src/sad_views/component_design_diagram.py)):
 
-Entry: `python src/architecture_docx_exporter.py <output_add_dir> <docx_path>`
+For each component in each layer, generates an SVG showing:
+
+```
+[CallerA]  ⇨  ┌─────────── CompName ───────────┐  ⇨  [CalleeA]
+[CallerB]  ⇨  │  ┌────────────────────────────┐ │  ⇨  [CalleeB]
+              │  │          Unit1             │ │
+              │  └────────────────────────────┘ │
+              │  ┌────────────────────────────┐ │
+              │  │          Unit2             │ │
+              │  └────────────────────────────┘ │
+              └────────────────────────────────┘
+```
+
+- Left column: same-layer components whose functions call into this component (callers)
+- Centre: outer box with component name inside at top; unit boxes stacked vertically inside
+- Right column: same-layer components this component's functions call (callees)
+- Arrows: `⇨` Unicode character, `textLength` stretched to span exactly from one box
+  border to the other — no SVG marker/line
+- All boxes: white fill, `#333333` stroke, 1px — no color
+- Call graph derived from `functions.json` `callsIds` per layer; cross-component edges
+  only (same component calls filtered out); cross-layer calls excluded
+
+Outputs written to `output/sad/layer_static_diagrams/`:
+- `<LayerN>_<CompName>_design.svg` — one per component
+- `_component_design_data.json` — `{layer: {comp: {svgPath: ...}}}`
+
+### SAD exporter — `src/architecture_docx_exporter.py`
+
+Entry: `python src/architecture_docx_exporter.py <output_sad_dir> <docx_path>`
 
 Builds `Software Architecture Design Specification.docx` with:
 - Heading 1: "Software Architecture Design Specification"
@@ -403,9 +433,15 @@ Builds `Software Architecture Design Specification.docx` with:
           center-aligned via `w:vAlign`
         - Description is populated from `_layer_static_data.json` (`component.description`)
         - Development Type is always `"New"` for now; Note column is empty
+    - Section 3.N.3: Component Design (emitted only if `_component_design_data.json` exists)
+      - Section 3.N.3.y: `<ComponentName>` (heading level 4, one per component in config order)
+        - Embeds component design PNG (SVG converted via `_svg_to_png` at export time)
+      - Section 3.N.2 is reserved for a future view; gap is intentional
 
 SVG→PNG conversion uses an inline Puppeteer Node.js script written to `PROJECT_ROOT`
 and run with `cwd=PROJECT_ROOT` so `node_modules/puppeteer` is resolvable.
+SVGs are written in Phase 3 (the view); PNG conversion happens in Phase 4 (the exporter)
+at the point of embedding — consistent with the `layerStaticDiagram` pattern.
 
 ### Config additions
 
@@ -435,6 +471,41 @@ and run with `cwd=PROJECT_ROOT` so `node_modules/puppeteer` is resolvable.
 
 `layers_config()` (in `core.config`) returns the `layers` block. `get_flat_groups(cfg)`
 flattens all layers' groups into one dict for the SDD planner.
+
+---
+
+## 4e. Component Design view (`feat/component-design`)
+
+Adds SAD section 3.N.3 — one subsection per component per layer.
+
+### New file: `src/sad_views/component_design_diagram.py`
+
+Registered as `componentDesignDiagram` in the SAD view registry. Enabled by default
+(no explicit `false` in `config.architectureDoc.views`). To disable:
+```jsonc
+"architectureDoc": { "views": { "componentDesignDiagram": false } }
+```
+
+**Call graph derivation**: reads `model/LayerN/functions.json` directly (via
+`layer_model_dir(layer_name)`) for each layer. For every function, inspects `callsIds`.
+If the first `|`-segment of the callee ID differs from the caller's component and both
+components belong to the same layer's config groups, an edge is recorded. Result:
+`callers_of[C]` and `callees_of[C]` sets per component.
+
+**SVG layout**: all peer (caller/callee) boxes use the maximum width of their column so
+all `⇨` arrows have the same `textLength = _ARROW_W = 60`. Panels are vertically
+centred relative to each other within `content_h = max(left_h, centre_h, right_h)`.
+
+**Key constants** (in `component_design_diagram.py`):
+
+| Constant | Value | Purpose |
+|---|---|---|
+| `_ARROW_W` | 60 | Gap between peer col and centre box = ⇨ textLength |
+| `_PEER_BOX_H` | 30 | Height of caller/callee boxes |
+| `_PEER_BOX_GAP` | 10 | Vertical gap between stacked peer boxes |
+| `_NAME_AREA_H` | 28 | Height reserved for component name at top of outer box |
+| `_UNIT_H` | 26 | Height of each unit box |
+| `_UNIT_GAP` | 4 | Vertical gap between stacked unit boxes |
 
 ---
 
