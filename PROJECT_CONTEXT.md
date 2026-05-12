@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-09 (feat/architecture-design — ADD pipeline: per-layer model dirs, Architecture Design Document export, layer static SVG/PNG diagrams; Component Information table with merged group cells and LLM descriptions; V3 Streamlit UI redesign: sidebar reorder, inline component detail panel with visibility filter, config.local.json removed, flowchart PNG path fix, output sorted by mtime).
+> Updated: 2026-05-12 (feat/architecture-design — ADD pipeline: per-layer model dirs, Architecture Design Document export, layer static SVG/PNG diagrams; Component Information table with merged group cells and LLM descriptions; V3 Streamlit UI redesign: sidebar reorder, inline component detail panel with visibility filter, config.local.json removed, flowchart PNG path fix, output sorted by mtime; architecture_docx_exporter Component Group cell fix; docx_exporter flowcharts_render_png removal).
 > Current active branch: `feat/architecture-design` (off `feat/test-framework`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -397,8 +397,10 @@ Builds `Software Architecture Design Specification.docx` with:
       - Embeds the layer PNG (Puppeteer-rendered from SVG)
       - Horizontal rule + "Component Information" heading (level 4)
       - 5-column table: **Component Group | Component | Description | Development Type | Note**
-        - Component Group cells are **vertically merged** (python-docx `.merge()`) when a
-          group contains more than one component; merged cells are center-aligned via `w:vAlign`
+        - Component Group column: group name written **only on the first row** (`i == 0`)
+          of each group; subsequent rows get `""`. Rows are then **vertically merged**
+          (python-docx `.merge()`) when a group has >1 component; merged cells are
+          center-aligned via `w:vAlign`
         - Description is populated from `_layer_static_data.json` (`component.description`)
         - Development Type is always `"New"` for now; Note column is empty
 
@@ -530,10 +532,10 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 {
   "views": {
     "interfaceTables": true,
-    "unitDiagrams":     { "renderPng": true },
-    "flowcharts":       { "scriptPath": "src/flowchart/flowchart_engine.py", "renderPng": true },
-    "behaviourDiagram": { "renderPng": true },
-    "componentStaticDiagram": { "enabled": true, "renderPng": true, "widthInches": 5.5 }
+    "unitDiagrams":    true,
+    "flowcharts":      true,   // bool — PNG rendering is always attempted when true
+    "behaviourDiagram": true,
+    "componentStaticDiagram": true
   },
   "clang": {
     "llvmLibPath":       "C:\\Program Files\\LLVM\\bin\\libclang.dll",
@@ -1415,9 +1417,10 @@ Wraps the **real flowchart engine** under `src/flowchart/`. Steps:
        [--clang-arg=... ]+
    ```
 5. Runs the subprocess with `cwd=project_root`. Logs full argv on launch.
-6. When `renderPng: true`, walks every per-unit JSON in `out_dir`, writes a
-   temp `.mmd` per `(unit, function)`, calls `mmdc` (with puppeteer config if
-   present), captures the PNG to `<unit>_<func>.png`, deletes the temp file.
+6. **Always** walks every per-unit JSON in `out_dir`, writes a temp `.mmd` per
+   `(unit, function)`, calls `mmdc` (with puppeteer config if present), captures
+   the PNG to `<unit>_<func>.png`, deletes the temp file. The old `renderPng`
+   sub-key was removed; PNG rendering is unconditional when `views.flowcharts: true`.
    Progress is reported via `core.progress.ProgressReporter`.
 
 ---
