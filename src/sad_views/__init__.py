@@ -16,3 +16,4 @@ def run_sad_views(model, output_dir, model_dir, config):
 
 
 from . import layer_static_diagram  # noqa: F401
+from . import component_design_diagram  # noqa: F401

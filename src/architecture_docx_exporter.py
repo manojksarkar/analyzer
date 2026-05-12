@@ -144,13 +144,21 @@ def export_architecture_docx(output_dir: str, docx_path: str) -> None:
         print("Error: python-docx not installed. pip install python-docx")
         raise SystemExit(1)
 
-    data_path = os.path.join(output_dir, "layer_static_diagrams", "_layer_static_data.json")
+    static_dir = os.path.join(output_dir, "layer_static_diagrams")
+
+    data_path = os.path.join(static_dir, "_layer_static_data.json")
     if not os.path.isfile(data_path):
         print(f"[architecture_docx_exporter] no data at {data_path}; run phase 3 first")
         raise SystemExit(1)
 
     with open(data_path, "r", encoding="utf-8") as f:
         layer_data = json.load(f)
+
+    comp_design_path = os.path.join(static_dir, "_component_design_data.json")
+    comp_design_data = {}
+    if os.path.isfile(comp_design_path):
+        with open(comp_design_path, "r", encoding="utf-8") as f:
+            comp_design_data = json.load(f)
 
     font_pt = Pt(9)
     doc = Document()
@@ -200,6 +208,21 @@ def export_architecture_docx(output_dir: str, docx_path: str) -> None:
             pPr.append(pBdr)
             doc.add_heading("Component Information", level=4)
             _add_component_table(doc, groups, font_pt)
+
+        # 3.x.3 Component Design
+        layer_comp_designs = comp_design_data.get(layer_name, {})
+        if layer_comp_designs:
+            doc.add_heading(f"3.{layer_idx}.3 Component Design", level=3)
+            comp_idx = 1
+            for group_components in groups.values():
+                for comp_name in group_components:
+                    doc.add_heading(
+                        f"3.{layer_idx}.3.{comp_idx} {comp_name}", level=4
+                    )
+                    svg_path = layer_comp_designs.get(comp_name, {}).get("svgPath")
+                    png_path = _svg_to_png(svg_path) if svg_path else None
+                    _add_image(doc, png_path, inches=5.5)
+                    comp_idx += 1
 
     os.makedirs(os.path.dirname(docx_path), exist_ok=True)
     doc.save(docx_path)
