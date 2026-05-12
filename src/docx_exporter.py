@@ -1011,9 +1011,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     font_size = 8
     views_cfg = config.get("views", {})
     msd_enabled, msd_render_png, msd_width_in = _parse_component_static_diagram_cfg(views_cfg)
-    fc_cfg = views_cfg.get("flowcharts") if isinstance(views_cfg.get("flowcharts"), dict) else {}
     flowcharts_enabled = bool(views_cfg.get("flowcharts"))
-    flowcharts_render_png = fc_cfg.get("renderPng", True)
     flowcharts_dir = os.path.abspath(os.path.join(artifacts_dir, "flowcharts"))
     flowcharts_map = _load_flowcharts(flowcharts_dir) if flowcharts_enabled else {}
 
@@ -1169,13 +1167,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 # Build flowcharts list: own flowchart + private callee flowcharts
                 flowcharts_list = []
                 if flowchart:
-                    png_path = None
-                    if flowcharts_render_png:
-                        png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
-                        if not os.path.isfile(png_path):
-                            png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
-                        if not os.path.isfile(png_path):
-                            png_path = None
+                    png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
+                    if not os.path.isfile(png_path):
+                        png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
+                    if not os.path.isfile(png_path):
+                        png_path = None
                     iface_params = ", ".join(
                         f"{p.get('type', '')} {p.get('name', '')}".strip()
                         for p in (iface.get("parameters") or [])
@@ -1207,13 +1203,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         if callee_fid in rendered_private_fids:
                             continue
                         rendered_private_fids.add(callee_fid)
-                        callee_png = None
-                        if flowcharts_render_png:
-                            callee_png = os.path.join(flowcharts_dir, f"{callee_unit_prefix}_{safe_filename(callee_func_name)}.png")
-                            if not os.path.isfile(callee_png):
-                                callee_png = os.path.join(flowcharts_dir, f"{callee_unit_name}_{safe_filename(callee_func_name)}.png")
-                            if not os.path.isfile(callee_png):
-                                callee_png = None
+                        callee_png = os.path.join(flowcharts_dir, f"{callee_unit_prefix}_{safe_filename(callee_func_name)}.png")
+                        if not os.path.isfile(callee_png):
+                            callee_png = os.path.join(flowcharts_dir, f"{callee_unit_name}_{safe_filename(callee_func_name)}.png")
+                        if not os.path.isfile(callee_png):
+                            callee_png = None
                         callee_params = ", ".join(
                             f"{p.get('type', '')} {p.get('name', '')}".strip()
                             for p in (callee.get("params") or callee.get("parameters") or [])

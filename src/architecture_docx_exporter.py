@@ -101,10 +101,10 @@ def _add_component_table(doc, groups: dict, font_pt):
 
     for group_name, components in groups.items():
         group_start[group_name] = len(table.rows)  # record before adding rows
-        for comp_name, comp_data in components.items():
+        for i, (comp_name, comp_data) in enumerate(components.items()):
             description = comp_data.get("description", "") if isinstance(comp_data, dict) else ""
             row = table.add_row().cells
-            row[0].text = group_name
+            row[0].text = group_name if i == 0 else ""
             row[1].text = comp_name
             row[2].text = description
             row[3].text = "New"
