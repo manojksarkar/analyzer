@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-04 (feat/test-framework — direction logic fixes, lambda propagation, test overhaul, no-LLM cleanup on behaviour diagram + flowchart tests, DESIGN_SPEC fully rewritten: all rules are output/DOCX-focused with no code logic — REQ-DS-XX, REQ-IT-XX, REQ-UD-XX, REQ-BD-XX, REQ-FC-XX, REQ-CO-XX; TEST_INVENTORY rule coverage tables updated to match).
+> Updated: 2026-05-15 (function hide feature: `hidden` field in `model/functions.json`, Phase 4 filtering in `docx_exporter.py`, Hide/Show toggle in Streamlit UI; new §14b Streamlit UI; §14 function-hiding table; §17 design decision; fix: global variables excluded from per-function flowchart sections in DOCX).
 > Current active branch: `feat/test-framework` (off `version3`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -49,6 +49,9 @@ analyzer/
     views/                    View registry + four built-in views
     flowchart/                Real C++ → Mermaid CFG flowchart engine
   fake_behaviour_diagram_generator.py    Placeholder behaviour-diagram emitter
+  ui/
+    app.py                    Streamlit UI — run/export controls + function browser (see §14b)
+    requirements.txt          streamlit, pyvis, networkx
   test_cpp_project/           Fixture C++ tree (see §15)
   model/                      Phase 1+2 output (JSON)
   output/                     Phase 3+4 output (JSON, .mmd, .png, .docx)
@@ -1405,6 +1408,34 @@ Per source file: `out_dir/<source_file_name>.json` containing
 - Loads abbreviations from `config.llm.abbreviationsPath`.
 - Iterates modules in sorted order.
 
+### Function hiding (Phase 4 only, no Phase 3 needed)
+
+Functions can be hidden from DOCX output without re-running Phase 3.
+The `hidden` flag lives in `model/functions.json` per function entry:
+`{"hidden": true, ...}`. It is set via the UI (§14b) and never written
+by any pipeline phase.
+
+At the top of `export_docx`, after loading `functions_data`:
+- `_hidden_fids` — set of all fids where `hidden == True`.
+- `_hidden_by_mod_unit` — `(module, unit) → set of base function names`,
+  built from `_hidden_fids` for the Dynamic Behaviour lookup.
+
+What is filtered in Phase 4:
+
+| Output | Filtered? |
+|---|---|
+| Interface table entries | ✅ fid not in `_hidden_fids` |
+| Per-function DOCX section + its flowchart | ✅ iface excluded before loop |
+| Private callee flowcharts | ✅ callee_fid not in `_hidden_fids` |
+| Dynamic Behaviour entries | ✅ currentFunctionName in `_hidden_by_mod_unit` |
+| Component/Unit description table | ✅ uses already-filtered interfaces |
+| Unit diagram PNG | ❌ pre-rendered in Phase 3 |
+| Behaviour diagram PNG | ❌ pre-rendered in Phase 3 |
+| Module container/header PNG | ❌ pre-rendered in Phase 3 |
+
+Pre-rendered PNGs from Phase 3 are embedded as-is — they still show
+hidden functions as nodes. Only text sections are filterable in Phase 4.
+
 ### CLI
 
 ```
@@ -1436,7 +1467,7 @@ Software Detailed Design                                       (Heading 0)
         [Interface table — 8 cols, see below]
       2.1.1.3 <UnitName>-<FuncName>                            (Heading 4)
         [Flowchart table — 5 rows, see below]
-      ... one Heading-4 sub-section per interface ...
+      ... one Heading-4 sub-section per **function** (globals excluded) ...
   2.2 Dynamic Behaviour                                        (Heading 2)
     2.2.1 <UnitName> - <FuncName> (<ExternalUnitFunc>)         (Heading 3)
       [Behaviour description table]
@@ -1513,6 +1544,10 @@ Data Range | Direction(In/Out) | Source/Destination | Interface Type
 
 ### Flowchart table per interface (`_add_flowchart_table`)
 
+The per-interface loop (`2.1.1.3`, `2.1.1.4`, …) iterates **functions only**
+— global variable entries are excluded from this loop even though they appear
+in the interface table above. Globals have no flowchart section.
+
 5-row table: Requirements | Risk | Capacity(Density) | Input Name | Output Name
 
 Requirements cell contains:
@@ -1534,6 +1569,55 @@ Reads `artifacts_dir/behaviour_diagrams/_behaviour_pngs.json`. For every
 - Heading: `<sec>.2.<idx> <unitName> - <functionName> (<externalUnitFunction>)`
 - Behaviour description table (`_add_behavior_description_table`) with input/output names from the model.
 - Embedded PNG if `pngPath` is non-empty and exists.
+
+---
+
+## 14b. Streamlit UI — `ui/app.py`
+
+Run with: `streamlit run ui/app.py` (opens at `http://localhost:8501`).
+
+### What it does
+
+Single-page app. Left column: all config controls + run buttons. Right
+column: tabbed output (`Output log` / `Modules Groups`).
+
+### Config controls (left column)
+
+Reads `config/config.json` + `config.local.json` on init, writes back to
+`config.local.json` on every run and on the hide/show toggle.
+Covers: project path, clang paths, all LLM fields, all views toggles,
+export settings, and `modulesGroups` (editable group/module/path tree).
+
+### Run buttons
+
+| Button | What it runs |
+|---|---|
+| Run full pipeline | `python run.py [--no-llm-summarize] [--selected-group G] <proj>` |
+| Export only | `python run.py --from-phase 4 --use-model [--selected-group G] <proj>` |
+
+### Modules Groups tab — function browser
+
+Hierarchical tree: Group → Module → Unit → functions. Each function row
+has two columns:
+- **Function button** (col 5): opens `_function_dialog` modal (description,
+  callers/callees, flowchart viewer). Shows `fname() [hidden]` and is
+  disabled when hidden.
+- **Hide/Show button** (col 1): calls `_toggle_function_hidden(fid, bool)`,
+  which writes `{"hidden": true/false}` directly into `model/functions.json`.
+  No config change. Triggers `st.rerun()` so the label updates immediately.
+
+### `_toggle_function_hidden(fid, hidden)`
+
+Writes the `hidden` field into `model/functions.json` at `ROOT/model/functions.json`.
+Uses the same path as `_save_function_description` — no group-aware path logic.
+The `hidden` field is read by Phase 4 (`export_docx`) to filter output
+(see §14 — Function hiding). Phase 3 does **not** read this field.
+
+### `_function_dialog` modal
+
+Opens on function button click. Left panel: signature, description textarea
++ Save button, Calls/Called-by expanders, Behaviour names. Right panel:
+flowchart viewer (reads pre-rendered PNG or Mermaid from `output/`).
 
 ---
 
@@ -1665,6 +1749,19 @@ plan time:
 Phase 1 parses the **union** of all configured module folders, regardless of
 `--selected-group`. The group filter only affects Phases 3 + 4. This ensures
 cross-group call edges remain visible even when exporting one group.
+
+### Function hidden flag in model, not config
+
+`hidden: true/false` is stored per-function in `model/functions.json`,
+not in `config.local.json`. Rationale: it is function-specific data that
+lives alongside descriptions, direction, interfaceId, etc. Config is for
+pipeline behaviour settings, not per-entity data. This also means the flag
+survives config resets and is visible to any future tool that reads the
+model, not just the DOCX exporter.
+
+Phase 3 does not read the `hidden` field — it still writes every function
+to `interface_tables.json`. Phase 4 filters at export time, so hiding and
+re-running export only (Phase 4) is the correct workflow.
 
 ### Artifacts dir from `json_path`, not `output_dir`
 

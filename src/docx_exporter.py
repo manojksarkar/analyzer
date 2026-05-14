@@ -1160,10 +1160,12 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             doc.add_heading(f"{sec_num}.1.{unit_idx}.2 unit interface", level=4)
             _add_interface_table(doc, interfaces, font_small)
 
-            # 2.1.1.3, 2.1.1.4, ... per interface
+            # 2.1.1.3, 2.1.1.4, ... per interface (functions only — globals have no flowchart section)
             unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
             rendered_private_fids = set()  # track private flowcharts already shown in this unit
-            for iface_idx, iface in enumerate(interfaces, start=3):
+            for iface_idx, iface in enumerate(
+                (i for i in interfaces if i.get("type") != "Global Variable"), start=3
+            ):
                 func_name = iface.get("name", "")
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{func_name}", level=4)
                 unit_prefix = unit_key.replace(KEY_SEP, "_")
