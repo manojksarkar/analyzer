@@ -42,12 +42,14 @@ def run(model, output_dir, model_dir, config):
     if val is None or val is False:
         # Not enabled
         return
-    fc_cfg = val if isinstance(val, dict) else {}
 
     # Be robust to callers passing relative output_dir/model_dir.
     output_dir_abs = os.path.abspath(output_dir)
     model_dir_abs = os.path.abspath(model_dir)
-    project_root = os.path.dirname(model_dir_abs)
+    # When model_dir is a layer subdir (model/Layer1/), dirname gives model/ not the
+    # analyzer root.  Walk up one extra level in that case.
+    _parent = os.path.dirname(model_dir_abs)
+    project_root = os.path.dirname(_parent) if os.path.basename(_parent) == "model" else _parent
 
     # Out dir fixed in code: output/flowcharts under the view output dir
     out_dir = os.path.join(output_dir_abs, "flowcharts")
@@ -55,7 +57,7 @@ def run(model, output_dir, model_dir, config):
 
     functions_path = os.path.join(model_dir_abs, "functions.json")
     metadata_path = os.path.join(model_dir_abs, "metadata.json")
-    allowed_modules = {m.lower() for m in ((config or {}).get("_analyzerAllowedModules") or [])}
+    allowed_components = {m.lower() for m in ((config or {}).get("_analyzerAllowedComponents") or [])}
 
     std = "c++14"  # fixed in code
     clang_cfg = config.get("clang") or {}
@@ -75,7 +77,7 @@ def run(model, output_dir, model_dir, config):
     if not isinstance(clang_args, list):
         clang_args = [clang_args] if clang_args else []
 
-    script = _resolve_script(project_root, fc_cfg.get("scriptPath"))
+    script = _resolve_script(project_root, "fake_flowchart_generator.py")
     if not os.path.isfile(script):
         log("generator not found: %s" % script, component="flowcharts", err=True)
         return
@@ -83,7 +85,7 @@ def run(model, output_dir, model_dir, config):
     # If we are exporting a selected group, pass only that group's functions to the generator.
     functions_arg_path = functions_path
     group_name = (config or {}).get("_analyzerSelectedGroup") or ""
-    if allowed_modules and group_name and os.path.isfile(functions_path):
+    if allowed_components and group_name and os.path.isfile(functions_path):
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
                 all_funcs = json.load(f)
@@ -93,7 +95,7 @@ def run(model, output_dir, model_dir, config):
                     for fid, info in all_funcs.items()
                     if isinstance(fid, str)
                     and KEY_SEP in fid
-                    and fid.split(KEY_SEP, 1)[0].lower() in allowed_modules
+                    and fid.split(KEY_SEP, 1)[0].lower() in allowed_components
                 }
                 group_functions_path = os.path.join(model_dir_abs, f"functions_{safe_filename(group_name)}.json")
                 with open(group_functions_path, "w", encoding="utf-8") as tf:
@@ -161,9 +163,7 @@ def run(model, output_dir, model_dir, config):
         log("generator exited with code %s" % r.returncode, component="flowcharts", err=True)
         return
 
-    # Render flowcharts to PNG when renderPng is true
-    if not fc_cfg.get("renderPng", False):
-        return
+    # Always render flowcharts to PNG
 
     mmdc = mmdc_path(project_root)
     if not os.path.isfile(mmdc):

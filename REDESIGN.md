@@ -35,7 +35,7 @@ The current system is a 4-phase pipeline invoked via `run.py`:
                         v                    v                 ├── unit_diagrams.py
                   model/functions.json   model/knowledge_base  ├── behaviour_diagram.py
                   model/metadata.json    model/units.json      └── flowcharts.py
-                  model/data.json        model/modules.json          │
+                  model/data.json        model/components.json       │
                   model/globalVars.json  model/summaries.json        │  subprocess
                                                                      v
                                                           flowchart_engine.py
@@ -291,12 +291,12 @@ knowledge_base.json. This is 3 representations of the same data.
 │                                                                      │
 │  # Summaries (populated by LLM pass)                                 │
 │  project_summary: str                                                │
-│  module_summaries: Dict[str, str]                                    │
+│  component_summaries: Dict[str, str]                                 │
 │  file_summaries: Dict[str, str]                                      │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**No separate `functions.json`, `knowledge_base.json`, `units.json`, `modules.json`.** One model serialized to one file: `model/project.json`. Views read this directly.
+**No separate `functions.json`, `knowledge_base.json`, `units.json`, `components.json`.** One model serialized to one file: `model/project.json`. Views read this directly.
 
 ---
 
@@ -766,7 +766,7 @@ Views and exporters are discovered by the engine at startup. Config controls whi
     "unitDiagrams": { "renderPng": true },
     "flowcharts": { "renderPng": true },
     "behaviourDiagram": { "renderPng": true },
-    "moduleStaticDiagram": { "enabled": true, "renderPng": true }
+    "componentStaticDiagram": { "enabled": true, "renderPng": true }
   },
 
   // Export

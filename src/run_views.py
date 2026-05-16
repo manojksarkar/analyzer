@@ -8,16 +8,15 @@ from core.paths import paths as _paths
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
 PROJECT_ROOT = _p.project_root
-MODEL_DIR = _p.model_dir
 
 
 def _load_model():
     from core.model_io import (
-        load_model, FUNCTIONS, GLOBALS, UNITS, MODULES, DATA_DICTIONARY, ModelFileMissing,
+        load_model, FUNCTIONS, GLOBALS, UNITS, COMPONENTS, DATA_DICTIONARY, ModelFileMissing,
     )
     try:
         return load_model(
-            FUNCTIONS, GLOBALS, UNITS, MODULES,
+            FUNCTIONS, GLOBALS, UNITS, COMPONENTS,
             optional=[DATA_DICTIONARY],
         )
     except ModelFileMissing as e:
@@ -26,12 +25,16 @@ def _load_model():
 
 
 def main():
-    # Optional CLI override:
-    #   python src/run_views.py --output-dir output/group1
-    #   python src/run_views.py --selected-group tests
-    # python src/run_views.py --filter-mode single_per_function
-    output_dir = os.path.join(PROJECT_ROOT, "output")
     args = sys.argv[1:]
+
+    # --layer LayerN: read model from model/LayerN/
+    if "--layer" in args:
+        i = args.index("--layer")
+        if i + 1 < len(args):
+            from core.model_io import set_model_dir, layer_model_dir
+            set_model_dir(layer_model_dir(args[i + 1]))
+
+    output_dir = os.path.join(PROJECT_ROOT, "output")
     if "--output-dir" in args:
         i = args.index("--output-dir")
         if i + 1 < len(args):
@@ -53,8 +56,10 @@ def main():
     from core.config import app_config
     from views import run_views
 
+    from core.model_io import _effective_model_dir
     model = _load_model()
     config = app_config()
+    model_dir = _effective_model_dir()
     # Apply filter mode override from command line
     if filter_mode_override:
         if "views" not in config:
@@ -64,7 +69,8 @@ def main():
         config["views"]["sequenceDiagrams"]["filterMode"] = filter_mode_override
         print(f"[run_views] Using filter mode: {filter_mode_override}")
     if selected_group:
-        groups = (config.get("modulesGroups") or {})
+        from core.config import get_flat_groups
+        groups = get_flat_groups(config)
         resolved = selected_group
         if isinstance(groups, dict) and selected_group not in groups:
             sk = selected_group.casefold()
@@ -78,8 +84,8 @@ def main():
         if isinstance(grp, dict):
             config = dict(config)
             config["_analyzerSelectedGroup"] = resolved
-            config["_analyzerAllowedModules"] = sorted(grp.keys())
-    run_views(model, output_dir, MODEL_DIR, config)
+            config["_analyzerAllowedComponents"] = sorted(grp.keys())
+    run_views(model, output_dir, model_dir, config)
 
 
 if __name__ == "__main__":
