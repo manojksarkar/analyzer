@@ -134,6 +134,66 @@ def _add_component_table(doc, groups: dict, font_pt):
         vAlign.set(qn("w:val"), "center")
 
 
+_IFACE_COLS = (
+    "Interface ID", "Interface Name", "Information",
+    "Data Type", "Data Range", "Direction",
+    "Source/Destination", "Interface Type",
+)
+
+
+def _add_horizontal_rule(doc):
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    hr = doc.add_paragraph()
+    pPr = hr._p.get_or_add_pPr()
+    pBdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")
+    bottom.set(qn("w:space"), "1")
+    bottom.set(qn("w:color"), "auto")
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+
+
+def _add_interface_table_sad(doc, interfaces, font_pt):
+    """Interface table for one component in section 3.N.3."""
+    table = doc.add_table(rows=1, cols=len(_IFACE_COLS))
+    table.style = "Table Grid"
+    hdr = table.rows[0].cells
+    for i, label in enumerate(_IFACE_COLS):
+        hdr[i].text = label
+        for run in hdr[i].paragraphs[0].runs:
+            run.font.bold = True
+            run.font.size = font_pt
+
+    for iface in interfaces:
+        iface_type = iface.get("type", "") or "-"
+        if "variableType" in iface:
+            data_type  = iface.get("variableType", "") or "-"
+            data_range = iface.get("range", "") or "NA"
+        else:
+            params     = iface.get("parameters", [])
+            data_type  = "; ".join(p.get("type", "") for p in params) if params else "VOID"
+            data_range = "; ".join(p.get("range", "") for p in params) if params else "NA"
+
+        row = table.add_row().cells
+        cells_text = (
+            str(iface.get("interfaceId", "")),
+            str(iface.get("interfaceName", "")),
+            str(iface.get("description", "") or "-"),
+            data_type,
+            data_range,
+            str(iface.get("direction", "") or "-"),
+            str(iface.get("sourceDest", "") or "-"),
+            iface_type,
+        )
+        for cell, txt in zip(row, cells_text):
+            cell.text = txt
+            for run in cell.paragraphs[0].runs:
+                run.font.size = font_pt
+
+
 # ── main export ───────────────────────────────────────────────────────────────
 
 def export_architecture_docx(output_dir: str, docx_path: str) -> None:
@@ -144,13 +204,21 @@ def export_architecture_docx(output_dir: str, docx_path: str) -> None:
         print("Error: python-docx not installed. pip install python-docx")
         raise SystemExit(1)
 
-    data_path = os.path.join(output_dir, "layer_static_diagrams", "_layer_static_data.json")
+    static_dir = os.path.join(output_dir, "layer_static_diagrams")
+
+    data_path = os.path.join(static_dir, "_layer_static_data.json")
     if not os.path.isfile(data_path):
         print(f"[architecture_docx_exporter] no data at {data_path}; run phase 3 first")
         raise SystemExit(1)
 
     with open(data_path, "r", encoding="utf-8") as f:
         layer_data = json.load(f)
+
+    comp_design_path = os.path.join(static_dir, "_component_design_data.json")
+    comp_design_data = {}
+    if os.path.isfile(comp_design_path):
+        with open(comp_design_path, "r", encoding="utf-8") as f:
+            comp_design_data = json.load(f)
 
     font_pt = Pt(9)
     doc = Document()
@@ -186,20 +254,27 @@ def export_architecture_docx(output_dir: str, docx_path: str) -> None:
 
         # component listing table
         if groups:
-            from docx.oxml.ns import qn
-            from docx.oxml import OxmlElement
-            hr = doc.add_paragraph()
-            pPr = hr._p.get_or_add_pPr()
-            pBdr = OxmlElement("w:pBdr")
-            bottom = OxmlElement("w:bottom")
-            bottom.set(qn("w:val"), "single")
-            bottom.set(qn("w:sz"), "6")
-            bottom.set(qn("w:space"), "1")
-            bottom.set(qn("w:color"), "auto")
-            pBdr.append(bottom)
-            pPr.append(pBdr)
+            _add_horizontal_rule(doc)
             doc.add_heading("Component Information", level=4)
             _add_component_table(doc, groups, font_pt)
+
+        # 3.x.3 Component Design
+        layer_comp_designs = comp_design_data.get(layer_name, {})
+        if layer_comp_designs:
+            doc.add_heading(f"3.{layer_idx}.3 Component Design", level=3)
+            comp_idx = 1
+            for group_components in groups.values():
+                for comp_name in group_components:
+                    doc.add_heading(
+                        f"3.{layer_idx}.3.{comp_idx} {comp_name}", level=4
+                    )
+                    comp_entry = layer_comp_designs.get(comp_name, {})
+                    svg_path = comp_entry.get("svgPath")
+                    png_path = _svg_to_png(svg_path) if svg_path else None
+                    _add_image(doc, png_path, inches=5.5)
+                    _add_horizontal_rule(doc)
+                    _add_interface_table_sad(doc, comp_entry.get("interfaces", []), font_pt)
+                    comp_idx += 1
 
     os.makedirs(os.path.dirname(docx_path), exist_ok=True)
     doc.save(docx_path)
