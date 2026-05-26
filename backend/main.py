@@ -27,6 +27,8 @@ import sys
 from datetime import datetime
 from typing import Dict, List, Optional
 
+import tempfile
+
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -77,6 +79,7 @@ from models import (  # noqa: E402
     ComponentSummary,
     ExportJobRequest,
     Flowchart,
+    FunctionCaller,
     FunctionDetailWithHidden,
     JobStartResult,
     Module,
@@ -301,6 +304,116 @@ def _logical_group_node(
     )
 
 
+def _description_of(record: dict) -> str:
+    """Return the description text for a functions/knowledge_base record.
+
+    Reads `description` first, falls back to legacy `comment`. The analyzer
+    pipeline is mid-migration to a single canonical `description` field
+    (see src/model_deriver.py) and on-disk JSON still carries either name
+    depending on when it was last written; this helper hides the difference
+    from API responses.
+    """
+    if not isinstance(record, dict):
+        return ""
+    return str(record.get("description") or record.get("comment") or "")
+
+
+def _safe_write_json(path: str, data) -> None:
+    """Atomically rewrite `path` with `data`.
+
+    Writes to a sibling temp file then os.replace()s onto the target so an
+    interrupted save can't leave a half-written file in place. Caller is
+    responsible for catching exceptions.
+    """
+    dir_ = os.path.dirname(path) or "."
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", delete=False, dir=dir_, suffix=".tmp"
+    )
+    try:
+        json.dump(data, tmp, indent=2, ensure_ascii=False)
+        tmp.flush()
+        tmp.close()
+        os.replace(tmp.name, path)
+    except Exception:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        raise
+
+
+def _persist_description(fn_id: str, description: str, functions_data: dict) -> None:
+    """Write `description` to functions.json (keyed by fn_id) and
+    knowledge_base.json (keyed by qualifiedName).
+
+    Canonicalises on the `description` field and removes any legacy
+    `comment` so consumers reading the older name don't see stale text.
+    Failures on one file don't roll back the other — best-effort.
+    """
+    # functions.json
+    functions_path = os.path.join(_REPO_ROOT, "model", "functions.json")
+    try:
+        with open(functions_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        entry = data.get(fn_id)
+        if isinstance(entry, dict):
+            entry["description"] = description
+            entry.pop("comment", None)
+            _safe_write_json(functions_path, data)
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    # knowledge_base.json — keyed by qualifiedName
+    qname = (functions_data.get(fn_id) or {}).get("qualifiedName") or ""
+    if not qname:
+        return
+    kb_path = os.path.join(_REPO_ROOT, "model", "knowledge_base.json")
+    if not os.path.isfile(kb_path):
+        return
+    try:
+        with open(kb_path, "r", encoding="utf-8") as f:
+            kb = json.load(f)
+        if not isinstance(kb, dict):
+            return
+        kb_funcs = kb.get("functions") or {}
+        entry = kb_funcs.get(qname)
+        if isinstance(entry, dict):
+            entry["description"] = description
+            entry.pop("comment", None)
+            _safe_write_json(kb_path, kb)
+    except (json.JSONDecodeError, OSError):
+        pass
+
+
+def _find_flowchart_for_fn(fn_id: str) -> str:
+    """Scan output/flowcharts/*.json for the entry whose functionKey matches
+    `fn_id` and return its Mermaid script. Empty string when no match
+    exists (e.g. flowcharts not yet rendered, or function filtered out).
+    Skips `_summary.json` and any file starting with `_`."""
+    flowcharts_dir = os.path.join(_REPO_ROOT, "output", "flowcharts")
+    if not os.path.isdir(flowcharts_dir):
+        return ""
+    try:
+        names = os.listdir(flowcharts_dir)
+    except OSError:
+        return ""
+    for name in names:
+        if not name.endswith(".json") or name.startswith("_"):
+            continue
+        path = os.path.join(flowcharts_dir, name)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                arr = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(arr, list):
+            continue
+        for entry in arr:
+            if isinstance(entry, dict) and entry.get("functionKey") == fn_id:
+                return str(entry.get("flowchart") or "")
+    return ""
+
+
 def _build_module_tree(
     module_key: str,
     inner: dict,
@@ -467,20 +580,112 @@ def _not_implemented(api_num: int, batch_num: int) -> HTTPException:
 
 @app.get("/api/v1/components/{component_id}/modules", response_model=List[ModuleSummary])
 async def list_modules(component_id: str) -> List[ModuleSummary]:
-    """API 4 — list modules for a component (no tree). Batch 2."""
-    raise _not_implemented(4, 2)
+    """API 4 — list modules for a component, no tree.
+
+    Same data the modules array of API 3 carries, but lighter: no
+    file/function tree built, so the response is fast even for very large
+    projects. Case-insensitive component_id; unknown id → 404.
+    """
+    if component_id.upper() != _COMPONENT_ID.upper():
+        raise HTTPException(status_code=404, detail=f"component {component_id!r} not found")
+
+    groups = _load_modules_groups()
+    base_path = _project_base_path()
+    summaries: List[ModuleSummary] = []
+    for module_key, inner in groups.items():
+        inner_dict = inner if isinstance(inner, dict) else {}
+        all_dirs = _collect_module_dirs(inner_dict)
+        files_count = _count_source_files(base_path or "", all_dirs)
+        summaries.append(
+            ModuleSummary(
+                id=module_key,
+                name=module_key,
+                path=module_key,
+                files=files_count,
+                loc="0",
+            )
+        )
+    return summaries
 
 
 @app.get("/api/v1/functions/{fn_id}", response_model=FunctionDetailWithHidden)
 async def get_function(fn_id: str) -> FunctionDetailWithHidden:
-    """API 5 — function detail (callers, callees, flowchart, description). Batch 2."""
-    raise _not_implemented(5, 2)
+    """API 5 — full function detail.
+
+    Reads the function record from model/functions.json (the composite
+    fn_id is the key), resolves callers/callees by looking up calledByIds
+    and callsIds in the same table, and pulls the Mermaid script from
+    output/flowcharts/*.json by matching functionKey == fn_id. Hidden
+    flag is sourced from the in-memory _db["hidden_functions"] store —
+    that flag is session-only by design (no JSON persistence).
+    """
+    functions_data = _load_functions()
+    fn_info = functions_data.get(fn_id)
+    if not isinstance(fn_info, dict):
+        raise HTTPException(status_code=404, detail=f"function {fn_id!r} not found")
+
+    description = _description_of(fn_info)
+
+    callers: List[FunctionCaller] = []
+    for caller_id in (fn_info.get("calledByIds") or []):
+        caller_info = functions_data.get(caller_id) or {}
+        caller_name = caller_info.get("qualifiedName") or caller_id
+        callers.append(FunctionCaller(id=str(caller_id), name=str(caller_name), loc="0"))
+
+    callees: List[FunctionCaller] = []
+    for callee_id in (fn_info.get("callsIds") or []):
+        callee_info = functions_data.get(callee_id) or {}
+        callee_name = callee_info.get("qualifiedName") or callee_id
+        callees.append(FunctionCaller(id=str(callee_id), name=str(callee_name), loc="0"))
+
+    flowchart_text = _find_flowchart_for_fn(fn_id)
+    hidden = fn_id in _db["hidden_functions"]
+
+    loc_block = fn_info.get("location") or {}
+    return FunctionDetailWithHidden(
+        id=fn_id,
+        name=str(fn_info.get("qualifiedName") or fn_id),
+        file=str(loc_block.get("file") or ""),
+        line=str(loc_block.get("line") or ""),
+        ret=str(fn_info.get("returnType") or ""),
+        description=description,
+        callers=callers,
+        callees=callees,
+        flowchart=flowchart_text,
+        hidden=hidden,
+    )
 
 
 @app.patch("/api/v1/functions/{fn_id}", response_model=PatchFunctionResult)
 async def patch_function(fn_id: str, body: PatchFunctionBody) -> PatchFunctionResult:
-    """API 6 — update function description / hidden flag. Batch 2."""
-    raise _not_implemented(6, 2)
+    """API 6 — persist edited description / toggle hidden flag.
+
+    Description writes go to model/functions.json AND model/knowledge_base.json
+    (the two on-disk sources the analyzer pipeline reads from). The hidden
+    flag stays in the in-memory _db only — by team agreement no JSON gets a
+    `hidden` field. Returns the saved timestamp so the UI can show
+    "saved at HH:MM" feedback.
+
+    fn_id is validated against functions.json before any write; unknown
+    ids return 404 without touching disk.
+    """
+    functions_data = _load_functions()
+    if fn_id not in functions_data:
+        raise HTTPException(status_code=404, detail=f"function {fn_id!r} not found")
+
+    if body.description is not None:
+        _persist_description(fn_id, body.description, functions_data)
+
+    if body.hidden is not None:
+        if body.hidden:
+            _db["hidden_functions"][fn_id] = True
+        else:
+            _db["hidden_functions"].pop(fn_id, None)
+
+    return PatchFunctionResult(
+        fnId=fn_id,
+        savedAt=datetime.now().strftime("%H:%M"),
+    )
 
 
 @app.get("/api/v1/flowcharts/{fn_id}", response_model=Flowchart)
