@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -342,26 +343,93 @@ def _safe_write_json(path: str, data) -> None:
         raise
 
 
-def _persist_description(fn_id: str, description: str, functions_data: dict) -> None:
-    """Write `description` to functions.json (keyed by fn_id) and
-    knowledge_base.json (keyed by qualifiedName).
+def _safe_filename(name: str) -> str:
+    """Replicates src/utils.py::safe_filename for the small set of chars that
+    can't appear in a filename. Matches the per-group filename produced by
+    src/views/flowcharts.py so reads/writes hit the same file the pipeline
+    wrote."""
+    return re.sub(r'[<>:"/\\|?*]', "_", name or "")
 
-    Canonicalises on the `description` field and removes any legacy
-    `comment` so consumers reading the older name don't see stale text.
-    Failures on one file don't roll back the other — best-effort.
+
+def _module_file_for_fn(fn_id: str) -> Optional[str]:
+    """Return the path to the per-module functions JSON that owns this fn_id,
+    or None if the mapping can't be resolved.
+
+    fn_id format is `<inner_group>|<unit>|<qname>|<params>`. The inner_group
+    segment (e.g. `tests_a`) appears under one OUTER group in modulesGroups
+    (e.g. `tests` -> {tests_a: [...], tests_b: [...]}). The pipeline writes
+    the per-group file as functions_<outer>.json (see flowcharts.py line
+    288), so we look up the outer key the same way.
+
+    Returning a path doesn't mean the file exists on disk — the caller
+    should check.
     """
-    # functions.json
-    functions_path = os.path.join(_REPO_ROOT, "model", "functions.json")
+    if not fn_id or "|" not in fn_id:
+        return None
+    inner_prefix = fn_id.split("|", 1)[0]
+    groups = _load_modules_groups()
+    for outer_key, inner in groups.items():
+        if isinstance(inner, dict) and inner_prefix in inner:
+            return os.path.join(
+                _REPO_ROOT, "model", f"functions_{_safe_filename(outer_key)}.json"
+            )
+    # Fallback: maybe the unit prefix IS the outer key (single-group module
+    # like `core` where inner_prefix == outer_key already matched above —
+    # this branch is a defensive no-op).
+    return None
+
+
+def _read_description_override(fn_id: str) -> Optional[str]:
+    """Return the description stored in the per-module file for fn_id, or
+    None when the file doesn't exist / doesn't carry this entry / can't be
+    parsed.
+
+    A None result tells callers "no per-module override exists — fall back
+    to the master functions.json value." An empty-string result is a real
+    answer (the file exists and says the description is blank) and is NOT
+    treated as a miss.
+    """
+    path = _module_file_for_fn(fn_id)
+    if not path or not os.path.isfile(path):
+        return None
     try:
-        with open(functions_path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        entry = data.get(fn_id)
-        if isinstance(entry, dict):
-            entry["description"] = description
-            entry.pop("comment", None)
-            _safe_write_json(functions_path, data)
     except (json.JSONDecodeError, OSError):
-        pass
+        return None
+    if not isinstance(data, dict):
+        return None
+    entry = data.get(fn_id)
+    if not isinstance(entry, dict):
+        return None
+    return _description_of(entry)
+
+
+def _persist_description(fn_id: str, description: str, functions_data: dict) -> None:
+    """Write `description` to the per-module file (functions_<group>.json)
+    and knowledge_base.json. Never touches the master functions.json — per
+    team contract, descriptions are canonical in the per-module files.
+
+    Canonicalises onto `description` and removes any legacy `comment` so
+    consumers reading the older name don't see stale text. Failures on one
+    file don't roll back the other — best-effort. If the per-module file
+    doesn't exist yet (the pipeline hasn't generated one for this group),
+    the write is skipped silently — the UI's PATCH still returns 200, and
+    the next pipeline run will produce the file fresh.
+    """
+    # Per-module functions_<group>.json — the canonical store for descriptions
+    module_path = _module_file_for_fn(fn_id)
+    if module_path and os.path.isfile(module_path):
+        try:
+            with open(module_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            entry = data.get(fn_id) if isinstance(data, dict) else None
+            if isinstance(entry, dict):
+                entry["description"] = description
+                entry.pop("comment", None)
+                _safe_write_json(module_path, data)
+        except (json.JSONDecodeError, OSError):
+            pass
 
     # knowledge_base.json — keyed by qualifiedName
     qname = (functions_data.get(fn_id) or {}).get("qualifiedName") or ""
@@ -624,7 +692,11 @@ async def get_function(fn_id: str) -> FunctionDetailWithHidden:
     if not isinstance(fn_info, dict):
         raise HTTPException(status_code=404, detail=f"function {fn_id!r} not found")
 
-    description = _description_of(fn_info)
+    # Descriptions are canonical in functions_<group>.json (per-module file)
+    # — fall back to the master functions.json value only when no per-module
+    # file exists yet (pipeline hasn't run for this group).
+    desc_override = _read_description_override(fn_id)
+    description = desc_override if desc_override is not None else _description_of(fn_info)
 
     callers: List[FunctionCaller] = []
     for caller_id in (fn_info.get("calledByIds") or []):
