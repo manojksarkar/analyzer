@@ -113,16 +113,24 @@ class PatchFunctionResult(BaseModel):
 
 
 class PrepareJobRequest(BaseModel):
-    componentId: str
-    moduleId: str
+    # componentId / moduleId are accepted for shape parity with the UI's
+    # existing payload but the backend doesn't forward them to run.py —
+    # `path` alone drives the pipeline per the team decision. Optional with
+    # default None so direct callers (Postman, Swagger, scripts) can post
+    # just `{"path": "..."}` without a 422.
+    componentId: Optional[str] = None
+    moduleId: Optional[str] = None
     path: str
 
 
 class ExportJobRequest(BaseModel):
-    componentId: str
-    moduleId: str
+    componentId: Optional[str] = None
+    moduleId: Optional[str] = None
     path: str
-    hiddenFns: Dict[str, bool]
+    # hiddenFns is accepted but currently ignored (see API 12 — "ignore
+    # hiddenFns" decision). Default to empty dict so callers omitting it
+    # don't 422.
+    hiddenFns: Dict[str, bool] = {}
 
 
 class PrepLog(BaseModel):
