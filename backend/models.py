@@ -21,6 +21,11 @@ class Repository(BaseModel):
     path: str
     lastIndexed: str
     files: int
+    # `loc` (lines of code) exists in the office models.py contract. We keep
+    # the field for shape parity but never compute it — always 0. Default
+    # lets call sites omit it without breaking, and Pydantic v2 accepts the
+    # value at the office side where the field is required.
+    loc: int = 0
 
 
 class TreeNode(BaseModel):
@@ -37,6 +42,7 @@ class Module(BaseModel):
     path: str
     files: int
     tree: TreeNode
+    loc: int = 0  # shape-parity placeholder; see Repository.loc note
 
 
 class Component(BaseModel):
@@ -60,11 +66,13 @@ class ModuleSummary(BaseModel):
     name: str
     path: str
     files: int
+    loc: int = 0  # shape-parity placeholder; see Repository.loc note
 
 
 class FunctionCaller(BaseModel):
     id: str
     name: str
+    loc: int = 0  # shape-parity placeholder; see Repository.loc note
 
 
 class Flowchart(BaseModel):
