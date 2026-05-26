@@ -380,10 +380,11 @@ async def get_repository() -> Repository:
     """API 1 — repository metadata. Currently hardcoded; will be backed by
     config + parser metadata once the canonical project path lands.
 
-    `loc=0` is passed defensively because some downstream models.py versions
-    declare `loc` as required (lines-of-code count). Pydantic v2 silently
-    ignores the extra kwarg when the field isn't in the model, so this is
-    safe for both shapes.
+    `loc="0"` is passed defensively because the office models.py declares
+    `loc` as required (lines-of-code count). The field is typed as a string
+    in both this repo's models.py and the office's, so we always send a
+    string. Pydantic v2 silently ignores the kwarg when the field isn't
+    defined, so this is safe across model shapes.
     """
     return Repository(
         name="ASPICE",
@@ -391,7 +392,7 @@ async def get_repository() -> Repository:
         path="C:/code-path",
         lastIndexed="2 min ago",
         files=500,
-        loc=0,
+        loc="0",
     )
 
 
@@ -439,7 +440,7 @@ async def get_component(component_id: str) -> Component:
                 path=module_key,
                 files=files_count,
                 tree=tree,
-                loc=0,  # placeholder for downstream models that require `loc`
+                loc="0",  # placeholder; loc is typed str across both model shapes
             )
         )
 
