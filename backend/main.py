@@ -58,12 +58,21 @@ def _detect_analyzer_root(start: str) -> str:
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = _detect_analyzer_root(_BACKEND_DIR)
 _SRC_DIR = os.path.join(_REPO_ROOT, "src")
-if _SRC_DIR not in sys.path:
-    sys.path.insert(0, _SRC_DIR)
+
+# sys.path setup. Two reasons to add both dirs explicitly:
+#   - _SRC_DIR makes `from core.config import load_config` resolve regardless
+#     of cwd, so importing src/core/config.py works from any launch dir.
+#   - _BACKEND_DIR makes `from models import ...` resolve regardless of
+#     whether uvicorn is launched as `uvicorn backend.main:app` (from one
+#     dir above) or `uvicorn main:app` (from inside backend/). Otherwise
+#     only one of those two invocations puts backend/ on sys.path.
+for _p in (_SRC_DIR, _BACKEND_DIR):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from core.config import load_config  # noqa: E402
 
-from backend.models import (  # noqa: E402
+from models import (  # noqa: E402
     Component,
     ComponentSummary,
     ExportJobRequest,
