@@ -378,13 +378,20 @@ app.add_middleware(
 @app.get("/api/v1/repository", response_model=Repository)
 async def get_repository() -> Repository:
     """API 1 — repository metadata. Currently hardcoded; will be backed by
-    config + parser metadata once the canonical project path lands."""
+    config + parser metadata once the canonical project path lands.
+
+    `loc=0` is passed defensively because some downstream models.py versions
+    declare `loc` as required (lines-of-code count). Pydantic v2 silently
+    ignores the extra kwarg when the field isn't in the model, so this is
+    safe for both shapes.
+    """
     return Repository(
         name="ASPICE",
         branch="release",
         path="C:/code-path",
         lastIndexed="2 min ago",
         files=500,
+        loc=0,
     )
 
 
@@ -432,6 +439,7 @@ async def get_component(component_id: str) -> Component:
                 path=module_key,
                 files=files_count,
                 tree=tree,
+                loc=0,  # placeholder for downstream models that require `loc`
             )
         )
 
