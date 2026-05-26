@@ -30,10 +30,33 @@ from typing import Dict, List, Optional
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-# Make the existing src/ package importable so we can reuse load_config()
-# (which knows how to parse the JSONC + trailing commas in config/config.json).
+# Locate the analyzer root regardless of how deeply backend/ is nested.
+# Layouts we want to support:
+#   <root>/backend/main.py            (flat — historical)
+#   <root>/fast-app/backend/main.py   (nested under fast-app/)
+#   <root>/anything/.../backend/main.py
+# Walk upward looking for a directory that has BOTH src/core/ and config/ —
+# those two markers together uniquely identify the analyzer root.
+def _detect_analyzer_root(start: str) -> str:
+    cur = os.path.abspath(start)
+    for _ in range(10):  # safety bound — never recurse to filesystem root
+        if (
+            os.path.isdir(os.path.join(cur, "src", "core"))
+            and os.path.isdir(os.path.join(cur, "config"))
+        ):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    # Fallback: parent of backend/ — preserves the old behaviour for the
+    # flat layout when the markers happen to be missing (e.g. first run
+    # before any pipeline has populated config/).
+    return os.path.dirname(os.path.abspath(start))
+
+
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-_REPO_ROOT = os.path.dirname(_BACKEND_DIR)
+_REPO_ROOT = _detect_analyzer_root(_BACKEND_DIR)
 _SRC_DIR = os.path.join(_REPO_ROOT, "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
