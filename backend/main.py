@@ -579,28 +579,55 @@ def _read_log_tail(
     return entries[-limit:]
 
 
-def _spawn_run_py(project_path: str, extra_args: Optional[List[str]] = None) -> subprocess.Popen:
+def _spawn_run_py(
+    project_path: str,
+    extra_args: Optional[List[str]] = None,
+    output_file_path: Optional[str] = None,
+) -> subprocess.Popen:
     """Spawn `python run.py <project_path> [extra_args...]` rooted at the
     analyzer repo so run.py resolves config/, src/, model/ correctly.
 
-    Windows needs shell=True (project preference — see CLAUDE.md note about
-    subprocess.run requirements). The process group flags let API 11 kill
-    the whole tree cleanly when cancel arrives."""
+    When output_file_path is provided, stdout AND stderr are merged into
+    that file (line-buffered) so import-time crashes — which happen before
+    parser.py / run.py configure their loggers — leave a visible trail.
+    Without this, DEVNULL'd stderr makes every Phase-1 failure look the
+    same regardless of cause. The file handle is attached to the Popen
+    object as `_spawn_output_fh` so the watcher can close it on exit.
+
+    Windows needs shell=True (project preference — see CLAUDE.md note
+    about subprocess.run requirements). The process group flags let API 11
+    kill the whole tree cleanly when cancel arrives.
+    """
     cmd: List[str] = [sys.executable, "run.py", project_path]
     if extra_args:
         cmd.extend(extra_args)
     is_windows = sys.platform == "win32"
+
+    out_fh: Optional[object] = None
+    if output_file_path:
+        os.makedirs(os.path.dirname(output_file_path) or ".", exist_ok=True)
+        out_fh = open(output_file_path, "w", encoding="utf-8", buffering=1)
+        stdout_target = out_fh
+        stderr_target = subprocess.STDOUT  # merge into the same file
+    else:
+        stdout_target = subprocess.DEVNULL
+        stderr_target = subprocess.DEVNULL
+
     popen_kwargs: Dict = dict(
         cwd=_REPO_ROOT,
-        stdout=subprocess.DEVNULL,  # logs go to the rolling log file
-        stderr=subprocess.DEVNULL,
+        stdout=stdout_target,
+        stderr=stderr_target,
     )
     if is_windows:
         popen_kwargs["shell"] = True
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         popen_kwargs["start_new_session"] = True  # own process group
-    return subprocess.Popen(cmd, **popen_kwargs)
+
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+    # Attach so _watch_subprocess_job can close it when the process exits.
+    proc._spawn_output_fh = out_fh  # type: ignore[attr-defined]
+    return proc
 
 
 async def _watch_subprocess_job(job_id: str) -> None:
@@ -624,13 +651,22 @@ async def _watch_subprocess_job(job_id: str) -> None:
             job["complete"] = True
             if rc != 0 and not job.get("error"):
                 job["error"] = f"run.py exited with code {rc}"
-            # Snapshot the log file size at completion so subsequent reads
-            # for THIS job are bounded — protects against another job
-            # appending to the same rolling log file later.
+            # Snapshot the rolling-log file size at completion so subsequent
+            # reads for THIS job are bounded — protects against another job
+            # appending later. (The per-job output file in `output_file` is
+            # naturally isolated; this offset is only used as a fallback.)
             log_file = job.get("log_file") or ""
             if log_file and os.path.isfile(log_file):
                 try:
                     job["log_end_offset"] = os.path.getsize(log_file)
+                except OSError:
+                    pass
+            # Close the per-job stdout/stderr capture so the tail read
+            # picks up the final flush.
+            fh = getattr(proc, "_spawn_output_fh", None)
+            if fh is not None:
+                try:
+                    fh.close()
                 except OSError:
                     pass
             return
@@ -971,18 +1007,24 @@ async def start_prepare(
     log_file = _expected_log_file_path()
     log_offset = os.path.getsize(log_file) if os.path.isfile(log_file) else 0
 
+    job_id = _new_job_id("prep")
+    # Per-job stdout+stderr capture — catches import-time crashes (e.g.
+    # libclang DLL load failure) that happen BEFORE parser.py configures
+    # its logger and so never reach the rolling daily log file.
+    output_file = os.path.join(_REPO_ROOT, "logs", f"job_{job_id}.out.log")
+
     try:
-        proc = _spawn_run_py(project_path)
+        proc = _spawn_run_py(project_path, output_file_path=output_file)
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to spawn run.py: {exc}")
 
-    job_id = _new_job_id("prep")
     _jobs[job_id] = {
         "type": "prepare",
         "process": proc,
         "pid": proc.pid,
         "log_file": log_file,
         "log_offset": log_offset,
+        "output_file": output_file,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "complete": False,
         "cancelled": False,
@@ -1015,6 +1057,13 @@ async def get_prepare_logs(job_id: str) -> List[PrepLog]:
         raise HTTPException(
             status_code=400, detail=f"job {job_id!r} is not a prepare job"
         )
+    # Prefer the per-job output file (true isolation, captures import-time
+    # crashes). Fall back to the rolling daily log slice only if the
+    # per-job file is unavailable for some reason — keeps the endpoint
+    # working even when an older job (created before this fix) is queried.
+    output_file = job.get("output_file") or ""
+    if output_file and os.path.isfile(output_file):
+        return _read_log_tail(output_file, 0, _LOG_TAIL_LIMIT)
     end_off = job.get("log_end_offset")
     return _read_log_tail(
         job.get("log_file") or "",
