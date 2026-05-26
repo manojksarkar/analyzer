@@ -21,14 +21,16 @@ Stubbed routes return HTTP 501 with a clear message so the UI surfaces
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
+import secrets
+import subprocess
 import sys
-from datetime import datetime
-from typing import Dict, List, Optional
-
 import tempfile
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -453,18 +455,18 @@ def _persist_description(fn_id: str, description: str, functions_data: dict) -> 
         pass
 
 
-def _find_flowchart_for_fn(fn_id: str) -> str:
+def _find_flowchart_entry(fn_id: str) -> Optional[dict]:
     """Scan output/flowcharts/*.json for the entry whose functionKey matches
-    `fn_id` and return its Mermaid script. Empty string when no match
-    exists (e.g. flowcharts not yet rendered, or function filtered out).
-    Skips `_summary.json` and any file starting with `_`."""
+    `fn_id` and return the whole {functionKey, name, flowchart} dict, or
+    None when no match exists (flowcharts not yet rendered, function
+    filtered out). Skips `_summary.json` and any file starting with `_`."""
     flowcharts_dir = os.path.join(_REPO_ROOT, "output", "flowcharts")
     if not os.path.isdir(flowcharts_dir):
-        return ""
+        return None
     try:
         names = os.listdir(flowcharts_dir)
     except OSError:
-        return ""
+        return None
     for name in names:
         if not name.endswith(".json") or name.startswith("_"):
             continue
@@ -478,8 +480,161 @@ def _find_flowchart_for_fn(fn_id: str) -> str:
             continue
         for entry in arr:
             if isinstance(entry, dict) and entry.get("functionKey") == fn_id:
-                return str(entry.get("flowchart") or "")
-    return ""
+                return entry
+    return None
+
+
+def _find_flowchart_for_fn(fn_id: str) -> str:
+    """Convenience wrapper — return just the Mermaid script string, or ''."""
+    entry = _find_flowchart_entry(fn_id)
+    return str(entry.get("flowchart") or "") if entry else ""
+
+
+# ---------------------------------------------------------------------------
+# Prepare-job helpers (used by APIs 8 / 9 / 10 / 11)
+# ---------------------------------------------------------------------------
+
+# Log-line format from src/core/logging_setup.py:
+#   "[%(asctime)s] %(levelname)s %(name)s: %(message)s"  with datefmt %H:%M:%S
+_LOG_LINE_RE = re.compile(r"^\[(\d{2}:\d{2}:\d{2})\] (\w+) ([\w.]+): (.*)$")
+
+# Default tail size for the prepare-logs endpoint. Most recent N lines are
+# returned; client polls every couple of seconds.
+_LOG_TAIL_LIMIT = 40
+
+
+def _expected_log_file_path() -> str:
+    """Path the analyzer's configure_logging() will write into for today's
+    run. UTC date matches logging_setup.py:101.
+
+    A jitter window exists between API 8 spawning run.py and run.py calling
+    configure_logging(), so the file may not exist yet when we return; the
+    log reader handles that case by treating it as "no lines so far"."""
+    today_utc = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return os.path.join(_REPO_ROOT, "logs", f"run_{today_utc}.log")
+
+
+def _new_job_id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_hex(6)}"
+
+
+def _level_normalize(raw: str) -> str:
+    """Map Python logging level names to the UI's four-token vocabulary."""
+    low = (raw or "").lower()
+    if low in ("error", "critical", "fatal"):
+        return "error"
+    if low in ("warning", "warn"):
+        return "warn"
+    if low == "debug":
+        return "debug"
+    return "info"
+
+
+def _read_log_tail(
+    log_file: str,
+    start_offset: int,
+    limit: int,
+    end_offset: Optional[int] = None,
+) -> List[PrepLog]:
+    """Return up to `limit` most recent PrepLog entries from log_file,
+    sliced to [start_offset, end_offset).
+
+    The watcher records end_offset when a subprocess exits so a completed
+    job's response is bounded to lines actually emitted by THAT job, even
+    if other jobs have since appended more lines to the shared rolling
+    log file. For a still-running job (end_offset is None) we read up to
+    the current EOF.
+
+    Lines that don't match the standard `[HH:MM:SS] LEVEL name: msg` format
+    are attached to the previously-seen timestamp/level — these are usually
+    multi-line traceback continuations. Blank lines are dropped."""
+    if not log_file or not os.path.isfile(log_file):
+        return []
+    try:
+        with open(log_file, "rb") as f:
+            f.seek(start_offset)
+            if end_offset is not None and end_offset > start_offset:
+                raw = f.read(end_offset - start_offset)
+            else:
+                raw = f.read()
+        text = raw.decode("utf-8", errors="replace")
+    except OSError:
+        return []
+    lines = text.splitlines()
+    if not lines:
+        return []
+
+    entries: List[PrepLog] = []
+    last_t = ""
+    last_level = "info"
+    for idx, raw in enumerate(lines):
+        m = _LOG_LINE_RE.match(raw)
+        if m:
+            ts, lvl, _name, msg = m.groups()
+            last_t = ts
+            last_level = _level_normalize(lvl)
+            entries.append(PrepLog(id=str(idx), t=ts, level=last_level, msg=msg))
+        elif raw.strip():
+            entries.append(PrepLog(id=str(idx), t=last_t, level=last_level, msg=raw))
+    return entries[-limit:]
+
+
+def _spawn_run_py(project_path: str, extra_args: Optional[List[str]] = None) -> subprocess.Popen:
+    """Spawn `python run.py <project_path> [extra_args...]` rooted at the
+    analyzer repo so run.py resolves config/, src/, model/ correctly.
+
+    Windows needs shell=True (project preference — see CLAUDE.md note about
+    subprocess.run requirements). The process group flags let API 11 kill
+    the whole tree cleanly when cancel arrives."""
+    cmd: List[str] = [sys.executable, "run.py", project_path]
+    if extra_args:
+        cmd.extend(extra_args)
+    is_windows = sys.platform == "win32"
+    popen_kwargs: Dict = dict(
+        cwd=_REPO_ROOT,
+        stdout=subprocess.DEVNULL,  # logs go to the rolling log file
+        stderr=subprocess.DEVNULL,
+    )
+    if is_windows:
+        popen_kwargs["shell"] = True
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True  # own process group
+    return subprocess.Popen(cmd, **popen_kwargs)
+
+
+async def _watch_subprocess_job(job_id: str) -> None:
+    """Background task: poll the spawned subprocess until it exits, then
+    mark the job complete. A non-zero return code records an error string
+    so API 10 can surface it."""
+    job = _jobs.get(job_id)
+    if not job:
+        return
+    proc: Optional[subprocess.Popen] = job.get("process")
+    if proc is None:
+        return
+    while True:
+        if job.get("cancelled"):
+            # Cancel handler is responsible for killing the process; we
+            # just stop watching and mark complete on the next cycle.
+            return
+        rc = proc.poll()
+        if rc is not None:
+            job["return_code"] = rc
+            job["complete"] = True
+            if rc != 0 and not job.get("error"):
+                job["error"] = f"run.py exited with code {rc}"
+            # Snapshot the log file size at completion so subsequent reads
+            # for THIS job are bounded — protects against another job
+            # appending to the same rolling log file later.
+            log_file = job.get("log_file") or ""
+            if log_file and os.path.isfile(log_file):
+                try:
+                    job["log_end_offset"] = os.path.getsize(log_file)
+                except OSError:
+                    pass
+            return
+        await asyncio.sleep(0.5)
 
 
 def _build_module_tree(
@@ -762,22 +917,111 @@ async def patch_function(fn_id: str, body: PatchFunctionBody) -> PatchFunctionRe
 
 @app.get("/api/v1/flowcharts/{fn_id}", response_model=Flowchart)
 async def get_flowchart(fn_id: str) -> Flowchart:
-    """API 7 — fetch the Mermaid script for one function. Batch 3."""
-    raise _not_implemented(7, 3)
+    """API 7 — return the Mermaid script for one function.
+
+    Reads output/flowcharts/*.json (skipping `_summary.json` and any file
+    starting with `_`) and matches on functionKey. Returns 404 when the
+    flowchart hasn't been rendered yet for this fn_id — clients should
+    surface "flowchart not generated, run the pipeline first."
+    """
+    entry = _find_flowchart_entry(fn_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"flowchart for {fn_id!r} not found")
+    return Flowchart(
+        id=fn_id,
+        name=str(entry.get("name") or fn_id),
+        code=str(entry.get("flowchart") or ""),
+    )
 
 
 @app.post("/api/v1/jobs/prepare", response_model=JobStartResult)
 async def start_prepare(
     request: PrepareJobRequest, background_tasks: BackgroundTasks
 ) -> JobStartResult:
-    """API 8 — start a `python run.py` prepare job. Batch 3."""
-    raise _not_implemented(8, 3)
+    """API 8 — spawn `python run.py <path>` and start tracking it.
+
+    The CPP project path comes from the request body (`path`). componentId
+    and moduleId are accepted for shape parity with the UI contract but
+    are not forwarded to run.py — per team decision the path alone drives
+    the full pipeline. Job state lives only in memory (`_jobs[job_id]`)
+    and is lost on FastAPI restart, which is the agreed scope.
+
+    The log file path + current size are recorded at spawn time so API 9
+    can return only THIS job's slice when multiple prepare jobs share
+    the rolling daily log file.
+
+    Errors:
+      400 — empty path or path doesn't resolve to a directory
+      500 — Popen failed (e.g. python not on PATH inside the host)
+    """
+    project_path = (request.path or "").strip()
+    if not project_path:
+        raise HTTPException(status_code=400, detail="path is required")
+    # Allow relative paths — resolve against the analyzer repo root.
+    if not os.path.isabs(project_path):
+        candidate = os.path.join(_REPO_ROOT, project_path)
+        if os.path.isdir(candidate):
+            project_path = candidate
+    if not os.path.isdir(project_path):
+        raise HTTPException(
+            status_code=400,
+            detail=f"path not found or not a directory: {project_path!r}",
+        )
+
+    log_file = _expected_log_file_path()
+    log_offset = os.path.getsize(log_file) if os.path.isfile(log_file) else 0
+
+    try:
+        proc = _spawn_run_py(project_path)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to spawn run.py: {exc}")
+
+    job_id = _new_job_id("prep")
+    _jobs[job_id] = {
+        "type": "prepare",
+        "process": proc,
+        "pid": proc.pid,
+        "log_file": log_file,
+        "log_offset": log_offset,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "complete": False,
+        "cancelled": False,
+        "error": None,
+        "return_code": None,
+        "project_path": project_path,
+    }
+
+    background_tasks.add_task(_watch_subprocess_job, job_id)
+    return JobStartResult(jobId=job_id)
 
 
 @app.get("/api/v1/jobs/{job_id}/prepare/logs", response_model=List[PrepLog])
 async def get_prepare_logs(job_id: str) -> List[PrepLog]:
-    """API 9 — tail recent log lines for a prepare job. Batch 3."""
-    raise _not_implemented(9, 3)
+    """API 9 — return up to the most recent 40 log lines emitted by this
+    prepare job's run.py subprocess.
+
+    Reads the rolling daily log file at the byte offset recorded when the
+    job started, so each job's response contains only that job's slice
+    even when several jobs share `logs/run_<UTC-date>.log`.
+
+    Errors:
+      404 — unknown job_id
+      400 — job_id exists but isn't a prepare job (use the export endpoint)
+    """
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
+    if job.get("type") != "prepare":
+        raise HTTPException(
+            status_code=400, detail=f"job {job_id!r} is not a prepare job"
+        )
+    end_off = job.get("log_end_offset")
+    return _read_log_tail(
+        job.get("log_file") or "",
+        int(job.get("log_offset") or 0),
+        _LOG_TAIL_LIMIT,
+        end_offset=int(end_off) if end_off is not None else None,
+    )
 
 
 @app.get("/api/v1/jobs/{job_id}/status")
