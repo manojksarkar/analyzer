@@ -3,13 +3,20 @@
 Run with:
     uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
-The UI (Vite dev server) is expected at http://localhost:5173. Only that
-origin is whitelisted by CORS for now; widen the list when staging/prod
-hosts come online.
+The UI (Vite dev server) is at http://localhost:5173 — that's the only
+origin currently whitelisted by CORS. Widen the list when staging hosts
+come online.
 
-The first batch (APIs 1–3) is intentionally read-only and side-effect free —
-later batches will add job orchestration, PATCH /functions, and download
-endpoints.
+The structure mirrors the team's `main.py` (12 routes total). Routes are
+filled in batch-by-batch against real CPP project data:
+
+  Batch 1 (this commit): APIs 1-3   — repository, components, component-by-id
+  Batch 2: APIs 4-6   — modules, function detail, function patch
+  Batch 3: APIs 7-9   — flowchart, prepare job, prepare logs
+  Batch 4: APIs 10-12 — job status, cancel, export job
+
+Stubbed routes return HTTP 501 with a clear message so the UI surfaces
+"not yet wired" rather than a confusing payload.
 """
 
 from __future__ import annotations
@@ -17,13 +24,14 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 # Make the existing src/ package importable so we can reuse load_config()
-# (handles JSONC + trailing commas in config/config.json).
+# (which knows how to parse the JSONC + trailing commas in config/config.json).
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.dirname(_BACKEND_DIR)
 _SRC_DIR = os.path.join(_REPO_ROOT, "src")
@@ -35,24 +43,18 @@ from core.config import load_config  # noqa: E402
 from backend.models import (  # noqa: E402
     Component,
     ComponentSummary,
+    ExportJobRequest,
+    Flowchart,
+    FunctionDetailWithHidden,
+    JobStartResult,
     Module,
+    ModuleSummary,
+    PatchFunctionBody,
+    PatchFunctionResult,
+    PrepLog,
+    PrepareJobRequest,
     Repository,
     TreeNode,
-)
-
-
-# ---------------------------------------------------------------------------
-# App + middleware
-# ---------------------------------------------------------------------------
-
-app = FastAPI(title="Analyzer Backend", version="0.1.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 
@@ -60,30 +62,42 @@ app.add_middleware(
 # Constants
 # ---------------------------------------------------------------------------
 
-# The UI currently surfaces a single hardcoded "FTL" component that wraps
-# every entry in config.json :: modulesGroups. When multi-component support
-# lands, this becomes a lookup keyed off a new config block.
+# Single hardcoded component for now. When config grows a "components" key
+# this becomes a lookup keyed off that block.
 _COMPONENT_ID = "FTL"
 _COMPONENT_NAME = "FTL"
 _COMPONENT_CODE = "FTL"
 _COMPONENT_DESC = ""
 
-# Extensions counted as "source files" for the per-module file count and for
-# tree-leaf inclusion.
+# Files counted as "source files" for the per-module count and tree leaves.
 _SOURCE_EXTS = (".cpp", ".c", ".cc", ".cxx", ".h", ".hpp", ".hh", ".hxx")
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# In-memory stores (populated by later batches)
+# ---------------------------------------------------------------------------
+
+# Persisted patches from PATCH /functions/{fn_id} (batch 2).
+_db: Dict[str, Dict[str, object]] = {
+    "descriptions": {},
+    "hidden_functions": {},
+}
+
+# Background-job state keyed by job_id (batches 3 & 4).
+_jobs: Dict[str, Dict] = {}
+
+
+# ---------------------------------------------------------------------------
+# Real-data helpers (used by APIs 1-3)
 # ---------------------------------------------------------------------------
 
 
 def _project_base_path() -> Optional[str]:
-    """Return the basePath last recorded by the parser, or None if unknown.
+    """Return basePath last recorded by the parser, or None if unknown.
 
-    The file/tree views are anchored to this directory. When no run has
-    happened yet (model/metadata.json missing), the tree endpoints return
-    empty children rather than guessing a path.
+    File/tree views are anchored to this directory. When no run has happened
+    yet (model/metadata.json missing), the tree endpoints return empty
+    children instead of guessing a path.
     """
     p = os.path.join(_REPO_ROOT, "model", "metadata.json")
     if not os.path.isfile(p):
@@ -98,14 +112,14 @@ def _project_base_path() -> Optional[str]:
 
 
 def _load_modules_groups() -> Dict[str, Dict[str, object]]:
-    """Return config.json :: modulesGroups, or an empty dict if missing/invalid."""
+    """Return config.json :: modulesGroups, or {} when missing/invalid."""
     cfg = load_config(_REPO_ROOT)
     groups = cfg.get("modulesGroups") or {}
     return groups if isinstance(groups, dict) else {}
 
 
 def _load_functions() -> Dict[str, dict]:
-    """Load model/functions.json, returning {} when missing or malformed."""
+    """Load model/functions.json — {} when missing or malformed."""
     p = os.path.join(_REPO_ROOT, "model", "functions.json")
     if not os.path.isfile(p):
         return {}
@@ -118,10 +132,10 @@ def _load_functions() -> Dict[str, dict]:
 
 
 def _normalize_dirs(spec) -> List[str]:
-    """A logical-group's directory spec may be a string or a list of strings.
+    """A logical-group's dirs may be a string or a list of strings.
 
-    Empty/non-string entries are dropped silently so a malformed config never
-    crashes the API — it just produces a thinner tree.
+    Empty/non-string entries are dropped so a malformed config never crashes
+    the API — it just yields a thinner tree.
     """
     if not spec:
         return []
@@ -137,11 +151,7 @@ def _normalize_dirs(spec) -> List[str]:
 
 
 def _collect_module_dirs(inner: dict) -> List[str]:
-    """Flatten every logical group's dirs for the file/count walk.
-
-    De-duplicates while preserving insertion order so unstable filesystem
-    ordering doesn't change the response.
-    """
+    """Flatten every logical group's dirs into one ordered, deduped list."""
     if not isinstance(inner, dict):
         return []
     seen: set = set()
@@ -155,7 +165,7 @@ def _collect_module_dirs(inner: dict) -> List[str]:
 
 
 def _count_source_files(base_path: str, rel_dirs: List[str]) -> int:
-    """Recursively count files with C/C++ extensions under any of rel_dirs."""
+    """Recursively count C/C++ source files under any of rel_dirs."""
     if not base_path or not os.path.isdir(base_path):
         return 0
     total = 0
@@ -171,10 +181,7 @@ def _count_source_files(base_path: str, rel_dirs: List[str]) -> int:
 
 
 def _functions_by_file(functions_data: Dict[str, dict]) -> Dict[str, List[dict]]:
-    """Group functions by their location.file (normalised to forward-slashes).
-
-    Each value entry is {"id": <function key>, "info": <functions.json entry>}.
-    """
+    """Group {fn_id: info} by normalized location.file."""
     by_file: Dict[str, List[dict]] = {}
     for fid, info in functions_data.items():
         if not isinstance(info, dict):
@@ -207,11 +214,8 @@ def _file_node(file_rel: str, by_file: Dict[str, List[dict]]) -> TreeNode:
 
 
 def _dir_node(base_path: str, rel_dir: str, by_file: Dict[str, List[dict]]) -> Optional[TreeNode]:
-    """Build a submodule node for rel_dir, recursing into subdirectories and listing files.
-
-    Returns None if rel_dir doesn't exist on disk; an existing-but-empty
-    directory still yields a node with children=None so the UI can show it.
-    """
+    """Build a submodule node for rel_dir, recursing into subdirectories and
+    listing source files. Returns None if the dir doesn't exist on disk."""
     full = os.path.join(base_path, rel_dir)
     if not os.path.isdir(full):
         return None
@@ -221,19 +225,19 @@ def _dir_node(base_path: str, rel_dir: str, by_file: Dict[str, List[dict]]) -> O
     except OSError:
         entries = []
 
-    sub_dir_names = [e for e in entries if os.path.isdir(os.path.join(full, e))]
-    sub_file_names = [
+    sub_dirs = [e for e in entries if os.path.isdir(os.path.join(full, e))]
+    sub_files = [
         e for e in entries
         if not os.path.isdir(os.path.join(full, e)) and e.lower().endswith(_SOURCE_EXTS)
     ]
 
     children: List[TreeNode] = []
-    for sub_dir in sub_dir_names:
+    for sub_dir in sub_dirs:
         child_rel = (rel_dir + "/" + sub_dir).strip("/")
         node = _dir_node(base_path, child_rel, by_file)
         if node is not None:
             children.append(node)
-    for sub_file in sub_file_names:
+    for sub_file in sub_files:
         file_rel = (rel_dir + "/" + sub_file).strip("/")
         children.append(_file_node(file_rel, by_file))
 
@@ -251,11 +255,7 @@ def _logical_group_node(
     base_path: str,
     by_file: Dict[str, List[dict]],
 ) -> TreeNode:
-    """Build a submodule node for one logical group (an inner key of modulesGroups).
-
-    Each directory the group lists becomes one child of this node. Missing
-    directories are skipped silently.
-    """
+    """One inner-key (logical group) of modulesGroups → submodule node."""
     children: List[TreeNode] = []
     for rel in _normalize_dirs(spec):
         node = _dir_node(base_path, rel, by_file)
@@ -280,25 +280,20 @@ def _build_module_tree(
     Layout rules:
       - The tree root is always the module itself (type=submodule).
       - When the module has exactly one logical group whose name matches the
-        module name, the logical-group level is collapsed away — the module's
-        direct children are the directory nodes. This avoids the awkward
+        module name, the logical-group level is collapsed — avoids the
         "core -> core -> app, math" double-nesting for the common case.
       - When the module has multiple logical groups, each appears as its own
-        child node — useful for the "tests" pattern where `tests_a`/`tests_b`
-        partition the same physical tree.
+        child — useful for the tests/tests_a/tests_b partition pattern.
     """
     inner_dict = inner if isinstance(inner, dict) else {}
     base = base_path or ""
 
     if not base or not os.path.isdir(base):
-        # No project on disk yet (no run / metadata.json missing) — return
-        # an empty stub so the UI can still render the module header.
         return TreeNode(id=module_key, type="submodule", name=module_key)
 
     logical_keys = list(inner_dict.keys())
 
     if len(logical_keys) == 1 and logical_keys[0] == module_key:
-        # Collapse the redundant logical-group layer.
         only_group = logical_keys[0]
         children: List[TreeNode] = []
         for rel in _normalize_dirs(inner_dict[only_group]):
@@ -312,9 +307,10 @@ def _build_module_tree(
             children=children or None,
         )
 
-    children = []
-    for group_name, spec in inner_dict.items():
-        children.append(_logical_group_node(group_name, spec, base, by_file))
+    children = [
+        _logical_group_node(group_name, spec, base, by_file)
+        for group_name, spec in inner_dict.items()
+    ]
     return TreeNode(
         id=module_key,
         type="submodule",
@@ -324,17 +320,33 @@ def _build_module_tree(
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# App + middleware
+# ---------------------------------------------------------------------------
+
+app = FastAPI(
+    title="Analyzer Backend",
+    description="Backend API for the analyzer document generation UI",
+    version="0.2.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Routes — Batch 1 (implemented against real data)
 # ---------------------------------------------------------------------------
 
 
 @app.get("/api/v1/repository", response_model=Repository)
 async def get_repository() -> Repository:
-    """Return the (currently hardcoded) repository metadata.
-
-    Will eventually be backed by config + the parser's metadata.json once we
-    decide where the canonical project path lives.
-    """
+    """API 1 — repository metadata. Currently hardcoded; will be backed by
+    config + parser metadata once the canonical project path lands."""
     return Repository(
         name="ASPICE",
         branch="release",
@@ -346,11 +358,9 @@ async def get_repository() -> Repository:
 
 @app.get("/api/v1/components", response_model=List[ComponentSummary])
 async def list_components() -> List[ComponentSummary]:
-    """List components — only "FTL" for now.
-
-    moduleCount is read from config.json::modulesGroups so the UI badge
-    updates the moment a new module group is added to config (no restart).
-    """
+    """API 2 — single hardcoded "FTL" wrapping every entry in
+    config.json::modulesGroups. moduleCount tracks that dict live so the UI
+    badge updates as soon as a new group is added (no restart needed)."""
     groups = _load_modules_groups()
     return [
         ComponentSummary(
@@ -365,12 +375,10 @@ async def list_components() -> List[ComponentSummary]:
 
 @app.get("/api/v1/components/{component_id}", response_model=Component)
 async def get_component(component_id: str) -> Component:
-    """Return the full module breakdown for one component, including the
-    directory/file/function tree built from disk + functions.json.
-
-    Unknown component_id → 404. Case-insensitive match so "ftl"/"FTL"/"Ftl"
-    all hit the same single hardcoded component.
-    """
+    """API 3 — full module breakdown for one component, including the
+    directory/file/function tree built from metadata.json::basePath joined
+    against model/functions.json. Case-insensitive component_id lookup.
+    Unknown component_id → 404."""
     if component_id.upper() != _COMPONENT_ID.upper():
         raise HTTPException(status_code=404, detail=f"component {component_id!r} not found")
 
@@ -390,7 +398,7 @@ async def get_component(component_id: str) -> Component:
                 id=module_key,
                 name=module_key,
                 path=module_key,
-                files=str(files_count),
+                files=files_count,
                 tree=tree,
             )
         )
@@ -402,3 +410,79 @@ async def get_component(component_id: str) -> Component:
         desc=_COMPONENT_DESC,
         modules=modules,
     )
+
+
+# ---------------------------------------------------------------------------
+# Routes — Batches 2-4 (stubbed; return 501 until implemented)
+# ---------------------------------------------------------------------------
+
+
+def _not_implemented(api_num: int, batch_num: int) -> HTTPException:
+    return HTTPException(
+        status_code=501,
+        detail=f"API {api_num} not yet implemented (scheduled for batch {batch_num})",
+    )
+
+
+@app.get("/api/v1/components/{component_id}/modules", response_model=List[ModuleSummary])
+async def list_modules(component_id: str) -> List[ModuleSummary]:
+    """API 4 — list modules for a component (no tree). Batch 2."""
+    raise _not_implemented(4, 2)
+
+
+@app.get("/api/v1/functions/{fn_id}", response_model=FunctionDetailWithHidden)
+async def get_function(fn_id: str) -> FunctionDetailWithHidden:
+    """API 5 — function detail (callers, callees, flowchart, description). Batch 2."""
+    raise _not_implemented(5, 2)
+
+
+@app.patch("/api/v1/functions/{fn_id}", response_model=PatchFunctionResult)
+async def patch_function(fn_id: str, body: PatchFunctionBody) -> PatchFunctionResult:
+    """API 6 — update function description / hidden flag. Batch 2."""
+    raise _not_implemented(6, 2)
+
+
+@app.get("/api/v1/flowcharts/{fn_id}", response_model=Flowchart)
+async def get_flowchart(fn_id: str) -> Flowchart:
+    """API 7 — fetch the Mermaid script for one function. Batch 3."""
+    raise _not_implemented(7, 3)
+
+
+@app.post("/api/v1/jobs/prepare", response_model=JobStartResult)
+async def start_prepare(
+    request: PrepareJobRequest, background_tasks: BackgroundTasks
+) -> JobStartResult:
+    """API 8 — start a `python run.py` prepare job. Batch 3."""
+    raise _not_implemented(8, 3)
+
+
+@app.get("/api/v1/jobs/{job_id}/prepare/logs", response_model=List[PrepLog])
+async def get_prepare_logs(job_id: str) -> List[PrepLog]:
+    """API 9 — tail recent log lines for a prepare job. Batch 3."""
+    raise _not_implemented(9, 3)
+
+
+@app.get("/api/v1/jobs/{job_id}/status")
+async def get_job_status(job_id: str):
+    """API 10 — job status / progress / error. Batch 4."""
+    raise _not_implemented(10, 4)
+
+
+@app.delete("/api/v1/jobs/{job_id}")
+async def cancel_job(job_id: str):
+    """API 11 — cancel a running job (full process-tree kill). Batch 4."""
+    raise _not_implemented(11, 4)
+
+
+@app.post("/api/v1/jobs/export", response_model=JobStartResult)
+async def start_export(
+    request: ExportJobRequest, background_tasks: BackgroundTasks
+) -> JobStartResult:
+    """API 12 — start the phase-4 docx export job. Batch 4."""
+    raise _not_implemented(12, 4)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

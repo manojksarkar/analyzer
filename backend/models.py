@@ -35,7 +35,7 @@ class Module(BaseModel):
     id: str
     name: str
     path: str
-    files: str
+    files: int
     tree: TreeNode
 
 
@@ -59,7 +59,7 @@ class ModuleSummary(BaseModel):
     id: str
     name: str
     path: str
-    files: str
+    files: int
 
 
 class FunctionCaller(BaseModel):
