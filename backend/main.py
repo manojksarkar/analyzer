@@ -26,6 +26,7 @@ import json
 import os
 import re
 import secrets
+import signal
 import subprocess
 import sys
 import tempfile
@@ -81,6 +82,7 @@ from models import (  # noqa: E402
     Component,
     ComponentSummary,
     ExportJobRequest,
+    ExportProgress,
     Flowchart,
     FunctionCaller,
     FunctionDetailWithHidden,
@@ -630,10 +632,110 @@ def _spawn_run_py(
     return proc
 
 
+def _kill_process_tree(proc: subprocess.Popen) -> None:
+    """Hard-kill the subprocess and every descendant.
+
+    Windows: `taskkill /F /T /PID <pid>` walks the process tree (works
+    because _spawn_run_py sets CREATE_NEW_PROCESS_GROUP). Falls back to
+    proc.terminate() if taskkill is missing.
+
+    POSIX: `os.killpg(getpgid(pid), SIGKILL)` — _spawn_run_py sets
+    start_new_session=True so the spawned process is the group leader.
+    Falls back to proc.kill() if anything in that chain fails.
+    """
+    if proc.poll() is not None:
+        return  # already exited
+    pid = proc.pid
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=10,
+            )
+            return
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        try:
+            proc.terminate()
+        except OSError:
+            pass
+        return
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
+        return
+    except OSError:
+        pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
+def _finalize_job(job_id: str, rc: Optional[int], error: Optional[str] = None) -> None:
+    """Centralised completion bookkeeping — called by both the watcher
+    (process exited on its own) and the cancel endpoint (process killed).
+
+    Sets complete/return_code/error in one place; chooses the right
+    progress representation for the job type; snapshots the rolling-log
+    end_offset (for fallback tail reads); and closes the per-job
+    stdout/stderr capture file so the final flush lands on disk.
+
+    Cancelled-with-nonzero-rc is reported as "cancelled by user"; a
+    cancel that races a clean exit (rc=0) is recorded with no error so
+    the UI doesn't show a confusing failure on a successful run.
+    """
+    job = _jobs.get(job_id)
+    if not job or job.get("complete"):
+        return
+    job["complete"] = True
+    job["return_code"] = rc
+
+    if error:
+        job["error"] = error
+    elif rc not in (0, None):
+        if job.get("cancelled"):
+            job["error"] = "cancelled by user"
+        else:
+            job["error"] = f"run.py exited with code {rc}"
+
+    if job.get("type") == "export":
+        if job.get("cancelled") and rc not in (0, None):
+            stage = "cancelled"
+        elif rc == 0:
+            stage = "done"
+        else:
+            stage = "failed"
+        job["progress"] = ExportProgress(pct=100, stage=stage)
+    else:
+        # Prepare jobs: integer percentage. 100 on any terminal state so
+        # the UI can flip its spinner off.
+        job["progress"] = 100
+
+    log_file = job.get("log_file") or ""
+    if log_file and os.path.isfile(log_file):
+        try:
+            job["log_end_offset"] = os.path.getsize(log_file)
+        except OSError:
+            pass
+
+    proc = job.get("process")
+    if proc is not None:
+        fh = getattr(proc, "_spawn_output_fh", None)
+        if fh is not None:
+            try:
+                fh.close()
+            except OSError:
+                pass
+
+
 async def _watch_subprocess_job(job_id: str) -> None:
-    """Background task: poll the spawned subprocess until it exits, then
-    mark the job complete. A non-zero return code records an error string
-    so API 10 can surface it."""
+    """Background task: poll until the spawned subprocess exits, then hand
+    off to _finalize_job. When a cancel request flips the cancelled flag
+    mid-flight, the kill happens in the cancel handler; this watcher just
+    needs to detect the resulting exit and finalize."""
     job = _jobs.get(job_id)
     if not job:
         return
@@ -641,34 +743,9 @@ async def _watch_subprocess_job(job_id: str) -> None:
     if proc is None:
         return
     while True:
-        if job.get("cancelled"):
-            # Cancel handler is responsible for killing the process; we
-            # just stop watching and mark complete on the next cycle.
-            return
         rc = proc.poll()
         if rc is not None:
-            job["return_code"] = rc
-            job["complete"] = True
-            if rc != 0 and not job.get("error"):
-                job["error"] = f"run.py exited with code {rc}"
-            # Snapshot the rolling-log file size at completion so subsequent
-            # reads for THIS job are bounded — protects against another job
-            # appending later. (The per-job output file in `output_file` is
-            # naturally isolated; this offset is only used as a fallback.)
-            log_file = job.get("log_file") or ""
-            if log_file and os.path.isfile(log_file):
-                try:
-                    job["log_end_offset"] = os.path.getsize(log_file)
-                except OSError:
-                    pass
-            # Close the per-job stdout/stderr capture so the tail read
-            # picks up the final flush.
-            fh = getattr(proc, "_spawn_output_fh", None)
-            if fh is not None:
-                try:
-                    fh.close()
-                except OSError:
-                    pass
+            _finalize_job(job_id, rc=rc)
             return
         await asyncio.sleep(0.5)
 
@@ -826,15 +903,8 @@ async def get_component(component_id: str) -> Component:
 
 
 # ---------------------------------------------------------------------------
-# Routes — Batches 2-4 (stubbed; return 501 until implemented)
+# Routes — Batches 2, 3, 4
 # ---------------------------------------------------------------------------
-
-
-def _not_implemented(api_num: int, batch_num: int) -> HTTPException:
-    return HTTPException(
-        status_code=501,
-        detail=f"API {api_num} not yet implemented (scheduled for batch {batch_num})",
-    )
 
 
 @app.get("/api/v1/components/{component_id}/modules", response_model=List[ModuleSummary])
@@ -1075,22 +1145,134 @@ async def get_prepare_logs(job_id: str) -> List[PrepLog]:
 
 @app.get("/api/v1/jobs/{job_id}/status")
 async def get_job_status(job_id: str):
-    """API 10 — job status / progress / error. Batch 4."""
-    raise _not_implemented(10, 4)
+    """API 10 — return type/complete/progress/error for a job.
+
+    For prepare jobs progress is an int (0 while running, 100 once
+    complete). For export jobs progress is an ExportProgress({pct, stage})
+    object and a top-level `stage` is also surfaced for UIs that only
+    want the human label. 404 on unknown id."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
+    response: Dict = {
+        "jobId": job_id,
+        "type": job.get("type"),
+        "complete": bool(job.get("complete")),
+        "progress": job.get("progress", 0),
+        "error": job.get("error"),
+    }
+    if job.get("type") == "export":
+        prog = job.get("progress")
+        response["stage"] = prog.stage if isinstance(prog, ExportProgress) else ""
+    return response
 
 
 @app.delete("/api/v1/jobs/{job_id}")
 async def cancel_job(job_id: str):
-    """API 11 — cancel a running job (full process-tree kill). Batch 4."""
-    raise _not_implemented(11, 4)
+    """API 11 — full process-tree kill of a running job.
+
+    Sets cancelled=True, kills the subprocess and its descendants
+    (taskkill /F /T on Windows, killpg(SIGKILL) on POSIX), waits up to
+    2 seconds for the process to exit, then finalises the job so a
+    follow-up /status call returns complete=True without waiting for
+    the watcher's next poll.
+
+    Idempotent: cancelling an already-complete job returns the same
+    `{"status": "cancelled"}` shape — there's nothing useful for the
+    UI to do with a "too late" signal.
+    """
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
+
+    if job.get("complete"):
+        return {"status": "cancelled"}
+
+    job["cancelled"] = True
+    proc: Optional[subprocess.Popen] = job.get("process")
+    if proc is None:
+        _finalize_job(job_id, rc=None, error="cancelled by user")
+        return {"status": "cancelled"}
+
+    _kill_process_tree(proc)
+    # Give the OS a moment to reap the process so /status reflects
+    # complete=True before the next request lands.
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
+    rc = proc.poll()
+    _finalize_job(job_id, rc=rc, error="cancelled by user")
+    return {"status": "cancelled"}
 
 
 @app.post("/api/v1/jobs/export", response_model=JobStartResult)
 async def start_export(
     request: ExportJobRequest, background_tasks: BackgroundTasks
 ) -> JobStartResult:
-    """API 12 — start the phase-4 docx export job. Batch 4."""
-    raise _not_implemented(12, 4)
+    """API 12 — spawn `python run.py <path> --from-phase 4`.
+
+    Phase 4 is the docx export step in the analyzer pipeline; we resume
+    from there so we don't re-parse and re-derive. componentId / moduleId
+    are accepted for shape parity but not forwarded (path drives the
+    pipeline). hiddenFns is ignored per team decision — the per-function
+    hide isn't wired through run.py yet.
+
+    Same spawn/watch infrastructure as start_prepare; only difference is
+    the extra --from-phase 4 argument and the initial progress shape
+    (ExportProgress with pct=0/stage='running' instead of plain 0).
+
+    Validation:
+      400 — empty or non-existent path
+      500 — Popen failed
+    """
+    project_path = (request.path or "").strip()
+    if not project_path:
+        raise HTTPException(status_code=400, detail="path is required")
+    if not os.path.isabs(project_path):
+        candidate = os.path.join(_REPO_ROOT, project_path)
+        if os.path.isdir(candidate):
+            project_path = candidate
+    if not os.path.isdir(project_path):
+        raise HTTPException(
+            status_code=400,
+            detail=f"path not found or not a directory: {project_path!r}",
+        )
+
+    log_file = _expected_log_file_path()
+    log_offset = os.path.getsize(log_file) if os.path.isfile(log_file) else 0
+
+    job_id = _new_job_id("exp")
+    output_file = os.path.join(_REPO_ROOT, "logs", f"job_{job_id}.out.log")
+
+    try:
+        proc = _spawn_run_py(
+            project_path,
+            extra_args=["--from-phase", "4"],
+            output_file_path=output_file,
+        )
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to spawn run.py: {exc}")
+
+    _jobs[job_id] = {
+        "type": "export",
+        "process": proc,
+        "pid": proc.pid,
+        "log_file": log_file,
+        "log_offset": log_offset,
+        "output_file": output_file,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "complete": False,
+        "cancelled": False,
+        "error": None,
+        "return_code": None,
+        "project_path": project_path,
+        "progress": ExportProgress(pct=0, stage="running"),
+        "result": None,
+    }
+
+    background_tasks.add_task(_watch_subprocess_job, job_id)
+    return JobStartResult(jobId=job_id)
 
 
 if __name__ == "__main__":
