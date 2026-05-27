@@ -520,6 +520,33 @@ def _new_job_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(6)}"
 
 
+def _resolve_group_name(requested: Optional[str]) -> Optional[str]:
+    """Validate moduleId against the OUTER keys of config.modulesGroups
+    (case-insensitive). Returns the canonical key when matched, None when
+    `requested` is empty/None. Raises HTTPException(400) when non-empty
+    but unknown — saves an unattended run.py from silently processing the
+    full project when the UI sent a typo.
+
+    Mirrors src/utils.py's resolver behaviour so the API answers exactly
+    the same set of names that the CLI's --selected-group accepts.
+    """
+    if not requested or not requested.strip():
+        return None
+    req = requested.strip()
+    groups = _load_modules_groups()
+    if req in groups:
+        return req
+    fold = req.casefold()
+    for k in groups.keys():
+        if isinstance(k, str) and k.casefold() == fold:
+            return k
+    valid = sorted(k for k in groups.keys() if isinstance(k, str))
+    raise HTTPException(
+        status_code=400,
+        detail=f"moduleId {requested!r} not in modulesGroups; valid: {valid}",
+    )
+
+
 def _level_normalize(raw: str) -> str:
     """Map Python logging level names to the UI's four-token vocabulary."""
     low = (raw or "").lower()
@@ -1074,6 +1101,14 @@ async def start_prepare(
             detail=f"path not found or not a directory: {project_path!r}",
         )
 
+    # moduleId, when present, forwards as `--selected-group <name>` so the
+    # pipeline only processes that module — same semantics as the CLI.
+    # Empty/None moduleId runs the full project. Unknown moduleId 400s here
+    # so the UI gets immediate feedback instead of an unattended full-project
+    # run that the user didn't ask for.
+    selected_group = _resolve_group_name(request.moduleId)
+    extra_args: List[str] = ["--selected-group", selected_group] if selected_group else []
+
     log_file = _expected_log_file_path()
     log_offset = os.path.getsize(log_file) if os.path.isfile(log_file) else 0
 
@@ -1084,7 +1119,11 @@ async def start_prepare(
     output_file = os.path.join(_REPO_ROOT, "logs", f"job_{job_id}.out.log")
 
     try:
-        proc = _spawn_run_py(project_path, output_file_path=output_file)
+        proc = _spawn_run_py(
+            project_path,
+            extra_args=extra_args or None,
+            output_file_path=output_file,
+        )
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to spawn run.py: {exc}")
 
@@ -1239,6 +1278,14 @@ async def start_export(
             detail=f"path not found or not a directory: {project_path!r}",
         )
 
+    # Same moduleId → --selected-group plumbing as start_prepare, so
+    # exports can also be scoped to one module instead of regenerating
+    # the docx for the entire project.
+    selected_group = _resolve_group_name(request.moduleId)
+    extra_args: List[str] = ["--from-phase", "4"]
+    if selected_group:
+        extra_args.extend(["--selected-group", selected_group])
+
     log_file = _expected_log_file_path()
     log_offset = os.path.getsize(log_file) if os.path.isfile(log_file) else 0
 
@@ -1248,7 +1295,7 @@ async def start_export(
     try:
         proc = _spawn_run_py(
             project_path,
-            extra_args=["--from-phase", "4"],
+            extra_args=extra_args,
             output_file_path=output_file,
         )
     except OSError as exc:
