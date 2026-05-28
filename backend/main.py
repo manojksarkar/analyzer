@@ -31,7 +31,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -628,6 +628,47 @@ def _read_log_tail(
     return entries[-limit:]
 
 
+# Matches the orchestration phase-start line written by
+# src/core/orchestration.py:  `[<idx>/<total>] === <phase name> ===`
+_PHASE_START_RE = re.compile(r"\[(\d+)/(\d+)\] === (.+?) ===")
+
+
+def _compute_progress_and_phase(output_file: str) -> Tuple[int, str]:
+    """Approximate progress + currently-running phase label by scanning
+    the per-job stdout/stderr capture for `[N/M] === Phase ... ===`
+    lines that orchestration.py emits at every phase boundary.
+
+    The latest marker is treated as "phase N currently in progress" —
+    we report `(N - 0.5) / total` as the percent, so a 4-phase run
+    moves through 12 / 37 / 62 / 87 as each phase begins and stays
+    capped at 99 until _finalize_job sets the true 100 on exit. Good
+    enough to give the UI a moving spinner instead of a frozen 0.
+
+    Returns (0, "") when the file isn't readable yet or no markers have
+    been logged — caller treats that as "still warming up".
+    """
+    if not output_file or not os.path.isfile(output_file):
+        return (0, "")
+    try:
+        with open(output_file, "rb") as f:
+            text = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return (0, "")
+    matches = _PHASE_START_RE.findall(text)
+    if not matches:
+        return (0, "")
+    n_s, total_s, name = matches[-1]
+    try:
+        n = int(n_s)
+        total = int(total_s)
+    except ValueError:
+        return (0, "")
+    if total <= 0:
+        return (0, name.strip())
+    pct = (n - 0.5) / total * 100
+    return (max(0, min(99, int(pct))), name.strip())
+
+
 def _spawn_run_py(
     project_path: str,
     extra_args: Optional[List[str]] = None,
@@ -1215,15 +1256,35 @@ async def get_job_status(job_id: str):
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
+
+    # Live progress: while the subprocess is running, scan the per-job
+    # output file for `[N/M] === Phase ... ===` markers so the UI sees
+    # something better than a frozen 0. Once _finalize_job has set
+    # complete=True it owns the final value (100) and we leave it alone.
+    if job.get("complete"):
+        progress = job.get("progress", 100)
+        phase_label = ""
+    else:
+        live_pct, phase_label = _compute_progress_and_phase(
+            job.get("output_file") or ""
+        )
+        if job.get("type") == "export":
+            existing = job.get("progress")
+            stage = existing.stage if isinstance(existing, ExportProgress) else "running"
+            progress = ExportProgress(pct=live_pct, stage=stage)
+        else:
+            progress = live_pct
+
     response: Dict = {
         "jobId": job_id,
         "type": job.get("type"),
         "complete": bool(job.get("complete")),
-        "progress": job.get("progress", 0),
+        "progress": progress,
         "error": job.get("error"),
+        "phase": phase_label,
     }
     if job.get("type") == "export":
-        prog = job.get("progress")
+        prog = response["progress"]
         response["stage"] = prog.stage if isinstance(prog, ExportProgress) else ""
     return response
 
@@ -1297,12 +1358,22 @@ async def get_export_status(job_id: str):
         stage = ""
         pct = int(prog or 0)
 
+    # Live progress / phase label while running — see API 10 for rationale.
+    phase_label = ""
+    if not job.get("complete"):
+        live_pct, phase_label = _compute_progress_and_phase(
+            job.get("output_file") or ""
+        )
+        if live_pct > 0:
+            pct = live_pct
+
     docx_path = job.get("output_docx_path") or ""
     has_file = bool(docx_path and os.path.isfile(docx_path))
     return {
         "jobId": job_id,
         "complete": bool(job.get("complete")),
         "stage": stage,
+        "phase": phase_label,
         "progress": pct,
         "error": job.get("error"),
         "filename": os.path.basename(docx_path) if has_file else None,
