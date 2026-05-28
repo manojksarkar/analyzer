@@ -128,9 +128,11 @@ class ExportJobRequest(BaseModel):
     moduleId: Optional[str] = None
     path: str
     # hiddenFns is accepted but currently ignored (see API 12 — "ignore
-    # hiddenFns" decision). Default to empty dict so callers omitting it
-    # don't 422.
-    hiddenFns: Dict[str, bool] = {}
+    # hiddenFns" decision). Optional[Dict]=None (rather than = {}) so the
+    # field validates clean even on strict-mode Pydantic instances and on
+    # older/forked models.py copies where the literal mutable default
+    # might not be honored.
+    hiddenFns: Optional[Dict[str, bool]] = None
 
 
 class PrepLog(BaseModel):

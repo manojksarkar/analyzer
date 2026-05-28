@@ -1347,9 +1347,15 @@ async def cancel_job(job_id: str):
 
 @app.get("/api/v1/jobs/{job_id}/export/status")
 async def get_export_status(job_id: str):
-    """Export-specific status: extends API 10 with the docx filename and
+    """Docx-artifact status: extends API 10 with the docx filename and
     a ready-to-use download URL once the file is on disk. The UI polls
     this until `complete` is true, then hits `downloadUrl`.
+
+    Works for BOTH prepare and export jobs — `python run.py <path>`
+    without --from-phase already runs phase 4, so a prepare job produces
+    the same docx an export job does. The endpoint is named
+    `/export/status` for URL stability; the action is "status of the
+    docx this job is producing."
 
     Response:
       jobId, complete, stage, progress (pct), error, filename (or null),
@@ -1357,23 +1363,28 @@ async def get_export_status(job_id: str):
 
     Errors:
       404 — unknown job_id
-      400 — job exists but is a prepare job; use /jobs/{id}/status instead
     """
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
-    if job.get("type") != "export":
-        raise HTTPException(
-            status_code=400,
-            detail=f"job {job_id!r} is not an export job (use /jobs/{{id}}/status)",
-        )
     prog = job.get("progress")
     if isinstance(prog, ExportProgress):
         stage = prog.stage
         pct = prog.pct
     else:
-        stage = ""
+        # Prepare jobs (progress is a plain int) don't carry an ExportProgress
+        # but the UI still wants a `stage` label. Synthesize one from the
+        # job's terminal state so the docx-status endpoint behaves the same
+        # whether the docx came from prepare or from --from-phase 4 export.
         pct = int(prog or 0)
+        if not job.get("complete"):
+            stage = "running"
+        elif (job.get("error") or "").lower().startswith("cancelled"):
+            stage = "cancelled"
+        elif job.get("error"):
+            stage = "failed"
+        else:
+            stage = "done"
 
     # Live progress / phase label while running — see API 10 for rationale.
     phase_label = ""
@@ -1403,24 +1414,24 @@ async def get_export_status(job_id: str):
 
 @app.get("/api/v1/jobs/{job_id}/export/download")
 async def download_export(job_id: str):
-    """Stream the docx produced by an export job back to the caller.
+    """Stream the docx produced by this job back to the caller.
+
+    Works for BOTH prepare and export jobs — `python run.py <path>` (no
+    --from-phase) already runs phase 4 at the tail of the full pipeline,
+    so a prepare job's output_docx_path is just as real as an export
+    job's. The endpoint name keeps "export" for URL stability.
 
     Standard browser download flow: returns a FileResponse with the
-    `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
-    content type and a Content-Disposition that uses the docx's basename.
+    Office content type and a Content-Disposition that uses the docx's
+    basename.
 
     Errors:
       404 — unknown job_id or the docx file is missing on disk
-      400 — job exists but isn't an export job
-      409 — export hasn't completed yet, or completed with an error
+      409 — job hasn't completed yet, or completed with an error
     """
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
-    if job.get("type") != "export":
-        raise HTTPException(
-            status_code=400, detail=f"job {job_id!r} is not an export job"
-        )
     if not job.get("complete"):
         raise HTTPException(
             status_code=409, detail=f"job {job_id!r} not complete yet"
