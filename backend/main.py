@@ -628,6 +628,18 @@ def _read_log_tail(
     return entries[-limit:]
 
 
+def _format_command_line(project_path: str, extra_args: Optional[List[str]]) -> str:
+    """Render the literal argv that _spawn_run_py builds, as a single
+    human-readable string. Surfaced on the status response so the UI can
+    verify exactly which run.py invocation is being tracked — useful for
+    confirming `--selected-group <name>` was passed through.
+    """
+    parts: List[str] = [os.path.basename(sys.executable) or "python", "run.py", project_path]
+    if extra_args:
+        parts.extend(extra_args)
+    return " ".join(parts)
+
+
 # Matches the orchestration phase-start line written by
 # src/core/orchestration.py:  `[<idx>/<total>] === <phase name> ===`
 _PHASE_START_RE = re.compile(r"\[(\d+)/(\d+)\] === (.+?) ===")
@@ -1197,6 +1209,7 @@ async def start_prepare(
         "output_file": output_file,
         "output_docx_path": _expected_docx_path(selected_group),
         "selected_group": selected_group,
+        "command_line": _format_command_line(project_path, extra_args or []),
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "complete": False,
         "cancelled": False,
@@ -1282,6 +1295,10 @@ async def get_job_status(job_id: str):
         "progress": progress,
         "error": job.get("error"),
         "phase": phase_label,
+        # Verification fields — let the UI confirm which CLI was actually
+        # spawned without having to open the per-job log file.
+        "selectedGroup": job.get("selected_group"),
+        "commandLine": job.get("command_line"),
     }
     if job.get("type") == "export":
         prog = response["progress"]
@@ -1379,6 +1396,8 @@ async def get_export_status(job_id: str):
         "filename": os.path.basename(docx_path) if has_file else None,
         "downloadUrl": f"/api/v1/jobs/{job_id}/export/download" if has_file else None,
         "hiddenCount": 0,
+        "selectedGroup": job.get("selected_group"),
+        "commandLine": job.get("command_line"),
     }
 
 
@@ -1521,6 +1540,7 @@ async def start_export(
         "output_file": output_file,
         "output_docx_path": _expected_docx_path(selected_group),
         "selected_group": selected_group,
+        "command_line": _format_command_line(project_path, extra_args),
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "complete": False,
         "cancelled": False,
