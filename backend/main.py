@@ -35,6 +35,7 @@ from typing import Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 # Locate the analyzer root regardless of how deeply backend/ is nested.
 # Layouts we want to support:
@@ -518,6 +519,25 @@ def _expected_log_file_path() -> str:
 
 def _new_job_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(6)}"
+
+
+def _expected_docx_path(selected_group: Optional[str]) -> str:
+    """Return the absolute path the analyzer would write its docx to for a
+    given --selected-group, mirroring docx_exporter.py:933-938:
+
+        group_name = selected_group or "all"
+        raw  = config.export.docxPath  (default: output/software_detailed_design.docx)
+        path = <repo>/{raw with {group} -> group_name}
+
+    Computed at job-creation time and stashed on the job so the download
+    endpoint doesn't have to re-derive it later.
+    """
+    cfg = load_config(_REPO_ROOT)
+    export_cfg = cfg.get("export") or {}
+    raw = (export_cfg.get("docxPath") or "output/software_detailed_design.docx").strip()
+    group_name = selected_group or "all"
+    rel = raw.replace("{group}", group_name)
+    return os.path.normpath(os.path.join(_REPO_ROOT, rel))
 
 
 def _resolve_group_name(requested: Optional[str]) -> Optional[str]:
@@ -1134,6 +1154,8 @@ async def start_prepare(
         "log_file": log_file,
         "log_offset": log_offset,
         "output_file": output_file,
+        "output_docx_path": _expected_docx_path(selected_group),
+        "selected_group": selected_group,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "complete": False,
         "cancelled": False,
@@ -1245,6 +1267,124 @@ async def cancel_job(job_id: str):
     return {"status": "cancelled"}
 
 
+@app.get("/api/v1/jobs/{job_id}/export/status")
+async def get_export_status(job_id: str):
+    """Export-specific status: extends API 10 with the docx filename and
+    a ready-to-use download URL once the file is on disk. The UI polls
+    this until `complete` is true, then hits `downloadUrl`.
+
+    Response:
+      jobId, complete, stage, progress (pct), error, filename (or null),
+      downloadUrl (or null), hiddenCount (always 0 — hiddenFns ignored).
+
+    Errors:
+      404 — unknown job_id
+      400 — job exists but is a prepare job; use /jobs/{id}/status instead
+    """
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
+    if job.get("type") != "export":
+        raise HTTPException(
+            status_code=400,
+            detail=f"job {job_id!r} is not an export job (use /jobs/{{id}}/status)",
+        )
+    prog = job.get("progress")
+    if isinstance(prog, ExportProgress):
+        stage = prog.stage
+        pct = prog.pct
+    else:
+        stage = ""
+        pct = int(prog or 0)
+
+    docx_path = job.get("output_docx_path") or ""
+    has_file = bool(docx_path and os.path.isfile(docx_path))
+    return {
+        "jobId": job_id,
+        "complete": bool(job.get("complete")),
+        "stage": stage,
+        "progress": pct,
+        "error": job.get("error"),
+        "filename": os.path.basename(docx_path) if has_file else None,
+        "downloadUrl": f"/api/v1/jobs/{job_id}/export/download" if has_file else None,
+        "hiddenCount": 0,
+    }
+
+
+@app.get("/api/v1/jobs/{job_id}/export/download")
+async def download_export(job_id: str):
+    """Stream the docx produced by an export job back to the caller.
+
+    Standard browser download flow: returns a FileResponse with the
+    `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+    content type and a Content-Disposition that uses the docx's basename.
+
+    Errors:
+      404 — unknown job_id or the docx file is missing on disk
+      400 — job exists but isn't an export job
+      409 — export hasn't completed yet, or completed with an error
+    """
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
+    if job.get("type") != "export":
+        raise HTTPException(
+            status_code=400, detail=f"job {job_id!r} is not an export job"
+        )
+    if not job.get("complete"):
+        raise HTTPException(
+            status_code=409, detail=f"job {job_id!r} not complete yet"
+        )
+    if job.get("error"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"job {job_id!r} failed: {job['error']}",
+        )
+    docx_path = job.get("output_docx_path") or ""
+    if not docx_path or not os.path.isfile(docx_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"docx not found on disk: {docx_path or '(no path recorded)'}",
+        )
+    return FileResponse(
+        path=docx_path,
+        filename=os.path.basename(docx_path),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+    )
+
+
+@app.get("/api/v1/config")
+async def get_config_raw():
+    """Return the parsed contents of config/config.json as JSON.
+
+    The on-disk file is JSONC (allows // line comments and trailing
+    commas); we strip those using the same helpers the analyzer pipeline
+    uses so the response is exactly what the pipeline sees, just without
+    the comment syntax. config.local.json overrides are NOT applied here
+    — this endpoint deliberately returns only config.json so the UI sees
+    the canonical, version-controlled values.
+
+    Errors:
+      404 — config/config.json missing
+      500 — file is present but unparseable
+    """
+    config_path = os.path.join(_REPO_ROOT, "config", "config.json")
+    if not os.path.isfile(config_path):
+        raise HTTPException(status_code=404, detail="config/config.json not found")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            raw_text = f.read()
+        # Reuse the analyzer's JSONC sanitiser so the API answers exactly
+        # what the pipeline parses.
+        from core.config import _strip_json_comments, _strip_trailing_commas  # type: ignore
+        cleaned = _strip_trailing_commas(_strip_json_comments(raw_text))
+        return json.loads(cleaned)
+    except (json.JSONDecodeError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=f"failed to parse config.json: {exc}")
+
+
 @app.post("/api/v1/jobs/export", response_model=JobStartResult)
 async def start_export(
     request: ExportJobRequest, background_tasks: BackgroundTasks
@@ -1308,6 +1448,8 @@ async def start_export(
         "log_file": log_file,
         "log_offset": log_offset,
         "output_file": output_file,
+        "output_docx_path": _expected_docx_path(selected_group),
+        "selected_group": selected_group,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "complete": False,
         "cancelled": False,
