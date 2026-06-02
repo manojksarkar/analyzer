@@ -300,6 +300,13 @@ def _save_last_run():
 def _load_last_run() -> dict:
     return _load_json(LAST_RUN)
 
+def _toggle_function_hidden(fid: str, hidden: bool):
+    funcs_path = ROOT / "model" / "functions.json"
+    funcs = _load_json(funcs_path)
+    if fid in funcs:
+        funcs[fid]["hidden"] = hidden
+        funcs_path.write_text(json.dumps(funcs, indent=2), encoding="utf-8")
+
 def _save_function_description(fid: str, description: str):
     funcs_path = ROOT / "model" / "functions.json"
     funcs = _load_json(funcs_path)
@@ -1320,9 +1327,17 @@ with tab_mg:
                                 for fid in fids:
                                     parts = fid.split("|")
                                     fname = parts[2] if len(parts) > 2 else fid
+                                    is_hidden = bool(_funcs_all.get(fid, {}).get("hidden", False))
 
-                                    if st.button(f"{fname}()", key=f"fn_{fid}", use_container_width=True):
-                                        _function_dialog(fid, _units_all, _funcs_all)
+                                    c_fn, c_eye = st.columns([5, 1])
+                                    with c_fn:
+                                        btn_label = f"{fname}() [hidden]" if is_hidden else f"{fname}()"
+                                        if st.button(btn_label, key=f"fn_{fid}", use_container_width=True, disabled=is_hidden):
+                                            _function_dialog(fid, _units_all, _funcs_all)
+                                    with c_eye:
+                                        if st.button("Show" if is_hidden else "Hide", key=f"hide_{fid}"):
+                                            _toggle_function_hidden(fid, not is_hidden)
+                                            st.rerun()
 
 with tab_output:
     cmd_str = _rs.get("cmd", "")

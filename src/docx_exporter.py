@@ -1029,6 +1029,14 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     modules_data = _load_model_json("modules")
     global_variables_data = _load_model_json("globalVariables")
     functions_data = _load_model_json("functions")
+    _hidden_fids: set = {fid for fid, f in functions_data.items() if f.get("hidden", False)}
+    _hidden_by_mod_unit: dict = {}
+    for _fid in _hidden_fids:
+        _fp = _fid.split(KEY_SEP)
+        if len(_fp) >= 3:
+            _qn = (functions_data[_fid].get("qualifiedName") or "")
+            _base = _qn.split("::")[-1] if _qn else _fp[2]
+            _hidden_by_mod_unit.setdefault((_fp[0], _fp[1]), set()).add(_base)
     base_path = _load_base_path()
 
     doc = Document()
@@ -1045,7 +1053,10 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         parts = unit_key.split(KEY_SEP, 1)
         module_name = parts[0]
         unit_name_display = unit_data.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
-        interfaces = unit_data["entries"]
+        interfaces = [
+            i for i in unit_data["entries"]
+            if i.get("functionId") not in _hidden_fids
+        ]
         by_module.setdefault(module_name, []).append((unit_key, unit_name_display, interfaces))
 
     sorted_modules = sorted(by_module.keys())
@@ -1149,10 +1160,12 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             doc.add_heading(f"{sec_num}.1.{unit_idx}.2 unit interface", level=4)
             _add_interface_table(doc, interfaces, font_small)
 
-            # 2.1.1.3, 2.1.1.4, ... per interface
+            # 2.1.1.3, 2.1.1.4, ... per interface (functions only — globals have no flowchart section)
             unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
             rendered_private_fids = set()  # track private flowcharts already shown in this unit
-            for iface_idx, iface in enumerate(interfaces, start=3):
+            for iface_idx, iface in enumerate(
+                (i for i in interfaces if i.get("type") != "Global Variable"), start=3
+            ):
                 func_name = iface.get("name", "")
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{func_name}", level=4)
                 unit_prefix = unit_key.replace(KEY_SEP, "_")
@@ -1181,6 +1194,8 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 if flowcharts_enabled:
                     callee_fids = (functions_data.get(iface.get("functionId")) or {}).get("callsIds") or []
                     for callee_fid in callee_fids:
+                        if callee_fid in _hidden_fids:
+                            continue
                         callee = functions_data.get(callee_fid) or {}
                         if (callee.get("visibility") or "").lower() != "private":
                             continue
@@ -1239,9 +1254,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         beh_idx = 0
         for unit_name, entries in sorted((docx_rows.get(module_name) or {}).items()):
             for row in entries:
+                current_fn = row.get("currentFunctionName", "") or ""
+                if current_fn in _hidden_by_mod_unit.get((module_name, unit_name), set()):
+                    continue
                 beh_idx += 1
                 ext = row.get("externalUnitFunction", "")
-                current_fn = row.get("currentFunctionName", "") or ""
                 subheader = f"{unit_name} - {current_fn}"
                 if ext:
                     subheader += f" ({ext})"
