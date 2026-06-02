@@ -63,6 +63,8 @@ or, for Pydantic validation failures (422):
 | 13 | GET   | `/api/v1/jobs/{job_id}/export/status` | Docx-artifact status (works for prepare AND export jobs) |
 | 14 | GET   | `/api/v1/jobs/{job_id}/export/download` | Stream the docx (works for prepare AND export jobs) |
 | 15 | GET   | `/api/v1/config` | Parsed `config/config.json` (JSONC → JSON) |
+| 16 | POST  | `/api/v1/config` | Surgically replace `modulesGroups` in config.json (preserves comments + other keys) |
+| 17 | GET   | `/api/v1/project/structure` | Full directory/file tree of the CPP project |
 
 ---
 
@@ -596,6 +598,148 @@ applied — only the canonical version-controlled values are returned.
 ### Errors
 - 404 — `config/config.json` not found
 - 500 — file exists but is unparseable
+
+---
+
+# 16. POST /api/v1/config
+
+Replace the `modulesGroups` block in `config/config.json` **and only that
+block** — every other key, all inline comments (`//` and `/* */`), and
+the existing formatting elsewhere in the file are preserved byte-for-byte.
+
+The endpoint runs a small JSONC-aware splice (it knows about strings,
+both comment flavours, and brace nesting) so the result is still valid
+JSONC, the analyzer pipeline keeps parsing it correctly, and humans
+keep their documentation.
+
+### Request body
+```json
+{
+  "modulesGroups": {
+    "core": {
+      "core": ["app", "math"]
+    },
+    "support": {
+      "support": "outer/inner"
+    },
+    "tests": {
+      "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
+      "tests_b": ["tests/hub", "tests/poly", "tests/structs"]
+    }
+  }
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `modulesGroups` | yes | Same shape as in config.json. Outer key = module name; inner key = logical group name; inner value = directory path (string) or list of directory paths. |
+
+### Response 200
+```json
+{
+  "status": "ok",
+  "moduleCount": 3,
+  "modules": ["core", "support", "tests"]
+}
+```
+
+### Errors
+- 400 — body is missing `modulesGroups`, OR the existing on-disk
+  `modulesGroups` block has malformed braces, OR the result wouldn't
+  re-parse as JSONC (so the API refuses to write garbage)
+- 404 — `config/config.json` doesn't exist
+- 500 — IO failure during write
+
+### What's preserved across the write
+
+| Element | Preserved? |
+|---|---|
+| Other top-level keys (`views`, `clang`, `llm`, `export`) | ✓ byte-identical |
+| Single-line comments (`// ...`) | ✓ |
+| Block comments (`/* ... */`) | ✓ |
+| Trailing commas (JSONC quirk) | ✓ |
+| Whitespace outside the modulesGroups block | ✓ |
+| Indentation of the new modulesGroups block | matches the original |
+
+Writes are atomic (temp-file + `os.replace`) so an interrupted save
+can't leave a half-written file.
+
+---
+
+# 17. GET /api/v1/project/structure
+
+Return the full directory/file tree of the CPP project that
+`backend/repository_config.json` points at. Used by the UI to render
+the source-tree explorer.
+
+### Source of the project path
+The endpoint reads `backend/repository_config.json`:
+```json
+{ "path": "C:\\Users\\Vishal shakya\\...\\test_cpp_project" }
+```
+If that file is missing or has no `path` field, the endpoint returns
+404. The file is hand-edited (or written by a separate UI flow); the
+backend only reads it.
+
+### Response shape
+Recursive, intentionally minimal:
+```
+directory -> { "name": str, "children": StructureNode[] }
+file      -> { "name": str }                                  (no `children` key)
+```
+UI infers type from presence/absence of `children` (`"children" in node`).
+
+- Dotfiles and dot-directories are skipped (`.git`, `.flowchart_cache`,
+  `.vscode`, etc.) — cross-platform via the dotfile convention.
+- Sort order: directories first, then files; alphabetical within each
+  group. Identical projects produce byte-identical responses across
+  runs.
+- Depth is unlimited (small/medium projects only — be mindful for
+  very deep trees).
+
+### Response 200 (abbreviated for the test project)
+```json
+{
+  "name": "test_cpp_project",
+  "children": [
+    {
+      "name": "app",
+      "children": [ { "name": "main.cpp" } ]
+    },
+    {
+      "name": "math",
+      "children": [
+        { "name": "utils.cpp" },
+        { "name": "utils.h" }
+      ]
+    },
+    {
+      "name": "outer",
+      "children": [
+        {
+          "name": "inner",
+          "children": [
+            { "name": "helper.cpp" },
+            { "name": "helper.h" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tests",
+      "children": [
+        { "name": "access",    "children": [ { "name": "access_visibility.cpp" }, { "name": "access_visibility.h" } ] },
+        { "name": "direction", "children": [ { "name": "read_write.cpp" }, { "name": "read_write.h" } ] }
+        /* ... and so on for enum, flow, hub, poly, structs, void_alias */
+      ]
+    }
+  ]
+}
+```
+
+### Errors
+- 404 — `backend/repository_config.json` is missing or has no `path`
+- 404 — `path` doesn't exist on disk or isn't a directory
 
 ---
 

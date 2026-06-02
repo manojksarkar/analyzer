@@ -161,6 +161,15 @@ class ExportCompleteResult(BaseModel):
     hiddenCount: int
 
 
+class UpdateConfigRequest(BaseModel):
+    """Body shape for POST /api/v1/config — surgical update of just the
+    `modulesGroups` key. The inner type captures the existing config
+    layout: outer keys are module names; values map logical-group names
+    to either one directory path (string) or a list of directory paths.
+    """
+    modulesGroups: Dict[str, Dict[str, object]]
+
+
 # ---------------------------------------------------------------------------
 # Error response
 # ---------------------------------------------------------------------------

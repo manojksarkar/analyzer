@@ -96,6 +96,7 @@ from models import (  # noqa: E402
     PrepareJobRequest,
     Repository,
     TreeNode,
+    UpdateConfigRequest,
 )
 
 
@@ -1454,6 +1455,279 @@ async def download_export(job_id: str):
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Project-structure helpers
+# ---------------------------------------------------------------------------
+
+# Filename for the small "where is the CPP project on this machine?" pointer.
+# Hand-edited by the user / written by an external tool — the backend only
+# reads it. Lives next to main.py so the path resolver doesn't depend on
+# repo layout (works whether backend/ sits at the analyzer root or under
+# fast-app/ or anywhere else).
+_REPOSITORY_CONFIG_NAME = "repository_config.json"
+
+
+def _load_repository_path() -> str:
+    """Read the `path` field from backend/repository_config.json.
+
+    Returns the absolute path verbatim (no validation here — callers
+    handle the case where the path doesn't exist on disk so the error
+    message can be specific to that endpoint).
+    """
+    path_file = os.path.join(_BACKEND_DIR, _REPOSITORY_CONFIG_NAME)
+    if not os.path.isfile(path_file):
+        return ""
+    try:
+        with open(path_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return ""
+    return str(data.get("path") or "").strip()
+
+
+def _walk_project_structure(abs_path: str) -> Dict:
+    """Return a minimal structure tree: every node has `name`; directories
+    additionally carry `children`. UI infers type by `"children" in node`.
+
+    Dotfiles / dot-directories are skipped (handles `.git`, `.flowchart_cache`,
+    `.vscode`, etc. uniformly across Windows + Linux without poking at
+    OS-specific hidden-attribute bits). Sort order: directories first then
+    files, alphabetical within each group, so identical projects produce
+    byte-identical responses across runs.
+    """
+    name = os.path.basename(abs_path) or abs_path
+    if os.path.isdir(abs_path):
+        try:
+            entries = sorted(os.listdir(abs_path))
+        except OSError:
+            entries = []
+        entries = [e for e in entries if not e.startswith(".")]
+        sub_dirs = [e for e in entries if os.path.isdir(os.path.join(abs_path, e))]
+        sub_files = [e for e in entries if not os.path.isdir(os.path.join(abs_path, e))]
+        children = [
+            _walk_project_structure(os.path.join(abs_path, e))
+            for e in (sub_dirs + sub_files)
+        ]
+        return {"name": name, "children": children}
+    return {"name": name}
+
+
+# ---------------------------------------------------------------------------
+# Surgical JSONC modifier for config.json
+# ---------------------------------------------------------------------------
+
+def _splice_modules_groups(raw_text: str, new_value: dict) -> str:
+    """Replace JUST the `modulesGroups` value inside the raw JSONC text,
+    preserving every other key, all comments (// and /* */), and the
+    original formatting elsewhere in the file.
+
+    Why surgical instead of "parse + dump back": config.json carries
+    inline documentation comments the team relies on (Linux libclang
+    paths, env-var hints, etc.); a naïve parse-and-write would strip
+    them. The state machine here understands JSON strings, both comment
+    flavours, and brace nesting so it never replaces a `{ ... }` that's
+    actually inside a string literal or comment.
+
+    Raises ValueError when modulesGroups isn't present or its value
+    isn't a JSON object (so the caller can return 400 with a meaningful
+    detail instead of writing garbage to disk).
+    """
+    key = '"modulesGroups"'
+    idx = raw_text.find(key)
+    if idx < 0:
+        raise ValueError("modulesGroups key not found in config.json")
+
+    # Skip `: ` and any whitespace between the key and the opening brace
+    pos = idx + len(key)
+    while pos < len(raw_text) and raw_text[pos] in " \t\r\n:":
+        pos += 1
+    if pos >= len(raw_text) or raw_text[pos] != "{":
+        raise ValueError("modulesGroups value is not an object")
+
+    value_start = pos
+    depth = 0
+    in_string = False
+    escape = False
+    in_line_comment = False
+    in_block_comment = False
+    value_end = -1
+
+    while pos < len(raw_text):
+        c = raw_text[pos]
+
+        if in_line_comment:
+            if c == "\n":
+                in_line_comment = False
+            pos += 1
+            continue
+        if in_block_comment:
+            if c == "*" and pos + 1 < len(raw_text) and raw_text[pos + 1] == "/":
+                in_block_comment = False
+                pos += 2
+                continue
+            pos += 1
+            continue
+        if in_string:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            pos += 1
+            continue
+
+        if c == '"':
+            in_string = True
+            pos += 1
+            continue
+        if c == "/" and pos + 1 < len(raw_text):
+            nxt = raw_text[pos + 1]
+            if nxt == "/":
+                in_line_comment = True
+                pos += 2
+                continue
+            if nxt == "*":
+                in_block_comment = True
+                pos += 2
+                continue
+
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                value_end = pos + 1
+                break
+        pos += 1
+
+    if value_end < 0:
+        raise ValueError("unmatched braces inside modulesGroups value")
+
+    # Indent the new JSON to sit at the same column as the key, so the
+    # diff against the original file is local to this one block.
+    line_start = raw_text.rfind("\n", 0, idx) + 1
+    indent = raw_text[line_start:idx]
+    new_json = json.dumps(new_value, indent=2, ensure_ascii=False)
+    if "\n" in new_json:
+        first, rest = new_json.split("\n", 1)
+        rest = "\n".join(indent + line if line else line for line in rest.split("\n"))
+        new_json = first + "\n" + rest
+    return raw_text[:value_start] + new_json + raw_text[value_end:]
+
+
+@app.get("/api/v1/project/structure")
+async def get_project_structure():
+    """Return the full directory/file tree of the CPP project that
+    backend/repository_config.json points at.
+
+    Shape (recursive):
+        directory -> { "name": str, "children": StructureNode[] }
+        file      -> { "name": str }   (no `children` key at all)
+    The UI distinguishes by `"children" in node`. Dotfiles / dot-dirs
+    are skipped. Sort order: dirs first, then files, alphabetical
+    within each group. Depth is unlimited.
+
+    Errors:
+      404 — backend/repository_config.json is missing or has no `path`
+      404 — `path` doesn't resolve to an existing directory
+    """
+    project_path = _load_repository_path()
+    if not project_path:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"backend/{_REPOSITORY_CONFIG_NAME} is missing or has no "
+                f"`path` field — create it with {{\"path\": \"...\"}}"
+            ),
+        )
+    if not os.path.isdir(project_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"project path does not exist or is not a directory: {project_path!r}",
+        )
+    return _walk_project_structure(project_path)
+
+
+@app.post("/api/v1/config")
+async def update_config(body: UpdateConfigRequest):
+    """Replace ONLY the `modulesGroups` block in config/config.json,
+    preserving comments and every other key/value untouched.
+
+    Body:
+      { "modulesGroups": { ... } }
+
+    The new modulesGroups is serialized at the same indent level as
+    the existing one, so the on-disk diff is local to this single
+    block. Uses an atomic temp-file + os.replace() so an interrupted
+    save can't corrupt config.json.
+
+    Errors:
+      404 — config/config.json missing
+      400 — body is missing modulesGroups, or the on-disk file's
+            existing modulesGroups isn't well-formed (e.g. raw JSON
+            parse fails before/after the splice)
+      500 — file IO error during write-back
+    """
+    new_groups = body.modulesGroups
+    config_path = os.path.join(_REPO_ROOT, "config", "config.json")
+    if not os.path.isfile(config_path):
+        raise HTTPException(status_code=404, detail="config/config.json not found")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            raw_text = f.read()
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to read config.json: {exc}")
+
+    try:
+        updated_text = _splice_modules_groups(raw_text, new_groups)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # Quick sanity check: stripped result must still parse as JSON.
+    try:
+        from core.config import _strip_json_comments, _strip_trailing_commas  # type: ignore
+        cleaned = _strip_trailing_commas(_strip_json_comments(updated_text))
+        json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"refused to write: result would be unparseable JSON ({exc})",
+        )
+
+    try:
+        _safe_write_json_text(config_path, updated_text)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to write config.json: {exc}")
+
+    return {
+        "status": "ok",
+        "moduleCount": len(new_groups),
+        "modules": sorted(list(new_groups.keys())),
+    }
+
+
+def _safe_write_json_text(path: str, text: str) -> None:
+    """Atomic-replace flavour of _safe_write_json that takes pre-serialised
+    text (so we can keep comments and exact whitespace from a surgical edit).
+    """
+    dir_ = os.path.dirname(path) or "."
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", delete=False, dir=dir_, suffix=".tmp"
+    )
+    try:
+        tmp.write(text)
+        tmp.flush()
+        tmp.close()
+        os.replace(tmp.name, path)
+    except Exception:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        raise
 
 
 @app.get("/api/v1/config")
