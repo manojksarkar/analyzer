@@ -135,6 +135,7 @@ def _init():
 
     st.session_state.setdefault("export_docx_path", export.get("docxPath", "output/software_detailed_design_{group}.docx"))
     st.session_state.setdefault("export_font_size", int(export.get("docxFontSize", 8)))
+    st.session_state.setdefault("data_dict_path", "")
 
     mg = cfg.get("modulesGroups", {})
     gid = 0; mid = 0; pid = 0; groups: list[dict] = []
@@ -385,6 +386,9 @@ def _run_full(selected_group):
 
     if selected_group:
         cmd += ["--selected-group", selected_group]
+
+    if dd := st.session_state.get("data_dict_path", "").strip():
+        cmd += ["--data-dictionary", dd]
 
     cmd.append(proj)
 
@@ -853,6 +857,12 @@ def _settings_dialog():
         e1, e2 = st.columns([3, 1])
         e1.text_input("DOCX path", key="export_docx_path")
         e2.number_input("Font size", key="export_font_size", min_value=6, max_value=16)
+
+        st.markdown("##### Pipeline inputs")
+        _path_row("Data dictionary CSV (optional)", "data_dict_path",
+                  filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                  help="CSV merged into model/dataDictionary.json during Phase 1. See config/data_dictionary.csv for format.")
+
 
     # ─────────────────────────────────────────────
     # CONFIG PREVIEW

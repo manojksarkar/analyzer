@@ -59,10 +59,14 @@ def _resolve_group_name(groups: Dict[str, Any], requested: Optional[str]) -> Opt
     return None
 
 
-def _build_model_phases(project_path: str, *, no_llm_summarize: bool) -> List[Phase]:
+def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
+                        data_dictionary_path: Optional[str] = None) -> List[Phase]:
     deriver_args = [] if no_llm_summarize else ["--llm-summarize"]
+    parser_args = [project_path]
+    if data_dictionary_path:
+        parser_args += ["--data-dictionary", data_dictionary_path]
     return [
-        Phase("Phase 1: Parse C++ source", "parser.py", [project_path]),
+        Phase("Phase 1: Parse C++ source", "parser.py", parser_args),
         Phase("Phase 2: Derive model", "model_deriver.py", deriver_args),
     ]
 
@@ -92,7 +96,8 @@ def plan_runs(
     use_model: bool,
     no_llm_summarize: bool,
     from_phase: int = 1,
-    filter_mode: Optional[str]
+    filter_mode: Optional[str],
+    data_dictionary_path: Optional[str] = None,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -129,7 +134,8 @@ def plan_runs(
                                  phases=phases,
                                  runner_from_phase=translated))
         else:
-            phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize) \
+            phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
+                                         data_dictionary_path=data_dictionary_path) \
                      + _view_export_phases(filter_mode=filter_mode)
             plans.append(RunPlan(label="single run",
                                  phases=phases,
@@ -143,7 +149,8 @@ def plan_runs(
 
     if not use_model:
         # Build-model plan covers phases 1+2 only.
-        build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize)
+        build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
+                                            data_dictionary_path=data_dictionary_path)
         # If the user wants to start at phase >= 3, the build step is skipped
         # entirely (use existing model on disk).
         if from_phase <= 2:

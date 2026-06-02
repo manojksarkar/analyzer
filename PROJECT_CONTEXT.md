@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-15 (function hide feature: `hidden` field in `model/functions.json`, Phase 4 filtering in `docx_exporter.py`, Hide/Show toggle in Streamlit UI; new §14b Streamlit UI; §14 function-hiding table; §17 design decision; fix: global variables excluded from per-function flowchart sections in DOCX).
+> Updated: 2026-06-02 (external data dictionary CSV input: `--data-dictionary <path>` CLI flag on `run.py`, `dataDictionaryPath` config field, `_merge_external_data_dictionary()` in `parser.py`, sample fixture `config/data_dictionary.csv`, UI file picker in `app.py`; see §5 CLI flags, §6 config, §10 Phase 1, §14b UI).
 > Current active branch: `feat/test-framework` (off `version3`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -304,6 +304,7 @@ python run.py [options] <project_path>
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
 | `--selected-group <name>` | Export only the named group from `config.modulesGroups`. Case-insensitive |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
+| `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `config/data_dictionary.csv` for format. |
 | `--quiet` | stderr handler raised to WARNING |
 | `--verbose` | stderr handler lowered to DEBUG |
 
@@ -930,10 +931,20 @@ Final model key: `module|unit|qualifiedName|paramTypes`.
 - `qualifiedName` includes namespace + class.
 - `paramTypes` is the comma-joined list of normalised parameter type strings.
 
+### External data dictionary merge
+
+After `_scan_defines()` and before writing `dataDictionary.json`, if `--data-dictionary <path>` was passed (or `dataDictionaryPath` is set in config), `_merge_external_data_dictionary(path)` is called:
+
+- Reads a CSV with columns: `Name, Kind, EntryName, Range, Comment`.
+- **Top-level rows** (non-empty `Name`): copy existing auto-parsed entry, overwrite `kind`/`range`/`comment` from CSV, reset `enumerators`/`fields` list if the kind uses them.
+- **Child rows** (empty `Name`, Kind=`enumerator` or `field`): carry forward the last non-empty `Name` as parent key and append `{name: EntryName, value/range, comment}` to the parent's list. Empty `Name` matches Excel merged-cell CSV exports.
+- External entries win on conflict. New entries (not in parsed source) are added as-is.
+- `location` and other auto-parsed fields are preserved on updated entries via `dict(existing)` copy.
+
 ### Outputs
 
 `metadata.json`, `functions.json`, `globalVariables.json`, `dataDictionary.json`
-written to `model/` via plain `json.dump`.
+written to `model/` via `core.model_io.write_model_file`.
 
 ---
 

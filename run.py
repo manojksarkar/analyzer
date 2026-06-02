@@ -9,6 +9,9 @@ Options:
   --skip-model         Alias of --use-model
   --no-llm-summarize   Skip LLM phase/hierarchy summarization (faster, lower quality)
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
+  --data-dictionary <path>
+                       CSV file to merge into model/dataDictionary.json (overrides
+                       auto-parsed entries). See config/data_dictionary.csv for format.
   --verbose            Enable DEBUG logs (cache hits, budgets, few-shot picks)
   --quiet              Only log WARNINGs and above
   --trace-prompts      Print full LLM prompts (system + user) to stdout.
@@ -21,6 +24,7 @@ Examples:
   python run.py --from-phase 3 test_cpp_project
   python run.py --selected-group MyGroup test_cpp_project
   python run.py --filter-mode single_per_function test_cpp_project
+  python run.py --data-dictionary config/data_dictionary.csv SampleCppProject
 """
 import os
 import shutil
@@ -65,13 +69,14 @@ from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, MO
 # Parse flags
 # ---------------------------------------------------------------------------
 
-clean_all          = False
-use_model          = False
-no_llm_summarize   = False
-from_phase         = 1
-selected_group_arg = None
-filter_mode_arg    = None
-raw_args           = []
+clean_all             = False
+use_model             = False
+no_llm_summarize      = False
+from_phase            = 1
+selected_group_arg    = None
+filter_mode_arg       = None
+data_dictionary_arg   = None
+raw_args              = []
 
 i = 1
 while i < len(sys.argv):
@@ -93,6 +98,12 @@ while i < len(sys.argv):
             log("--selected-group requires a group name", component="run", err=True)
             sys.exit(1)
         selected_group_arg = sys.argv[i]
+    elif a == "--data-dictionary":
+        i += 1
+        if i >= len(sys.argv):
+            log("--data-dictionary requires a file path", component="run", err=True)
+            sys.exit(1)
+        data_dictionary_arg = sys.argv[i]
     elif a == "--from-phase":
         i += 1
         if i >= len(sys.argv):
@@ -161,6 +172,15 @@ cfg = load_config(SCRIPT_DIR)
 if not (cfg.get("llm") or {}).get("summarize", True):
     no_llm_summarize = True
 
+data_dictionary_path = data_dictionary_arg or None
+if data_dictionary_path:
+    _dd_abs = data_dictionary_path if os.path.isabs(data_dictionary_path) \
+              else os.path.join(SCRIPT_DIR, data_dictionary_path)
+    if not os.path.isfile(_dd_abs):
+        log(f"--data-dictionary file not found: {_dd_abs}", component="run", err=True)
+        sys.exit(2)
+    data_dictionary_path = _dd_abs
+
 # Resolve and display the LLM config up-front so the user sees exactly which
 # provider, endpoint, model, and token budget the run will use. Fails loud
 # (LlmConfigError) if any required field is missing or invalid — better to
@@ -182,7 +202,8 @@ try:
         use_model=use_model,
         no_llm_summarize=no_llm_summarize,
         from_phase=from_phase,
-        filter_mode=filter_mode_arg
+        filter_mode=filter_mode_arg,
+        data_dictionary_path=data_dictionary_path,
     )
 except ValueError as e:
     log(str(e), component="run", err=True)
