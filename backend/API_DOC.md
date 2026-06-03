@@ -492,21 +492,27 @@ Generic job status — works for BOTH prepare and export jobs.
 | `jobId` | string | Echo of the request id |
 | `type` | `"prepare"` \| `"export"` | Job kind |
 | `complete` | boolean | True once the subprocess has exited |
-| `progress` | int (prepare) \| `ExportProgress` (export) | Live percentage parsed from `[N/M] === Phase ... ===` log markers; 100 on finalize |
-| `phase` | string | Currently-running phase label (empty before any marker / after complete) |
+| `progress` | int (prepare) \| `ExportProgress` (export) | Within-current-phase %. While running: **50** (rough midpoint — the analyzer only logs phase boundaries, not within-phase progress). On complete: **100**. For export jobs this is wrapped in `ExportProgress({pct, stage})`. |
+| `overallProgress` | int | Pipeline-wide %, derived from `[N/M] === Phase ... ===` log markers as `(N - 0.5) / total * 100`. Climbs through 12/37/62/87 as each phase begins (for a 4-phase prepare); jumps to 100 on complete. |
+| `phase` | string | Currently-running phase label, with the `Phase N: ` prefix stripped (e.g. `"Derive model"`, not `"Phase 2: Derive model"`). Empty before any marker is logged and after the job completes. |
+| `phaseNumber` | int | The `N` from `[N/M]` — currently running phase (1-based). 0 before any marker is logged. Kept at the last-seen value after complete so the UI can show "Completed 4 of 4". |
+| `totalPhase` | int | The `M` from `[N/M]` — total phases planned for this run. 0 before any marker is logged. |
 | `error` | string \| null | Error description (set on non-zero exit or cancellation) |
 | `selectedGroup` | string \| null | Resolved module key (or null when no moduleId) |
 | `commandLine` | string | Literal CLI being run — useful for verification |
 | `stage` | string (export only) | Same value as `progress.stage` |
 
-### Response 200 — prepare job running
+### Response 200 — prepare job running (mid-pipeline)
 ```json
 {
   "jobId": "prep_4f7a1b8e2c9d",
   "type": "prepare",
   "complete": false,
-  "progress": 37,
-  "phase": "Phase 2: Derive model",
+  "progress": 50,
+  "overallProgress": 37,
+  "phase": "Derive model",
+  "phaseNumber": 2,
+  "totalPhase": 4,
   "error": null,
   "selectedGroup": "core",
   "commandLine": "python.exe run.py C:\\aspice\\test_cpp_project --selected-group core"
@@ -520,7 +526,10 @@ Generic job status — works for BOTH prepare and export jobs.
   "type": "prepare",
   "complete": true,
   "progress": 100,
+  "overallProgress": 100,
   "phase": "",
+  "phaseNumber": 4,
+  "totalPhase": 4,
   "error": null,
   "selectedGroup": "core",
   "commandLine": "python.exe run.py C:\\aspice\\test_cpp_project --selected-group core"
@@ -534,7 +543,10 @@ Generic job status — works for BOTH prepare and export jobs.
   "type": "export",
   "complete": false,
   "progress": { "pct": 50, "stage": "running" },
-  "phase": "Phase 4: Export DOCX",
+  "overallProgress": 50,
+  "phase": "Export DOCX",
+  "phaseNumber": 1,
+  "totalPhase": 1,
   "stage": "running",
   "error": null,
   "selectedGroup": "core",
@@ -633,7 +645,9 @@ fail noisily.
 Docx-artifact status — works for BOTH prepare AND export jobs (prepare
 runs phase 4 too as part of the full pipeline, so it produces the same
 docx). Extends `/status` with `filename`, `downloadUrl`, and a normalized
-`stage` label.
+`stage` label. Carries the same `progress` / `overallProgress` /
+`phase` / `phaseNumber` / `totalPhase` fields as API 10 — see that
+section for their exact semantics.
 
 ### Response 200 — running
 ```json
@@ -641,8 +655,11 @@ docx). Extends `/status` with `filename`, `downloadUrl`, and a normalized
   "jobId": "prep_4f7a1b8e2c9d",
   "complete": false,
   "stage": "running",
-  "phase": "Phase 4: Export DOCX",
-  "progress": 87,
+  "phase": "Export DOCX",
+  "phaseNumber": 4,
+  "totalPhase": 4,
+  "progress": 50,
+  "overallProgress": 87,
   "error": null,
   "filename": null,
   "downloadUrl": null,
@@ -659,7 +676,10 @@ docx). Extends `/status` with `filename`, `downloadUrl`, and a normalized
   "complete": true,
   "stage": "done",
   "phase": "",
+  "phaseNumber": 4,
+  "totalPhase": 4,
   "progress": 100,
+  "overallProgress": 100,
   "error": null,
   "filename": "software_detailed_design_core.docx",
   "downloadUrl": "/api/v1/jobs/prep_4f7a1b8e2c9d/export/download",

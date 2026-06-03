@@ -645,41 +645,63 @@ def _format_command_line(project_path: str, extra_args: Optional[List[str]]) -> 
 # src/core/orchestration.py:  `[<idx>/<total>] === <phase name> ===`
 _PHASE_START_RE = re.compile(r"\[(\d+)/(\d+)\] === (.+?) ===")
 
+# `Phase 2: Derive model` -> `Derive model` (strip the human-prefix the
+# analyzer uses so the UI shows just the phase name).
+_PHASE_LABEL_PREFIX_RE = re.compile(r"^Phase\s+\d+\s*:\s*", re.IGNORECASE)
 
-def _compute_progress_and_phase(output_file: str) -> Tuple[int, str]:
-    """Approximate progress + currently-running phase label by scanning
-    the per-job stdout/stderr capture for `[N/M] === Phase ... ===`
-    lines that orchestration.py emits at every phase boundary.
 
-    The latest marker is treated as "phase N currently in progress" —
-    we report `(N - 0.5) / total` as the percent, so a 4-phase run
-    moves through 12 / 37 / 62 / 87 as each phase begins and stays
-    capped at 99 until _finalize_job sets the true 100 on exit. Good
-    enough to give the UI a moving spinner instead of a frozen 0.
+def _compute_progress_and_phase(
+    output_file: str,
+) -> Tuple[int, str, int, int, int]:
+    """Approximate per-phase + overall progress + currently-running phase
+    label by scanning the per-job stdout/stderr capture for
+    `[N/M] === Phase ... ===` lines that orchestration.py emits at every
+    phase boundary.
 
-    Returns (0, "") when the file isn't readable yet or no markers have
-    been logged — caller treats that as "still warming up".
+    Returns (per_phase_pct, phase_label, phase_number, total_phase, overall_pct).
+
+      per_phase_pct  Within-phase percent. The analyzer only logs phase
+                     BOUNDARIES, not within-phase progress, so we report
+                     a constant 50 while a phase is running (rough
+                     midpoint). _finalize_job overrides this to 100 on
+                     terminal exit.
+      phase_label    Human phase name with the `Phase N: ` prefix
+                     stripped, so "Phase 2: Derive model" surfaces as
+                     just "Derive model".
+      phase_number   The N from `[N/M]` (currently running phase, 1-based).
+                     0 when no markers have been logged yet.
+      total_phase    The M from `[N/M]` (total phases in this plan).
+                     0 when no markers have been logged yet.
+      overall_pct    Pipeline-wide percent: `(N - 0.5) / total * 100`,
+                     capped at 99 so we never accidentally report 100
+                     from a log scan — _finalize_job sets the true 100.
+
+    All-zero return means "still warming up" (file unreadable or no
+    markers seen yet).
     """
     if not output_file or not os.path.isfile(output_file):
-        return (0, "")
+        return (0, "", 0, 0, 0)
     try:
         with open(output_file, "rb") as f:
             text = f.read().decode("utf-8", errors="replace")
     except OSError:
-        return (0, "")
+        return (0, "", 0, 0, 0)
     matches = _PHASE_START_RE.findall(text)
     if not matches:
-        return (0, "")
+        return (0, "", 0, 0, 0)
     n_s, total_s, name = matches[-1]
     try:
         n = int(n_s)
         total = int(total_s)
     except ValueError:
-        return (0, "")
+        return (0, "", 0, 0, 0)
+
+    label = _PHASE_LABEL_PREFIX_RE.sub("", name.strip())
+
     if total <= 0:
-        return (0, name.strip())
-    pct = (n - 0.5) / total * 100
-    return (max(0, min(99, int(pct))), name.strip())
+        return (50, label, n, 0, 0)
+    overall = (n - 0.5) / total * 100
+    return (50, label, n, total, max(0, min(99, int(overall))))
 
 
 def _spawn_run_py(
@@ -1369,10 +1391,20 @@ async def get_prepare_logs(job_id: str) -> List[PrepLog]:
 async def get_job_status(job_id: str):
     """API 10 — return type/complete/progress/error for a job.
 
-    For prepare jobs progress is an int (0 while running, 100 once
-    complete). For export jobs progress is an ExportProgress({pct, stage})
-    object and a top-level `stage` is also surfaced for UIs that only
-    want the human label. 404 on unknown id."""
+    Progress fields:
+      progress         within-current-phase % (running: 50, complete: 100;
+                       for export jobs this is wrapped in an
+                       ExportProgress({pct, stage}) object)
+      overallProgress  pipeline-wide %, 0..99 while running, 100 complete
+      phase            human phase label, prefix-stripped (e.g.
+                       "Derive model" not "Phase 2: Derive model")
+      phaseNumber      currently running phase N (1-based), 0 when no
+                       markers seen yet
+      totalPhase       total phases planned for the run
+
+    Still-running export jobs also include the redundant top-level
+    `stage` field for UIs that only consume that label. 404 on unknown id.
+    """
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
@@ -1380,28 +1412,42 @@ async def get_job_status(job_id: str):
     # Live progress: while the subprocess is running, scan the per-job
     # output file for `[N/M] === Phase ... ===` markers so the UI sees
     # something better than a frozen 0. Once _finalize_job has set
-    # complete=True it owns the final value (100) and we leave it alone.
+    # complete=True we still scan to get phase_number/total_phase for
+    # the "Phase 4 of 4 — Complete" UX, but override the percent fields.
+    per_phase_pct, phase_label, phase_number, total_phase, overall_pct = \
+        _compute_progress_and_phase(job.get("output_file") or "")
+
     if job.get("complete"):
-        progress = job.get("progress", 100)
+        # Terminal state: progress + overallProgress jump to 100; phase
+        # label clears (no phase is "currently running" any more) but
+        # we keep phaseNumber/totalPhase so the UI can show
+        # "Completed 4 of 4 phases" etc.
         phase_label = ""
+        overall_pct = 100
+        if job.get("type") == "export":
+            existing = job.get("progress")
+            stage = existing.stage if isinstance(existing, ExportProgress) else "done"
+            progress = ExportProgress(pct=100, stage=stage)
+        else:
+            progress = 100
     else:
-        live_pct, phase_label = _compute_progress_and_phase(
-            job.get("output_file") or ""
-        )
         if job.get("type") == "export":
             existing = job.get("progress")
             stage = existing.stage if isinstance(existing, ExportProgress) else "running"
-            progress = ExportProgress(pct=live_pct, stage=stage)
+            progress = ExportProgress(pct=per_phase_pct, stage=stage)
         else:
-            progress = live_pct
+            progress = per_phase_pct
 
     response: Dict = {
         "jobId": job_id,
         "type": job.get("type"),
         "complete": bool(job.get("complete")),
         "progress": progress,
-        "error": job.get("error"),
+        "overallProgress": overall_pct,
         "phase": phase_label,
+        "phaseNumber": phase_number,
+        "totalPhase": total_phase,
+        "error": job.get("error"),
         # Verification fields — let the UI confirm which CLI was actually
         # spawned without having to open the per-job log file.
         "selectedGroup": job.get("selected_group"),
@@ -1493,14 +1539,17 @@ async def get_export_status(job_id: str):
         else:
             stage = "done"
 
-    # Live progress / phase label while running — see API 10 for rationale.
-    phase_label = ""
-    if not job.get("complete"):
-        live_pct, phase_label = _compute_progress_and_phase(
-            job.get("output_file") or ""
-        )
-        if live_pct > 0:
-            pct = live_pct
+    # Live progress / phase label — see API 10 for rationale.
+    per_phase_pct, phase_label, phase_number, total_phase, overall_pct = \
+        _compute_progress_and_phase(job.get("output_file") or "")
+    if not job.get("complete") and per_phase_pct > 0:
+        pct = per_phase_pct
+    if job.get("complete"):
+        # Terminal state: phase label clears, overall jumps to 100; keep
+        # phaseNumber/totalPhase so the UI can show "4 of 4" etc.
+        phase_label = ""
+        overall_pct = 100
+        pct = 100
 
     docx_path = job.get("output_docx_path") or ""
     has_file = bool(docx_path and os.path.isfile(docx_path))
@@ -1509,7 +1558,10 @@ async def get_export_status(job_id: str):
         "complete": bool(job.get("complete")),
         "stage": stage,
         "phase": phase_label,
+        "phaseNumber": phase_number,
+        "totalPhase": total_phase,
         "progress": pct,
+        "overallProgress": overall_pct,
         "error": job.get("error"),
         "filename": os.path.basename(docx_path) if has_file else None,
         "downloadUrl": f"/api/v1/jobs/{job_id}/export/download" if has_file else None,
