@@ -113,18 +113,23 @@ class PatchFunctionResult(BaseModel):
 class PrepareJobRequest(BaseModel):
     # componentId / moduleId are accepted for shape parity with the UI's
     # existing payload but the backend doesn't forward them to run.py —
-    # `path` alone drives the pipeline per the team decision. Optional with
-    # default None so direct callers (Postman, Swagger, scripts) can post
-    # just `{"path": "..."}` without a 422.
+    # `path` (or `?name=` query) alone drives the pipeline per the team
+    # decision. Optional with default None so direct callers (Postman,
+    # Swagger, scripts) can post just `{"path": "..."}` without a 422.
+    #
+    # `path` is now optional too: when `?name=` query is provided the
+    # backend looks up the path from repository_config.json and uses
+    # that. Validation: exactly one of {?name=, body.path} must resolve
+    # to an existing directory, else 400.
     componentId: Optional[str] = None
     moduleId: Optional[str] = None
-    path: str
+    path: Optional[str] = None
 
 
 class ExportJobRequest(BaseModel):
     componentId: Optional[str] = None
     moduleId: Optional[str] = None
-    path: str
+    path: Optional[str] = None
     # hiddenFns is accepted but currently ignored (see API 12 — "ignore
     # hiddenFns" decision). Optional[Dict]=None (rather than = {}) so the
     # field validates clean even on strict-mode Pydantic instances and on

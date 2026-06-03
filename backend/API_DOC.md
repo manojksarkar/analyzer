@@ -386,7 +386,27 @@ Spawn `python run.py <path> [--selected-group <name>]` — full pipeline:
 parse → derive → views → docx export. Returns a `jobId` to track progress
 and download the resulting docx.
 
+### Project path resolution (in priority order)
+1. **`?name=<repo>` query param** — looked up in
+   `backend/repository_config.json`; 404 if no such repository.
+2. **Request body `path`** — used directly. Backward-compatible with
+   pre-multi-repo clients.
+
+Exactly one of the two must yield a directory.
+
+### Query params
+- `?name=<repo_name>` — optional. When provided, takes precedence over
+  body `path` (useful when a UI has just picked a repo from the list
+  and wants to spawn against it without re-sending the full path).
+
 ### Request body
+```json
+{
+  "moduleId": "core",
+  "componentId": "FTL"
+}
+```
+…or, for callers that don't use `?name=`:
 ```json
 {
   "path": "C:\\aspice\\test_cpp_project",
@@ -397,9 +417,19 @@ and download the resulting docx.
 
 | Field | Required | Notes |
 |---|---|---|
-| `path` | yes | Absolute path to the CPP project. Relative paths resolve against analyzer repo root. |
+| `path` | no (required if `?name=` is omitted) | Absolute path to the CPP project. Relative paths resolve against analyzer repo root. |
 | `moduleId` | no (omit or `""` for full project) | Maps to `--selected-group <name>`. Validated against `modulesGroups` outer keys, case-insensitive. |
 | `componentId` | no | Accepted for shape parity, not forwarded to `run.py`. |
+
+### Example calls
+```
+POST /api/v1/jobs/prepare?name=test_cpp_project
+{ "moduleId": "core" }
+
+POST /api/v1/jobs/prepare
+{ "path": "C:\\aspice\\test_cpp_project", "moduleId": "core" }
+```
+Both spawn the same `python run.py <path> --selected-group core` invocation.
 
 ### Response 200
 ```json
@@ -407,9 +437,11 @@ and download the resulting docx.
 ```
 
 ### Errors
-- 400 — `path` missing, empty, or not a directory
+- 400 — neither `?name=` nor body `path` supplied, OR the resolved
+  path isn't a directory
 - 400 — `moduleId` non-empty but doesn't match any `modulesGroups` key
   (detail includes the valid list)
+- 404 — `?name=` doesn't match any configured repository
 - 500 — failed to spawn the subprocess (e.g. python not on PATH)
 
 ### Verifying what the backend actually ran
@@ -546,19 +578,34 @@ re-renders only the docx using existing model data on disk. Use this
 after editing function descriptions via PATCH to regenerate the document
 without re-parsing.
 
+### Project path resolution
+Same rules as POST /jobs/prepare (see API 8):
+1. `?name=<repo>` query param wins if provided.
+2. Otherwise body `path` is used.
+
+### Query params
+- `?name=<repo_name>` — optional. Same semantics as `/jobs/prepare`.
+
 ### Request body
 ```json
 {
-  "path": "C:\\aspice\\test_cpp_project",
   "moduleId": "core",
   "componentId": "FTL",
   "hiddenFns": {}
 }
 ```
+…or with `path` instead of `?name=`:
+```json
+{
+  "path": "C:\\aspice\\test_cpp_project",
+  "moduleId": "core",
+  "componentId": "FTL"
+}
+```
 
 | Field | Required | Notes |
 |---|---|---|
-| `path` | yes | Same rules as POST /jobs/prepare |
+| `path` | no (required if `?name=` is omitted) | Same rules as POST /jobs/prepare |
 | `moduleId` | no | Same rules; should match (or be a subset of) what was prepared earlier so the per-module model files exist on disk |
 | `componentId` | no | Accepted, not forwarded |
 | `hiddenFns` | no (defaults to `null`) | Accepted but **currently ignored** — per-function hide isn't wired through `run.py` yet |
@@ -569,7 +616,8 @@ without re-parsing.
 ```
 
 ### Errors
-- 400 — `path` missing/invalid; `moduleId` invalid
+- 400 — neither `?name=` nor body `path` supplied; OR `moduleId` invalid
+- 404 — `?name=` doesn't match any configured repository
 - 500 — Popen failure
 
 ### Important constraint
@@ -852,25 +900,33 @@ UI infers type from presence/absence of `children` (`"children" in node`).
 
 # Recommended UI Flows
 
-### A. First-time run for a project
+### A. First-time run for a project (using `?name=`)
 ```
-1. GET  /api/v1/repository                  // splash header
-2. GET  /api/v1/components                  // sidebar
-3. GET  /api/v1/components/FTL              // module tree
-4. POST /api/v1/jobs/prepare {"path": "C:\\...", "moduleId": "core"}
+1. GET  /api/v1/repository                                // list of registered repos
+2. GET  /api/v1/components                                // sidebar
+3. GET  /api/v1/components/FTL                            // module tree
+4. POST /api/v1/jobs/prepare?name=test_cpp_project        // body: { "moduleId": "core" }
 5. Loop:
-     GET /api/v1/jobs/{jobId}/status        // progress + phase
-     GET /api/v1/jobs/{jobId}/prepare/logs  // optional, for log panel
-6. GET /api/v1/jobs/{jobId}/export/status   // wait for stage="done", downloadUrl set
-7. GET /api/v1/jobs/{jobId}/export/download // file download
+     GET /api/v1/jobs/{jobId}/status                      // progress + phase
+     GET /api/v1/jobs/{jobId}/prepare/logs                // optional, for log panel
+6. GET /api/v1/jobs/{jobId}/export/status                 // wait for stage="done", downloadUrl set
+7. GET /api/v1/jobs/{jobId}/export/download               // file download
 ```
+Step 4 can also use `body.path` instead of `?name=` (legacy form).
 
 ### B. Edit a description and re-export
 ```
-1. GET   /api/v1/functions/{fn_id}          // load editor
+1. GET   /api/v1/functions/{fn_id}                        // load editor
 2. PATCH /api/v1/functions/{fn_id} {"description": "new text"}
-3. POST  /api/v1/jobs/export {"path": "C:\\...", "moduleId": "core"}
+3. POST  /api/v1/jobs/export?name=test_cpp_project        // body: { "moduleId": "core" }
 4. Same status-poll + download as flow A from step 5 onward
+```
+
+### B'. Register a new repo, then run
+```
+1. POST  /api/v1/repository { "name": "my_repo", "path": "D:\\code\\my_proj" }
+2. POST  /api/v1/jobs/prepare?name=my_repo
+3. Same as flow A from step 5 onward
 ```
 
 ### C. Cancel a runaway job

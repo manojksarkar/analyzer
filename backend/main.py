@@ -1232,27 +1232,44 @@ async def get_flowchart(fn_id: str) -> Flowchart:
 
 @app.post("/api/v1/jobs/prepare", response_model=JobStartResult)
 async def start_prepare(
-    request: PrepareJobRequest, background_tasks: BackgroundTasks
+    request: PrepareJobRequest,
+    background_tasks: BackgroundTasks,
+    name: Optional[str] = None,
 ) -> JobStartResult:
     """API 8 — spawn `python run.py <path>` and start tracking it.
 
-    The CPP project path comes from the request body (`path`). componentId
-    and moduleId are accepted for shape parity with the UI contract but
-    are not forwarded to run.py — per team decision the path alone drives
-    the full pipeline. Job state lives only in memory (`_jobs[job_id]`)
-    and is lost on FastAPI restart, which is the agreed scope.
+    Project path resolution (in priority order):
+      1. ?name=<repo_name> query param — looked up in
+         backend/repository_config.json (404 if no such repo).
+      2. request body `path` — used directly.
 
-    The log file path + current size are recorded at spawn time so API 9
-    can return only THIS job's slice when multiple prepare jobs share
-    the rolling daily log file.
+    Exactly one of those must yield a directory. componentId and
+    moduleId are accepted for shape parity with the UI contract but
+    are not forwarded to run.py — per team decision only the path
+    + --selected-group (from moduleId) drive the pipeline. Job state
+    lives only in memory (`_jobs[job_id]`) and is lost on FastAPI
+    restart.
+
+    The log file path + current size are recorded at spawn time so
+    API 9 can return only THIS job's slice when multiple prepare jobs
+    share the rolling daily log file.
 
     Errors:
-      400 — empty path or path doesn't resolve to a directory
+      400 — neither `?name=` nor body `path` supplied; or the resolved
+            path isn't a directory
+      404 — `?name=` doesn't match any configured repository
       500 — Popen failed (e.g. python not on PATH inside the host)
     """
-    project_path = (request.path or "").strip()
+    if name and name.strip():
+        # _resolve_repository_path raises HTTPException on miss; let it propagate
+        project_path = _resolve_repository_path(name)
+    else:
+        project_path = (request.path or "").strip()
     if not project_path:
-        raise HTTPException(status_code=400, detail="path is required")
+        raise HTTPException(
+            status_code=400,
+            detail="either ?name=<repo> query param or body `path` is required",
+        )
     # Allow relative paths — resolve against the analyzer repo root.
     if not os.path.isabs(project_path):
         candidate = os.path.join(_REPO_ROOT, project_path)
@@ -1608,6 +1625,30 @@ def _save_repositories(repos: List[Dict[str, str]]) -> None:
     path_file = _repository_config_path()
     os.makedirs(os.path.dirname(path_file) or ".", exist_ok=True)
     _safe_write_json(path_file, repos)
+
+
+def _resolve_repository_path(name: str) -> str:
+    """Return the on-disk path for the repository with the given name.
+
+    Raises HTTPException(404) if no repository has that name — callers
+    can let it propagate so the error reaches the client unchanged.
+    """
+    name = (name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="repository name is empty")
+    for r in _load_repositories():
+        if r["name"] == name:
+            path = (r.get("path") or "").strip()
+            if not path:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"repository {name!r} has no path configured",
+                )
+            return path
+    raise HTTPException(
+        status_code=404,
+        detail=f"repository {name!r} not found in repository_config.json",
+    )
 
 
 def _walk_project_structure(abs_path: str) -> Dict:
@@ -2024,7 +2065,9 @@ async def get_config_raw():
 
 @app.post("/api/v1/jobs/export", response_model=JobStartResult)
 async def start_export(
-    request: ExportJobRequest, background_tasks: BackgroundTasks
+    request: ExportJobRequest,
+    background_tasks: BackgroundTasks,
+    name: Optional[str] = None,
 ) -> JobStartResult:
     """API 12 — spawn `python run.py <path> --from-phase 4`.
 
@@ -2034,17 +2077,30 @@ async def start_export(
     pipeline). hiddenFns is ignored per team decision — the per-function
     hide isn't wired through run.py yet.
 
+    Project path resolution (in priority order):
+      1. ?name=<repo_name> query param — looked up in
+         backend/repository_config.json (404 if no such repo).
+      2. request body `path` — used directly.
+
     Same spawn/watch infrastructure as start_prepare; only difference is
     the extra --from-phase 4 argument and the initial progress shape
     (ExportProgress with pct=0/stage='running' instead of plain 0).
 
     Validation:
-      400 — empty or non-existent path
+      400 — neither `?name=` nor body `path` supplied; or resolved path
+            isn't a directory
+      404 — `?name=` doesn't match any configured repository
       500 — Popen failed
     """
-    project_path = (request.path or "").strip()
+    if name and name.strip():
+        project_path = _resolve_repository_path(name)
+    else:
+        project_path = (request.path or "").strip()
     if not project_path:
-        raise HTTPException(status_code=400, detail="path is required")
+        raise HTTPException(
+            status_code=400,
+            detail="either ?name=<repo> query param or body `path` is required",
+        )
     if not os.path.isabs(project_path):
         candidate = os.path.join(_REPO_ROOT, project_path)
         if os.path.isdir(candidate):
