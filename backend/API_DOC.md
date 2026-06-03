@@ -63,7 +63,7 @@ or, for Pydantic validation failures (422):
 | 13 | GET   | `/api/v1/jobs/{job_id}/export/status` | Docx-artifact status (works for prepare AND export jobs) |
 | 14 | GET   | `/api/v1/jobs/{job_id}/export/download` | Stream the docx (works for prepare AND export jobs) |
 | 15 | GET   | `/api/v1/config` | Parsed `config/config.json` (JSONC → JSON) |
-| 16 | POST  | `/api/v1/config` | Replace `modulesGroups` in config.json (preserves comments when it can; auto-backup either way) |
+| 16 | POST  | `/api/v1/config` | Replace `modulesGroups` in config.json (surgical splice; preserves comments + other keys; no backup file) |
 | 17 | GET   | `/api/v1/project/structure` | Full directory/file tree of the CPP project |
 
 ---
@@ -603,31 +603,25 @@ applied — only the canonical version-controlled values are returned.
 
 # 16. POST /api/v1/config
 
-Update the `modulesGroups` block in `config/config.json`. Every other
-top-level key (`views`, `clang`, `llm`, `export`, ...) is preserved.
+Replace ONLY the `modulesGroups` block in `config/config.json`. Every
+other top-level key (`views`, `clang`, `llm`, `export`, ...), every
+`//` and `/* */` comment, every trailing comma, and the whitespace /
+indentation everywhere else are preserved byte-for-byte.
 
-### Strategy: surgical first, lossy fallback
+### Strategy
 
-The endpoint uses a **hybrid two-strategy approach**:
+Pure surgical splice — no fallback. A JSONC-aware key-finder walks
+the file with full string and comment awareness, so a literal
+`"modulesGroups"` substring appearing inside a string value or a `//`
+comment can't trigger a false match. Once the real key is located,
+brace-nesting (also string/comment-aware) finds the matching `}` of
+its value and only that range is replaced.
 
-1. **Surgical splice (default):** Walk the raw JSONC, find the
-   `modulesGroups` block by brace-matching, replace just that value,
-   and validate the result by re-parsing. **Preserves all `//` and
-   `/* */` comments and the existing whitespace everywhere except
-   inside the modulesGroups block.** Works for typical configs.
-2. **Lossy rewrite (fallback):** Parse the whole file into a dict,
-   swap in the new modulesGroups, serialize back as plain JSON.
-   **Comments are stripped.** Only runs if the surgical splice
-   produces text that doesn't re-parse (e.g. very large arrays where
-   the brace-tracker has been observed to mis-count).
-
-The response includes a `"strategy"` field telling the caller which
-path was taken, so the UI can decide whether to surface a warning
-about lost comments.
-
-Either way, a timestamped backup of the pre-update file is written
-next to it (`config.json.bak.<UTC-stamp>`) so the original — with
-comments — is always recoverable.
+If the splice produces text that doesn't re-parse, the endpoint dumps
+the failed output to `logs/config_splice_failed_<UTC-stamp>.json` and
+returns 400 with the parser error position and that path. The on-disk
+file is never modified in that case. **No backup file is created**
+(the on-disk file stays exactly as-is on both success and failure).
 
 ### Request body
 ```json
@@ -656,27 +650,12 @@ comments — is always recoverable.
   disk. Returns the would-have-been-written byte size. Useful for
   the UI to validate a new `modulesGroups` before committing.
 
-### Response 200 — surgical succeeded (comments preserved)
+### Response 200
 ```json
 {
   "status": "ok",
-  "strategy": "surgical",
   "moduleCount": 3,
-  "modules": ["core", "support", "tests"],
-  "backup": "C:\\aspice_v2\\config\\config.json.bak.20260603T035444Z"
-}
-```
-No `note` field — surgical succeeded, on-disk comments are intact.
-
-### Response 200 — lossy fallback (comments stripped)
-```json
-{
-  "status": "ok",
-  "strategy": "lossy",
-  "moduleCount": 3,
-  "modules": ["core", "support", "tests"],
-  "backup": "C:\\aspice_v2\\config\\config.json.bak.20260603T035444Z",
-  "note": "surgical splice failed; fell back to full rewrite which stripped comments. Original (with comments) preserved at `backup`. surgical error: ..."
+  "modules": ["core", "support", "tests"]
 }
 ```
 
@@ -684,14 +663,12 @@ No `note` field — surgical succeeded, on-disk comments are intact.
 ```json
 {
   "status": "dryRun",
-  "strategy": "surgical",
   "wouldWrite": "C:\\aspice_v2\\config\\config.json",
   "moduleCount": 3,
   "modules": ["core", "support", "tests"],
   "previewBytes": 3214
 }
 ```
-(Or `"strategy": "lossy"` with a `note` if the surgical pass would have failed.)
 
 ### Errors
 - 400 — body missing `modulesGroups`; OR existing on-disk `config.json`
@@ -702,21 +679,18 @@ No `note` field — surgical succeeded, on-disk comments are intact.
 
 ### What's preserved across the write
 
-| Element | `strategy: surgical` | `strategy: lossy` |
-|---|---|---|
-| Other top-level keys (`views`, `clang`, `llm`, `export`) | ✓ byte-identical | ✓ data-identical |
-| `modulesGroups` content | replaced with body value | replaced with body value |
-| Single-line comments (`// ...`) | ✓ preserved | **stripped** |
-| Block comments (`/* ... */`) | ✓ preserved | **stripped** |
-| Trailing commas (JSONC quirk) | ✓ preserved | normalised away |
-| Whitespace / indentation | matched to surroundings | normalised to 2-space indent |
+| Element | Preserved? |
+|---|---|
+| Other top-level keys (`views`, `clang`, `llm`, `export`) | ✓ byte-identical |
+| `modulesGroups` content | replaced with body value |
+| Single-line comments (`// ...`) | ✓ |
+| Block comments (`/* ... */`) | ✓ |
+| Trailing commas (JSONC quirk) | ✓ |
+| Whitespace / indentation outside the modulesGroups block | ✓ |
 
-Either way, a timestamped backup `config.json.bak.<UTC-stamp>` is
-written BEFORE the new content lands, and the backup path is returned
-in the response. Writes are atomic (temp-file + `os.replace`) so an
-interrupted save can't leave a half-written file. If the backup write
-fails the API returns 500 without touching the live file — we never
-overwrite without a recoverable copy in place.
+Writes are atomic (temp-file + `os.replace`) so an interrupted save
+can't leave a half-written file. **No backup file is created** — the
+splice either succeeds or refuses to touch the live file.
 
 ---
 

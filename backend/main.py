@@ -1518,29 +1518,119 @@ def _walk_project_structure(abs_path: str) -> Dict:
 # Surgical JSONC modifier for config.json
 # ---------------------------------------------------------------------------
 
+def _find_modules_groups_key_pos(raw_text: str) -> int:
+    """Return the byte offset of the opening `"` of the root-level
+    `"modulesGroups"` key in raw JSONC text, or -1 if not found.
+
+    Walks the entire file with full JSONC awareness — strings (with
+    `\\"` escape handling), `//` line comments, `/* */` block comments,
+    and `{}` nesting. The match is only accepted when:
+      - we're at object depth 1 (so it's a root-level key, not a key
+        in some nested object that happens to share the name)
+      - the next non-whitespace char is `:` (so it's a key, not just
+        a string literal that reads "modulesGroups")
+
+    This is a hardening over the previous str.find() approach, which
+    could match the literal substring `"modulesGroups"` appearing
+    *inside* a clangArg string value (very plausible for huge office
+    configs with hundreds of clang flags). A false match there would
+    send the brace tracker into the wrong region of the file and
+    produce truncated output — the 80%-of-config-written behaviour
+    reported earlier.
+    """
+    pos = 0
+    n = len(raw_text)
+    depth = 0
+    in_string = False
+    escape = False
+    in_line_comment = False
+    in_block_comment = False
+    string_start = -1
+
+    while pos < n:
+        c = raw_text[pos]
+
+        if in_line_comment:
+            if c == "\n":
+                in_line_comment = False
+            pos += 1
+            continue
+        if in_block_comment:
+            if c == "*" and pos + 1 < n and raw_text[pos + 1] == "/":
+                in_block_comment = False
+                pos += 2
+                continue
+            pos += 1
+            continue
+        if in_string:
+            if escape:
+                escape = False
+                pos += 1
+                continue
+            if c == "\\":
+                escape = True
+                pos += 1
+                continue
+            if c == '"':
+                # String just closed — was it our key?
+                if depth == 1 and raw_text[string_start + 1:pos] == "modulesGroups":
+                    nxt = pos + 1
+                    while nxt < n and raw_text[nxt] in " \t\r\n":
+                        nxt += 1
+                    if nxt < n and raw_text[nxt] == ":":
+                        return string_start
+                in_string = False
+                pos += 1
+                continue
+            pos += 1
+            continue
+
+        if c == '"':
+            in_string = True
+            string_start = pos
+            pos += 1
+            continue
+        if c == "/" and pos + 1 < n:
+            nxt = raw_text[pos + 1]
+            if nxt == "/":
+                in_line_comment = True
+                pos += 2
+                continue
+            if nxt == "*":
+                in_block_comment = True
+                pos += 2
+                continue
+
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        pos += 1
+
+    return -1
+
+
 def _splice_modules_groups(raw_text: str, new_value: dict) -> str:
     """Replace JUST the `modulesGroups` value inside the raw JSONC text,
     preserving every other key, all comments (// and /* */), and the
     original formatting elsewhere in the file.
 
-    Why surgical instead of "parse + dump back": config.json carries
-    inline documentation comments the team relies on (Linux libclang
-    paths, env-var hints, etc.); a naïve parse-and-write would strip
-    them. The state machine here understands JSON strings, both comment
-    flavours, and brace nesting so it never replaces a `{ ... }` that's
-    actually inside a string literal or comment.
+    Uses a JSONC-aware key finder (so a `"modulesGroups"` substring
+    inside another string can't trigger a false match) plus a brace-
+    nesting scanner that understands strings and comments — never
+    replaces a `{ ... }` that's actually inside a string literal or
+    comment.
 
     Raises ValueError when modulesGroups isn't present or its value
     isn't a JSON object (so the caller can return 400 with a meaningful
     detail instead of writing garbage to disk).
     """
-    key = '"modulesGroups"'
-    idx = raw_text.find(key)
+    idx = _find_modules_groups_key_pos(raw_text)
     if idx < 0:
-        raise ValueError("modulesGroups key not found in config.json")
+        raise ValueError("modulesGroups key not found at root level of config.json")
 
-    # Skip `: ` and any whitespace between the key and the opening brace
-    pos = idx + len(key)
+    # Skip past the literal `"modulesGroups"` then the whitespace + `:`
+    pos = idx + len('"modulesGroups"')
     while pos < len(raw_text) and raw_text[pos] in " \t\r\n:":
         pos += 1
     if pos >= len(raw_text) or raw_text[pos] != "{":
@@ -1653,40 +1743,32 @@ async def get_project_structure():
 
 @app.post("/api/v1/config")
 async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
-    """Replace the `modulesGroups` block in config/config.json.
+    """Replace ONLY the `modulesGroups` block in config/config.json,
+    preserving every other top-level key (`views`, `clang`, `llm`,
+    `export`, ...), all `//` and `/* */` comments, trailing commas,
+    and the whitespace/formatting elsewhere in the file.
 
-    Strategy: parse the existing JSONC into a dict, swap in the new
-    modulesGroups value, then serialize the whole dict back out as
-    plain JSON. Every OTHER key/value (`views`, `clang`, `llm`,
-    `export`, ...) is preserved exactly because they round-trip
-    through Python unchanged.
-
-    Caveats:
-      - `//` and `/* */` comments in the on-disk file are LOST on
-        write — JSON itself has no comment syntax, and the previous
-        surgical-splice attempt to preserve them turned out to be
-        too fragile for real-world configs (700-clangArg files
-        produced mis-aligned brace tracking). A timestamped backup
-        of the pre-update file is written next to it so comments are
-        recoverable: `config.json.bak.<UTC-stamp>`.
-      - Field order in the rewritten file follows the order Python's
-        dict preserves (insertion order) — for a typical config that
-        means views, clang, llm, modulesGroups, export.
+    Strategy: JSONC-aware surgical splice. No parse-and-rewrite
+    fallback — if the splice produces unparseable text the endpoint
+    refuses to write and dumps the attempted output to
+    `logs/config_splice_failed_<UTC>.json` so it can be diagnosed.
+    Per team decision, comments must survive every save; we never
+    silently strip them.
 
     Body:
       { "modulesGroups": { ... } }
 
     Query params:
-      ?dryRun=true — run the full parse + rewrite pipeline but do
-        NOT touch disk. Returns the would-have-been-written byte size
-        instead. Useful for the UI side to validate a new
-        modulesGroups before committing.
+      ?dryRun=true — run the splice + validation but don't write to
+        disk. Returns the would-have-been-written byte size.
 
     Errors:
       404 — config/config.json missing
-      400 — on-disk config.json is unparseable (so we can't safely
-            modify it)
-      500 — IO failure during read or write
+      400 — body missing modulesGroups; modulesGroups not present at
+            root of the on-disk file; or the splice produced
+            unparseable text (response includes the parser error
+            position and a path to the diagnostic dump)
+      500 — IO failure during write
     """
     new_groups = body.modulesGroups
     config_path = os.path.join(_REPO_ROOT, "config", "config.json")
@@ -1699,96 +1781,57 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to read config.json: {exc}")
 
-    # Strategy 1: surgical splice — preserves `//` and `/* */` comments
-    # and the exact whitespace elsewhere in the file. Works on most configs
-    # but the state machine has been observed to mis-track braces on very
-    # large arrays (700+ clangArgs case), so it's gated by a validation
-    # parse: if the spliced output doesn't re-parse cleanly, we fall back.
-    from core.config import _strip_json_comments, _strip_trailing_commas  # type: ignore
-
-    strategy_used = "surgical"
-    updated_text: Optional[str] = None
-    surgical_error: Optional[str] = None
     try:
-        spliced = _splice_modules_groups(raw_text, new_groups)
-        cleaned = _strip_trailing_commas(_strip_json_comments(spliced))
-        json.loads(cleaned)
-        updated_text = spliced
-    except (ValueError, json.JSONDecodeError) as exc:
-        surgical_error = str(exc)
-        strategy_used = "lossy"
+        updated_text = _splice_modules_groups(raw_text, new_groups)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    # Strategy 2: parse the whole file, swap in new modulesGroups, write
-    # the dict back out. Comments are lost but data is bulletproof. Only
-    # runs when surgical produced unparseable output.
-    if updated_text is None:
+    # Validate that the spliced result is still parseable JSONC.
+    from core.config import _strip_json_comments, _strip_trailing_commas  # type: ignore
+    try:
+        cleaned = _strip_trailing_commas(_strip_json_comments(updated_text))
+        json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        # Dump the failed output for inspection — invaluable when the
+        # splice mis-tracks something specific to a particular config.
+        diag_path = ""
         try:
-            cleaned_orig = _strip_trailing_commas(_strip_json_comments(raw_text))
-            config_dict = json.loads(cleaned_orig)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"existing config.json is unparseable — won't risk "
-                    f"overwriting: {exc.msg} at line {exc.lineno} col {exc.colno}"
-                ),
-            )
-        if not isinstance(config_dict, dict):
-            raise HTTPException(
-                status_code=400, detail="config.json root is not a JSON object"
-            )
-        config_dict["modulesGroups"] = new_groups
-        updated_text = json.dumps(config_dict, indent=2, ensure_ascii=False)
+            logs_dir = os.path.join(_REPO_ROOT, "logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            diag_path = os.path.join(logs_dir, f"config_splice_failed_{stamp}.json")
+            with open(diag_path, "w", encoding="utf-8") as f:
+                f.write(updated_text)
+        except OSError:
+            diag_path = ""
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"refused to write {config_path}: result would be unparseable "
+                f"JSON — {exc.msg} at line {exc.lineno} col {exc.colno}"
+                + (f"; diagnostic copy at {diag_path}" if diag_path else "")
+            ),
+        )
 
     if dryRun:
-        response: Dict = {
+        return {
             "status": "dryRun",
-            "strategy": strategy_used,
             "wouldWrite": config_path,
             "moduleCount": len(new_groups),
             "modules": sorted(list(new_groups.keys())),
             "previewBytes": len(updated_text),
         }
-        if strategy_used == "lossy":
-            response["note"] = (
-                "surgical splice failed; lossy rewrite would strip comments. "
-                f"surgical error: {surgical_error}"
-            )
-        return response
-
-    # Backup the original so comments + formatting are recoverable.
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_path = f"{config_path}.bak.{stamp}"
-    try:
-        with open(backup_path, "w", encoding="utf-8") as f:
-            f.write(raw_text)
-    except OSError as exc:
-        # Backup failure is treated as fatal so we never overwrite without
-        # a recoverable copy on hand.
-        raise HTTPException(
-            status_code=500,
-            detail=f"failed to write backup at {backup_path}: {exc}",
-        )
 
     try:
         _safe_write_json_text(config_path, updated_text)
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to write config.json: {exc}")
 
-    response = {
+    return {
         "status": "ok",
-        "strategy": strategy_used,
         "moduleCount": len(new_groups),
         "modules": sorted(list(new_groups.keys())),
-        "backup": backup_path,
     }
-    if strategy_used == "lossy":
-        response["note"] = (
-            "surgical splice failed; fell back to full rewrite which stripped "
-            "comments. Original (with comments) preserved at `backup`. "
-            f"surgical error: {surgical_error}"
-        )
-    return response
 
 
 def _safe_write_json_text(path: str, text: str) -> None:
