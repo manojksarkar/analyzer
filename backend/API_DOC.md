@@ -63,7 +63,7 @@ or, for Pydantic validation failures (422):
 | 13 | GET   | `/api/v1/jobs/{job_id}/export/status` | Docx-artifact status (works for prepare AND export jobs) |
 | 14 | GET   | `/api/v1/jobs/{job_id}/export/download` | Stream the docx (works for prepare AND export jobs) |
 | 15 | GET   | `/api/v1/config` | Parsed `config/config.json` (JSONC → JSON) |
-| 16 | POST  | `/api/v1/config` | Replace `modulesGroups` in config.json (other keys preserved; comments stripped; auto-backup) |
+| 16 | POST  | `/api/v1/config` | Replace `modulesGroups` in config.json (preserves comments when it can; auto-backup either way) |
 | 17 | GET   | `/api/v1/project/structure` | Full directory/file tree of the CPP project |
 
 ---
@@ -604,9 +604,30 @@ applied — only the canonical version-controlled values are returned.
 # 16. POST /api/v1/config
 
 Update the `modulesGroups` block in `config/config.json`. Every other
-top-level key (`views`, `clang`, `llm`, `export`, ...) is preserved
-because the endpoint parses the full file into a Python dict, swaps
-in the new `modulesGroups` value, and writes the result back out.
+top-level key (`views`, `clang`, `llm`, `export`, ...) is preserved.
+
+### Strategy: surgical first, lossy fallback
+
+The endpoint uses a **hybrid two-strategy approach**:
+
+1. **Surgical splice (default):** Walk the raw JSONC, find the
+   `modulesGroups` block by brace-matching, replace just that value,
+   and validate the result by re-parsing. **Preserves all `//` and
+   `/* */` comments and the existing whitespace everywhere except
+   inside the modulesGroups block.** Works for typical configs.
+2. **Lossy rewrite (fallback):** Parse the whole file into a dict,
+   swap in the new modulesGroups, serialize back as plain JSON.
+   **Comments are stripped.** Only runs if the surgical splice
+   produces text that doesn't re-parse (e.g. very large arrays where
+   the brace-tracker has been observed to mis-count).
+
+The response includes a `"strategy"` field telling the caller which
+path was taken, so the UI can decide whether to surface a warning
+about lost comments.
+
+Either way, a timestamped backup of the pre-update file is written
+next to it (`config.json.bak.<UTC-stamp>`) so the original — with
+comments — is always recoverable.
 
 ### Request body
 ```json
@@ -635,28 +656,42 @@ in the new `modulesGroups` value, and writes the result back out.
   disk. Returns the would-have-been-written byte size. Useful for
   the UI to validate a new `modulesGroups` before committing.
 
-### Response 200 (real write)
+### Response 200 — surgical succeeded (comments preserved)
 ```json
 {
   "status": "ok",
+  "strategy": "surgical",
+  "moduleCount": 3,
+  "modules": ["core", "support", "tests"],
+  "backup": "C:\\aspice_v2\\config\\config.json.bak.20260603T035444Z"
+}
+```
+No `note` field — surgical succeeded, on-disk comments are intact.
+
+### Response 200 — lossy fallback (comments stripped)
+```json
+{
+  "status": "ok",
+  "strategy": "lossy",
   "moduleCount": 3,
   "modules": ["core", "support", "tests"],
   "backup": "C:\\aspice_v2\\config\\config.json.bak.20260603T035444Z",
-  "note": "config.json comments were stripped; original is at `backup`"
+  "note": "surgical splice failed; fell back to full rewrite which stripped comments. Original (with comments) preserved at `backup`. surgical error: ..."
 }
 ```
 
-### Response 200 (dryRun)
+### Response 200 — dryRun
 ```json
 {
   "status": "dryRun",
+  "strategy": "surgical",
   "wouldWrite": "C:\\aspice_v2\\config\\config.json",
   "moduleCount": 3,
   "modules": ["core", "support", "tests"],
-  "previewBytes": 3214,
-  "note": "comments would be stripped on a real write"
+  "previewBytes": 3214
 }
 ```
+(Or `"strategy": "lossy"` with a `note` if the surgical pass would have failed.)
 
 ### Errors
 - 400 — body missing `modulesGroups`; OR existing on-disk `config.json`
@@ -666,28 +701,22 @@ in the new `modulesGroups` value, and writes the result back out.
 - 500 — IO failure during backup or write
 
 ### What's preserved across the write
-| Element | Preserved? |
-|---|---|
-| Other top-level keys (`views`, `clang`, `llm`, `export`) | ✓ data-identical |
-| `modulesGroups` content | ✓ replaced with body value |
-| Single-line comments (`// ...`) | **stripped** |
-| Block comments (`/* ... */`) | **stripped** |
-| Trailing commas (JSONC quirk) | normalised away |
-| Whitespace / indentation | normalised to 2-space indent |
 
-A timestamped backup `config.json.bak.<UTC-stamp>` is always written
-next to the original BEFORE the new content lands, so comments (and
-the pre-existing formatting) are recoverable. The backup path is
-returned in the response.
+| Element | `strategy: surgical` | `strategy: lossy` |
+|---|---|---|
+| Other top-level keys (`views`, `clang`, `llm`, `export`) | ✓ byte-identical | ✓ data-identical |
+| `modulesGroups` content | replaced with body value | replaced with body value |
+| Single-line comments (`// ...`) | ✓ preserved | **stripped** |
+| Block comments (`/* ... */`) | ✓ preserved | **stripped** |
+| Trailing commas (JSONC quirk) | ✓ preserved | normalised away |
+| Whitespace / indentation | matched to surroundings | normalised to 2-space indent |
 
-The previous implementation tried to surgically replace just the
-`modulesGroups` block while preserving every byte elsewhere — that
-approach turned out to be too fragile for large configs (700+
-clangArgs caused brace-tracking issues), so it was replaced with the
-robust parse-and-rewrite flow.
-
-Writes are atomic (temp-file + `os.replace`) so an interrupted save
-can't leave a half-written file.
+Either way, a timestamped backup `config.json.bak.<UTC-stamp>` is
+written BEFORE the new content lands, and the backup path is returned
+in the response. Writes are atomic (temp-file + `os.replace`) so an
+interrupted save can't leave a half-written file. If the backup write
+fails the API returns 500 without touching the live file — we never
+overwrite without a recoverable copy in place.
 
 ---
 

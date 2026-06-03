@@ -1699,42 +1699,62 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to read config.json: {exc}")
 
-    # Parse the existing JSONC (strip comments + trailing commas first).
+    # Strategy 1: surgical splice — preserves `//` and `/* */` comments
+    # and the exact whitespace elsewhere in the file. Works on most configs
+    # but the state machine has been observed to mis-track braces on very
+    # large arrays (700+ clangArgs case), so it's gated by a validation
+    # parse: if the spliced output doesn't re-parse cleanly, we fall back.
+    from core.config import _strip_json_comments, _strip_trailing_commas  # type: ignore
+
+    strategy_used = "surgical"
+    updated_text: Optional[str] = None
+    surgical_error: Optional[str] = None
     try:
-        from core.config import _strip_json_comments, _strip_trailing_commas  # type: ignore
-        cleaned = _strip_trailing_commas(_strip_json_comments(raw_text))
-        config_dict = json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"existing config.json is unparseable — won't risk overwriting: "
-                f"{exc.msg} at line {exc.lineno} col {exc.colno}"
-            ),
-        )
+        spliced = _splice_modules_groups(raw_text, new_groups)
+        cleaned = _strip_trailing_commas(_strip_json_comments(spliced))
+        json.loads(cleaned)
+        updated_text = spliced
+    except (ValueError, json.JSONDecodeError) as exc:
+        surgical_error = str(exc)
+        strategy_used = "lossy"
 
-    if not isinstance(config_dict, dict):
-        raise HTTPException(
-            status_code=400, detail="config.json root is not a JSON object"
-        )
-
-    # Swap in the new value (preserving Python's dict insertion order for
-    # everything else).
-    config_dict["modulesGroups"] = new_groups
-
-    # Serialize back. 2-space indent matches the prevailing style; we leave
-    # ensure_ascii=False so non-ASCII paths survive a round trip.
-    updated_text = json.dumps(config_dict, indent=2, ensure_ascii=False)
+    # Strategy 2: parse the whole file, swap in new modulesGroups, write
+    # the dict back out. Comments are lost but data is bulletproof. Only
+    # runs when surgical produced unparseable output.
+    if updated_text is None:
+        try:
+            cleaned_orig = _strip_trailing_commas(_strip_json_comments(raw_text))
+            config_dict = json.loads(cleaned_orig)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"existing config.json is unparseable — won't risk "
+                    f"overwriting: {exc.msg} at line {exc.lineno} col {exc.colno}"
+                ),
+            )
+        if not isinstance(config_dict, dict):
+            raise HTTPException(
+                status_code=400, detail="config.json root is not a JSON object"
+            )
+        config_dict["modulesGroups"] = new_groups
+        updated_text = json.dumps(config_dict, indent=2, ensure_ascii=False)
 
     if dryRun:
-        return {
+        response: Dict = {
             "status": "dryRun",
+            "strategy": strategy_used,
             "wouldWrite": config_path,
             "moduleCount": len(new_groups),
             "modules": sorted(list(new_groups.keys())),
             "previewBytes": len(updated_text),
-            "note": "comments would be stripped on a real write",
         }
+        if strategy_used == "lossy":
+            response["note"] = (
+                "surgical splice failed; lossy rewrite would strip comments. "
+                f"surgical error: {surgical_error}"
+            )
+        return response
 
     # Backup the original so comments + formatting are recoverable.
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -1755,13 +1775,20 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to write config.json: {exc}")
 
-    return {
+    response = {
         "status": "ok",
+        "strategy": strategy_used,
         "moduleCount": len(new_groups),
         "modules": sorted(list(new_groups.keys())),
         "backup": backup_path,
-        "note": "config.json comments were stripped; original is at `backup`",
     }
+    if strategy_used == "lossy":
+        response["note"] = (
+            "surgical splice failed; fell back to full rewrite which stripped "
+            "comments. Original (with comments) preserved at `backup`. "
+            f"surgical error: {surgical_error}"
+        )
+    return response
 
 
 def _safe_write_json_text(path: str, text: str) -> None:
