@@ -1653,79 +1653,78 @@ async def get_project_structure():
 
 @app.post("/api/v1/config")
 async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
-    """Replace ONLY the `modulesGroups` block in config/config.json,
-    preserving comments and every other key/value untouched.
+    """Replace the `modulesGroups` block in config/config.json.
+
+    Strategy: parse the existing JSONC into a dict, swap in the new
+    modulesGroups value, then serialize the whole dict back out as
+    plain JSON. Every OTHER key/value (`views`, `clang`, `llm`,
+    `export`, ...) is preserved exactly because they round-trip
+    through Python unchanged.
+
+    Caveats:
+      - `//` and `/* */` comments in the on-disk file are LOST on
+        write — JSON itself has no comment syntax, and the previous
+        surgical-splice attempt to preserve them turned out to be
+        too fragile for real-world configs (700-clangArg files
+        produced mis-aligned brace tracking). A timestamped backup
+        of the pre-update file is written next to it so comments are
+        recoverable: `config.json.bak.<UTC-stamp>`.
+      - Field order in the rewritten file follows the order Python's
+        dict preserves (insertion order) — for a typical config that
+        means views, clang, llm, modulesGroups, export.
 
     Body:
       { "modulesGroups": { ... } }
 
     Query params:
-      ?dryRun=true — run the full splice + validation pipeline but
-        DO NOT write to disk. Useful for debugging when you want to
-        see what the endpoint would have written without touching
-        the live file.
-
-    The new modulesGroups is serialized at the same indent level as
-    the existing one, so the on-disk diff is local to this single
-    block. Uses an atomic temp-file + os.replace() so an interrupted
-    save can't corrupt config.json.
-
-    On validation failure (the splice produced text that doesn't
-    re-parse), the would-have-been-written text is dumped to
-    `logs/config_splice_failed_<UTC>.json` and that path is included
-    in the error detail so the user can inspect what went wrong.
+      ?dryRun=true — run the full parse + rewrite pipeline but do
+        NOT touch disk. Returns the would-have-been-written byte size
+        instead. Useful for the UI side to validate a new
+        modulesGroups before committing.
 
     Errors:
       404 — config/config.json missing
-      400 — body is missing modulesGroups; the on-disk modulesGroups
-            block has malformed braces; or the splice produced
-            unparseable text (with path to the diagnostic copy)
-      500 — file IO error during write-back
+      400 — on-disk config.json is unparseable (so we can't safely
+            modify it)
+      500 — IO failure during read or write
     """
     new_groups = body.modulesGroups
     config_path = os.path.join(_REPO_ROOT, "config", "config.json")
     if not os.path.isfile(config_path):
         raise HTTPException(status_code=404, detail="config/config.json not found")
+
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             raw_text = f.read()
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to read config.json: {exc}")
 
-    try:
-        updated_text = _splice_modules_groups(raw_text, new_groups)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    # Quick sanity check: stripped result must still parse as JSON.
+    # Parse the existing JSONC (strip comments + trailing commas first).
     try:
         from core.config import _strip_json_comments, _strip_trailing_commas  # type: ignore
-        cleaned = _strip_trailing_commas(_strip_json_comments(updated_text))
-        json.loads(cleaned)
+        cleaned = _strip_trailing_commas(_strip_json_comments(raw_text))
+        config_dict = json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        # Dump the would-have-been-written text so the user can see exactly
-        # what failed. The line/col on `exc` map to the cleaned text, which
-        # is what the parser saw — surfacing both helps debug indentation
-        # / comment-stripping interactions.
-        diag_path = ""
-        try:
-            logs_dir = os.path.join(_REPO_ROOT, "logs")
-            os.makedirs(logs_dir, exist_ok=True)
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-            diag_path = os.path.join(logs_dir, f"config_splice_failed_{stamp}.json")
-            with open(diag_path, "w", encoding="utf-8") as f:
-                f.write(updated_text)
-        except OSError:
-            diag_path = ""
         raise HTTPException(
             status_code=400,
             detail=(
-                f"refused to write {config_path}: "
-                f"result would be unparseable JSON — "
+                f"existing config.json is unparseable — won't risk overwriting: "
                 f"{exc.msg} at line {exc.lineno} col {exc.colno}"
-                + (f"; diagnostic copy at {diag_path}" if diag_path else "")
             ),
         )
+
+    if not isinstance(config_dict, dict):
+        raise HTTPException(
+            status_code=400, detail="config.json root is not a JSON object"
+        )
+
+    # Swap in the new value (preserving Python's dict insertion order for
+    # everything else).
+    config_dict["modulesGroups"] = new_groups
+
+    # Serialize back. 2-space indent matches the prevailing style; we leave
+    # ensure_ascii=False so non-ASCII paths survive a round trip.
+    updated_text = json.dumps(config_dict, indent=2, ensure_ascii=False)
 
     if dryRun:
         return {
@@ -1734,7 +1733,22 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
             "moduleCount": len(new_groups),
             "modules": sorted(list(new_groups.keys())),
             "previewBytes": len(updated_text),
+            "note": "comments would be stripped on a real write",
         }
+
+    # Backup the original so comments + formatting are recoverable.
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup_path = f"{config_path}.bak.{stamp}"
+    try:
+        with open(backup_path, "w", encoding="utf-8") as f:
+            f.write(raw_text)
+    except OSError as exc:
+        # Backup failure is treated as fatal so we never overwrite without
+        # a recoverable copy on hand.
+        raise HTTPException(
+            status_code=500,
+            detail=f"failed to write backup at {backup_path}: {exc}",
+        )
 
     try:
         _safe_write_json_text(config_path, updated_text)
@@ -1745,6 +1759,8 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
         "status": "ok",
         "moduleCount": len(new_groups),
         "modules": sorted(list(new_groups.keys())),
+        "backup": backup_path,
+        "note": "config.json comments were stripped; original is at `backup`",
     }
 
 

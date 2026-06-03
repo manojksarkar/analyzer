@@ -63,7 +63,7 @@ or, for Pydantic validation failures (422):
 | 13 | GET   | `/api/v1/jobs/{job_id}/export/status` | Docx-artifact status (works for prepare AND export jobs) |
 | 14 | GET   | `/api/v1/jobs/{job_id}/export/download` | Stream the docx (works for prepare AND export jobs) |
 | 15 | GET   | `/api/v1/config` | Parsed `config/config.json` (JSONC → JSON) |
-| 16 | POST  | `/api/v1/config` | Surgically replace `modulesGroups` in config.json (preserves comments + other keys) |
+| 16 | POST  | `/api/v1/config` | Replace `modulesGroups` in config.json (other keys preserved; comments stripped; auto-backup) |
 | 17 | GET   | `/api/v1/project/structure` | Full directory/file tree of the CPP project |
 
 ---
@@ -603,14 +603,10 @@ applied — only the canonical version-controlled values are returned.
 
 # 16. POST /api/v1/config
 
-Replace the `modulesGroups` block in `config/config.json` **and only that
-block** — every other key, all inline comments (`//` and `/* */`), and
-the existing formatting elsewhere in the file are preserved byte-for-byte.
-
-The endpoint runs a small JSONC-aware splice (it knows about strings,
-both comment flavours, and brace nesting) so the result is still valid
-JSONC, the analyzer pipeline keeps parsing it correctly, and humans
-keep their documentation.
+Update the `modulesGroups` block in `config/config.json`. Every other
+top-level key (`views`, `clang`, `llm`, `export`, ...) is preserved
+because the endpoint parses the full file into a Python dict, swaps
+in the new `modulesGroups` value, and writes the result back out.
 
 ### Request body
 ```json
@@ -632,34 +628,63 @@ keep their documentation.
 
 | Field | Required | Notes |
 |---|---|---|
-| `modulesGroups` | yes | Same shape as in config.json. Outer key = module name; inner key = logical group name; inner value = directory path (string) or list of directory paths. |
+| `modulesGroups` | yes | Outer key = module name; inner key = logical group name; inner value = directory path (string) or list of directory paths. |
 
-### Response 200
+### Query params
+- `dryRun=true` — run the parse + rewrite pipeline but do NOT touch
+  disk. Returns the would-have-been-written byte size. Useful for
+  the UI to validate a new `modulesGroups` before committing.
+
+### Response 200 (real write)
 ```json
 {
   "status": "ok",
   "moduleCount": 3,
-  "modules": ["core", "support", "tests"]
+  "modules": ["core", "support", "tests"],
+  "backup": "C:\\aspice_v2\\config\\config.json.bak.20260603T035444Z",
+  "note": "config.json comments were stripped; original is at `backup`"
+}
+```
+
+### Response 200 (dryRun)
+```json
+{
+  "status": "dryRun",
+  "wouldWrite": "C:\\aspice_v2\\config\\config.json",
+  "moduleCount": 3,
+  "modules": ["core", "support", "tests"],
+  "previewBytes": 3214,
+  "note": "comments would be stripped on a real write"
 }
 ```
 
 ### Errors
-- 400 — body is missing `modulesGroups`, OR the existing on-disk
-  `modulesGroups` block has malformed braces, OR the result wouldn't
-  re-parse as JSONC (so the API refuses to write garbage)
+- 400 — body missing `modulesGroups`; OR existing on-disk `config.json`
+  isn't parseable (the endpoint refuses to overwrite an already-broken
+  file)
 - 404 — `config/config.json` doesn't exist
-- 500 — IO failure during write
+- 500 — IO failure during backup or write
 
 ### What's preserved across the write
-
 | Element | Preserved? |
 |---|---|
-| Other top-level keys (`views`, `clang`, `llm`, `export`) | ✓ byte-identical |
-| Single-line comments (`// ...`) | ✓ |
-| Block comments (`/* ... */`) | ✓ |
-| Trailing commas (JSONC quirk) | ✓ |
-| Whitespace outside the modulesGroups block | ✓ |
-| Indentation of the new modulesGroups block | matches the original |
+| Other top-level keys (`views`, `clang`, `llm`, `export`) | ✓ data-identical |
+| `modulesGroups` content | ✓ replaced with body value |
+| Single-line comments (`// ...`) | **stripped** |
+| Block comments (`/* ... */`) | **stripped** |
+| Trailing commas (JSONC quirk) | normalised away |
+| Whitespace / indentation | normalised to 2-space indent |
+
+A timestamped backup `config.json.bak.<UTC-stamp>` is always written
+next to the original BEFORE the new content lands, so comments (and
+the pre-existing formatting) are recoverable. The backup path is
+returned in the response.
+
+The previous implementation tried to surgically replace just the
+`modulesGroups` block while preserving every byte elsewhere — that
+approach turned out to be too fragile for large configs (700+
+clangArgs caused brace-tracking issues), so it was replaced with the
+robust parse-and-rewrite flow.
 
 Writes are atomic (temp-file + `os.replace`) so an interrupted save
 can't leave a half-written file.
