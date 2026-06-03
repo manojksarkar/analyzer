@@ -504,7 +504,7 @@ _LOG_LINE_RE = re.compile(r"^\[(\d{2}:\d{2}:\d{2})\] (\w+) ([\w.]+): (.*)$")
 
 # Default tail size for the prepare-logs endpoint. Most recent N lines are
 # returned; client polls every couple of seconds.
-_LOG_TAIL_LIMIT = 40
+_LOG_TAIL_LIMIT = 200
 
 
 def _expected_log_file_path() -> str:
@@ -617,15 +617,15 @@ def _read_log_tail(
     entries: List[PrepLog] = []
     last_t = ""
     last_level = "info"
-    for idx, raw in enumerate(lines):
+    for raw in lines:
         m = _LOG_LINE_RE.match(raw)
         if m:
             ts, lvl, _name, msg = m.groups()
             last_t = ts
             last_level = _level_normalize(lvl)
-            entries.append(PrepLog(id=str(idx), t=ts, level=last_level, msg=msg))
+            entries.append(PrepLog(id=str(len(entries)), t=ts, level=last_level, msg=msg))
         elif raw.strip():
-            entries.append(PrepLog(id=str(idx), t=last_t, level=last_level, msg=raw))
+            entries.append(PrepLog(id=str(len(entries)), t=last_t, level=last_level, msg=raw))
     return entries[-limit:]
 
 
