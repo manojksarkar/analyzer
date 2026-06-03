@@ -1652,23 +1652,34 @@ async def get_project_structure():
 
 
 @app.post("/api/v1/config")
-async def update_config(body: UpdateConfigRequest):
+async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
     """Replace ONLY the `modulesGroups` block in config/config.json,
     preserving comments and every other key/value untouched.
 
     Body:
       { "modulesGroups": { ... } }
 
+    Query params:
+      ?dryRun=true — run the full splice + validation pipeline but
+        DO NOT write to disk. Useful for debugging when you want to
+        see what the endpoint would have written without touching
+        the live file.
+
     The new modulesGroups is serialized at the same indent level as
     the existing one, so the on-disk diff is local to this single
     block. Uses an atomic temp-file + os.replace() so an interrupted
     save can't corrupt config.json.
 
+    On validation failure (the splice produced text that doesn't
+    re-parse), the would-have-been-written text is dumped to
+    `logs/config_splice_failed_<UTC>.json` and that path is included
+    in the error detail so the user can inspect what went wrong.
+
     Errors:
       404 — config/config.json missing
-      400 — body is missing modulesGroups, or the on-disk file's
-            existing modulesGroups isn't well-formed (e.g. raw JSON
-            parse fails before/after the splice)
+      400 — body is missing modulesGroups; the on-disk modulesGroups
+            block has malformed braces; or the splice produced
+            unparseable text (with path to the diagnostic copy)
       500 — file IO error during write-back
     """
     new_groups = body.modulesGroups
@@ -1692,10 +1703,38 @@ async def update_config(body: UpdateConfigRequest):
         cleaned = _strip_trailing_commas(_strip_json_comments(updated_text))
         json.loads(cleaned)
     except json.JSONDecodeError as exc:
+        # Dump the would-have-been-written text so the user can see exactly
+        # what failed. The line/col on `exc` map to the cleaned text, which
+        # is what the parser saw — surfacing both helps debug indentation
+        # / comment-stripping interactions.
+        diag_path = ""
+        try:
+            logs_dir = os.path.join(_REPO_ROOT, "logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            diag_path = os.path.join(logs_dir, f"config_splice_failed_{stamp}.json")
+            with open(diag_path, "w", encoding="utf-8") as f:
+                f.write(updated_text)
+        except OSError:
+            diag_path = ""
         raise HTTPException(
             status_code=400,
-            detail=f"refused to write: result would be unparseable JSON ({exc})",
+            detail=(
+                f"refused to write {config_path}: "
+                f"result would be unparseable JSON — "
+                f"{exc.msg} at line {exc.lineno} col {exc.colno}"
+                + (f"; diagnostic copy at {diag_path}" if diag_path else "")
+            ),
         )
+
+    if dryRun:
+        return {
+            "status": "dryRun",
+            "wouldWrite": config_path,
+            "moduleCount": len(new_groups),
+            "modules": sorted(list(new_groups.keys())),
+            "previewBytes": len(updated_text),
+        }
 
     try:
         _safe_write_json_text(config_path, updated_text)
