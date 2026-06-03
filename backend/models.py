@@ -16,16 +16,14 @@ from pydantic import BaseModel
 
 
 class Repository(BaseModel):
+    """One entry in backend/repository_config.json.
+
+    Simplified to just (name, path) — the multi-repository API replaces the
+    earlier single-repo placeholder shape. The UI distinguishes repos by
+    name; the path drives the analyzer pipeline.
+    """
     name: str
-    branch: str
     path: str
-    lastIndexed: str
-    files: int
-    # `loc` (lines of code) exists in the office models.py contract. We keep
-    # the field for shape parity but never compute it — always "0". Stored
-    # as a string for parity with the office shape; default lets call sites
-    # omit it without breaking.
-    loc: str = "0"
 
 
 class TreeNode(BaseModel):

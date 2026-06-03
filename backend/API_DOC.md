@@ -48,7 +48,11 @@ or, for Pydantic validation failures (422):
 
 | # | Method | Path | Purpose |
 |---|---|---|---|
-| 1 | GET    | `/api/v1/repository` | Hardcoded repo metadata |
+| 1a | GET    | `/api/v1/repository` | List all repositories from `backend/repository_config.json` |
+| 1b | GET    | `/api/v1/repository/{name}` | Get one repository by name |
+| 1c | POST   | `/api/v1/repository` | Add a new repository (auto-creates the file if missing) |
+| 1d | PUT    | `/api/v1/repository/{name}` | Update an existing repository's path |
+| 1e | DELETE | `/api/v1/repository/{name}` | Remove a repository |
 | 2 | GET    | `/api/v1/components` | List components |
 | 3 | GET    | `/api/v1/components/{component_id}` | Component detail with full directory/file/function tree |
 | 4 | GET    | `/api/v1/components/{component_id}/modules` | Module summaries (no tree) |
@@ -68,21 +72,94 @@ or, for Pydantic validation failures (422):
 
 ---
 
-# 1. GET /api/v1/repository
+# 1. Repository CRUD
 
-Hardcoded repository metadata. No request body; no parameters.
+Storage: `backend/repository_config.json`. Shape on disk is a list:
+```json
+[
+  { "name": "test_cpp_project", "path": "C:\\Users\\...\\test_cpp_project" },
+  { "name": "other_repo",       "path": "D:\\cpp_code" }
+]
+```
+
+The file is auto-created on the first POST when it doesn't exist. The
+legacy single-repo format `{"path": "..."}` is auto-migrated on read to
+a one-entry list named `default`, so existing installs keep working
+without a manual edit.
+
+## 1a. GET /api/v1/repository — list all
 
 ### Response 200
 ```json
-{
-  "name": "ASPICE",
-  "branch": "release",
-  "path": "C:/code-path",
-  "lastIndexed": "2 min ago",
-  "files": 500,
-  "loc": "0"
-}
+[
+  { "name": "test_cpp_project", "path": "C:\\Users\\...\\test_cpp_project" },
+  { "name": "other_repo",       "path": "D:\\cpp_code" }
+]
 ```
+Returns `[]` when no repositories are configured yet.
+
+## 1b. GET /api/v1/repository/{name} — fetch one
+
+### Response 200
+```json
+{ "name": "test_cpp_project", "path": "C:\\Users\\...\\test_cpp_project" }
+```
+### Errors
+- 404 — no repository has that name
+
+## 1c. POST /api/v1/repository — add new
+
+### Request body
+```json
+{ "name": "new_repo", "path": "C:\\new_cpp_project" }
+```
+Both fields are required and stripped of surrounding whitespace before
+storage.
+
+### Response 201
+```json
+{ "name": "new_repo", "path": "C:\\new_cpp_project" }
+```
+
+### Errors
+- 400 — `name` or `path` missing / empty / whitespace-only
+- 409 — a repository with that name already exists (names are
+  case-sensitive)
+- 500 — IO failure during write
+
+Auto-creates `backend/repository_config.json` (and its parent directory)
+when the file doesn't exist yet.
+
+## 1d. PUT /api/v1/repository/{name} — update path
+
+### Request body
+```json
+{ "name": "new_repo", "path": "D:\\new_cpp_project" }
+```
+The body's `name` MUST match the URL `{name}` — renames aren't
+supported via PUT; do DELETE + POST instead.
+
+### Response 200
+```json
+{ "name": "new_repo", "path": "D:\\new_cpp_project" }
+```
+
+### Errors
+- 400 — body `name` doesn't match URL `{name}`, or `path` is empty
+- 404 — no repository has that name
+- 500 — IO failure during write
+
+## 1e. DELETE /api/v1/repository/{name} — remove
+
+### Response 204
+Empty body.
+
+### Errors
+- 404 — no repository has that name
+- 500 — IO failure during write
+
+The on-disk file becomes `[]` (not deleted) when the last repository
+is removed — the UI can keep POSTing without re-bootstrapping the file.
 
 ---
 
@@ -696,18 +773,19 @@ splice either succeeds or refuses to touch the live file.
 
 # 17. GET /api/v1/project/structure
 
-Return the full directory/file tree of the CPP project that
-`backend/repository_config.json` points at. Used by the UI to render
-the source-tree explorer.
+Return the full directory/file tree of one configured repository. Used
+by the UI to render the source-tree explorer.
+
+### Query params
+- `?name=<repo_name>` — pick a specific repository by name. When
+  omitted, the **first** entry in `backend/repository_config.json` is
+  used (matches the historical single-repo behaviour).
 
 ### Source of the project path
-The endpoint reads `backend/repository_config.json`:
-```json
-{ "path": "C:\\Users\\Vishal shakya\\...\\test_cpp_project" }
-```
-If that file is missing or has no `path` field, the endpoint returns
-404. The file is hand-edited (or written by a separate UI flow); the
-backend only reads it.
+The endpoint reads `backend/repository_config.json` — see the
+Repository CRUD section (1a–1e) for shape and lifecycle. If that file
+is missing/empty, or the requested `name` isn't found, the endpoint
+returns 404.
 
 ### Response shape
 Recursive, intentionally minimal:
@@ -766,8 +844,9 @@ UI infers type from presence/absence of `children` (`"children" in node`).
 ```
 
 ### Errors
-- 404 — `backend/repository_config.json` is missing or has no `path`
-- 404 — `path` doesn't exist on disk or isn't a directory
+- 404 — no repositories configured in `repository_config.json`
+- 404 — `?name=` doesn't match any configured repository
+- 404 — repository's path doesn't exist on disk or isn't a directory
 
 ---
 

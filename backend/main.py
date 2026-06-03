@@ -925,25 +925,114 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/v1/repository", response_model=Repository)
-async def get_repository() -> Repository:
-    """API 1 — repository metadata. Currently hardcoded; will be backed by
-    config + parser metadata once the canonical project path lands.
+@app.get("/api/v1/repository", response_model=List[Repository])
+async def list_repositories() -> List[Repository]:
+    """List every repository registered in backend/repository_config.json.
 
-    `loc="0"` is passed defensively because the office models.py declares
-    `loc` as required (lines-of-code count). The field is typed as a string
-    in both this repo's models.py and the office's, so we always send a
-    string. Pydantic v2 silently ignores the kwarg when the field isn't
-    defined, so this is safe across model shapes.
+    Returns [] when no repos are configured (use POST /api/v1/repository
+    to add the first). The legacy `{"path": "..."}` single-repo file
+    format is auto-migrated to a one-entry list named "default" on read,
+    so existing setups keep working without a manual edit.
     """
-    return Repository(
-        name="ASPICE",
-        branch="release",
-        path="C:/code-path",
-        lastIndexed="2 min ago",
-        files=500,
-        loc="0",
-    )
+    return [Repository(**r) for r in _load_repositories()]
+
+
+@app.get("/api/v1/repository/{name}", response_model=Repository)
+async def get_repository(name: str) -> Repository:
+    """Fetch one repository by name. 404 when no entry has that name."""
+    for r in _load_repositories():
+        if r["name"] == name:
+            return Repository(**r)
+    raise HTTPException(status_code=404, detail=f"repository {name!r} not found")
+
+
+@app.post("/api/v1/repository", response_model=Repository, status_code=201)
+async def add_repository(body: Repository) -> Repository:
+    """Add a new repository entry.
+
+    Names are case-sensitive and must be unique; 409 if a repo with that
+    name already exists. Both fields are required and stripped of
+    surrounding whitespace before storage.
+
+    backend/repository_config.json (and its parent directory) is
+    auto-created on first POST so the UI doesn't have to bootstrap it.
+    """
+    name = (body.name or "").strip()
+    path = (body.path or "").strip()
+    if not name or not path:
+        raise HTTPException(status_code=400, detail="name and path are required")
+    repos = _load_repositories()
+    if any(r["name"] == name for r in repos):
+        raise HTTPException(
+            status_code=409, detail=f"repository {name!r} already exists"
+        )
+    repos.append({"name": name, "path": path})
+    try:
+        _save_repositories(repos)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"failed to save repository_config.json: {exc}",
+        )
+    return Repository(name=name, path=path)
+
+
+@app.put("/api/v1/repository/{name}", response_model=Repository)
+async def update_repository(name: str, body: Repository) -> Repository:
+    """Update an existing repository's path.
+
+    The URL `{name}` is the identifier; the body's `name` must match it
+    (renames aren't supported here — delete + add the new name instead).
+    404 when no entry has that name.
+    """
+    if (body.name or "").strip() != name:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"body name {body.name!r} does not match URL name {name!r}; "
+                f"renames aren't supported via PUT"
+            ),
+        )
+    new_path = (body.path or "").strip()
+    if not new_path:
+        raise HTTPException(status_code=400, detail="path is required")
+    repos = _load_repositories()
+    for r in repos:
+        if r["name"] == name:
+            r["path"] = new_path
+            try:
+                _save_repositories(repos)
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"failed to save repository_config.json: {exc}",
+                )
+            return Repository(name=name, path=new_path)
+    raise HTTPException(status_code=404, detail=f"repository {name!r} not found")
+
+
+@app.delete("/api/v1/repository/{name}", status_code=204)
+async def delete_repository(name: str):
+    """Remove a repository by name. 404 when no entry has that name.
+
+    The on-disk file becomes `[]` (not deleted) when the last repository
+    is removed — the UI can keep POSTing without re-bootstrapping the
+    file.
+    """
+    repos = _load_repositories()
+    remaining = [r for r in repos if r["name"] != name]
+    if len(remaining) == len(repos):
+        raise HTTPException(
+            status_code=404, detail=f"repository {name!r} not found"
+        )
+    try:
+        _save_repositories(remaining)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"failed to save repository_config.json: {exc}",
+        )
+    return None
 
 
 @app.get("/api/v1/components", response_model=List[ComponentSummary])
@@ -1469,22 +1558,56 @@ async def download_export(job_id: str):
 _REPOSITORY_CONFIG_NAME = "repository_config.json"
 
 
-def _load_repository_path() -> str:
-    """Read the `path` field from backend/repository_config.json.
+def _repository_config_path() -> str:
+    return os.path.join(_BACKEND_DIR, _REPOSITORY_CONFIG_NAME)
 
-    Returns the absolute path verbatim (no validation here — callers
-    handle the case where the path doesn't exist on disk so the error
-    message can be specific to that endpoint).
+
+def _load_repositories() -> List[Dict[str, str]]:
+    """Read the repositories list from backend/repository_config.json.
+
+    Returns [] if the file is missing, unreadable, or malformed — callers
+    handle the "no repos configured" case so error messages can be
+    specific to the endpoint that needed one.
+
+    Auto-migrates the legacy `{"path": "..."}` single-repo format into
+    `[{"name": "default", "path": "..."}]` so existing on-disk configs
+    keep working without a manual edit.
     """
-    path_file = os.path.join(_BACKEND_DIR, _REPOSITORY_CONFIG_NAME)
+    path_file = _repository_config_path()
     if not os.path.isfile(path_file):
-        return ""
+        return []
     try:
         with open(path_file, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
-        return ""
-    return str(data.get("path") or "").strip()
+        return []
+
+    # New format: list of {name, path}
+    if isinstance(data, list):
+        out: List[Dict[str, str]] = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            path = str(entry.get("path") or "").strip()
+            if name and path:
+                out.append({"name": name, "path": path})
+        return out
+
+    # Legacy single-repo format: {"path": "..."} -> [{"name": "default", "path": "..."}]
+    if isinstance(data, dict):
+        legacy_path = str(data.get("path") or "").strip()
+        if legacy_path:
+            return [{"name": "default", "path": legacy_path}]
+    return []
+
+
+def _save_repositories(repos: List[Dict[str, str]]) -> None:
+    """Atomically write the repositories list to backend/repository_config.json,
+    creating the file (and the parent directory) if either is missing."""
+    path_file = _repository_config_path()
+    os.makedirs(os.path.dirname(path_file) or ".", exist_ok=True)
+    _safe_write_json(path_file, repos)
 
 
 def _walk_project_structure(abs_path: str) -> Dict:
@@ -1709,9 +1832,8 @@ def _splice_modules_groups(raw_text: str, new_value: dict) -> str:
 
 
 @app.get("/api/v1/project/structure")
-async def get_project_structure():
-    """Return the full directory/file tree of the CPP project that
-    backend/repository_config.json points at.
+async def get_project_structure(name: Optional[str] = None):
+    """Return the full directory/file tree of one configured repository.
 
     Shape (recursive):
         directory -> { "name": str, "children": StructureNode[] }
@@ -1720,20 +1842,35 @@ async def get_project_structure():
     are skipped. Sort order: dirs first, then files, alphabetical
     within each group. Depth is unlimited.
 
+    Query params:
+      ?name=<repo_name> — pick a specific repository by name. When
+        omitted, the FIRST entry in backend/repository_config.json is
+        used (matches the previous single-repo behaviour).
+
     Errors:
-      404 — backend/repository_config.json is missing or has no `path`
-      404 — `path` doesn't resolve to an existing directory
+      404 — no repositories configured / unknown name / path doesn't
+            resolve to an existing directory
     """
-    project_path = _load_repository_path()
-    if not project_path:
+    repos = _load_repositories()
+    if not repos:
         raise HTTPException(
             status_code=404,
             detail=(
-                f"backend/{_REPOSITORY_CONFIG_NAME} is missing or has no "
-                f"`path` field — create it with {{\"path\": \"...\"}}"
+                f"no repositories configured in backend/{_REPOSITORY_CONFIG_NAME} — "
+                f"POST /api/v1/repository to add the first"
             ),
         )
-    if not os.path.isdir(project_path):
+    if name:
+        match = next((r for r in repos if r["name"] == name), None)
+        if not match:
+            raise HTTPException(
+                status_code=404, detail=f"repository {name!r} not found"
+            )
+        project_path = match["path"]
+    else:
+        project_path = repos[0]["path"]
+
+    if not project_path or not os.path.isdir(project_path):
         raise HTTPException(
             status_code=404,
             detail=f"project path does not exist or is not a directory: {project_path!r}",
