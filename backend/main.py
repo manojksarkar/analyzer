@@ -1811,7 +1811,7 @@ def _resolve_repository_path(name: str) -> str:
     )
 
 
-def _walk_project_structure(abs_path: str) -> Dict:
+def _walk_project_structure(abs_path: str, dirs_only: bool = False) -> Dict:
     """Return a minimal structure tree: every node has `name`; directories
     additionally carry `children`. UI infers type by `"children" in node`.
 
@@ -1820,6 +1820,10 @@ def _walk_project_structure(abs_path: str) -> Dict:
     OS-specific hidden-attribute bits). Sort order: directories first then
     files, alphabetical within each group, so identical projects produce
     byte-identical responses across runs.
+
+    When `dirs_only=True`, file entries are omitted from `children` —
+    only directories appear. Useful for tree-view sidebars that just
+    want navigation without leaf nodes.
     """
     name = os.path.basename(abs_path) or abs_path
     if os.path.isdir(abs_path):
@@ -1829,11 +1833,19 @@ def _walk_project_structure(abs_path: str) -> Dict:
             entries = []
         entries = [e for e in entries if not e.startswith(".")]
         sub_dirs = [e for e in entries if os.path.isdir(os.path.join(abs_path, e))]
-        sub_files = [e for e in entries if not os.path.isdir(os.path.join(abs_path, e))]
         children = [
-            _walk_project_structure(os.path.join(abs_path, e))
-            for e in (sub_dirs + sub_files)
+            _walk_project_structure(os.path.join(abs_path, e), dirs_only=dirs_only)
+            for e in sub_dirs
         ]
+        if not dirs_only:
+            sub_files = [
+                e for e in entries
+                if not os.path.isdir(os.path.join(abs_path, e))
+            ]
+            children.extend(
+                _walk_project_structure(os.path.join(abs_path, e), dirs_only=dirs_only)
+                for e in sub_files
+            )
         return {"name": name, "children": children}
     return {"name": name}
 
@@ -2033,8 +2045,11 @@ def _splice_modules_groups(raw_text: str, new_value: dict) -> str:
 
 
 @app.get("/api/v1/project/structure")
-async def get_project_structure(name: Optional[str] = None):
-    """Return the full directory/file tree of one configured repository.
+async def get_project_structure(
+    name: Optional[str] = None,
+    dirsOnly: bool = False,
+):
+    """Return the directory/file tree of one configured repository.
 
     Shape (recursive):
         directory -> { "name": str, "children": StructureNode[] }
@@ -2047,6 +2062,9 @@ async def get_project_structure(name: Optional[str] = None):
       ?name=<repo_name> — pick a specific repository by name. When
         omitted, the FIRST entry in backend/repository_config.json is
         used (matches the previous single-repo behaviour).
+      ?dirsOnly=true — omit file entries from the response, returning
+        a directories-only tree. Useful for navigation sidebars. Default
+        is `false` (files included).
 
     Errors:
       404 — no repositories configured / unknown name / path doesn't
@@ -2076,7 +2094,7 @@ async def get_project_structure(name: Optional[str] = None):
             status_code=404,
             detail=f"project path does not exist or is not a directory: {project_path!r}",
         )
-    return _walk_project_structure(project_path)
+    return _walk_project_structure(project_path, dirs_only=dirsOnly)
 
 
 @app.post("/api/v1/config")

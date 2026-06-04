@@ -848,12 +848,41 @@ by the UI to render the source-tree explorer.
 - `?name=<repo_name>` — pick a specific repository by name. When
   omitted, the **first** entry in `backend/repository_config.json` is
   used (matches the historical single-repo behaviour).
+- `?dirsOnly=true` — return a **directories-only** tree (file entries
+  are omitted everywhere in the response). Default is `false` (files
+  included). Useful for navigation sidebars that don't need leaf nodes.
 
 ### Source of the project path
 The endpoint reads `backend/repository_config.json` — see the
 Repository CRUD section (1a–1e) for shape and lifecycle. If that file
 is missing/empty, or the requested `name` isn't found, the endpoint
 returns 404.
+
+### Example — `?dirsOnly=true`
+```
+GET /api/v1/project/structure?dirsOnly=true
+GET /api/v1/project/structure?name=test_cpp_project&dirsOnly=true
+```
+```json
+{
+  "name": "test_cpp_project",
+  "children": [
+    { "name": "app",   "children": [] },
+    { "name": "math",  "children": [] },
+    { "name": "outer", "children": [ { "name": "inner", "children": [] } ] },
+    { "name": "tests", "children": [
+      { "name": "access",    "children": [] },
+      { "name": "direction", "children": [] }
+      /* ... */
+    ] }
+  ]
+}
+```
+Empty `children: []` is the right signal for a directory that contains
+only files (filtered out) — the directory itself is still present, just
+with no leaf nodes underneath. This keeps the response shape uniform:
+every node either has `children` (directory) or doesn't (file). With
+`dirsOnly=true` the file branch never appears.
 
 ### Response shape
 Recursive, intentionally minimal:
