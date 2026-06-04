@@ -104,6 +104,96 @@ Each plan emits its own `[N/M] === Phase ... ===` log markers. The
 backend canonicalises these to a 4-phase pipeline for the UI (see §4
 "Canonical 4-phase mapping").
 
+### Analyzer pipeline — phase by phase
+
+The pipeline is **subprocess-based and crash-recoverable**: each phase is
+its own Python entry point, and `run.py` can resume from any phase via
+`--from-phase N`. The four canonical phases:
+
+#### Phase 1 — Parse C++ source (`src/parser.py`)
+- libclang-based AST walk.
+- Inputs: project directory.
+- Outputs:
+  - `model/functions.json` — every function keyed by `module|unit|qname|params`.
+    Carries `qualifiedName`, `location {file, line, endLine}`, `returnType`,
+    `parameters`, `comment` (raw doxygen), `visibility`, `calledByIds`,
+    `callsIds`, `writesGlobalIds`, `behaviourInputName`,
+    `behaviourOutputName`.
+  - `model/globalVariables.json` — globals.
+  - `model/dataDictionary.json` — types, typedefs, enums (for LLM context).
+  - `model/metadata.json` — `basePath`, `projectName`, `generatedAt`.
+
+#### Phase 2 — Derive model (`src/model_deriver.py`)
+- Builds units / modules from per-file function lists.
+- Propagates global-access through the call graph (so a caller transitively
+  inherits its callees' globals).
+- Synthesises behaviour names (Input / Output labels) from params + globals.
+- Runs LLM enrichment when enabled in `config.json::llm.descriptions`:
+  - Two-pass description generation (callee-context then caller-context).
+  - Few-shot prompt selection, cache, optional self-review.
+  - Token-budgeted prompts (`maxContextTokens`).
+- Outputs:
+  - `model/functions.json` — enriched (descriptions added).
+  - `model/units.json`, `model/modules.json`.
+  - `model/knowledge_base.json` — flat keyed-by-qname view for downstream
+    consumers (PATCH writes here in addition to per-module files).
+  - `model/summaries.json` — optional phase/file/module hierarchy summary
+    when `--llm-summarize` is passed.
+
+#### Phase 3 — Generate views (`src/run_views.py`)
+- Drives a registry of view scripts (each registered via `@register("name")`
+  in `src/views/`).
+- Key views and what they produce:
+  - **interfaceTables** → `output/interface_tables.json` (drives the docx
+    interface tables).
+  - **unitDiagrams** → `output/unit_diagrams/*.png` (per-unit class-like
+    Mermaid renders).
+  - **moduleStaticDiagram** → `output/module_static_diagrams/*.png` (per-
+    module box-and-lines layout).
+  - **behaviourDiagram** → `output/behaviour_diagrams/*.png` (per-function
+    sequence diagrams).
+  - **flowcharts** → `output/flowcharts/<unit>.json` containing
+    `[{functionKey, name, flowchart: "<mermaid>"}]` + matching `*.png`
+    files. The PNGs are auto-sliced into `__part_K_of_N.png` when their
+    aspect ratio would overflow a Word page (commit `8560de4`).
+  - **sequenceDiagrams** → reuses the flowchart engine.
+- When `modulesGroups` is configured, Phase 3 runs **once per group**
+  via `views.flowcharts.scriptPath = src/flowchart/flowchart_engine.py`
+  with `--selected-group <name>` so each group's output lands under
+  `output/<group>/`.
+
+#### Phase 4 — Export DOCX (`src/docx_exporter.py`)
+- Reads `output/interface_tables.json` + per-group artifacts.
+- Templates a Word document using `python-docx`.
+- Embeds rendered flowchart PNGs (sliced parts inserted in order so the
+  document flows across pages).
+- Output path comes from `config.json::export.docxPath` with `{group}`
+  substituted by the `--selected-group` value or `"all"`.
+
+#### Mermaid flowchart specifics (analyzer subsystem)
+Used by Phase 3's `flowcharts` view:
+- `src/flowchart/flowchart_engine.py` — CLI entry that the views layer
+  spawns as a subprocess (because libclang inside libclang is fragile).
+- `src/flowchart/ast_engine/` — re-parses each function's body with
+  libclang to build a CFG.
+- `src/flowchart/mermaid/builder.py` — emits Mermaid `flowchart TD` plus a
+  YAML frontmatter and `%%{init}%%` directive that select the ELK
+  renderer and tune layout (commit `d4d4d3d`: `feedbackEdges: true` so
+  loop back-edges route along the periphery instead of crossing forward
+  edges).
+- `src/flowchart/llm/generator.py` — single LLM call per function to
+  label nodes/edges; respects `maxContextTokens` budget.
+
+#### Key invariants the backend depends on
+- `logs/run_<UTC>.log` (rolling) is configured by `src/core/logging_setup.py`
+  using **UTC date** for the filename.
+- `orchestration.py` emits `[N/M] === Phase ... ===` immediately before
+  each phase starts and `[N/M] Phase Name — Xs` after each completes.
+- The `--selected-group` flag's accepted names are the OUTER keys of
+  `config.modulesGroups`. Case-insensitive resolution (`_resolve_group_name`).
+- Per-module files live at `model/functions_<safe(group)>.json` with
+  `_safe_filename()` (re.sub of `[<>:"/\\|?*]`) applied to the group name.
+
 ---
 
 ## 3. Current State
@@ -289,6 +379,160 @@ Accepts `?name=<repo>` and `?dirsOnly=true`.
 - `GET /openapi.json` — machine-readable OpenAPI 3.
 - `GET /docs` — Swagger UI.
 - `GET /redoc` — ReDoc UI.
+
+### Key endpoint examples (inline)
+
+These are the responses a UI dev actually consumes — read this section
+to integrate without needing `API_DOC.md` open in another tab.
+
+#### Repository list (`GET /repository`)
+```json
+[
+  { "name": "test_cpp_project", "path": "C:\\...\\test_cpp_project" },
+  { "name": "other_repo",       "path": "D:\\cpp_code" }
+]
+```
+
+#### Components (`GET /components/FTL`) — abbreviated
+```jsonc
+{
+  "id": "FTL", "code": "FTL", "name": "FTL", "desc": "",
+  "modules": [
+    {
+      "id": "core", "name": "core", "path": "core", "files": 3, "loc": "0",
+      "tree": {
+        "id": "core", "type": "submodule", "name": "core", "meta": null,
+        "children": [
+          { "id": "app", "type": "submodule", "name": "app", "children": [
+            { "id": "app/main.cpp", "type": "submodule", "name": "main.cpp", "children": [
+              { "id": "core|main|calculate|", "type": "fn", "name": "calculate" }
+              /* ... */
+            ]}
+          ]},
+          { "id": "math", "type": "submodule", "name": "math", "children": [/* ... */] }
+        ]
+      }
+    },
+    /* support, tests, ... */
+  ]
+}
+```
+A complete fixture for the test project is at
+`backend/fixtures/get_components_FTL.json` (711 lines).
+
+#### Function detail (`GET /functions/core|main|main|`)
+```jsonc
+{
+  "id": "core|main|main|",
+  "name": "main",
+  "file": "app/main.cpp",
+  "line": "75",
+  "ret": "int",
+  "description": "Top-level orchestrator for the calculation suite.",
+  "callers": [],
+  "callees": [
+    { "id": "core|main|calculateWithCallback|",     "name": "calculateWithCallback",     "loc": "0" },
+    { "id": "core|main|calculateWithPolymorphism|", "name": "calculateWithPolymorphism", "loc": "0" }
+  ],
+  "flowchart": "flowchart TD\n    N1([Start: main])\n    N3[int result1 = calculate#40;#41;#59;]\n    ...",
+  "hidden": false
+}
+```
+
+#### Update description (`PATCH /functions/{fn_id}`)
+Request:
+```json
+{ "description": "Top-level orchestrator for the calculation suite." }
+```
+Response:
+```json
+{ "fnId": "core|main|main|", "savedAt": "14:32" }
+```
+Writes to `model/functions_<group>.json` (per-module file) **and**
+`model/knowledge_base.json`. Does NOT touch `model/functions.json`.
+
+#### Start prepare (`POST /jobs/prepare?name=test_cpp_project`)
+Body (path optional when `?name=` is supplied):
+```json
+{ "moduleId": "core" }
+```
+Response:
+```json
+{ "jobId": "prep_4f7a1b8e2c9d" }
+```
+
+#### Job status (`GET /jobs/{job_id}/status`)
+Running (mid-pipeline, multi-group prepare):
+```json
+{
+  "jobId": "prep_4f7a1b8e2c9d",
+  "type": "prepare",
+  "complete": false,
+  "progress": 50,
+  "overallProgress": 68,
+  "phase": "Generate views",
+  "phaseNumber": 3,
+  "totalPhase": 4,
+  "error": null,
+  "selectedGroup": "core",
+  "commandLine": "python.exe run.py C:\\... --selected-group core"
+}
+```
+Complete:
+```json
+{
+  "jobId": "prep_4f7a1b8e2c9d",
+  "type": "prepare",
+  "complete": true,
+  "progress": 100,
+  "overallProgress": 100,
+  "phase": "",
+  "phaseNumber": 4,
+  "totalPhase": 4,
+  "error": null,
+  "selectedGroup": "core",
+  "commandLine": "..."
+}
+```
+
+#### Download readiness (`GET /jobs/{job_id}/export/status`)
+```json
+{
+  "jobId": "prep_4f7a1b8e2c9d",
+  "complete": true,
+  "stage": "done",
+  "phase": "",
+  "phaseNumber": 4,
+  "totalPhase": 4,
+  "progress": 100,
+  "overallProgress": 100,
+  "error": null,
+  "filename": "software_detailed_design_core.docx",
+  "downloadUrl": "/api/v1/jobs/prep_4f7a1b8e2c9d/export/download",
+  "hiddenCount": 0,
+  "selectedGroup": "core",
+  "commandLine": "..."
+}
+```
+
+#### Project structure (`GET /project/structure?dirsOnly=true`)
+```json
+{
+  "name": "test_cpp_project",
+  "children": [
+    { "name": "app",   "children": [] },
+    { "name": "math",  "children": [] },
+    { "name": "outer", "children": [ { "name": "inner", "children": [] } ] },
+    { "name": "tests", "children": [
+      { "name": "access",    "children": [] },
+      { "name": "direction", "children": [] }
+      /* ... */
+    ]}
+  ]
+}
+```
+Files have **no** `children` key at all; directories always have it
+(possibly empty). UI inference: `"children" in node` → directory.
 
 ---
 
@@ -563,6 +807,120 @@ analyzer/
   the analyzer's deps into uvicorn's venv.
 - `config/config.json` is JSONC; comments must survive every
   `POST /config` write.
+
+---
+
+---
+
+## 11. Development History & Lessons Learned
+
+Things this team has paid for in time and that cannot be re-derived from
+code or git log alone. Read this before re-litigating a decision; many
+of these are "tried it, didn't work, here's why we ended up here."
+
+### 11.1 The venv mismatch (always check first when a job fails on import)
+**What happened:** Office machine kept getting `ModuleNotFoundError: No module named 'clang'` from Phase 1. Same `run.py` worked from the terminal.
+**Root cause:** `uvicorn` was launched inside a venv that didn't have `libclang` installed. `_spawn_run_py` uses `sys.executable`, which inherits the venv interpreter. The terminal python was the system one (where `libclang` was installed).
+**Lesson:** Whenever a job fails on a `ModuleNotFoundError`, the first question is "is uvicorn's Python the same one that runs the analyzer from the CLI?" Either install the analyzer's deps into the venv (`pip install -r requirements.txt` inside it) or run uvicorn without the venv.
+**Backend follow-up:** `_spawn_run_py` redirects child stdout+stderr to `logs/job_<job_id>.out.log` so this is now visible immediately via `GET /jobs/{id}/prepare/logs` (commit `80bcfa4`).
+
+### 11.2 Office config.json splice failure (the 80%-truncation bug)
+**What happened:** The user's office `config.json` (700+ `clangArgs`) made `POST /config` produce a corrupt file. The diagnostic dump showed only ~80% of the original got written, with a JSON parse error mid-stream.
+**First hypothesis:** Brace-tracking failure on a giant array. We added diagnostic dumps and a `?dryRun=true` query param.
+**Second hypothesis (the lossy escape hatch):** We added a parse-modify-rewrite fallback that drops comments. User pushed back — the comments are documentation, not noise.
+**Actual root cause:** The previous `_splice_modules_groups` used a naïve `str.find('"modulesGroups"')` that could match inside a `//` comment that happened to mention the literal `"modulesGroups"` string. When that happened, the brace tracker started scanning from inside a comment region and walked into the wrong part of the file.
+**Fix:** `_find_modules_groups_key_pos` walks the whole file with full JSONC awareness (strings with `\\"` escape handling, both comment flavours, brace nesting) and only accepts a root-level match followed by `:`. The lossy fallback was removed.
+**Lesson:** When parsing JSONC for surgical edits, do NOT rely on `str.find` for key positions. Walk the file with a state machine that understands comments and strings.
+
+### 11.3 Multi-group progress went backwards (the 75 → 25 → 100 bug)
+**What happened:** `overallProgress` started at 75%, then jumped down to 25%, then to 100%. `totalPhase` always showed 2 instead of 4.
+**Root cause:** `src/core/group_planner.py` splits a prepare with `modulesGroups` configured into multiple plans. Each plan emits its own `[N/M]` markers (commonly `[N/2]`). My code took the latest `[N/M]` and divided N by M, so progress collapsed every time a new plan restarted at `[1/2]`.
+**Fix:** Canonical 4-phase mapping by phase NAME (Parse / Derive / Views / Export). `totalPhase` is always 4. `overallProgress` is now `(markers_seen - 0.5) / total_expected * 100`, where `total_expected` is computed upfront from `_expected_phase_markers(selected_group, from_phase)` mirroring the planner's branching rules. For a 3-group prepare without `--selected-group`, the expected total is `2 + 3*2 = 8` markers, so progress climbs `6 → 18 → 31 → 43 → 56 → 68 → 81 → 93 → 100`.
+**Caveat:** `phaseNumber` still bounces 3 ↔ 4 because that reflects what's actually running for each group. UI should bind the progress bar to `overallProgress` and the "current phase" label to `phase` — both are stable; `phaseNumber` is best read as "which canonical phase is happening right now."
+**Lesson:** `_expected_phase_markers` and `src/core/group_planner.py::plan_runs` must stay in sync. If the planner branching changes, the helper needs to follow. (The helper's docstring deliberately references the planner file for this reason.)
+
+### 11.4 hiddenFns: accepted, ignored, defaulted to None
+**Decision history:** Originally `hiddenFns: Dict[str, bool]` (required). Caused 422s on direct callers (Postman) who sent just `{"path": "..."}`. Made it `Dict[str, bool] = {}` (optional with empty default). Caused some Pydantic-strict office instances to still 422. Finally settled on `Optional[Dict[str, bool]] = None` — Pydantic 2 always accepts omitting a nullable field, regardless of strictness.
+**Current status:** Field is accepted on `ExportJobRequest` and PATCH on `/functions/{fn_id}` for shape parity with the office mock, but it's not forwarded to the analyzer pipeline yet. PATCH's `hidden` flag toggles an in-memory `_db["hidden_functions"]` set that GET `/functions/{fn_id}` reflects, but the docx exporter doesn't see it.
+**Open question (see §9):** When a function is hidden, should it also disappear from caller/callee lists in other functions' detail views? Not decided.
+
+### 11.5 The `loc: "0"` field everywhere
+**Why it exists:** Office-side `models.py` declared `loc` as a required field on Repository / Module / ModuleSummary / FunctionCaller. The simplest path to shape parity was to add the field with a placeholder value.
+**Why string and not int:** Office contract used string; we matched.
+**Why `"0"` and not `null`:** Pydantic v2 strictness rules + simpler UI consumption.
+**Trade-off:** UI shows "0 LOC" everywhere which is misleading. UI should either hide the field or show a dash. Real LOC computation is on the §8 roadmap.
+
+### 11.6 Trailing-slash on POST
+**Decision:** All POST URLs use no trailing slash (`POST /api/v1/repository`, NOT `POST /api/v1/repository/`). FastAPI redirects via 307 with the trailing slash form, but it's a round-trip the UI doesn't need.
+
+### 11.7 PATCH writes to per-module file, not to functions.json
+**Why:** `model/functions.json` is RAW parser output. The analyzer re-overwrites it on every prepare. If we wrote descriptions there, they'd vanish on the next run.
+**Where they go:**
+  1. `model/functions_<group>.json` — per-module subset that the docx export step reads. Survives across re-prepares because per-module files are written by the views step (Phase 3), not the parser.
+  2. `model/knowledge_base.json` — flat by-qualifiedName view; mirror.
+**Read path:** GET `/functions/{fn_id}` calls `_read_description_override()` which looks at the per-module file first, then falls back to `functions.json`.
+
+### 11.8 Flowchart slicing for tall PNGs
+**Problem:** A 41-node function (`NTR_OP_FLUSH_Complete`) rendered as a tall PNG that overflowed a single Word page and got clipped — ~40% of the function was invisible in the docx.
+**Decision:** Slice at whitespace bands. Approach A (PNG slicing) was chosen over Approach B (CFG semantic split) for reliability — ELK's `rankSpacing: 60` guarantees a white horizontal band between every layer, so the slicer always finds clean cut points.
+**Where:** `src/views/flowcharts.py::_maybe_slice_tall_png()`. Writes `<stem>__part_K_of_N.png` files; `docx_exporter` picks them up via `_resolve_flowchart_pngs`.
+**Trigger:** aspect ratio H/W > 1.875 × 1.15 buffer. Wide layouts (W/H > 1.5) are skipped — height slicing wouldn't help. Tiny tail slices (<20% of a target) are merged into their predecessor.
+**Constants:** `_SLICE_EMBED_WIDTH_IN = 4.0`, `_SLICE_USABLE_HEIGHT_IN = 7.5`. Tied to the `Inches(4.0)` width used in `docx_exporter._add_flowchart_table`.
+
+### 11.9 Mermaid frontmatter + ELK back-edge routing
+**Why we use ELK and not the default Dagre renderer:** for CFGs with loops, Dagre routes back-edges through the central column and causes crossings. ELK with `feedbackEdges: true` routes them along the periphery.
+**Where:** `src/flowchart/mermaid/builder.py::build_mermaid()` emits a YAML frontmatter (`---\nconfig:\n  flowchart:\n    defaultRenderer: elk\n---`) plus an `%%{init}%%` directive that also sets `defaultRenderer` (some Mermaid CLI versions only honor one or the other).
+**Gotcha that bit us:** the analyzer's `validate_mermaid()` originally rejected scripts that didn't start with `flowchart` — but with frontmatter, the script starts with `---`. We extended the validator to skip optional YAML frontmatter and `%%{init}%%` directives before the `flowchart` keyword check (commit `db9c7bc`).
+**Casing:** The ELK options inside `%%{init}%%` are camelCase (`nodeSpacing`, not `nodespacing`). Lowercase keys are silently dropped by Mermaid (commit `db9c7bc` again).
+
+### 11.10 In-memory jobs survive intent, not restarts
+**The contract:** A `jobId` is valid only within one uvicorn session. When uvicorn restarts:
+- The `_jobs` dict is empty. `GET /jobs/{old_id}/*` → 404.
+- The on-disk model + docx files are untouched.
+- The UI should clear cached jobIds on a 404 and prompt the user to start a fresh job.
+**Why we didn't add persistence:** The team explicitly chose this scope. A single-user analyzer doesn't need durable job history. If we ever need it, see §8 "Persistent job state."
+
+### 11.11 The previous "commit-strip" episode
+**What happened:** While debugging the office config splice failure, we briefly switched POST `/config` to a parse-and-rewrite ("lossy") implementation that worked reliably but stripped `//` comments. User pushed back hard: comments are documentation, not formatting. We reverted to surgical-only. **No backup file is created on POST `/config`** (was added during the lossy era, removed when surgical-only became the only path).
+**Lesson:** When a change visibly degrades the on-disk artifact the user cares about, even if it "works," it's a regression. Test against artifacts the user actually inspects, not just round-trip data shape.
+
+### 11.12 PowerShell + Windows quirks we kept hitting
+- `python -c "..."` in PowerShell sometimes triggers `goto :error` indentation errors when the inline script contains certain characters. We worked around by writing tiny `_probe_*.py` files and `rm`-ing them after.
+- Unicode arrows (`→`) in `print()` calls fail with `UnicodeEncodeError` on the default `cp1252` console. Probes use plain `->`.
+- `subprocess.run([...], shell=True)` on Windows is required for the analyzer per a long-standing project preference (logged in CLAUDE.md / memory). The backend follows the same pattern in `_spawn_run_py`.
+
+---
+
+## 12. Testing convention
+
+There is **no automated test suite**. Verification is done via short
+`_probe_*.py` scripts written at the analyzer repo root, run once, then
+deleted. The pattern:
+
+```python
+# _probe_<name>.py
+import asyncio, sys
+sys.path.insert(0, ".")
+sys.path.insert(0, "backend")
+
+from backend.main import some_endpoint_handler
+from models import SomeRequest
+
+async def main():
+    # call handler directly, assert on response
+    ...
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Run with `python _probe_<name>.py` then `rm _probe_<name>.py`. Probes
+are intentionally not committed — they're one-shot verification, not
+regression coverage.
+
+For changes that touch the analyzer pipeline itself (rare from the
+backend side), the real test is running `python run.py test_cpp_project`
+end-to-end and checking the produced docx.
 
 ---
 
