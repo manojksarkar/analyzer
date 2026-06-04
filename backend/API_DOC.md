@@ -493,10 +493,10 @@ Generic job status — works for BOTH prepare and export jobs.
 | `type` | `"prepare"` \| `"export"` | Job kind |
 | `complete` | boolean | True once the subprocess has exited |
 | `progress` | int (prepare) \| `ExportProgress` (export) | Within-current-phase %. While running: **50** (rough midpoint — the analyzer only logs phase boundaries, not within-phase progress). On complete: **100**. For export jobs this is wrapped in `ExportProgress({pct, stage})`. |
-| `overallProgress` | int | Pipeline-wide %, derived from `[N/M] === Phase ... ===` log markers as `(N - 0.5) / total * 100`. Climbs through 12/37/62/87 as each phase begins (for a 4-phase prepare); jumps to 100 on complete. |
-| `phase` | string | Currently-running phase label, with the `Phase N: ` prefix stripped (e.g. `"Derive model"`, not `"Phase 2: Derive model"`). Empty before any marker is logged and after the job completes. |
-| `phaseNumber` | int | The `N` from `[N/M]` — currently running phase (1-based). 0 before any marker is logged. Kept at the last-seen value after complete so the UI can show "Completed 4 of 4". |
-| `totalPhase` | int | The `M` from `[N/M]` — total phases planned for this run. 0 before any marker is logged. |
+| `overallProgress` | int | Pipeline-wide %. **Monotonic** — derived from marker count vs. total expected (which is computed upfront from the planner branching rules in `src/core/group_planner.py`). For a full prepare on a 3-group config the expected total is `2 + 3*2 = 8` markers, so progress climbs 6 → 18 → 31 → 43 → 56 → 68 → 81 → 93 → 100. Never goes backwards even when phases 3+4 repeat per group. |
+| `phase` | string | **Latest** phase label, with the `Phase N: ` prefix stripped (e.g. `"Derive model"`, not `"Phase 2: Derive model"`). Reflects the current truth — for multi-group runs the same name (e.g. `"Generate views"`) appears repeatedly as each group is processed. |
+| `phaseNumber` | int | Canonical pipeline phase (1=Parse, 2=Derive, 3=Views, 4=Export). For multi-group runs this bounces 3 ↔ 4 as each group's views+export pair runs — pair with `overallProgress` (always monotonic) for a stable progress bar. 0 before any marker is logged. |
+| `totalPhase` | int | Always **4** (the canonical pipeline length). UI never sees the inner `[N/M]` denominators that change per plan. |
 | `error` | string \| null | Error description (set on non-zero exit or cancellation) |
 | `selectedGroup` | string \| null | Resolved module key (or null when no moduleId) |
 | `commandLine` | string | Literal CLI being run — useful for verification |

@@ -650,58 +650,153 @@ _PHASE_START_RE = re.compile(r"\[(\d+)/(\d+)\] === (.+?) ===")
 _PHASE_LABEL_PREFIX_RE = re.compile(r"^Phase\s+\d+\s*:\s*", re.IGNORECASE)
 
 
+# Canonical 4-phase pipeline that the UI thinks in terms of, matching the
+# constants in src/core/group_planner.py (PHASE_PARSE/DERIVE/VIEWS/EXPORT).
+# The analyzer may split this into multiple `RunPlan`s under the hood —
+# e.g. a multi-group run emits Phase 3 and 4 once per group — but every
+# phase still has one of these canonical names and that's what we surface
+# to the UI so phaseNumber stays a clean 1..4.
+_CANONICAL_PHASES = [
+    "Parse C++ source",
+    "Derive model",
+    "Generate views",
+    "Export to DOCX",
+]
+_PHASE_NAME_TO_NUMBER = {name.casefold(): i + 1 for i, name in enumerate(_CANONICAL_PHASES)}
+_CANONICAL_TOTAL = 4
+
+
+def _expected_phase_markers(selected_group: Optional[str], from_phase: int) -> int:
+    """Predict how many `[N/M] === Phase ... ===` markers the spawned
+    run.py will log, based on the plan_runs branching in
+    src/core/group_planner.py:87 (kept in sync deliberately — when that
+    file changes this helper must follow).
+
+    Used to compute monotonically-increasing overall progress for
+    multi-group runs where phases 3 and 4 repeat once per group. Without
+    this, my code would see the latest [N/2] marker and divide by 2 —
+    progress would oscillate as each new group restarted at [1/2].
+    """
+    cfg = load_config(_REPO_ROOT)
+    groups_cfg = cfg.get("modulesGroups") or {}
+    num_groups = len(groups_cfg) if isinstance(groups_cfg, dict) else 0
+
+    # Branch 1 of plan_runs: no modulesGroups -> single flat plan.
+    if num_groups == 0:
+        # The single plan has 4 phases; --from-phase skips the first N-1.
+        # Floor at 1 so we never divide by zero.
+        return max(1, 5 - max(1, from_phase))
+
+    # Branch 2: modulesGroups present.
+    effective_groups = 1 if selected_group else num_groups
+    # Build-model plan covers canonical phases 1+2. Skipped entirely when
+    # from_phase > 2 (use existing model on disk).
+    if from_phase <= 1:
+        build_markers = 2
+    elif from_phase == 2:
+        build_markers = 1
+    else:
+        build_markers = 0
+    # Per-group plan covers canonical phases 3+4. local_from in the planner
+    # is max(1, from_phase - 2): from_phase 3 -> 1, 4 -> 2.
+    if from_phase >= 4:
+        per_group = 1  # just Export
+    else:
+        per_group = 2  # Views + Export
+    return build_markers + effective_groups * per_group
+
+
 def _compute_progress_and_phase(
     output_file: str,
+    total_expected_markers: int = 0,
 ) -> Tuple[int, str, int, int, int]:
-    """Approximate per-phase + overall progress + currently-running phase
-    label by scanning the per-job stdout/stderr capture for
-    `[N/M] === Phase ... ===` lines that orchestration.py emits at every
-    phase boundary.
-
-    Returns (per_phase_pct, phase_label, phase_number, total_phase, overall_pct).
+    """Compute (per_phase_pct, phase_label, phase_number, total_phase, overall_pct)
+    from the per-job stdout/stderr capture, treating the analyzer's
+    underlying multi-plan layout as a single canonical 4-phase pipeline
+    (Parse / Derive / Views / Export).
 
       per_phase_pct  Within-phase percent. The analyzer only logs phase
                      BOUNDARIES, not within-phase progress, so we report
                      a constant 50 while a phase is running (rough
                      midpoint). _finalize_job overrides this to 100 on
                      terminal exit.
-      phase_label    Human phase name with the `Phase N: ` prefix
-                     stripped, so "Phase 2: Derive model" surfaces as
-                     just "Derive model".
-      phase_number   The N from `[N/M]` (currently running phase, 1-based).
-                     0 when no markers have been logged yet.
-      total_phase    The M from `[N/M]` (total phases in this plan).
-                     0 when no markers have been logged yet.
-      overall_pct    Pipeline-wide percent: `(N - 0.5) / total * 100`,
-                     capped at 99 so we never accidentally report 100
-                     from a log scan — _finalize_job sets the true 100.
+      phase_label    Latest phase name with the `Phase N: ` prefix
+                     stripped — current truth, so the UI can show
+                     "Currently: Generate views" even when the same
+                     phase has been seen before for another group.
+      phase_number   Canonical 1-4 mapping of the LATEST phase name. May
+                     bounce between 3 and 4 across groups for multi-
+                     group runs; pair with overall_pct (which is always
+                     monotonic) for a stable progress bar.
+      total_phase    Always 4 (the canonical pipeline length). UI never
+                     sees the inner [N/M] denominators that change per
+                     plan.
+      overall_pct    Marker-count progress: `(markers_seen - 0.5) /
+                     total_expected_markers * 100`, capped at 99 — so
+                     it climbs monotonically through every phase of
+                     every plan. _finalize_job sets the true 100 on
+                     exit. Falls back to canonical_max/4 when no
+                     total_expected was supplied (transitional callers).
 
     All-zero return means "still warming up" (file unreadable or no
     markers seen yet).
     """
     if not output_file or not os.path.isfile(output_file):
-        return (0, "", 0, 0, 0)
+        return (0, "", 0, _CANONICAL_TOTAL, 0)
     try:
         with open(output_file, "rb") as f:
             text = f.read().decode("utf-8", errors="replace")
     except OSError:
-        return (0, "", 0, 0, 0)
+        return (0, "", 0, _CANONICAL_TOTAL, 0)
+
     matches = _PHASE_START_RE.findall(text)
     if not matches:
-        return (0, "", 0, 0, 0)
-    n_s, total_s, name = matches[-1]
-    try:
-        n = int(n_s)
-        total = int(total_s)
-    except ValueError:
-        return (0, "", 0, 0, 0)
+        return (0, "", 0, _CANONICAL_TOTAL, 0)
 
-    label = _PHASE_LABEL_PREFIX_RE.sub("", name.strip())
+    # Walk every marker so we can:
+    #   - count them (for overall progress against the expected total)
+    #   - find the latest canonical phase (for phase label / phaseNumber)
+    #   - find the max canonical seen (fallback overall calc)
+    max_canonical = 0
+    latest_canonical = 0
+    latest_label = ""
+    for _n_s, _total_s, name in matches:
+        clean = _PHASE_LABEL_PREFIX_RE.sub("", name.strip())
+        canonical = _PHASE_NAME_TO_NUMBER.get(clean.casefold(), 0)
+        if canonical > max_canonical:
+            max_canonical = canonical
+        latest_canonical = canonical or latest_canonical
+        latest_label = clean
 
-    if total <= 0:
-        return (50, label, n, 0, 0)
-    overall = (n - 0.5) / total * 100
-    return (50, label, n, total, max(0, min(99, int(overall))))
+    if latest_canonical == 0:
+        # Phase names didn't map to the canonical 4-phase pipeline (e.g.
+        # someone running a custom plan). Fall back to a literal [N/M]
+        # reading so we still surface something sensible.
+        _n_s, _total_s, _name = matches[-1]
+        try:
+            n = int(_n_s)
+            total = int(_total_s)
+        except ValueError:
+            return (0, latest_label, 0, _CANONICAL_TOTAL, 0)
+        if total <= 0:
+            return (50, latest_label, n, _CANONICAL_TOTAL, 0)
+        overall = (n - 0.5) / total * 100
+        return (50, latest_label, n, _CANONICAL_TOTAL,
+                max(0, min(99, int(overall))))
+
+    # Overall progress: marker count vs expected total. This is what stops
+    # progress from oscillating across plans — each new marker monotonically
+    # increases the count, regardless of which [N/M] denominator it belongs
+    # to. Falls back to canonical_max/4 when caller didn't supply an
+    # expected total.
+    markers_seen = len(matches)
+    if total_expected_markers and total_expected_markers > 0:
+        overall = (markers_seen - 0.5) / total_expected_markers * 100
+    else:
+        overall = (max_canonical - 0.5) / _CANONICAL_TOTAL * 100
+    overall_capped = max(0, min(99, int(overall)))
+
+    return (50, latest_label, latest_canonical, _CANONICAL_TOTAL, overall_capped)
 
 
 def _spawn_run_py(
@@ -1339,6 +1434,13 @@ async def start_prepare(
         "output_docx_path": _expected_docx_path(selected_group),
         "selected_group": selected_group,
         "command_line": _format_command_line(project_path, extra_args or []),
+        # Snapshot how many `[N/M] === Phase ... ===` markers the planner
+        # is expected to emit so /status can compute monotonic overall
+        # progress even when the run splits into multiple plans (e.g.
+        # build-model + per-group views+export).
+        "total_phase_markers": _expected_phase_markers(
+            selected_group, from_phase=1
+        ),
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "complete": False,
         "cancelled": False,
@@ -1415,7 +1517,10 @@ async def get_job_status(job_id: str):
     # complete=True we still scan to get phase_number/total_phase for
     # the "Phase 4 of 4 — Complete" UX, but override the percent fields.
     per_phase_pct, phase_label, phase_number, total_phase, overall_pct = \
-        _compute_progress_and_phase(job.get("output_file") or "")
+        _compute_progress_and_phase(
+            job.get("output_file") or "",
+            total_expected_markers=int(job.get("total_phase_markers") or 0),
+        )
 
     if job.get("complete"):
         # Terminal state: progress + overallProgress jump to 100; phase
@@ -1541,7 +1646,10 @@ async def get_export_status(job_id: str):
 
     # Live progress / phase label — see API 10 for rationale.
     per_phase_pct, phase_label, phase_number, total_phase, overall_pct = \
-        _compute_progress_and_phase(job.get("output_file") or "")
+        _compute_progress_and_phase(
+            job.get("output_file") or "",
+            total_expected_markers=int(job.get("total_phase_markers") or 0),
+        )
     if not job.get("complete") and per_phase_pct > 0:
         pct = per_phase_pct
     if job.get("complete"):
@@ -2196,6 +2304,11 @@ async def start_export(
         "output_docx_path": _expected_docx_path(selected_group),
         "selected_group": selected_group,
         "command_line": _format_command_line(project_path, extra_args),
+        # Export jobs run with --from-phase 4 — see _expected_phase_markers
+        # for how that resolves to a marker count given the live config.
+        "total_phase_markers": _expected_phase_markers(
+            selected_group, from_phase=4
+        ),
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "complete": False,
         "cancelled": False,
