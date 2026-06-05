@@ -1,0 +1,18 @@
+Name,Kind,EntryName,Range,Comment
+DB_TYPE,enum,,0-2,Database selection
+,enumerator,DB_NONE,0,No database
+,enumerator,DB_MAIN,1,Main database
+,enumerator,DB_BACKUP,2,Backup database
+Status,enum,,-1-1,Operation result codes
+,enumerator,STATUS_OK,0,Success
+,enumerator,STATUS_ERR,-1,Error
+,enumerator,STATUS_PENDING,1,Pending
+Color,enum,,0-2,LED color selection
+,enumerator,RED,0,Red
+,enumerator,GREEN,1,Green
+,enumerator,BLUE,2,Blue
+GG,struct,,NA,Position data
+,field,x,0-100,X coordinate
+,field,y,0-100,Y coordinate
+MotorSpeed_t,typedef,,0-3000,Motor speed in RPM
+Voltage_t,typedef,,0-5000,Voltage in millivolts

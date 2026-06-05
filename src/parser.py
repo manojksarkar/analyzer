@@ -1,4 +1,5 @@
 """Parse C++ source -> model/."""
+import csv
 import os
 import re
 import sys
@@ -20,11 +21,21 @@ _p = _paths()
 SCRIPT_DIR = _p.src_dir
 PROJECT_ROOT = _p.project_root
 if len(sys.argv) < 2:
-    print("Usage: python parser.py <project_path>")
+    print("Usage: python parser.py <project_path> [--data-dictionary <path>]")
     raise SystemExit(1)
 proj_arg = sys.argv[1]
 MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.path.join(PROJECT_ROOT, proj_arg)
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
+
+# Scan for optional --data-dictionary flag (may be passed by group_planner).
+_data_dict_path: str | None = None
+_i = 2
+while _i < len(sys.argv):
+    if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
+        _data_dict_path = sys.argv[_i + 1]
+        _i += 2
+    else:
+        _i += 1
 
 from utils import (
     get_module_name as _get_module,
@@ -1013,6 +1024,102 @@ def _scan_defines():
             }
 
 
+def _merge_external_data_dictionary(path: str) -> None:
+    """Merge a user-authored CSV into the module-level data_dictionary (external wins).
+
+    CSV columns: Name, Kind, EntryName, Range, Comment
+    - Name (required for top-level rows): type key in dataDictionary.
+    - Kind: typedef/enum/define/struct/class/primitive (default: typedef).
+    - EntryName: enumerator name (for Kind=enumerator) or field name (for Kind=field).
+    - Range: range string (e.g. 0-255) or numeric value for enumerators.
+    - Comment: description.
+
+    Child rows (Kind=enumerator or Kind=field) have an empty Name column —
+    the parser carries forward the last non-empty Name as the parent key.
+    This matches how Excel merged-cell exports look in CSV.
+    """
+    if not os.path.isfile(path):
+        print(f"[parser] ERROR: data dictionary CSV not found: {path}", file=sys.stderr)
+        sys.exit(2)
+
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            if reader.fieldnames is None:
+                print(f"[parser] ERROR: data dictionary CSV is empty: {path}", file=sys.stderr)
+                sys.exit(2)
+
+            # Normalise header names: strip BOM and whitespace.
+            reader.fieldnames = [f.lstrip("﻿").strip() for f in reader.fieldnames]
+
+            parent_key: str | None = None
+            merged = 0
+
+            for row in reader:
+                name     = (row.get("Name")      or "").strip()
+                kind     = (row.get("Kind")       or "").strip().lower()
+                entry_nm = (row.get("EntryName")  or "").strip()
+                range_v  = (row.get("Range")      or "").strip()
+                comment  = (row.get("Comment")    or "").strip()
+
+                # Child rows: enumerator or field — attach to current parent.
+                if not name and kind in ("enumerator", "field"):
+                    if parent_key is None or not entry_nm:
+                        continue
+                    entry = data_dictionary.get(parent_key)
+                    if entry is None:
+                        continue
+                    if kind == "enumerator":
+                        entry.setdefault("enumerators", [])
+                        try:
+                            val = int(range_v) if range_v else 0
+                        except ValueError:
+                            val = range_v
+                        child = {"name": entry_nm, "value": val}
+                        if comment:
+                            child["comment"] = comment
+                        entry["enumerators"].append(child)
+                    else:  # field
+                        entry.setdefault("fields", [])
+                        child = {"name": entry_nm}
+                        if range_v:
+                            child["range"] = range_v
+                        if comment:
+                            child["comment"] = comment
+                        entry["fields"].append(child)
+                    continue
+
+                # Top-level row: create or update a dictionary entry.
+                if not name:
+                    continue
+
+                parent_key = name
+                kind = kind or "typedef"
+
+                # Start from existing entry so unspecified sub-lists are preserved.
+                existing = data_dictionary.get(name, {})
+                entry: dict = dict(existing)
+                entry["kind"] = kind
+                if range_v:
+                    entry["range"] = range_v
+                if comment:
+                    entry["comment"] = comment
+                # Reset enumerators/fields so child rows below append fresh.
+                if kind in ("enum",):
+                    entry["enumerators"] = []
+                if kind in ("struct", "class"):
+                    entry["fields"] = []
+
+                data_dictionary[name] = entry
+                merged += 1
+
+    except csv.Error as exc:
+        print(f"[parser] ERROR: failed to parse data dictionary CSV {path}: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    print(f"  data dictionary: merged {merged} entries from {os.path.basename(path)}")
+
+
 def main():
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
@@ -1061,6 +1168,9 @@ def main():
         data_dictionary[name] = {"kind": "primitive", "range": info["range"]}
     # Add defines (kind=define)
     _scan_defines()
+    # Merge user-supplied data dictionary CSV (external entries win on conflict).
+    if _data_dict_path:
+        _merge_external_data_dictionary(_data_dict_path)
     write_model_file(DATA_DICTIONARY, data_dictionary)
 
     n_funcs = len(metadata["functions"])
