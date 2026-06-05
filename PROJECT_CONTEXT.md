@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-04-21 (version3 — LLM layer upgrade + observability refinements).
+> Updated: 2026-06-05 (version3 — flowchart layout, PNG slicing, validator hardening, and the new FastAPI backend layer).
 > Current active branch: `version3` (off `version2`, which is off `main`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -9,6 +9,8 @@
 > - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
 > - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
 > - §4c covers the version3 observability + cross-platform refinements (prompt/response tracing, UTF-8 output, token-budget-scaled flowchart prompts, Ollama budget clamp).
+> - **§4d covers post-2026-04-21 refinements: strict CLI flag rejection, LLM description cache relocation, `FunctionKnowledge.end_line`, Mermaid frontmatter + ELK feedbackEdges, and PNG slicing for tall flowcharts.**
+> - **§21 introduces the FastAPI backend layer (commits since 2026-05-20) — implementation detail lives in [backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md); this file just orients you.**
 > - All pre-existing sections have been updated in place where version3 changed the behaviour.
 
 ---
@@ -340,6 +342,116 @@ Behaviour:
 Rule of thumb: keeping `maxContextTokens: null` on both providers makes the
 code pick the right value per provider automatically and eliminates the
 switch-provider mis-config path entirely.
+
+---
+
+## 4d. Post-2026-04-21 refinements (`version3`)
+
+Seven commits land between the last update and 2026-06-05. All are
+analyzer-side; backend-side work is summarised in §21 and detailed in
+`backend/PROJECT_CONTEXT.md`.
+
+### Strict CLI flag rejection (`bc36b00`)
+`run.py` used to silently ignore unknown flags — typing `--trace-prompt`
+(singular) instead of `--trace-prompts` would produce an empty trace
+file with no error. Now any unknown flag prefixed with `-` exits with a
+clear message listing valid options. Cost was a single `else` branch in
+the argument loop.
+
+### LLM description cache moved out of the C++ project (`a656354`)
+The entity cache for two-pass description results used to live at
+`<project_path>/.flowchart_cache/llm_descriptions/`. That meant two
+parallel analyzer instances pointed at the same C++ project corrupted
+each other's cache. Cache is now at
+`<analyzer_root>/.flowchart_cache/llm_descriptions/` (via
+`core.paths().cache_dir`); each analyzer copy has its own. The cache
+still survives `--clean` (which only wipes `output/` and `model/`).
+
+### `FunctionKnowledge.end_line` added (`a656354`)
+The hierarchy summariser's `_read_body()` previously read
+`max_lines + 3` lines from each function's start, regardless of actual
+function length. Short functions silently spilled into the next
+function; long functions were silently truncated. New `end_line` field
+on `FunctionKnowledge` (set from `cursor.extent.end.line` in
+`project_scanner.py`; from `location.endLine` in `model_deriver.py`)
+clips the read at the function's actual end. `max_lines` still caps
+long functions for prompt-budget reasons; this only prevents overruns.
+Carried through JSON serialisation as `endLine` for save/load
+round-trips.
+
+### Mermaid validator accepts frontmatter + `%%{init}%%` (`db9c7bc`)
+`validate_mermaid()` used to reject any script that didn't literally
+start with the word `flowchart`. After the flowchart builder added a
+YAML frontmatter block (`---\nconfig:\n  ...\n---`) plus a
+`%%{ init: {...} }%%` directive in front of `flowchart TD`, every
+function produced a spurious "does not start with 'flowchart'" warning.
+The validator now strips an optional frontmatter block and any number
+of leading `%%{...}%%` directives before checking the keyword. Also
+fixed an unrelated `* 0` typo in the unmatched-quote heuristic.
+
+### ELK spacing keys corrected to camelCase (`db9c7bc`)
+The Mermaid `%%{init}%%` block had `nodespacing` / `rankspacing`
+(lowercase), which Mermaid silently ignores — it expects `nodeSpacing`
+and `rankSpacing`. Fixed.
+
+### ELK layout config — feedbackEdges + spacing + camelCase init key (`5124f34`, `0877c1f`, `d4d4d3d`)
+Three commits in sequence tuned the flowchart engine to reduce edge
+crossings:
+
+1. `5124f34` — bumped `nodeSpacing 10 → 50`, `rankSpacing 20 → 60`;
+   added `elk.mergeEdges: false`, `nodePlacementStrategy: BRANDES_KOEPF`,
+   `cycleBreakingStrategy: GREEDY`. Cramped layers were forcing edges
+   through the gaps between nodes; giving layers breathing room is the
+   single highest-leverage knob.
+2. `0877c1f` — added `"defaultRenderer": "elk"` inside the
+   `%%{init}%%` directive's `flowchart` block as well as in the YAML
+   frontmatter. Some Mermaid CLI versions only honor one of the two
+   paths; emitting it both ways works regardless. Also made the PNG
+   slicer always log its W/H/aspect/decision per render (no more
+   silent "didn't slice, can't tell why").
+3. `d4d4d3d` — added `elk.layered.feedbackEdges: true`. For CFGs with
+   loops (which are most non-trivial functions), back-edges to a
+   decision node would weave through the central forward-edge column
+   and force crossings. With feedback edges enabled, ELK routes them
+   along the periphery and the central column stays clear for the
+   forward path. Specifically fixes the `NTNT_FindFaultException` case
+   where `N6 → N10` crossed `N7 → N8`.
+
+### PNG slicing for tall flowcharts (`8560de4`)
+Word embeds flowchart PNGs at a fixed 4-inch width via
+`docx_exporter._add_flowchart_table`, so tall flowcharts (the 41-node
+`NTR_OP_FLUSH_Complete` was the trigger case) overflowed a single page
+and got clipped. New `_maybe_slice_tall_png()` in
+`src/views/flowcharts.py`:
+
+- Decision: split when `H/W > 1.875 × 1.10` (aspect over 10% of the
+  4"-by-7.5" page-fit ratio). Skip when `W/H > 1.5` (wide layout —
+  slicing horizontally wouldn't help).
+- N = `ceil(aspect / 1.875)` pieces.
+- Cut Y's snap to whitespace rows (every pixel R/G/B > 250) within a
+  ±15% window of each target (widens to ±20% fallback; forces cut if
+  no whitespace found). ELK's `rankSpacing: 60` guarantees a clear
+  band between every layer, so a clean cut almost always exists.
+- Tail slices < 20% of a target are merged into their predecessor.
+- Writes `<stem>__part_K_of_N.png` slices; deletes the original.
+  Stale parts from prior runs are scrubbed first so re-runs are
+  idempotent.
+
+`docx_exporter._resolve_flowchart_pngs()` reads slice parts when they
+exist (preferring them over the single `<stem>.png`) and embeds each
+on its own paragraph inside the Requirements cell — Word's normal text
+flow puts oversize slices on separate pages without explicit breaks.
+First slice carries the function signature label; subsequent slices
+carry "(continued — Part K of N)". Aspect-corrected one-page test
+function still embeds as a single image.
+
+### Where things stand on flowchart layout
+For typical functions: clean ELK layout, no crossings. For high-back-
+edge functions (`NTNT_FindFaultException` style): crossings reduced
+~70% by `feedbackEdges: true`. For very tall functions: PNG slicing
+preserves every node across pages. Wide-then-deep functions still
+sometimes have residual crossings — that would require Approach B
+(CFG-level semantic splitting), which is on the §16 roadmap.
 
 ---
 
@@ -1381,8 +1493,51 @@ src/flowchart/
    `self._max_context_tokens` — no more `getattr(client, "_num_ctx", 8192)`
    fallback.
 10. **Validation** — `validate_cfg(cfg)` then `validate_mermaid(script)`.
-    Failures are logged at WARNING but don't abort the run.
-11. **Build Mermaid** — `build_mermaid(cfg)`.
+    Failures are logged at WARNING but don't abort the run. Note (§4d,
+    `db9c7bc`): `validate_mermaid()` strips an optional YAML frontmatter
+    block and any leading `%%{...}%%` init directives before checking
+    that the script starts with `flowchart` — needed because the builder
+    emits both.
+11. **Build Mermaid** — `build_mermaid(cfg)`. The emitted script is:
+
+    ```mermaid
+    ---
+    config:
+      flowchart:
+        defaultRenderer: elk
+    ---
+    %%{ init: {
+      "flowchart": { "defaultRenderer": "elk" },
+      "elk": {
+        "nodePlacementStrategy": "BRANDES_KOEPF",
+        "cycleBreakingStrategy": "GREEDY",
+        "nodeSpacing": 50,
+        "rankSpacing": 60,
+        "mergeEdges": false,
+        "layered.feedbackEdges": true
+      }
+    } }%%
+    flowchart TD
+        ...
+    ```
+
+    Why this exact shape (see §4d for commit-by-commit):
+    - `defaultRenderer: elk` is emitted in both the YAML frontmatter
+      and the init directive because different Mermaid CLI versions
+      honor different paths.
+    - `nodeSpacing: 50` / `rankSpacing: 60` give layers enough room
+      that nodes don't force edges through the gaps between them —
+      single highest-leverage knob for reducing crossings.
+    - `nodePlacementStrategy: BRANDES_KOEPF` + `cycleBreakingStrategy:
+      GREEDY` keep layered placement deterministic for CFGs with loops.
+    - `mergeEdges: false` keeps fan-in/fan-out lines distinct (Mermaid
+      defaults to merging same-source edges, which obscures decision
+      branches).
+    - `layered.feedbackEdges: true` is the key fix for back-edge
+      crossings in loop-heavy CFGs — ELK routes back-edges along the
+      periphery instead of weaving them through the forward column.
+    - Init-directive keys are camelCase (`nodeSpacing`, not
+      `nodespacing`) — Mermaid silently ignores the lowercase form.
 
 ### LLM client construction + banner + enrichment config (version3)
 
@@ -1435,6 +1590,37 @@ file via `--knowledge-json`.
 
 Per source file: `out_dir/<source_file_name>.json` containing
 `[{name, flowchart}, …]`. Plus `_summary.json` with per-file counts.
+
+### PNG rendering + slicing (`src/views/flowcharts.py`, §4d `8560de4`)
+
+Mermaid scripts are rendered to PNG by the `flowcharts` view
+(`render_flowcharts.py` → mermaid-cli subprocess). After the PNG is
+written, `_maybe_slice_tall_png(png_path, *, page_aspect=1.875)` decides
+whether to slice the image into vertical parts so DOCX export can keep
+every node visible across multiple Word pages:
+
+- Aspect check: `aspect = H / W`. Skip if `W / H > 1.5` (wide). Slice
+  if `aspect > page_aspect * 1.10` (>10% taller than the 4"×7.5"
+  page-fit ratio Word uses).
+- `N = ceil(aspect / page_aspect)` slices.
+- Targets Y at `H * k / N` for `k = 1..N-1`, but snaps to whitespace
+  rows (all pixels R/G/B > 250) within ±15% of each target (widens to
+  ±20% fallback; forces the cut at target if no whitespace found).
+  ELK's `rankSpacing: 60` guarantees a clear band between every layer,
+  so a clean whitespace cut almost always exists.
+- Tail slice merged into predecessor if shorter than 20% of a target.
+- Stale `<stem>__part_*_of_*.png` files from prior runs are scrubbed
+  first, then the new slices are written as
+  `<stem>__part_1_of_N.png` … `<stem>__part_N_of_N.png`, and the
+  original `<stem>.png` is deleted.
+- Always logs W/H/aspect and the decision per render (no silent skips).
+
+Downstream, `docx_exporter._resolve_flowchart_pngs()` prefers the
+sliced parts over the original when both would exist (parts win). Each
+slice is embedded on its own paragraph inside the Requirements cell —
+Word's normal flow places oversize images on new pages without
+explicit page-break tags. First slice gets the function signature
+label; subsequent slices carry "(continued — Part K of N)".
 
 ---
 
@@ -1923,3 +2109,101 @@ If anything in steps 5–16 fails with a non-zero exit code, the runner logs
 `<phase> failed with exit code N; resume with: --from-phase <idx>`. The user
 can fix the underlying issue and rerun with that flag, skipping straight to
 the failed step.
+
+---
+
+## 21. Companion: the FastAPI backend (`backend/`)
+
+Starting in version3, the analyzer pipeline is also reachable over HTTP
+through a small FastAPI service that the external UI talks to. This
+section is intentionally short — it orients you to the layer; the
+authoritative reference is **[backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md)**
+(~930 lines covering all endpoints, request/response shapes, design
+decisions, and the development history).
+
+### What the backend is, and isn't
+
+- **What it is**: a thin async wrapper around `run.py`. It spawns the
+  analyzer as a subprocess (`_spawn_run_py`), tails its stdout+stderr
+  to per-job log files, parses `[N/M] === Phase X: ... ===` markers
+  for progress, and exposes the model artifacts that the analyzer
+  already produces (functions, modules, flowcharts, the exported
+  DOCX).
+- **What it isn't**: a re-implementation of the pipeline. The backend
+  never imports analyzer internals — it only reads JSON the analyzer
+  writes and shells out to `python run.py`. The pipeline contract
+  documented in §3, §10–§14 is the single source of truth.
+
+### Process model
+
+- FastAPI on `:8000`, CORS pinned to `http://localhost:5173` (the Vite
+  dev server the UI runs on).
+- Jobs live in an in-memory `_jobs: dict[str, JobState]` — **no
+  persistence by design**. Restarting the backend forgets in-flight
+  jobs, but already-exported DOCX files on disk remain downloadable
+  via `GET /jobs/{jobId}/download` (the endpoint resolves by reading
+  `output/*.docx` directly).
+- Each spawned subprocess writes to
+  `logs/job_<job_id>.out.log` (interleaved stdout+stderr). The
+  `GET /jobs/{jobId}/preplogs` endpoint tails this file rather than
+  buffering in process memory.
+- Process tree kill uses `taskkill /F /T` on Windows and `killpg(SIGKILL)`
+  on POSIX so cancelling a job actually stops the whole subprocess tree
+  (parser/model_deriver/run_views/docx_exporter can spawn children).
+
+### Progress: canonical 4-phase mapping
+
+The pipeline has variable plan counts (build-only vs build+views vs
+views-only, multi-group runs) and inside-plan phase counts (some plans
+have 2 phases, others 4). To give the UI a stable progress bar:
+
+- A **canonical 4-phase** taxonomy is exposed regardless of the
+  actual plan shape: Parse C++ source → Derive model → Generate
+  views → Export to DOCX.
+- `_PHASE_NAME_TO_NUMBER` maps phase labels (case-folded) to
+  `phaseNumber` 1..4.
+- `_CANONICAL_TOTAL = 4` is always returned as `totalPhase` (even when
+  the actual plan has only 2 phases — `totalPhase` is canonical, not
+  literal).
+- `_expected_phase_markers(selected_group, from_phase)` predicts the
+  total number of `=== Phase ... ===` markers the run will emit, used
+  to compute `overallProgress` monotonically. This was the fix for the
+  "75% → 25% → 100%" regression: previously `overallProgress` was
+  computed from "markers seen / markers in current plan", which jumped
+  backwards across plan boundaries.
+- The `phase` field strips a leading `Phase N: ` prefix
+  (`_PHASE_LABEL_PREFIX_RE`) — the UI wants the bare phase name.
+
+### Config editing: surgical JSONC splice
+
+`POST /api/v1/config` updates only the `modulesGroups` key inside
+`config/config.json` while preserving every comment and every other
+key in the file. The implementation (`_find_modules_groups_key_pos`)
+is a small JSONC-aware state machine that tracks strings, line
+comments, block comments, and brace nesting depth — a regex or a
+`json.loads` + `json.dumps` round-trip would either miss commented
+duplicates or strip every `//` and `/* */` comment from the file.
+Earlier attempts to do this with `json.loads` deleted ~80% of the
+config; the surgical splice is the only safe path. Backup files are
+**not** written (the user explicitly opted out — git is the backup).
+
+### Multi-repository CRUD
+
+`backend/repository_config.json` is a list of `{name, path}` entries
+(see `backend/models.py:Repository`). Endpoints that previously took
+just a path now accept `?name=<repo>` query parameters; the backend
+resolves the name to a directory via `_resolve_repository_path` and
+auto-migrates legacy single-repo `{path: "..."}` files to
+`[{name: "default", path: "..."}]` on first read.
+
+### Where to read more
+
+The full endpoint catalog (17 endpoints), request/response examples,
+and the lessons-learned section (12 entries: venv mismatches, the
+config splice 80% bug, progress monotonicity, hiddenFns evolution,
+PNG slicing, ELK feedbackEdges, lossy-rewrite reversal, Windows
+shell=True quirks, etc.) is in
+[backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md). API examples
+with curl payloads are in [backend/API_DOC.md](backend/API_DOC.md). A
+sample response fixture lives at
+[backend/fixtures/get_components_FTL.json](backend/fixtures/get_components_FTL.json).
