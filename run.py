@@ -158,28 +158,11 @@ if not os.path.isdir(resolved):
 # When --use-model is set, refuse early if model files are missing.
 # ---------------------------------------------------------------------------
 if use_model:
-    from core.config import layers_config as _layers_config
-    from core.model_io import layer_model_dir as _lmd
-    _layers = _layers_config()
-    if _layers:
-        # Per-layer dirs: check each layer has its required files
-        _missing = []
-        for _ln in _layers:
-            _ldir = _lmd(_ln)
-            for _name in (FUNCTIONS, GLOBALS, UNITS, COMPONENTS):
-                _p = os.path.join(_ldir, f"{_name}.json")
-                if not os.path.isfile(_p):
-                    _missing.append(_p)
-                    break
-        if _missing:
-            log(f"--use-model set but model files missing: {_missing[0]}", component="run", err=True)
-            sys.exit(2)
-    else:
-        MODEL_FILES = (_mfp(FUNCTIONS), _mfp(GLOBALS), _mfp(UNITS), _mfp(COMPONENTS))
-        missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
-        if missing:
-            log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
-            sys.exit(2)
+    MODEL_FILES = (_mfp(FUNCTIONS), _mfp(GLOBALS), _mfp(UNITS), _mfp(COMPONENTS))
+    missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
+    if missing:
+        log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
+        sys.exit(2)
     log("Using existing model/ (skipping Phase 1/2).", component="run")
 
 # ---------------------------------------------------------------------------

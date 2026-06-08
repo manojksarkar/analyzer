@@ -134,12 +134,8 @@ def plan_runs(
 
     plans: List[RunPlan] = []
 
-    generate_sddd = doc_type in (DOC_TYPE_SDDD, DOC_TYPE_BOTH)
-    generate_sad = doc_type in (DOC_TYPE_SAD, DOC_TYPE_BOTH)
-
-    # --selected-group only applies to SDDD; flag it early when SAD-only.
-    if selected_group and not generate_sddd:
-        raise ValueError("--selected-group is only valid for SDDD (doc-type sddd or both)")
+    # SDD-only: always generate SDDD, never SAD/ADD
+    generate_sddd = True
 
     # Build layer -> [group] and group -> layer mappings
     from .config import layers_config
@@ -187,13 +183,11 @@ def plan_runs(
 
     if generate_sddd:
         for g in target_groups:
-            ln = group_to_layer.get(g)
             group_out = os.path.join(p.output_dir, g)
             view_phases = _view_export_phases(
                 output_dir=group_out,
                 selected_group=g,
                 filter_mode=filter_mode,
-                layer_name=ln,
                 docx_args=[
                     os.path.join(group_out, "interface_tables.json"),
                     os.path.join(group_out, f"software_detailed_design_{g}.docx"),
@@ -204,20 +198,5 @@ def plan_runs(
             plans.append(RunPlan(label=f"Group: {g}",
                                  phases=view_phases,
                                  runner_from_phase=local_from))
-
-    if generate_sad:
-        # SAD builds model for ALL layers (not just target_layers)
-        if not use_model and from_phase <= 2:
-            all_layers = [ln for ln in layers_cfg if ln not in seen_layers]
-            for ln in all_layers:
-                build_phases = _build_model_phases(
-                    project_path, no_llm_summarize=no_llm_summarize, layer_name=ln)
-                plans.append(RunPlan(label=f"Build model ({ln})",
-                                     phases=build_phases,
-                                     runner_from_phase=from_phase))
-        add_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
-        plans.append(RunPlan(label="Architecture Design Document",
-                             phases=_add_doc_phases(),
-                             runner_from_phase=add_from))
 
     return plans

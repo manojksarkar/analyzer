@@ -1063,7 +1063,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             i for i in unit_data["entries"]
             if i.get("functionId") not in _hidden_fids
         ]
-        by_module.setdefault(module_name, []).append((unit_key, unit_name_display, interfaces))
+        by_component.setdefault(component_name, []).append((unit_key, unit_name_display, interfaces))
 
     sorted_components = sorted(by_component.keys())
 
@@ -1255,7 +1255,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         for unit_name, entries in sorted((docx_rows.get(component_name) or {}).items()):
             for row in entries:
                 current_fn = row.get("currentFunctionName", "") or ""
-                if current_fn in _hidden_by_mod_unit.get((module_name, unit_name), set()):
+                if current_fn in _hidden_by_mod_unit.get((component_name, unit_name), set()):
                     continue
                 beh_idx += 1
                 ext = row.get("externalUnitFunction", "")
