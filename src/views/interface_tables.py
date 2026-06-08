@@ -28,7 +28,7 @@ def _build_interface_tables(
     global_variables_data,
     data_dictionary=None,
     *,
-    allowed_modules: set | None = None,
+    allowed_components: set | None = None,
 ):
     # Only .cpp units; entries sorted by line; caller/callee units derived from calledByIds/callsIds
     fid_to_unit = _fid_to_unit(units_data)
@@ -37,8 +37,8 @@ def _build_interface_tables(
 
     result = {"unitNames": unit_names}
     for unit_key, unit_info in units_data.items():
-        if allowed_modules:
-            if KEY_SEP in unit_key and unit_key.split(KEY_SEP, 1)[0].lower() not in allowed_modules:
+        if allowed_components:
+            if KEY_SEP in unit_key and unit_key.split(KEY_SEP, 1)[0].lower() not in allowed_components:
                 continue
         if not (unit_info.get("fileName") or "").endswith(".cpp"):
             continue
@@ -65,15 +65,15 @@ def _build_interface_tables(
                 u for cid in f.get("callsIds", []) or []
                 for u in fid_to_unit.get(cid, []) if u
             }
-            self_module = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
+            self_component = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
             def _is_external_unit(u: str) -> bool:
                 if KEY_SEP not in u:
                     return True
                 mod = u.split(KEY_SEP, 1)[0]
-                if allowed_modules:
-                    return mod.lower() not in allowed_modules
+                if allowed_components:
+                    return mod.lower() not in allowed_components
                 # Default behaviour: treat different module as external
-                return mod != self_module
+                return mod != self_component
 
             callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _is_external_unit(u)))
             callees_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in callee_units if _is_external_unit(u)))
@@ -148,14 +148,14 @@ def run(model, output_dir, model_dir, config):
     functions_data = model.get("functions", {})
     global_variables_data = model.get("globalVariables", {})
     data_dict = model.get("dataDictionary", {})
-    allowed_modules = {m.lower() for m in (config.get("_analyzerAllowedModules") or [])}
+    allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
 
     interface_tables = _build_interface_tables(
         units_data,
         functions_data,
         global_variables_data,
         data_dict,
-        allowed_modules=allowed_modules,
+        allowed_components=allowed_components,
     )
     out_path = os.path.join(output_dir, "interface_tables.json")
     os.makedirs(output_dir, exist_ok=True)

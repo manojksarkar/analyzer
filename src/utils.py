@@ -84,45 +84,40 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 _CONFIG_CACHE = load_config(_PROJECT_ROOT)
 
-# Module mapping cache (initialized at import).
-_MODULE_OVERRIDES: dict = {}
-_GROUP_MAP: dict = {}  # module name -> group name
+# Component mapping cache (initialized at import).
+_COMPONENT_OVERRIDES: dict = {}
+_GROUP_MAP: dict = {}  # component name -> group name
 
 
-def init_module_mapping(config: dict) -> None:
-    """Initialize module folder mapping used by get_module_name/make_*_key helpers.
-
-    This project no longer uses config.selectedGroup to affect module mapping.
-    Module mapping is derived from:
-    - top-level config.modules (if present), else
-    - merged union of all config.modulesGroups entries.
-    """
-    global _MODULE_OVERRIDES, _GROUP_MAP
+def init_component_mapping(config: dict) -> None:
+    """Initialize component folder mapping used by get_component_name/make_*_key helpers."""
+    global _COMPONENT_OVERRIDES, _GROUP_MAP
     cfg = config or {}
-    _MODULE_OVERRIDES = cfg.get("modules") or {}
+    _COMPONENT_OVERRIDES = cfg.get("components") or cfg.get("modules") or {}
     _GROUP_MAP = {}
-    if _MODULE_OVERRIDES:
+    if _COMPONENT_OVERRIDES:
         return
-    groups = cfg.get("modulesGroups") or {}
+    from core.config import get_flat_groups
+    groups = get_flat_groups(cfg)
     if not isinstance(groups, dict) or not groups:
-        _MODULE_OVERRIDES = {}
+        _COMPONENT_OVERRIDES = {}
         return
     merged: dict = {}
     for group_name, grp in groups.items():
         if not isinstance(grp, dict):
             continue
-        for module, paths in grp.items():
-            _GROUP_MAP.setdefault(module, group_name)
+        for component, paths in grp.items():
+            _GROUP_MAP.setdefault(component, group_name)
             if not paths:
                 continue
             if isinstance(paths, str):
                 paths_list = [paths]
             else:
                 paths_list = list(paths) if isinstance(paths, list) else []
-            if module not in merged:
-                merged[module] = paths_list if len(paths_list) != 1 else paths_list[0]
+            if component not in merged:
+                merged[component] = paths_list if len(paths_list) != 1 else paths_list[0]
             else:
-                existing = merged.get(module)
+                existing = merged.get(component)
                 if isinstance(existing, str):
                     existing_list = [existing]
                 else:
@@ -130,38 +125,26 @@ def init_module_mapping(config: dict) -> None:
                 for p in paths_list:
                     if p and p not in existing_list:
                         existing_list.append(p)
-                merged[module] = existing_list if len(existing_list) != 1 else existing_list[0]
-    _MODULE_OVERRIDES = merged
+                merged[component] = existing_list if len(existing_list) != 1 else existing_list[0]
+    _COMPONENT_OVERRIDES = merged
 
 
 # Default initialization from on-disk config.
-init_module_mapping(_CONFIG_CACHE)
+init_component_mapping(_CONFIG_CACHE)
 
-def resolve_group(module: str) -> str:
-    """Return the moduleGroups group name for a module, or empty string if unknown."""
-    return _GROUP_MAP.get(module, "")
-
-def resolve_group(module: str) -> str:
-    """Return the modulesGroups group name for a module, or empty string if unknown."""
-    return _GROUP_MAP.get(module, "")
+def resolve_group(component: str) -> str:
+    """Return the layer group name for a component, or empty string if unknown."""
+    return _GROUP_MAP.get(component, "")
 
 
-def _resolve_module_from_rel(rel_file: str) -> str:
-    """Resolve module name for a path relative to the project base.
-
-    Behaviour:
-    - If config.modules is provided, only those mappings are used; unmatched
-      paths resolve to "unknown".
-    - If config.modules is not provided, fallback is first path segment
-      (original behaviour).
-    """
+def _resolve_component_from_rel(rel_file: str) -> str:
+    """Resolve component name for a path relative to the project base."""
     path = rel_file.replace("\\", "/") if rel_file else ""
     if not path:
         return "unknown"
 
-    # Configurable overrides: "modules": { "ModuleName": "folder" | ["folder1", "dir/subdir"] }
-    if _MODULE_OVERRIDES:
-        for module, paths in _MODULE_OVERRIDES.items():
+    if _COMPONENT_OVERRIDES:
+        for component, paths in _COMPONENT_OVERRIDES.items():
             if not paths:
                 continue
             if isinstance(paths, str):
@@ -170,30 +153,29 @@ def _resolve_module_from_rel(rel_file: str) -> str:
                 p = (folder or "").replace("\\", "/").lstrip("./")
                 if not p:
                     continue
-                # Folder-based match: module is the folder and its subfolders.
                 if path == p or path.lower().startswith(p.lower() + "/"):
-                    return module
+                    return component
         return "unknown"
 
     parts = path.split("/")
     return parts[0] if parts and parts[0] else "unknown"
 
 
-def _path_to_module_unit(rel_file: str) -> tuple:
-    """Return (module, unitname) from rel_file. Unitname = filename without extension (no subpath)."""
+def _path_to_component_unit(rel_file: str) -> tuple:
+    """Return (component, unitname) from rel_file. Unitname = filename without extension (no subpath)."""
     path = rel_file.replace("\\", "/") if rel_file else ""
     if not path:
         return "unknown", ""
-    module = _resolve_module_from_rel(path)
+    component = _resolve_component_from_rel(path)
     parts = path.split("/")
     unitname = os.path.splitext(parts[-1])[0] if parts else ""
-    return module, unitname
+    return component, unitname
 
 
 def make_unit_key(rel_file: str) -> str:
-    """Unit unique key: module|unitname (assumes single-name units, no path in key)."""
-    module, unitname = _path_to_module_unit(rel_file)
-    return f"{module}{KEY_SEP}{unitname}"
+    """Unit unique key: component|unitname (assumes single-name units, no path in key)."""
+    component, unitname = _path_to_component_unit(rel_file)
+    return f"{component}{KEY_SEP}{unitname}"
 
 
 def path_from_unit_rel(rel_file: str) -> str:
@@ -203,20 +185,20 @@ def path_from_unit_rel(rel_file: str) -> str:
 
 
 def make_global_key(rel_file: str, full_name: str) -> str:
-    """Unique key: module|unitname|qualifiedName."""
-    module, unit = _path_to_module_unit(rel_file)
-    return f"{module}{KEY_SEP}{unit}{KEY_SEP}{full_name}"
+    """Unique key: component|unitname|qualifiedName."""
+    component, unit = _path_to_component_unit(rel_file)
+    return f"{component}{KEY_SEP}{unit}{KEY_SEP}{full_name}"
 
 
-def make_function_key(module: str, rel_file: str, full_name: str, parameters: list) -> str:
-    """Unique key: module|unitname|qualifiedName|paramTypes."""
+def make_function_key(component: str, rel_file: str, full_name: str, parameters: list) -> str:
+    """Unique key: component|unitname|qualifiedName|paramTypes."""
     path = rel_file.replace("\\", "/") if rel_file else ""
     parts = path.split("/")
-    if not module and parts:
-        module = parts[0]
-    _, unit = _path_to_module_unit(rel_file)
+    if not component and parts:
+        component = parts[0]
+    _, unit = _path_to_component_unit(rel_file)
     param_types = ",".join((p.get("type") or "").strip() for p in (parameters or []))
-    return f"{module}{KEY_SEP}{unit}{KEY_SEP}{full_name}{KEY_SEP}{param_types}"
+    return f"{component}{KEY_SEP}{unit}{KEY_SEP}{full_name}{KEY_SEP}{param_types}"
 
 
 def short_name(full_name: str) -> str:
@@ -242,7 +224,7 @@ def path_is_under(base_path: str, candidate_path: str) -> bool:
     return not rel.startswith("..")
 
 
-def get_module_name(file_path: str, base_path: str) -> str:
+def get_component_name(file_path: str, base_path: str) -> str:
     if not file_path:
         return "unknown"
     try:
@@ -252,9 +234,10 @@ def get_module_name(file_path: str, base_path: str) -> str:
         abs_base = os.path.normcase(os.path.abspath(base_path))
         abs_path = os.path.normcase(os.path.abspath(path))
         rel = os.path.relpath(abs_path, abs_base).replace("\\", "/")
-        return _resolve_module_from_rel(rel)
+        return _resolve_component_from_rel(rel)
     except ValueError:
         return "unknown"
+
 
 
 def norm_path(path: str, base_path: str) -> str:

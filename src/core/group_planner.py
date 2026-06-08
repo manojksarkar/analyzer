@@ -2,10 +2,10 @@
 
 Centralises the three-branch logic that used to live in run.py:
 
-  - no modulesGroups in config       -> single run, all 4 phases
-  - modulesGroups + no --selected    -> build model once, then phase 3+4
+  - no layer in config       -> single run, all 4 phases
+  - layer + no --selected    -> build model once, then phase 3+4
                                         for every group
-  - modulesGroups + --selected GROUP -> build model once, then phase 3+4
+  - layer + --selected GROUP -> build model once, then phase 3+4
                                         for that one group
 
 Each branch produces a single, flat `RunPlan` whose `.phases` list is fed
@@ -29,8 +29,13 @@ from .paths import paths
 # phase list it produces.
 PHASE_PARSE = 1     # Phase 1: Parse C++ source         -> parser.py
 PHASE_DERIVE = 2    # Phase 2: Derive model             -> model_deriver.py
-PHASE_VIEWS = 3     # Phase 3: Generate views           -> run_views.py
-PHASE_EXPORT = 4    # Phase 4: Export to DOCX           -> docx_exporter.py
+PHASE_VIEWS = 3     # Phase 3: Generate views           -> run_views.py / run_sad_views.py
+PHASE_EXPORT = 4    # Phase 4: Export to DOCX           -> docx_exporter.py / architecture_docx_exporter.py
+
+# Valid doc_type values for plan_runs().
+DOC_TYPE_SDDD = "sddd"
+DOC_TYPE_SAD  = "sad"
+DOC_TYPE_BOTH = "both"
 
 
 @dataclass
@@ -74,7 +79,8 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
 def _view_export_phases(*, output_dir: Optional[str] = None,
                         selected_group: Optional[str] = None,
                         filter_mode: Optional[str] = None,
-                        docx_args: Optional[List[str]] = None) -> List[Phase]:
+                        docx_args: Optional[List[str]] = None,
+                        layer_name: Optional[str] = None) -> List[Phase]:
     views_args: List[str] = []
     if output_dir:
         views_args += ["--output-dir", output_dir]
@@ -82,9 +88,14 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
         views_args += ["--selected-group", selected_group]
     if filter_mode:
         views_args += ["--filter-mode", filter_mode]
+    if layer_name:
+        views_args += ["--layer", layer_name]
+    _docx_args = list(docx_args or [])
+    if layer_name and "--layer" not in _docx_args:
+        _docx_args += ["--layer", layer_name]
     return [
         Phase("Phase 3: Generate views", "run_views.py", views_args),
-        Phase("Phase 4: Export to DOCX", "docx_exporter.py", list(docx_args or [])),
+        Phase("Phase 4: Export to DOCX", "docx_exporter.py", _docx_args),
     ]
 
 
@@ -106,11 +117,12 @@ def plan_runs(
     runner itself dead-simple.
 
     Raises ValueError if `selected_group` is set but doesn't exist in
-    config.modulesGroups (caller is expected to translate this to a
+    config.layer (caller is expected to translate this to a
     user-visible error).
     """
     p = paths()
-    groups_cfg = (cfg.get("modulesGroups") or {})
+    from .config import get_flat_groups
+    groups_cfg = get_flat_groups(cfg)
     group_names = sorted(groups_cfg.keys()) if isinstance(groups_cfg, dict) else []
 
     resolved_selected = _resolve_group_name(groups_cfg, selected_group)
@@ -122,8 +134,23 @@ def plan_runs(
 
     plans: List[RunPlan] = []
 
+    generate_sddd = doc_type in (DOC_TYPE_SDDD, DOC_TYPE_BOTH)
+    generate_sad = doc_type in (DOC_TYPE_SAD, DOC_TYPE_BOTH)
+
+    # --selected-group only applies to SDDD; flag it early when SAD-only.
+    if selected_group and not generate_sddd:
+        raise ValueError("--selected-group is only valid for SDDD (doc-type sddd or both)")
+
+    # Build layer -> [group] and group -> layer mappings
+    from .config import layers_config
+    layers_cfg = layers_config()
+    group_to_layer: Dict[str, str] = {}
+    for lname, lcfg in layers_cfg.items():
+        for gname in (lcfg.get("groups") or {}):
+            group_to_layer[gname] = lname
+
     # ------------------------------------------------------------------
-    # No modulesGroups: single flat run, all 4 phases
+    # No layer: single flat run, all 4 phases (backward compat)
     # ------------------------------------------------------------------
     if not group_names:
         if use_model:
@@ -143,7 +170,7 @@ def plan_runs(
         return plans
 
     # ------------------------------------------------------------------
-    # modulesGroups present: build model once, then per-group view+export
+    # Layers present: build model per layer, then per-group view+export
     # ------------------------------------------------------------------
     target_groups = [resolved_selected] if resolved_selected else group_names
 
@@ -158,35 +185,39 @@ def plan_runs(
                                  phases=build_phases,
                                  runner_from_phase=from_phase))
 
-    for g in target_groups:
-        # All groups get a fresh output sub-directory under output/<group>/.
-        # When a single group is selected and resolves the same as today's
-        # behaviour, run_views/docx_exporter handle output paths themselves
-        # via --selected-group, so we don't pass --output-dir explicitly.
-        if resolved_selected:
-            view_phases = _view_export_phases(selected_group=g, filter_mode=filter_mode,
-                                              docx_args=["--selected-group", g])
-        else:
+    if generate_sddd:
+        for g in target_groups:
+            ln = group_to_layer.get(g)
             group_out = os.path.join(p.output_dir, g)
             view_phases = _view_export_phases(
                 output_dir=group_out,
                 selected_group=g,
                 filter_mode=filter_mode,
+                layer_name=ln,
                 docx_args=[
                     os.path.join(group_out, "interface_tables.json"),
                     os.path.join(group_out, f"software_detailed_design_{g}.docx"),
                     "--selected-group", g,
                 ],
             )
+            local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
+            plans.append(RunPlan(label=f"Group: {g}",
+                                 phases=view_phases,
+                                 runner_from_phase=local_from))
 
-        # When --from-phase points at views/export, translate it to the
-        # group plan's local indices (which only contain phases 3+4).
-        if from_phase >= PHASE_VIEWS:
-            local_from = max(1, from_phase - 2)  # 3 -> 1, 4 -> 2
-        else:
-            local_from = 1
-        plans.append(RunPlan(label=f"Group: {g}",
-                             phases=view_phases,
-                             runner_from_phase=local_from))
+    if generate_sad:
+        # SAD builds model for ALL layers (not just target_layers)
+        if not use_model and from_phase <= 2:
+            all_layers = [ln for ln in layers_cfg if ln not in seen_layers]
+            for ln in all_layers:
+                build_phases = _build_model_phases(
+                    project_path, no_llm_summarize=no_llm_summarize, layer_name=ln)
+                plans.append(RunPlan(label=f"Build model ({ln})",
+                                     phases=build_phases,
+                                     runner_from_phase=from_phase))
+        add_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
+        plans.append(RunPlan(label="Architecture Design Document",
+                             phases=_add_doc_phases(),
+                             runner_from_phase=add_from))
 
     return plans
