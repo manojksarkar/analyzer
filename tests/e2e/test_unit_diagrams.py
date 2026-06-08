@@ -11,10 +11,10 @@ Call graph for the Sample group (from SampleCppProject source):
                coreProcess→libNormalize)
   Core → Util (coreOrchestrate→utilCompute/utilScale)
   Lib  → Util (libNormalize→utilCompute)
-  Util → (nothing cross-module)
+  Util → (nothing cross-component)
 
-All three modules belong to the Sample group, so every unit is "internal"
-— nodes and edges live inside the module subgraph, not outside it.
+All three components belong to the Sample group, so every unit is "internal"
+— nodes and edges live inside the component subgraph, not outside it.
 """
 import os
 
@@ -32,10 +32,10 @@ UNITS = {
     "Util": "Util_Util",
 }
 
-# Every cross-module edge × every diagram it must appear in.
+# Every cross-component edge × every diagram it must appear in.
 # Each graph edge appears twice: once in the source unit's diagram (as outgoing)
 # and once in the target unit's diagram (as incoming caller).
-CROSS_MODULE_EDGES = [
+CROSS_COMPONENT_EDGES = [
     # (diagram,  src_node,    dst_node,    reason)
     ("Core", "Core_Core", "Lib_Lib",   "coreAdd/coreOrchestrate→libAdd, coreProcess/coreOrchestrate→libNormalize"),
     ("Core", "Core_Core", "Util_Util", "coreOrchestrate→utilCompute/utilScale"),
@@ -138,7 +138,7 @@ def test_peer_not_styled_as_main_unit(mmd_files, unit, peer_id):
 #   2. The label uses IF_ format (not a raw function name)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("diagram,src,dst,reason", CROSS_MODULE_EDGES)
+@pytest.mark.parametrize("diagram,src,dst,reason", CROSS_COMPONENT_EDGES)
 def test_cross_module_edge_with_if_label(mmd_files, diagram, src, dst, reason):
     lines = mmd_files[diagram].splitlines()
     edge_lines = [l for l in lines if src in l and dst in l and "-->" in l]

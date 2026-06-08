@@ -171,12 +171,12 @@ class TestBuildInterfaceTables:
         result = _build_interface_tables(units, {}, {"g1": gvar})
         assert result["Mod|core"]["entries"] == []
 
-    def test_allowed_modules_filters_out_other_modules(self):
+    def test_allowed_components_filters_out_other_components(self):
         units = {
             "Mod|core": {"name": "core", "fileName": "core.cpp", "functionIds": [], "globalVariableIds": []},
             "Other|util": {"name": "util", "fileName": "util.cpp", "functionIds": [], "globalVariableIds": []},
         }
-        result = _build_interface_tables(units, {}, {}, allowed_modules={"mod"})
+        result = _build_interface_tables(units, {}, {}, allowed_components={"mod"})
         assert "Mod|core" in result
         assert "Other|util" not in result
 
