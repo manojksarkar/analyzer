@@ -503,6 +503,30 @@ def get_flat_groups(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg.get("layer") or {}
 
 
+def get_layer_components(cfg: Dict[str, Any], group_name: str) -> set:
+    """Return all component names in the same layer as group_name.
+
+    For a flat (non-layered) config, returns all components across all groups.
+    Returns empty set if group not found.
+    """
+    layers = cfg.get("layers") or {}
+    for layer_cfg in layers.values():
+        groups = layer_cfg.get("groups") or {}
+        if group_name in groups:
+            components: set = set()
+            for grp in groups.values():
+                if isinstance(grp, dict):
+                    components.update(grp.keys())
+            return components
+    # Flat config (no layers): all components in all groups
+    flat = get_flat_groups(cfg)
+    components = set()
+    for grp in flat.values():
+        if isinstance(grp, dict):
+            components.update(grp.keys())
+    return components
+
+
 
 def components_groups() -> Dict[str, Any]:
     """Return flattened groups across all layers with paths resolved."""

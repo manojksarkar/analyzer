@@ -1024,6 +1024,17 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     components_data = _load_model_json("components")
     global_variables_data = _load_model_json("globalVariables")
     functions_data = _load_model_json("functions")
+
+    # Filter model data to only the components in the same layer as the selected group
+    if selected_group:
+        from core.config import get_layer_components, app_config
+        layer_comps = get_layer_components(app_config(), selected_group)
+        if layer_comps:
+            lower = {c.lower() for c in layer_comps}
+            units_data = {k: v for k, v in units_data.items() if k.split("|")[0].lower() in lower}
+            components_data = {k: v for k, v in components_data.items() if k.lower() in lower}
+            global_variables_data = {k: v for k, v in global_variables_data.items() if k.split("|")[0].lower() in lower}
+            functions_data = {k: v for k, v in functions_data.items() if k.split("|")[0].lower() in lower}
     _hidden_fids: set = {fid for fid, f in functions_data.items() if f.get("hidden", False)}
     _hidden_by_mod_unit: dict = {}
     for _fid in _hidden_fids:

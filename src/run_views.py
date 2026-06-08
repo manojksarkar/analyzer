@@ -10,6 +10,23 @@ SCRIPT_DIR = _p.src_dir
 PROJECT_ROOT = _p.project_root
 
 
+def _filter_model_to_components(model: dict, allowed: set) -> dict:
+    """Return a copy of model with only data belonging to the given component names."""
+    from core.model_io import FUNCTIONS, GLOBALS, UNITS, COMPONENTS
+    lower = {c.lower() for c in allowed}
+    filtered = dict(model)
+    # functions / globals / units: key starts with "ComponentName|..."
+    for key in (FUNCTIONS, GLOBALS, UNITS):
+        if key in model:
+            filtered[key] = {k: v for k, v in model[key].items()
+                             if k.split("|")[0].lower() in lower}
+    # components: key IS the component name
+    if COMPONENTS in model:
+        filtered[COMPONENTS] = {k: v for k, v in model[COMPONENTS].items()
+                                 if k.lower() in lower}
+    return filtered
+
+
 def _load_model():
     from core.model_io import (
         load_model, FUNCTIONS, GLOBALS, UNITS, COMPONENTS, DATA_DICTIONARY, ModelFileMissing,
@@ -77,6 +94,11 @@ def main():
             config = dict(config)
             config["_analyzerSelectedGroup"] = resolved
             config["_analyzerAllowedComponents"] = sorted(grp.keys())
+            # Filter model to only include components from the same layer
+            from core.config import get_layer_components
+            layer_comps = get_layer_components(config, resolved)
+            if layer_comps:
+                model = _filter_model_to_components(model, layer_comps)
     run_views(model, output_dir, model_dir, config)
 
 
