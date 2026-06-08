@@ -215,11 +215,11 @@ class TestMakeUnitKey:
         init_component_mapping(utils._CONFIG_CACHE)
 
     def test_resolves_component_from_path(self):
-        key = make_unit_key("Sample/Core/core.cpp")
+        key = make_unit_key("Layer1/Sample/Core/core.cpp")
         assert key.startswith("Core|")
 
     def test_unit_name_is_filename_without_extension(self):
-        key = make_unit_key("Sample/Core/core.cpp")
+        key = make_unit_key("Layer1/Sample/Core/core.cpp")
         assert key == "Core|core"
 
     def test_unknown_path_returns_unknown(self):

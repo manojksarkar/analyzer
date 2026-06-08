@@ -23,7 +23,7 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-UNIT_DIAGRAMS_DIR = os.path.join(PROJECT_ROOT, "output", "unit_diagrams")
+UNIT_DIAGRAMS_DIR = os.path.join(PROJECT_ROOT, "output", "Sample", "unit_diagrams")
 
 # unit_key "Core|Core"  →  safe_filename  →  "Core_Core"
 UNITS = {

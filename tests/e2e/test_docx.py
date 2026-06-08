@@ -22,7 +22,7 @@ except ImportError:
     pytest.skip("python-docx not installed", allow_module_level=True)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "software_detailed_design_Sample.docx")
+DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "Sample", "software_detailed_design_Sample.docx")
 
 COL_IF_ID    = 0
 COL_IF_NAME  = 1
@@ -277,6 +277,12 @@ def test_behaviour_description_tables_present(docx):
 
 def test_flowchart_tables_present(docx):
     """_add_flowchart_table uses 'Capacity(Density)' — distinct from the behaviour table."""
+    import json
+    cfg_path = os.path.join(PROJECT_ROOT, "config", "config.json")
+    with open(cfg_path, encoding="utf-8") as f:
+        cfg = json.load(f)
+    if not cfg.get("views", {}).get("flowcharts"):
+        pytest.skip("flowcharts disabled in config")
     row_labels = {
         row.cells[0].text.strip()
         for t in docx.tables

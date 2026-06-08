@@ -231,7 +231,7 @@ class TestEnrichInterfaces:
     def teardown_method(self):
         init_component_mapping(utils._CONFIG_CACHE)
 
-    def _make_func(self, rel_file="Sample/Core/core.cpp"):
+    def _make_func(self, rel_file="Layer1/Sample/Core/core.cpp"):
         return {
             "location": {"file": rel_file, "line": 1},
             "params": [],
