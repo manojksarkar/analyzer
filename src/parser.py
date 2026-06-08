@@ -968,15 +968,12 @@ def _collect_source_files():
 
 def _collect_define_files():
     """Files to scan for #define (includes headers)."""
-    prefix = _layer_prefix()
     exts = (".cpp", ".cc", ".cxx", ".h", ".hpp")
     files = []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
             if f.endswith(exts):
                 path = os.path.join(root, f)
-                if prefix and not path.startswith(prefix):
-                    continue
                 if is_project_file(path):
                     files.append(path)
     return files
