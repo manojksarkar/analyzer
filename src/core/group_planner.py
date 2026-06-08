@@ -27,15 +27,10 @@ from .paths import paths
 # Canonical phase indices used by --from-phase. These are the *user-visible*
 # numbers; the planner translates them to runner-visible indices in the flat
 # phase list it produces.
-PHASE_PARSE = 1     # Phase 1: Parse C++ source         -> parser.py
-PHASE_DERIVE = 2    # Phase 2: Derive model             -> model_deriver.py
-PHASE_VIEWS = 3     # Phase 3: Generate views           -> run_views.py / run_sad_views.py
-PHASE_EXPORT = 4    # Phase 4: Export to DOCX           -> docx_exporter.py / architecture_docx_exporter.py
-
-# Valid doc_type values for plan_runs().
-DOC_TYPE_SDDD = "sddd"
-DOC_TYPE_SAD  = "sad"
-DOC_TYPE_BOTH = "both"
+PHASE_PARSE = 1     # Phase 1: Parse C++ source   -> parser.py
+PHASE_DERIVE = 2    # Phase 2: Derive model       -> model_deriver.py
+PHASE_VIEWS = 3     # Phase 3: Generate views     -> run_views.py
+PHASE_EXPORT = 4    # Phase 4: Export to DOCX     -> docx_exporter.py
 
 
 @dataclass
@@ -134,17 +129,6 @@ def plan_runs(
 
     plans: List[RunPlan] = []
 
-    # SDD-only: always generate SDDD, never SAD/ADD
-    generate_sddd = True
-
-    # Build layer -> [group] and group -> layer mappings
-    from .config import layers_config
-    layers_cfg = layers_config()
-    group_to_layer: Dict[str, str] = {}
-    for lname, lcfg in layers_cfg.items():
-        for gname in (lcfg.get("groups") or {}):
-            group_to_layer[gname] = lname
-
     # ------------------------------------------------------------------
     # No layer: single flat run, all 4 phases (backward compat)
     # ------------------------------------------------------------------
@@ -181,8 +165,7 @@ def plan_runs(
                                  phases=build_phases,
                                  runner_from_phase=from_phase))
 
-    if generate_sddd:
-        for g in target_groups:
+    for g in target_groups:
             group_out = os.path.join(p.output_dir, g)
             view_phases = _view_export_phases(
                 output_dir=group_out,
