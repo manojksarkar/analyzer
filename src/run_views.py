@@ -27,13 +27,6 @@ def _load_model():
 def main():
     args = sys.argv[1:]
 
-    # --layer LayerN: read model from model/LayerN/
-    if "--layer" in args:
-        i = args.index("--layer")
-        if i + 1 < len(args):
-            from core.model_io import set_model_dir, layer_model_dir
-            set_model_dir(layer_model_dir(args[i + 1]))
-
     output_dir = os.path.join(PROJECT_ROOT, "output")
     if "--output-dir" in args:
         i = args.index("--output-dir")
@@ -56,10 +49,9 @@ def main():
     from core.config import app_config
     from views import run_views
 
-    from core.model_io import _effective_model_dir
     model = _load_model()
     config = app_config()
-    model_dir = _effective_model_dir()
+    model_dir = _p.model_dir
     # Apply filter mode override from command line
     if filter_mode_override:
         if "views" not in config:

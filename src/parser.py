@@ -27,13 +27,6 @@ proj_arg = sys.argv[1]
 MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.path.join(PROJECT_ROOT, proj_arg)
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
 
-# Scan for optional --layer flag (may be passed by group_planner for per-layer runs).
-_layer_arg: str | None = None
-for _ai, _aa in enumerate(sys.argv[1:], 1):
-    if _aa == "--layer" and _ai + 1 < len(sys.argv):
-        _layer_arg = sys.argv[_ai + 1]
-        break
-
 # Scan for optional --data-dictionary flag (may be passed by group_planner).
 _data_dict_path: str | None = None
 _i = 2
@@ -962,25 +955,12 @@ def build_metadata():
     }
 
 
-def _layer_prefix() -> str | None:
-    """Return the abs path prefix to restrict parsing to when --layer is given."""
-    if not _layer_arg:
-        return None
-    from core.config import layers_config
-    layer_cfg = layers_config().get(_layer_arg, {})
-    layer_path = layer_cfg.get("path", _layer_arg)
-    return os.path.join(MODULE_BASE_PATH, layer_path)
-
-
 def _collect_source_files():
-    prefix = _layer_prefix()
     files = []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
-            if f.endswith((".cpp", ".cc", ".cxx")):  # exclude .h/.hpp (often fail as translation units)
+            if f.endswith((".cpp", ".cc", ".cxx")):
                 path = os.path.join(root, f)
-                if prefix and not path.startswith(prefix):
-                    continue
                 if is_project_file(path):
                     files.append(path)
     return files

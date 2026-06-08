@@ -74,8 +74,7 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
 def _view_export_phases(*, output_dir: Optional[str] = None,
                         selected_group: Optional[str] = None,
                         filter_mode: Optional[str] = None,
-                        docx_args: Optional[List[str]] = None,
-                        layer_name: Optional[str] = None) -> List[Phase]:
+                        docx_args: Optional[List[str]] = None) -> List[Phase]:
     views_args: List[str] = []
     if output_dir:
         views_args += ["--output-dir", output_dir]
@@ -83,14 +82,9 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
         views_args += ["--selected-group", selected_group]
     if filter_mode:
         views_args += ["--filter-mode", filter_mode]
-    if layer_name:
-        views_args += ["--layer", layer_name]
-    _docx_args = list(docx_args or [])
-    if layer_name and "--layer" not in _docx_args:
-        _docx_args += ["--layer", layer_name]
     return [
         Phase("Phase 3: Generate views", "run_views.py", views_args),
-        Phase("Phase 4: Export to DOCX", "docx_exporter.py", _docx_args),
+        Phase("Phase 4: Export to DOCX", "docx_exporter.py", list(docx_args or [])),
     ]
 
 

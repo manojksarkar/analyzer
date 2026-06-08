@@ -503,10 +503,6 @@ def get_flat_groups(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg.get("layer") or {}
 
 
-def layers_config() -> Dict[str, Any]:
-    """Return the raw `layers` block (used by ADD pipeline to iterate layers)."""
-    return app_config().get("layers") or {}
-
 
 def components_groups() -> Dict[str, Any]:
     """Return flattened groups across all layers with paths resolved."""
