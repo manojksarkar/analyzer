@@ -271,15 +271,16 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
                 pass
         component_header_files[m] = sorted(headers)
 
+    from core.model_io import write_model_file, UNITS, COMPONENTS
+
     components_data = {
         m: {
-            "units": [u for u in units_data if u.split(KEY_SEP)[0] == m],
+            "units":       [u for u in units_data if u.split(KEY_SEP)[0] == m],
             "headerFiles": component_header_files.get(m, []),
         }
         for m in component_names
     }
 
-    from core.model_io import write_model_file, UNITS, COMPONENTS
     write_model_file(UNITS, units_data)
     write_model_file(COMPONENTS, components_data)
     print(f"  model/units.json ({len(units_data)})")

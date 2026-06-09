@@ -104,6 +104,51 @@ for _mod_paths in _components_cfg.values():
         if _norm:
             _COMPONENT_FOLDERS.append(_norm)
 
+# ---------------------------------------------------------------------------
+# Flat file-to-component map (replaces prefix-matching for lookup + filtering)
+# ---------------------------------------------------------------------------
+
+_SOURCE_EXTS = {'.cpp', '.cc', '.cxx', '.c', '.h', '.hpp', '.hxx'}
+
+
+def _build_file_component_map(components_cfg: dict, base_path: str) -> dict:
+    """Resolve component config to {lowercase_relpath: component}.
+
+    Each entry (string or element of a list) is inspected individually:
+    - Known C/C++ extension → added as an exact file.
+    - No recognised extension → treated as a directory; all source files
+      under it are included recursively.
+
+    setdefault ensures the first component in config iteration order wins on overlap.
+    """
+    file_map: dict = {}
+    for component, paths in (components_cfg or {}).items():
+        if isinstance(paths, str):
+            paths = [paths]
+        for p in (paths or []):
+            p_norm = (p or "").replace("\\", "/").lstrip("./").rstrip("/")
+            if not p_norm:
+                continue
+            _, ext = os.path.splitext(p_norm)
+            if ext.lower() in _SOURCE_EXTS:
+                # Explicit file entry — add directly
+                file_map.setdefault(p_norm.lower(), component)
+            else:
+                # Directory entry — walk the filesystem
+                abs_dir = os.path.join(base_path, p_norm)
+                if not os.path.isdir(abs_dir):
+                    continue
+                for root, _, files in os.walk(abs_dir):
+                    for fname in files:
+                        if os.path.splitext(fname)[1].lower() in _SOURCE_EXTS:
+                            full = os.path.join(root, fname)
+                            key = os.path.relpath(full, base_path).replace("\\", "/").lower()
+                            file_map.setdefault(key, component)
+    return file_map
+
+
+_FILE_COMPONENT_MAP: dict = _build_file_component_map(_components_cfg, MODULE_BASE_PATH)
+
 # Read layer include paths written by run.py before Phase 1 started.
 _layer_include_paths: dict = {}
 _clang_paths_file = os.path.join(PROJECT_ROOT, "model", "clang_include_paths.json")
@@ -166,7 +211,15 @@ def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str
 
 
 def get_component_name(file_path: str) -> str:
-    return _get_component(file_path, MODULE_BASE_PATH)
+    if not file_path or not _FILE_COMPONENT_MAP:
+        return _get_component(file_path, MODULE_BASE_PATH)
+    try:
+        rel = os.path.relpath(
+            os.path.abspath(file_path), MODULE_BASE_PATH
+        ).replace("\\", "/").lower()
+    except ValueError:
+        return "unknown"
+    return _FILE_COMPONENT_MAP.get(rel, "unknown")
 
 index = cindex.Index.create()
 functions = {}
@@ -256,13 +309,9 @@ def _inline_comment(cursor) -> str:
 def is_project_file(file_path: str) -> bool:
     """Return True if this path should be treated as project source for parsing.
 
-    - The file must lie under ``MODULE_BASE_PATH``.
-    - Folder allowlists come only from config: optional top-level ``components`` map, or
-      (if not present) the merged union of all ``layer`` groups.
-    - If ``_COMPONENT_FOLDERS`` is non-empty, only files whose path relative to the project
-      root matches one of those entries (or a subpath) are included.
-    - If ``_COMPONENT_FOLDERS`` is empty, any file under the project root passes this check
-      (callers such as ``_collect_source_files`` still restrict by extension).
+    Uses the flat _FILE_COMPONENT_MAP built from config + filesystem scan.
+    A file is included iff it is under MODULE_BASE_PATH AND appears in the map.
+    When the map is empty (no component config) every file under the base passes.
     """
     if not file_path:
         return False
@@ -270,18 +319,12 @@ def is_project_file(file_path: str) -> bool:
     abs_base = os.path.normcase(os.path.abspath(MODULE_BASE_PATH))
     if not abs_path.startswith(abs_base):
         return False
-
-    if _COMPONENT_FOLDERS:
+    if _FILE_COMPONENT_MAP:
         try:
-            rel = os.path.relpath(abs_path, MODULE_BASE_PATH).replace("\\", "/")
+            rel = os.path.relpath(abs_path, MODULE_BASE_PATH).replace("\\", "/").lower()
         except ValueError:
-            rel = abs_path.replace("\\", "/")
-        for folder in _COMPONENT_FOLDERS:
-            # Folder-based match: folder itself or any subpath under it
-            if rel == folder or rel.lower().startswith(folder.lower() + "/"):
-                return True
-        return False
-
+            return False
+        return rel in _FILE_COMPONENT_MAP
     return True
 
 
