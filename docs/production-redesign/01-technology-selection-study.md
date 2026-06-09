@@ -5,8 +5,9 @@
 | **Document** | Technology Selection Study |
 | **Project** | C++ Codebase Analyzer — Production Platform (POC → Production) |
 | **Status** | Draft for Review |
-| **Version** | 1.0 |
-| **Date** | 2026-06-07 |
+| **Version** | 1.1 |
+| **Date** | 2026-06-09 |
+| **Changes in v1.1** | Object store **MinIO → SeaweedFS** (MinIO Community Edition was archived / "no longer maintained" in Feb 2026); added §5.2 Resource Estimation & Scalability. |
 | **Prepared by** | _______________________ |
 | **Reviewed by** | _______________________ |
 | **Audience** | Engineering Leadership / Architecture Review |
@@ -65,7 +66,7 @@ These principles were applied consistently when choosing between options:
 1. **On-prem, fewer moving parts = higher reliability.** Every additional datastore is one more system to secure, back up, patch, monitor, and keep consistent. Prefer one strong engine over several specialised ones until a measured limit forces otherwise.
 2. **Keep graduation paths open.** Avoid choices that box us in (e.g. an engine whose open-source tier cannot cluster). Prefer designs where scaling out is "add a swappable component," not "re-architect."
 3. **Strong consistency where data integrity matters.** Generation runs update many related records; ACID transactions protect correctness (C4).
-4. **Redundancy at the right layer.** With local NVMe (C7), redundancy is provided by the application (DB replication, object-store erasure coding), not by a storage layer.
+4. **Redundancy at the right layer.** With local NVMe (C7), redundancy is provided by the application (DB replication, object-store replication/erasure coding), not by a storage layer.
 5. **Open-source in the OSI sense.** "Source-available" licenses (SSPL, RSAL) do **not** satisfy C2.
 
 ---
@@ -78,17 +79,17 @@ These principles were applied consistently when choosing between options:
 |---|---|---|---|---|---|
 | 1 | **Primary database** | **PostgreSQL 16+** | PostgreSQL (BSD-like) | ACID + strong consistency + maturity; **JSONB** for schema-loose model data; one engine covers relational + document + vector + graph needs → fewest moving parts on-prem | R2, R3, R5, C4 |
 | 2 | **Vector similarity search** | **pgvector** (Postgres extension) | PostgreSQL | Embeddings + HNSW ANN **co-located** with metadata, so similarity search can be filtered by tenant/project in one query; no separate system to operate | R3 |
-| 3 | **Object / blob storage** | **MinIO** (distributed) | AGPLv3 (OSI-approved) | S3-compatible, self-hostable on-prem; **built for** clustered, erasure-coded storage on local disks; keeps large binaries out of the DB | R4, C1, C7 |
+| 3 | **Object / blob storage** | **SeaweedFS** (distributed, S3-compatible) | Apache 2.0 | S3-compatible, self-hostable on-prem; rack-aware **replication** (erasure coding optional); excellent with many small files (our flowchart PNGs); keeps large binaries out of the DB. **Actively maintained** — replaces MinIO, whose Community Edition was archived Feb 2026 (see §9). Integration is the **S3 API**, so the store is swappable | R4, C1, C7 |
 | 4 | **Background job queue** | **PostgreSQL table + `SELECT … FOR UPDATE SKIP LOCKED`** | PostgreSQL | Zero extra infrastructure; **transactional with the data** (no lost/orphaned jobs); durable; throughput is ample for long-running generation jobs | R1, R5 |
 | 5 | **Graph / impact analysis** | **Postgres recursive CTE + materialized closure table** | PostgreSQL | The only graph query we run is **bounded transitive closure** ("who depends on changed function F?"); a dedicated graph DB is not justified | R5 |
 | 6 | **Analyzer ↔ storage integration** | **Direct DB read/write (phases rewritten)** | — | Removes the current local-disk file handoff between phases, so phases / sub-jobs can run on **any** node — the enabler for distributed workers | R2, R5, C5 |
-| 7 | **Container orchestration** | **Kubernetes** | Apache 2.0 | Self-hostable standard; rich operator ecosystem (CloudNativePG, MinIO); rolling updates; horizontal scale | C3, C4, C8 |
-| 8 | **PostgreSQL HA** | **CloudNativePG operator** | Apache 2.0 | Automated primary + replicas, failover, and **PITR backups to MinIO**; designed for local-disk streaming replication | C4 |
+| 7 | **Container orchestration** | **Kubernetes** | Apache 2.0 | Self-hostable standard; rich operator/Helm ecosystem (CloudNativePG, SeaweedFS); rolling updates; horizontal scale | C3, C4, C8 |
+| 8 | **PostgreSQL HA** | **CloudNativePG operator** | Apache 2.0 | Automated primary + replicas, failover, and **PITR backups to the S3 object store (SeaweedFS)**; designed for local-disk streaming replication | C4 |
 | 9 | **Storage substrate** | **Local NVMe + TopoLVM / OpenEBS LocalPV** | Apache 2.0 | Fastest, simplest; avoids a distributed storage layer (the hardest part of on-prem K8s); redundancy provided by app-level replication | C4, C7 |
 | 10 | **Application tier** | **Stateless FastAPI API + stateless analyzer workers** | — (in-house) | Horizontal scale on any node; rolling updates; job/state lives in the DB, not process memory | R1, C3 |
 | 11 | **LLM access** | **Internal corporate gateway** via existing unified `LlmClient` (OpenAI-compatible) | — (given) | C++ IP stays on-network; reuses existing client; **no GPU nodes needed** in-cluster | C1, C6 |
 | 12 | **Cluster size** | **3 nodes to start; 5 if 2-failure tolerance required** | — | 3 nodes survive **1** failure (quorum = 2); 5 survive **2** (quorum = 3). Start lean, scale by uptime need | C4 |
-| 13 | **Backup / DR** | **PITR (CloudNativePG → MinIO) + off-cluster copy** | — | Replication is **not** backup; protects against logical errors (e.g. a bad delete that replicates instantly) | C4 |
+| 13 | **Backup / DR** | **PITR (CloudNativePG → SeaweedFS) + off-cluster copy** | — | Replication is **not** backup; protects against logical errors (e.g. a bad delete that replicates instantly) | C4 |
 | 14 | **Authentication & RBAC** | **In-app auth on PostgreSQL** — FastAPI + argon2id password hashing, signed token/session, `roles`/`user_roles` tables, optional Row-Level Security | — (in-house) | Simple role model needs no separate IAM; reuses the DB + API already selected; tenant data-scoping enforceable in Postgres (RLS) | R1, R6 |
 
 ---
@@ -100,59 +101,60 @@ The two diagrams below realise the stack in §5. The first is the **logical view
 ### 5.1.1 Logical architecture & flows
 
 ```text
-                    +-----------------------------------------------+
-   TENANTS          |  Web browser  (multi-tenant C++ project teams)|
-                    +-----------------------+-----------------------+
-                                            | HTTPS
-                                            v
-                              +--------------------------+
-   EDGE                       |  Ingress / Load Balancer |
-                              +-------------+------------+
-                        +-------------------+--------------------+
-                        v                                        v
-                +-----------------+               +-----------------------+
-   APP TIER     |  Web UI         |   REST/JSON   |  FastAPI API  x N      |
-   (stateless,  |  (Vite/React)   |-------------->|  - enqueue job         |
-    any node)   +-----------------+               |  - read model/status   |
-                                                  |  - stream .docx        |
-                                                  +-----------+------------+
-                                                              | (1) enqueue
-                        +-------------------------------------+ (3) r/w model
-                        |                                     |
-                        v (2) claim job (SKIP LOCKED)         | (3) r/w model + results
-              +---------------------------------+            |
-              |  Analyzer Workers x M           |            |
-              |   P1 Parse  (libclang)          |            |
-              |   P2 Derive (+ LLM) ------------|--(4) LLM-->[ LLM GATEWAY ]
-              |   P3 Views  (+ mmdc PNG)        |            |
-              |   P4 Export (.docx) ------------|--(5) blob->[ MinIO ]
-              +----------------+----------------+            |
-                               | (3) read/write model        |
-                               v                             v
-   DATA TIER  +--------------------------------------+   +------------------------+
-   (stateful, |  PostgreSQL 16 + pgvector  (CNPG)    |   |  MinIO (distributed)   |
-    on local  |  primary --> replica --> replica     |   |  erasure-coded:        |
-    NVMe)     |  - model: functions / units / modules|   |   - generated .docx    |
-              |  - call graph + closure (impact, R5) |   |   - flowchart PNGs     |
-              |  - LLM results + embeddings (R3)     |   +-----------+------------+
-              |  - jobs queue (SKIP LOCKED)         |               ^
-              |  - blob pointers --------------------|---------------+
-              +--------------------------------------+
+        TENANTS  --  C++ project teams (web browsers, multi-tenant)
+            |
+            |  HTTPS
+            v
+   +--------------------------+
+   |  Ingress / Load Balancer |
+   +------------+-------------+
+                |
+       +--------+--------+
+       v                 v
+ +-----------+   +-------------------------------+
+ |  Web UI   |   |  FastAPI API   [stateless, N] |   any node; lose one,
+ | (static)  |   |  enqueue | read | stream      |   the LB uses the rest
+ +-----------+   +---------------+---------------+
+                                 |
+                                 |  SQL (ACID)
+                                 v
+   +=========================================================+
+   |  PostgreSQL   [HA: 1 primary + 2 replicas via CNPG]      |   <- system of record
+   |  jobs-queue | model | call-graph + closure | vectors     |
+   +====+=========================================+==========+
+        ^                                         |
+  claim |  job + heartbeat              read/write |  model, LLM results,
+        |  (SKIP LOCKED)               each phase  |  embeddings, blob pointers
+        |                                          v
+   +====+=========================================+==========+
+   |  Analyzer Workers   [stateless, M slots over worker VMs] |
+   |  one job per slot:   P1 -> P2 -> P3 -> P4  (heartbeats)   |
+   +----+-----------------------------------------+----------+
+        |  LLM (HTTPS)                             |  S3 put / get
+        v                                          v
+ +-----------------------------+       +------------------------------+
+ | Internal LLM Gateway        |       | SeaweedFS   [HA: replicated] |
+ | (off-cluster, corp network) |       | generated .docx + PNGs       |
+ +-----------------------------+       +------------------------------+
 
-   EXTERNAL   +-------------------------------------------------------------+
-   (off-      |  Internal Corporate LLM Gateway (OpenAI-compatible API)      |
-    cluster)  |  -- code-derived prompts stay on the corporate network --    |
-              +-------------------------------------------------------------+
+   Legend:  [HA] survives a node loss      [stateless] add / remove freely
 ```
 
-**Flow walkthrough**
+There are **two fast, user-facing request flows** and **one slow, asynchronous job flow**. Keeping them separate is what lets the heavy generation work scale independently of the API.
 
-1. **Start a job** — the UI calls the API; the API writes a `jobs` row (enqueue) in the *same transaction* as the run record and returns a job ID immediately. *(Selected #4, #10)*
-2. **Claim** — an idle Analyzer Worker picks the job with `SELECT … FOR UPDATE SKIP LOCKED`; no two workers get the same job. *(Selected #4)*
-3. **Run phases against the DB** — the worker executes Phase 1–4, reading/writing the model, call graph, LLM results and embeddings *directly in PostgreSQL* — no local-file handoff. *(Selected #1, #2, #5, #6)*
-4. **LLM enrichment** — workers call the internal gateway over HTTPS; this is the only path code-derived prompts take, and only to the on-network gateway. *(Selected #11)*
-5. **Store artifacts** — the generated `.docx` and PNGs are written to MinIO; their pointers (object key + checksum) are saved in Postgres. *(Selected #3)*
-6. **Read / download** — the UI polls status via the API; on completion the API streams the `.docx` from MinIO.
+**Request flow (synchronous — what the browser experiences):**
+1. Browser → Ingress → **API**. Reads (project tree, functions, job status) are answered from PostgreSQL. The API is stateless, so any replica serves — losing one is invisible to the user.
+2. **Download** → the API streams the finished `.docx` straight from SeaweedFS.
+
+**Job flow (asynchronous — the generation pipeline):**
+1. **Submit** — the API writes a `jobs` row in the *same transaction* as the run record (so a job can never be lost) and returns a job ID immediately. *(#4, #10)*
+2. **Claim** — one idle worker slot takes the job via `SELECT … FOR UPDATE SKIP LOCKED`; exactly one worker owns it. *(#4)*
+3. **Run** — the worker executes P1→P4, committing **each phase's** output (model, call graph, LLM results, embeddings) **directly to PostgreSQL**, and heartbeats while running. *(#1, #2, #5, #6)*
+4. **LLM** — Phase 2 and flowchart labelling call the internal gateway over HTTPS — the only egress, and only to the on-network gateway. *(#11)*
+5. **Artifacts** — `.docx` and PNGs are written to SeaweedFS; the pointer row is committed in PostgreSQL **only after** the object is durably stored (no dangling pointers). *(#3)*
+6. **Done** — the job row is marked complete; the UI's next status poll offers the download.
+
+> **Consistency, in one line:** all durable state lives in one ACID database; the enqueue shares the run's transaction; each phase commits atomically and is idempotent; and a blob pointer is written only after its object exists. Failure, HA, and scaling behaviour are detailed in §5.1.3.
 
 ### 5.1.2 Physical deployment topology (3 nodes)
 
@@ -164,18 +166,18 @@ The two diagrams below realise the stack in §5. The first is the **logical view
 |  | FastAPI API pod       |  | FastAPI API pod       |  | API pod          ||
 |  | Analyzer Worker pod(s)|  | Analyzer Worker pod(s)|  | Worker pod(s)    ||
 |  | Postgres PRIMARY(CNPG)|  | Postgres replica      |  | Postgres replica ||
-|  | MinIO server + drives |  | MinIO server + drives |  | MinIO + drives   ||
+|  | SeaweedFS volume node |  | SeaweedFS volume node |  | SeaweedFS vol.   ||
 |  | [ local NVMe ]        |  | [ local NVMe ]        |  | [ local NVMe ]   ||
 |  +-----------------------+  +-----------------------+  +------------------+|
 |                                                                           |
 |  Redundancy is APP-LEVEL (local NVMe does not move between nodes):         |
-|    - Postgres -> CNPG streaming replication (primary + 2 replicas)         |
-|    - MinIO    -> erasure coding across the three nodes' drives             |
-|    - Backups  -> CNPG PITR to MinIO, plus an off-cluster copy              |
+|    - Postgres  -> CNPG streaming replication (primary + 2 replicas)        |
+|    - SeaweedFS -> rack-aware replication across the nodes' drives          |
+|    - Backups   -> CNPG PITR to SeaweedFS, plus an off-cluster copy         |
 |                                                                           |
 |  Failure behaviour (see also Sec 8.6):                                     |
-|    - lose 1 node  -> quorum holds (2/3): Postgres fails over, MinIO stays  |
-|                      read/write           =>  PLATFORM STAYS UP            |
+|    - lose 1 node  -> quorum holds (2/3): Postgres fails over, object       |
+|                      store stays read/write   =>  PLATFORM STAYS UP        |
 |    - lose 2 nodes -> quorum lost (1/3): writes halt by design to prevent   |
 |                      split-brain          =>  PLATFORM DOWN                |
 +---------------------------------------------------------------------------+
@@ -186,7 +188,160 @@ The two diagrams below realise the stack in §5. The first is the **logical view
         +------------------------------------------------+
 ```
 
-> Scaling to **5 nodes** keeps the same shape — more API/worker pods and Postgres/MinIO members — and raises quorum to 3, so the platform then survives **two** simultaneous node failures (item #12).
+> Scaling to **5 nodes** keeps the same shape — more API/worker pods and Postgres/SeaweedFS members — and raises quorum to 3, so the platform then survives **two** simultaneous node failures (item #12).
+
+### 5.1.3 Failure, HA, Scalability & Consistency
+
+The platform has **two kinds of tier**, and the difference between them is the key to understanding both scaling and failure:
+
+- **Stateless tiers — the API pods and the Analyzer Workers.** They hold no durable state (all job/run state lives in PostgreSQL), so they can be added, removed, or killed freely. **Scaling (#5 / #6) happens here:** add worker VMs → more job slots.
+- **Stateful data core — PostgreSQL (CNPG) + SeaweedFS + etcd.** Quorum-bound, sized for HA (3 nodes survive 1 failure, 5 survive 2). You make this tier *redundant*; you do **not** scale it for throughput.
+
+> **This resolves the "#5/#6 vs node-failure" question:** you scale compute by adding **stateless worker VMs, which are not quorum members**, so scaling never touches the data core. At the initial 3-node deployment the workers are co-located on the data-core nodes; as load grows you add **worker-only VMs** (the §5.2.4 scale-out) and the data core is untouched. A worker VM joining or dying is simply ± job slots.
+
+| Goal | How it is achieved |
+|---|---|
+| **Scalability (#5 / #6)** | Concurrency `C = (#worker VMs) × (slots/VM)`. Add stateless worker VMs → more slots; the shared Postgres queue feeds them. No code/schema change; no quorum impact. |
+| **High availability** | Stateless pods → Kubernetes reschedules them onto live nodes. Data core → PostgreSQL failover (CNPG), SeaweedFS replication, etcd quorum. 3 nodes tolerate 1 failure. |
+| **Node failure — data** | Postgres primary lost → CNPG promotes a replica in seconds. SeaweedFS node lost → other-node replicas serve, then re-replicate. **No data lost.** |
+| **Node failure — in-flight job** | The worker stops heartbeating → a **reaper** flips the job `running → queued` → another worker **resumes from the last committed phase** (DB-direct + `--from-phase`). **No job lost.** |
+| **Consistency** | One ACID database. Enqueue shares the run's transaction. Each phase commits atomically and is **idempotent** (safe to re-run). A blob pointer is committed only **after** its object is durable. |
+
+**Concrete scenario — a node dies while jobs are running at peak load.**
+Suppose 2 worker VMs each run K = 3 slots → up to **6 concurrent jobs**, and one node (holding a Postgres *replica*, an API pod, and 3 running jobs) suddenly fails:
+
+1. **Data core stays up.** The dead node held a *replica*, so PostgreSQL keeps serving from the primary; the queue and all model data are intact. *(Had it held the primary, CNPG promotes a surviving replica in seconds.)* SeaweedFS serves every object from its other-node replicas and re-replicates to restore redundancy. Quorum is 2 / 3 → holds.
+2. **API stays up.** The ingress stops routing to the dead API pod and uses the survivors — no user-visible break.
+3. **The 3 in-flight jobs are not lost.** Their workers stop heartbeating; after the timeout the reaper returns them to `queued`.
+4. **They resume, not restart.** Surviving workers claim them and continue **from the last committed phase** — a job that had finished Parse + Derive restarts at Views, because those outputs are already in PostgreSQL. At worst, the *currently-running* phase is redone (phases are idempotent).
+5. **Capacity degrades gracefully.** Slots drop 6 → 3; queued and requeued jobs simply wait for a free slot. When the node is replaced (or its workers reschedule onto spare capacity), slots return to 6.
+
+**So #5/#6 and node-failure are the same lever — live worker slots.** Adding a VM is +slots; a failing VM is −slots; the queue absorbs both, and the reaper + per-phase checkpointing make an interrupted job *resume* rather than die. The only hard limit is the data core's quorum: you may lose worker VMs freely, but not a **majority** of the 3 (or 5) data-core nodes at once — that halts writes by design (§8.6).
+
+### 5.1.4 Per-node component placement (3-node deployment)
+
+This is the **initial, co-located** 3-node deployment — every node runs the full stack. (As load grows, the Analyzer Workers move to dedicated worker-only VMs per §5.1.3 / §5.2.4; the data core stays on these three.)
+
+```text
++===================== KUBERNETES CLUSTER  (3 nodes, quorum = 2) ======================+
+|                                                                                      |
+|  +-------- NODE 1 ---------+  +-------- NODE 2 ---------+  +-------- NODE 3 ---------+ |
+|  | k8s control plane  [Q]  |  | k8s control plane  [Q]  |  | k8s control plane  [Q]  | |
+|  |   etcd / api / sched    |  |   etcd / api / sched    |  |   etcd / api / sched    | |
+|  | ingress-controller pod  |  | ingress-controller pod  |  | ingress-controller pod  | |
+|  | FastAPI API pod         |  | FastAPI API pod         |  | FastAPI API pod         | |
+|  | Analyzer Workers (K)    |  | Analyzer Workers (K)    |  | Analyzer Workers (K)    | |
+|  | Postgres PRIMARY (CNPG) |  | Postgres replica (CNPG) |  | Postgres replica (CNPG) | |
+|  | SeaweedFS master+vol+S3 |  | SeaweedFS master+vol+S3 |  | SeaweedFS master+vol+S3 | |
+|  | TopoLVM local-PV (DS)   |  | TopoLVM local-PV (DS)   |  | TopoLVM local-PV (DS)   | |
+|  | ====== local NVMe ===== |  | ====== local NVMe ===== |  | ====== local NVMe ===== | |
+|  +-------------------------+  +-------------------------+  +-------------------------+ |
+|                                                                                      |
+|  Cluster-wide controllers (single replica, scheduled on any one node):               |
+|     - CloudNativePG operator        - SeaweedFS operator/coordinator                  |
+|                                                                                      |
+|  [Q] quorum members: etcd + Postgres failover + SeaweedFS master  (need majority)    |
++======================================================================================+
+        ^                          |                                |
+        | HTTPS (users)            | HTTPS (workers -> LLM)          | PITR + object copy
+        |                          v                                v
+ +--------------+       +----------------------------+    +----------------------------+
+ | Users        |       | Internal LLM Gateway       |    | Off-cluster backup target  |
+ | (browsers)   |       | (off-cluster, corp net)    |    | (S3 / NAS)                 |
+ +--------------+       +----------------------------+    +----------------------------+
+```
+
+**What runs on each node, and why:**
+
+- **Ingress controller** — one per node; the load balancer spreads traffic across the API pods.
+- **FastAPI API** — one **stateless** replica per node (3 total) behind the ingress; lose one, the others serve.
+- **Analyzer Workers** — `K` job slots per node (`K` from §5.2.3); **stateless**. Scale-out later = add **worker-only VMs** (§5.1.3, §5.2.4).
+- **PostgreSQL (CNPG)** — 1 primary + 2 replicas across the nodes; the primary can sit on any node and fails over automatically. Holds the model, call graph + closure, vectors, **and the job queue**.
+- **SeaweedFS** — `master` (metadata, Raft-quorum), `volume server` (objects on local NVMe), `S3 gateway/filer`. Generated `.docx` + PNGs are replicated across nodes.
+- **TopoLVM / local-PV provisioner** — a DaemonSet on each node that turns local NVMe into PersistentVolumes for Postgres and SeaweedFS.
+- **Operators** (CloudNativePG, SeaweedFS) — single-replica controllers; they *manage* the stateful sets, they don't serve data.
+
+**Quorum members `[Q]`** — etcd, the Postgres failover coordinator, and the SeaweedFS master all need a **majority alive**. That is exactly why this cluster survives **1** node loss but halts writes on **2** (§8.6). The API and Worker pods are **not** quorum members, so they scale and fail independently of the data core.
+
+---
+
+## 5.2 Resource Estimation & Horizontal Scalability
+
+### 5.2.1 Workload parameters
+
+| Parameter | Value |
+|---|---|
+| C++ projects | **N** (unbounded) |
+| Functions per project | up to **50,000** |
+| Tenants per project | up to **40** |
+| Concurrent generation jobs | **configurable** (e.g. start at 2), bounded by system resources |
+| Scaling model | **add worker VMs to raise concurrency — no code change** |
+
+A **job** = one full 4-phase generation run for one project. Jobs are queued; the platform runs at most **C** concurrently, where **C** is the total number of worker *slots* across the fleet. The 40-tenants-per-project figure drives queue depth and fairness, not per-job cost (cost is per project-generation).
+
+### 5.2.2 Per-job resource profile (the unit of sizing)
+
+| Phase | CPU | Memory | Notes |
+|---|---|---|---|
+| 1 Parse (libclang) | bursty, multi-core | **high** | translation units held in RAM — the main memory driver |
+| 2 Derive (+ LLM) | low | low–moderate | **dominated by LLM calls** → network/IO-bound and gateway-rate-limited; long wall-clock, little local CPU |
+| 3 Views (+ mmdc) | bursty | **high** | each `mmdc` render spawns a headless Chrome (~0.3–1 GB); the flowchart engine re-parses with libclang |
+| 4 Export (.docx) | low | low | python-docx |
+
+**Three binding constraints**, in the order they usually bite:
+1. **RAM** — libclang + headless-Chrome set the ceiling; exceeding it triggers OOM kills.
+2. **CPU cores** — for the parse/render bursts.
+3. **LLM-gateway throughput (global)** — shared across *all* jobs and rate-limited (~1 req / 3 s on the corporate gateway). **Adding worker VMs does not speed this up.**
+
+### 5.2.3 How many jobs fit on a VM
+
+```
+jobs_per_vm = floor( min( usable_RAM   / peak_RAM_per_job ,
+                          usable_cores / cores_per_active_job ) )
+```
+`usable_*` = total minus ~20–30% reserved for the OS, the worker agent, and headroom.
+
+**Worked example — 32 GB / 8 vCPU (illustrative; confirm by profiling):**
+
+| Input | Assumed value |
+|---|---|
+| usable RAM | ~24 GB (≈ 75 %) |
+| usable cores | ~6 |
+| peak RAM per job (50k-function project) | ~8 GB |
+| active cores per job | ~2 (much of a job is LLM-wait) |
+| RAM-bound limit | 24 / 8 = **3** |
+| CPU-bound limit | 6 / 2 = **3** |
+| **→ jobs_per_vm** | **≈ 3** |
+
+> These figures are **estimates to validate by measurement** — profile a representative 50k-function run for peak RSS (e.g. cgroup `memory.peak`) and CPU before fixing the limit. Starting at **2 concurrent jobs** is a safe, conservative default; raise it after profiling.
+
+**Key caveat:** because Phase 2 and flowchart labelling are LLM-bound and the gateway is rate-limited, running more jobs at once overlaps their *parse/render* work but **serializes their LLM work** behind the gateway. Once the gateway saturates, per-job wall-clock grows with concurrency — the gateway, not the VM, becomes the bottleneck.
+
+### 5.2.4 Achieving requirements #5 / #6 — scale by adding VMs
+
+This falls out of the **stateless-workers + Postgres-queue** design (items #4, #10) for free:
+
+```text
+                 +--------------- Postgres job queue ----------------+
+   submissions ->|  pending jobs (fair-scheduled across tenants)     |
+                 +------------------------+--------------------------+
+                       claim (SKIP LOCKED) |
+        +------------------------------------+------------------------------+
+        v                                    v                              v
+ +--------------+                    +--------------+               +--------------+
+ | Worker VM 1  |                    | Worker VM 2  |     ...       | Worker VM n  |
+ |  K slots     |                    |  K slots     |               |  K slots     |
+ +--------------+                    +--------------+               +--------------+
+
+   Total concurrency  C = n x K       (K = jobs_per_vm from 5.2.3)
+```
+
+- **One job = one worker slot;** a VM runs `K = jobs_per_vm` worker processes.
+- **Total concurrency `C` = sum of slots across all worker VMs.**
+- **To run more jobs at once → add worker VMs** (or worker pods/replicas). New workers simply start claiming from the same queue — **no code or schema change**.
+- The **global cap** is the total slot count (set by replica count / config). **Per-tenant fairness** (the 40-tenants case) is enforced in the claim query (round-robin across tenants or a per-tenant max-in-flight) so one tenant cannot starve the rest.
+- **The one thing adding VMs does *not* scale: LLM enrichment throughput** — bounded by the corporate gateway's rate. If the LLM phase is the bottleneck, the lever is the gateway's allowed concurrency, not more worker VMs.
+- **Queue reliability at this scale:** jobs are few and long, so the Postgres queue is nowhere near any throughput limit. Each claimed job carries a `claimed_at` / heartbeat; a reaper requeues jobs whose worker died mid-run, so a lost worker never strands a job.
 
 ---
 
@@ -202,7 +357,7 @@ The two diagrams below realise the stack in §5. The first is the **logical view
 | Job broker | **Redis / RabbitMQ (now)** | RabbitMQ: MPL 2.0; Redis: see note | An extra **stateful** system to cluster and operate. Postgres-as-queue meets our throughput for long jobs. *Note:* Redis core left BSD in 2024 (RSAL/SSPL) — the OSI-clean fork is **Valkey**. Retained as a future path (§7). |
 | Everything | **Managed cloud services** (RDS, S3, Cloud SQL, managed vector) | — | Violates **C1** (on-prem only — firmware IP cannot leave the network). |
 | Storage layer | **Ceph / Longhorn / distributed storage** | LGPL / Apache 2.0 | Unneeded complexity. Local NVMe + app-level replication is faster and simpler; distributed storage is the hardest part of on-prem K8s. Retained as a future path (§7). |
-| Document storage | **Word docs as DB BLOBs** | — | Bloats the database, slows backup/restore, hurts performance. Object storage (MinIO) is the standard pattern. |
+| Document storage | **Word docs as DB BLOBs** | — | Bloats the database, slows backup/restore, hurts performance. Object storage (SeaweedFS) is the standard pattern. |
 | Storage model | **JSON files as system of record** (status quo) | — | No indexing, querying, transactions, or concurrency control. Not scalable, durable, or consistent (R2, C3, C4). |
 | LLM hosting | **Self-hosted GPU LLM nodes (Ollama in-cluster)** | — | Unnecessary — an internal corporate gateway is available (C6). Avoids significant GPU cost and node complexity. |
 
@@ -218,6 +373,7 @@ Choices made deliberately keep these alternatives available. None require re-arc
 | Job queue | Postgres SKIP LOCKED | **Valkey** (BSD) + RQ/Arq, or **RabbitMQ** (MPL 2.0) | When job throughput exceeds the DB-queue comfort zone or we need pub/sub fan-out. |
 | Graph queries | Postgres CTE + closure table | **Apache AGE → NebulaGraph** (see §7.1) | If traversal / pattern-matching needs deepen substantially beyond transitive closure. |
 | Storage substrate | Local NVMe | **Ceph** (LGPL) / **Longhorn** (Apache 2.0) | If stateful pods need volume mobility or shared RWX volumes across nodes. |
+| Object store | **SeaweedFS** (S3 API) | **Ceph RGW** (LGPL) / **Garage** (AGPLv3) / **RustFS** (Apache 2.0) | Enterprise-scale erasure coding + multi-site (Ceph RGW), dead-simple geo-replication (Garage), or a console-rich newcomer (RustFS). Cheap swap — all speak the S3 API. |
 | Cluster size | 3 nodes | **5 → 7 nodes** | For higher simultaneous-failure tolerance (5 survives 2, 7 survives 3). |
 | Orchestrator | Kubernetes | **Nomad** / **Docker Swarm** / **Patroni-on-VMs** | If full Kubernetes proves too heavy for the team's operational capacity. |
 | Identity / Auth | In-app auth on PostgreSQL (local accounts, simple roles) | **Keycloak** (Apache 2.0) + corporate SSO (LDAP / AD / OIDC) | When SSO / directory federation, richer token management, or a full IAM admin UI is required. |
@@ -242,19 +398,19 @@ Our graph workload is **bounded transitive closure** — impact analysis of the 
 ## 8. Key Decision Rationale (expanded)
 
 **8.1 Why a PostgreSQL-centric design.**
-Requirements R2, R3, and R5 are three views of one data-model problem: versioned metadata, similarity search, and dependency-graph traversal. PostgreSQL covers all three in a single ACID engine — JSONB (flexible model data), pgvector (similarity), recursive CTEs (graph) — plus blob *pointers* for MinIO. One engine means one thing to back up, secure, and keep consistent. For on-prem, that operational simplicity is itself a reliability feature (Principle 1).
+Requirements R2, R3, and R5 are three views of one data-model problem: versioned metadata, similarity search, and dependency-graph traversal. PostgreSQL covers all three in a single ACID engine — JSONB (flexible model data), pgvector (similarity), recursive CTEs (graph) — plus blob *pointers* for the object store. One engine means one thing to back up, secure, and keep consistent. For on-prem, that operational simplicity is itself a reliability feature (Principle 1).
 
-**8.2 Why MinIO for documents, not the database.**
-Generated `.docx` files and flowchart PNGs are large binaries. Storing them in the DB bloats it and slows backup/restore. MinIO is purpose-built for clustered, erasure-coded object storage on local disks — exactly our environment (C7) — and is S3-compatible, so the application uses a standard interface.
+**8.2 Why a dedicated S3 object store (SeaweedFS), not the database.**
+Generated `.docx` files and flowchart PNGs are large binaries; storing them in the DB bloats it and slows backup/restore. We therefore use a clustered, S3-compatible object store on local disks (C7). **The application depends on the S3 *API*, not on any one product** — this abstraction is deliberate. The original choice, MinIO, had its Community Edition put into maintenance mode and then **archived ("no longer maintained") in February 2026** (binaries/images pulled, admin console gutted), so it is no longer viable. We switched to **SeaweedFS** (Apache 2.0, actively maintained, excellent with many small files like our PNGs); because the integration is the S3 API, the swap is a configuration change, not a code change. Ceph RGW, Garage, and RustFS remain S3-compatible alternatives (§7).
 
 **8.3 Why the queue lives in Postgres (for now).**
 A generation run is a long, heavy background job and cannot run inside an HTTP request. The work must be handed to background workers via a queue, which also gives durability, retries, and backpressure (protecting the rate-limited LLM gateway). `SELECT … FOR UPDATE SKIP LOCKED` turns an ordinary table into a safe multi-consumer queue with **no extra infrastructure** and **transactional enqueue** (the job is created in the same transaction as the run record, so it can never be lost). A dedicated broker is a documented future path if throughput ever demands it.
 
 **8.4 Why local NVMe with app-level replication.**
-Local NVMe is the fastest and simplest substrate and lets us skip a distributed storage layer. The non-negotiable rule: because local disk is node-pinned, **redundancy must come from the application** — CloudNativePG keeps streaming replicas on other nodes' NVMe, and MinIO erasure-codes across nodes. A single stateful pod on one local disk with no replica is never acceptable.
+Local NVMe is the fastest and simplest substrate and lets us skip a distributed storage layer. The non-negotiable rule: because local disk is node-pinned, **redundancy must come from the application** — CloudNativePG keeps streaming replicas on other nodes' NVMe, and SeaweedFS replicates (rack-aware) across nodes. A single stateful pod on one local disk with no replica is never acceptable.
 
 **8.5 Why the analyzer is rewritten to use the DB directly.**
-The current pipeline hands work between phases via files on local disk, which assumes a single machine. In a cluster, a later phase may run on a different node with no access to that disk. Writing directly to the DB (and blobs to MinIO) removes every local-disk handoff, which is what makes distributed, horizontally-scaled workers possible.
+The current pipeline hands work between phases via files on local disk, which assumes a single machine. In a cluster, a later phase may run on a different node with no access to that disk. Writing directly to the DB (and blobs to the S3 object store) removes every local-disk handoff, which is what makes distributed, horizontally-scaled workers possible.
 
 **8.6 Why 3 nodes to start (and what 5 buys).**
 Quorum = majority must be alive. With 3 nodes, majority is 2, so the cluster survives **one** node failure; losing two breaks quorum and halts writes (by design, to prevent split-brain). 5 nodes raise quorum to 3, surviving **two** failures. The choice is a tolerance/cost trade-off, not a capacity one: start at 3 for an internal tool, move to 5 if uptime expectations rise.
@@ -268,11 +424,11 @@ The initial role model is simple (e.g. Platform Admin / Team Owner / Maintainer 
 
 | Risk | Mitigation |
 |---|---|
-| On-prem Kubernetes is greenfield; operational maturity required | Start 3-node; use managed operators (CloudNativePG, MinIO operator); lighter orchestrator available as fallback (§7) |
-| Local NVMe is node-pinned (data does not move) | App-level replication (CNPG, MinIO erasure coding) + PITR backups; never run single-replica stateful workloads |
+| On-prem Kubernetes is greenfield; operational maturity required | Start 3-node; use managed operators (CloudNativePG, SeaweedFS Helm/operator); lighter orchestrator available as fallback (§7) |
+| Local NVMe is node-pinned (data does not move) | App-level replication (CNPG, SeaweedFS replication) + PITR backups; never run single-replica stateful workloads |
 | Two simultaneous node failures on a 3-node cluster cause an outage | Accept for an internal tool, or provision 5 nodes for 2-failure tolerance |
 | pgvector scaling ceiling at very-large embedding counts (C3) | Start with function-level embeddings; keep the vector backend swappable; graduate to Qdrant/Milvus if needed |
-| MinIO is AGPLv3 — some corporate policies scrutinize AGPL | Confirm with legal/OSS review; alternatives (Ceph, SeaweedFS) available if blocked |
+| Object-store project risk (a vendor may abandon its OSS edition — as MinIO did, archived Feb 2026) | Depend on the **S3 API**, not one implementation; chose actively-maintained **SeaweedFS** (Apache 2.0); Ceph RGW / Garage / RustFS are drop-in S3 alternatives (§7); pin and mirror the deployed image |
 | Analyzer DB rewrite is a substantial change (C5) | Phased migration; the existing pipeline contract (PROJECT_CONTEXT) remains the source of truth |
 | "Replication is not backup" — logical errors replicate instantly | Enforce PITR + off-cluster backup copy + periodic restore drills |
 | Local accounts mean the platform stores user credentials | Hash with **argon2id**, enforce a password policy, design `users` for federation from day one, and plan migration to corporate SSO / Keycloak (§7) |
@@ -283,7 +439,7 @@ The initial role model is simple (e.g. Platform Admin / Team Owner / Maintainer 
 
 A structured evaluation against our requirements (R1–R5) and hard constraints (on-prem, open-source, firmware-scale, reliable/durable/consistent) converges on a **PostgreSQL-centric, open-source, on-premise stack**:
 
-> **PostgreSQL 16+ (with pgvector) as the system of record · MinIO for documents · job queue inside Postgres · Kubernetes on local NVMe · CloudNativePG for database HA · MinIO distributed for object-store HA · stateless API + workers · LLM via the internal corporate gateway · in-app auth + RBAC on PostgreSQL · 3-node cluster to start.**
+> **PostgreSQL 16+ (with pgvector) as the system of record · SeaweedFS (S3) for documents · job queue inside Postgres · Kubernetes on local NVMe · CloudNativePG for database HA · SeaweedFS distributed for object-store HA · stateless API + workers · LLM via the internal corporate gateway · in-app auth + RBAC on PostgreSQL · 3-node cluster to start.**
 
 This stack satisfies every requirement and constraint, minimises the number of systems to operate on-prem (a reliability benefit), and preserves clear graduation paths (dedicated vector store, dedicated queue/broker, distributed storage, larger cluster) without re-architecture. **Recommendation: adopt this stack and proceed to detailed database schema design.**
 
@@ -300,10 +456,11 @@ This stack satisfies every requirement and constraint, minimises the number of s
 | **SSPL / RSAL** | "Source-available" licenses (MongoDB / Redis) that OSI did **not** approve as open source. |
 | **Quorum** | The majority of nodes that must be alive for a clustered system to operate safely (avoid split-brain). |
 | **`SELECT … FOR UPDATE SKIP LOCKED`** | A SQL pattern that turns a table into a concurrent job queue: each worker locks and claims a different row without blocking others. |
-| **Erasure coding** | How MinIO spreads data + parity shards across drives/nodes so it survives drive/node loss. |
+| **Erasure coding / replication** | How an object store spreads data — full replicas or parity shards — across drives/nodes so it survives drive/node loss. SeaweedFS defaults to replication, with erasure coding optional. |
 | **CSI** | Container Storage Interface — the Kubernetes plug-in standard for providing persistent storage. |
 | **PITR** | Point-In-Time Recovery — restoring a database to any past moment from backups + transaction logs. |
 | **CloudNativePG (CNPG)** | An open-source Kubernetes operator that runs PostgreSQL with replication, failover, and backups. |
+| **SeaweedFS** | An Apache-2.0, S3-compatible distributed object store; the store for generated documents and PNGs (replaces the discontinued MinIO). |
 | **NVMe** | A fast, directly-attached solid-state disk interface (local to each server). |
 | **AGPL** | GNU Affero GPL — an OSI-approved open-source license with network-use copyleft terms that some companies review carefully. |
 | **RBAC** | Role-Based Access Control — permissions are granted to roles, and roles are assigned to users. |
