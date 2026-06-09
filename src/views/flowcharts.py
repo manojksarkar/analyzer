@@ -89,7 +89,8 @@ def run(model, output_dir, model_dir, config):
     if not isinstance(clang_args, list):
         clang_args = [clang_args] if clang_args else []
 
-    # Read base_path and layer-scoped include paths written by Phase 1.
+    # Read base_path from metadata.json and layer-scoped include paths from
+    # clang_include_paths.json (both written by run.py / Phase 1).
     if os.path.isfile(metadata_path):
         try:
             with open(metadata_path, "r", encoding="utf-8") as f:
@@ -99,12 +100,18 @@ def run(model, output_dir, model_dir, config):
                 base_i = f"-I{base_path}"
                 if base_i not in clang_args:
                     clang_args.insert(0, base_i)
-            layer_paths = meta.get("clangIncludePaths") or {}
-            if layer_paths:
-                for p in _resolve_layer_dirs(config, group_name, layer_paths):
-                    arg = f"-I{p}"
-                    if arg not in clang_args:
-                        clang_args.append(arg)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    clang_paths_file = os.path.join(model_dir_abs, "clang_include_paths.json")
+    if os.path.isfile(clang_paths_file):
+        try:
+            with open(clang_paths_file, "r", encoding="utf-8") as f:
+                layer_paths = json.load(f) or {}
+            for p in _resolve_layer_dirs(config, group_name, layer_paths):
+                arg = f"-I{p}"
+                if arg not in clang_args:
+                    clang_args.append(arg)
         except (json.JSONDecodeError, OSError):
             pass
 

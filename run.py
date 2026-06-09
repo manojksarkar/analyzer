@@ -181,6 +181,32 @@ if data_dictionary_path:
         sys.exit(2)
     data_dictionary_path = _dd_abs
 
+# ---------------------------------------------------------------------------
+# Collect layer include paths before any phase runs.
+# Written to model/clang_include_paths.json so Phase 1 (parser) and Phase 3
+# (flowchart engine) can read them without re-walking the filesystem.
+# ---------------------------------------------------------------------------
+import json as _json
+_model_dir = os.path.join(SCRIPT_DIR, "model")
+os.makedirs(_model_dir, exist_ok=True)
+_layer_inc: dict = {}
+for _lname, _layer in (cfg.get("layers") or {}).items():
+    if not isinstance(_layer, dict):
+        continue
+    _layer_rel = _layer.get("path") or _lname
+    _layer_abs = os.path.join(resolved, _layer_rel)
+    if not os.path.isdir(_layer_abs):
+        continue
+    _dirs: list = []
+    for _dirpath, _dirnames, _ in os.walk(_layer_abs):
+        _dirnames[:] = [d for d in _dirnames if not d.startswith(".")]
+        _dirs.append(_dirpath)
+    _layer_inc[_lname] = _dirs
+_clang_paths_file = os.path.join(_model_dir, "clang_include_paths.json")
+with open(_clang_paths_file, "w", encoding="utf-8") as _f:
+    _json.dump(_layer_inc, _f, indent=2)
+log("Layer include paths collected.", component="run")
+
 # Resolve and display the LLM config up-front so the user sees exactly which
 # provider, endpoint, model, and token budget the run will use. Fails loud
 # (LlmConfigError) if any required field is missing or invalid — better to

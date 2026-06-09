@@ -104,22 +104,15 @@ for _mod_paths in _components_cfg.values():
         if _norm:
             _COMPONENT_FOLDERS.append(_norm)
 
-# Walk each layer directory and collect every subdirectory as a clang include
-# path.  Stored per-layer so the flowchart engine can scope to the right layer
-# when generating output for a single group.
+# Read layer include paths written by run.py before Phase 1 started.
 _layer_include_paths: dict = {}
-for _layer_name, _layer in (_config.get("layers") or {}).items():
-    if not isinstance(_layer, dict):
-        continue
-    _layer_rel = _layer.get("path") or _layer_name
-    _layer_abs = os.path.join(MODULE_BASE_PATH, _layer_rel)
-    if not os.path.isdir(_layer_abs):
-        continue
-    _dirs: list = []
-    for _dirpath, _dirnames, _ in os.walk(_layer_abs):
-        _dirnames[:] = [d for d in _dirnames if not d.startswith(".")]
-        _dirs.append(_dirpath)
-    _layer_include_paths[_layer_name] = _dirs
+_clang_paths_file = os.path.join(PROJECT_ROOT, "model", "clang_include_paths.json")
+if os.path.isfile(_clang_paths_file):
+    try:
+        with open(_clang_paths_file, "r", encoding="utf-8") as _f:
+            _layer_include_paths = json.load(_f) or {}
+    except (json.JSONDecodeError, OSError):
+        pass
 
 CLANG_ARGS = [
     "-std=c++14",
@@ -1184,7 +1177,6 @@ def main():
         "projectName": metadata["projectName"],
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
-        "clangIncludePaths": _layer_include_paths,
     }
     from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY
     write_model_file(METADATA, meta_header)
