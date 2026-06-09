@@ -21,6 +21,30 @@ from .registry import register
 from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
 
 
+def _resolve_layer_dirs(config, group_name, layer_paths):
+    """Return the include dirs for the layer that owns group_name.
+
+    When group_name is set, only the dirs from its layer are returned so the
+    flowchart engine does not see headers from unrelated layers.  Falls back to
+    all dirs across all layers when no group is selected or the group is not
+    found in the config.
+    """
+    if group_name:
+        layers_cfg = (config or {}).get("layers") or {}
+        for layer_name, layer in layers_cfg.items():
+            groups = layer.get("groups") or {}
+            if group_name.lower() in {g.lower() for g in groups}:
+                return layer_paths.get(layer_name) or []
+    all_dirs: list = []
+    seen: set = set()
+    for dirs in layer_paths.values():
+        for d in dirs:
+            if d not in seen:
+                seen.add(d)
+                all_dirs.append(d)
+    return all_dirs
+
+
 def _resolve_script(project_root: str, script_path: str) -> str:
     if not script_path:
         return os.path.join(project_root, "fake_flowchart_generator.py")
@@ -61,21 +85,28 @@ def run(model, output_dir, model_dir, config):
 
     std = "c++14"  # fixed in code
     clang_cfg = config.get("clang") or {}
-    clang_args = clang_cfg.get("clangArgs")
-    if not clang_args:
-        # Fallback: derive -I from metadata.json basePath
-        clang_args = []
-        if os.path.isfile(metadata_path):
-            try:
-                with open(metadata_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-                base_path = meta.get("basePath", "").strip()
-                if base_path:
-                    clang_args = [f"-I{base_path}"]
-            except (json.JSONDecodeError, OSError):
-                pass
+    clang_args = list(clang_cfg.get("clangArgs") or [])
     if not isinstance(clang_args, list):
         clang_args = [clang_args] if clang_args else []
+
+    # Read base_path and layer-scoped include paths written by Phase 1.
+    if os.path.isfile(metadata_path):
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            base_path = meta.get("basePath", "").strip()
+            if base_path:
+                base_i = f"-I{base_path}"
+                if base_i not in clang_args:
+                    clang_args.insert(0, base_i)
+            layer_paths = meta.get("clangIncludePaths") or {}
+            if layer_paths:
+                for p in _resolve_layer_dirs(config, group_name, layer_paths):
+                    arg = f"-I{p}"
+                    if arg not in clang_args:
+                        clang_args.append(arg)
+        except (json.JSONDecodeError, OSError):
+            pass
 
     script = _resolve_script(project_root, "fake_flowchart_generator.py")
     if not os.path.isfile(script):

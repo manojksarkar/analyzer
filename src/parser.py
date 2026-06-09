@@ -104,11 +104,36 @@ for _mod_paths in _components_cfg.values():
         if _norm:
             _COMPONENT_FOLDERS.append(_norm)
 
+# Walk each layer directory and collect every subdirectory as a clang include
+# path.  Stored per-layer so the flowchart engine can scope to the right layer
+# when generating output for a single group.
+_layer_include_paths: dict = {}
+for _layer_name, _layer in (_config.get("layers") or {}).items():
+    if not isinstance(_layer, dict):
+        continue
+    _layer_rel = _layer.get("path") or _layer_name
+    _layer_abs = os.path.join(MODULE_BASE_PATH, _layer_rel)
+    if not os.path.isdir(_layer_abs):
+        continue
+    _dirs: list = []
+    for _dirpath, _dirnames, _ in os.walk(_layer_abs):
+        _dirnames[:] = [d for d in _dirnames if not d.startswith(".")]
+        _dirs.append(_dirpath)
+    _layer_include_paths[_layer_name] = _dirs
+
 CLANG_ARGS = [
     "-std=c++14",
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
+# Phase 1 parses all layers, so extend with every collected directory.
+_clang_args_seen = set(CLANG_ARGS)
+for _dirs in _layer_include_paths.values():
+    for _d in _dirs:
+        _a = f"-I{_d}"
+        if _a not in _clang_args_seen:
+            _clang_args_seen.add(_a)
+            CLANG_ARGS.append(_a)
 # Visibility-style macros (PRIVATE/PROTECTED/PUBLIC/__OVLYINIT) and the
 # `VOID` -> `void` alias come from `core.config.default_clang_macro_defs()`
 # so the flowchart engine's per-function re-parser can reuse the same set.
@@ -1159,6 +1184,7 @@ def main():
         "projectName": metadata["projectName"],
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
+        "clangIncludePaths": _layer_include_paths,
     }
     from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY
     write_model_file(METADATA, meta_header)
