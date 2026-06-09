@@ -27,12 +27,20 @@ proj_arg = sys.argv[1]
 MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.path.join(PROJECT_ROOT, proj_arg)
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
 
-# Scan for optional --data-dictionary flag (may be passed by group_planner).
+# Scan for optional flags passed by group_planner.
 _data_dict_path: str | None = None
+_selected_group: str | None = None
+_selected_layer: str | None = None
 _i = 2
 while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
         _data_dict_path = sys.argv[_i + 1]
+        _i += 2
+    elif sys.argv[_i] == "--selected-group" and _i + 1 < len(sys.argv):
+        _selected_group = sys.argv[_i + 1]
+        _i += 2
+    elif sys.argv[_i] == "--selected-layer" and _i + 1 < len(sys.argv):
+        _selected_layer = sys.argv[_i + 1]
         _i += 2
     else:
         _i += 1
@@ -63,8 +71,14 @@ if _llvm and os.path.isfile(_llvm):
             os.environ["PATH"] = _llvm_bin_dir + os.pathsep + os.environ.get("PATH", "")
     cindex.Config.set_library_file(_llvm)
 
-from core.config import get_flat_groups as _get_flat_groups
-_components_groups = _get_flat_groups(_config)
+from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups
+if _selected_layer:
+    _components_groups = _get_layer_flat_groups(_config, _selected_layer)
+elif _selected_group:
+    _layer_name = _get_group_layer_name(_config, _selected_group)
+    _components_groups = _get_layer_flat_groups(_config, _layer_name) if _layer_name else _get_flat_groups(_config)
+else:
+    _components_groups = _get_flat_groups(_config)
 _components_cfg = _config.get("components") or _config.get("modules") or {}
 # If layer exists but no explicit component mapping is provided, merge all groups.
 # This makes the model parse only the union of all configured component folders.

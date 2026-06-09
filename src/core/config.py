@@ -528,6 +528,22 @@ def get_layer_components(cfg: Dict[str, Any], group_name: str) -> set:
 
 
 
+def get_group_layer_name(cfg: Dict[str, Any], group_name: str) -> Optional[str]:
+    """Return the layer name that contains group_name, or None if not found."""
+    for layer_name, layer_cfg in (cfg.get("layers") or {}).items():
+        if group_name in ((layer_cfg or {}).get("groups") or {}):
+            return layer_name
+    return None
+
+
+def get_layer_flat_groups(cfg: Dict[str, Any], layer_name: str) -> Dict[str, Any]:
+    """Return flat groups for a single named layer, with layer paths resolved."""
+    layer_cfg = (cfg.get("layers") or {}).get(layer_name)
+    if not layer_cfg:
+        return {}
+    return _resolve_layer_paths({layer_name: layer_cfg})
+
+
 def components_groups() -> Dict[str, Any]:
     """Return flattened groups across all layers with paths resolved."""
     return get_flat_groups(app_config())
