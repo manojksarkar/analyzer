@@ -82,6 +82,7 @@ def run(model, output_dir, model_dir, config):
     functions_path = os.path.join(model_dir_abs, "functions.json")
     metadata_path = os.path.join(model_dir_abs, "metadata.json")
     allowed_components = {m.lower() for m in ((config or {}).get("_analyzerAllowedComponents") or [])}
+    group_name = (config or {}).get("_analyzerSelectedGroup") or ""
 
     std = "c++14"  # fixed in code
     clang_cfg = config.get("clang") or {}
@@ -122,7 +123,6 @@ def run(model, output_dir, model_dir, config):
 
     # If we are exporting a selected group, pass only that group's functions to the generator.
     functions_arg_path = functions_path
-    group_name = (config or {}).get("_analyzerSelectedGroup") or ""
     if allowed_components and group_name and os.path.isfile(functions_path):
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
