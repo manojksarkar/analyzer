@@ -1,7 +1,8 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-09 (feat/from-main branch: `module` → `component` rename throughout source + model + config; `modulesGroups` → `layers` two-level config schema; same-layer model filtering in Phase 3 + Phase 4; `SampleCppProject` restructured with Layer1 + Layer2/Platform; `model/modules.json` → `model/components.json`; new `get_flat_groups` / `get_layer_components` helpers in `core.config`; `--trace-prompts` + `--filter-mode` CLI flags; `model/clang_include_paths.json` written by `run.py` before any phase; see §5, §6, §7, §9, §10, §11, §12, §15).
-> Current active branch: `feat/from-main`.
+> Updated: 2026-06-09 (feat/auto-clang-includes branch: Phase 1 parsing scoped to selected layer — `--selected-group` passes itself to `parser.py` which derives the layer via `get_group_layer_name`; new `--selected-layer` flag parses one layer and generates DOCX for all its groups; both flags together are an error; `clang_include_paths.json` also scoped to the selected layer; new `get_group_layer_name` / `get_layer_flat_groups` helpers in `core.config`; see §4e, §5, §7).
+> Previous update: 2026-06-09 (feat/from-main branch: `module` → `component` rename throughout source + model + config; `modulesGroups` → `layers` two-level config schema; same-layer model filtering in Phase 3 + Phase 4; `SampleCppProject` restructured with Layer1 + Layer2/Platform; `model/modules.json` → `model/components.json`; new `get_flat_groups` / `get_layer_components` helpers in `core.config`; `--trace-prompts` + `--filter-mode` CLI flags; `model/clang_include_paths.json` written by `run.py` before any phase; see §5, §6, §7, §9, §10, §11, §12, §15).
+> Current active branch: `feat/auto-clang-includes`.
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
@@ -10,6 +11,7 @@
 > - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
 > - §4c covers the feat/test-framework changes (test overhaul, LIBCLANG_PATH, llm.summarize).
 > - §4d covers the feat/from-main changes (component rename, layers config, same-layer filtering, SampleCppProject restructure).
+> - §4e covers the feat/auto-clang-includes changes (layer-scoped Phase 1 parsing, `--selected-layer` flag).
 > - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
@@ -400,6 +402,40 @@ SampleCppProject/
 
 ---
 
+## 4e. feat/auto-clang-includes changes
+
+### Layer-scoped Phase 1 parsing
+
+Previously, Phase 1 always parsed every file across all configured layers regardless of `--selected-group`. Since there is no cross-layer communication (only cross-group/cross-component within the same layer), this was wasted work.
+
+**What changed:**
+
+- `parser.py` now accepts `--selected-group <G>` and `--selected-layer <L>` flags (passed by `group_planner`).
+  - `--selected-group`: calls `get_group_layer_name(cfg, G)` to find the layer, then `get_layer_flat_groups(cfg, layer)` to build `_COMPONENT_FOLDERS` from that layer only.
+  - `--selected-layer`: calls `get_layer_flat_groups(cfg, L)` directly.
+  - No flag: falls back to `get_flat_groups(cfg)` — all layers (existing behaviour).
+
+- `run.py` resolves the target layer before walking directories for `clang_include_paths.json`, so only the selected layer's directories are written to that file.
+
+- `group_planner._build_model_phases` passes `--selected-group G` or `--selected-layer L` to `parser.py` depending on which CLI flag was given.
+
+- `--selected-group` and `--selected-layer` are **mutually exclusive** — `run.py` exits with code 1 if both are set.
+
+### New `--selected-layer` CLI flag
+
+`--selected-layer <L>` is a new top-level flag that:
+1. Restricts Phase 1+2 to layer L only.
+2. Runs Phase 3+4 for every group defined inside layer L.
+
+This is equivalent to running `--selected-group G` once per group in the layer, but in one command.
+
+### New helpers in `core.config`
+
+- `get_group_layer_name(cfg, group_name)` → layer name or `None`
+- `get_layer_flat_groups(cfg, layer_name)` → `{groupName: {componentName: resolvedPath}}` for one layer
+
+---
+
 ## 5. CLI — `run.py`
 
 ### Syntax
@@ -416,7 +452,8 @@ python run.py [options] <project_path>
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
-| `--selected-group <name>` | Export only the named group from `config.layers`. Case-insensitive |
+| `--selected-group <name>` | Export only the named group. Phase 1+2 parse only that group's layer. Case-insensitive. Mutually exclusive with `--selected-layer`. |
+| `--selected-layer <name>` | Parse only the named layer (Phase 1+2) and generate DOCX for every group in it (Phase 3+4 per group). Mutually exclusive with `--selected-group`. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
 | `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `config/data_dictionary.csv` for format. |
 | `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`) |
@@ -440,17 +477,9 @@ historical bugs are guarded against here:
 
 After parsing flags, run.py:
 
-0. **Layer include paths** — walks all `layers.<L>.path` directories under
-   `<project_path>` and writes `model/clang_include_paths.json`. Phase 1
-   reads this to extend `CLANG_ARGS` with `-I<dir>` for every directory in
-   every layer so all headers are resolvable across layers.
+0. **Layer include paths** — resolves the selected layer (from `--selected-group` or `--selected-layer`), then walks only that layer's directories (or all layers if neither flag is set) and writes `model/clang_include_paths.json`. Phase 1 reads this to extend `CLANG_ARGS` with `-I<dir>` for each collected directory.
 1. Loads `config/config.json` (+ `config.local.json`) via `load_config`.
-1a. **Collects layer include paths** — walks every layer directory under
-   `<project_path>` recursively (skipping hidden dirs), stores result as
-   `{LayerName: [abs_dir, …]}`, and writes it to `model/clang_include_paths.json`
-   before any phase starts. This file is the reference for which directories
-   were collected, and is read by Phase 1 (`parser.py`) and Phase 3
-   (`flowcharts.py`) — neither re-walks the filesystem.
+1a. **Collects layer include paths** — walks the relevant layer directory/directories under `<project_path>` recursively (skipping hidden dirs), stores result as `{LayerName: [abs_dir, …]}`, and writes it to `model/clang_include_paths.json` before any phase starts. When `--selected-group` or `--selected-layer` is set, only the targeted layer is walked. Read by Phase 1 (`parser.py`) and Phase 3 (`flowcharts.py`) — neither re-walks the filesystem.
 2. **Resolves the LLM block strictly via `load_llm_config(cfg)`** and prints the
    `format_llm_config_banner` to the log so the operator sees exactly which
    provider, baseUrl, model, `numCtx`, resolved `maxContextTokens`, retries,
@@ -471,13 +500,16 @@ The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
 (flowchart engine) starts, because that engine can be invoked standalone — see
 §13.
 
-### Three dispatch shapes (collapsed inside `plan_runs`)
+### Four dispatch shapes (collapsed inside `plan_runs`)
 
-| Config state | CLI | Plans returned |
-|---|---|---|
-| No `layers` (or `layer`) | (any) | One plan with all 4 phases (or just 3+4 if `--use-model`) |
-| `layers` present | no `--selected-group` | One "Build model" plan (Phases 1+2) + N "Group: <name>" plans (Phases 3+4 each, with `--output-dir output/<group>/`) |
-| `layers` present | `--selected-group <G>` | One "Build model" plan + one "Group: <G>" plan (Phases 3+4, `--output-dir output/<G>/`) |
+| Config state | CLI | Phase 1+2 parses | Phase 3+4 generates |
+|---|---|---|---|
+| No `layers` (or `layer`) | (any) | everything | one DOCX |
+| `layers` present | no flag | all layers | DOCX per group (all groups) |
+| `layers` present | `--selected-group <G>` | G's layer only | DOCX for G only |
+| `layers` present | `--selected-layer <L>` | L only | DOCX per group in L |
+
+Passing both `--selected-group` and `--selected-layer` exits with error code 1 before any phase runs.
 
 Phase 4 (`docx_exporter.py`) receives the group's `interface_tables.json`
 and DOCX path as positional args plus `--selected-group <G>` so it can
@@ -645,6 +677,8 @@ in `src/utils.py` or one of the phase scripts.
 - `get_layer_components(cfg, group_name)` → `set` of all component names in
   the same layer as `group_name`. Used by Phase 3 and Phase 4 for same-layer
   model filtering.
+- `get_group_layer_name(cfg, group_name)` → the layer name that owns `group_name`, or `None`. Used by `parser.py` and `run.py` to derive the layer from `--selected-group`.
+- `get_layer_flat_groups(cfg, layer_name)` → flat groups for a single named layer only (layer paths resolved). Used by `parser.py` to restrict `_COMPONENT_FOLDERS` when a layer is selected.
 - `_resolve_layer_paths(layers_cfg)` — internal helper that prepends
   `layer.path` to each component path inside the layer's groups.
 - `default_clang_macro_defs()` — returns the `-D` macro list shared by

@@ -121,8 +121,8 @@ def _build_unit_diagram(
         lines.append("  " + _node_line(pid).strip())
 
     # Internal module (yellow box)
-    mod_label = (this_component or "Internal").replace("]", "'").replace("[", "'")
-    lines.append(f"  subgraph internal_mod[{mod_label}]")
+    mod_label = (this_component or "Internal").replace('"', "'").replace("]", "'").replace("[", "'")
+    lines.append(f'  subgraph internal_mod["{mod_label}"]')
     lines.append("    direction TB")
     lines.append("    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px")
     lines.append("")

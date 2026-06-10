@@ -178,7 +178,7 @@ CLANG_ARGS = [
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
-# Phase 1 parses all layers, so extend with every collected directory.
+# Extend with layer include dirs (scoped to selected layer when --selected-group/--selected-layer is set).
 _clang_args_seen = set(CLANG_ARGS)
 for _dirs in _layer_include_paths.values():
     for _d in _dirs:

@@ -1172,7 +1172,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             ):
                 func_name = iface.get("name", "")
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{func_name}", level=4)
-                unit_prefix = unit_key.replace(KEY_SEP, "_")
+                unit_prefix = unit_key.replace(KEY_SEP, "_").replace(" ", "_")
                 flowchart = (
                     flowcharts_map.get(unit_prefix, {}).get(func_name)
                     or flowcharts_map.get(unit_name_flowchart, {}).get(func_name)
@@ -1203,7 +1203,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                             continue
                         callee_parts = callee_fid.split(KEY_SEP)
                         callee_unit_key = KEY_SEP.join(callee_parts[:2]) if len(callee_parts) >= 2 else ""
-                        callee_unit_prefix = callee_unit_key.replace(KEY_SEP, "_")
+                        callee_unit_prefix = callee_unit_key.replace(KEY_SEP, "_").replace(" ", "_")
                         callee_unit_name = callee_parts[1] if len(callee_parts) > 1 else ""
                         callee_qn = callee.get("qualifiedName", "")
                         callee_func_name = callee_qn.split("::")[-1] if callee_qn else ""
