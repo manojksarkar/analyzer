@@ -42,6 +42,15 @@ def is_valid_mermaid(text: str) -> bool:
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FC_DIR = os.path.join(PROJECT_ROOT, "output", "flowcharts")
 
+# Skip entire module when flowcharts are disabled in config
+_cfg_path = os.path.join(PROJECT_ROOT, "config", "config.json")
+if os.path.isfile(_cfg_path):
+    import json as _json
+    with open(_cfg_path, encoding="utf-8") as _f:
+        _cfg = _json.load(_f)
+    if not _cfg.get("views", {}).get("flowcharts"):
+        pytest.skip("flowcharts disabled in config", allow_module_level=True)
+
 UNITS = ["Core", "Lib", "Util"]
 
 # Public functions that must appear in each unit's flowchart

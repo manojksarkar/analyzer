@@ -63,7 +63,7 @@ _log_path = configure_logging(project_root=SCRIPT_DIR, quiet=_quiet_flag, verbos
 
 from utils import log, load_config
 from core import PhaseRunner, plan_runs
-from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, MODULES
+from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, COMPONENTS
 
 # ---------------------------------------------------------------------------
 # Parse flags
@@ -74,6 +74,7 @@ use_model             = False
 no_llm_summarize      = False
 from_phase            = 1
 selected_group_arg    = None
+selected_layer_arg    = None
 filter_mode_arg       = None
 data_dictionary_arg   = None
 raw_args              = []
@@ -98,6 +99,12 @@ while i < len(sys.argv):
             log("--selected-group requires a group name", component="run", err=True)
             sys.exit(1)
         selected_group_arg = sys.argv[i]
+    elif a == "--selected-layer":
+        i += 1
+        if i >= len(sys.argv):
+            log("--selected-layer requires a layer name", component="run", err=True)
+            sys.exit(1)
+        selected_layer_arg = sys.argv[i]
     elif a == "--data-dictionary":
         i += 1
         if i >= len(sys.argv):
@@ -121,7 +128,7 @@ while i < len(sys.argv):
     i += 1
 
 def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
-    """Resolve requested group name against config.modulesGroups, case-insensitive."""
+    """Resolve requested group name against config.layer, case-insensitive."""
     if not requested:
         return None
     if not isinstance(groups, dict) or not groups:
@@ -134,10 +141,15 @@ def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
             return k
     return None
 
+if selected_group_arg and selected_layer_arg:
+    log("--selected-group and --selected-layer are mutually exclusive", component="run", err=True)
+    sys.exit(1)
+
 if len(raw_args) < 1:
     print("Usage: python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
-    print("                     [--no-llm-summarize] [--from-phase N] [--quiet|--verbose]")
-    print("                     [--trace-prompts] [--filter-mode MODE] <project_path>")
+    print("                     [--selected-layer <name>] [--no-llm-summarize] [--from-phase N]")
+    print("                     [--quiet|--verbose] [--trace-prompts] [--filter-mode MODE]")
+    print("                     <project_path>")
     print("Example: python run.py test_cpp_project")
     sys.exit(1)
 
@@ -158,7 +170,7 @@ if not os.path.isdir(resolved):
 # When --use-model is set, refuse early if model files are missing.
 # ---------------------------------------------------------------------------
 if use_model:
-    MODEL_FILES = (_mfp(FUNCTIONS), _mfp(GLOBALS), _mfp(UNITS), _mfp(MODULES))
+    MODEL_FILES = (_mfp(FUNCTIONS), _mfp(GLOBALS), _mfp(UNITS), _mfp(COMPONENTS))
     missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
     if missing:
         log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
@@ -181,6 +193,43 @@ if data_dictionary_path:
         sys.exit(2)
     data_dictionary_path = _dd_abs
 
+# ---------------------------------------------------------------------------
+# Collect layer include paths before any phase runs.
+# Written to model/clang_include_paths.json so Phase 1 (parser) and Phase 3
+# (flowchart engine) can read them without re-walking the filesystem.
+# ---------------------------------------------------------------------------
+import json as _json
+from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name
+_model_dir = os.path.join(SCRIPT_DIR, "model")
+os.makedirs(_model_dir, exist_ok=True)
+_all_groups = _get_flat_groups(cfg)
+_resolved_group = _resolve_group_name(_all_groups, selected_group_arg)
+if selected_layer_arg:
+    _selected_layer = selected_layer_arg
+elif _resolved_group:
+    _selected_layer = _get_group_layer_name(cfg, _resolved_group)
+else:
+    _selected_layer = None
+_layer_inc: dict = {}
+for _lname, _layer in (cfg.get("layers") or {}).items():
+    if _selected_layer and _lname != _selected_layer:
+        continue
+    if not isinstance(_layer, dict):
+        continue
+    _layer_rel = _layer.get("path") or _lname
+    _layer_abs = os.path.join(resolved, _layer_rel)
+    if not os.path.isdir(_layer_abs):
+        continue
+    _dirs: list = []
+    for _dirpath, _dirnames, _ in os.walk(_layer_abs):
+        _dirnames[:] = [d for d in _dirnames if not d.startswith(".")]
+        _dirs.append(_dirpath)
+    _layer_inc[_lname] = _dirs
+_clang_paths_file = os.path.join(_model_dir, "clang_include_paths.json")
+with open(_clang_paths_file, "w", encoding="utf-8") as _f:
+    _json.dump(_layer_inc, _f, indent=2)
+log("Layer include paths collected.", component="run")
+
 # Resolve and display the LLM config up-front so the user sees exactly which
 # provider, endpoint, model, and token budget the run will use. Fails loud
 # (LlmConfigError) if any required field is missing or invalid — better to
@@ -199,6 +248,7 @@ try:
         cfg,
         project_path=resolved,
         selected_group=selected_group_arg,
+        selected_layer=selected_layer_arg,
         use_model=use_model,
         no_llm_summarize=no_llm_summarize,
         from_phase=from_phase,

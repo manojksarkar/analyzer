@@ -2,10 +2,10 @@
 
 Centralises the three-branch logic that used to live in run.py:
 
-  - no modulesGroups in config       -> single run, all 4 phases
-  - modulesGroups + no --selected    -> build model once, then phase 3+4
+  - no layer in config       -> single run, all 4 phases
+  - layer + no --selected    -> build model once, then phase 3+4
                                         for every group
-  - modulesGroups + --selected GROUP -> build model once, then phase 3+4
+  - layer + --selected GROUP -> build model once, then phase 3+4
                                         for that one group
 
 Each branch produces a single, flat `RunPlan` whose `.phases` list is fed
@@ -27,10 +27,10 @@ from .paths import paths
 # Canonical phase indices used by --from-phase. These are the *user-visible*
 # numbers; the planner translates them to runner-visible indices in the flat
 # phase list it produces.
-PHASE_PARSE = 1     # Phase 1: Parse C++ source         -> parser.py
-PHASE_DERIVE = 2    # Phase 2: Derive model             -> model_deriver.py
-PHASE_VIEWS = 3     # Phase 3: Generate views           -> run_views.py
-PHASE_EXPORT = 4    # Phase 4: Export to DOCX           -> docx_exporter.py
+PHASE_PARSE = 1     # Phase 1: Parse C++ source   -> parser.py
+PHASE_DERIVE = 2    # Phase 2: Derive model       -> model_deriver.py
+PHASE_VIEWS = 3     # Phase 3: Generate views     -> run_views.py
+PHASE_EXPORT = 4    # Phase 4: Export to DOCX     -> docx_exporter.py
 
 
 @dataclass
@@ -60,11 +60,17 @@ def _resolve_group_name(groups: Dict[str, Any], requested: Optional[str]) -> Opt
 
 
 def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
-                        data_dictionary_path: Optional[str] = None) -> List[Phase]:
+                        data_dictionary_path: Optional[str] = None,
+                        selected_group: Optional[str] = None,
+                        selected_layer: Optional[str] = None) -> List[Phase]:
     deriver_args = [] if no_llm_summarize else ["--llm-summarize"]
     parser_args = [project_path]
     if data_dictionary_path:
         parser_args += ["--data-dictionary", data_dictionary_path]
+    if selected_group:
+        parser_args += ["--selected-group", selected_group]
+    elif selected_layer:
+        parser_args += ["--selected-layer", selected_layer]
     return [
         Phase("Phase 1: Parse C++ source", "parser.py", parser_args),
         Phase("Phase 2: Derive model", "model_deriver.py", deriver_args),
@@ -93,6 +99,7 @@ def plan_runs(
     *,
     project_path: str,
     selected_group: Optional[str],
+    selected_layer: Optional[str] = None,
     use_model: bool,
     no_llm_summarize: bool,
     from_phase: int = 1,
@@ -105,12 +112,11 @@ def plan_runs(
     (not a single plan) lets us emit one plan per group while keeping the
     runner itself dead-simple.
 
-    Raises ValueError if `selected_group` is set but doesn't exist in
-    config.modulesGroups (caller is expected to translate this to a
-    user-visible error).
+    Raises ValueError if selected_group/selected_layer doesn't exist in config.
     """
     p = paths()
-    groups_cfg = (cfg.get("modulesGroups") or {})
+    from .config import get_flat_groups
+    groups_cfg = get_flat_groups(cfg)
     group_names = sorted(groups_cfg.keys()) if isinstance(groups_cfg, dict) else []
 
     resolved_selected = _resolve_group_name(groups_cfg, selected_group)
@@ -120,10 +126,24 @@ def plan_runs(
             f"Valid groups: {', '.join(group_names) if group_names else '(none)'}"
         )
 
+    # Validate --selected-layer and derive target groups for that layer.
+    if selected_layer:
+        layer_cfg = (cfg.get("layers") or {}).get(selected_layer)
+        if layer_cfg is None:
+            valid_layers = sorted((cfg.get("layers") or {}).keys())
+            raise ValueError(
+                f"Unknown --selected-layer {selected_layer!r}. "
+                f"Valid layers: {', '.join(valid_layers) if valid_layers else '(none)'}"
+            )
+        layer_group_names = set((layer_cfg.get("groups") or {}).keys())
+        layer_target_groups = [g for g in group_names if g in layer_group_names]
+    else:
+        layer_target_groups = []
+
     plans: List[RunPlan] = []
 
     # ------------------------------------------------------------------
-    # No modulesGroups: single flat run, all 4 phases
+    # No layer: single flat run, all 4 phases (backward compat)
     # ------------------------------------------------------------------
     if not group_names:
         if use_model:
@@ -143,30 +163,35 @@ def plan_runs(
         return plans
 
     # ------------------------------------------------------------------
-    # modulesGroups present: build model once, then per-group view+export
+    # Layers present: build model, then per-group view+export
     # ------------------------------------------------------------------
-    target_groups = [resolved_selected] if resolved_selected else group_names
+    if selected_layer:
+        target_groups = layer_target_groups
+    elif resolved_selected:
+        target_groups = [resolved_selected]
+    else:
+        target_groups = group_names
 
     if not use_model:
         # Build-model plan covers phases 1+2 only.
         build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
-                                            data_dictionary_path=data_dictionary_path)
+                                            data_dictionary_path=data_dictionary_path,
+                                            selected_group=resolved_selected,
+                                            selected_layer=selected_layer)
         # If the user wants to start at phase >= 3, the build step is skipped
         # entirely (use existing model on disk).
         if from_phase <= 2:
-            plans.append(RunPlan(label="Build model (all modules)",
+            if resolved_selected:
+                label = f"Build model (layer of {resolved_selected})"
+            elif selected_layer:
+                label = f"Build model ({selected_layer})"
+            else:
+                label = "Build model (all layers)"
+            plans.append(RunPlan(label=label,
                                  phases=build_phases,
                                  runner_from_phase=from_phase))
 
     for g in target_groups:
-        # All groups get a fresh output sub-directory under output/<group>/.
-        # When a single group is selected and resolves the same as today's
-        # behaviour, run_views/docx_exporter handle output paths themselves
-        # via --selected-group, so we don't pass --output-dir explicitly.
-        if resolved_selected:
-            view_phases = _view_export_phases(selected_group=g, filter_mode=filter_mode,
-                                              docx_args=["--selected-group", g])
-        else:
             group_out = os.path.join(p.output_dir, g)
             view_phases = _view_export_phases(
                 output_dir=group_out,
@@ -178,15 +203,9 @@ def plan_runs(
                     "--selected-group", g,
                 ],
             )
-
-        # When --from-phase points at views/export, translate it to the
-        # group plan's local indices (which only contain phases 3+4).
-        if from_phase >= PHASE_VIEWS:
-            local_from = max(1, from_phase - 2)  # 3 -> 1, 4 -> 2
-        else:
-            local_from = 1
-        plans.append(RunPlan(label=f"Group: {g}",
-                             phases=view_phases,
-                             runner_from_phase=local_from))
+            local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
+            plans.append(RunPlan(label=f"Group: {g}",
+                                 phases=view_phases,
+                                 runner_from_phase=local_from))
 
     return plans

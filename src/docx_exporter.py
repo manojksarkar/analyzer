@@ -11,6 +11,7 @@ from core.paths import paths as _paths
 _p = _paths()
 PROJECT_ROOT = _p.project_root
 OUTPUT_DIR = _p.output_dir
+
 MODEL_DIR = _p.model_dir
 COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
 # Placeholder when no value (no column may be empty)
@@ -392,12 +393,12 @@ def _escape_mermaid_label_for_structure(text: str) -> str:
     return t
 
 
-def _build_module_container_mermaid(
-    module_name: str,
+def _build_component_container_mermaid(
+    component_name: str,
     unit_rows: List[Tuple[Any, str, Any]],
 ) -> str:
-    """Mermaid subgraph: blue module box containing all unit nodes."""
-    mod_label = _escape_mermaid_label_for_structure(module_name)
+    """Mermaid subgraph: blue component box containing all unit nodes."""
+    mod_label = _escape_mermaid_label_for_structure(component_name)
     lines = [
         "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
         "flowchart TB",
@@ -417,15 +418,15 @@ def _build_module_container_mermaid(
     return "\n".join(lines)
 
 
-def _build_module_header_dependency_mermaid(
-    module_name: str,
+def _build_component_header_dependency_mermaid(
+    component_name: str,
     unit_rows: List[Tuple[Any, str, Any]],
     units_data: dict,
-    modules_data: dict,
+    components_data: dict,
 ) -> str:
-    """Mermaid BT chart: header nodes at top, source nodes below, same-module headers only."""
-    module_headers: set = set(
-        (modules_data.get(module_name) or {}).get("headerFiles") or []
+    """Mermaid BT chart: header nodes at top, source nodes below, same-component headers only."""
+    component_headers: set = set(
+        (components_data.get(component_name) or {}).get("headerFiles") or []
     )
 
     lines = [
@@ -458,7 +459,7 @@ def _build_module_header_dependency_mermaid(
 
         for h_rel in (unit_info.get("includedHeaders") or []):
             h_rel = h_rel.replace("\\", "/")
-            if h_rel not in module_headers:
+            if h_rel not in component_headers:
                 continue
             h_base = os.path.basename(h_rel)
             h_label = _escape_mermaid_label_for_structure(os.path.splitext(h_base)[0]) + "\nHeader"
@@ -480,16 +481,16 @@ def _build_module_header_dependency_mermaid(
     return "\n".join(lines)
 
 
-def _build_module_static_structure_mermaid(
-    module_name: str,
+def _build_component_static_structure_mermaid(
+    component_name: str,
     unit_rows: List[Tuple[Any, str, Any]],
 ) -> str:
-    """Mermaid TB chart: one box for module, one row of child boxes for units.
+    """Mermaid TB chart: one box for component, one row of child boxes for units.
 
-    unit_rows: sorted list of (unit_key, unit_name_display, interfaces) per module.
+    unit_rows: sorted list of (unit_key, unit_name_display, interfaces) per component.
     """
     mod_id = "MOD"
-    mod_label = _escape_mermaid_label_for_structure(module_name)
+    mod_label = _escape_mermaid_label_for_structure(component_name)
     lines = [
         "%%{init: {'flowchart': {'ranksep': '0.55', 'nodesep': '0.35'}}}%%",
         "flowchart TB",
@@ -503,31 +504,23 @@ def _build_module_static_structure_mermaid(
         lines.append(f'  {uid}["{_escape_mermaid_label_for_structure(disp)}"]')
         lines.append(f"  {mod_id} --> {uid}")
     lines.append(
-        "  classDef moduleNode fill:#1e293b,stroke:#334155,color:#ffffff"
+        "  classDef componentNode fill:#1e293b,stroke:#334155,color:#ffffff"
     )
     lines.append(
         "  classDef unitNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff"
     )
-    lines.append(f"  class {mod_id} moduleNode")
+    lines.append(f"  class {mod_id} componentNode")
     if unit_ids:
         lines.append(f"  class {','.join(unit_ids)} unitNode")
     return "\n".join(lines)
 
 
-def _parse_module_static_diagram_cfg(views_cfg: dict, export_cfg: dict = None) -> Tuple[bool, bool, float]:
-    """enabled, renderPng, widthInches for Static Design module→units diagram (config.views.moduleStaticDiagram)."""
-    raw = (views_cfg or {}).get("moduleStaticDiagram")
-    if raw is None and export_cfg:
-        raw = export_cfg.get("moduleStaticDiagram")
+def _parse_component_static_diagram_cfg(views_cfg: dict) -> Tuple[bool, bool, float]:
+    """enabled, renderPng, widthInches for Static Design component→units diagram (config.views.componentStaticDiagram)."""
+    raw = (views_cfg or {}).get("componentStaticDiagram")
     if raw is None:
         raw = True
-    if isinstance(raw, dict):
-        return (
-            bool(raw.get("enabled", True)),
-            bool(raw.get("renderPng", True)),
-            float(raw.get("widthInches", 1)),
-        )
-    return bool(raw), True, 1
+    return bool(raw), True, 5.5
 
 
 def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bool:
@@ -548,11 +541,19 @@ def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bo
         cmd.extend(["-p", puppeteer])
     try:
         if os_type == "Windows":
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False, shell=True)    
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False, shell=True)
         else:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
-        return r.returncode == 0 and os.path.isfile(png_path)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+        if r.returncode == 0 and os.path.isfile(png_path):
+            return True
+        err = (r.stderr or r.stdout or f"exit {r.returncode}").strip()
+        print(f"[docx_exporter] warning: mmdc failed for {os.path.basename(png_path)}: {err[:120]}")
+        return False
+    except FileNotFoundError:
+        print(f"[docx_exporter] warning: mmdc not found — {mmdc}")
+        return False
+    except subprocess.TimeoutExpired:
+        print(f"[docx_exporter] warning: mmdc timed out for {os.path.basename(png_path)}")
         return False
 
 def _add_flowchart_table(doc, func_name: str, description: str, input_name: str,
@@ -860,7 +861,7 @@ def _merge_vertical_cells(table, col: int, start_row: int, end_row: int) -> None
 
 
 def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, config: dict, abbreviations: dict) -> None:
-    """Add module-level table: Component | Unit | Description | Note.
+    """Add component-level table: Component | Unit | Description | Note.
 
     Description is derived from per-unit `interface_tables.json` entries:
     it aggregates available `description` fields from both functions and globals.
@@ -971,7 +972,7 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         note_text = NA
 
         row = table.add_row().cells
-        # Component is one per module; only first body row holds text, then column 0 is merged.
+        # Component is one per component; only first body row holds text, then column 0 is merged.
         row[0].text = str(component_name or NA) if row_idx == 0 else ""
         row[1].text = str(unit_name_display or NA)
         row[2].text = str(description_text or NA)
@@ -989,23 +990,17 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     from utils import safe_filename, KEY_SEP
     from core.config import app_config
     config = app_config()
-    export_cfg = config.get("export", {})
     json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
     json_path = os.path.abspath(json_path)
     # Views write next to interface_tables.json (e.g. output/<group>/); do not use output/ only.
     artifacts_dir = os.path.dirname(json_path)
-    # Allow group-specific filenames via {group} placeholder.
     group_name = selected_group or "all"
-    raw_docx = export_cfg.get("docxPath", "output/software_detailed_design.docx")
-    raw_docx = raw_docx.replace("{group}", group_name)
     if not docx_path:
-        docx_path = os.path.join(PROJECT_ROOT, raw_docx)
-    font_size = int(export_cfg.get("docxFontSize", 8))
+        docx_path = os.path.join(PROJECT_ROOT, f"output/software_detailed_design_{group_name}.docx")
+    font_size = 8
     views_cfg = config.get("views", {})
-    msd_enabled, msd_render_png, msd_width_in = _parse_module_static_diagram_cfg(views_cfg, export_cfg)
-    fc_cfg = views_cfg.get("flowcharts") if isinstance(views_cfg.get("flowcharts"), dict) else {}
+    msd_enabled, msd_render_png, msd_width_in = _parse_component_static_diagram_cfg(views_cfg)
     flowcharts_enabled = bool(views_cfg.get("flowcharts"))
-    flowcharts_render_png = fc_cfg.get("renderPng", True)
     flowcharts_dir = os.path.abspath(os.path.join(artifacts_dir, "flowcharts"))
     flowcharts_map = _load_flowcharts(flowcharts_dir) if flowcharts_enabled else {}
 
@@ -1026,9 +1021,20 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
 
     abbreviations = _load_abbreviations(PROJECT_ROOT, config)
     units_data, data_dictionary = _load_model_for_unit_headers()
-    modules_data = _load_model_json("modules")
+    components_data = _load_model_json("components")
     global_variables_data = _load_model_json("globalVariables")
     functions_data = _load_model_json("functions")
+
+    # Filter model data to only the components in the same layer as the selected group
+    if selected_group:
+        from core.config import get_layer_components, app_config
+        layer_comps = get_layer_components(app_config(), selected_group)
+        if layer_comps:
+            lower = {c.lower() for c in layer_comps}
+            units_data = {k: v for k, v in units_data.items() if k.split("|")[0].lower() in lower}
+            components_data = {k: v for k, v in components_data.items() if k.lower() in lower}
+            global_variables_data = {k: v for k, v in global_variables_data.items() if k.split("|")[0].lower() in lower}
+            functions_data = {k: v for k, v in functions_data.items() if k.split("|")[0].lower() in lower}
     _hidden_fids: set = {fid for fid, f in functions_data.items() if f.get("hidden", False)}
     _hidden_by_mod_unit: dict = {}
     for _fid in _hidden_fids:
@@ -1042,8 +1048,8 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     doc = Document()
     doc.add_heading("Software Detailed Design", 0)
 
-    # Group by module; use data as-is from view output
-    by_module = {}
+    # Group by component; use data as-is from view output
+    by_component = {}
     for unit_key in data.keys():
         if unit_key in ("basePath", "projectName", "unitNames"):
             continue
@@ -1051,15 +1057,15 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         if not isinstance(unit_data, dict) or "entries" not in unit_data:
             continue
         parts = unit_key.split(KEY_SEP, 1)
-        module_name = parts[0]
+        component_name = parts[0]
         unit_name_display = unit_data.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
         interfaces = [
             i for i in unit_data["entries"]
             if i.get("functionId") not in _hidden_fids
         ]
-        by_module.setdefault(module_name, []).append((unit_key, unit_name_display, interfaces))
+        by_component.setdefault(component_name, []).append((unit_key, unit_name_display, interfaces))
 
-    sorted_modules = sorted(by_module.keys())
+    sorted_components = sorted(by_component.keys())
 
     # 1 Introduction
     doc.add_heading("1 Introduction", level=1)
@@ -1073,48 +1079,46 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     # 2, 3, ... Modules
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
-    n_modules = len(sorted_modules)
-    _docx_progress = ProgressReporter("docx_exporter", total=n_modules, logger=get_logger("docx_exporter"))
+    n_components = len(sorted_components)
+    _docx_progress = ProgressReporter("docx_exporter", total=n_components, logger=get_logger("docx_exporter"))
     _docx_progress.start()
-    for sec_idx, module_name in enumerate(sorted_modules, start=0):
+    for sec_idx, component_name in enumerate(sorted_components, start=0):
         sec_num = sec_idx + 2
-        _docx_progress.step(label=module_name)
-        doc.add_heading(f"{sec_num} {module_name}", level=1)
+        _docx_progress.step(label=component_name)
+        doc.add_heading(f"{sec_num} {component_name}", level=1)
 
         # 2.1 Static Design
         doc.add_heading(f"{sec_num}.1 Static Design", level=2)
 
-        unit_rows_module = sorted(by_module[module_name])
-        if msd_enabled and unit_rows_module:
-            # Container diagram: blue module subgraph with all units inside
-            container_mmd = _build_module_container_mermaid(module_name, unit_rows_module)
+        unit_rows_component = sorted(by_component[component_name])
+        if msd_enabled and unit_rows_component:
+            # Container diagram: blue component subgraph with all units inside
+            container_mmd = _build_component_container_mermaid(component_name, unit_rows_component)
             container_png = os.path.join(
-                artifacts_dir, "module_container_diagrams", f"{safe_filename(module_name)}.png"
+                artifacts_dir, "component_container_diagrams", f"{safe_filename(component_name)}.png"
             )
             if msd_render_png:
-                if _render_mermaid_to_png(PROJECT_ROOT, container_mmd, container_png) and os.path.isfile(container_png):
-                    try:
-                        doc.add_picture(container_png, width=Inches(6))
-                    except Exception:
-                        _add_mermaid_as_text(doc, container_mmd, font_small)
-                else:
+                _render_mermaid_to_png(PROJECT_ROOT, container_mmd, container_png)
+            if os.path.isfile(container_png):
+                try:
+                    doc.add_picture(container_png, width=Inches(6))
+                except Exception:
                     _add_mermaid_as_text(doc, container_mmd, font_small)
             else:
                 _add_mermaid_as_text(doc, container_mmd, font_small)
             _add_horizontal_rule(doc)
 
-            # File dependency diagram: .cpp → .h include edges inside module
-            dep_mmd = _build_module_header_dependency_mermaid(module_name, unit_rows_module, units_data, modules_data)
+            # File dependency diagram: .cpp → .h include edges inside component
+            dep_mmd = _build_component_header_dependency_mermaid(component_name, unit_rows_component, units_data, components_data)
             dep_png = os.path.join(
-                artifacts_dir, "module_header_dependency_diagrams", f"{safe_filename(module_name)}.png"
+                artifacts_dir, "component_header_dependency_diagrams", f"{safe_filename(component_name)}.png"
             )
             if msd_render_png:
-                if _render_mermaid_to_png(PROJECT_ROOT, dep_mmd, dep_png) and os.path.isfile(dep_png):
-                    try:
-                        doc.add_picture(dep_png, width=Inches(6))
-                    except Exception:
-                        _add_mermaid_as_text(doc, dep_mmd, font_small)
-                else:
+                _render_mermaid_to_png(PROJECT_ROOT, dep_mmd, dep_png)
+            if os.path.isfile(dep_png):
+                try:
+                    doc.add_picture(dep_png, width=Inches(6))
+                except Exception:
                     _add_mermaid_as_text(doc, dep_mmd, font_small)
             else:
                 _add_mermaid_as_text(doc, dep_mmd, font_small)
@@ -1122,15 +1126,15 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         # Module-level index table (Component/Unit/Description/Note)
         _add_component_unit_table(
             doc,
-            module_name,
-            unit_rows_module,
+            component_name,
+            unit_rows_component,
             font_small,
             config=config,
             abbreviations=abbreviations,
         )
 
         unit_diag_dir = os.path.join(artifacts_dir, "unit_diagrams")
-        for unit_idx, (unit_key, unit_name_display, interfaces) in enumerate(unit_rows_module, start=1):
+        for unit_idx, (unit_key, unit_name_display, interfaces) in enumerate(unit_rows_component, start=1):
             # 2.1.1 unit1
             doc.add_heading(f"{sec_num}.1.{unit_idx} {unit_name_display}", level=3)
 
@@ -1176,13 +1180,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 # Build flowcharts list: own flowchart + private callee flowcharts
                 flowcharts_list = []
                 if flowchart:
-                    png_path = None
-                    if flowcharts_render_png:
-                        png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
-                        if not os.path.isfile(png_path):
-                            png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
-                        if not os.path.isfile(png_path):
-                            png_path = None
+                    png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
+                    if not os.path.isfile(png_path):
+                        png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
+                    if not os.path.isfile(png_path):
+                        png_path = None
                     iface_params = ", ".join(
                         f"{p.get('type', '')} {p.get('name', '')}".strip()
                         for p in (iface.get("parameters") or [])
@@ -1216,13 +1218,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         if callee_fid in rendered_private_fids:
                             continue
                         rendered_private_fids.add(callee_fid)
-                        callee_png = None
-                        if flowcharts_render_png:
-                            callee_png = os.path.join(flowcharts_dir, f"{callee_unit_prefix}_{safe_filename(callee_func_name)}.png")
-                            if not os.path.isfile(callee_png):
-                                callee_png = os.path.join(flowcharts_dir, f"{callee_unit_name}_{safe_filename(callee_func_name)}.png")
-                            if not os.path.isfile(callee_png):
-                                callee_png = None
+                        callee_png = os.path.join(flowcharts_dir, f"{callee_unit_prefix}_{safe_filename(callee_func_name)}.png")
+                        if not os.path.isfile(callee_png):
+                            callee_png = os.path.join(flowcharts_dir, f"{callee_unit_name}_{safe_filename(callee_func_name)}.png")
+                        if not os.path.isfile(callee_png):
+                            callee_png = None
                         callee_params = ", ".join(
                             f"{p.get('type', '')} {p.get('name', '')}".strip()
                             for p in (callee.get("params") or callee.get("parameters") or [])
@@ -1252,10 +1252,10 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             except (json.JSONDecodeError, IOError):
                 pass
         beh_idx = 0
-        for unit_name, entries in sorted((docx_rows.get(module_name) or {}).items()):
+        for unit_name, entries in sorted((docx_rows.get(component_name) or {}).items()):
             for row in entries:
                 current_fn = row.get("currentFunctionName", "") or ""
-                if current_fn in _hidden_by_mod_unit.get((module_name, unit_name), set()):
+                if current_fn in _hidden_by_mod_unit.get((component_name, unit_name), set()):
                     continue
                 beh_idx += 1
                 ext = row.get("externalUnitFunction", "")
@@ -1272,7 +1272,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         if len(parts) < 3:
                             continue
                         mod, unit, _ = parts[0], parts[1], parts[2]
-                        if mod != module_name or unit != unit_name:
+                        if mod != component_name or unit != unit_name:
                             continue
                         qn = f.get("qualifiedName", "") or ""
                         base_name = qn.split("::")[-1] if qn else ""
@@ -1306,9 +1306,9 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 elif png_path:
                     _add_para(doc, f"[Behaviour diagram: {png_path}]")
 
-    _docx_progress.done(summary=f"{n_modules} modules written")
+    _docx_progress.done(summary=f"{n_components} components written")
     # N Code Metrics, Coding rule, test coverage
-    metrics_sec = len(sorted_modules) + 2
+    metrics_sec = len(sorted_components) + 2
     doc.add_heading(f"{metrics_sec} Code Metrics, Coding Rule, Test Coverage", level=1)
     _add_para(doc, "[Code metrics, coding rules and test coverage.]")
 

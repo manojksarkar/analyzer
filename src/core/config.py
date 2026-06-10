@@ -6,7 +6,7 @@ user can change anything by editing the JSON file. This module:
   2. Loads + merges config.json + config.local.json once per process.
   3. Resolves the LLM config block, applying environment-variable overrides.
   4. Provides typed helpers (llm_config, views_config, exporter_config,
-     modules_groups) so call sites stop typing `cfg.get("llm", {}).get(...)`.
+     components_groups) so call sites stop typing `cfg.get("llm", {}).get(...)`.
   5. Re-exports the raw dict via `app_config()` for code that still wants the
      dict-style access.
 
@@ -471,6 +471,79 @@ def default_clang_macro_defs() -> list:
     return args
 
 
-def modules_groups() -> Dict[str, Any]:
-    """Return the `modulesGroups` block (or {} if absent)."""
-    return app_config().get("modulesGroups") or {}
+def _resolve_layer_paths(layers_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten layers into {groupName: {componentName: resolvedPaths}} with layer path prefix applied."""
+    result: Dict[str, Any] = {}
+    for layer_name, layer in (layers_cfg or {}).items():
+        if not isinstance(layer, dict):
+            continue
+        layer_path = layer.get("path", layer_name)
+        for group_name, modules in (layer.get("groups") or {}).items():
+            if not isinstance(modules, dict):
+                continue
+            resolved: Dict[str, Any] = {}
+            for mod_name, paths in modules.items():
+                if isinstance(paths, str):
+                    resolved[mod_name] = f"{layer_path}/{paths}" if paths else layer_path
+                elif isinstance(paths, list):
+                    resolved[mod_name] = [f"{layer_path}/{p}" if p else layer_path for p in paths]
+                else:
+                    resolved[mod_name] = paths
+            result[group_name] = resolved
+    return result
+
+
+def get_flat_groups(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Return {groupName: {componentName: paths}} from config, with layer paths resolved.
+
+    Reads `layers` (new schema). Falls back to `layer` for old configs.
+    """
+    if "layers" in cfg:
+        return _resolve_layer_paths(cfg.get("layers") or {})
+    return cfg.get("layer") or {}
+
+
+def get_layer_components(cfg: Dict[str, Any], group_name: str) -> set:
+    """Return all component names in the same layer as group_name.
+
+    For a flat (non-layered) config, returns all components across all groups.
+    Returns empty set if group not found.
+    """
+    layers = cfg.get("layers") or {}
+    for layer_cfg in layers.values():
+        groups = layer_cfg.get("groups") or {}
+        if group_name in groups:
+            components: set = set()
+            for grp in groups.values():
+                if isinstance(grp, dict):
+                    components.update(grp.keys())
+            return components
+    # Flat config (no layers): all components in all groups
+    flat = get_flat_groups(cfg)
+    components = set()
+    for grp in flat.values():
+        if isinstance(grp, dict):
+            components.update(grp.keys())
+    return components
+
+
+
+def get_group_layer_name(cfg: Dict[str, Any], group_name: str) -> Optional[str]:
+    """Return the layer name that contains group_name, or None if not found."""
+    for layer_name, layer_cfg in (cfg.get("layers") or {}).items():
+        if group_name in ((layer_cfg or {}).get("groups") or {}):
+            return layer_name
+    return None
+
+
+def get_layer_flat_groups(cfg: Dict[str, Any], layer_name: str) -> Dict[str, Any]:
+    """Return flat groups for a single named layer, with layer paths resolved."""
+    layer_cfg = (cfg.get("layers") or {}).get(layer_name)
+    if not layer_cfg:
+        return {}
+    return _resolve_layer_paths({layer_name: layer_cfg})
+
+
+def components_groups() -> Dict[str, Any]:
+    """Return flattened groups across all layers with paths resolved."""
+    return get_flat_groups(app_config())

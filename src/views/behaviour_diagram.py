@@ -27,7 +27,6 @@ def run(model, output_dir, model_dir, config):
     if beh_val is None or beh_val is False:
         log("skipped (views.behaviourDiagram not enabled)", component="behaviourDiagram")
         return
-    beh_cfg = beh_val if isinstance(beh_val, dict) else {}
 
     project_root = os.path.dirname(os.path.abspath(model_dir))
     out_dir = os.path.join(output_dir, "behaviour_diagrams")
@@ -35,33 +34,33 @@ def run(model, output_dir, model_dir, config):
 
     units_data = model.get("units", {})
     functions_data = model.get("functions", {})
-    allowed_modules = {m.lower() for m in (config.get("_analyzerAllowedModules") or [])}
+    allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
     fid_to_unit = {fid: uk for uk, u in units_data.items() for fid in u.get("functionIds", [])}
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                   for uk, u in units_data.items()}
 
     functions_path = os.path.join(model_dir, "functions.json")
-    modules_path = os.path.join(model_dir, "modules.json")
+    components_path = os.path.join(model_dir, "components.json")
     units_path = os.path.join(model_dir, "units.json")
-    gen = SequenceDiagramGenerator(modules_path, units_path, functions_path)
+    gen = SequenceDiagramGenerator(components_path, units_path, functions_path)
 
-    render_png = beh_cfg.get("renderPng", True)
+    render_png = True
     mmdc = mmdc_path(project_root)
-    puppeteer = beh_cfg.get("puppeteerConfigPath") or os.path.join(project_root, "config", "puppeteer-config.json")
+    puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):
         puppeteer = os.path.join(project_root, puppeteer)
     run_cmd_base = [mmdc, "--scale", "2"]
     if os.path.isfile(puppeteer):
         run_cmd_base.extend(["-p", puppeteer])
 
-    docx_rows = {}  # module -> unit -> [ {externalUnitFunction, pngPath} ]
+    docx_rows = {}  # component -> unit -> [ {externalUnitFunction, pngPath} ]
     # Only generate diagrams for functions within the selected group (if any),
     # but keep full-model context so external callers (outside the group) are captured.
-    if allowed_modules:
+    if allowed_components:
         functions = [
             fid for fid, uk in fid_to_unit.items()
             if KEY_SEP in uk
-            and uk.split(KEY_SEP, 1)[0].lower() in allowed_modules
+            and uk.split(KEY_SEP, 1)[0].lower() in allowed_components
             and (functions_data.get(fid, {}).get("visibility") or "").lower() != "private"
         ]
     else:
@@ -80,7 +79,8 @@ def run(model, output_dir, model_dir, config):
         progress.step()
 
         try:
-            mmd_paths, behaviour_descriptions = gen.generate_all_diagrams(fid, out_dir) or []
+            mmd_paths = gen.generate_all_diagrams(fid, out_dir) or []
+            behaviour_descriptions = []
         except Exception as e:
             log("generator error for %s: %s" % (fid, e), component="behaviourDiagram", err=True)
             continue
@@ -91,15 +91,15 @@ def run(model, output_dir, model_dir, config):
         unit_key = fid_to_unit.get(fid)
         if not unit_key:
             continue
-        module_name = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
+        component_name = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
         current_unit = unit_names.get(unit_key, unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
         called_by_ids = functions_data.get(fid, {}).get("calledByIds", []) or []
-        if allowed_modules:
+        if allowed_components:
             # External = outside selected group
-            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0].lower() not in allowed_modules]
+            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0].lower() not in allowed_components]
         else:
             # Default behaviour: external = different module
-            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] != module_name]
+            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] != component_name]
 
         for idx, mmd_path in enumerate(mmd_paths):
             if idx >= len(external_callers):
@@ -137,7 +137,7 @@ def run(model, output_dir, model_dir, config):
                     if idx == 0:
                         log("mmdc timed out", component="behaviourDiagram", err=True)
 
-            docx_rows.setdefault(module_name, {}).setdefault(current_unit, []).append({
+            docx_rows.setdefault(component_name, {}).setdefault(current_unit, []).append({
                 "currentFunctionName": current_function_name,
                 "externalUnitFunction": external_unit_external_function,
                 "pngPath": png_path,

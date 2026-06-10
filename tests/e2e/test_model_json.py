@@ -4,7 +4,7 @@ Checks structure and invariants for:
   model/functions.json
   model/globalVariables.json
   model/units.json
-  model/modules.json
+  model/components.json
 """
 import json
 import os
@@ -16,7 +16,7 @@ pytestmark = pytest.mark.e2e
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
 
-SAMPLE_MODULES = {"Core", "Lib", "Util"}
+SAMPLE_COMPONENTS = {"Core", "Lib", "Util"}
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +51,8 @@ def units(run_pipeline):
 
 
 @pytest.fixture(scope="module")
-def modules(run_pipeline):
-    path = os.path.join(MODEL_DIR, "modules.json")
+def components(run_pipeline):
+    path = os.path.join(MODEL_DIR, "components.json")
     if not os.path.isfile(path):
         pytest.fail(f"Missing: {path}")
     with open(path, encoding="utf-8") as f:
@@ -61,7 +61,7 @@ def modules(run_pipeline):
 
 @pytest.fixture(scope="module")
 def sample_functions(functions):
-    return {fid: f for fid, f in functions.items() if fid.split("|")[0] in SAMPLE_MODULES}
+    return {fid: f for fid, f in functions.items() if fid.split("|")[0] in SAMPLE_COMPONENTS}
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ def test_functions_json_not_empty(functions):
 
 
 def test_function_key_format(functions):
-    """Keys must be module|unit|qualifiedName|paramTypes."""
+    """Keys must be component|unit|qualifiedName|paramTypes."""
     for fid in functions:
         parts = fid.split("|")
         assert len(parts) == 4, f"Function key should have 4 parts: {fid!r}"
@@ -122,7 +122,7 @@ def test_global_variables_json_not_empty(global_variables):
 
 
 def test_global_variable_key_format(global_variables):
-    """Keys must be module|unit|qualifiedName."""
+    """Keys must be component|unit|qualifiedName."""
     for vid in global_variables:
         parts = vid.split("|")
         assert len(parts) == 3, f"Global key should have 3 parts: {vid!r}"
@@ -131,7 +131,7 @@ def test_global_variable_key_format(global_variables):
 def test_global_variable_required_fields(global_variables):
     required = {"qualifiedName", "location", "type", "visibility"}
     for vid, g in global_variables.items():
-        if vid.split("|")[0] not in SAMPLE_MODULES:
+        if vid.split("|")[0] not in SAMPLE_COMPONENTS:
             continue
         missing = required - set(g.keys())
         assert not missing, f"{vid} missing fields: {missing}"
@@ -153,7 +153,7 @@ def test_sample_units_present(units):
 def test_unit_required_fields(units):
     required = {"name", "functionIds", "globalVariableIds", "callerUnits", "calleesUnits"}
     for uk, u in units.items():
-        if uk.split("|")[0] not in SAMPLE_MODULES:
+        if uk.split("|")[0] not in SAMPLE_COMPONENTS:
             continue
         missing = required - set(u.keys())
         assert not missing, f"Unit {uk!r} missing fields: {missing}"
@@ -180,22 +180,22 @@ def test_util_has_no_callees(units):
 
 
 # ---------------------------------------------------------------------------
-# modules.json
+# components.json
 # ---------------------------------------------------------------------------
 
-def test_modules_json_not_empty(modules):
-    assert modules, "modules.json is empty"
+def test_components_json_not_empty(components):
+    assert components, "components.json is empty"
 
 
-def test_sample_modules_present(modules):
-    for m in SAMPLE_MODULES:
-        assert m in modules, f"Module {m!r} missing from modules.json"
+def test_sample_components_present(components):
+    for c in SAMPLE_COMPONENTS:
+        assert c in components, f"Component {c!r} missing from components.json"
 
 
-def test_module_has_units_list(modules):
-    for m, data in modules.items():
-        if m not in SAMPLE_MODULES:
+def test_component_has_units_list(components):
+    for c, data in components.items():
+        if c not in SAMPLE_COMPONENTS:
             continue
-        assert "units" in data, f"Module {m!r} missing 'units' key"
-        assert isinstance(data["units"], list), f"Module {m!r}: 'units' should be a list"
-        assert data["units"], f"Module {m!r}: 'units' list is empty"
+        assert "units" in data, f"Component {c!r} missing 'units' key"
+        assert isinstance(data["units"], list), f"Component {c!r}: 'units' should be a list"
+        assert data["units"], f"Component {c!r}: 'units' list is empty"

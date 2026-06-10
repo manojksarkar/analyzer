@@ -27,18 +27,26 @@ proj_arg = sys.argv[1]
 MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.path.join(PROJECT_ROOT, proj_arg)
 PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
 
-# Scan for optional --data-dictionary flag (may be passed by group_planner).
+# Scan for optional flags passed by group_planner.
 _data_dict_path: str | None = None
+_selected_group: str | None = None
+_selected_layer: str | None = None
 _i = 2
 while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
         _data_dict_path = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--selected-group" and _i + 1 < len(sys.argv):
+        _selected_group = sys.argv[_i + 1]
+        _i += 2
+    elif sys.argv[_i] == "--selected-layer" and _i + 1 < len(sys.argv):
+        _selected_layer = sys.argv[_i + 1]
+        _i += 2
     else:
         _i += 1
 
 from utils import (
-    get_module_name as _get_module,
+    get_component_name as _get_component,
     get_range_for_type,
     load_config,
     make_function_key,
@@ -63,26 +71,33 @@ if _llvm and os.path.isfile(_llvm):
             os.environ["PATH"] = _llvm_bin_dir + os.pathsep + os.environ.get("PATH", "")
     cindex.Config.set_library_file(_llvm)
 
-_modules_groups = _config.get("modulesGroups") or {}
-_modules_cfg = _config.get("modules") or {}
-# If modulesGroups exists but no explicit "modules" is provided, merge all groups.
-# This makes the model parse only the union of all configured module folders.
-if not _modules_cfg and isinstance(_modules_groups, dict) and _modules_groups:
+from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups
+if _selected_layer:
+    _components_groups = _get_layer_flat_groups(_config, _selected_layer)
+elif _selected_group:
+    _layer_name = _get_group_layer_name(_config, _selected_group)
+    _components_groups = _get_layer_flat_groups(_config, _layer_name) if _layer_name else _get_flat_groups(_config)
+else:
+    _components_groups = _get_flat_groups(_config)
+_components_cfg = _config.get("components") or _config.get("modules") or {}
+# If layer exists but no explicit component mapping is provided, merge all groups.
+# This makes the model parse only the union of all configured component folders.
+if not _components_cfg and isinstance(_components_groups, dict) and _components_groups:
     merged = {}
-    for _, grp in _modules_groups.items():
+    for _, grp in _components_groups.items():
         if not isinstance(grp, dict):
             continue
-        for module, paths in grp.items():
+        for component, paths in grp.items():
             if not paths:
                 continue
             if isinstance(paths, str):
                 paths_list = [paths]
             else:
                 paths_list = list(paths) if isinstance(paths, list) else []
-            if module not in merged:
-                merged[module] = paths_list if len(paths_list) != 1 else paths_list[0]
+            if component not in merged:
+                merged[component] = paths_list if len(paths_list) != 1 else paths_list[0]
             else:
-                existing = merged.get(module)
+                existing = merged.get(component)
                 if isinstance(existing, str):
                     existing_list = [existing]
                 else:
@@ -90,10 +105,10 @@ if not _modules_cfg and isinstance(_modules_groups, dict) and _modules_groups:
                 for p in paths_list:
                     if p and p not in existing_list:
                         existing_list.append(p)
-                merged[module] = existing_list if len(existing_list) != 1 else existing_list[0]
-    _modules_cfg = merged
-_MODULE_FOLDERS = []
-for _mod_paths in _modules_cfg.values():
+                merged[component] = existing_list if len(existing_list) != 1 else existing_list[0]
+    _components_cfg = merged
+_COMPONENT_FOLDERS = []
+for _mod_paths in _components_cfg.values():
     if not _mod_paths:
         continue
     if isinstance(_mod_paths, str):
@@ -101,13 +116,76 @@ for _mod_paths in _modules_cfg.values():
     for _p in _mod_paths:
         _norm = (_p or "").replace("\\", "/").lstrip("./")
         if _norm:
-            _MODULE_FOLDERS.append(_norm)
+            _COMPONENT_FOLDERS.append(_norm)
+
+# ---------------------------------------------------------------------------
+# Flat file-to-component map (replaces prefix-matching for lookup + filtering)
+# ---------------------------------------------------------------------------
+
+_SOURCE_EXTS = {'.cpp', '.cc', '.cxx', '.c', '.h', '.hpp', '.hxx'}
+
+
+def _build_file_component_map(components_cfg: dict, base_path: str) -> dict:
+    """Resolve component config to {lowercase_relpath: component}.
+
+    Each entry (string or element of a list) is inspected individually:
+    - Known C/C++ extension → added as an exact file.
+    - No recognised extension → treated as a directory; all source files
+      under it are included recursively.
+
+    setdefault ensures the first component in config iteration order wins on overlap.
+    """
+    file_map: dict = {}
+    for component, paths in (components_cfg or {}).items():
+        if isinstance(paths, str):
+            paths = [paths]
+        for p in (paths or []):
+            p_norm = (p or "").replace("\\", "/").lstrip("./").rstrip("/")
+            if not p_norm:
+                continue
+            _, ext = os.path.splitext(p_norm)
+            if ext.lower() in _SOURCE_EXTS:
+                # Explicit file entry — add directly
+                file_map.setdefault(p_norm.lower(), component)
+            else:
+                # Directory entry — walk the filesystem
+                abs_dir = os.path.join(base_path, p_norm)
+                if not os.path.isdir(abs_dir):
+                    continue
+                for root, _, files in os.walk(abs_dir):
+                    for fname in files:
+                        if os.path.splitext(fname)[1].lower() in _SOURCE_EXTS:
+                            full = os.path.join(root, fname)
+                            key = os.path.relpath(full, base_path).replace("\\", "/").lower()
+                            file_map.setdefault(key, component)
+    return file_map
+
+
+_FILE_COMPONENT_MAP: dict = _build_file_component_map(_components_cfg, MODULE_BASE_PATH)
+
+# Read layer include paths written by run.py before Phase 1 started.
+_layer_include_paths: dict = {}
+_clang_paths_file = os.path.join(PROJECT_ROOT, "model", "clang_include_paths.json")
+if os.path.isfile(_clang_paths_file):
+    try:
+        with open(_clang_paths_file, "r", encoding="utf-8") as _f:
+            _layer_include_paths = json.load(_f) or {}
+    except (json.JSONDecodeError, OSError):
+        pass
 
 CLANG_ARGS = [
     "-std=c++14",
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
+# Phase 1 parses all layers, so extend with every collected directory.
+_clang_args_seen = set(CLANG_ARGS)
+for _dirs in _layer_include_paths.values():
+    for _d in _dirs:
+        _a = f"-I{_d}"
+        if _a not in _clang_args_seen:
+            _clang_args_seen.add(_a)
+            CLANG_ARGS.append(_a)
 # Visibility-style macros (PRIVATE/PROTECTED/PUBLIC/__OVLYINIT) and the
 # `VOID` -> `void` alias come from `core.config.default_clang_macro_defs()`
 # so the flowchart engine's per-function re-parser can reuse the same set.
@@ -146,8 +224,16 @@ def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str
     return "default"
 
 
-def get_module_name(file_path: str) -> str:
-    return _get_module(file_path, MODULE_BASE_PATH)
+def get_component_name(file_path: str) -> str:
+    if not file_path or not _FILE_COMPONENT_MAP:
+        return _get_component(file_path, MODULE_BASE_PATH)
+    try:
+        rel = os.path.relpath(
+            os.path.abspath(file_path), MODULE_BASE_PATH
+        ).replace("\\", "/").lower()
+    except ValueError:
+        return "unknown"
+    return _FILE_COMPONENT_MAP.get(rel, "unknown")
 
 index = cindex.Index.create()
 functions = {}
@@ -155,8 +241,8 @@ globals_data = {}
 data_dictionary = {}
 call_graph = defaultdict(list)  # caller -> [callees]
 reverse_call_graph = defaultdict(list)  # callee -> [callers]
-module_functions = defaultdict(list)
-function_to_module = {}
+component_functions = defaultdict(list)
+function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
 global_access_writes = defaultdict(set)  # func_key -> set of var_id
 # First non-trivial return expression per function (for behaviour output naming)
@@ -237,13 +323,9 @@ def _inline_comment(cursor) -> str:
 def is_project_file(file_path: str) -> bool:
     """Return True if this path should be treated as project source for parsing.
 
-    - The file must lie under ``MODULE_BASE_PATH``.
-    - Folder allowlists come only from config: optional top-level ``modules`` map, or
-      (if not present) the merged union of all ``modulesGroups``.
-    - If ``_MODULE_FOLDERS`` is non-empty, only files whose path relative to the project
-      root matches one of those entries (or a subpath) are included.
-    - If ``_MODULE_FOLDERS`` is empty, any file under the project root passes this check
-      (callers such as ``_collect_source_files`` still restrict by extension).
+    Uses the flat _FILE_COMPONENT_MAP built from config + filesystem scan.
+    A file is included iff it is under MODULE_BASE_PATH AND appears in the map.
+    When the map is empty (no component config) every file under the base passes.
     """
     if not file_path:
         return False
@@ -251,18 +333,12 @@ def is_project_file(file_path: str) -> bool:
     abs_base = os.path.normcase(os.path.abspath(MODULE_BASE_PATH))
     if not abs_path.startswith(abs_base):
         return False
-
-    if _MODULE_FOLDERS:
+    if _FILE_COMPONENT_MAP:
         try:
-            rel = os.path.relpath(abs_path, MODULE_BASE_PATH).replace("\\", "/")
+            rel = os.path.relpath(abs_path, MODULE_BASE_PATH).replace("\\", "/").lower()
         except ValueError:
-            rel = abs_path.replace("\\", "/")
-        for folder in _MODULE_FOLDERS:
-            # Folder-based match: folder itself or any subpath under it
-            if rel == folder or rel.lower().startswith(folder.lower() + "/"):
-                return True
-        return False
-
+            return False
+        return rel in _FILE_COMPONENT_MAP
     return True
 
 
@@ -587,7 +663,7 @@ def visit_definitions(cursor):
         # Mark as visited
         _visited_function_keys.add(func_key)
         func_id = f"{cursor.location.file.name}:{cursor.location.line}"
-        module_name = get_module_name(cursor.location.file.name)
+        component_name = get_component_name(cursor.location.file.name)
         params = []
         try:
             for arg in cursor.get_arguments():
@@ -608,7 +684,7 @@ def visit_definitions(cursor):
             "functionName": cursor.spelling,
             "qualifiedName": get_qualified_name(cursor),
             "mangledName": cursor.mangled_name or "",
-            "moduleName": module_name,
+            "componentName": component_name,
             "parameters": params,
             "returnType": cursor.result_type.spelling if cursor.result_type else "",
             "endLine": end_line,
@@ -617,20 +693,20 @@ def visit_definitions(cursor):
         }
         if cursor.is_definition():
             functions[fk] = entry
-            if fk not in function_to_module:
-                module_functions[module_name].append(fk)
-                function_to_module[fk] = module_name
+            if fk not in function_to_component:
+                component_functions[component_name].append(fk)
+                function_to_component[fk] = component_name
         elif fk not in functions:
             # Forward declaration only (e.g. "VOID _f(VOID);" with no body in this TU)
             entry["declarationOnly"] = True
             functions[fk] = entry
-            module_functions[module_name].append(fk)
-            function_to_module[fk] = module_name
+            component_functions[component_name].append(fk)
+            function_to_component[fk] = component_name
 
     elif is_global_var and cursor.spelling and cursor.location.file:
         if _var_decl_should_record_as_function_not_global(cursor):
             func_id = f"{cursor.location.file.name}:{cursor.location.line}"
-            module_name = get_module_name(cursor.location.file.name)
+            component_name = get_component_name(cursor.location.file.name)
             params = []
             for a in _var_decl_init_args_cursors(cursor):
                 leaf = _strip_implicit_cast(a)
@@ -654,15 +730,15 @@ def visit_definitions(cursor):
                 "functionName": cursor.spelling,
                 "qualifiedName": get_qualified_name(cursor),
                 "mangledName": "",
-                "moduleName": module_name,
+                "componentName": component_name,
                 "parameters": params,
                 "returnType": cursor.type.spelling if cursor.type else "",
                 "endLine": end_line,
                 "syntheticFromVarDecl": True,
                 "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
             }
-            module_functions[module_name].append(fk)
-            function_to_module[fk] = module_name
+            component_functions[component_name].append(fk)
+            function_to_component[fk] = component_name
         else:
             var_id = f"{cursor.location.file.name}:{cursor.location.line}"
             value_str = _get_var_init_value(cursor)
@@ -670,7 +746,7 @@ def visit_definitions(cursor):
                 "variableId": var_id,
                 "variableName": cursor.spelling,
                 "qualifiedName": get_qualified_name(cursor),
-                "moduleName": get_module_name(cursor.location.file.name),
+                "componentName": get_component_name(cursor.location.file.name),
                 "type": cursor.type.spelling if cursor.type else "",
                 "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
             }
@@ -865,7 +941,7 @@ def build_metadata():
             rel_file = os.path.relpath(file_path, base_path).replace("\\", "/")
         except ValueError:
             rel_file = file_path.replace("\\", "/")
-        fid = make_function_key(f["moduleName"], rel_file, f["qualifiedName"], f["parameters"])
+        fid = make_function_key(f["componentName"], rel_file, f["qualifiedName"], f["parameters"])
         func_key_to_fid[func_key] = fid
         functions_dict[fid] = {
             "qualifiedName": f["qualifiedName"],
@@ -958,7 +1034,7 @@ def _collect_source_files():
     files = []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
-            if f.endswith((".cpp", ".cc", ".cxx")):  # exclude .h/.hpp (often fail as translation units)
+            if f.endswith((".cpp", ".cc", ".cxx")):
                 path = os.path.join(root, f)
                 if is_project_file(path):
                     files.append(path)

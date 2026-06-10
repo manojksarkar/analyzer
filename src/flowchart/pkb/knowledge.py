@@ -188,8 +188,8 @@ class ProjectKnowledge:
 
     # Hierarchical summaries (populated by --llm-summarize in project_scanner.py)
     project_summary: str = ""
-    # Keyed by module/directory relative path (e.g. "src/qos")
-    module_summaries: Dict[str, str] = field(default_factory=dict)
+    # Keyed by component/directory relative path (e.g. "src/qos")
+    component_summaries: Dict[str, str] = field(default_factory=dict)
     # Keyed by relative file path (e.g. "src/qos/qos_manager.cpp")
     file_summaries: Dict[str, str] = field(default_factory=dict)
 
@@ -217,7 +217,7 @@ class ProjectKnowledge:
             f"macros={len(self.macros)}, typedefs={len(self.typedefs)}, "
             f"structs={len(self.structs)}, globals={len(self.globals)}, "
             f"file_summaries={len(self.file_summaries)}, "
-            f"module_summaries={len(self.module_summaries)}, "
+            f"component_summaries={len(self.component_summaries)}, "
             f"project_summary={'yes' if self.project_summary else 'no'}"
         )
 
@@ -232,7 +232,7 @@ def save_knowledge(knowledge: ProjectKnowledge, path: str) -> None:
         "project_name": knowledge.project_name,
         "base_path": knowledge.base_path,
         "project_summary": knowledge.project_summary,
-        "module_summaries": knowledge.module_summaries,
+        "component_summaries": knowledge.component_summaries,
         "file_summaries": knowledge.file_summaries,
         "functions": {
             k: {
@@ -330,7 +330,7 @@ def load_knowledge(path: str) -> Optional[ProjectKnowledge]:
         project_name=data.get("project_name", ""),
         base_path=data.get("base_path", ""),
         project_summary=data.get("project_summary", ""),
-        module_summaries=data.get("module_summaries", {}),
+        component_summaries=data.get("component_summaries", {}),
         file_summaries=data.get("file_summaries", {}),
     )
 

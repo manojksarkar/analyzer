@@ -21,6 +21,30 @@ from .registry import register
 from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
 
 
+def _resolve_layer_dirs(config, group_name, layer_paths):
+    """Return the include dirs for the layer that owns group_name.
+
+    When group_name is set, only the dirs from its layer are returned so the
+    flowchart engine does not see headers from unrelated layers.  Falls back to
+    all dirs across all layers when no group is selected or the group is not
+    found in the config.
+    """
+    if group_name:
+        layers_cfg = (config or {}).get("layers") or {}
+        for layer_name, layer in layers_cfg.items():
+            groups = layer.get("groups") or {}
+            if group_name.lower() in {g.lower() for g in groups}:
+                return layer_paths.get(layer_name) or []
+    all_dirs: list = []
+    seen: set = set()
+    for dirs in layer_paths.values():
+        for d in dirs:
+            if d not in seen:
+                seen.add(d)
+                all_dirs.append(d)
+    return all_dirs
+
+
 def _resolve_script(project_root: str, script_path: str) -> str:
     if not script_path:
         return os.path.join(project_root, "fake_flowchart_generator.py")
@@ -42,12 +66,14 @@ def run(model, output_dir, model_dir, config):
     if val is None or val is False:
         # Not enabled
         return
-    fc_cfg = val if isinstance(val, dict) else {}
 
     # Be robust to callers passing relative output_dir/model_dir.
     output_dir_abs = os.path.abspath(output_dir)
     model_dir_abs = os.path.abspath(model_dir)
-    project_root = os.path.dirname(model_dir_abs)
+    # When model_dir is a layer subdir (model/Layer1/), dirname gives model/ not the
+    # analyzer root.  Walk up one extra level in that case.
+    _parent = os.path.dirname(model_dir_abs)
+    project_root = os.path.dirname(_parent) if os.path.basename(_parent) == "model" else _parent
 
     # Out dir fixed in code: output/flowcharts under the view output dir
     out_dir = os.path.join(output_dir_abs, "flowcharts")
@@ -55,35 +81,49 @@ def run(model, output_dir, model_dir, config):
 
     functions_path = os.path.join(model_dir_abs, "functions.json")
     metadata_path = os.path.join(model_dir_abs, "metadata.json")
-    allowed_modules = {m.lower() for m in ((config or {}).get("_analyzerAllowedModules") or [])}
+    allowed_components = {m.lower() for m in ((config or {}).get("_analyzerAllowedComponents") or [])}
+    group_name = (config or {}).get("_analyzerSelectedGroup") or ""
 
     std = "c++14"  # fixed in code
     clang_cfg = config.get("clang") or {}
-    clang_args = clang_cfg.get("clangArgs")
-    if not clang_args:
-        # Fallback: derive -I from metadata.json basePath
-        clang_args = []
-        if os.path.isfile(metadata_path):
-            try:
-                with open(metadata_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-                base_path = meta.get("basePath", "").strip()
-                if base_path:
-                    clang_args = [f"-I{base_path}"]
-            except (json.JSONDecodeError, OSError):
-                pass
+    clang_args = list(clang_cfg.get("clangArgs") or [])
     if not isinstance(clang_args, list):
         clang_args = [clang_args] if clang_args else []
 
-    script = _resolve_script(project_root, fc_cfg.get("scriptPath"))
+    # Read base_path from metadata.json and layer-scoped include paths from
+    # clang_include_paths.json (both written by run.py / Phase 1).
+    if os.path.isfile(metadata_path):
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            base_path = meta.get("basePath", "").strip()
+            if base_path:
+                base_i = f"-I{base_path}"
+                if base_i not in clang_args:
+                    clang_args.insert(0, base_i)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    clang_paths_file = os.path.join(model_dir_abs, "clang_include_paths.json")
+    if os.path.isfile(clang_paths_file):
+        try:
+            with open(clang_paths_file, "r", encoding="utf-8") as f:
+                layer_paths = json.load(f) or {}
+            for p in _resolve_layer_dirs(config, group_name, layer_paths):
+                arg = f"-I{p}"
+                if arg not in clang_args:
+                    clang_args.append(arg)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    script = _resolve_script(project_root, "fake_flowchart_generator.py")
     if not os.path.isfile(script):
         log("generator not found: %s" % script, component="flowcharts", err=True)
         return
 
     # If we are exporting a selected group, pass only that group's functions to the generator.
     functions_arg_path = functions_path
-    group_name = (config or {}).get("_analyzerSelectedGroup") or ""
-    if allowed_modules and group_name and os.path.isfile(functions_path):
+    if allowed_components and group_name and os.path.isfile(functions_path):
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
                 all_funcs = json.load(f)
@@ -93,7 +133,7 @@ def run(model, output_dir, model_dir, config):
                     for fid, info in all_funcs.items()
                     if isinstance(fid, str)
                     and KEY_SEP in fid
-                    and fid.split(KEY_SEP, 1)[0].lower() in allowed_modules
+                    and fid.split(KEY_SEP, 1)[0].lower() in allowed_components
                 }
                 group_functions_path = os.path.join(model_dir_abs, f"functions_{safe_filename(group_name)}.json")
                 with open(group_functions_path, "w", encoding="utf-8") as tf:
@@ -161,9 +201,7 @@ def run(model, output_dir, model_dir, config):
         log("generator exited with code %s" % r.returncode, component="flowcharts", err=True)
         return
 
-    # Render flowcharts to PNG when renderPng is true
-    if not fc_cfg.get("renderPng", False):
-        return
+    # Always render flowcharts to PNG
 
     mmdc = mmdc_path(project_root)
     if not os.path.isfile(mmdc):

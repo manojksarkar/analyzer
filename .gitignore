@@ -29,6 +29,15 @@ logs
 
 # Local config overrides (optional)
 config/config.local.json
+config/last_run.json
+
+# Cache
+.flowchart_cache/
+**/.flowchart_cache/
+
+# Claude tooling
+.claude/settings.json
+sitecustomize.py
 
 # Node
 node_modules/

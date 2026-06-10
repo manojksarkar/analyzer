@@ -95,13 +95,13 @@ TASK_RATIOS: Dict[str, Dict[str, float]] = {
         "repo_map":         0.10,
         "file_source":      0.40,
         "function_descriptions": 0.15,
-        "module_context":   0.10,
+        "component_context": 0.10,
         "instructions":     0.05,
         "output_reserve":   0.07,
     },
 
-    # Phase 2 hierarchy summarizer — module summaries
-    "module_summary": {
+    # Phase 2 hierarchy summarizer — component summaries
+    "component_summary": {
         "system_prompt":    0.05,
         "few_shot":         0.07,
         "repo_map":         0.12,
@@ -116,7 +116,7 @@ TASK_RATIOS: Dict[str, Dict[str, float]] = {
         "system_prompt":    0.05,
         "few_shot":         0.05,
         "project_structure": 0.10,
-        "module_summaries": 0.60,
+        "component_summaries": 0.60,
         "entry_points":     0.10,
         "instructions":     0.05,
         "output_reserve":   0.05,
@@ -162,7 +162,7 @@ TASK_RATIOS: Dict[str, Dict[str, float]] = {
         "output_reserve":   0.10,
     },
 
-    # Ensemble synthesis (module/project summaries)
+    # Ensemble synthesis (component/project summaries)
     "ensemble_synthesis": {
         "system_prompt":    0.05,
         "candidates":       0.40,

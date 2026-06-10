@@ -54,7 +54,10 @@ def update_snapshots(request):
 
 @pytest.fixture(scope="session")
 def interface_tables(run_pipeline):
-    path = os.path.join(OUTPUT_DIR, "interface_tables.json")
+    # New layout: output/<group>/interface_tables.json; fall back to flat output/
+    path = os.path.join(OUTPUT_DIR, "Sample", "interface_tables.json")
+    if not os.path.isfile(path):
+        path = os.path.join(OUTPUT_DIR, "interface_tables.json")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 

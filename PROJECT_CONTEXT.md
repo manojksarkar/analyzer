@@ -1,7 +1,7 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-02 (external data dictionary CSV input: `--data-dictionary <path>` CLI flag on `run.py`, `dataDictionaryPath` config field, `_merge_external_data_dictionary()` in `parser.py`, sample fixture `config/data_dictionary.csv`, UI file picker in `app.py`; see §5 CLI flags, §6 config, §10 Phase 1, §14b UI).
-> Current active branch: `feat/test-framework` (off `version3`).
+> Updated: 2026-06-09 (feat/from-main branch: `module` → `component` rename throughout source + model + config; `modulesGroups` → `layers` two-level config schema; same-layer model filtering in Phase 3 + Phase 4; `SampleCppProject` restructured with Layer1 + Layer2/Platform; `model/modules.json` → `model/components.json`; new `get_flat_groups` / `get_layer_components` helpers in `core.config`; `--trace-prompts` + `--filter-mode` CLI flags; `model/clang_include_paths.json` written by `run.py` before any phase; see §5, §6, §7, §9, §10, §11, §12, §15).
+> Current active branch: `feat/from-main`.
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
@@ -9,6 +9,7 @@
 > - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
 > - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
 > - §4c covers the feat/test-framework changes (test overhaul, LIBCLANG_PATH, llm.summarize).
+> - §4d covers the feat/from-main changes (component rename, layers config, same-layer filtering, SampleCppProject restructure).
 > - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
@@ -52,8 +53,9 @@ analyzer/
   ui/
     app.py                    Streamlit UI — run/export controls + function browser (see §14b)
     requirements.txt          streamlit, pyvis, networkx
-  test_cpp_project/           Fixture C++ tree (see §15)
+  SampleCppProject/           Fixture C++ tree — Layer1 + Layer2/Platform (see §15)
   model/                      Phase 1+2 output (JSON)
+    clang_include_paths.json  Written by run.py before Phase 1; {LayerName:[abs_dirs]}
   output/                     Phase 3+4 output (JSON, .mmd, .png, .docx)
   logs/                       Daily log files (run_YYYYMMDD.log)
   CLAUDE.md                   Onboarding pointer (says "read PROJECT_CONTEXT.md")
@@ -70,7 +72,7 @@ Phase 1  src/parser.py          C++ source → model/metadata.json,
                                              model/globalVariables.json,
                                              model/dataDictionary.json
 Phase 2  src/model_deriver.py   model/ → model/units.json,
-                                          model/modules.json,
+                                          model/components.json,
                                           model/knowledge_base.json (for flowchart engine),
                                           model/summaries.json (LLM hierarchy summaries)
                                   + enriches functions.json with interfaceId,
@@ -286,6 +288,118 @@ for a permanent local preference.
 
 ---
 
+## 4d. feat/from-main changes
+
+### `module` → `component` rename
+
+Every occurrence of "module" in source, model files, config, and keys was
+renamed to "component". Specific impacts:
+
+| Old | New |
+|---|---|
+| `model/modules.json` | `model/components.json` |
+| `core.model_io.MODULES` constant | `core.model_io.COMPONENTS` |
+| `get_module_name(file, base)` in `utils.py` | `get_component_name(file, base)` |
+| `init_module_mapping(config)` in `utils.py` | `init_component_mapping(config)` |
+| `_MODULE_OVERRIDES` / `_MODULE_FOLDERS` | `_COMPONENT_OVERRIDES` / `_COMPONENT_FOLDERS` |
+| `function["moduleName"]` in model JSON | `function["componentName"]` |
+| `_build_units_modules(...)` in Phase 2 | `_build_units_components(...)` |
+| `module_functions` / `function_to_module` | `component_functions` / `function_to_component` |
+| `config.modulesGroups` | `config.layers` (new two-level schema, see §6) |
+| `_analyzerAllowedModules` in config | `_analyzerAllowedComponents` in config |
+| `moduleStaticDiagram` view key | `componentStaticDiagram` view key |
+| `knowledge_base.json: "modules"` key | `knowledge_base.json: "components"` key |
+| `summaries.json: "modules"` key | `summaries.json: "components"` key |
+| `run.py` checks for `MODULES` on `--use-model` | checks for `COMPONENTS` |
+
+### New `layers` config schema
+
+`config.json` now uses a two-level `layers` structure instead of the flat
+`modulesGroups`. Format:
+
+```jsonc
+"layers": {
+  "Layer1": {
+    "path": "Layer1",          // relative to <project_path>
+    "groups": {
+      "Sample": {              // group name (for --selected-group)
+        "Core": "Sample/Core", // component → path (relative to layer path)
+        "Lib":  "Sample/Lib",
+        "Util": "Sample/Util"
+      },
+      "Full": {
+        "Iface": ["Direction", "Types", "Flow"],  // list of paths also OK
+        "Cross": ["Hub", "Poly"]
+      }
+    }
+  },
+  "Layer2": {
+    "path": "Layer2",
+    "groups": {
+      "Platform": {
+        "Gpio": "Platform/Gpio",
+        "Uart": "Platform/Uart",
+        ...
+      }
+    }
+  }
+}
+```
+
+`core.config.get_flat_groups(cfg)` flattens this into
+`{groupName: {componentName: resolvedPath}}` with layer paths prepended.
+Falls back to the old `layer` key for backwards compatibility.
+
+### Same-layer model filtering
+
+When generating a group's SDD (Phase 3 + 4), the model is now filtered to
+**all components in the same layer** — not just the selected group's
+components. This ensures cross-component call edges within the layer remain
+visible.
+
+- `run_views.py` calls `get_layer_components(config, group)` and then
+  `_filter_model_to_components(model, layer_comps)` before passing the model
+  to `views.run_views()`.
+- `docx_exporter.py` applies the same filter to `units_data`, `components_data`,
+  `global_variables_data`, and `functions_data`.
+- `_analyzerAllowedComponents` (set on the config dict) still contains only
+  the **selected group's** component names — this is what `interface_tables.py`
+  and other views use to filter their output. The same-layer filter just
+  ensures the model fed to the views has all same-layer data available for
+  cross-component edge discovery.
+
+### Layer include paths (`model/clang_include_paths.json`)
+
+Before Phase 1, `run.py` walks every directory under every configured layer
+path and writes the results to `model/clang_include_paths.json` as
+`{layerName: [dir1, dir2, ...]}`. Phase 1 (`parser.py`) reads this file and
+adds a `-I` flag for each directory so all layer headers are resolvable.
+
+### `SampleCppProject` restructure
+
+The test fixture was reorganised from a flat `SampleCppProject/` into:
+
+```
+SampleCppProject/
+  Layer1/        — existing test fixtures (Access, App, Diag, Direction, Flow, Hub,
+                   Math, Outer/Inner, Poly, Types) + new Sample/ group
+    Sample/
+      Core/      — Core.cpp / Core.h
+      Lib/       — Lib.cpp / Lib.h
+      Util/      — Util.cpp / Util.h
+  Layer2/
+    Platform/    — 15 new platform components (stub .cpp/.h files):
+                   Adc, Cache, Config, Display, EventBus, Gpio, I2c,
+                   Logger, Network, Protocol, Scheduler, Spi, Storage,
+                   Timer, Uart  (each with 3-5 sub-files)
+```
+
+`config.json` defines two layers pointing at these directories. The old
+`test_cpp_project/` fixture is **no longer used** (replaced by
+`SampleCppProject/`).
+
+---
+
 ## 5. CLI — `run.py`
 
 ### Syntax
@@ -302,9 +416,11 @@ python run.py [options] <project_path>
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
-| `--selected-group <name>` | Export only the named group from `config.modulesGroups`. Case-insensitive |
+| `--selected-group <name>` | Export only the named group from `config.layers`. Case-insensitive |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
 | `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `config/data_dictionary.csv` for format. |
+| `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`) |
+| `--trace-prompts` | Print full LLM prompts (system + user) to stdout. Sets `LLM_TRACE_PROMPTS=1` env var. **Warning**: large runs emit tens of MB. |
 | `--quiet` | stderr handler raised to WARNING |
 | `--verbose` | stderr handler lowered to DEBUG |
 
@@ -324,7 +440,17 @@ historical bugs are guarded against here:
 
 After parsing flags, run.py:
 
+0. **Layer include paths** — walks all `layers.<L>.path` directories under
+   `<project_path>` and writes `model/clang_include_paths.json`. Phase 1
+   reads this to extend `CLANG_ARGS` with `-I<dir>` for every directory in
+   every layer so all headers are resolvable across layers.
 1. Loads `config/config.json` (+ `config.local.json`) via `load_config`.
+1a. **Collects layer include paths** — walks every layer directory under
+   `<project_path>` recursively (skipping hidden dirs), stores result as
+   `{LayerName: [abs_dir, …]}`, and writes it to `model/clang_include_paths.json`
+   before any phase starts. This file is the reference for which directories
+   were collected, and is read by Phase 1 (`parser.py`) and Phase 3
+   (`flowcharts.py`) — neither re-walks the filesystem.
 2. **Resolves the LLM block strictly via `load_llm_config(cfg)`** and prints the
    `format_llm_config_banner` to the log so the operator sees exactly which
    provider, baseUrl, model, `numCtx`, resolved `maxContextTokens`, retries,
@@ -349,9 +475,13 @@ The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
 
 | Config state | CLI | Plans returned |
 |---|---|---|
-| No `modulesGroups` | (any) | One plan with all 4 phases (or just 3+4 if `--use-model`) |
-| `modulesGroups` present | no `--selected-group` | One "Build model" plan (Phases 1+2) + N "Group: <name>" plans (Phases 3+4 each, with `--output-dir output/<group>/`) |
-| `modulesGroups` present | `--selected-group <G>` | One "Build model" plan + one "Group: <G>" plan (Phases 3+4 only, **no `--output-dir`** — output goes to `output/`) |
+| No `layers` (or `layer`) | (any) | One plan with all 4 phases (or just 3+4 if `--use-model`) |
+| `layers` present | no `--selected-group` | One "Build model" plan (Phases 1+2) + N "Group: <name>" plans (Phases 3+4 each, with `--output-dir output/<group>/`) |
+| `layers` present | `--selected-group <G>` | One "Build model" plan + one "Group: <G>" plan (Phases 3+4, `--output-dir output/<G>/`) |
+
+Phase 4 (`docx_exporter.py`) receives the group's `interface_tables.json`
+and DOCX path as positional args plus `--selected-group <G>` so it can
+apply the same-layer model filter (see §4d).
 
 `--from-phase` translation also lives here:
 - `from_phase ≤ 2`: build-model plan starts at that index, group plans start at 1.
@@ -371,61 +501,78 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 {
   "views": {
     "interfaceTables": true,
-    "unitDiagrams":     { "renderPng": true },
-    "flowcharts":       { "scriptPath": "src/flowchart/flowchart_engine.py", "renderPng": true },
-    "behaviourDiagram": { "renderPng": true },
-    "moduleStaticDiagram": { "enabled": true, "renderPng": true, "widthInches": 5.5 }
+    "unitDiagrams":     false,
+    "flowcharts":       false,
+    "behaviourDiagram": false,
+    "componentStaticDiagram": true   // was "moduleStaticDiagram" in older versions
   },
   "clang": {
     "llvmLibPath":       "C:\\Program Files\\LLVM\\bin\\libclang.dll",
-    "clangIncludePath":  "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
-    "clangArgs":         []
+    "clangIncludePath":  "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
   },
   "llm": {
     // ── required fields — load_llm_config raises LlmConfigError if missing ──
     "provider":          "ollama",        // "ollama" | "openai"  (strictly validated)
     "baseUrl":           "http://localhost:11434",
-    "defaultModel":      "llama3.2",          // currently set to llama3.2 in config.json
-    "timeoutSeconds":    120,              // positive int
-    "numCtx":            8192,             // Ollama context window (positive int)
-    "retries":           1,                // >=0; up to (1+retries) total tries
+    "defaultModel":      "llama3.2",
+    "timeoutSeconds":    300,             // positive int
+    "numCtx":            8192,            // Ollama context window (positive int)
+    "retries":           1,               // >=0; up to (1+retries) total tries
 
     // ── optional fields ──
-    "descriptions":      false,            // enable LLM function descriptions (Phase 2)
-    "behaviourNames":    false,            // enable LLM behaviour input/output names
-    "summarize":         true,             // false = suppress Phase 2 hierarchy summarization (same as --no-llm-summarize)
-    "abbreviationsPath": "config/abbreviations.txt",
-    "apiKey":            "",               // openai bearer; prefer env LLM_API_KEY
+    "descriptions":      false,           // enable LLM function descriptions (Phase 2)
+    "behaviourNames":    false,           // enable LLM behaviour input/output names
+    "summarize":         false,           // false = suppress Phase 2 hierarchy summarization
+    "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY
     "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
 
     // version3 — token budgeting
-    // null → auto: numCtx-512 for Ollama, 127488 for OpenAI
-    // int  → explicit override (e.g. 16000 for Ollama 16K, 120000 for GPT-4o)
-    "maxContextTokens":  null,
-    "cacheVersion":      1,                // bump to invalidate llm entity cache
+    "maxContextTokens":  127488,          // null → auto: numCtx-512 for Ollama, 127488 for OpenAI
+    "cacheVersion":      1,               // bump to invalidate llm entity cache
     "fewShotExamplesDir": "few_shot_examples",
 
     // version3 — enrichment feature flags (every flag must be a bool)
     "enrichment": {
       "twoPassDescriptions": true,   // Pass 2 refines with caller context   (2x desc cost)
       "selfReview":          false,  // generate→review→revise (≥20-line fns) (3x cost)
-      "ensemble":            false,  // 3 temps + synthesis for unit/module summaries (4x cost)
+      "ensemble":            false,  // 3 temps + synthesis for unit/component summaries (4x cost)
       "cfgSimplification":   false,  // LLM proposes merge/drop plan for >15-node CFGs
       "variableEnrichment":  true    // rich global-variable descriptions
     }
   },
-  "modulesGroups": {
-    "core":    { "core":    ["app", "math"] },
-    "support": { "support": "outer/inner" },
-    "tests":   {
-      "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
-      "tests_b": ["tests/hub", "tests/poly", "tests/structs"]
+  // Two-level layer structure (replaces old "modulesGroups").
+  // paths inside groups are relative to the layer's "path".
+  "layers": {
+    "Layer1": {
+      "path": "Layer1",
+      "groups": {
+        "Sample": {
+          "Core": "Sample/Core",
+          "Lib":  "Sample/Lib",
+          "Util": "Sample/Util"
+        },
+        "Full": {
+          "Iface": ["Direction", "Types", "Flow"],
+          "Cross": ["Hub", "Poly"]
+        },
+        "Support": { "Math": "Math", "App": "App", "Outer": "Outer/Inner" },
+        "Access":  { "Access": "Access" },
+        "Diag":    { "Diag": "Diag" }
+      }
+    },
+    "Layer2": {
+      "path": "Layer2",
+      "groups": {
+        "Platform": {
+          "Gpio": "Platform/Gpio", "Uart": "Platform/Uart",
+          "Spi":  "Platform/Spi",  "I2c":  "Platform/I2c",
+          "Adc":  "Platform/Adc",  "Display": "Platform/Display",
+          // … (15 components total)
+        }
+      }
     }
   },
-  "export": {
-    "docxPath":      "output/software_detailed_design_{group}.docx",
-    "docxFontSize": 8
-  }
+  "ui": { "theme": "Light" }
 }
 ```
 
@@ -448,10 +595,14 @@ Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 
 ### Config rules
 
-- Group names and module names: **CapitalCamelCase or snake_case**, both are tolerated.
-- Each folder path should appear in exactly one group; the parser merges all
-  groups into one big folder set so cross-group calls are still discoverable.
+- Group names and component names: **CapitalCamelCase or snake_case**, both are tolerated.
+- Each folder path should appear in exactly one component; the parser merges all
+  layers/groups into one big folder set so cross-layer calls are still discoverable.
 - `selectedGroup` is **not** a config key — group selection is CLI-only.
+- Layer `"path"` is relative to `<project_path>`. Component paths inside a group
+  are relative to the layer's path and are prepended by `get_flat_groups()`.
+- Old `modulesGroups` / `layer` top-level keys still load via `get_flat_groups()`
+  for backwards compatibility. New code always uses `layers`.
 - LLM is off by default for descriptions/behaviour names. Phase 2 hierarchy
   summarization (which writes `summaries.json` + `knowledge_base.json`) is
   on by default and is controlled by `--no-llm-summarize`.
@@ -488,13 +639,23 @@ in `src/utils.py` or one of the phase scripts.
 - `load_llm_config(cfg)` — env-var overlay + normalised `llm` block (see §6).
 - `app_config(*, refresh=False)` — process-cached merged dict.
 - Typed accessors: `llm_config()`, `views_config()`, `exporter_config()`,
-  `clang_config()`, `modules_groups()`.
+  `clang_config()`, `components_groups()`.
+- `get_flat_groups(cfg)` — flattens `layers` (or fallback `layer`) into
+  `{groupName: {componentName: resolvedPath}}` with layer path prepended.
+- `get_layer_components(cfg, group_name)` → `set` of all component names in
+  the same layer as `group_name`. Used by Phase 3 and Phase 4 for same-layer
+  model filtering.
+- `_resolve_layer_paths(layers_cfg)` — internal helper that prepends
+  `layer.path` to each component path inside the layer's groups.
+- `default_clang_macro_defs()` — returns the `-D` macro list shared by
+  Phase 1 and the flowchart engine's per-function re-parser.
 
 ### `core.model_io` — [src/core/model_io.py](src/core/model_io.py)
 
 Canonical filenames (use these constants, never bare strings):
-`METADATA`, `FUNCTIONS`, `GLOBALS`, `UNITS`, `MODULES`, `DATA_DICTIONARY`,
+`METADATA`, `FUNCTIONS`, `GLOBALS`, `UNITS`, `COMPONENTS`, `DATA_DICTIONARY`,
 `KNOWLEDGE_BASE`, `SUMMARIES`. Tuple `ALL_MODEL_NAMES` lists them all.
+(`MODULES` constant was removed; `COMPONENTS` is its replacement.)
 
 Functions:
 - `model_file_path(name)` → absolute path under `paths().model_dir`.
@@ -804,24 +965,25 @@ So legacy `from utils import load_config` still works.
 | `timed(component)` ctx-mgr | Logs `<elapsed>s` on exit |
 | `mmdc_path(project_root)` | Local `node_modules/.bin/mmdc` or system `mmdc` |
 | `safe_filename(s)` | Replace `<>:"/\\|?*,&;` with `_` |
-| `init_module_mapping(config)` | Build `_MODULE_OVERRIDES` from `modules` or merged `modulesGroups` |
-| `_resolve_module_from_rel(rel)` | Match relative path against `_MODULE_OVERRIDES` (case-insensitive) |
-| `make_unit_key(rel_file)` | `module\|unitname` |
-| `make_global_key(rel_file, qn)` | `module\|unit\|qualifiedName` |
-| `make_function_key(module, rel_file, qn, params)` | `module\|unit\|qualifiedName\|paramTypes` |
+| `init_component_mapping(config)` | Build `_COMPONENT_OVERRIDES` from `components` or merged `layers` groups (via `get_flat_groups`) |
+| `_resolve_component_from_rel(rel)` | Match relative path against `_COMPONENT_OVERRIDES` (case-insensitive) |
+| `make_unit_key(rel_file)` | `component\|unitname` |
+| `make_global_key(rel_file, qn)` | `component\|unit\|qualifiedName` |
+| `make_function_key(component, rel_file, qn, params)` | `component\|unit\|qualifiedName\|paramTypes` |
 | `path_from_unit_rel(rel)` | Strip extension, normalise slashes |
 | `short_name(qn)` | Last `::` segment |
 | `path_is_under(base, candidate)` | Safe containment via `os.path.relpath` |
-| `get_module_name(file_path, base_path)` | Absolute path → module name (uses `path_is_under`) |
+| `get_component_name(file_path, base_path)` | Absolute path → component name (uses `_resolve_component_from_rel`) |
+| `resolve_group(component)` | Component name → group name (from `_GROUP_MAP` built at import) |
 | `norm_path(path, base_path)` | Resolve relative paths against `base_path` |
 | `PRIMITIVES` dict | C++ primitive types → range string |
 | `get_range_for_type(type_str)` | Map type to range; falls back to `NA` |
 | `get_range(type_str, data_dictionary)` | Range lookup with typedef recursion (depth 10) |
 
-Note: `init_module_mapping` runs at import time using the on-disk config, so
+Note: `init_component_mapping` runs at import time using the on-disk config, so
 `make_*_key` works immediately. `parser.py` builds its own folder list from
-the same config (kept separate to avoid the analyzer's import order
-constraints).
+the same config via `get_flat_groups` (kept separate to avoid the analyzer's
+import order constraints).
 
 ---
 
@@ -833,12 +995,20 @@ constraints).
 - Loads libclang from `clang.llvmLibPath`. On Windows, calls
   `os.add_dll_directory(<llvm/bin>)` so dependent DLLs are found, with a
   `PATH`-extension fallback.
-- Builds `_MODULE_FOLDERS` from merged `modulesGroups` (or `modules` top-level).
+- Builds `_COMPONENT_FOLDERS` from merged `layers` groups via `get_flat_groups`
+  (or `components`/`modules` top-level fallback).
+- Reads `model/clang_include_paths.json` (written by `run.py` before any phase)
+  and extends `CLANG_ARGS` with `-I<dir>` for every directory in every layer.
 - Sets `CLANG_ARGS`:
   - `-std=c++14`
   - `-I<MODULE_BASE_PATH>`, `-I<clangIncludePath>`
+  - `-I<every dir from clang_include_paths.json>` (all layer subdirectories)
   - `-DPRIVATE=` `-DPROTECTED=` `-DPUBLIC=` `-D__OVLYINIT=` (visibility macros)
   - `-DVOID=void` (handles codebases that use `VOID` as a type macro)
+  - **Auto-derived layer paths** — reads `model/clang_include_paths.json`
+    (written by `run.py` before Phase 1) and appends `-I<dir>` for every
+    directory across all layers. No manual listing in `clang.clangArgs` needed
+    for directories already declared in `layers` config.
   - Any extras from `config.clang.clangArgs`.
 
 ### Visibility detection (`_detect_visibility`)
@@ -850,7 +1020,7 @@ expanded to nothing by `-DPRIVATE=` and Clang doesn't surface them.
 
 ### File filtering (`is_project_file`)
 
-Rejects anything outside `MODULE_BASE_PATH` and (when `_MODULE_FOLDERS` is
+Rejects anything outside `MODULE_BASE_PATH` and (when `_COMPONENT_FOLDERS` is
 non-empty) anything whose relative path doesn't start with one of the
 configured folder prefixes (case-insensitive after `os.path.normcase`).
 
@@ -924,9 +1094,9 @@ and every global to `"In/Out"`.
 
 ### Final keying (`build_metadata` + `utils.make_function_key`)
 
-Final model key: `module|unit|qualifiedName|paramTypes`.
+Final model key: `component|unit|qualifiedName|paramTypes`.
 
-- `module` from `get_module_name(file_path, base_path)` → `_resolve_module_from_rel`.
+- `component` from `get_component_name(file_path, base_path)` → `_resolve_component_from_rel`.
 - `unit` from filename without extension.
 - `qualifiedName` includes namespace + class.
 - `paramTypes` is the comma-joined list of normalised parameter type strings.
@@ -953,13 +1123,15 @@ written to `model/` via `core.model_io.write_model_file`.
 Loads via `core.model_io.load_model(METADATA, FUNCTIONS, GLOBALS)` and exits
 with a clear "Run Phase 1 first" message on `ModelFileMissing`.
 
-### `_build_units_modules`
+### `_build_units_components`
 
 Groups all functions and globals by file path. Produces:
 - `model/units.json` — one entry per `.cpp/.cc/.cxx` (headers excluded from
   unit keys). Each entry has `name`, `path`, `fileName`, `functionIds` (sorted
-  by source line), `globalVariableIds`, `callerUnits` (set), `calleesUnits` (set).
-- `model/modules.json` — one entry per module containing its unit keys.
+  by source line), `globalVariableIds`, `callerUnits` (set), `calleesUnits` (set),
+  and `includedHeaders` (read from local `#include` directives).
+- `model/components.json` — one entry per component containing its unit keys
+  and `headerFiles` list. (Was `model/modules.json` in older versions.)
 
 ### `_build_interface_index` / `_enrich_interfaces`
 
@@ -1110,16 +1282,21 @@ CLI:
 python src/run_views.py [--output-dir <dir>] [--selected-group <name>]
 ```
 
-Loads model via `core.model_io.load_model(FUNCTIONS, GLOBALS, UNITS, MODULES, optional=[DATA_DICTIONARY])`.
+Loads model via `core.model_io.load_model(FUNCTIONS, GLOBALS, UNITS, COMPONENTS, optional=[DATA_DICTIONARY])`.
 
 When a group is selected, run_views resolves the name case-insensitively
-against `config.modulesGroups` and stuffs two extra keys into the config dict
-that's passed down into views:
+against `get_flat_groups(config)` and stuffs two extra keys into the config
+dict that's passed down into views:
 
 - `_analyzerSelectedGroup` = the resolved group name
-- `_analyzerAllowedModules` = sorted list of module names from that group's entry
+- `_analyzerAllowedComponents` = sorted list of component names from that group's entry
 
-Then it calls `views.run_views(model, output_dir, model_dir, config)`.
+It also calls `get_layer_components(config, resolved)` and passes the result to
+`_filter_model_to_components(model, layer_comps)` — this filters all four model
+dicts (functions/globals/units/components) to only entities in the same layer,
+so cross-component call edges within the layer stay visible in the views.
+
+Then it calls `views.run_views(filtered_model, output_dir, model_dir, config)`.
 
 ### View dispatch — [src/views/__init__.py](src/views/__init__.py)
 
@@ -1147,7 +1324,7 @@ Output: `output/interface_tables.json` (or `output/<group>/interface_tables.json
 Full logic and column definitions: `docs/DESIGN_SPEC.md` — Interface Tables.
 
 - Iterates `.cpp` units only; header-only units skipped.
-- Filters by `_analyzerAllowedModules` if set.
+- Filters by `_analyzerAllowedComponents` if set.
 - Includes `PUBLIC` and `PROTECTED` functions and globals; excludes `PRIVATE`.
 - Entries sorted by source line number within each unit.
 - For each function: builds `callerUnits` / `calleesUnits` (all units including
@@ -1208,8 +1385,15 @@ section.
 Wraps the **real flowchart engine** under `src/flowchart/`. Steps:
 
 1. Resolves `out_dir = output_dir/flowcharts/`.
-2. Pulls `clang.clangArgs` from config; if empty, derives `-I<basePath>` from
-   `metadata.json`.
+2. Builds clang args in three layers (in order):
+   - Manual `clang.clangArgs` from config (if set).
+   - `-I<basePath>` from `metadata.json` (always added).
+   - **Layer-scoped paths** from `model/clang_include_paths.json` via
+     `_resolve_layer_dirs(config, group_name, layer_paths)`: when a group is
+     selected, only the dirs belonging to that group's layer are added (e.g.
+     group "Sample" → Layer1 dirs only). When no group is selected, dirs from
+     all layers are added. This prevents headers from unrelated layers
+     polluting the include path for a single-group run.
 3. If a group is selected, **filters `functions.json` by module-prefix** and
    writes `model/functions_<group>.json`. The filtered file is passed to the
    engine instead of the full one. (Module-prefix filtering, not units.json
@@ -1632,64 +1816,79 @@ flowchart viewer (reads pre-rendered PNG or Mermaid from `output/`).
 
 ---
 
-## 15. Test fixture — `test_cpp_project/`
+## 15. Test fixture — `SampleCppProject/`
 
-Current layout (matches `config.json` modulesGroups):
+The old `test_cpp_project/` fixture is superseded. Current fixture (matches
+`config.json` `layers`):
 
 ```
-test_cpp_project/
-  app/
-    main.cpp                       — top-level entry
-  math/
-    utils.cpp                      — small math helpers
-  outer/inner/
-    helper.cpp                     — nested-directory module path
-  tests/
-    access/access_visibility.cpp   — PRIVATE/PUBLIC/PROTECTED macros
-    direction/read_write.cpp       — In/Out direction from globals
-    enum/types.cpp                 — enum / typedef coverage
-    flow/flowcharts.cpp            — control-flow patterns (if/else, switch, loops)
-    hub/hub.cpp                    — cross-module fan-out
-    poly/dispatch.cpp              — virtual dispatch / polymorphism
-    structs/point_rect.cpp         — struct + union types
-    void_alias/forward_void_decl.cpp
-    void_alias/multiline_ovlyinit.cpp
-    void_alias/preproc_if_function.cpp
-    void_alias/preproc_if_function_then.cpp
-    void_alias/void_as_var.cpp
-    void_alias/void_is_void.cpp    — synthetic-from-VAR_DECL recovery cases
+SampleCppProject/
+  Layer1/
+    Access/   AccessVisibility.cpp/.h  — PRIVATE/PUBLIC/PROTECTED macros
+    App/      Main.cpp                 — top-level entry
+    Diag/     ForwardVoidDecl, MultilineOvlyinit, PreprocIf*, VoidAsVar,
+              VoidIsVoid               — synthetic-from-VAR_DECL recovery cases
+    Direction/ ReadWrite.cpp/.h        — In/Out direction from globals
+    Flow/     Flowcharts.cpp/.h        — control-flow patterns (if/else, switch, loops)
+    Hub/      Hub.cpp/.h               — cross-component fan-out
+    Math/     Utils.cpp/.h             — small math helpers
+    Outer/Inner/ Helper.cpp/.h         — nested-directory component path
+    Poly/     Dispatch.cpp/.h          — virtual dispatch / polymorphism
+    Sample/
+      Core/   Core.cpp/.h              — Sample group, Core component
+      Lib/    Lib.cpp/.h               — Sample group, Lib component
+      Util/   Util.cpp/.h              — Sample group, Util component
+    Types/    PointRect.cpp/.h, Types.cpp/.h — struct + union types, enum/typedef
+  Layer2/
+    Platform/                          — 15 stub platform components (3-5 files each)
+      Adc/ AdcCal/ AdcFilter/          — ADC components
+      Cache/ CachePol/ LruCache/       — Cache components
+      Config/ CfgParse/ CfgStore/      — Config components
+      Display/ DispBuf/ DispFont/ FrameBuf/ — Display components
+      EventBus/ EvbQueue/ Event/       — EventBus components
+      Gpio/ Gpio{Alt,Cfg,Debounce,Group,Input,Irq,Mux,Output,Pin,Port}/ — GPIO
+      I2c/ I2cMaster/ I2cScan/         — I2C components
+      Logger/ LogBuf/ LogFmt/          — Logger components
+      Network/ NetBuf/ Socket/ TcpClient/ — Network components
+      Protocol/ ProtoCrc/ ProtoFrame/ ProtoHdlr/ — Protocol components
+      Scheduler/ SchedCfg/ Task/ TaskQueue/ — Scheduler components
+      Spi/ SpiCfg/ SpiDev/             — SPI components
+      Storage/ Eeprom/ Flash/ StorCache/ — Storage components
+      Timer/ TmrHw/ TmrMgr/            — Timer components
+      Uart/ Uart{Buf,Clock,Debug,Dma,Error,Fifo,Flow,Init,Irq,Mode,...}/ — UART
 ```
 
-`config.json`'s `modulesGroups` maps these to three groups: `core`
-(`app` + `math`), `support` (`outer/inner`), and `tests` (split into
-`tests_a` and `tests_b`).
+`config.json`'s `layers` maps these to:
+- **Layer1**: groups `Sample` (Core/Lib/Util), `Full` (Iface/Cross), `Support`
+  (Math/App/Outer), `Access`, `Diag`
+- **Layer2**: group `Platform` (all 15 platform components)
 
 ### Key docs
 
 - `docs/DESIGN_SPEC.md` — view logic requirements with verification criteria (REQ-IT-XX for Interface Tables, REQ-UD-XX for Unit Diagrams). Update first before changing any view logic.
 - `docs/TEST_INVENTORY.md` — maps every DESIGN_SPEC requirement to its test case. Update after adding/changing tests.
-- `.coveragerc` — `parallel = false` (removed); single `.coverage` file written per run.
+- `.coveragerc` — single `.coverage` file written per run.
 
 ### Quick run commands
 
 ```bash
 # Full run, all groups
-python run.py test_cpp_project
+python run.py SampleCppProject
 
-# Full clean run, single group, output to output/ (not output/<group>/)
-python run.py --clean test_cpp_project --selected-group core
+# Full clean run, single group
+python run.py --clean SampleCppProject --selected-group Sample
 
 # Skip the LLM hierarchy summaries (faster, lower quality)
-python run.py --no-llm-summarize test_cpp_project
+python run.py --no-llm-summarize SampleCppProject
 
 # Reuse model/, regenerate views + docx for one group
-python run.py --use-model test_cpp_project --selected-group tests
+python run.py --use-model SampleCppProject --selected-group Platform
 
 # Resume after a Phase 4 crash without re-parsing
-python run.py --from-phase 4 test_cpp_project
+python run.py --from-phase 4 SampleCppProject
 
 # Verbose stderr (DEBUG); inherited by every subprocess phase
-python run.py --verbose test_cpp_project --selected-group core
+python run.py --verbose SampleCppProject --selected-group Sample
 ```
 
 ---
@@ -1896,12 +2095,30 @@ for the group filter. The actual code in `flowcharts.py` still uses module
 prefix matching (Risk 2). Re-read source after edits — discussion is not
 implementation.
 
-### Configs with `core` / `support` / `tests` vs `InterfaceTables` / etc.
+### Configs with `core` / `support` / `tests` vs current group names
 
 Earlier docs referenced `InterfaceTables`, `Flowcharts`, `BehaviourDiagram`,
-… as group names. The current `config.json` uses `core`, `support`, `tests`
-(matching the test fixture). When validating CLI behaviour, always check
+… as group names, then `core`, `support`, `tests`. The current `config.json`
+uses `Sample`, `Full`, `Support`, `Access`, `Diag`, `Platform` (matching the
+`SampleCppProject` fixture). When validating CLI behaviour, always check
 which config is active before quoting group names.
+
+### `module` → `component` rename is pervasive — don't mix old and new
+
+The rename from "module" to "component" touched source, model JSON keys,
+config, and constants. Any code that uses the old names (`MODULES`,
+`_analyzerAllowedModules`, `get_module_name`, `moduleName`, `modulesGroups`,
+`moduleStaticDiagram`) will silently fail to filter or produce empty output.
+After any refactor, grep for the old names to confirm nothing was missed.
+
+### `interface_tables.json` total = components in the file, not the group
+
+Phase 4 (`docx_exporter.py`) counts sections from the `interface_tables.json`
+it reads — never from the selected group's component count. If that file was
+generated with more components than the selected group has, the progress
+total will be wrong. Ensure Phase 3 was run for the group (which writes a
+group-filtered `interface_tables.json` to `output/<group>/`) before running
+Phase 4. Stale files from a previous full-project run cause the mismatch.
 
 ### Do not reach into private `_attrs` on `LlmClient` (version3)
 
@@ -1954,73 +2171,84 @@ binary and falls back to system `mmdc`.
 For the literal-minded: this is what happens when you run
 
 ```bash
-python run.py --selected-group core test_cpp_project
+python run.py --selected-group Sample SampleCppProject
 ```
 
 1. **`run.py` startup** — sets `cwd` to its own directory; prepends
    `src/` to `sys.path`; calls `core.logging_setup.configure_logging` (which
    creates `logs/run_YYYYMMDD.log` and the stderr handler).
-2. **Argv loop** — parses flags. Sets `selected_group_arg = "core"`,
+2. **Argv loop** — parses flags. Sets `selected_group_arg = "Sample"`,
    `from_phase = 1`, `use_model = False`, `no_llm_summarize = False`.
 3. **`load_config(SCRIPT_DIR)`** (re-exported from `core.config`) — reads
    JSONC, merges `config.local.json` if present. Sets `LIBCLANG_PATH` env var
    from `clang.llvmLibPath` if the file exists (propagates to all subprocesses).
    If `llm.summarize` is `false` in config, forces `no_llm_summarize = True`.
-3a. **`load_llm_config(cfg)` + banner** — strictly validates the `llm` block
+3a. **Layer include path collection** — walks each `layers.<L>.path` directory
+   under `SampleCppProject/`, collecting every subdirectory. Writes
+   `model/clang_include_paths.json` as `{LayerName: [abs_dirs…]}`. Runs before
+   any subprocess so Phase 1 can extend its `-I` flags from it.
+3b. **`load_llm_config(cfg)` + banner** — strictly validates the `llm` block
    (required: `provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`,
    `retries`; type-checked enrichment toggles; env-var overrides). Renders
    `format_llm_config_banner` and writes it to the log so the run begins with a
    visible record of which provider/model/budget will be used. On any
    validation failure → `LlmConfigError` → exit 2 (no silent defaults).
-4. **`plan_runs(cfg, …)`** — sees `modulesGroups` is set and a single
-   `selected_group`. Returns two plans:
-   - Plan 1: "Build model (all modules)" → `[parser.py, model_deriver.py --llm-summarize]`
-   - Plan 2: "Group: core" → `[run_views.py --selected-group core, docx_exporter.py --selected-group core]`
+4. **`plan_runs(cfg, …)`** — calls `get_flat_groups(cfg)`, sees `layers` is set
+   and `selected_group = "Sample"`. Returns two plans:
+   - Plan 1: "Build model (all modules)" → `[parser.py <abs_project_path>, model_deriver.py]`
+   - Plan 2: "Group: Sample" → `[run_views.py --output-dir output/Sample --selected-group Sample, docx_exporter.py output/Sample/interface_tables.json output/Sample/software_detailed_design_Sample.docx --selected-group Sample]`
 5. **`PhaseRunner.run(plan1.phases)`** — subprocess `python src/parser.py
    <abs_project_path>`. The parser inherits `LOG_LEVEL` from env.
-6. **Parser (Phase 1)** — loads libclang, walks every `.cpp/.h` under
-   `MODULE_BASE_PATH`, runs three traversal passes, calls `build_metadata`,
-   writes `metadata.json` / `functions.json` / `globalVariables.json` /
-   `dataDictionary.json` to `model/`.
+6. **Parser (Phase 1)** — loads libclang, reads `model/clang_include_paths.json`
+   and extends `CLANG_ARGS` with `-I<dir>` for all layer subdirs. Walks every
+   `.cpp/.h` under `MODULE_BASE_PATH`, runs three traversal passes, calls
+   `build_metadata`, writes `metadata.json` / `functions.json` /
+   `globalVariables.json` / `dataDictionary.json` to `model/`.
 7. **`PhaseRunner.run(plan1.phases)` continues** — subprocess
-   `python src/model_deriver.py --llm-summarize`.
+   `python src/model_deriver.py`.
 8. **Model deriver (Phase 2)** — loads model via `core.model_io.load_model`.
-   Builds units + modules, propagates global access transitively, assigns
+   Builds units + components, propagates global access transitively, assigns
    interface IDs, runs static behaviour-name heuristics, optionally calls
-   the LLM for descriptions and behaviour names, runs the
+   the LLM for descriptions and behaviour names, optionally runs the
    `HierarchySummarizer` for `summaries.json`, generates `knowledge_base.json`
-   for the flowchart engine. Writes everything back to `model/`.
+   for the flowchart engine. Writes everything back to `model/` including the
+   new `model/components.json`.
 9. **`PhaseRunner.run(plan2.phases)`** — subprocess
-   `python src/run_views.py --selected-group core`.
-10. **`run_views.py`** — loads model (`load_model(FUNCTIONS, GLOBALS, UNITS, MODULES, optional=[DATA_DICTIONARY])`),
-    resolves the group name case-insensitively, sets `_analyzerSelectedGroup`
-    + `_analyzerAllowedModules` on the config dict, calls
-    `views.run_views(model, output_dir, model_dir, config)`.
-11. **`interface_tables` view** — writes `output/interface_tables.json`
-    filtered to the `core` modules.
+   `python src/run_views.py --output-dir output/Sample --selected-group Sample`.
+10. **`run_views.py`** — loads model (`load_model(FUNCTIONS, GLOBALS, UNITS, COMPONENTS, optional=[DATA_DICTIONARY])`),
+    resolves the group name case-insensitively, calls `get_layer_components` to
+    find all Layer1 components, filters the full model to same-layer components
+    via `_filter_model_to_components`, sets `_analyzerSelectedGroup = "Sample"`
+    + `_analyzerAllowedComponents = ["Core","Lib","Util"]` on the config dict,
+    calls `views.run_views(filtered_model, output/Sample, model_dir, config)`.
+11. **`interface_tables` view** — writes `output/Sample/interface_tables.json`
+    filtered to the Sample group's components (Core/Lib/Util). Other Layer1
+    components are in the filtered model for call-edge discovery but not in the
+    output.
 12. **`unit_diagrams` view** — emits one `.mmd` per `.cpp` unit into
-    `output/unit_diagrams/`, then renders each with `mmdc`.
+    `output/Sample/unit_diagrams/`, then renders each with `mmdc`.
 13. **`behaviour_diagram` view** — uses `FakeBehaviourGenerator` to emit
     `.mmd` files plus `_behaviour_pngs.json`.
-14. **`flowcharts` view** — filters `functions.json` to `functions_core.json`
-    via module prefix, launches `python src/flowchart/flowchart_engine.py …`
+14. **`flowcharts` view** — filters `functions.json` to `functions_Sample.json`
+    via component prefix, launches `python src/flowchart/flowchart_engine.py …`
     with `--knowledge-json model/knowledge_base.json`. The engine:
     - builds (or restores from `.flowchart_cache/`) the PKB
     - groups functions by source file
     - for each function: source extract → libclang TU parse → cursor resolve
       → CFG build (with ASSERT skip) → enrich with PKB → batched LLM labeling
       with auto-halving on empty responses → validate → build Mermaid
-    - writes one JSON per source file into `output/flowcharts/`
+    - writes one JSON per source file into `output/Sample/flowcharts/`
     - writes `_summary.json`
     The view then walks the per-unit JSONs and renders every flowchart to
     PNG via `mmdc`.
 15. **`PhaseRunner.run(plan2.phases)` continues** — subprocess
-    `python src/docx_exporter.py --selected-group core`.
-16. **`docx_exporter.py`** — `artifacts_dir = output/`, loads model + abbreviations,
-    iterates modules, builds the DOCX via `python-docx`. Embeds module static
-    diagrams, unit diagrams, flowchart PNGs, and behaviour-diagram PNGs from
-    paths under `artifacts_dir`. Writes
-    `output/software_detailed_design_core.docx`.
+    `python src/docx_exporter.py output/Sample/interface_tables.json output/Sample/software_detailed_design_Sample.docx --selected-group Sample`.
+16. **`docx_exporter.py`** — `artifacts_dir = output/Sample/`, loads model +
+    abbreviations, applies same-layer filter (all Layer1 components) to model
+    dicts, iterates only Sample's components (Core/Lib/Util), builds the DOCX
+    via `python-docx`. Embeds component static diagrams, unit diagrams, flowchart
+    PNGs, and behaviour-diagram PNGs from paths under `artifacts_dir`. Writes
+    `output/Sample/software_detailed_design_Sample.docx`.
 17. **Back in `run.py`** — `runner.run` returns elapsed seconds; the loop logs
     `Done. Total: <secs>s` and `Full log: logs/run_YYYYMMDD.log`. Each
     subprocess's `atexit` hook has already dumped its LLM token usage to the

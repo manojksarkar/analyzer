@@ -340,17 +340,17 @@ class ProjectKnowledgeBase:
             name = self._knowledge.project_name or "Project"
             lines.append(f"[Project] {name}: {self._knowledge.project_summary}")
 
-        # Module summary — derive module path from function's file
-        if func_entry.file and self._knowledge.module_summaries:
-            module_path = _parent_dir(func_entry.file)
-            module_summary = self._knowledge.module_summaries.get(module_path, "")
-            if not module_summary and "/" in module_path:
+        # Component summary — derive component path from function's file
+        if func_entry.file and self._knowledge.component_summaries:
+            component_path = _parent_dir(func_entry.file)
+            component_summary = self._knowledge.component_summaries.get(component_path, "")
+            if not component_summary and "/" in component_path:
                 # Try parent of parent (e.g. src/qos/detail → src/qos)
-                module_summary = self._knowledge.module_summaries.get(
-                    _parent_dir(module_path), ""
+                component_summary = self._knowledge.component_summaries.get(
+                    _parent_dir(component_path), ""
                 )
-            if module_summary:
-                lines.append(f"[Module] {module_path}/: {module_summary}")
+            if component_summary:
+                lines.append(f"[Component] {component_path}/: {component_summary}")
 
         # File summary
         if func_entry.file and self._knowledge.file_summaries:

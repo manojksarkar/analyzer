@@ -22,7 +22,7 @@ except ImportError:
     pytest.skip("python-docx not installed", allow_module_level=True)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "software_detailed_design_Sample.docx")
+DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "Sample", "software_detailed_design_Sample.docx")
 
 COL_IF_ID    = 0
 COL_IF_NAME  = 1
@@ -227,10 +227,10 @@ def test_introduction_section_headings(docx, expected):
     assert any(expected in h for h in headings), f"Introduction section '{expected}' not found in DOCX"
 
 
-@pytest.mark.parametrize("module", ["Core", "Lib", "Util"])
-def test_module_level1_heading_present(docx, module):
+@pytest.mark.parametrize("component", ["Core", "Lib", "Util"])
+def test_component_level1_heading_present(docx, component):
     level1 = [p.text.strip() for p in docx.paragraphs if p.style.name == "Heading 1"]
-    assert any(module in h for h in level1), f"No level-1 heading for module '{module}'"
+    assert any(component in h for h in level1), f"No level-1 heading for component '{component}'"
 
 
 def test_code_metrics_heading_present(docx):
@@ -277,6 +277,12 @@ def test_behaviour_description_tables_present(docx):
 
 def test_flowchart_tables_present(docx):
     """_add_flowchart_table uses 'Capacity(Density)' — distinct from the behaviour table."""
+    import json
+    cfg_path = os.path.join(PROJECT_ROOT, "config", "config.json")
+    with open(cfg_path, encoding="utf-8") as f:
+        cfg = json.load(f)
+    if not cfg.get("views", {}).get("flowcharts"):
+        pytest.skip("flowcharts disabled in config")
     row_labels = {
         row.cells[0].text.strip()
         for t in docx.tables
@@ -304,8 +310,8 @@ def test_component_unit_table_present(docx):
         )
 
 
-def test_component_unit_table_has_module_names(docx):
-    """Component column must contain the Sample group module names."""
+def test_component_unit_table_has_component_names(docx):
+    """Component column must contain the Sample group component names."""
     component_tables = [
         t for t in docx.tables
         if t.rows and {c.text.strip() for c in t.rows[0].cells} >= {"Component", "Unit"}
@@ -317,8 +323,8 @@ def test_component_unit_table_has_module_names(docx):
         for row in t.rows
         for c in row.cells
     }
-    for module in ("Core", "Lib", "Util"):
-        assert module in all_cell_text, f"Module '{module}' missing from Component/Unit table"
+    for component in ("Core", "Lib", "Util"):
+        assert component in all_cell_text, f"Component '{component}' missing from Component/Unit table"
 
 
 # ---------------------------------------------------------------------------
@@ -338,10 +344,10 @@ def test_unit_header_table_present(docx):
 
 
 # ---------------------------------------------------------------------------
-# moduleStaticDiagram — PNG or Mermaid text present in Static Design section
+# componentStaticDiagram — PNG or Mermaid text present in Static Design section
 # ---------------------------------------------------------------------------
 
-def test_module_static_diagram_content_present(docx):
+def test_component_static_diagram_content_present(docx):
     """Static Design section must contain either an embedded image (PNG rendered)
     or a paragraph with 'flowchart' (Mermaid text fallback)."""
     paras = list(docx.paragraphs)
@@ -365,5 +371,5 @@ def test_module_static_diagram_content_present(docx):
                 found = True
                 break
         assert found, (
-            f"Static Design section (para {h_idx}) has no module diagram image or Mermaid text"
+            f"Static Design section (para {h_idx}) has no component diagram image or Mermaid text"
         )

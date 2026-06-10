@@ -1,4 +1,4 @@
-"""Derive model: units, modules, enrichment. Phase 2."""
+"""Derive model: units, components, enrichment. Phase 2."""
 import os
 import re
 import sys
@@ -10,6 +10,7 @@ from core.paths import paths as _paths
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
 PROJECT_ROOT = _p.project_root
+
 MODEL_DIR = _p.model_dir
 os.makedirs(MODEL_DIR, exist_ok=True)
 
@@ -165,7 +166,7 @@ def _read_local_includes(fp: str, base_path: str, defined_macros: set = None) ->
     return result
 
 
-def _build_units_modules(base_path: str, functions_data: dict, global_variables_data: dict):
+def _build_units_components(base_path: str, functions_data: dict, global_variables_data: dict):
     defined_macros = _defined_macros_from_config()
     all_files = set()
     for f in functions_data.values():
@@ -237,10 +238,10 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
                 "includedHeaders": included_headers,
             }
 
-    module_names = sorted({u.split(KEY_SEP)[0] for u in units_data if KEY_SEP in u})
+    component_names = sorted({u.split(KEY_SEP)[0] for u in units_data if KEY_SEP in u})
 
-    # Collect directories that belong to each module (from source file locations).
-    module_source_dirs: dict = {}
+    # Collect directories that belong to each component (from source file locations).
+    component_source_dirs: dict = {}
     for fp in sorted(all_files):
         base = os.path.basename(fp)
         if not base.lower().endswith((".cpp", ".cc", ".cxx")):
@@ -250,11 +251,11 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
         except ValueError:
             rel = fp.replace("\\", "/")
         m = make_unit_key(rel).split(KEY_SEP)[0]
-        module_source_dirs.setdefault(m, set()).add(os.path.dirname(fp))
+        component_source_dirs.setdefault(m, set()).add(os.path.dirname(fp))
 
     # Scan those directories for header files to build an authoritative list.
-    module_header_files: dict = {}
-    for m, dirs in module_source_dirs.items():
+    component_header_files: dict = {}
+    for m, dirs in component_source_dirs.items():
         headers = set()
         for d in dirs:
             try:
@@ -268,21 +269,22 @@ def _build_units_modules(base_path: str, functions_data: dict, global_variables_
                         headers.add(rel_h)
             except OSError:
                 pass
-        module_header_files[m] = sorted(headers)
+        component_header_files[m] = sorted(headers)
 
-    modules_data = {
+    from core.model_io import write_model_file, UNITS, COMPONENTS
+
+    components_data = {
         m: {
-            "units": [u for u in units_data if u.split(KEY_SEP)[0] == m],
-            "headerFiles": module_header_files.get(m, []),
+            "units":       [u for u in units_data if u.split(KEY_SEP)[0] == m],
+            "headerFiles": component_header_files.get(m, []),
         }
-        for m in module_names
+        for m in component_names
     }
 
-    from core.model_io import write_model_file, UNITS, MODULES
     write_model_file(UNITS, units_data)
-    write_model_file(MODULES, modules_data)
+    write_model_file(COMPONENTS, components_data)
     print(f"  model/units.json ({len(units_data)})")
-    print(f"  model/modules.json ({len(modules_data)})")
+    print(f"  model/components.json ({len(components_data)})")
     return units_data, unit_by_file
 
 
@@ -659,11 +661,11 @@ def _run_hierarchy_summarizer(
 
     Steps:
       1. Build a ProjectKnowledge object from functions_data (no extra LLM calls)
-      2. Run HierarchySummarizer.summarize() — 4 levels: function, file, module, project
+      2. Run HierarchySummarizer.summarize() — 4 levels: function, file, component, project
       3. Write phases back into functions_data in place
-      4. Return {"project", "modules", "files"} for knowledge_base.json
+      4. Return {"project", "components", "files"} for knowledge_base.json
 
-    Returns empty summaries dict if the flowchart module cannot be imported.
+    Returns empty summaries dict if the flowchart Python module cannot be imported.
     """
     # Import the shared LLM client from src/llm_core BEFORE inserting
     # src/flowchart into sys.path — once flowchart is on the path, the bare
@@ -677,7 +679,7 @@ def _run_hierarchy_summarizer(
         from pkb.knowledge import FunctionKnowledge, ProjectKnowledge
     except ImportError as exc:
         print(f"  Cannot import Flowchart HierarchySummarizer: {exc}", file=sys.stderr)
-        return {"project": "", "modules": {}, "files": {}}
+        return {"project": "", "components": {}, "files": {}}
 
     # Build ProjectKnowledge from already-parsed model data (no extra LLM/libclang calls)
     knowledge = ProjectKnowledge(project_name=project_name, base_path=base_path)
@@ -705,7 +707,7 @@ def _run_hierarchy_summarizer(
     from utils import load_llm_config
     client = _build_llm_client_from_config(load_llm_config(config))
 
-    # Run the 4-level summarization (function summaries, phases, file, module, project)
+    # Run the 4-level summarization (function summaries, phases, file, component, project)
     summarizer = HierarchySummarizer(knowledge, client, base_path)
     summarizer.summarize()
 
@@ -724,7 +726,7 @@ def _run_hierarchy_summarizer(
 
     return {
         "project": knowledge.project_summary,
-        "modules": knowledge.module_summaries,
+        "components": knowledge.component_summaries,
         "files": knowledge.file_summaries,
     }
 
@@ -872,7 +874,7 @@ def _generate_knowledge_base(
         "project_name": project_name,
         "base_path": base_path,
         "project_summary": summaries.get("project", ""),
-        "module_summaries": summaries.get("modules", {}),
+        "component_summaries": summaries.get("components", {}),
         "file_summaries": summaries.get("files", {}),
         "functions": functions_kb,
         "enums": enums_kb,
@@ -909,7 +911,7 @@ def main():
     # Load dataDictionary for knowledge_base.json generation
     data_dict = read_model_file(DATA_DICTIONARY, required=False, default={})
 
-    units_data, unit_by_file = _build_units_modules(base_path, functions_data, global_variables_data)
+    units_data, unit_by_file = _build_units_components(base_path, functions_data, global_variables_data)
     idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data)
     _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id, config)
     # Propagate global access along call graph so outers inherit inner globals
@@ -919,7 +921,7 @@ def main():
     # LLM polish for poor static names (uses abbreviations)
     _enrich_behaviour_names_llm(base_path, functions_data, global_variables_data, config)
 
-    # LLM summarization (--llm-summarize only): phases + file/module/project hierarchy.
+    # LLM summarization (--llm-summarize only): phases + file/component/project hierarchy.
     # Runs before _enrich_from_llm so that phases are in functions_data when knowledge_base
     # is written, and before description enrichment so already-commented functions are skipped.
     summaries: dict = {}

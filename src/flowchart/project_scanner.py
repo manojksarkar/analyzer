@@ -775,9 +775,9 @@ class HierarchySummarizer:
         "Summarize the responsibility of the given source file in 2-3 sentences. "
         "Output only the sentences, no headings or lists."
     )
-    _MODULE_SYSTEM = (
+    _COMPONENT_SYSTEM = (
         "You are a C++ software architect. "
-        "Summarize the purpose of the given software module (directory) in 2-3 sentences. "
+        "Summarize the purpose of the given software component (directory) in 2-3 sentences. "
         "Output only the sentences, no headings or lists."
     )
     _PROJECT_SYSTEM = (
@@ -807,7 +807,7 @@ class HierarchySummarizer:
         self._summarize_functions()
         self._summarize_function_phases()
         self._summarize_files()
-        self._summarize_modules()
+        self._summarize_components()
         self._summarize_project()
         logger.info("── Hierarchy summarization complete ──")
 
@@ -1009,27 +1009,27 @@ class HierarchySummarizer:
         return raw.strip()[:600] if raw else ""
 
     # ------------------------------------------------------------------
-    # Level 3 — Module summaries
+    # Level 3 — Component summaries
     # ------------------------------------------------------------------
 
-    def _summarize_modules(self) -> None:
-        # Group files by their immediate parent directory (the module)
-        by_module: Dict[str, List[str]] = {}
+    def _summarize_components(self) -> None:
+        # Group files by their immediate parent directory (the component)
+        by_component: Dict[str, List[str]] = {}
         for file_path in self._k.file_summaries:
             parts = file_path.replace("\\", "/").split("/")
-            module = "/".join(parts[:-1]) if len(parts) > 1 else "."
-            by_module.setdefault(module, []).append(file_path)
+            component = "/".join(parts[:-1]) if len(parts) > 1 else "."
+            by_component.setdefault(component, []).append(file_path)
 
-        logger.info("  Summarizing %d modules...", len(by_module))
-        for module_path, files in sorted(by_module.items()):
+        logger.info("  Summarizing %d components...", len(by_component))
+        for component_path, files in sorted(by_component.items()):
             try:
-                summary = self._summarize_one_module(module_path, files)
+                summary = self._summarize_one_component(component_path, files)
                 if summary:
-                    self._k.module_summaries[module_path] = summary
+                    self._k.component_summaries[component_path] = summary
             except Exception as exc:
-                logger.debug("  Module summary failed for %s: %s", module_path, exc)
+                logger.debug("  Component summary failed for %s: %s", component_path, exc)
 
-    def _summarize_one_module(self, module_path: str,
+    def _summarize_one_component(self, component_path: str,
                                file_paths: List[str]) -> str:
         file_lines = []
         for fp in file_paths[:20]:
@@ -1042,12 +1042,12 @@ class HierarchySummarizer:
             file_lines.append(line)
 
         prompt = (
-            f"Module directory: {module_path}\n"
+            f"Component directory: {component_path}\n"
             f"Files ({len(file_paths)} total, showing up to 20):\n"
             + "\n".join(file_lines)
-            + "\n\nSummarize the purpose of this module in 2-3 sentences."
+            + "\n\nSummarize the purpose of this component in 2-3 sentences."
         )
-        raw = self._client.generate(self._MODULE_SYSTEM, prompt)
+        raw = self._client.generate(self._COMPONENT_SYSTEM, prompt)
         return raw.strip()[:600] if raw else ""
 
     # ------------------------------------------------------------------
@@ -1078,25 +1078,25 @@ class HierarchySummarizer:
                 except Exception as exc:
                     logger.debug("  README read failed: %s", exc)
 
-        # Fall back: aggregate top module summaries
-        if not self._k.module_summaries:
-            logger.info("  No module summaries available — skipping project summary")
+        # Fall back: aggregate top component summaries
+        if not self._k.component_summaries:
+            logger.info("  No component summaries available — skipping project summary")
             return
 
-        module_lines = [
-            f"  - {mod}: {summary[:100]}"
-            for mod, summary in list(self._k.module_summaries.items())[:20]
+        component_lines = [
+            f"  - {comp}: {summary[:100]}"
+            for comp, summary in list(self._k.component_summaries.items())[:20]
         ]
         prompt = (
             f"Project: {self._k.project_name}\n"
-            f"Modules ({len(self._k.module_summaries)} total, showing up to 20):\n"
-            + "\n".join(module_lines)
+            f"Components ({len(self._k.component_summaries)} total, showing up to 20):\n"
+            + "\n".join(component_lines)
             + "\n\nSummarize the overall purpose of this project in 2-3 sentences."
         )
         raw = self._client.generate(self._PROJECT_SYSTEM, prompt)
         if raw and raw.strip():
             self._k.project_summary = raw.strip()[:600]
-            logger.info("  Project summary generated from module descriptions")
+            logger.info("  Project summary generated from component descriptions")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -1208,7 +1208,7 @@ def _parse_args() -> argparse.Namespace:
     # LLM summarization arguments
     p.add_argument("--llm-summarize", action="store_true",
                    help="Run 4-level LLM summarization after scanning "
-                        "(function → file → module → project)")
+                        "(function → file → component → project)")
     p.add_argument("--llm-url", default="http://localhost:11434/api/generate",
                    help="LLM endpoint URL for summarization (default: Ollama local)")
     p.add_argument("--llm-model", default="gpt-oss",

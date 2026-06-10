@@ -35,7 +35,7 @@ METADATA = "metadata"
 FUNCTIONS = "functions"
 GLOBALS = "globalVariables"
 UNITS = "units"
-MODULES = "modules"
+COMPONENTS = "components"
 DATA_DICTIONARY = "dataDictionary"
 KNOWLEDGE_BASE = "knowledge_base"
 SUMMARIES = "summaries"
@@ -45,7 +45,7 @@ ALL_MODEL_NAMES = (
     FUNCTIONS,
     GLOBALS,
     UNITS,
-    MODULES,
+    COMPONENTS,
     DATA_DICTIONARY,
     KNOWLEDGE_BASE,
     SUMMARIES,
@@ -67,7 +67,7 @@ def model_files_present(*names: str) -> List[str]:
 
 
 def ensure_model_dir() -> str:
-    """Make sure the model directory exists. Returns its absolute path."""
+    """Make sure the active model directory exists. Returns its absolute path."""
     md = paths().model_dir
     os.makedirs(md, exist_ok=True)
     return md
@@ -160,3 +160,4 @@ def write_model_file(
             pass
         raise
     return path
+
