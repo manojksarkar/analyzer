@@ -986,7 +986,7 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         _merge_vertical_cells(table, 0, 1, n - 1)
 
 
-def export_docx(json_path: str = None, docx_path: str = None, selected_group: str | None = None) -> Tuple[bool, Optional[str]]:
+def export_docx(json_path: str = None, docx_path: str = None, selected_group: str | None = None, selected_components: list | None = None) -> Tuple[bool, Optional[str]]:
     from utils import safe_filename, KEY_SEP
     from core.config import app_config
     config = app_config()
@@ -994,7 +994,10 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     json_path = os.path.abspath(json_path)
     # Views write next to interface_tables.json (e.g. output/<group>/); do not use output/ only.
     artifacts_dir = os.path.dirname(json_path)
-    group_name = selected_group or "all"
+    if selected_components:
+        group_name = "_".join(selected_components)
+    else:
+        group_name = selected_group or "all"
     if not docx_path:
         docx_path = os.path.join(PROJECT_ROOT, f"output/software_detailed_design_{group_name}.docx")
     font_size = 8
@@ -1025,16 +1028,32 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     global_variables_data = _load_model_json("globalVariables")
     functions_data = _load_model_json("functions")
 
-    # Filter model data to only the components in the same layer as the selected group
+    # Filter model data to only the components in the same layer as the selected group/components
     if selected_group:
         from core.config import get_layer_components, app_config
         layer_comps = get_layer_components(app_config(), selected_group)
         if layer_comps:
-            lower = {c.lower() for c in layer_comps}
+            lower = {c.lower().replace(" ", "-") for c in layer_comps}
             units_data = {k: v for k, v in units_data.items() if k.split("|")[0].lower() in lower}
             components_data = {k: v for k, v in components_data.items() if k.lower() in lower}
             global_variables_data = {k: v for k, v in global_variables_data.items() if k.split("|")[0].lower() in lower}
             functions_data = {k: v for k, v in functions_data.items() if k.split("|")[0].lower() in lower}
+    elif selected_components:
+        from core.config import get_component_layer_name, get_layer_flat_groups, app_config
+        _cfg = app_config()
+        _derived_layer = get_component_layer_name(_cfg, selected_components[0])
+        if _derived_layer:
+            _layer_groups = get_layer_flat_groups(_cfg, _derived_layer)
+            layer_comps = set()
+            for _g in _layer_groups.values():
+                if isinstance(_g, dict):
+                    layer_comps.update(_g.keys())
+            if layer_comps:
+                lower = {c.lower().replace(" ", "-") for c in layer_comps}
+                units_data = {k: v for k, v in units_data.items() if k.split("|")[0].lower() in lower}
+                components_data = {k: v for k, v in components_data.items() if k.lower() in lower}
+                global_variables_data = {k: v for k, v in global_variables_data.items() if k.split("|")[0].lower() in lower}
+                functions_data = {k: v for k, v in functions_data.items() if k.split("|")[0].lower() in lower}
     _hidden_fids: set = {fid for fid, f in functions_data.items() if f.get("hidden", False)}
     _hidden_by_mod_unit: dict = {}
     for _fid in _hidden_fids:
@@ -1328,12 +1347,26 @@ def main():
         i = args.index("--selected-group")
         if i + 1 < len(args):
             selected_group = args[i + 1]
-            # Remove the flag + value so positional args remain: json_path docx_path
             args = args[:i] + args[i + 2 :]
+
+    # Collect --selected-component flags (repeatable); remove them from args
+    selected_components = []
+    filtered_args = []
+    j = 0
+    while j < len(args):
+        if args[j] == "--selected-component" and j + 1 < len(args):
+            selected_components.append(args[j + 1])
+            j += 2
+        else:
+            filtered_args.append(args[j])
+            j += 1
+    args = filtered_args
 
     json_path = args[0] if len(args) >= 1 else None
     docx_path = args[1] if len(args) >= 2 else None
-    ok, out_path = export_docx(json_path, docx_path, selected_group=selected_group)
+    ok, out_path = export_docx(json_path, docx_path,
+                               selected_group=selected_group,
+                               selected_components=selected_components or None)
     if ok:
         print(f"Exported: {out_path}")
     sys.exit(0 if ok else 1)

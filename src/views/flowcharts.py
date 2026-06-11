@@ -121,9 +121,9 @@ def run(model, output_dir, model_dir, config):
         log("generator not found: %s" % script, component="flowcharts", err=True)
         return
 
-    # If we are exporting a selected group, pass only that group's functions to the generator.
+    # If we are exporting a selected group/components, pass only those functions to the generator.
     functions_arg_path = functions_path
-    if allowed_components and group_name and os.path.isfile(functions_path):
+    if allowed_components and os.path.isfile(functions_path):
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
                 all_funcs = json.load(f)
@@ -135,7 +135,9 @@ def run(model, output_dir, model_dir, config):
                     and KEY_SEP in fid
                     and fid.split(KEY_SEP, 1)[0].lower() in allowed_components
                 }
-                group_functions_path = os.path.join(model_dir_abs, f"functions_{safe_filename(group_name)}.json")
+                orig_comps = sorted((config or {}).get("_analyzerAllowedComponents") or [])
+                filename_key = group_name or "_".join(orig_comps)
+                group_functions_path = os.path.join(model_dir_abs, f"functions_{safe_filename(filename_key)}.json")
                 with open(group_functions_path, "w", encoding="utf-8") as tf:
                     json.dump(filtered, tf, indent=2)
                 functions_arg_path = group_functions_path

@@ -1,6 +1,8 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-09 (feat/auto-clang-includes branch: Phase 1 parsing scoped to selected layer — `--selected-group` passes itself to `parser.py` which derives the layer via `get_group_layer_name`; new `--selected-layer` flag parses one layer and generates DOCX for all its groups; both flags together are an error; `clang_include_paths.json` also scoped to the selected layer; new `get_group_layer_name` / `get_layer_flat_groups` helpers in `core.config`; see §4e, §5, §7).
+> Updated: 2026-06-11 (feat/auto-clang-includes branch: component-level DOCX export + space normalization — `--selected-component` (repeatable, bundles into one DOCX), `--component-per-docx` (splits group/layer into one DOCX per component); spaces in group/component names replaced with `-` in all identifiers (keys, filenames, output dirs, Mermaid IDs) while display names keep spaces; `_build_file_component_map` in `parser.py` now normalizes component name values; `safe_filename` spaces→`-`; `get_component_layer_name` uses normalized comparison; see §4f, §5, §7, §9, §10).
+> Previous update: 2026-06-11 (feat/auto-clang-includes branch: `--selected-component` flag added — repeatable, accumulates a list; all components must be in the same layer; output to `output/<C1_C2>/`; new `get_component_layer_name` in `core.config`; `group_planner` has a fifth dispatch shape; `run_views` and `docx_exporter` both handle the new flag; see §5).
+> Previous update: 2026-06-09 (feat/auto-clang-includes branch: Phase 1 parsing scoped to selected layer — `--selected-group` passes itself to `parser.py` which derives the layer via `get_group_layer_name`; new `--selected-layer` flag parses one layer and generates DOCX for all its groups; both flags together are an error; `clang_include_paths.json` also scoped to the selected layer; new `get_group_layer_name` / `get_layer_flat_groups` helpers in `core.config`; see §4e, §5, §7).
 > Previous update: 2026-06-09 (feat/from-main branch: `module` → `component` rename throughout source + model + config; `modulesGroups` → `layers` two-level config schema; same-layer model filtering in Phase 3 + Phase 4; `SampleCppProject` restructured with Layer1 + Layer2/Platform; `model/modules.json` → `model/components.json`; new `get_flat_groups` / `get_layer_components` helpers in `core.config`; `--trace-prompts` + `--filter-mode` CLI flags; `model/clang_include_paths.json` written by `run.py` before any phase; see §5, §6, §7, §9, §10, §11, §12, §15).
 > Current active branch: `feat/auto-clang-includes`.
 > Validated against current source. Reading this file end-to-end is the
@@ -12,6 +14,7 @@
 > - §4c covers the feat/test-framework changes (test overhaul, LIBCLANG_PATH, llm.summarize).
 > - §4d covers the feat/from-main changes (component rename, layers config, same-layer filtering, SampleCppProject restructure).
 > - §4e covers the feat/auto-clang-includes changes (layer-scoped Phase 1 parsing, `--selected-layer` flag).
+> - §4f covers component-level DOCX export (`--selected-component`, `--component-per-docx`) and space normalization in identifiers.
 > - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
@@ -436,6 +439,77 @@ This is equivalent to running `--selected-group G` once per group in the layer, 
 
 ---
 
+## 4f. Component-level DOCX export + space normalization
+
+### New CLI flags
+
+**`--selected-component <name>`** (repeatable) — generate one DOCX covering the named component(s). Repeat the flag for each component; all must be in the same layer. Phase 1+2 parse that layer only. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx`. Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`.
+
+```bash
+python run.py --selected-component Gpio SampleCppProject
+python run.py --selected-component "Sample Core" --selected-component Lib SampleCppProject
+```
+
+**`--component-per-docx`** — modifier flag (no value). When combined with `--selected-group`, `--selected-layer`, or no selection, splits output into **one DOCX per component** instead of one per group. Cannot be combined with `--selected-component`.
+
+```bash
+python run.py --selected-group "My Sample" --component-per-docx SampleCppProject
+python run.py --selected-layer Layer1 --component-per-docx SampleCppProject
+python run.py --component-per-docx SampleCppProject   # all components in all layers
+```
+
+### Naming conventions for identifiers
+
+Group and component names may contain spaces (e.g. `"My Sample"`, `"Sample Core"`). Two rules apply everywhere a name becomes an identifier (filename, output dir, model key, Mermaid node ID):
+
+- **Space within a name → `-`**: `"Sample Core"` → `Sample-Core`
+- **Separator between component names in a bundle → `_`**: `["Sample-Core", "Lib"]` → `Sample-Core_Lib`
+
+Display contexts (DOCX section headings, log labels) keep the original name with spaces.
+
+### Where normalization is applied
+
+| Location | What changed |
+|---|---|
+| `src/utils.py` — `safe_filename` | Spaces → `-` before unsafe-char replacement |
+| `src/utils.py` — `_resolve_component_from_rel` | Returns `component.replace(" ", "-")` |
+| `src/parser.py` — `_build_file_component_map` | Both `setdefault` calls store `component.replace(" ", "-")` |
+| `src/views/unit_diagrams.py` — `_unit_part_id` | `replace(" ", "_")` → `replace(" ", "-")` |
+| `src/core/group_planner.py` — group output paths | `g.replace(" ", "-")` for dir + DOCX name |
+| `src/core/group_planner.py` — component bundle | `virtual_name = "_".join(selected_components)` |
+| `src/run_views.py` — `_filter_model_to_components` | `{c.lower().replace(" ", "-") for c in allowed}` |
+| `src/run_views.py` — `_analyzerAllowedComponents` | Keys normalized on set: `k.replace(" ", "-")` |
+| `src/docx_exporter.py` — same-layer filter | Both `lower` sets normalized with `.replace(" ", "-")` |
+| `src/core/config.py` — `get_component_layer_name` | Normalizes both sides of comparison |
+| `run.py` — `--selected-component` collection | Normalizes input at `append` time |
+
+**Important after this change**: any existing `model/functions.json` built before this change will have `"Sample Core|..."` keys (with spaces). Re-run from Phase 1 (`--clean` or `--from-phase 1`) after updating to get normalized `"Sample-Core|..."` keys.
+
+### `plan_runs` dispatch shapes (updated)
+
+`--component-per-docx` adds a new branching mode inside the existing per-group loop. When set, `plan_runs` iterates each group's components and emits one `RunPlan` per component (using `--selected-component`) instead of one per group.
+
+| `--component-per-docx` | CLI selection | Plans emitted |
+|---|---|---|
+| No | `--selected-group G` | 1 plan (whole group) |
+| No | `--selected-layer L` | 1 plan per group in L |
+| **Yes** | `--selected-group G` | 1 plan **per component** in G |
+| **Yes** | `--selected-layer L` | 1 plan **per component** across all groups in L |
+| **Yes** | (none) | 1 plan **per component** across all groups in all layers |
+
+### flowcharts.py — scoped functions temp file
+
+`model/functions_<key>.json` casing and separator:
+- Group run: `functions_My-Sample.json` (group name, spaces → `-`)
+- Single component: `functions_Sample-Core.json` (component name, correct casing from `_analyzerAllowedComponents`)
+- Multi-component bundle: `functions_Lib_Sample-Core.json` (sorted, `_`-joined, correct casing)
+
+### interface_tables.py — log fix
+
+The hardcoded log string `"output/interface_tables.json"` was replaced with the actual `out_path` so the log shows the real absolute path written.
+
+---
+
 ## 5. CLI — `run.py`
 
 ### Syntax
@@ -452,8 +526,10 @@ python run.py [options] <project_path>
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
-| `--selected-group <name>` | Export only the named group. Phase 1+2 parse only that group's layer. Case-insensitive. Mutually exclusive with `--selected-layer`. |
-| `--selected-layer <name>` | Parse only the named layer (Phase 1+2) and generate DOCX for every group in it (Phase 3+4 per group). Mutually exclusive with `--selected-group`. |
+| `--selected-group <name>` | Export only the named group. Phase 1+2 parse only that group's layer. Case-insensitive. Mutually exclusive with `--selected-layer` and `--selected-component`. |
+| `--selected-layer <name>` | Parse only the named layer (Phase 1+2) and generate DOCX for every group in it (Phase 3+4 per group). Mutually exclusive with `--selected-group` and `--selected-component`. |
+| `--selected-component <name>` | Export a DOCX for the named component only. Repeatable — use once per component to bundle multiple into one DOCX. All named components must be in the same layer. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx` (`_` between names, `-` replaces spaces). Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`. |
+| `--component-per-docx` | Modifier: split group/layer runs into one DOCX per component instead of one per group. Compatible with `--selected-group`, `--selected-layer`, or no selection. Cannot be combined with `--selected-component`. See §4f. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
 | `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `config/data_dictionary.csv` for format. |
 | `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`) |
@@ -500,7 +576,7 @@ The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
 (flowchart engine) starts, because that engine can be invoked standalone — see
 §13.
 
-### Four dispatch shapes (collapsed inside `plan_runs`)
+### Dispatch shapes (collapsed inside `plan_runs`)
 
 | Config state | CLI | Phase 1+2 parses | Phase 3+4 generates |
 |---|---|---|---|
@@ -508,11 +584,14 @@ The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
 | `layers` present | no flag | all layers | DOCX per group (all groups) |
 | `layers` present | `--selected-group <G>` | G's layer only | DOCX for G only |
 | `layers` present | `--selected-layer <L>` | L only | DOCX per group in L |
+| `layers` present | `--selected-component C [--selected-component C2 …]` | C's layer only (all named components must be same layer) | 1 DOCX for C[_C2…] |
+| `layers` present | any of above + `--component-per-docx` | same as without flag | 1 DOCX **per component** instead of per group |
 
-Passing both `--selected-group` and `--selected-layer` exits with error code 1 before any phase runs.
+`--selected-group`, `--selected-layer`, and `--selected-component` are mutually exclusive; combining any two exits with code 1. `--component-per-docx` cannot be combined with `--selected-component` (already at component granularity).
 
 Phase 4 (`docx_exporter.py`) receives the group's `interface_tables.json`
-and DOCX path as positional args plus `--selected-group <G>` so it can
+and DOCX path as positional args plus `--selected-group <G>` (group path) or
+`--selected-component C [--selected-component C2]` (component path) so it can
 apply the same-layer model filter (see §4d).
 
 `--from-phase` translation also lives here:
@@ -678,6 +757,7 @@ in `src/utils.py` or one of the phase scripts.
   the same layer as `group_name`. Used by Phase 3 and Phase 4 for same-layer
   model filtering.
 - `get_group_layer_name(cfg, group_name)` → the layer name that owns `group_name`, or `None`. Used by `parser.py` and `run.py` to derive the layer from `--selected-group`.
+- `get_component_layer_name(cfg, component_name)` → the layer name that owns `component_name` (searches all layers/groups), or `None`. Comparison is space-normalized (both sides `.replace(" ", "-")`) so normalized identifiers match raw config keys. Used by `run.py` and `group_planner` to derive the layer from `--selected-component`.
 - `get_layer_flat_groups(cfg, layer_name)` → flat groups for a single named layer only (layer paths resolved). Used by `parser.py` to restrict `_COMPONENT_FOLDERS` when a layer is selected.
 - `_resolve_layer_paths(layers_cfg)` — internal helper that prepends
   `layer.path` to each component path inside the layer's groups.
@@ -998,7 +1078,7 @@ So legacy `from utils import load_config` still works.
 | `log(msg, component, *, err=False)` | Thin wrapper around `core.logging_setup.get_logger` |
 | `timed(component)` ctx-mgr | Logs `<elapsed>s` on exit |
 | `mmdc_path(project_root)` | Local `node_modules/.bin/mmdc` or system `mmdc` |
-| `safe_filename(s)` | Replace `<>:"/\\|?*,&;` with `_` |
+| `safe_filename(s)` | Replace spaces with `-`, then `<>:"/\\|?*,&;` with `_` |
 | `init_component_mapping(config)` | Build `_COMPONENT_OVERRIDES` from `components` or merged `layers` groups (via `get_flat_groups`) |
 | `_resolve_component_from_rel(rel)` | Match relative path against `_COMPONENT_OVERRIDES` (case-insensitive) |
 | `make_unit_key(rel_file)` | `component\|unitname` |
@@ -1029,8 +1109,7 @@ import order constraints).
 - Loads libclang from `clang.llvmLibPath`. On Windows, calls
   `os.add_dll_directory(<llvm/bin>)` so dependent DLLs are found, with a
   `PATH`-extension fallback.
-- Builds `_COMPONENT_FOLDERS` from merged `layers` groups via `get_flat_groups`
-  (or `components`/`modules` top-level fallback).
+- Builds `_FILE_COMPONENT_MAP` via `_build_file_component_map` from merged `layers` groups via `get_flat_groups` (or `components`/`modules` top-level fallback). Component name values are stored normalized (spaces → `-`) so all model keys use the identifier form.
 - Reads `model/clang_include_paths.json` (written by `run.py` before any phase)
   and extends `CLANG_ARGS` with `-I<dir>` for every directory in every layer.
 - Sets `CLANG_ARGS`:

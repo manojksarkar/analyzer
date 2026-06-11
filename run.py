@@ -69,15 +69,17 @@ from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, CO
 # Parse flags
 # ---------------------------------------------------------------------------
 
-clean_all             = False
-use_model             = False
-no_llm_summarize      = False
-from_phase            = 1
-selected_group_arg    = None
-selected_layer_arg    = None
-filter_mode_arg       = None
-data_dictionary_arg   = None
-raw_args              = []
+clean_all               = False
+use_model               = False
+no_llm_summarize        = False
+from_phase              = 1
+selected_group_arg      = None
+selected_layer_arg      = None
+selected_components_arg = []
+component_per_docx      = False
+filter_mode_arg         = None
+data_dictionary_arg     = None
+raw_args                = []
 
 i = 1
 while i < len(sys.argv):
@@ -105,6 +107,14 @@ while i < len(sys.argv):
             log("--selected-layer requires a layer name", component="run", err=True)
             sys.exit(1)
         selected_layer_arg = sys.argv[i]
+    elif a == "--selected-component":
+        i += 1
+        if i >= len(sys.argv):
+            log("--selected-component requires a component name", component="run", err=True)
+            sys.exit(1)
+        selected_components_arg.append(sys.argv[i].replace(" ", "-"))
+    elif a == "--component-per-docx":
+        component_per_docx = True
     elif a == "--data-dictionary":
         i += 1
         if i >= len(sys.argv):
@@ -141,16 +151,21 @@ def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
             return k
     return None
 
-if selected_group_arg and selected_layer_arg:
-    log("--selected-group and --selected-layer are mutually exclusive", component="run", err=True)
+if sum(bool(x) for x in [selected_group_arg, selected_layer_arg, selected_components_arg]) > 1:
+    log("--selected-group, --selected-layer, and --selected-component are mutually exclusive", component="run", err=True)
+    sys.exit(1)
+if component_per_docx and selected_components_arg:
+    log("--component-per-docx cannot be combined with --selected-component", component="run", err=True)
     sys.exit(1)
 
 if len(raw_args) < 1:
     print("Usage: python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
     print("                     [--selected-layer <name>] [--no-llm-summarize] [--from-phase N]")
+    print("                     [--selected-component <name> [--selected-component <name> ...]]")
     print("                     [--quiet|--verbose] [--trace-prompts] [--filter-mode MODE]")
     print("                     <project_path>")
     print("Example: python run.py test_cpp_project")
+    print("Example: python run.py --selected-component Gpio SampleCppProject")
     sys.exit(1)
 
 if clean_all:
@@ -199,15 +214,42 @@ if data_dictionary_path:
 # (flowchart engine) can read them without re-walking the filesystem.
 # ---------------------------------------------------------------------------
 import json as _json
-from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name
+from core.config import (get_flat_groups as _get_flat_groups,
+                         get_group_layer_name as _get_group_layer_name,
+                         get_component_layer_name as _get_component_layer_name)
 _model_dir = os.path.join(SCRIPT_DIR, "model")
 os.makedirs(_model_dir, exist_ok=True)
 _all_groups = _get_flat_groups(cfg)
 _resolved_group = _resolve_group_name(_all_groups, selected_group_arg)
+
+# Validate --selected-component: all must exist and be in the same layer.
+if selected_components_arg:
+    _all_comp_names: set = set()
+    for _g in _all_groups.values():
+        if isinstance(_g, dict):
+            _all_comp_names.update(_g.keys())
+    # Normalize to identifier form for comparison (spaces -> -)
+    _all_comp_names_norm = {c.replace(" ", "-") for c in _all_comp_names}
+    for _c in selected_components_arg:  # already normalized at collection
+        if _c not in _all_comp_names_norm:
+            log(f"Unknown component {_c!r}. Valid components: {', '.join(sorted(_all_comp_names_norm))}", component="run", err=True)
+            sys.exit(1)
+    _comp_layers = {_c: _get_component_layer_name(cfg, _c) for _c in selected_components_arg}
+    _unique_layers = set(_comp_layers.values())
+    if len(_unique_layers) > 1:
+        _detail = ", ".join(f"{c!r}->{l}" for c, l in _comp_layers.items())
+        log(f"All --selected-component names must be in the same layer ({_detail})", component="run", err=True)
+        sys.exit(1)
+    _derived_layer_for_components = next(iter(_unique_layers))
+else:
+    _derived_layer_for_components = None
+
 if selected_layer_arg:
     _selected_layer = selected_layer_arg
 elif _resolved_group:
     _selected_layer = _get_group_layer_name(cfg, _resolved_group)
+elif _derived_layer_for_components:
+    _selected_layer = _derived_layer_for_components
 else:
     _selected_layer = None
 _layer_inc: dict = {}
@@ -249,6 +291,8 @@ try:
         project_path=resolved,
         selected_group=selected_group_arg,
         selected_layer=selected_layer_arg,
+        selected_components=selected_components_arg,
+        component_per_docx=component_per_docx,
         use_model=use_model,
         no_llm_summarize=no_llm_summarize,
         from_phase=from_phase,

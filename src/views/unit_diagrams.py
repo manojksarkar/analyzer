@@ -19,7 +19,7 @@ def _fid_to_unit(units_data):
 
 def _unit_part_id(unit_key):
     """Mermaid node id (safe, no | or special chars)."""
-    return (unit_key or "").replace(KEY_SEP, "_").replace(" ", "_") or "u"
+    return (unit_key or "").replace(KEY_SEP, "_").replace(" ", "-") or "u"
 
 
 def _escape_label(text):

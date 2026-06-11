@@ -146,7 +146,7 @@ def _build_file_component_map(components_cfg: dict, base_path: str) -> dict:
             _, ext = os.path.splitext(p_norm)
             if ext.lower() in _SOURCE_EXTS:
                 # Explicit file entry — add directly
-                file_map.setdefault(p_norm.lower(), component)
+                file_map.setdefault(p_norm.lower(), component.replace(" ", "-"))
             else:
                 # Directory entry — walk the filesystem
                 abs_dir = os.path.join(base_path, p_norm)
@@ -157,7 +157,7 @@ def _build_file_component_map(components_cfg: dict, base_path: str) -> dict:
                         if os.path.splitext(fname)[1].lower() in _SOURCE_EXTS:
                             full = os.path.join(root, fname)
                             key = os.path.relpath(full, base_path).replace("\\", "/").lower()
-                            file_map.setdefault(key, component)
+                            file_map.setdefault(key, component.replace(" ", "-"))
     return file_map
 
 
