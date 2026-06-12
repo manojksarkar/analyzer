@@ -100,7 +100,7 @@ def _build_unit_diagram(
     def _node_line(pid):
         for uk in units_data:
             if _unit_part_id(uk) == pid:
-                raw = unit_names.get(uk, uk) if pid == this_id else uk.replace(KEY_SEP, "/")
+                raw = unit_names.get(uk, uk) if pid == this_id else uk.replace(KEY_SEP, "/").replace("-", " ")
                 box_label = (raw or "?").replace("]", "'").replace("[", "'")
                 if pid == this_id:
                     extra = "<br/>".join([f"{pad} " for _ in range(n_extra_lines)])
@@ -121,7 +121,7 @@ def _build_unit_diagram(
         lines.append("  " + _node_line(pid).strip())
 
     # Internal module (yellow box)
-    mod_label = (this_component or "Internal").replace('"', "'").replace("]", "'").replace("[", "'")
+    mod_label = (this_component or "Internal").replace("-", " ").replace('"', "'").replace("]", "'").replace("[", "'")
     lines.append(f'  subgraph internal_mod["{mod_label}"]')
     lines.append("    direction TB")
     lines.append("    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px")
