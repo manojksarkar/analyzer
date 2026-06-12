@@ -12,6 +12,8 @@ Options:
   --data-dictionary <path>
                        CSV file to merge into model/dataDictionary.json (overrides
                        auto-parsed entries). See config/data_dictionary.csv for format.
+  --macros <path>      CSV file (Name, Value) passed as -D flags to Clang. Rows
+                       with Value="ne" are skipped. Empty Value → -DMACRONAME.
   --verbose            Enable DEBUG logs (cache hits, budgets, few-shot picks)
   --quiet              Only log WARNINGs and above
   --trace-prompts      Print full LLM prompts (system + user) to stdout.
@@ -79,6 +81,7 @@ selected_components_arg = []
 component_per_docx      = False
 filter_mode_arg         = None
 data_dictionary_arg     = None
+macros_arg              = None
 raw_args                = []
 
 i = 1
@@ -121,6 +124,12 @@ while i < len(sys.argv):
             log("--data-dictionary requires a file path", component="run", err=True)
             sys.exit(1)
         data_dictionary_arg = sys.argv[i]
+    elif a == "--macros":
+        i += 1
+        if i >= len(sys.argv):
+            log("--macros requires a file path", component="run", err=True)
+            sys.exit(1)
+        macros_arg = sys.argv[i]
     elif a == "--from-phase":
         i += 1
         if i >= len(sys.argv):
@@ -207,6 +216,15 @@ if data_dictionary_path:
         log(f"--data-dictionary file not found: {_dd_abs}", component="run", err=True)
         sys.exit(2)
     data_dictionary_path = _dd_abs
+
+macros_path = macros_arg or None
+if macros_path:
+    _m_abs = macros_path if os.path.isabs(macros_path) \
+             else os.path.join(SCRIPT_DIR, macros_path)
+    if not os.path.isfile(_m_abs):
+        log(f"--macros file not found: {_m_abs}", component="run", err=True)
+        sys.exit(2)
+    macros_path = _m_abs
 
 # ---------------------------------------------------------------------------
 # Collect layer include paths before any phase runs.
@@ -298,6 +316,7 @@ try:
         from_phase=from_phase,
         filter_mode=filter_mode_arg,
         data_dictionary_path=data_dictionary_path,
+        macros_path=macros_path,
     )
 except ValueError as e:
     log(str(e), component="run", err=True)

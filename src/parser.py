@@ -29,12 +29,16 @@ PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
 
 # Scan for optional flags passed by group_planner.
 _data_dict_path: str | None = None
+_macros_path: str | None = None
 _selected_group: str | None = None
 _selected_layer: str | None = None
 _i = 2
 while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
         _data_dict_path = sys.argv[_i + 1]
+        _i += 2
+    elif sys.argv[_i] == "--macros" and _i + 1 < len(sys.argv):
+        _macros_path = sys.argv[_i + 1]
         _i += 2
     elif sys.argv[_i] == "--selected-group" and _i + 1 < len(sys.argv):
         _selected_group = sys.argv[_i + 1]
@@ -186,9 +190,9 @@ for _dirs in _layer_include_paths.values():
         if _a not in _clang_args_seen:
             _clang_args_seen.add(_a)
             CLANG_ARGS.append(_a)
-# Visibility-style macros (PRIVATE/PROTECTED/PUBLIC/__OVLYINIT) and the
-# `VOID` -> `void` alias come from `core.config.default_clang_macro_defs()`
-# so the flowchart engine's per-function re-parser can reuse the same set.
+# Visibility-style macros (PRIVATE/PROTECTED/PUBLIC/__OVLYINIT) come from
+# `core.config.default_clang_macro_defs()` so the flowchart engine's
+# per-function re-parser reuses the same set.
 # Override locally by adding `-UPUBLIC` etc. to `clang.clangArgs` in config.
 _VISIBILITY_KEYWORDS = set(DEFAULT_VISIBILITY_MACROS) - {"__OVLYINIT"}
 for _arg in default_clang_macro_defs():
@@ -197,6 +201,41 @@ for _arg in default_clang_macro_defs():
 _extra = _clang.get("clangArgs")
 if _extra:
     CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
+
+
+def _load_macros_as_clang_args(path: str) -> list:
+    """Read 2-column CSV (Name, Value) and return -D flags for Clang.
+
+    Rows where Value is 'ne' (case-insensitive) are skipped entirely.
+    Rows where Value is empty produce -DNAME (defined as 1).
+    Rows where Value is present produce -DNAME=VALUE.
+    """
+    args = []
+    with open(path, newline="", encoding="utf-8-sig") as _f:
+        reader = csv.DictReader(_f)
+        for row in reader:
+            name = (row.get("Name") or "").strip()
+            value = (row.get("Value") or "").strip()
+            if not name:
+                continue
+            if value.lower() == "ne":
+                continue
+            args.append(f"-D{name}={value}" if value else f"-D{name}")
+    return args
+
+
+if _macros_path:
+    _macro_args = _load_macros_as_clang_args(_macros_path)
+    _macro_args_seen = set(CLANG_ARGS)
+    for _ma in _macro_args:
+        if _ma not in _macro_args_seen:
+            _macro_args_seen.add(_ma)
+            CLANG_ARGS.append(_ma)
+    import logging as _logging
+    _logging.getLogger("parser").info("Loaded %d macro -D flag(s) from %s", len(_macro_args), _macros_path)
+    _macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
+    with open(_macros_json, "w", encoding="utf-8") as _mf:
+        json.dump(_macro_args, _mf, indent=2)
 
 
 def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str:

@@ -116,6 +116,17 @@ def run(model, output_dir, model_dir, config):
         except (json.JSONDecodeError, OSError):
             pass
 
+    clang_macros_file = os.path.join(model_dir_abs, "clang_macros.json")
+    if os.path.isfile(clang_macros_file):
+        try:
+            with open(clang_macros_file, "r", encoding="utf-8") as f:
+                macro_args = json.load(f) or []
+            for arg in macro_args:
+                if arg and arg not in clang_args:
+                    clang_args.append(arg)
+        except (json.JSONDecodeError, OSError):
+            pass
+
     script = _resolve_script(project_root, "fake_flowchart_generator.py")
     if not os.path.isfile(script):
         log("generator not found: %s" % script, component="flowcharts", err=True)
