@@ -38,11 +38,57 @@ This document records the **database selection** for the production platform and
 
 ---
 
-## 3. Concrete data & query profile
+## 3. Storage estimation (structured/operational data)
+
+> Database storage only — **excludes rendered images and the generated `.docx`** (object-storage phase). All figures are estimates to be validated by measurement.
+
+**Assumptions**
+
+| Assumption | Value |
+|---|---|
+| Functions per project | 20,000 |
+| Other entities (globals / macros / types) | 3,000 |
+| Branches kept (latest state each) | 10 |
+| Tenants | share the codebase → **do not multiply** DB data |
+| Embedding | one per function, 768-dim + HNSW index |
+| v1 storage model | **per-branch** (no cross-branch dedup — that's the deferred history phase) |
+
+**Per branch** (one project's latest state on one branch)
+
+| Item | Calculation | Size |
+|---|---|---|
+| Function metadata + description + behaviour | 20,000 × ~2.3 KB | ~46 MB |
+| Mermaid scripts (text) | 20,000 × ~3 KB | ~60 MB |
+| Vector embeddings (+ HNSW index) | 20,000 × ~6 KB | ~120 MB |
+| Other entities (globals/macros/types) | 3,000 × ~1.5 KB | ~5 MB |
+| Dependency edges | ~250,000 × ~80 B | ~20 MB |
+| Content hashes | 23,000 × 32 B | ~1 MB |
+| **Per-branch total** | | **~250 MB** |
+
+**Per project** = ~250 MB × **10 branches** ≈ **~2.5 GB**
+
+**Whole platform**
+
+| Projects | Logical (× ~2.5 GB) | Physical (× 3 replicas) |
+|---|---|---|
+| 10 | ~25 GB | ~75 GB |
+| 50 | ~125 GB | ~375 GB |
+| 200 | ~500 GB | ~1.5 TB |
+
+*(Tenancy/RBAC + job-queue tables are platform-wide and tiny — a few MB.)*
+
+**Observations**
+- **Dominated by per-function content** (embeddings + Mermaid). The **×10 branches** is the main multiplier, because v1 stores each branch's data independently.
+- **Cross-branch dedup (deferred history phase) would shrink this substantially** — branches share ~80–90% of code, so shared embeddings/Mermaid/entities could drop per-project from ~2.5 GB toward **~0.5 GB + small deltas**.
+- **Confirms the scale assumption:** even at **200 projects** it is ~500 GB logical / ~1.5 TB physical — comfortably a **single primary + replicas**; **no distributed/sharded DB needed** (the basis for factor F5, §5).
+
+---
+
+## 4. Concrete data & query profile
 
 The platform's data shapes and access patterns are concrete and well understood. Here is what the analyzer produces and what the platform must query.
 
-### 3.1 The data we store
+### 4.1 The data we store
 
 | Data | Shape | Notes |
 |---|---|---|
@@ -55,7 +101,7 @@ The platform's data shapes and access patterns are concrete and well understood.
 | **Tenancy & RBAC** — tenants, projects, users, roles | relational | R1, R6 |
 | **Jobs** — generation/queue state | relational | the work queue |
 
-### 3.2 The queries / access patterns we need
+### 4.2 The queries / access patterns we need
 
 | Pattern | Where it's used | Implication |
 |---|---|---|
@@ -69,13 +115,13 @@ The platform's data shapes and access patterns are concrete and well understood.
 
 ---
 
-## 4. Selection factors (derived from §3)
+## 5. Selection factors (derived from §4)
 
-From the concrete data and queries above, the database must score well on these factors. *These are not abstract — each traces directly to §3.*
+From the concrete data and queries above, the database must score well on these factors. *These are not abstract — each traces directly to §4.*
 
-| # | Factor | Why it matters (from §3) |
+| # | Factor | Why it matters (from §4) |
 |---|---|---|
-| **F1** | **Multi-paradigm data model in one engine** (relational + document + graph + vector) | §3 shows all four shapes; one engine avoids polyglot complexity |
+| **F1** | **Multi-paradigm data model in one engine** (relational + document + graph + vector) | §4 shows all four shapes; one engine avoids polyglot complexity |
 | **F2** | **ACID transactional integrity** | bulk generation writes must be atomic/consistent (C4) |
 | **F3** | **Native graph traversal** (recursive/transitive closure) | impact analysis is the core query for incremental updates |
 | **F4** | **Vector similarity search** | R3 result-reuse |
@@ -86,7 +132,7 @@ From the concrete data and queries above, the database must score well on these 
 
 ---
 
-## 5. Selected database — PostgreSQL (single-primary + HA), and why
+## 6. Selected database — PostgreSQL (single-primary + HA), and why
 
 > **Decision: PostgreSQL 16+** as the operational database, run for high availability via the **CloudNativePG** operator (1 primary + replicas), with the **pgvector** extension.
 
@@ -107,21 +153,21 @@ PostgreSQL is the only single open-source engine that scores well on **every** f
 
 ---
 
-## 6. Rejected options & why
+## 7. Rejected options & why
 
 | Option | License | Why rejected |
 |---|---|---|
 | **MongoDB** | SSPL | Weak at graph/relational; its vector search is tied to its managed cloud (not usable on-prem). Its one appeal (native JSON) is covered by Postgres **JSONB**. |
 | **CockroachDB** | CSL | **Relicensed to source-available in 2024 → fails C2** (same basis as MongoDB). Distributed-scale we don't need; non-native vector. |
-| **Citus / YugabyteDB** (distributed SQL) | AGPL / Apache-2.0 | Solve a **write-scaling problem we don't have** (our structured data fits one node). Add distributed-consensus operational complexity; less-mature pgvector than native Postgres. Retained as a *future* path only (§7). |
+| **Citus / YugabyteDB** (distributed SQL) | AGPL / Apache-2.0 | Solve a **write-scaling problem we don't have** (our structured data fits one node). Add distributed-consensus operational complexity; less-mature pgvector than native Postgres. Retained as a *future* path only (§8). |
 | **MySQL / MariaDB** | GPLv2 | Open source and viable, but weaker JSONB ergonomics and a far less mature vector ecosystem than pgvector for our JSON + graph + vector mix. |
 | **SQLite** | Public Domain | Single-writer; cannot serve multi-tenant, concurrent, write-heavy generation (R1). Fine only for the POC. |
 | **Neo4j / dedicated graph DB** | GPLv3 (Community) | Community edition has **no open-source clustering** (HA needs paid Enterprise) → boxes us in. Our graph need is **bounded transitive closure**, which Postgres recursive CTEs handle; a second datastore isn't justified. |
-| **Qdrant / Milvus as the *primary* store** | Apache-2.0 | Excellent vector engines, but they **augment**, not replace, the metadata store. pgvector covers current scale; adding one now means extra ops + cross-store consistency. Retained as a future path (§7). |
+| **Qdrant / Milvus as the *primary* store** | Apache-2.0 | Excellent vector engines, but they **augment**, not replace, the metadata store. pgvector covers current scale; adding one now means extra ops + cross-store consistency. Retained as a future path (§8). |
 
 ---
 
-## 7. Alternatives retained (graduation paths, not chosen now)
+## 8. Alternatives retained (graduation paths, not chosen now)
 
 Deliberately kept open; none requires re-architecture to adopt.
 
@@ -135,9 +181,9 @@ The principle: **start centralized on Postgres; specialize only when a measured 
 
 ---
 
-## 8. Supporting details
+## 9. Supporting details
 
-### 8.1 High-level data shape (detailed schema is a separate document)
+### 9.1 High-level data shape (detailed schema is a separate document)
 
 The database organizes into a few logical groups (tables to be specified in the schema doc):
 - **Tenancy & access:** tenants, projects, users, roles.
@@ -147,13 +193,13 @@ The database organizes into a few logical groups (tables to be specified in the 
 - **Generated content:** vector embeddings (for similarity reuse).
 - **Operations:** the job queue.
 
-### 8.2 High availability & durability
+### 9.2 High availability & durability
 
 - **CloudNativePG** operator: 1 primary + 2 replicas with automatic failover.
 - **PITR backups**; replicas provide read-scaling and failover.
 - Survives a single node loss (a 3-node quorum tolerates 1 failure).
 
-### 8.3 How the database serves the Incremental feature
+### 9.3 How the database serves the Incremental feature
 
 The incremental feature needs **no additional database technology** — it is the reason we favored Postgres-with-CTEs over a graph DB:
 - **Change detection** → per-entity content-hash rows (compare stored vs current).
@@ -162,26 +208,22 @@ The incremental feature needs **no additional database technology** — it is th
 
 *(The companion "Incremental Changes Design" document specifies this end-to-end.)*
 
-### 8.4 Scope & deferrals
+### 9.4 Scope & deferrals
 
 - **Object storage = future phase.** We keep **one latest document per branch** in the database for now (and regenerate older states on demand). When rendered-image / multi-version document volume grows, a dedicated object-storage study will follow.
 
-### 8.5 Capacity snapshot (structured data only)
-
-Structured data (entities + edges + hashes + embeddings + metadata) is **modest** — on the order of **~tens of GB even across many firmware-scale projects** — comfortably served by a **single primary** with replicas. This confirms F5: we need **HA**, not a distributed/sharded database.
-
-### 8.6 Risks & mitigations
+### 9.5 Risks & mitigations
 
 | Risk | Mitigation |
 |---|---|
 | Deep transitive-closure (impact analysis) gets slow at scale | **materialized closure table** maintained incrementally — *inside* Postgres, no new system |
-| pgvector strains at very large vector counts | start function-level; keep the vector backend swappable; graduate to Qdrant/Milvus (§7) |
-| Single primary is a write bottleneck *in principle* | our write load fits one node; graduation to Citus/Yugabyte documented (§7) if ever needed |
-| Blob volume later (images/docs) | explicitly deferred to the object-storage phase (§8.4) |
+| pgvector strains at very large vector counts | start function-level; keep the vector backend swappable; graduate to Qdrant/Milvus (§8) |
+| Single primary is a write bottleneck *in principle* | our write load fits one node; graduation to Citus/Yugabyte documented (§8) if ever needed |
+| Blob volume later (images/docs) | explicitly deferred to the object-storage phase (§9.4) |
 
 ---
 
-## 9. Summary & recommendation
+## 10. Summary & recommendation
 
 A POC-grounded evaluation — derived from the **actual** data shapes and query patterns the analyzer produces — converges on a single, clear choice:
 
