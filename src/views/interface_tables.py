@@ -162,6 +162,6 @@ def run(model, output_dir, model_dir, config):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(interface_tables, f, indent=2)
     unit_count = len([k for k in interface_tables if k != "unitNames"])
-    log("output/interface_tables.json (%d units, %d functions, %d globals)" % (
-        unit_count, len(functions_data), len(global_variables_data)
+    log("%s (%d units, %d functions, %d globals)" % (
+        out_path, unit_count, len(functions_data), len(global_variables_data)
     ), component="interfaceTables")

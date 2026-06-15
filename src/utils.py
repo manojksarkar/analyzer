@@ -73,10 +73,10 @@ def mmdc_path(project_root: str) -> str:
 
 
 def safe_filename(s: str) -> str:
-    """Filesystem-safe name (| and other unsafe chars -> _).
+    """Filesystem-safe name: spaces -> -, unsafe chars -> _.
     Includes , & ; to avoid Windows cmd parsing issues when paths are passed to mmdc.
     """
-    return re.sub(r'[<>:"/\\|?*,&;]', "_", s or "")
+    return re.sub(r'[<>:"/\\|?*,&;]', "_", (s or "").replace(" ", "-"))
 
 
 
@@ -154,7 +154,7 @@ def _resolve_component_from_rel(rel_file: str) -> str:
                 if not p:
                     continue
                 if path == p or path.lower().startswith(p.lower() + "/"):
-                    return component
+                    return component.replace(" ", "-")
         return "unknown"
 
     parts = path.split("/")

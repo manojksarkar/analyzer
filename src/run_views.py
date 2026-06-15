@@ -13,7 +13,7 @@ PROJECT_ROOT = _p.project_root
 def _filter_model_to_components(model: dict, allowed: set) -> dict:
     """Return a copy of model with only data belonging to the given component names."""
     from core.model_io import FUNCTIONS, GLOBALS, UNITS, COMPONENTS
-    lower = {c.lower() for c in allowed}
+    lower = {c.lower().replace(" ", "-") for c in allowed}
     filtered = dict(model)
     # functions / globals / units: key starts with "ComponentName|..."
     for key in (FUNCTIONS, GLOBALS, UNITS):
@@ -54,6 +54,10 @@ def main():
         i = args.index("--selected-group")
         if i + 1 < len(args):
             selected_group = args[i + 1]
+    selected_components = []
+    for j in range(len(args) - 1):
+        if args[j] == "--selected-component":
+            selected_components.append(args[j + 1])
     filter_mode_override = None
     if "--filter-mode" in args:
         i = args.index("--filter-mode")
@@ -93,10 +97,23 @@ def main():
         if isinstance(grp, dict):
             config = dict(config)
             config["_analyzerSelectedGroup"] = resolved
-            config["_analyzerAllowedComponents"] = sorted(grp.keys())
+            config["_analyzerAllowedComponents"] = sorted(k.replace(" ", "-") for k in grp.keys())
             # Filter model to only include components from the same layer
             from core.config import get_layer_components
             layer_comps = get_layer_components(config, resolved)
+            if layer_comps:
+                model = _filter_model_to_components(model, layer_comps)
+    elif selected_components:
+        from core.config import get_component_layer_name, get_layer_flat_groups
+        config = dict(config)
+        config["_analyzerAllowedComponents"] = sorted(selected_components)
+        derived_layer = get_component_layer_name(config, selected_components[0])
+        if derived_layer:
+            layer_groups = get_layer_flat_groups(config, derived_layer)
+            layer_comps: set = set()
+            for g in layer_groups.values():
+                if isinstance(g, dict):
+                    layer_comps.update(g.keys())
             if layer_comps:
                 model = _filter_model_to_components(model, layer_comps)
     run_views(model, output_dir, model_dir, config)

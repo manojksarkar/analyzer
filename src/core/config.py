@@ -536,6 +536,23 @@ def get_group_layer_name(cfg: Dict[str, Any], group_name: str) -> Optional[str]:
     return None
 
 
+def get_component_layer_name(cfg: Dict[str, Any], component_name: str) -> Optional[str]:
+    """Return the layer name that owns component_name, or None if not found.
+
+    Comparison is space-normalized (spaces replaced with -) so that a caller
+    using the identifier form ("My-Sample") matches a config key with spaces
+    ("My Sample").
+    """
+    norm = (component_name or "").replace(" ", "-")
+    for layer_name, layer_cfg in (cfg.get("layers") or {}).items():
+        for grp in ((layer_cfg or {}).get("groups") or {}).values():
+            if isinstance(grp, dict):
+                for k in grp:
+                    if (k or "").replace(" ", "-") == norm:
+                        return layer_name
+    return None
+
+
 def get_layer_flat_groups(cfg: Dict[str, Any], layer_name: str) -> Dict[str, Any]:
     """Return flat groups for a single named layer, with layer paths resolved."""
     layer_cfg = (cfg.get("layers") or {}).get(layer_name)

@@ -61,12 +61,15 @@ def _resolve_group_name(groups: Dict[str, Any], requested: Optional[str]) -> Opt
 
 def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
                         data_dictionary_path: Optional[str] = None,
+                        macros_path: Optional[str] = None,
                         selected_group: Optional[str] = None,
                         selected_layer: Optional[str] = None) -> List[Phase]:
     deriver_args = [] if no_llm_summarize else ["--llm-summarize"]
     parser_args = [project_path]
     if data_dictionary_path:
         parser_args += ["--data-dictionary", data_dictionary_path]
+    if macros_path:
+        parser_args += ["--macros", macros_path]
     if selected_group:
         parser_args += ["--selected-group", selected_group]
     elif selected_layer:
@@ -80,6 +83,7 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
 def _view_export_phases(*, output_dir: Optional[str] = None,
                         selected_group: Optional[str] = None,
                         filter_mode: Optional[str] = None,
+                        extra_view_args: Optional[List[str]] = None,
                         docx_args: Optional[List[str]] = None) -> List[Phase]:
     views_args: List[str] = []
     if output_dir:
@@ -88,6 +92,8 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
         views_args += ["--selected-group", selected_group]
     if filter_mode:
         views_args += ["--filter-mode", filter_mode]
+    if extra_view_args:
+        views_args += extra_view_args
     return [
         Phase("Phase 3: Generate views", "run_views.py", views_args),
         Phase("Phase 4: Export to DOCX", "docx_exporter.py", list(docx_args or [])),
@@ -100,11 +106,14 @@ def plan_runs(
     project_path: str,
     selected_group: Optional[str],
     selected_layer: Optional[str] = None,
+    selected_components: Optional[List[str]] = None,
+    component_per_docx: bool = False,
     use_model: bool,
     no_llm_summarize: bool,
     from_phase: int = 1,
     filter_mode: Optional[str],
     data_dictionary_path: Optional[str] = None,
+    macros_path: Optional[str] = None,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -143,6 +152,50 @@ def plan_runs(
     plans: List[RunPlan] = []
 
     # ------------------------------------------------------------------
+    # Component selection: one or more explicit component names
+    # ------------------------------------------------------------------
+    if selected_components:
+        from .config import get_component_layer_name
+        derived_layer = get_component_layer_name(cfg, selected_components[0])
+        virtual_name = "_".join(selected_components)
+
+        if not use_model:
+            build_phases = _build_model_phases(
+                project_path,
+                no_llm_summarize=no_llm_summarize,
+                data_dictionary_path=data_dictionary_path,
+                macros_path=macros_path,
+                selected_layer=derived_layer,
+            )
+            if from_phase <= 2:
+                plans.append(RunPlan(
+                    label=f"Build model (layer of {', '.join(selected_components)})",
+                    phases=build_phases,
+                    runner_from_phase=from_phase,
+                ))
+
+        comp_out = os.path.join(p.output_dir, virtual_name)
+        comp_sel_args: List[str] = []
+        for c in selected_components:
+            comp_sel_args += ["--selected-component", c]
+        view_phases = _view_export_phases(
+            output_dir=comp_out,
+            filter_mode=filter_mode,
+            extra_view_args=comp_sel_args,
+            docx_args=[
+                os.path.join(comp_out, "interface_tables.json"),
+                os.path.join(comp_out, f"software_detailed_design_{virtual_name}.docx"),
+            ] + comp_sel_args,
+        )
+        local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
+        plans.append(RunPlan(
+            label=f"Components: {', '.join(selected_components)}",
+            phases=view_phases,
+            runner_from_phase=local_from,
+        ))
+        return plans
+
+    # ------------------------------------------------------------------
     # No layer: single flat run, all 4 phases (backward compat)
     # ------------------------------------------------------------------
     if not group_names:
@@ -155,7 +208,8 @@ def plan_runs(
                                  runner_from_phase=translated))
         else:
             phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
-                                         data_dictionary_path=data_dictionary_path) \
+                                         data_dictionary_path=data_dictionary_path,
+                                         macros_path=macros_path) \
                      + _view_export_phases(filter_mode=filter_mode)
             plans.append(RunPlan(label="single run",
                                  phases=phases,
@@ -176,6 +230,7 @@ def plan_runs(
         # Build-model plan covers phases 1+2 only.
         build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                             data_dictionary_path=data_dictionary_path,
+                                            macros_path=macros_path,
                                             selected_group=resolved_selected,
                                             selected_layer=selected_layer)
         # If the user wants to start at phase >= 3, the build step is skipped
@@ -191,19 +246,41 @@ def plan_runs(
                                  phases=build_phases,
                                  runner_from_phase=from_phase))
 
+    local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
     for g in target_groups:
-            group_out = os.path.join(p.output_dir, g)
+        if component_per_docx:
+            grp = groups_cfg.get(g, {})
+            if not isinstance(grp, dict):
+                continue
+            for comp_name in grp.keys():
+                comp = comp_name.replace(" ", "-")
+                comp_out = os.path.join(p.output_dir, comp)
+                comp_sel_args = ["--selected-component", comp]
+                view_phases = _view_export_phases(
+                    output_dir=comp_out,
+                    filter_mode=filter_mode,
+                    extra_view_args=comp_sel_args,
+                    docx_args=[
+                        os.path.join(comp_out, "interface_tables.json"),
+                        os.path.join(comp_out, f"software_detailed_design_{comp}.docx"),
+                    ] + comp_sel_args,
+                )
+                plans.append(RunPlan(label=f"Component: {comp}",
+                                     phases=view_phases,
+                                     runner_from_phase=local_from))
+        else:
+            g_safe = g.replace(" ", "-")
+            group_out = os.path.join(p.output_dir, g_safe)
             view_phases = _view_export_phases(
                 output_dir=group_out,
                 selected_group=g,
                 filter_mode=filter_mode,
                 docx_args=[
                     os.path.join(group_out, "interface_tables.json"),
-                    os.path.join(group_out, f"software_detailed_design_{g}.docx"),
+                    os.path.join(group_out, f"software_detailed_design_{g_safe}.docx"),
                     "--selected-group", g,
                 ],
             )
-            local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
             plans.append(RunPlan(label=f"Group: {g}",
                                  phases=view_phases,
                                  runner_from_phase=local_from))

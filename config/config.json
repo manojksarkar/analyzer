@@ -6,7 +6,7 @@
   "views": {
     "interfaceTables": true,
     "unitDiagrams": true,
-    "flowcharts": false,
+    "flowcharts": true,
     "behaviourDiagram": true,
     "componentStaticDiagram": true
   },
@@ -14,8 +14,8 @@
     "Layer1": {
       "path": "Layer1",
       "groups": {
-        "Sample": {
-          "Core": "Sample/Core",
+        "My Sample": {
+          "Sample Core": "Sample/Core",
           "Lib": "Sample/Lib",
           "Util": "Sample/Util"
         },

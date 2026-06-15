@@ -19,7 +19,7 @@ def _fid_to_unit(units_data):
 
 def _unit_part_id(unit_key):
     """Mermaid node id (safe, no | or special chars)."""
-    return (unit_key or "").replace(KEY_SEP, "_").replace(" ", "_") or "u"
+    return (unit_key or "").replace(KEY_SEP, "_").replace(" ", "-") or "u"
 
 
 def _escape_label(text):
@@ -100,7 +100,7 @@ def _build_unit_diagram(
     def _node_line(pid):
         for uk in units_data:
             if _unit_part_id(uk) == pid:
-                raw = unit_names.get(uk, uk) if pid == this_id else uk.replace(KEY_SEP, "/")
+                raw = unit_names.get(uk, uk) if pid == this_id else uk.replace(KEY_SEP, "/").replace("-", " ")
                 box_label = (raw or "?").replace("]", "'").replace("[", "'")
                 if pid == this_id:
                     extra = "<br/>".join([f"{pad} " for _ in range(n_extra_lines)])
@@ -121,8 +121,8 @@ def _build_unit_diagram(
         lines.append("  " + _node_line(pid).strip())
 
     # Internal module (yellow box)
-    mod_label = (this_component or "Internal").replace("]", "'").replace("[", "'")
-    lines.append(f"  subgraph internal_mod[{mod_label}]")
+    mod_label = (this_component or "Internal").replace("-", " ").replace('"', "'").replace("]", "'").replace("[", "'")
+    lines.append(f'  subgraph internal_mod["{mod_label}"]')
     lines.append("    direction TB")
     lines.append("    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px")
     lines.append("")
