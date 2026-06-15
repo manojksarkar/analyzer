@@ -1103,8 +1103,9 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     _docx_progress.start()
     for sec_idx, component_name in enumerate(sorted_components, start=0):
         sec_num = sec_idx + 2
-        _docx_progress.step(label=component_name)
-        doc.add_heading(f"{sec_num} {component_name}", level=1)
+        component_display = component_name.replace("-", " ")
+        _docx_progress.step(label=component_display)
+        doc.add_heading(f"{sec_num} {component_display}", level=1)
 
         # 2.1 Static Design
         doc.add_heading(f"{sec_num}.1 Static Design", level=2)
@@ -1112,7 +1113,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         unit_rows_component = sorted(by_component[component_name])
         if msd_enabled and unit_rows_component:
             # Container diagram: blue component subgraph with all units inside
-            container_mmd = _build_component_container_mermaid(component_name, unit_rows_component)
+            container_mmd = _build_component_container_mermaid(component_display, unit_rows_component)
             container_png = os.path.join(
                 artifacts_dir, "component_container_diagrams", f"{safe_filename(component_name)}.png"
             )
@@ -1145,7 +1146,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         # Module-level index table (Component/Unit/Description/Note)
         _add_component_unit_table(
             doc,
-            component_name,
+            component_display,
             unit_rows_component,
             font_small,
             config=config,
