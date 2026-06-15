@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-05 (version3 — flowchart layout, PNG slicing, validator hardening, and the new FastAPI backend layer).
+> Updated: 2026-06-12 (version3 — production-redesign design work added: §22 captures the POC→production stack, PostgreSQL DB selection, and the incremental (delta) regeneration feature).
 > Current active branch: `version3` (off `version2`, which is off `main`).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
@@ -11,6 +11,7 @@
 > - §4c covers the version3 observability + cross-platform refinements (prompt/response tracing, UTF-8 output, token-budget-scaled flowchart prompts, Ollama budget clamp).
 > - **§4d covers post-2026-04-21 refinements: strict CLI flag rejection, LLM description cache relocation, `FunctionKnowledge.end_line`, Mermaid frontmatter + ELK feedbackEdges, and PNG slicing for tall flowcharts.**
 > - **§21 introduces the FastAPI backend layer (commits since 2026-05-20) — implementation detail lives in [backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md); this file just orients you.**
+> - **§22 captures the Production Redesign (POC → Production) design decisions — overall stack, PostgreSQL DB selection, and the incremental (delta) regeneration feature. Full detail in `docs/production-redesign/01..03`. Read §22 first when working on the production platform.**
 > - All pre-existing sections have been updated in place where version3 changed the behaviour.
 
 ---
@@ -2207,3 +2208,146 @@ shell=True quirks, etc.) is in
 with curl payloads are in [backend/API_DOC.md](backend/API_DOC.md). A
 sample response fixture lives at
 [backend/fixtures/get_components_FTL.json](backend/fixtures/get_components_FTL.json).
+
+---
+
+## 22. Production Redesign (POC → Production) — design decisions
+
+> This section captures the forward-looking **production platform** design work done in the
+> 2026-06 design sessions. Everything in §1–§21 is the **POC**; this is the plan to productionize it.
+> **Full detail lives in three design docs under `docs/production-redesign/` (all on `version3`).
+> Read those for depth — this section is the orientation + the decisions, so a fresh session can
+> pick up without re-deriving them.**
+
+### 22.1 Design documents (read these for full detail)
+
+- **`docs/production-redesign/01-technology-selection-study.md`** (v1.2) — overall production stack + deployment.
+- **`docs/production-redesign/02-database-design-study.md`** — DB selection (PostgreSQL), POC-grounded, with storage estimation.
+- **`docs/production-redesign/03-incremental-changes-design.md`** — the incremental / delta regeneration feature.
+
+### 22.2 The vision
+
+A **multi-tenant, on-premise production platform**: users register a C++ project (a path or, going
+forward, a **git/Bitbucket URL → clone**), the platform runs the analyzer and produces the ASPICE
+SWE.3 document, browsable/downloadable in a UI. Must be **scalable, reliable, durable, consistent**.
+
+### 22.3 Hard constraints (these drive every decision)
+
+- **On-prem only** — C++ firmware IP must not leave the corporate network → **no cloud services**.
+- **Open-source only (OSI-approved)** → rules out *source-available* licenses: **SSPL** (MongoDB),
+  **CSL** (CockroachDB, since 2024), **BSL** (ArangoDB/Memgraph), and **MinIO/Redis** post-relicense.
+- **Firmware-scale** — up to ~50k functions/project (~20k typical), ~40 tenants/project
+  (tenants **share** the codebase, so they do *not* multiply data), 10+ branches/project.
+- **Rewrite the analyzer to read/write the DB directly** (no more `model/`+`output/` JSON files) —
+  this also removes the local-disk phase handoff, which is what enables **distributed workers**.
+
+### 22.4 Selected stack (key decisions)
+
+- **Database: PostgreSQL 16+** (single-primary + HA via **CloudNativePG/CNPG**) with **pgvector**.
+  The **system of record** (replaces the JSON files).
+  - *Why Postgres:* one engine covers **relational + JSONB (document) + recursive CTEs
+    (graph/impact analysis) + pgvector (similarity)**; ACID; OSI open-source; on-prem; won't rug-pull;
+    modest structured scale **fits one node**.
+  - **NOT a distributed DB** (Citus/Cockroach/Yugabyte) — structured data fits one node; we scale the
+    **stateless worker tier**, not the DB.
+- **Job queue:** Postgres-as-queue (`SELECT … FOR UPDATE SKIP LOCKED`) — **not** RabbitMQ/Kafka/Redis
+  (extra stateful system for throughput we don't need; long, few jobs).
+- **Graph / impact analysis:** Postgres **recursive CTE / materialized closure table** (not a graph DB;
+  **Apache AGE** is the in-Postgres graduation path, then NebulaGraph).
+- **Object storage: DEFERRED to a future phase.** History worth knowing: chose MinIO → discovered
+  **MinIO Community Edition was archived ("no longer maintained") in Feb 2026** → switched to
+  **SeaweedFS** (Apache-2.0) → then **deferred object storage entirely for now**. v1: keep **latest
+  document per branch** in the DB; **flowchart images generated on demand, not stored**; **Mermaid
+  scripts kept in the DB** (text).
+- **Deployment:** containers on **Kubernetes**, **3-node cluster** (quorum = 2, survives **1** node
+  failure; 5 nodes survive 2). **Stateless tier** (API + workers) vs **stateful quorum-bound data
+  core** (Postgres + etcd [+ object store later]). **Local SSD (NVMe-ready)** via TopoLVM/OpenEBS
+  LocalPV; redundancy = **app-level replication** (CNPG), not a storage layer. No existing
+  CSI/distributed storage. Worker VMs are **not** quorum members → scale them freely.
+- **LLM:** internal **corporate gateway** (OpenAI-compatible, off-cluster) → **no GPU nodes** in-cluster.
+- **Auth:** **in-app auth + RBAC on PostgreSQL** (simple roles now); **Keycloak + corporate SSO** is the
+  graduation path. Tenant isolation via `tenant_id` + optional Postgres **Row-Level Security (RLS)**.
+
+### 22.5 Rejected DB options (for the record)
+
+- **MongoDB** — SSPL (not OSI); weak graph/relational; on-prem vector is Atlas-only.
+- **CockroachDB** — CSL (not OSI since 2024); distributed-scale we don't need.
+- **Citus / YugabyteDB** — solve a write-scale problem we don't have; AGPL (Citus); less-mature pgvector.
+- **MySQL / MariaDB** — weaker JSONB; immature vector ecosystem vs pgvector.
+- **SQLite** — single-writer; no multi-tenant concurrency.
+- **Neo4j / dedicated graph DB** — GPLv3 Community has no open-source clustering; our graph need is
+  bounded transitive closure that Postgres handles.
+- **Qdrant / Milvus as the primary store** — augment, not replace; pgvector covers current scale
+  (kept as a graduation path).
+
+### 22.6 Incremental (delta) regeneration feature — design summary
+
+Goal: **hours → minutes** for small changes (skip the rate-limited LLM work for unchanged functions).
+"Incremental build for documents" (the make/ccache/Bazel principle).
+
+- **Change detection — two layers:**
+  - **`git diff --name-only`** for *which files* changed (fast, reliable — **not** its scattered hunk
+    output).
+  - **Entity hashing** for *which entities* changed: hash **four entity types — functions, globals,
+    macros, types**. **Token-based** (libclang; ignores whitespace/indentation/CRLF, **includes
+    comments**), **full SHA-256** (32 bytes, never truncated), one **uniform** hash per entity's source
+    extent, **keyed by identity including the defining file/location** (so same-named macros/types in
+    different files are distinct).
+  - **One hash per entity** now; **per-artifact hashing is deferred**.
+  - Classification: unchanged / changed / new / deleted; **move/rename = delete(old key) + add(new key)**.
+  - *Why hash globals/macros/types separately:* changing a global/macro/type does **not** change a
+    *using* function's tokens (a function still just writes `MAX` after `#define MAX` changes value), so
+    those entities must be hashed on their own; impact analysis then refreshes the functions that use them.
+- **Impact analysis (dependency-graph propagation):** changes flow **UP to callers/users**. Axes:
+  **call graph (transitive callers), type usage, globals, macros, containment (file/module/project
+  summaries), diagrams (call-edge changes), cross-group**. Hard cases: **indirect calls / virtual
+  dispatch → over-approximate** (treat as edges to all overrides / any address-taken function);
+  **move/rename → key change**. Algorithm: reverse-reachability BFS / recursive CTE / closure table over
+  the stored edges.
+- **Selective regeneration:** re-run the LLM only for the impact set; **reuse** stored outputs for the
+  rest. **Reassemble** the document from pieces (not in-place patching).
+- **Branch handling:** keep **latest commit + latest document per branch**. On regenerate, gate with
+  **`git merge-base --is-ancestor base new`**: if the stored baseline is an ancestor → incremental;
+  first-time-branch / rebase / force-push / diverged → **full-regen fallback** (always correct).
+- **Versioning:** latest only per branch; **full Git-style history (cross-branch dedup) is deferred**.
+- **Tech additions (no new DB or system):** the **`git` CLI** in the worker image + **repo credentials**
+  (SSH deploy key or HTTP access token, from a deployment-appropriate secrets store — K8s Secrets / Vault
+  / env injection; the project owner supplies it at registration, stored encrypted). Operator-side recipe
+  changes (LLM model/prompts/config) → a manual full-regen, separate from the user's code-diff path.
+
+### 22.7 Storage estimation (DB structured data only; excludes images/docs)
+
+- **~250 MB / branch** (20k functions + 3k entities), dominated by **embeddings (~120 MB) + Mermaid
+  (~60 MB)**.
+- **~2.5 GB / project** (×10 branches; v1 stores per-branch, no cross-branch dedup).
+- Platform: ~25 GB (10 projects) → **~500 GB logical / ~1.5 TB physical at 200 projects** → a
+  **single primary + replicas** comfortably suffices.
+- Cross-branch dedup (deferred) would shrink ~2.5 GB → **~0.5 GB + small deltas**.
+
+### 22.8 Explicitly deferred to later phases
+
+- **Object storage** (images, documents at scale).
+- **Per-artifact hashing** (finer-grained reuse — e.g. a comment-only change reusing the flowchart).
+- **Image-render cache** (skip re-rendering unchanged flowcharts — tied to object storage).
+- **Full version history** (Git-style dedup across versions/branches).
+- **Non-Functional Requirements section** for the DB study.
+
+### 22.9 What's next
+
+- **Detailed database schema design** — tables for entities, dependency edges, `{key → hash}` records,
+  per-branch baselines, RBAC, and the job queue.
+- (Optional) the NFR section for the DB study.
+- The object-storage study (future phase).
+
+### 22.10 Cross-cutting lessons from this session
+
+- **MinIO Community Edition is dead** (archived Feb 2026); **SeaweedFS** (Apache-2.0) is the maintained
+  alternative *if/when* object storage is needed.
+- **Watch licensing rug-pulls:** SSPL / CSL / BSL / RSAL are *source-available, not OSI*. PostgreSQL
+  (PostgreSQL License) is the low-risk anchor; **Valkey** is the OSI-clean Redis fork.
+- **Hashing for change detection** must be **token-based** (to ignore formatting/CRLF) and **full
+  SHA-256** (collisions effectively impossible). A *token change is always a line change*, so git diff
+  never *under*-detects — it only over-detects on formatting, which is the safe direction.
+- **The whole incremental design biases to over-regenerate, never to stale** — every ambiguous case
+  (indirect/virtual calls, formatting noise, non-ancestor commits) regenerates *more*, with a manual
+  full-regen escape hatch.
