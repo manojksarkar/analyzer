@@ -238,6 +238,7 @@ if _macros_path:
         json.dump(_macro_args, _mf, indent=2)
 
 
+
 def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str:
     """Scan raw source lines at/before line_no to detect PRIVATE/PUBLIC/PROTECTED prefix.
 

@@ -14,6 +14,12 @@ Options:
                        auto-parsed entries). See config/data_dictionary.csv for format.
   --macros <path>      CSV file (Name, Value) passed as -D flags to Clang. Rows
                        with Value="ne" are skipped. Empty Value → -DMACRONAME.
+  --include-path <layer> <dir>
+                       Add an extra -I include directory for the named layer.
+                       Repeatable. Merged into clang_include_paths.json before
+                       Phase 1, so layer-scoping in Phase 1 and Phase 3 is
+                       automatic. Example:
+                         --include-path Layer1 C:/ThirdParty/boost/include
   --verbose            Enable DEBUG logs (cache hits, budgets, few-shot picks)
   --quiet              Only log WARNINGs and above
   --trace-prompts      Print full LLM prompts (system + user) to stdout.
@@ -82,6 +88,7 @@ component_per_docx      = False
 filter_mode_arg         = None
 data_dictionary_arg     = None
 macros_arg              = None
+include_path_args       = []   # list of (layer_name, abs_dir) tuples
 raw_args                = []
 
 i = 1
@@ -130,6 +137,12 @@ while i < len(sys.argv):
             log("--macros requires a file path", component="run", err=True)
             sys.exit(1)
         macros_arg = sys.argv[i]
+    elif a == "--include-path":
+        if i + 2 >= len(sys.argv):
+            log("--include-path requires two arguments: <layer> <dir>", component="run", err=True)
+            sys.exit(1)
+        include_path_args.append((sys.argv[i + 1], sys.argv[i + 2]))
+        i += 2
     elif a == "--from-phase":
         i += 1
         if i >= len(sys.argv):
@@ -226,6 +239,7 @@ if macros_path:
         sys.exit(2)
     macros_path = _m_abs
 
+
 # ---------------------------------------------------------------------------
 # Collect layer include paths before any phase runs.
 # Written to model/clang_include_paths.json so Phase 1 (parser) and Phase 3
@@ -285,6 +299,21 @@ for _lname, _layer in (cfg.get("layers") or {}).items():
         _dirnames[:] = [d for d in _dirnames if not d.startswith(".")]
         _dirs.append(_dirpath)
     _layer_inc[_lname] = _dirs
+
+# Validate and merge --include-path <layer> <dir> entries.
+_known_layers = set((cfg.get("layers") or {}).keys())
+for _ip_layer, _ip_dir in include_path_args:
+    if _ip_layer not in _known_layers:
+        log(f"--include-path: unknown layer {_ip_layer!r}. Valid layers: {', '.join(sorted(_known_layers))}", component="run", err=True)
+        sys.exit(1)
+    _ip_abs = _ip_dir if os.path.isabs(_ip_dir) else os.path.join(SCRIPT_DIR, _ip_dir)
+    if not os.path.isdir(_ip_abs):
+        log(f"--include-path: directory not found: {_ip_abs}", component="run", err=True)
+        sys.exit(1)
+    _layer_inc.setdefault(_ip_layer, [])
+    if _ip_abs not in _layer_inc[_ip_layer]:
+        _layer_inc[_ip_layer].append(_ip_abs)
+
 _clang_paths_file = os.path.join(_model_dir, "clang_include_paths.json")
 with open(_clang_paths_file, "w", encoding="utf-8") as _f:
     _json.dump(_layer_inc, _f, indent=2)
