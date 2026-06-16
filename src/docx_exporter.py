@@ -1040,7 +1040,7 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         _merge_vertical_cells(table, 0, 1, n - 1)
 
 
-def _build_cover_page(doc, project_name: str, group_name: str, version: str = "1.0.0") -> None:
+def _build_cover_page(doc, project_name: str, group_name: str, version: str = "1.0.0", copyright_text: str = "") -> None:
     """Render the cover page (first page) of the DOCX."""
     from datetime import date as _date
     from docx.shared import Pt, Inches, RGBColor
@@ -1135,6 +1135,13 @@ def _build_cover_page(doc, project_name: str, group_name: str, version: str = "1
         p_cr.add_run().add_picture(cr_path, width=Inches(2.6))
     else:
         _run(p_cr, "© All Rights Reserved", size_pt=10, color=DARK)
+
+    # Copyright sentence below the image
+    _cr_text = copyright_text or f"© {_date.today().year} All Rights Reserved."
+    p_cr_text = doc.add_paragraph()
+    _spacing(p_cr_text, before=0, after=0)
+    _align(p_cr_text, "left")
+    _run(p_cr_text, _cr_text, size_pt=8, color=RGBColor(128, 128, 128))
 
     _spacer(4)
 
@@ -1247,7 +1254,8 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         _cover_group = "All Components"
 
     doc = Document()
-    _build_cover_page(doc, _project_name, _cover_group)
+    _build_cover_page(doc, _project_name, _cover_group,
+                      copyright_text=config.get("docx", {}).get("copyrightText", ""))
     _add_toc(doc)
 
     # Group by component; use data as-is from view output
