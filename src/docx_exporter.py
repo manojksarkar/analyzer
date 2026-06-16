@@ -1040,6 +1040,116 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         _merge_vertical_cells(table, 0, 1, n - 1)
 
 
+def _build_cover_page(doc, project_name: str, group_name: str, version: str = "1.0.0") -> None:
+    """Render the cover page (first page) of the DOCX."""
+    from datetime import date as _date
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    NAVY = RGBColor(30, 60, 120)
+    DARK = RGBColor(60, 60, 60)
+    ASSETS = os.path.join(PROJECT_ROOT, "assets")
+
+    def _spacing(para, before=0, after=0):
+        pPr = para._p.get_or_add_pPr()
+        for old in pPr.findall(qn("w:spacing")):
+            pPr.remove(old)
+        sp = OxmlElement("w:spacing")
+        sp.set(qn("w:before"), str(before))
+        sp.set(qn("w:after"),  str(after))
+        pPr.append(sp)
+
+    def _align(para, val="right"):
+        pPr = para._p.get_or_add_pPr()
+        for old in pPr.findall(qn("w:jc")):
+            pPr.remove(old)
+        jc = OxmlElement("w:jc")
+        jc.set(qn("w:val"), val)
+        pPr.append(jc)
+        para.alignment = (WD_ALIGN_PARAGRAPH.RIGHT if val == "right" else
+                          WD_ALIGN_PARAGRAPH.CENTER if val == "center" else
+                          WD_ALIGN_PARAGRAPH.LEFT)
+
+    def _run(para, text, size_pt, bold=False, color=None):
+        r = para.add_run(text)
+        r.bold = bold
+        r.font.size = Pt(size_pt)
+        if color:
+            r.font.color.rgb = color
+        return r
+
+    def _double_underline(run, color_hex="1E3C78"):
+        rPr = run._r.get_or_add_rPr()
+        for old in rPr.findall(qn("w:u")):
+            rPr.remove(old)
+        u = OxmlElement("w:u")
+        u.set(qn("w:val"),   "double")
+        u.set(qn("w:color"), color_hex)
+        u.set(qn("w:sz"),    "12")
+        rPr.append(u)
+
+    def _spacer(n=1):
+        for _ in range(n):
+            p = doc.add_paragraph()
+            _spacing(p, 0, 0)
+
+    section    = doc.sections[0]
+    body_w_in  = (section.page_width / 914400) - (
+        section.left_margin / 914400 + section.right_margin / 914400)
+
+    _spacer(8)
+
+    # Project name — largest, bold, double-underlined
+    p_name = doc.add_paragraph()
+    _spacing(p_name, before=0, after=120)
+    _align(p_name, "right")
+    r_name = _run(p_name, project_name, size_pt=54, bold=True, color=NAVY)
+    _double_underline(r_name, "1E3C78")
+
+    # Subtitle — single line with group/component, bold
+    subtitle = f"Software Detailed Design Specification  —  {group_name}"
+    p_sub = doc.add_paragraph()
+    _spacing(p_sub, before=0, after=100)
+    _align(p_sub, "right")
+    _run(p_sub, subtitle, size_pt=16, bold=True, color=NAVY)
+
+    # Version
+    p_ver = doc.add_paragraph()
+    _spacing(p_ver, before=0, after=60)
+    _align(p_ver, "right")
+    _run(p_ver, f"Version {version}", size_pt=12, color=DARK)
+
+    # Date
+    p_date = doc.add_paragraph()
+    _spacing(p_date, before=0, after=400)
+    _align(p_date, "right")
+    _run(p_date, _date.today().strftime("%Y-%m-%d"), size_pt=12, color=DARK)
+
+    # Copyright image — left-aligned
+    cr_path = os.path.join(ASSETS, "copyright.png")
+    p_cr = doc.add_paragraph()
+    _spacing(p_cr, before=0, after=0)
+    _align(p_cr, "left")
+    if os.path.isfile(cr_path):
+        p_cr.add_run().add_picture(cr_path, width=Inches(2.6))
+    else:
+        _run(p_cr, "© All Rights Reserved", size_pt=10, color=DARK)
+
+    _spacer(4)
+
+    # Bottom arc — full body width
+    arc_path = os.path.join(ASSETS, "bottom_arc.png")
+    p_arc = doc.add_paragraph()
+    _spacing(p_arc, before=0, after=0)
+    _align(p_arc, "center")
+    if os.path.isfile(arc_path):
+        p_arc.add_run().add_picture(arc_path, width=Inches(body_w_in))
+
+    doc.add_page_break()
+
+
 def export_docx(json_path: str = None, docx_path: str = None, selected_group: str | None = None, selected_components: list | None = None) -> Tuple[bool, Optional[str]]:
     from utils import safe_filename, KEY_SEP
     from core.config import app_config
@@ -1118,9 +1228,22 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             _hidden_by_mod_unit.setdefault((_fp[0], _fp[1]), set()).add(_base)
     base_path = _load_base_path()
 
+    # Resolve project name from metadata
+    _meta_path = os.path.join(MODEL_DIR, "metadata.json")
+    _project_name = "Software Project"
+    if os.path.isfile(_meta_path):
+        with open(_meta_path, "r", encoding="utf-8") as _f:
+            _project_name = json.load(_f).get("projectName", _project_name)
+    # Build a readable cover label for the group / component selection
+    if selected_components:
+        _cover_group = " / ".join(c.replace("-", " ") for c in selected_components)
+    elif selected_group:
+        _cover_group = selected_group.replace("-", " ")
+    else:
+        _cover_group = "All Components"
+
     doc = Document()
-    doc.add_heading("Software Detailed Design", 0)
-    doc.add_page_break()
+    _build_cover_page(doc, _project_name, _cover_group)
     _add_toc(doc)
 
     # Group by component; use data as-is from view output
