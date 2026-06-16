@@ -12,6 +12,9 @@ Options:
   --data-dictionary <path>
                        CSV file to merge into model/dataDictionary.json (overrides
                        auto-parsed entries). See config/data_dictionary.csv for format.
+  --project-name <name>
+                       Override the project name used in metadata and
+                       interfaceIds (default: basename of project_path).
   --macros <path>      CSV file (Name, Value) passed as -D flags to Clang. Rows
                        with Value="ne" are skipped. Empty Value → -DMACRONAME.
   --include-path <layer> <dir>
@@ -88,6 +91,7 @@ component_per_docx      = False
 filter_mode_arg         = None
 data_dictionary_arg     = None
 macros_arg              = None
+project_name_arg        = None
 include_path_args       = []   # list of (layer_name, abs_dir) tuples
 raw_args                = []
 
@@ -137,6 +141,12 @@ while i < len(sys.argv):
             log("--macros requires a file path", component="run", err=True)
             sys.exit(1)
         macros_arg = sys.argv[i]
+    elif a == "--project-name":
+        i += 1
+        if i >= len(sys.argv):
+            log("--project-name requires a name argument", component="run", err=True)
+            sys.exit(1)
+        project_name_arg = sys.argv[i]
     elif a == "--include-path":
         if i + 2 >= len(sys.argv):
             log("--include-path requires two arguments: <layer> <dir>", component="run", err=True)
@@ -346,6 +356,7 @@ try:
         filter_mode=filter_mode_arg,
         data_dictionary_path=data_dictionary_path,
         macros_path=macros_path,
+        project_name=project_name_arg,
     )
 except ValueError as e:
     log(str(e), component="run", err=True)

@@ -63,7 +63,8 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
                         data_dictionary_path: Optional[str] = None,
                         macros_path: Optional[str] = None,
                         selected_group: Optional[str] = None,
-                        selected_layer: Optional[str] = None) -> List[Phase]:
+                        selected_layer: Optional[str] = None,
+                        project_name: Optional[str] = None) -> List[Phase]:
     deriver_args = [] if no_llm_summarize else ["--llm-summarize"]
     parser_args = [project_path]
     if data_dictionary_path:
@@ -74,6 +75,8 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
         parser_args += ["--selected-group", selected_group]
     elif selected_layer:
         parser_args += ["--selected-layer", selected_layer]
+    if project_name:
+        parser_args += ["--project-name", project_name]
     return [
         Phase("Phase 1: Parse C++ source", "parser.py", parser_args),
         Phase("Phase 2: Derive model", "model_deriver.py", deriver_args),
@@ -114,6 +117,7 @@ def plan_runs(
     filter_mode: Optional[str],
     data_dictionary_path: Optional[str] = None,
     macros_path: Optional[str] = None,
+    project_name: Optional[str] = None,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -166,6 +170,7 @@ def plan_runs(
                 data_dictionary_path=data_dictionary_path,
                 macros_path=macros_path,
                 selected_layer=derived_layer,
+                project_name=project_name,
             )
             if from_phase <= 2:
                 plans.append(RunPlan(
@@ -209,7 +214,8 @@ def plan_runs(
         else:
             phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                          data_dictionary_path=data_dictionary_path,
-                                         macros_path=macros_path) \
+                                         macros_path=macros_path,
+                                         project_name=project_name) \
                      + _view_export_phases(filter_mode=filter_mode)
             plans.append(RunPlan(label="single run",
                                  phases=phases,
@@ -232,7 +238,8 @@ def plan_runs(
                                             data_dictionary_path=data_dictionary_path,
                                             macros_path=macros_path,
                                             selected_group=resolved_selected,
-                                            selected_layer=selected_layer)
+                                            selected_layer=selected_layer,
+                                            project_name=project_name)
         # If the user wants to start at phase >= 3, the build step is skipped
         # entirely (use existing model on disk).
         if from_phase <= 2:
