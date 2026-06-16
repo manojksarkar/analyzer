@@ -1288,7 +1288,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     if _scope_body:
         _add_para(doc, _scope_body)
     for _item in _intro_cfg.get("scopeItems", []):
-        _add_para(doc, f"• {_item}")
+        _add_para(doc, f"- {_item}")
     doc.add_heading("1.3 Terms, Abbreviations and Definitions", level=2)
     if abbreviations:
         _abbr_tbl = doc.add_table(rows=1, cols=2)
