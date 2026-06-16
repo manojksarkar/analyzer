@@ -388,6 +388,60 @@ def _add_mermaid_as_text(doc, mermaid: str, font_small):
     run.font.size = font_small
 
 
+def _add_toc(doc) -> None:
+    """Insert a Word automatic table of contents field followed by a page break."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    try:
+        p_title = doc.add_paragraph("Contents", style="TOC Heading")
+    except KeyError:
+        from docx.shared import Pt
+        p_title = doc.add_paragraph()
+        run = p_title.add_run("Contents")
+        run.font.size = Pt(16)
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in p_title.runs:
+        run.bold = True
+
+    p = doc.add_paragraph()
+
+    run = p.add_run()
+    fldChar = OxmlElement("w:fldChar")
+    fldChar.set(qn("w:fldCharType"), "begin")
+    fldChar.set(qn("w:dirty"), "true")
+    run._r.append(fldChar)
+
+    run2 = p.add_run()
+    instrText = OxmlElement("w:instrText")
+    instrText.set(qn("xml:space"), "preserve")
+    instrText.text = ' TOC \\o "1-3" \\h \\z \\u '
+    run2._r.append(instrText)
+
+    run3 = p.add_run()
+    fldChar2 = OxmlElement("w:fldChar")
+    fldChar2.set(qn("w:fldCharType"), "separate")
+    run3._r.append(fldChar2)
+
+    run4 = p.add_run()
+    t = OxmlElement("w:t")
+    t.text = "Right-click here and select 'Update Field' to populate the table of contents."
+    run4._r.append(t)
+
+    run5 = p.add_run()
+    fldChar3 = OxmlElement("w:fldChar")
+    fldChar3.set(qn("w:fldCharType"), "end")
+    run5._r.append(fldChar3)
+
+    doc.add_page_break()
+
+    # Tell Word to update all fields (including this TOC) when the document is opened
+    update_fields = OxmlElement("w:updateFields")
+    update_fields.set(qn("w:val"), "true")
+    doc.settings.element.append(update_fields)
+
+
 def _escape_mermaid_label_for_structure(text: str) -> str:
     t = (text or "").replace('"', "'").replace("\n", " ").replace("|", "\u00a6")
     return t
@@ -1066,6 +1120,8 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
 
     doc = Document()
     doc.add_heading("Software Detailed Design", 0)
+    doc.add_page_break()
+    _add_toc(doc)
 
     # Group by component; use data as-is from view output
     by_component = {}
