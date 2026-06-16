@@ -1105,15 +1105,14 @@ def _build_cover_page(doc, project_name: str, group_name: str, version: str = "1
     p_name = doc.add_paragraph()
     _spacing(p_name, before=0, after=120)
     _align(p_name, "right")
-    r_name = _run(p_name, project_name, size_pt=54, bold=True, color=NAVY)
+    r_name = _run(p_name, project_name, size_pt=36, bold=True, color=NAVY)
     _double_underline(r_name, "1E3C78")
 
-    # Subtitle — single line with group/component, bold
-    subtitle = f"Software Detailed Design Specification  —  {group_name}"
+    # Subtitle — single line, no dash
     p_sub = doc.add_paragraph()
     _spacing(p_sub, before=0, after=100)
     _align(p_sub, "right")
-    _run(p_sub, subtitle, size_pt=16, bold=True, color=NAVY)
+    _run(p_sub, f"Software Detailed Design Specification  {group_name}", size_pt=16, bold=True, color=NAVY)
 
     # Version
     p_ver = doc.add_paragraph()
@@ -1235,10 +1234,15 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         with open(_meta_path, "r", encoding="utf-8") as _f:
             _project_name = json.load(_f).get("projectName", _project_name)
     # Build a readable cover label for the group / component selection
+    from core.config import get_group_layer_name, get_component_layer_name as _get_comp_layer
     if selected_components:
-        _cover_group = " / ".join(c.replace("-", " ") for c in selected_components)
+        _layer_name = _get_comp_layer(config, selected_components[0])
+        _comp_display = " / ".join(c.replace("-", " ") for c in selected_components)
+        _cover_group = f"{_layer_name} {_comp_display}" if _layer_name else _comp_display
     elif selected_group:
-        _cover_group = selected_group.replace("-", " ")
+        _layer_name = get_group_layer_name(config, selected_group)
+        _group_display = selected_group.replace("-", " ")
+        _cover_group = f"{_layer_name} {_group_display}" if _layer_name else _group_display
     else:
         _cover_group = "All Components"
 

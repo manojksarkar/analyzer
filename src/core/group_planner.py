@@ -118,6 +118,7 @@ def plan_runs(
     data_dictionary_path: Optional[str] = None,
     macros_path: Optional[str] = None,
     project_name: Optional[str] = None,
+    output_name: Optional[str] = None,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -179,7 +180,8 @@ def plan_runs(
                     runner_from_phase=from_phase,
                 ))
 
-        comp_out = os.path.join(p.output_dir, virtual_name)
+        out_key = output_name.replace(" ", "-") if output_name else virtual_name
+        comp_out = os.path.join(p.output_dir, out_key)
         comp_sel_args: List[str] = []
         for c in selected_components:
             comp_sel_args += ["--selected-component", c]
@@ -189,7 +191,7 @@ def plan_runs(
             extra_view_args=comp_sel_args,
             docx_args=[
                 os.path.join(comp_out, "interface_tables.json"),
-                os.path.join(comp_out, f"software_detailed_design_{virtual_name}.docx"),
+                os.path.join(comp_out, f"software_detailed_design_{out_key}.docx"),
             ] + comp_sel_args,
         )
         local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
@@ -277,14 +279,15 @@ def plan_runs(
                                      runner_from_phase=local_from))
         else:
             g_safe = g.replace(" ", "-")
-            group_out = os.path.join(p.output_dir, g_safe)
+            out_key = output_name.replace(" ", "-") if output_name else g_safe
+            group_out = os.path.join(p.output_dir, out_key)
             view_phases = _view_export_phases(
                 output_dir=group_out,
                 selected_group=g,
                 filter_mode=filter_mode,
                 docx_args=[
                     os.path.join(group_out, "interface_tables.json"),
-                    os.path.join(group_out, f"software_detailed_design_{g_safe}.docx"),
+                    os.path.join(group_out, f"software_detailed_design_{out_key}.docx"),
                     "--selected-group", g,
                 ],
             )
