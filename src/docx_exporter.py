@@ -388,6 +388,60 @@ def _add_mermaid_as_text(doc, mermaid: str, font_small):
     run.font.size = font_small
 
 
+def _add_toc(doc) -> None:
+    """Insert a Word automatic table of contents field followed by a page break."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    try:
+        p_title = doc.add_paragraph("Contents", style="TOC Heading")
+    except KeyError:
+        from docx.shared import Pt
+        p_title = doc.add_paragraph()
+        run = p_title.add_run("Contents")
+        run.font.size = Pt(16)
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in p_title.runs:
+        run.bold = True
+
+    p = doc.add_paragraph()
+
+    run = p.add_run()
+    fldChar = OxmlElement("w:fldChar")
+    fldChar.set(qn("w:fldCharType"), "begin")
+    fldChar.set(qn("w:dirty"), "true")
+    run._r.append(fldChar)
+
+    run2 = p.add_run()
+    instrText = OxmlElement("w:instrText")
+    instrText.set(qn("xml:space"), "preserve")
+    instrText.text = ' TOC \\o "1-4" \\h \\z \\u '
+    run2._r.append(instrText)
+
+    run3 = p.add_run()
+    fldChar2 = OxmlElement("w:fldChar")
+    fldChar2.set(qn("w:fldCharType"), "separate")
+    run3._r.append(fldChar2)
+
+    run4 = p.add_run()
+    t = OxmlElement("w:t")
+    t.text = "Right-click here and select 'Update Field' to populate the table of contents."
+    run4._r.append(t)
+
+    run5 = p.add_run()
+    fldChar3 = OxmlElement("w:fldChar")
+    fldChar3.set(qn("w:fldCharType"), "end")
+    run5._r.append(fldChar3)
+
+    doc.add_page_break()
+
+    # Tell Word to update all fields (including this TOC) when the document is opened
+    update_fields = OxmlElement("w:updateFields")
+    update_fields.set(qn("w:val"), "true")
+    doc.settings.element.append(update_fields)
+
+
 def _escape_mermaid_label_for_structure(text: str) -> str:
     t = (text or "").replace('"', "'").replace("\n", " ").replace("|", "\u00a6")
     return t
@@ -986,6 +1040,122 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         _merge_vertical_cells(table, 0, 1, n - 1)
 
 
+def _build_cover_page(doc, project_name: str, group_name: str, version: str = "1.0.0", copyright_text: str = "") -> None:
+    """Render the cover page (first page) of the DOCX."""
+    from datetime import date as _date
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    NAVY = RGBColor(30, 60, 120)
+    DARK = RGBColor(60, 60, 60)
+    ASSETS = os.path.join(PROJECT_ROOT, "assets")
+
+    def _spacing(para, before=0, after=0):
+        pPr = para._p.get_or_add_pPr()
+        for old in pPr.findall(qn("w:spacing")):
+            pPr.remove(old)
+        sp = OxmlElement("w:spacing")
+        sp.set(qn("w:before"), str(before))
+        sp.set(qn("w:after"),  str(after))
+        pPr.append(sp)
+
+    def _align(para, val="right"):
+        pPr = para._p.get_or_add_pPr()
+        for old in pPr.findall(qn("w:jc")):
+            pPr.remove(old)
+        jc = OxmlElement("w:jc")
+        jc.set(qn("w:val"), val)
+        pPr.append(jc)
+        para.alignment = (WD_ALIGN_PARAGRAPH.RIGHT if val == "right" else
+                          WD_ALIGN_PARAGRAPH.CENTER if val == "center" else
+                          WD_ALIGN_PARAGRAPH.LEFT)
+
+    def _run(para, text, size_pt, bold=False, color=None):
+        r = para.add_run(text)
+        r.bold = bold
+        r.font.size = Pt(size_pt)
+        if color:
+            r.font.color.rgb = color
+        return r
+
+    def _double_underline(run, color_hex="1E3C78"):
+        rPr = run._r.get_or_add_rPr()
+        for old in rPr.findall(qn("w:u")):
+            rPr.remove(old)
+        u = OxmlElement("w:u")
+        u.set(qn("w:val"),   "double")
+        u.set(qn("w:color"), color_hex)
+        u.set(qn("w:sz"),    "12")
+        rPr.append(u)
+
+    def _spacer(n=1):
+        for _ in range(n):
+            p = doc.add_paragraph()
+            _spacing(p, 0, 0)
+
+    section    = doc.sections[0]
+    body_w_in  = (section.page_width / 914400) - (
+        section.left_margin / 914400 + section.right_margin / 914400)
+
+    _spacer(8)
+
+    # Project name — largest, bold, double-underlined
+    p_name = doc.add_paragraph()
+    _spacing(p_name, before=0, after=120)
+    _align(p_name, "right")
+    r_name = _run(p_name, project_name, size_pt=36, bold=True, color=NAVY)
+    _double_underline(r_name, "1E3C78")
+
+    # Subtitle — single line, no dash
+    p_sub = doc.add_paragraph()
+    _spacing(p_sub, before=0, after=100)
+    _align(p_sub, "right")
+    _run(p_sub, f"Software Detailed Design Specification  {group_name}", size_pt=16, bold=True, color=NAVY)
+
+    # Version
+    p_ver = doc.add_paragraph()
+    _spacing(p_ver, before=0, after=60)
+    _align(p_ver, "right")
+    _run(p_ver, f"Version {version}", size_pt=12, color=DARK)
+
+    # Date
+    p_date = doc.add_paragraph()
+    _spacing(p_date, before=0, after=400)
+    _align(p_date, "right")
+    _run(p_date, _date.today().strftime("%Y-%m-%d"), size_pt=12, color=DARK)
+
+    # Copyright image — left-aligned
+    cr_path = os.path.join(ASSETS, "copyright.png")
+    p_cr = doc.add_paragraph()
+    _spacing(p_cr, before=0, after=0)
+    _align(p_cr, "left")
+    if os.path.isfile(cr_path):
+        p_cr.add_run().add_picture(cr_path, width=Inches(2.6))
+    else:
+        _run(p_cr, "© All Rights Reserved", size_pt=10, color=DARK)
+
+    # Copyright sentence below the image
+    _cr_text = copyright_text or f"© {_date.today().year} All Rights Reserved."
+    p_cr_text = doc.add_paragraph()
+    _spacing(p_cr_text, before=0, after=0)
+    _align(p_cr_text, "left")
+    _run(p_cr_text, _cr_text, size_pt=8, color=RGBColor(128, 128, 128))
+
+    _spacer(4)
+
+    # Bottom arc — full body width
+    arc_path = os.path.join(ASSETS, "bottom_arc.png")
+    p_arc = doc.add_paragraph()
+    _spacing(p_arc, before=0, after=0)
+    _align(p_arc, "center")
+    if os.path.isfile(arc_path):
+        p_arc.add_run().add_picture(arc_path, width=Inches(body_w_in))
+
+    doc.add_page_break()
+
+
 def export_docx(json_path: str = None, docx_path: str = None, selected_group: str | None = None, selected_components: list | None = None) -> Tuple[bool, Optional[str]]:
     from utils import safe_filename, KEY_SEP
     from core.config import app_config
@@ -1064,8 +1234,29 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             _hidden_by_mod_unit.setdefault((_fp[0], _fp[1]), set()).add(_base)
     base_path = _load_base_path()
 
+    # Resolve project name from metadata
+    _meta_path = os.path.join(MODEL_DIR, "metadata.json")
+    _project_name = "Software Project"
+    if os.path.isfile(_meta_path):
+        with open(_meta_path, "r", encoding="utf-8") as _f:
+            _project_name = json.load(_f).get("projectName", _project_name)
+    # Build a readable cover label for the group / component selection
+    from core.config import get_group_layer_name, get_component_layer_name as _get_comp_layer
+    if selected_components:
+        _layer_name = _get_comp_layer(config, selected_components[0])
+        _comp_display = " / ".join(c.replace("-", " ") for c in selected_components)
+        _cover_group = f"{_layer_name} {_comp_display}" if _layer_name else _comp_display
+    elif selected_group:
+        _layer_name = get_group_layer_name(config, selected_group)
+        _group_display = selected_group.replace("-", " ")
+        _cover_group = f"{_layer_name} {_group_display}" if _layer_name else _group_display
+    else:
+        _cover_group = "All Components"
+
     doc = Document()
-    doc.add_heading("Software Detailed Design", 0)
+    _build_cover_page(doc, _project_name, _cover_group,
+                      copyright_text=config.get("docx", {}).get("copyrightText", ""))
+    _add_toc(doc)
 
     # Group by component; use data as-is from view output
     by_component = {}
@@ -1089,11 +1280,39 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     # 1 Introduction
     doc.add_heading("1 Introduction", level=1)
     doc.add_heading("1.1 Purpose", level=2)
-    _add_para(doc, "[Purpose of this document.]")
+    _purpose_tpl = (
+        config.get("docx", {})
+        .get("introduction", {})
+        .get("purpose", "[Purpose of this document.]")
+    )
+    _add_para(doc, _purpose_tpl.replace("{project_name}", _project_name))
     doc.add_heading("1.2 Scope", level=2)
-    _add_para(doc, "[Scope of the software detailed design.]")
+    _intro_cfg = config.get("docx", {}).get("introduction", {})
+    _scope_intro = _intro_cfg.get("scopeIntro", "[Scope of the software detailed design.]")
+    _add_para(doc, _scope_intro.replace("{project_name}", _project_name))
+    for _comp in sorted_components:
+        _add_para(doc, f"• {_comp.replace('-', ' ')}")
+    _scope_body = _intro_cfg.get("scopeBody", "")
+    if _scope_body:
+        _add_para(doc, _scope_body)
+    for _item in _intro_cfg.get("scopeItems", []):
+        _add_para(doc, f"- {_item}")
     doc.add_heading("1.3 Terms, Abbreviations and Definitions", level=2)
-    _add_para(doc, "[Terms, abbreviations and definitions.]")
+    if abbreviations:
+        _abbr_tbl = doc.add_table(rows=1, cols=2)
+        _abbr_tbl.style = "Table Grid"
+        _abbr_hdr = _abbr_tbl.rows[0].cells
+        _abbr_hdr[0].text = "Term"
+        _abbr_hdr[1].text = "Description"
+        for _cell in _abbr_hdr:
+            for _run in _cell.paragraphs[0].runs:
+                _run.bold = True
+        for _term, _desc in sorted(abbreviations.items()):
+            _r = _abbr_tbl.add_row().cells
+            _r[0].text = _term
+            _r[1].text = _desc
+    else:
+        _add_para(doc, "[Terms, abbreviations and definitions.]")
 
     # 2, 3, ... Modules
     from core.progress import ProgressReporter
@@ -1103,8 +1322,9 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     _docx_progress.start()
     for sec_idx, component_name in enumerate(sorted_components, start=0):
         sec_num = sec_idx + 2
-        _docx_progress.step(label=component_name)
-        doc.add_heading(f"{sec_num} {component_name}", level=1)
+        component_display = component_name.replace("-", " ")
+        _docx_progress.step(label=component_display)
+        doc.add_heading(f"{sec_num} {component_display}", level=1)
 
         # 2.1 Static Design
         doc.add_heading(f"{sec_num}.1 Static Design", level=2)
@@ -1112,7 +1332,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         unit_rows_component = sorted(by_component[component_name])
         if msd_enabled and unit_rows_component:
             # Container diagram: blue component subgraph with all units inside
-            container_mmd = _build_component_container_mermaid(component_name, unit_rows_component)
+            container_mmd = _build_component_container_mermaid(component_display, unit_rows_component)
             container_png = os.path.join(
                 artifacts_dir, "component_container_diagrams", f"{safe_filename(component_name)}.png"
             )
@@ -1145,7 +1365,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         # Module-level index table (Component/Unit/Description/Note)
         _add_component_unit_table(
             doc,
-            component_name,
+            component_display,
             unit_rows_component,
             font_small,
             config=config,

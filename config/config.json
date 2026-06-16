@@ -81,6 +81,7 @@
     "numCtx": 8192,
     "retries": 1,
     "fewShotExamplesDir": "few_shot_examples",
+    "abbreviationsPath": "config/abbreviations.txt",
     "cacheVersion": 1,
     "enrichment": {
       "twoPassDescriptions": true,
@@ -99,5 +100,19 @@
   },
   "ui": {
     "theme": "Light"
+  },
+  "docx": {
+    "introduction": {
+      "purpose": "This document provides the Software Detailed Design (SDD) for the {project_name} software. It describes the internal structure, interfaces, and behaviour of each software component. The document is intended for software engineers responsible for implementation and verification of the {project_name} system.",
+      "scopeIntro": "This document covers the software detailed design for the {project_name} system. The following component/s are within the scope of this document:",
+      "scopeBody": "For each component, this document provides the following:",
+      "scopeItems": [
+        "Component Name",
+        "Static Design (Component, units, global variables)",
+        "Unit Information",
+        "Unit Name",
+        "Static Design"
+      ]
+    }
   }
 }

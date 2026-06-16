@@ -25,13 +25,13 @@ if len(sys.argv) < 2:
     raise SystemExit(1)
 proj_arg = sys.argv[1]
 MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.path.join(PROJECT_ROOT, proj_arg)
-PROJECT_NAME = os.path.basename(MODULE_BASE_PATH)
 
 # Scan for optional flags passed by group_planner.
 _data_dict_path: str | None = None
 _macros_path: str | None = None
 _selected_group: str | None = None
 _selected_layer: str | None = None
+_project_name_override: str | None = None
 _i = 2
 while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
@@ -46,8 +46,13 @@ while _i < len(sys.argv):
     elif sys.argv[_i] == "--selected-layer" and _i + 1 < len(sys.argv):
         _selected_layer = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--project-name" and _i + 1 < len(sys.argv):
+        _project_name_override = sys.argv[_i + 1]
+        _i += 2
     else:
         _i += 1
+
+PROJECT_NAME = _project_name_override or os.path.basename(MODULE_BASE_PATH)
 
 from utils import (
     get_component_name as _get_component,
@@ -236,6 +241,7 @@ if _macros_path:
     _macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
     with open(_macros_json, "w", encoding="utf-8") as _mf:
         json.dump(_macro_args, _mf, indent=2)
+
 
 
 def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str:

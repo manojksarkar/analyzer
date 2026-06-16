@@ -5,6 +5,7 @@ import sys
 import json
 
 from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group
+from core.config import get_component_layer_name
 from core.paths import paths as _paths
 
 _p = _paths()
@@ -339,8 +340,12 @@ def _id_seg(s: str) -> str:
     return re.sub(r'[^A-Z]', '', (s or '').upper())
 
 
+def _id_seg_layer(s: str) -> str:
+    """Like _id_seg but also keeps digits — so 'Layer1' -> 'LAYER1', not 'LAYER'."""
+    return re.sub(r'[^A-Z0-9]', '', (s or '').upper())
+
+
 def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, global_variables_data: dict, idx_by_id: dict, config: dict = None):
-    proj_code = _id_seg(project_name)
     for fid, f in functions_data.items():
         loc = f.get("location") or {}
         fp = loc.get("file", "")
@@ -352,13 +357,15 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         key_parts = unit_key.split(KEY_SEP)
         unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
         group_code = _id_seg(resolve_group(key_parts[0]))
+        layer_name = get_component_layer_name(config, key_parts[0]) if config else None
+        layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
         idx_code = f"{idx_by_id.get(fid, 0):02d}"
         if _fn_is_private(f, functions_data, base_path):
             f["visibility"] = "private"
             prefix = "PIF"
         else:
             prefix = "IF"
-        interface_id = f"{prefix}_{proj_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{proj_code}_{unit_name_code}_{idx_code}"
+        interface_id = f"{prefix}_{layer_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{layer_code}_{unit_name_code}_{idx_code}"
         raw_params = f.get("parameters", f.get("params", []))
         params = [{"name": p.get("name", ""), "type": p.get("type", "")} for p in raw_params]
         f["interfaceId"] = interface_id
@@ -374,10 +381,12 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         key_parts = unit_key.split(KEY_SEP)
         unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
         group_code = _id_seg(resolve_group(key_parts[0]))
+        layer_name = get_component_layer_name(config, key_parts[0]) if config else None
+        layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
         idx_code = f"{idx_by_id.get(vid, 0):02d}"
         is_private = (g.get("visibility") or "").lower() == "private"
         prefix = "PIF" if is_private else "IF"
-        g["interfaceId"] = f"{prefix}_{proj_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{proj_code}_{unit_name_code}_{idx_code}"
+        g["interfaceId"] = f"{prefix}_{layer_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{layer_code}_{unit_name_code}_{idx_code}"
 
 
 def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict):
