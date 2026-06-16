@@ -416,7 +416,7 @@ def _add_toc(doc) -> None:
     run2 = p.add_run()
     instrText = OxmlElement("w:instrText")
     instrText.set(qn("xml:space"), "preserve")
-    instrText.text = ' TOC \\o "1-3" \\h \\z \\u '
+    instrText.text = ' TOC \\o "1-4" \\h \\z \\u '
     run2._r.append(instrText)
 
     run3 = p.add_run()
