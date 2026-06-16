@@ -1,6 +1,7 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
+> Updated: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
+> Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
 > Previous update: 2026-06-16 (`--project-name <name>` CLI flag — overrides the project name written into `model/metadata.json` as `projectName`; default remains `os.path.basename(project_path)`; parsed in `parser.py` and forwarded via `group_planner._build_model_phases`; propagates automatically to `model_deriver` (reads `projectName` from metadata), flowchart engine, and LLM prompts; `ui/app.py` derives display name from path directly and is unaffected; see §5).
 > Previous update: 2026-06-15 (fix: DOCX component display names — `component_name` (normalized identifier, spaces→`-`) was being used as visible text in section headings and the Component/Unit table; introduced `component_display = component_name.replace("-", " ")` in the `export_docx` loop and passed it to `_add_component_unit_table` and `_build_component_container_mermaid`; all key lookups and filenames keep using `component_name`; see §12).
 > Previous update: 2026-06-15 (`interfaceId` format change — first segment is now the layer name instead of project name: `IF_<LAYER>_<GROUP>_<UNIT>_<NN>` / `PIF_<LAYER>_<GROUP>_<UNIT>_<NN>`; digits preserved via new `_id_seg_layer` helper so "Layer1" → "LAYER1" not "LAYER"; `get_component_layer_name(config, component)` used per entry; falls back to project name for configs without a `layers` key; see §11).
@@ -1776,6 +1777,7 @@ Rendered as the first page before the TOC. Layout (top → bottom):
 - **Version** — `"Version 1.0.0"` (12 pt, right-aligned). Hardcoded default; override via `_build_cover_page(..., version=...)`.
 - **Date** — `YYYY-MM-DD` of export run (12 pt, right-aligned).
 - **Copyright image** — `assets/copyright.png`, 2.6 in wide, left-aligned. Falls back to plain text if file missing.
+- **Copyright text** — one line below the image, 8 pt, gray (`#808080`), left-aligned. Defaults to `"© <year> All Rights Reserved."`. Override via `config.docx.copyrightText`.
 - **Bottom arc** — `assets/bottom_arc.png`, full body width, centered. Omitted if file missing.
 - Page break added after cover before TOC.
 
@@ -1785,10 +1787,13 @@ Rendered as the first page before the TOC. Layout (top → bottom):
 
 ```
 [Cover page — see above]
-[Table of Contents]
+[Table of Contents — _add_toc(); field ' TOC \o "1-4" \h \z \u '; covers Headings 1-4;
+ w:updateFields=true auto-updates on open; placeholder text shown until field is refreshed]
 1 Introduction                                                 (Heading 1)
-  1.1 Purpose
-  1.2 Scope
+  1.1 Purpose   — text from config.docx.introduction.purpose
+  1.2 Scope     — scopeIntro text, then component names (• bullet each),
+                  then scopeBody text, then scopeItems (- dash each)
+                  (config.docx.introduction.scopeIntro/scopeBody/scopeItems)
   1.3 Terms, Abbreviations and Definitions
 2 <ModuleName>                                                 (Heading 1)
   2.1 Static Design                                            (Heading 2)
