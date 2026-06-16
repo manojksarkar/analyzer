@@ -1268,11 +1268,39 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     # 1 Introduction
     doc.add_heading("1 Introduction", level=1)
     doc.add_heading("1.1 Purpose", level=2)
-    _add_para(doc, "[Purpose of this document.]")
+    _purpose_tpl = (
+        config.get("docx", {})
+        .get("introduction", {})
+        .get("purpose", "[Purpose of this document.]")
+    )
+    _add_para(doc, _purpose_tpl.replace("{project_name}", _project_name))
     doc.add_heading("1.2 Scope", level=2)
-    _add_para(doc, "[Scope of the software detailed design.]")
+    _intro_cfg = config.get("docx", {}).get("introduction", {})
+    _scope_intro = _intro_cfg.get("scopeIntro", "[Scope of the software detailed design.]")
+    _add_para(doc, _scope_intro.replace("{project_name}", _project_name))
+    for _comp in sorted_components:
+        _add_para(doc, f"• {_comp.replace('-', ' ')}")
+    _scope_body = _intro_cfg.get("scopeBody", "")
+    if _scope_body:
+        _add_para(doc, _scope_body)
+    for _item in _intro_cfg.get("scopeItems", []):
+        _add_para(doc, f"• {_item}")
     doc.add_heading("1.3 Terms, Abbreviations and Definitions", level=2)
-    _add_para(doc, "[Terms, abbreviations and definitions.]")
+    if abbreviations:
+        _abbr_tbl = doc.add_table(rows=1, cols=2)
+        _abbr_tbl.style = "Table Grid"
+        _abbr_hdr = _abbr_tbl.rows[0].cells
+        _abbr_hdr[0].text = "Term"
+        _abbr_hdr[1].text = "Description"
+        for _cell in _abbr_hdr:
+            for _run in _cell.paragraphs[0].runs:
+                _run.bold = True
+        for _term, _desc in sorted(abbreviations.items()):
+            _r = _abbr_tbl.add_row().cells
+            _r[0].text = _term
+            _r[1].text = _desc
+    else:
+        _add_para(doc, "[Terms, abbreviations and definitions.]")
 
     # 2, 3, ... Modules
     from core.progress import ProgressReporter
