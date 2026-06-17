@@ -1,0 +1,711 @@
+{
+  "id": "FTL",
+  "code": "FTL",
+  "name": "FTL",
+  "desc": "",
+  "modules": [
+    {
+      "id": "core",
+      "name": "core",
+      "path": "core",
+      "files": 3,
+      "tree": {
+        "id": "core",
+        "type": "submodule",
+        "name": "core",
+        "meta": null,
+        "children": [
+          {
+            "id": "app",
+            "type": "submodule",
+            "name": "app",
+            "meta": null,
+            "children": [
+              {
+                "id": "app/main.cpp",
+                "type": "submodule",
+                "name": "main.cpp",
+                "meta": null,
+                "children": [
+                  {
+                    "id": "core|main|calculate|",
+                    "type": "fn",
+                    "name": "calculate",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "core|main|calculateWithCallback|",
+                    "type": "fn",
+                    "name": "calculateWithCallback",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "core|main|calculateWithPolymorphism|",
+                    "type": "fn",
+                    "name": "calculateWithPolymorphism",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "core|main|runEnumTests|",
+                    "type": "fn",
+                    "name": "runEnumTests",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "core|main|runTypeTests|",
+                    "type": "fn",
+                    "name": "runTypeTests",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "core|main|runNestedFolderTests|",
+                    "type": "fn",
+                    "name": "runNestedFolderTests",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "core|main|runDirectionTests|",
+                    "type": "fn",
+                    "name": "runDirectionTests",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "core|main|main|",
+                    "type": "fn",
+                    "name": "main",
+                    "meta": null,
+                    "children": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "math",
+            "type": "submodule",
+            "name": "math",
+            "meta": null,
+            "children": [
+              {
+                "id": "math/utils.cpp",
+                "type": "submodule",
+                "name": "utils.cpp",
+                "meta": null,
+                "children": [
+                  {
+                    "id": "core|utils|add|int,int",
+                    "type": "fn",
+                    "name": "add",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "core|utils|subtract|int,int",
+                    "type": "fn",
+                    "name": "subtract",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "core|utils|computeBoth|int,int",
+                    "type": "fn",
+                    "name": "computeBoth",
+                    "meta": null,
+                    "children": null
+                  }
+                ]
+              },
+              {
+                "id": "math/utils.h",
+                "type": "submodule",
+                "name": "utils.h",
+                "meta": null,
+                "children": null
+              }
+            ]
+          }
+        ]
+      },
+      "loc": "0"
+    },
+    {
+      "id": "support",
+      "name": "support",
+      "path": "support",
+      "files": 2,
+      "tree": {
+        "id": "support",
+        "type": "submodule",
+        "name": "support",
+        "meta": null,
+        "children": [
+          {
+            "id": "outer/inner",
+            "type": "submodule",
+            "name": "inner",
+            "meta": null,
+            "children": [
+              {
+                "id": "outer/inner/helper.cpp",
+                "type": "submodule",
+                "name": "helper.cpp",
+                "meta": null,
+                "children": [
+                  {
+                    "id": "support|helper|nestedHelper|int",
+                    "type": "fn",
+                    "name": "nestedHelper",
+                    "meta": null,
+                    "children": null
+                  },
+                  {
+                    "id": "support|helper|helperCompute|int",
+                    "type": "fn",
+                    "name": "helperCompute",
+                    "meta": null,
+                    "children": null
+                  }
+                ]
+              },
+              {
+                "id": "outer/inner/helper.h",
+                "type": "submodule",
+                "name": "helper.h",
+                "meta": null,
+                "children": null
+              }
+            ]
+          }
+        ]
+      },
+      "loc": "0"
+    },
+    {
+      "id": "tests",
+      "name": "tests",
+      "path": "tests",
+      "files": 12,
+      "tree": {
+        "id": "tests",
+        "type": "submodule",
+        "name": "tests",
+        "meta": null,
+        "children": [
+          {
+            "id": "tests_a",
+            "type": "submodule",
+            "name": "tests_a",
+            "meta": null,
+            "children": [
+              {
+                "id": "tests/direction",
+                "type": "submodule",
+                "name": "direction",
+                "meta": null,
+                "children": [
+                  {
+                    "id": "tests/direction/read_write.cpp",
+                    "type": "submodule",
+                    "name": "read_write.cpp",
+                    "meta": null,
+                    "children": [
+                      {
+                        "id": "tests_a|read_write|readGlobal|",
+                        "type": "fn",
+                        "name": "readGlobal",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|read_write|writeGlobal|int",
+                        "type": "fn",
+                        "name": "writeGlobal",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|read_write|readWriteGlobal|int",
+                        "type": "fn",
+                        "name": "readWriteGlobal",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|read_write|indirectWrite|int",
+                        "type": "fn",
+                        "name": "indirectWrite",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|read_write|directionAdd|int,int",
+                        "type": "fn",
+                        "name": "directionAdd",
+                        "meta": null,
+                        "children": null
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tests/direction/read_write.h",
+                    "type": "submodule",
+                    "name": "read_write.h",
+                    "meta": null,
+                    "children": null
+                  }
+                ]
+              },
+              {
+                "id": "tests/enum",
+                "type": "submodule",
+                "name": "enum",
+                "meta": null,
+                "children": [
+                  {
+                    "id": "tests/enum/types.cpp",
+                    "type": "submodule",
+                    "name": "types.cpp",
+                    "meta": null,
+                    "children": [
+                      {
+                        "id": "tests_a|types|checkStatus|Status",
+                        "type": "fn",
+                        "name": "checkStatus",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|types|nextColor|Color",
+                        "type": "fn",
+                        "name": "nextColor",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|types|setMode|Mode_t",
+                        "type": "fn",
+                        "name": "setMode",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|types|getDefaultStatus|",
+                        "type": "fn",
+                        "name": "getDefaultStatus",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|types|getDefaultColor|",
+                        "type": "fn",
+                        "name": "getDefaultColor",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|types|enumWithHelper|int",
+                        "type": "fn",
+                        "name": "enumWithHelper",
+                        "meta": null,
+                        "children": null
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tests/enum/types.h",
+                    "type": "submodule",
+                    "name": "types.h",
+                    "meta": null,
+                    "children": null
+                  }
+                ]
+              },
+              {
+                "id": "tests/flow",
+                "type": "submodule",
+                "name": "flow",
+                "meta": null,
+                "children": [
+                  {
+                    "id": "tests/flow/flowcharts.cpp",
+                    "type": "submodule",
+                    "name": "flowcharts.cpp",
+                    "meta": null,
+                    "children": [
+                      {
+                        "id": "tests_a|flowcharts|fnIfSimple|int",
+                        "type": "fn",
+                        "name": "fnIfSimple",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnIfElse|int",
+                        "type": "fn",
+                        "name": "fnIfElse",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnNestedIfElse|int,int",
+                        "type": "fn",
+                        "name": "fnNestedIfElse",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnIfElseIf|int",
+                        "type": "fn",
+                        "name": "fnIfElseIf",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnSwitchSimple|int",
+                        "type": "fn",
+                        "name": "fnSwitchSimple",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnSwitchFallthrough|int",
+                        "type": "fn",
+                        "name": "fnSwitchFallthrough",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnForLoop|int",
+                        "type": "fn",
+                        "name": "fnForLoop",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnForBreak|int,int",
+                        "type": "fn",
+                        "name": "fnForBreak",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnForContinue|int",
+                        "type": "fn",
+                        "name": "fnForContinue",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnWhileLoop|int",
+                        "type": "fn",
+                        "name": "fnWhileLoop",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnDoWhile|int",
+                        "type": "fn",
+                        "name": "fnDoWhile",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnNestedFor|int,int",
+                        "type": "fn",
+                        "name": "fnNestedFor",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnForWithIf|int",
+                        "type": "fn",
+                        "name": "fnForWithIf",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnWhileWithIf|int",
+                        "type": "fn",
+                        "name": "fnWhileWithIf",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnIfEarlyReturn|int",
+                        "type": "fn",
+                        "name": "fnIfEarlyReturn",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnMixedForSwitch|int",
+                        "type": "fn",
+                        "name": "fnMixedForSwitch",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnDeeplyNested|int,int,int",
+                        "type": "fn",
+                        "name": "fnDeeplyNested",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnMultipleReturns|int,int",
+                        "type": "fn",
+                        "name": "fnMultipleReturns",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|fnLoopNestedIfElse|int",
+                        "type": "fn",
+                        "name": "fnLoopNestedIfElse",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_a|flowcharts|runFlowTests|",
+                        "type": "fn",
+                        "name": "runFlowTests",
+                        "meta": null,
+                        "children": null
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tests/flow/flowcharts.h",
+                    "type": "submodule",
+                    "name": "flowcharts.h",
+                    "meta": null,
+                    "children": null
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "tests_b",
+            "type": "submodule",
+            "name": "tests_b",
+            "meta": null,
+            "children": [
+              {
+                "id": "tests/hub",
+                "type": "submodule",
+                "name": "hub",
+                "meta": null,
+                "children": [
+                  {
+                    "id": "tests/hub/hub.cpp",
+                    "type": "submodule",
+                    "name": "hub.cpp",
+                    "meta": null,
+                    "children": [
+                      {
+                        "id": "tests_b|hub|hubValidate|int",
+                        "type": "fn",
+                        "name": "hubValidate",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|hub|hubCompute|int,int",
+                        "type": "fn",
+                        "name": "hubCompute",
+                        "meta": null,
+                        "children": null
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tests/hub/hub.h",
+                    "type": "submodule",
+                    "name": "hub.h",
+                    "meta": null,
+                    "children": null
+                  }
+                ]
+              },
+              {
+                "id": "tests/poly",
+                "type": "submodule",
+                "name": "poly",
+                "meta": null,
+                "children": [
+                  {
+                    "id": "tests/poly/dispatch.cpp",
+                    "type": "submodule",
+                    "name": "dispatch.cpp",
+                    "meta": null,
+                    "children": [
+                      {
+                        "id": "tests_b|dispatch|multiplyCore|int,int",
+                        "type": "fn",
+                        "name": "multiplyCore",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|dispatch|multiply|int,int",
+                        "type": "fn",
+                        "name": "multiply",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|dispatch|divide|int,int",
+                        "type": "fn",
+                        "name": "divide",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|dispatch|applyWithCallback|int (*)(int, int),int,int",
+                        "type": "fn",
+                        "name": "applyWithCallback",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|dispatch|AddOperation::apply|int,int",
+                        "type": "fn",
+                        "name": "AddOperation::apply",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|dispatch|MultiplyOperation::apply|int,int",
+                        "type": "fn",
+                        "name": "MultiplyOperation::apply",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|dispatch|applyWithOperation|Operation *,int,int",
+                        "type": "fn",
+                        "name": "applyWithOperation",
+                        "meta": null,
+                        "children": null
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tests/poly/dispatch.h",
+                    "type": "submodule",
+                    "name": "dispatch.h",
+                    "meta": null,
+                    "children": [
+                      {
+                        "id": "tests_b|dispatch|Operation::apply|int,int",
+                        "type": "fn",
+                        "name": "Operation::apply",
+                        "meta": null,
+                        "children": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "tests/structs",
+                "type": "submodule",
+                "name": "structs",
+                "meta": null,
+                "children": [
+                  {
+                    "id": "tests/structs/point_rect.cpp",
+                    "type": "submodule",
+                    "name": "point_rect.cpp",
+                    "meta": null,
+                    "children": [
+                      {
+                        "id": "tests_b|point_rect|pointSumWithAdd|int,int",
+                        "type": "fn",
+                        "name": "pointSumWithAdd",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|point_rect|pointSum|Point",
+                        "type": "fn",
+                        "name": "pointSum",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|point_rect|rectArea|const Rect *",
+                        "type": "fn",
+                        "name": "rectArea",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|point_rect|scalePoint|Point &,int",
+                        "type": "fn",
+                        "name": "scalePoint",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|point_rect|getDataAsInt|Data",
+                        "type": "fn",
+                        "name": "getDataAsInt",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|point_rect|noop|",
+                        "type": "fn",
+                        "name": "noop",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|point_rect|getPointX|const Point &",
+                        "type": "fn",
+                        "name": "getPointX",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|point_rect|initWidget|Widget_t *,int,const char *",
+                        "type": "fn",
+                        "name": "initWidget",
+                        "meta": null,
+                        "children": null
+                      },
+                      {
+                        "id": "tests_b|point_rect|areaOfSize|Size_t",
+                        "type": "fn",
+                        "name": "areaOfSize",
+                        "meta": null,
+                        "children": null
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tests/structs/point_rect.h",
+                    "type": "submodule",
+                    "name": "point_rect.h",
+                    "meta": null,
+                    "children": null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "loc": "0"
+    }
+  ]
+}
