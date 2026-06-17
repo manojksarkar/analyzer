@@ -77,7 +77,7 @@ for _p in (_SRC_DIR, _BACKEND_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from core.config import load_config  # noqa: E402
+from core.config import get_flat_groups, load_config  # noqa: E402
 
 from models import (  # noqa: E402
     Component,
@@ -153,10 +153,16 @@ def _project_base_path() -> Optional[str]:
     return base or None
 
 
-def _load_modules_groups() -> Dict[str, Dict[str, object]]:
-    """Return config.json :: modulesGroups, or {} when missing/invalid."""
+def _load_groups() -> Dict[str, Dict[str, object]]:
+    """Return flattened {groupName: {componentName: paths}} from config `layers`.
+
+    Main's schema nests layer -> groups -> {component: path|[paths]} with the
+    layer's path prepended by get_flat_groups(); the backend treats each group
+    as a UI "module" and each component as a folder under it. `paths` may be a
+    string or a list — `_normalize_dirs` handles both. Returns {} when absent.
+    """
     cfg = load_config(_REPO_ROOT)
-    groups = cfg.get("modulesGroups") or {}
+    groups = get_flat_groups(cfg)
     return groups if isinstance(groups, dict) else {}
 
 
@@ -297,7 +303,7 @@ def _logical_group_node(
     base_path: str,
     by_file: Dict[str, List[dict]],
 ) -> TreeNode:
-    """One inner-key (logical group) of modulesGroups → submodule node."""
+    """One component of a group (config.layers) → submodule node."""
     children: List[TreeNode] = []
     for rel in _normalize_dirs(spec):
         node = _dir_node(base_path, rel, by_file)
@@ -354,7 +360,9 @@ def _safe_filename(name: str) -> str:
     can't appear in a filename. Matches the per-group filename produced by
     src/views/flowcharts.py so reads/writes hit the same file the pipeline
     wrote."""
-    return re.sub(r'[<>:"/\\|?*]', "_", name or "")
+    # main's src/utils.py::safe_filename replaces spaces with '-' BEFORE the
+    # unsafe-char pass, so per-group files are functions_My-Sample.json etc.
+    return re.sub(r'[<>:"/\\|?*]', "_", (name or "").replace(" ", "-"))
 
 
 def _module_file_for_fn(fn_id: str) -> Optional[str]:
@@ -362,7 +370,7 @@ def _module_file_for_fn(fn_id: str) -> Optional[str]:
     or None if the mapping can't be resolved.
 
     fn_id format is `<inner_group>|<unit>|<qname>|<params>`. The inner_group
-    segment (e.g. `tests_a`) appears under one OUTER group in modulesGroups
+    segment (e.g. `Sample-Core`) is a component under one group in config.layers
     (e.g. `tests` -> {tests_a: [...], tests_b: [...]}). The pipeline writes
     the per-group file as functions_<outer>.json (see flowcharts.py line
     288), so we look up the outer key the same way.
@@ -373,15 +381,18 @@ def _module_file_for_fn(fn_id: str) -> Optional[str]:
     if not fn_id or "|" not in fn_id:
         return None
     inner_prefix = fn_id.split("|", 1)[0]
-    groups = _load_modules_groups()
-    for outer_key, inner in groups.items():
-        if isinstance(inner, dict) and inner_prefix in inner:
+    groups = _load_groups()
+    # fn_id keys are component-prefixed and space-normalized ("Sample-Core").
+    # get_flat_groups keys are raw config names ("Sample Core"), so normalize
+    # both sides. The per-group file the pipeline writes is
+    # functions_<safe(group)>.json (see src/views/flowcharts.py, §4f).
+    for group_key, inner in groups.items():
+        if isinstance(inner, dict) and any(
+            (comp or "").replace(" ", "-") == inner_prefix for comp in inner
+        ):
             return os.path.join(
-                _REPO_ROOT, "model", f"functions_{_safe_filename(outer_key)}.json"
+                _REPO_ROOT, "model", f"functions_{_safe_filename(group_key)}.json"
             )
-    # Fallback: maybe the unit prefix IS the outer key (single-group module
-    # like `core` where inner_prefix == outer_key already matched above —
-    # this branch is a defensive no-op).
     return None
 
 
@@ -542,7 +553,7 @@ def _expected_docx_path(selected_group: Optional[str]) -> str:
 
 
 def _resolve_group_name(requested: Optional[str]) -> Optional[str]:
-    """Validate moduleId against the OUTER keys of config.modulesGroups
+    """Validate moduleId against the group names of config.layers
     (case-insensitive). Returns the canonical key when matched, None when
     `requested` is empty/None. Raises HTTPException(400) when non-empty
     but unknown — saves an unattended run.py from silently processing the
@@ -554,17 +565,20 @@ def _resolve_group_name(requested: Optional[str]) -> Optional[str]:
     if not requested or not requested.strip():
         return None
     req = requested.strip()
-    groups = _load_modules_groups()
+    groups = _load_groups()
     if req in groups:
         return req
-    fold = req.casefold()
+    # Case- and space-insensitive match — group names may contain spaces
+    # (e.g. "My Sample") while the UI may send "My-Sample". --selected-group
+    # on main resolves case-insensitively, so the canonical key is returned.
+    fold = req.casefold().replace(" ", "-")
     for k in groups.keys():
-        if isinstance(k, str) and k.casefold() == fold:
+        if isinstance(k, str) and k.casefold().replace(" ", "-") == fold:
             return k
     valid = sorted(k for k in groups.keys() if isinstance(k, str))
     raise HTTPException(
         status_code=400,
-        detail=f"moduleId {requested!r} not in modulesGroups; valid: {valid}",
+        detail=f"moduleId {requested!r} not a configured group; valid: {valid}",
     )
 
 
@@ -678,16 +692,16 @@ def _expected_phase_markers(selected_group: Optional[str], from_phase: int) -> i
     progress would oscillate as each new group restarted at [1/2].
     """
     cfg = load_config(_REPO_ROOT)
-    groups_cfg = cfg.get("modulesGroups") or {}
+    groups_cfg = get_flat_groups(cfg)
     num_groups = len(groups_cfg) if isinstance(groups_cfg, dict) else 0
 
-    # Branch 1 of plan_runs: no modulesGroups -> single flat plan.
+    # Branch 1 of plan_runs: no layers/groups -> single flat plan.
     if num_groups == 0:
         # The single plan has 4 phases; --from-phase skips the first N-1.
         # Floor at 1 so we never divide by zero.
         return max(1, 5 - max(1, from_phase))
 
-    # Branch 2: modulesGroups present.
+    # Branch 2: layers/groups present.
     effective_groups = 1 if selected_group else num_groups
     # Build-model plan covers canonical phases 1+2. Skipped entirely when
     # from_phase > 2 (use existing model on disk).
@@ -974,7 +988,7 @@ def _build_module_tree(
     base_path: Optional[str],
     by_file: Dict[str, List[dict]],
 ) -> TreeNode:
-    """Build the tree for one module (one outer key of modulesGroups).
+    """Build the tree for one module (one group from config.layers).
 
     Layout rules:
       - The tree root is always the module itself (type=submodule).
@@ -1155,9 +1169,9 @@ async def delete_repository(name: str):
 @app.get("/api/v1/components", response_model=List[ComponentSummary])
 async def list_components() -> List[ComponentSummary]:
     """API 2 — single hardcoded "FTL" wrapping every entry in
-    config.json::modulesGroups. moduleCount tracks that dict live so the UI
+    config.json layers (groups). moduleCount tracks that dict live so the UI
     badge updates as soon as a new group is added (no restart needed)."""
-    groups = _load_modules_groups()
+    groups = _load_groups()
     return [
         ComponentSummary(
             id=_COMPONENT_ID,
@@ -1178,7 +1192,7 @@ async def get_component(component_id: str) -> Component:
     if component_id.upper() != _COMPONENT_ID.upper():
         raise HTTPException(status_code=404, detail=f"component {component_id!r} not found")
 
-    groups = _load_modules_groups()
+    groups = _load_groups()
     base_path = _project_base_path()
     functions_data = _load_functions()
     by_file = _functions_by_file(functions_data)
@@ -1225,7 +1239,7 @@ async def list_modules(component_id: str) -> List[ModuleSummary]:
     if component_id.upper() != _COMPONENT_ID.upper():
         raise HTTPException(status_code=404, detail=f"component {component_id!r} not found")
 
-    groups = _load_modules_groups()
+    groups = _load_groups()
     base_path = _project_base_path()
     summaries: List[ModuleSummary] = []
     for module_key, inner in groups.items():
@@ -1854,9 +1868,9 @@ def _walk_project_structure(abs_path: str, dirs_only: bool = False) -> Dict:
 # Surgical JSONC modifier for config.json
 # ---------------------------------------------------------------------------
 
-def _find_modules_groups_key_pos(raw_text: str) -> int:
+def _find_root_key_pos(raw_text: str, key: str) -> int:
     """Return the byte offset of the opening `"` of the root-level
-    `"modulesGroups"` key in raw JSONC text, or -1 if not found.
+    `key` (e.g. "layers") in raw JSONC text, or -1 if not found.
 
     Walks the entire file with full JSONC awareness — strings (with
     `\\"` escape handling), `//` line comments, `/* */` block comments,
@@ -1864,10 +1878,10 @@ def _find_modules_groups_key_pos(raw_text: str) -> int:
       - we're at object depth 1 (so it's a root-level key, not a key
         in some nested object that happens to share the name)
       - the next non-whitespace char is `:` (so it's a key, not just
-        a string literal that reads "modulesGroups")
+        a string literal that happens to read the same text)
 
     This is a hardening over the previous str.find() approach, which
-    could match the literal substring `"modulesGroups"` appearing
+    could match the literal substring (e.g. `"layers"`) appearing
     *inside* a clangArg string value (very plausible for huge office
     configs with hundreds of clang flags). A false match there would
     send the brace tracker into the wrong region of the file and
@@ -1909,7 +1923,7 @@ def _find_modules_groups_key_pos(raw_text: str) -> int:
                 continue
             if c == '"':
                 # String just closed — was it our key?
-                if depth == 1 and raw_text[string_start + 1:pos] == "modulesGroups":
+                if depth == 1 and raw_text[string_start + 1:pos] == key:
                     nxt = pos + 1
                     while nxt < n and raw_text[nxt] in " \t\r\n":
                         nxt += 1
@@ -1946,31 +1960,31 @@ def _find_modules_groups_key_pos(raw_text: str) -> int:
     return -1
 
 
-def _splice_modules_groups(raw_text: str, new_value: dict) -> str:
-    """Replace JUST the `modulesGroups` value inside the raw JSONC text,
+def _splice_root_object(raw_text: str, key: str, new_value: dict) -> str:
+    """Replace JUST the value of root-level `key` inside the raw JSONC text,
     preserving every other key, all comments (// and /* */), and the
     original formatting elsewhere in the file.
 
-    Uses a JSONC-aware key finder (so a `"modulesGroups"` substring
+    Uses a JSONC-aware key finder (so a matching key substring
     inside another string can't trigger a false match) plus a brace-
     nesting scanner that understands strings and comments — never
     replaces a `{ ... }` that's actually inside a string literal or
     comment.
 
-    Raises ValueError when modulesGroups isn't present or its value
+    Raises ValueError when `key` isn't present or its value
     isn't a JSON object (so the caller can return 400 with a meaningful
     detail instead of writing garbage to disk).
     """
-    idx = _find_modules_groups_key_pos(raw_text)
+    idx = _find_root_key_pos(raw_text, key)
     if idx < 0:
-        raise ValueError("modulesGroups key not found at root level of config.json")
+        raise ValueError(f"{key!r} key not found at root level of config.json")
 
-    # Skip past the literal `"modulesGroups"` then the whitespace + `:`
-    pos = idx + len('"modulesGroups"')
+    # Skip past the literal `"<key>"` then the whitespace + `:`
+    pos = idx + len(key) + 2  # +2 for the surrounding quotes
     while pos < len(raw_text) and raw_text[pos] in " \t\r\n:":
         pos += 1
     if pos >= len(raw_text) or raw_text[pos] != "{":
-        raise ValueError("modulesGroups value is not an object")
+        raise ValueError(f"{key!r} value is not an object")
 
     value_start = pos
     depth = 0
@@ -2030,7 +2044,7 @@ def _splice_modules_groups(raw_text: str, new_value: dict) -> str:
         pos += 1
 
     if value_end < 0:
-        raise ValueError("unmatched braces inside modulesGroups value")
+        raise ValueError(f"unmatched braces inside {key!r} value")
 
     # Indent the new JSON to sit at the same column as the key, so the
     # diff against the original file is local to this one block.
@@ -2099,7 +2113,7 @@ async def get_project_structure(
 
 @app.post("/api/v1/config")
 async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
-    """Replace ONLY the `modulesGroups` block in config/config.json,
+    """Replace ONLY the `layers` block in config/config.json,
     preserving every other top-level key (`views`, `clang`, `llm`,
     `export`, ...), all `//` and `/* */` comments, trailing commas,
     and the whitespace/formatting elsewhere in the file.
@@ -2112,7 +2126,7 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
     silently strip them.
 
     Body:
-      { "modulesGroups": { ... } }
+      { "layers": { ... } }
 
     Query params:
       ?dryRun=true — run the splice + validation but don't write to
@@ -2120,13 +2134,13 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
 
     Errors:
       404 — config/config.json missing
-      400 — body missing modulesGroups; modulesGroups not present at
+      400 — body missing layers; layers not present at
             root of the on-disk file; or the splice produced
             unparseable text (response includes the parser error
             position and a path to the diagnostic dump)
       500 — IO failure during write
     """
-    new_groups = body.modulesGroups
+    new_value = body.layers
     config_path = os.path.join(_REPO_ROOT, "config", "config.json")
     if not os.path.isfile(config_path):
         raise HTTPException(status_code=404, detail="config/config.json not found")
@@ -2138,7 +2152,7 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
         raise HTTPException(status_code=500, detail=f"failed to read config.json: {exc}")
 
     try:
-        updated_text = _splice_modules_groups(raw_text, new_groups)
+        updated_text = _splice_root_object(raw_text, "layers", new_value)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -2173,8 +2187,8 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
         return {
             "status": "dryRun",
             "wouldWrite": config_path,
-            "moduleCount": len(new_groups),
-            "modules": sorted(list(new_groups.keys())),
+            "layerCount": len(new_value),
+            "layers": sorted(list(new_value.keys())),
             "previewBytes": len(updated_text),
         }
 
@@ -2185,8 +2199,8 @@ async def update_config(body: UpdateConfigRequest, dryRun: bool = False):
 
     return {
         "status": "ok",
-        "moduleCount": len(new_groups),
-        "modules": sorted(list(new_groups.keys())),
+        "layerCount": len(new_value),
+        "layers": sorted(list(new_value.keys())),
     }
 
 

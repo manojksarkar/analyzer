@@ -166,11 +166,12 @@ class ExportCompleteResult(BaseModel):
 
 class UpdateConfigRequest(BaseModel):
     """Body shape for POST /api/v1/config — surgical update of just the
-    `modulesGroups` key. The inner type captures the existing config
-    layout: outer keys are module names; values map logical-group names
-    to either one directory path (string) or a list of directory paths.
+    `layers` key (main schema). Each layer maps to an object with a `path`
+    and a `groups` map (group -> {component: path | [paths]}); the whole
+    `layers` object is replaced verbatim, preserving every other config key
+    and all comments.
     """
-    modulesGroups: Dict[str, Dict[str, object]]
+    layers: Dict[str, object]
 
 
 # ---------------------------------------------------------------------------
