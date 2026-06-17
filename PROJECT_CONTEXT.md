@@ -1,6 +1,7 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
+> Updated: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
+> Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
 > Previous update: 2026-06-16 (`--project-name <name>` CLI flag — overrides the project name written into `model/metadata.json` as `projectName`; default remains `os.path.basename(project_path)`; parsed in `parser.py` and forwarded via `group_planner._build_model_phases`; propagates automatically to `model_deriver` (reads `projectName` from metadata), flowchart engine, and LLM prompts; `ui/app.py` derives display name from path directly and is unaffected; see §5).
 > Previous update: 2026-06-15 (fix: DOCX component display names — `component_name` (normalized identifier, spaces→`-`) was being used as visible text in section headings and the Component/Unit table; introduced `component_display = component_name.replace("-", " ")` in the `export_docx` loop and passed it to `_add_component_unit_table` and `_build_component_container_mermaid`; all key lookups and filenames keep using `component_name`; see §12).
@@ -11,7 +12,7 @@
 > Previous update: 2026-06-11 (feat/auto-clang-includes branch: `--selected-component` flag added — repeatable, accumulates a list; all components must be in the same layer; output to `output/<C1_C2>/`; new `get_component_layer_name` in `core.config`; `group_planner` has a fifth dispatch shape; `run_views` and `docx_exporter` both handle the new flag; see §5).
 > Previous update: 2026-06-09 (feat/auto-clang-includes branch: Phase 1 parsing scoped to selected layer — `--selected-group` passes itself to `parser.py` which derives the layer via `get_group_layer_name`; new `--selected-layer` flag parses one layer and generates DOCX for all its groups; both flags together are an error; `clang_include_paths.json` also scoped to the selected layer; new `get_group_layer_name` / `get_layer_flat_groups` helpers in `core.config`; see §4e, §5, §7).
 > Previous update: 2026-06-09 (feat/from-main branch: `module` → `component` rename throughout source + model + config; `modulesGroups` → `layers` two-level config schema; same-layer model filtering in Phase 3 + Phase 4; `SampleCppProject` restructured with Layer1 + Layer2/Platform; `model/modules.json` → `model/components.json`; new `get_flat_groups` / `get_layer_components` helpers in `core.config`; `--trace-prompts` + `--filter-mode` CLI flags; `model/clang_include_paths.json` written by `run.py` before any phase; see §5, §6, §7, §9, §10, §11, §12, §15).
-> Current active branch: `feat/auto-clang-includes`.
+> Current active branch: `version4` (integration base off `main`: main code + version3 backend + production-redesign docs).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
@@ -22,6 +23,8 @@
 > - §4d covers the feat/from-main changes (component rename, layers config, same-layer filtering, SampleCppProject restructure).
 > - §4e covers the feat/auto-clang-includes changes (layer-scoped Phase 1 parsing, `--selected-layer` flag).
 > - §4f covers component-level DOCX export (`--selected-component`, `--component-per-docx`) and space normalization in identifiers.
+> - §21 orients you to the FastAPI backend (`backend/`; detail in backend/PROJECT_CONTEXT.md).
+> - §22 orients you to the Production Redesign (POC→production design; docs in docs/production-redesign/).
 > - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
@@ -2406,3 +2409,275 @@ If anything in steps 5–16 fails with a non-zero exit code, the runner logs
 `<phase> failed with exit code N; resume with: --from-phase <idx>`. The user
 can fix the underlying issue and rerun with that flag, skipping straight to
 the failed step.
+
+---
+
+## 21. Companion: the FastAPI backend (`backend/`)
+
+> **Integration status (version4):** the `backend/` layer and the
+> `docs/production-redesign/` design docs were brought onto this branch from
+> `version3`, on top of the newer `main` code line. The backend was written
+> against the **older `modulesGroups` / `module` schema** and the
+> `model/modules.json` filename. This `main`-based code line instead uses the
+> **`layers` config + `component` terminology + `model/components.json`** (see
+> §4d, §6) and adds CLI flags (`--selected-layer`, `--selected-component`,
+> `--data-dictionary`, `--macros`, `--include-path`, `--project-name`).
+> **Adapting the backend to that schema and flag set is an open follow-up**
+> before it runs correctly against this analyzer. The description below is the
+> backend *as built on version3*.
+
+Starting in version3, the analyzer pipeline is also reachable over HTTP
+through a small FastAPI service that the external UI talks to. This
+section is intentionally short — it orients you to the layer; the
+authoritative reference is **[backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md)**
+(~930 lines covering all endpoints, request/response shapes, design
+decisions, and the development history).
+
+### What the backend is, and isn't
+
+- **What it is**: a thin async wrapper around `run.py`. It spawns the
+  analyzer as a subprocess (`_spawn_run_py`), tails its stdout+stderr
+  to per-job log files, parses `[N/M] === Phase X: ... ===` markers
+  for progress, and exposes the model artifacts that the analyzer
+  already produces (functions, components, flowcharts, the exported
+  DOCX).
+- **What it isn't**: a re-implementation of the pipeline. The backend
+  never imports analyzer internals — it only reads JSON the analyzer
+  writes and shells out to `python run.py`. The pipeline contract
+  documented in §3, §10–§14 is the single source of truth.
+
+### Process model
+
+- FastAPI on `:8000`, CORS pinned to `http://localhost:5173` (the Vite
+  dev server the UI runs on).
+- Jobs live in an in-memory `_jobs: dict[str, JobState]` — **no
+  persistence by design**. Restarting the backend forgets in-flight
+  jobs, but already-exported DOCX files on disk remain downloadable
+  via `GET /jobs/{jobId}/download` (the endpoint resolves by reading
+  `output/*.docx` directly).
+- Each spawned subprocess writes to
+  `logs/job_<job_id>.out.log` (interleaved stdout+stderr). The
+  `GET /jobs/{jobId}/preplogs` endpoint tails this file rather than
+  buffering in process memory.
+- Process tree kill uses `taskkill /F /T` on Windows and `killpg(SIGKILL)`
+  on POSIX so cancelling a job actually stops the whole subprocess tree
+  (parser/model_deriver/run_views/docx_exporter can spawn children).
+
+### Progress: canonical 4-phase mapping
+
+The pipeline has variable plan counts (build-only vs build+views vs
+views-only, multi-group runs) and inside-plan phase counts (some plans
+have 2 phases, others 4). To give the UI a stable progress bar:
+
+- A **canonical 4-phase** taxonomy is exposed regardless of the
+  actual plan shape: Parse C++ source → Derive model → Generate
+  views → Export to DOCX.
+- `_PHASE_NAME_TO_NUMBER` maps phase labels (case-folded) to
+  `phaseNumber` 1..4.
+- `_CANONICAL_TOTAL = 4` is always returned as `totalPhase` (even when
+  the actual plan has only 2 phases — `totalPhase` is canonical, not
+  literal).
+- `_expected_phase_markers(selected_group, from_phase)` predicts the
+  total number of `=== Phase ... ===` markers the run will emit, used
+  to compute `overallProgress` monotonically. This was the fix for the
+  "75% → 25% → 100%" regression: previously `overallProgress` was
+  computed from "markers seen / markers in current plan", which jumped
+  backwards across plan boundaries.
+- The `phase` field strips a leading `Phase N: ` prefix
+  (`_PHASE_LABEL_PREFIX_RE`) — the UI wants the bare phase name.
+
+### Config editing: surgical JSONC splice
+
+`POST /api/v1/config` updates only the `modulesGroups` key inside
+`config/config.json` while preserving every comment and every other
+key in the file. The implementation (`_find_modules_groups_key_pos`)
+is a small JSONC-aware state machine that tracks strings, line
+comments, block comments, and brace nesting depth — a regex or a
+`json.loads` + `json.dumps` round-trip would either miss commented
+duplicates or strip every `//` and `/* */` comment from the file.
+Earlier attempts to do this with `json.loads` deleted ~80% of the
+config; the surgical splice is the only safe path. Backup files are
+**not** written (the user explicitly opted out — git is the backup).
+
+> **Schema note (version4):** on this `main`-based code line the config key
+> is **`layers`** (two-level), not `modulesGroups`, and the model file is
+> `model/components.json`, not `modules.json`. The splice target and the
+> component/module-keyed read paths must be updated when the backend is
+> adapted (see the Integration status note above).
+
+### Multi-repository CRUD
+
+`backend/repository_config.json` is a list of `{name, path}` entries
+(see `backend/models.py:Repository`). Endpoints that previously took
+just a path now accept `?name=<repo>` query parameters; the backend
+resolves the name to a directory via `_resolve_repository_path` and
+auto-migrates legacy single-repo `{path: "..."}` files to
+`[{name: "default", path: "..."}]` on first read.
+
+### Where to read more
+
+The full endpoint catalog (17 endpoints), request/response examples,
+and the lessons-learned section (12 entries: venv mismatches, the
+config splice 80% bug, progress monotonicity, hiddenFns evolution,
+PNG slicing, ELK feedbackEdges, lossy-rewrite reversal, Windows
+shell=True quirks, etc.) is in
+[backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md). API examples
+with curl payloads are in [backend/API_DOC.md](backend/API_DOC.md). A
+sample response fixture lives at
+[backend/fixtures/get_components_FTL.json](backend/fixtures/get_components_FTL.json).
+
+---
+
+## 22. Production Redesign (POC → Production) — design decisions
+
+> This section captures the forward-looking **production platform** design work done in the
+> 2026-06 design sessions. Everything in §1–§21 is the **POC**; this is the plan to productionize it.
+> **Full detail lives in three design docs under `docs/production-redesign/` (brought onto `version4`).
+> Read those for depth — this section is the orientation + the decisions, so a fresh session can
+> pick up without re-deriving them.** Where this section references analyzer specifics it uses this
+> code line's `layers`/`component` terminology (§4d).
+
+### 22.1 Design documents (read these for full detail)
+
+- **`docs/production-redesign/01-technology-selection-study.md`** (v1.2) — overall production stack + deployment.
+- **`docs/production-redesign/02-database-design-study.md`** — DB selection (PostgreSQL), POC-grounded, with storage estimation.
+- **`docs/production-redesign/03-incremental-changes-design.md`** (**v1.2** — §12 records the chosen path: **Approach 2**, git-diff narrowed parse) — the incremental / delta regeneration feature.
+
+### 22.2 The vision
+
+A **multi-tenant, on-premise production platform**: users register a C++ project (a path or, going
+forward, a **git/Bitbucket URL → clone**), the platform runs the analyzer and produces the ASPICE
+SWE.3 document, browsable/downloadable in a UI. Must be **scalable, reliable, durable, consistent**.
+
+### 22.3 Hard constraints (these drive every decision)
+
+- **On-prem only** — C++ firmware IP must not leave the corporate network → **no cloud services**.
+- **Open-source only (OSI-approved)** → rules out *source-available* licenses: **SSPL** (MongoDB),
+  **CSL** (CockroachDB, since 2024), **BSL** (ArangoDB/Memgraph), and **MinIO/Redis** post-relicense.
+- **Firmware-scale** — up to ~50k functions/project (~20k typical), ~40 tenants/project
+  (tenants **share** the codebase, so they do *not* multiply data), 10+ branches/project.
+- **Rewrite the analyzer to read/write the DB directly** (no more `model/`+`output/` JSON files) —
+  this also removes the local-disk phase handoff, which is what enables **distributed workers**.
+
+### 22.4 Selected stack (key decisions)
+
+- **Database: PostgreSQL 16+** (single-primary + HA via **CloudNativePG/CNPG**) with **pgvector**.
+  The **system of record** (replaces the JSON files).
+  - *Why Postgres:* one engine covers **relational + JSONB (document) + recursive CTEs
+    (graph/impact analysis) + pgvector (similarity)**; ACID; OSI open-source; on-prem; won't rug-pull;
+    modest structured scale **fits one node**.
+  - **NOT a distributed DB** (Citus/Cockroach/Yugabyte) — structured data fits one node; we scale the
+    **stateless worker tier**, not the DB.
+- **Job queue:** Postgres-as-queue (`SELECT … FOR UPDATE SKIP LOCKED`) — **not** RabbitMQ/Kafka/Redis
+  (extra stateful system for throughput we don't need; long, few jobs).
+- **Graph / impact analysis:** Postgres **recursive CTE / materialized closure table** (not a graph DB;
+  **Apache AGE** is the in-Postgres graduation path, then NebulaGraph).
+- **Object storage: DEFERRED to a future phase.** History worth knowing: chose MinIO → discovered
+  **MinIO Community Edition was archived ("no longer maintained") in Feb 2026** → switched to
+  **SeaweedFS** (Apache-2.0) → then **deferred object storage entirely for now**. v1: keep **latest
+  document per branch** in the DB; **flowchart images generated on demand, not stored**; **Mermaid
+  scripts kept in the DB** (text).
+- **Deployment:** containers on **Kubernetes**, **3-node cluster** (quorum = 2, survives **1** node
+  failure; 5 nodes survive 2). **Stateless tier** (API + workers) vs **stateful quorum-bound data
+  core** (Postgres + etcd [+ object store later]). **Local SSD (NVMe-ready)** via TopoLVM/OpenEBS
+  LocalPV; redundancy = **app-level replication** (CNPG), not a storage layer. No existing
+  CSI/distributed storage. Worker VMs are **not** quorum members → scale them freely.
+- **LLM:** internal **corporate gateway** (OpenAI-compatible, off-cluster) → **no GPU nodes** in-cluster.
+- **Auth:** **in-app auth + RBAC on PostgreSQL** (simple roles now); **Keycloak + corporate SSO** is the
+  graduation path. Tenant isolation via `tenant_id` + optional Postgres **Row-Level Security (RLS)**.
+
+### 22.5 Rejected DB options (for the record)
+
+- **MongoDB** — SSPL (not OSI); weak graph/relational; on-prem vector is Atlas-only.
+- **CockroachDB** — CSL (not OSI since 2024); distributed-scale we don't need.
+- **Citus / YugabyteDB** — solve a write-scale problem we don't have; AGPL (Citus); less-mature pgvector.
+- **MySQL / MariaDB** — weaker JSONB; immature vector ecosystem vs pgvector.
+- **SQLite** — single-writer; no multi-tenant concurrency.
+- **Neo4j / dedicated graph DB** — GPLv3 Community has no open-source clustering; our graph need is
+  bounded transitive closure that Postgres handles.
+- **Qdrant / Milvus as the primary store** — augment, not replace; pgvector covers current scale
+  (kept as a graduation path).
+
+### 22.6 Incremental (delta) regeneration feature — design summary
+
+Goal: **hours → minutes** for small changes (skip the rate-limited LLM work for unchanged functions).
+"Incremental build for documents" (the make/ccache/Bazel principle).
+
+- **Change detection — two layers:**
+  - **`git diff --name-only`** for *which files* changed (fast, reliable — **not** its scattered hunk
+    output).
+  - **Entity hashing** for *which entities* changed: hash **four entity types — functions, globals,
+    macros, types**. **Token-based** (libclang; ignores whitespace/indentation/CRLF, **includes
+    comments**), **full SHA-256** (32 bytes, never truncated), one **uniform** hash per entity's source
+    extent, **keyed by identity including the defining file/location** (so same-named macros/types in
+    different files are distinct).
+  - **One hash per entity** now; **per-artifact hashing is deferred**.
+  - Classification: unchanged / changed / new / deleted; **move/rename = delete(old key) + add(new key)**.
+  - *Why hash globals/macros/types separately:* changing a global/macro/type does **not** change a
+    *using* function's tokens (a function still just writes `MAX` after `#define MAX` changes value), so
+    those entities must be hashed on their own; impact analysis then refreshes the functions that use them.
+- **Impact analysis (dependency-graph propagation):** changes flow **UP to callers/users**. Axes:
+  **call graph (transitive callers), type usage, globals, macros, containment (file/component/project
+  summaries), diagrams (call-edge changes), cross-group**. Hard cases: **indirect calls / virtual
+  dispatch → over-approximate** (treat as edges to all overrides / any address-taken function);
+  **move/rename → key change**. Algorithm: reverse-reachability BFS / recursive CTE / closure table over
+  the stored edges.
+- **Selective regeneration:** re-run the LLM only for the impact set; **reuse** stored outputs for the
+  rest. **Reassemble** the document from pieces (re-run Phase 3 views + Phase 4 export; **not** in-place
+  patching).
+- **Chosen approach & baseline (updated — see `docs/production-redesign/03` §12, v1.2):** v1 uses
+  **Approach 2** — **git-diff narrowed parse** (parse only changed files; reuse the baseline version's
+  stored model + outputs for the rest) + **stored-graph impact** + **selective regen**. The product model
+  is **a document version per code version, branch-agnostic** — each generation stores its own document +
+  metadata; reuse is **content-addressed across all generated versions**. The diff baseline is the
+  **nearest generated ancestor** (via `git merge-base`), with **Approach 1's full parse as the fallback**
+  for first-generation / no-ancestor / diverged history.
+- **Versioning:** a document version per generation; **full Git-style cross-version dedup is deferred**.
+- **Tech additions (no new DB or system):** the **`git` CLI** in the worker image + **repo credentials**
+  (SSH deploy key or HTTP access token, from a deployment-appropriate secrets store — K8s Secrets / Vault
+  / env injection; the project owner supplies it at registration, stored encrypted). Operator-side recipe
+  changes (LLM model/prompts/config) → a manual full-regen, separate from the user's code-diff path.
+
+### 22.7 Storage estimation (DB structured data only; excludes images/docs)
+
+- **~250 MB / branch** (20k functions + 3k entities), dominated by **embeddings (~120 MB) + Mermaid
+  (~60 MB)**.
+- **~2.5 GB / project** (×10 branches; v1 stores per-branch, no cross-branch dedup).
+- Platform: ~25 GB (10 projects) → **~500 GB logical / ~1.5 TB physical at 200 projects** → a
+  **single primary + replicas** comfortably suffices.
+- Cross-branch dedup (deferred) would shrink ~2.5 GB → **~0.5 GB + small deltas**.
+
+### 22.8 Explicitly deferred to later phases
+
+- **Object storage** (images, documents at scale).
+- **Per-artifact hashing** (finer-grained reuse — e.g. a comment-only change reusing the flowchart).
+- **Image-render cache** (skip re-rendering unchanged flowcharts — tied to object storage).
+- **Full version history** (Git-style dedup across versions/branches).
+- **Non-Functional Requirements section** for the DB study.
+
+### 22.9 What's next
+
+- **Incremental implementation (in progress on `version4`)** — Approach 2 over the current JSON-file
+  pipeline first, to migrate to Postgres later. Workstreams: git ingestion + project onboarding, per-project /
+  per-version storage, entity hashing + dependency-edge persistence, the detect→impact→regenerate→reassemble
+  engine wired into Phases 1–4, and the supporting APIs (onboard / projects / branches / commits / generate).
+- **Detailed database schema design** — tables for entities, dependency edges, `{key → hash}` records,
+  per-version baselines, RBAC, and the job queue (owned by the DB engineer).
+- (Optional) the NFR section for the DB study; the object-storage study (future phase).
+
+### 22.10 Cross-cutting lessons from this session
+
+- **MinIO Community Edition is dead** (archived Feb 2026); **SeaweedFS** (Apache-2.0) is the maintained
+  alternative *if/when* object storage is needed.
+- **Watch licensing rug-pulls:** SSPL / CSL / BSL / RSAL are *source-available, not OSI*. PostgreSQL
+  (PostgreSQL License) is the low-risk anchor; **Valkey** is the OSI-clean Redis fork.
+- **Hashing for change detection** must be **token-based** (to ignore formatting/CRLF) and **full
+  SHA-256** (collisions effectively impossible). A *token change is always a line change*, so git diff
+  never *under*-detects — it only over-detects on formatting, which is the safe direction.
+- **The whole incremental design biases to over-regenerate, never to stale** — every ambiguous case
+  (indirect/virtual calls, formatting noise, non-ancestor commits) regenerates *more*, with a manual
+  full-regen escape hatch.
+
+---
+
+_End of file._
