@@ -95,7 +95,7 @@ Engineers documenting C++ codebases for ASPICE compliance. They:
   `killpg(SIGKILL)`).
 
 ### Multi-plan execution (important for progress UX)
-For projects with `modulesGroups` configured, the analyzer's planner
+For projects with `layers` configured, the analyzer's planner
 (`src/core/group_planner.py:87`) splits the run into multiple plans:
 - 1 build-model plan (Parse + Derive).
 - N per-group plans (Generate views + Export to DOCX), one per group.
@@ -134,7 +134,7 @@ its own Python entry point, and `run.py` can resume from any phase via
   - Token-budgeted prompts (`maxContextTokens`).
 - Outputs:
   - `model/functions.json` — enriched (descriptions added).
-  - `model/units.json`, `model/modules.json`.
+  - `model/units.json`, `model/components.json`.
   - `model/knowledge_base.json` — flat keyed-by-qname view for downstream
     consumers (PATCH writes here in addition to per-module files).
   - `model/summaries.json` — optional phase/file/module hierarchy summary
@@ -157,7 +157,7 @@ its own Python entry point, and `run.py` can resume from any phase via
     files. The PNGs are auto-sliced into `__part_K_of_N.png` when their
     aspect ratio would overflow a Word page (commit `8560de4`).
   - **sequenceDiagrams** → reuses the flowchart engine.
-- When `modulesGroups` is configured, Phase 3 runs **once per group**
+- When `layers` is configured, Phase 3 runs **once per group**
   via `views.flowcharts.scriptPath = src/flowchart/flowchart_engine.py`
   with `--selected-group <name>` so each group's output lands under
   `output/<group>/`.
@@ -189,8 +189,8 @@ Used by Phase 3's `flowcharts` view:
   using **UTC date** for the filename.
 - `orchestration.py` emits `[N/M] === Phase ... ===` immediately before
   each phase starts and `[N/M] Phase Name — Xs` after each completes.
-- The `--selected-group` flag's accepted names are the OUTER keys of
-  `config.modulesGroups`. Case-insensitive resolution (`_resolve_group_name`).
+- The `--selected-group` flag's accepted names are the **group** names from
+  `config.layers` (case- and space-insensitive resolution, `_resolve_group_name`).
 - Per-module files live at `model/functions_<safe(group)>.json` with
   `_safe_filename()` (re.sub of `[<>:"/\\|?*]`) applied to the group name.
 
@@ -269,14 +269,14 @@ first, then fall back to `functions.json`. Implemented via
 
 ### 4.5 Surgical JSONC editing (POST `/config`)
 **Decision:** Walk the raw text with a JSONC-aware state machine, replace
-just the `modulesGroups` block, write back. No parse-and-dump.
+just the `layers` block, write back. No parse-and-dump.
 **Why:** `config/config.json` carries inline `//` documentation comments
 the team uses (Linux libclang paths, env-var hints, etc.). A naïve
 parse-and-write would strip them on every save.
 **Trade-off:** The state machine has to handle strings, both comment
 flavours, and brace nesting correctly. The previous `find()` based finder
-had a bug with comment-mentioned `"modulesGroups"`; the current
-`_find_modules_groups_key_pos()` walks the file properly and accepts only
+had a bug with comment-mentioned key strings; the current
+`_find_root_key_pos()` walks the file properly and accepts only
 root-level matches.
 
 ### 4.6 Canonical 4-phase mapping (for progress UX)
@@ -366,7 +366,7 @@ an alternative to body `path` (path lookup from `repository_config.json`).
 | Method | Path | Purpose |
 |---|---|---|
 | GET  | `/api/v1/config` | Parsed `config/config.json` (JSONC → JSON) |
-| POST | `/api/v1/config` | Surgically replace `modulesGroups` (preserves comments) |
+| POST | `/api/v1/config` | Surgically replace `layers` (preserves comments) |
 
 ### Project structure (17)
 | Method | Path | Purpose |
@@ -388,7 +388,7 @@ to integrate without needing `API_DOC.md` open in another tab.
 #### Repository list (`GET /repository`)
 ```json
 [
-  { "name": "test_cpp_project", "path": "C:\\...\\test_cpp_project" },
+  { "name": "SampleCppProject", "path": "C:\\...\\SampleCppProject" },
   { "name": "other_repo",       "path": "D:\\cpp_code" }
 ]
 ```
@@ -451,7 +451,7 @@ Response:
 Writes to `model/functions_<group>.json` (per-module file) **and**
 `model/knowledge_base.json`. Does NOT touch `model/functions.json`.
 
-#### Start prepare (`POST /jobs/prepare?name=test_cpp_project`)
+#### Start prepare (`POST /jobs/prepare?name=SampleCppProject`)
 Body (path optional when `?name=` is supplied):
 ```json
 { "moduleId": "core" }
@@ -518,7 +518,7 @@ Complete:
 #### Project structure (`GET /project/structure?dirsOnly=true`)
 ```json
 {
-  "name": "test_cpp_project",
+  "name": "SampleCppProject",
   "children": [
     { "name": "app",   "children": [] },
     { "name": "math",  "children": [] },
@@ -549,7 +549,7 @@ All state lives in JSON files on disk + the in-memory `_jobs` dict.
 | `model/knowledge_base.json`  | model_deriver.py | Functions/enums/macros/typedefs keyed by qualifiedName. Mirror of descriptions. |
 | `model/globalVariables.json` | parser.py + enriched | Global variables. |
 | `model/dataDictionary.json`  | parser.py | Type aliases + enums for LLM context. |
-| `model/modules.json`         | model_deriver.py | Module → units mapping. |
+| `model/components.json`         | model_deriver.py | Component → units mapping. |
 | `model/units.json`           | model_deriver.py | Unit metadata. |
 | `output/interface_tables.json` | run_views.py | Per-function interface metadata for docx export. |
 | `output/flowcharts/<unit>.json` | views/flowcharts.py | `[{functionKey, name, flowchart: "mermaid"}]` per unit. |
@@ -572,11 +572,13 @@ All state lives in JSON files on disk + the in-memory `_jobs` dict.
   Not persisted; resets on uvicorn restart.
 
 ### Composite IDs
-- **`fn_id`**: `<inner_module>|<unit>|<qualified_name>|<param_types>`
-  Example: `core|utils|add|int,int`.
-- **`module_id`** / outer key in `modulesGroups`: `core`, `support`, `tests`.
-- **Inner keys** (logical groups) under each outer: e.g.
-  `modulesGroups.tests = { tests_a: [...], tests_b: [...] }`.
+- **`fn_id`**: `<component>|<unit>|<qualified_name>|<param_types>`
+  Example: `Lib|Lib|add|int,int` (the component segment is space-normalized,
+  e.g. `"Sample Core"` → `Sample-Core`).
+- **`group` name** (what `moduleId` / `--selected-group` accept): a group under
+  a layer, e.g. `My Sample`, `Full`, `Support`, `Platform`.
+- **Components** under a group: e.g.
+  `layers.Layer1.groups."My Sample" = { "Sample Core": "Sample/Core", ... }`.
 
 ---
 
@@ -772,7 +774,7 @@ curl http://localhost:8000/api/v1/components
 ```
 analyzer/
 ├── run.py                            # analyzer CLI entry
-├── config/config.json                # analyzer + LLM + modulesGroups config
+├── config/config.json                # analyzer + LLM + layers config
 ├── src/                              # analyzer pipeline (phases 1-4)
 │   ├── parser.py                     # phase 1
 │   ├── model_deriver.py              # phase 2
@@ -828,13 +830,13 @@ of these are "tried it, didn't work, here's why we ended up here."
 **What happened:** The user's office `config.json` (700+ `clangArgs`) made `POST /config` produce a corrupt file. The diagnostic dump showed only ~80% of the original got written, with a JSON parse error mid-stream.
 **First hypothesis:** Brace-tracking failure on a giant array. We added diagnostic dumps and a `?dryRun=true` query param.
 **Second hypothesis (the lossy escape hatch):** We added a parse-modify-rewrite fallback that drops comments. User pushed back — the comments are documentation, not noise.
-**Actual root cause:** The previous `_splice_modules_groups` used a naïve `str.find('"modulesGroups"')` that could match inside a `//` comment that happened to mention the literal `"modulesGroups"` string. When that happened, the brace tracker started scanning from inside a comment region and walked into the wrong part of the file.
-**Fix:** `_find_modules_groups_key_pos` walks the whole file with full JSONC awareness (strings with `\\"` escape handling, both comment flavours, brace nesting) and only accepts a root-level match followed by `:`. The lossy fallback was removed.
+**Actual root cause:** The previous key-finder used a naïve `str.find('"<key>"')` that could match inside a `//` comment that happened to mention the literal key string. When that happened, the brace tracker started scanning from inside a comment region and walked into the wrong part of the file.
+**Fix:** `_find_root_key_pos` (generalized on version4 from the old `_find_modules_groups_key_pos`; now takes a key arg and targets `layers`) walks the whole file with full JSONC awareness (strings with `\\"` escape handling, both comment flavours, brace nesting) and only accepts a root-level match followed by `:`. The lossy fallback was removed.
 **Lesson:** When parsing JSONC for surgical edits, do NOT rely on `str.find` for key positions. Walk the file with a state machine that understands comments and strings.
 
 ### 11.3 Multi-group progress went backwards (the 75 → 25 → 100 bug)
 **What happened:** `overallProgress` started at 75%, then jumped down to 25%, then to 100%. `totalPhase` always showed 2 instead of 4.
-**Root cause:** `src/core/group_planner.py` splits a prepare with `modulesGroups` configured into multiple plans. Each plan emits its own `[N/M]` markers (commonly `[N/2]`). My code took the latest `[N/M]` and divided N by M, so progress collapsed every time a new plan restarted at `[1/2]`.
+**Root cause:** `src/core/group_planner.py` splits a prepare with `layers` configured into multiple plans. Each plan emits its own `[N/M]` markers (commonly `[N/2]`). My code took the latest `[N/M]` and divided N by M, so progress collapsed every time a new plan restarted at `[1/2]`.
 **Fix:** Canonical 4-phase mapping by phase NAME (Parse / Derive / Views / Export). `totalPhase` is always 4. `overallProgress` is now `(markers_seen - 0.5) / total_expected * 100`, where `total_expected` is computed upfront from `_expected_phase_markers(selected_group, from_phase)` mirroring the planner's branching rules. For a 3-group prepare without `--selected-group`, the expected total is `2 + 3*2 = 8` markers, so progress climbs `6 → 18 → 31 → 43 → 56 → 68 → 81 → 93 → 100`.
 **Caveat:** `phaseNumber` still bounces 3 ↔ 4 because that reflects what's actually running for each group. UI should bind the progress bar to `overallProgress` and the "current phase" label to `phase` — both are stable; `phaseNumber` is best read as "which canonical phase is happening right now."
 **Lesson:** `_expected_phase_markers` and `src/core/group_planner.py::plan_runs` must stay in sync. If the planner branching changes, the helper needs to follow. (The helper's docstring deliberately references the planner file for this reason.)
@@ -919,7 +921,7 @@ are intentionally not committed — they're one-shot verification, not
 regression coverage.
 
 For changes that touch the analyzer pipeline itself (rare from the
-backend side), the real test is running `python run.py test_cpp_project`
+backend side), the real test is running `python run.py SampleCppProject`
 end-to-end and checking the produced docx.
 
 ---

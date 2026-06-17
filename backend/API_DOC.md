@@ -37,9 +37,9 @@ or, for Pydantic validation failures (422):
 
 - **Jobs are in-memory only.** A `jobId` returned from POST is valid only until the next uvicorn restart. The on-disk model + docx files survive restarts; the jobId tracker does not. UI should clear cached jobIds on a 404 from any `/jobs/...` endpoint.
 - **`componentId` everywhere is the literal string `"FTL"`** for now. Multi-component support is on the roadmap.
-- **`moduleId` is the OUTER key of `config.modulesGroups`** — `core`, `support`, `tests` in the current config. Case-insensitive on input; the API echoes back the canonical key.
+- **`moduleId` is a group name from `config.layers`** — e.g. `My Sample`, `Full`, `Support`, `Access`, `Diag`, `Platform` in the current config (a "group" lives under a layer: `layers.<Layer>.groups.<Group>`). Case- and space-insensitive on input; the API echoes back the canonical key.
 - **`fn_id` is the composite function key** used throughout the analyzer:
-  `<inner_module>|<unit>|<qualified_name>|<param_types>` — e.g. `core|main|calculate|` or `core|utils|add|int,int`.
+  `<component>|<unit>|<qualified_name>|<param_types>` — e.g. `Sample-Core|Core|init|` or `Lib|Lib|add|int,int`. The component segment is space-normalized (`"Sample Core"` → `Sample-Core`).
 - **`loc` is a placeholder field** (string `"0"`) — the analyzer doesn't compute lines-of-code for the UI yet. It exists for shape parity with the office models.
 
 ---
@@ -67,7 +67,7 @@ or, for Pydantic validation failures (422):
 | 13 | GET   | `/api/v1/jobs/{job_id}/export/status` | Docx-artifact status (works for prepare AND export jobs) |
 | 14 | GET   | `/api/v1/jobs/{job_id}/export/download` | Stream the docx (works for prepare AND export jobs) |
 | 15 | GET   | `/api/v1/config` | Parsed `config/config.json` (JSONC → JSON) |
-| 16 | POST  | `/api/v1/config` | Replace `modulesGroups` in config.json (surgical splice; preserves comments + other keys; no backup file) |
+| 16 | POST  | `/api/v1/config` | Replace `layers` in config.json (surgical splice; preserves comments + other keys; no backup file) |
 | 17 | GET   | `/api/v1/project/structure` | Full directory/file tree of the CPP project |
 
 ---
@@ -77,7 +77,7 @@ or, for Pydantic validation failures (422):
 Storage: `backend/repository_config.json`. Shape on disk is a list:
 ```json
 [
-  { "name": "test_cpp_project", "path": "C:\\Users\\...\\test_cpp_project" },
+  { "name": "SampleCppProject", "path": "C:\\Users\\...\\SampleCppProject" },
   { "name": "other_repo",       "path": "D:\\cpp_code" }
 ]
 ```
@@ -92,7 +92,7 @@ without a manual edit.
 ### Response 200
 ```json
 [
-  { "name": "test_cpp_project", "path": "C:\\Users\\...\\test_cpp_project" },
+  { "name": "SampleCppProject", "path": "C:\\Users\\...\\SampleCppProject" },
   { "name": "other_repo",       "path": "D:\\cpp_code" }
 ]
 ```
@@ -102,7 +102,7 @@ Returns `[]` when no repositories are configured yet.
 
 ### Response 200
 ```json
-{ "name": "test_cpp_project", "path": "C:\\Users\\...\\test_cpp_project" }
+{ "name": "SampleCppProject", "path": "C:\\Users\\...\\SampleCppProject" }
 ```
 ### Errors
 - 404 — no repository has that name
@@ -166,8 +166,9 @@ is removed — the UI can keep POSTing without re-bootstrapping the file.
 # 2. GET /api/v1/components
 
 List all known components. Currently always returns a single hardcoded
-`FTL` entry; `moduleCount` is read live from `config.modulesGroups` so
-adding a new outer key to config increments the count without restart.
+`FTL` entry; `moduleCount` is read live from `config.layers` (the flattened
+group count) so adding a new group to config increments the count without
+restart.
 
 ### Response 200
 ```json
@@ -177,7 +178,7 @@ adding a new outer key to config increments the count without restart.
     "code": "FTL",
     "name": "FTL",
     "desc": "",
-    "moduleCount": 3
+    "moduleCount": 6
   }
 ]
 ```
@@ -201,10 +202,10 @@ Each `TreeNode` has:
   "children": null | TreeNode[]
 }
 ```
-- **Module top node** → type=`submodule`, name = module key
-- **Logical group level** → collapsed when the module has exactly one inner key
-  with the same name (the common case for `core` and `support`); preserved when
-  there are multiple (e.g. `tests` has `tests_a` + `tests_b`)
+- **Module top node** → type=`submodule`, name = group name (a `config.layers` group)
+- **Component level** → each component of the group (e.g. `Sample Core`, `Lib`,
+  `Util` under `My Sample`) appears as a `submodule` node; collapsed only when a
+  group has a single component sharing the group's name
 - **Directory nodes** → type=`submodule`, id = path relative to project root,
   name = basename
 - **File nodes** → type=`submodule`, id = relative file path, name = basename
@@ -219,45 +220,54 @@ Each `TreeNode` has:
   "desc": "",
   "modules": [
     {
-      "id": "core",
-      "name": "core",
-      "path": "core",
-      "files": 3,
+      "id": "My Sample",
+      "name": "My Sample",
+      "path": "My Sample",
+      "files": 6,
       "tree": {
-        "id": "core",
+        "id": "My Sample",
         "type": "submodule",
-        "name": "core",
+        "name": "My Sample",
         "meta": null,
         "children": [
           {
-            "id": "app",
+            "id": "Sample Core",
             "type": "submodule",
-            "name": "app",
+            "name": "Sample Core",
             "children": [
               {
-                "id": "app/main.cpp",
+                "id": "Layer1/Sample/Core",
                 "type": "submodule",
-                "name": "main.cpp",
+                "name": "Core",
                 "children": [
-                  { "id": "core|main|calculate|",   "type": "fn", "name": "calculate" },
-                  { "id": "core|main|main|",        "type": "fn", "name": "main" }
+                  {
+                    "id": "Layer1/Sample/Core/Core.cpp",
+                    "type": "submodule",
+                    "name": "Core.cpp",
+                    "children": [
+                      { "id": "Sample-Core|Core|init|", "type": "fn", "name": "init" }
+                    ]
+                  }
                 ]
               }
             ]
           },
-          { "id": "math", "type": "submodule", "name": "math", "children": [ ... ] }
+          { "id": "Lib",  "type": "submodule", "name": "Lib",  "children": [ ... ] },
+          { "id": "Util", "type": "submodule", "name": "Util", "children": [ ... ] }
         ]
       },
       "loc": "0"
     },
-    { "id": "support", ... },
-    { "id": "tests",   ... }
+    { "id": "Full",     ... },
+    { "id": "Support",  ... },
+    { "id": "Platform", ... }
   ]
 }
 ```
 
-The complete live response for the test project is committed at
-`backend/fixtures/get_components_FTL.json` (711 lines).
+A sample response (generated from the legacy `SampleCppProject`) is committed at
+`backend/fixtures/get_components_FTL.json`; regenerate it against
+`SampleCppProject` after a pipeline run to refresh the fixture.
 
 ### Errors
 - 404 — `component_id` doesn't match `FTL` (case-insensitive)
@@ -272,9 +282,10 @@ modules are here." Case-insensitive `component_id`.
 ### Response 200
 ```json
 [
-  { "id": "core",    "name": "core",    "path": "core",    "files": 3,  "loc": "0" },
-  { "id": "support", "name": "support", "path": "support", "files": 2,  "loc": "0" },
-  { "id": "tests",   "name": "tests",   "path": "tests",   "files": 12, "loc": "0" }
+  { "id": "My Sample", "name": "My Sample", "path": "My Sample", "files": 6,  "loc": "0" },
+  { "id": "Full",      "name": "Full",      "path": "Full",      "files": 10, "loc": "0" },
+  { "id": "Support",   "name": "Support",   "path": "Support",   "files": 6,  "loc": "0" },
+  { "id": "Platform",  "name": "Platform",  "path": "Platform",  "files": 45, "loc": "0" }
 ]
 ```
 
@@ -289,24 +300,24 @@ Full function detail: location, signature info, description (with PATCH
 override applied), full caller/callee lists, raw Mermaid flowchart, and
 the in-memory `hidden` flag.
 
-`fn_id` is URL-path-encoded — typical id: `core|main|main|`. Pipes are
+`fn_id` is URL-path-encoded — typical id: `Sample-Core|Core|init|`. Pipes are
 safe in modern clients; URL-encode if your HTTP client complains.
 
 ### Response 200 (some collections trimmed)
 ```json
 {
-  "id": "core|main|main|",
-  "name": "main",
-  "file": "app/main.cpp",
-  "line": "75",
-  "ret": "int",
+  "id": "Sample-Core|Core|init|",
+  "name": "init",
+  "file": "Layer1/Sample/Core/Core.cpp",
+  "line": "12",
+  "ret": "void",
   "description": "",
   "callers": [],
   "callees": [
-    { "id": "core|main|calculateWithCallback|",     "name": "calculateWithCallback",     "loc": "0" },
-    { "id": "core|main|calculateWithPolymorphism|", "name": "calculateWithPolymorphism", "loc": "0" }
+    { "id": "Lib|Lib|add|int,int", "name": "add",   "loc": "0" },
+    { "id": "Util|Util|clamp|int", "name": "clamp", "loc": "0" }
   ],
-  "flowchart": "flowchart TD\n    N1([Start: main])\n    N3[int result1 = calculate#40;#41;#59;]\n    ...",
+  "flowchart": "flowchart TD\n    N1([Start: init])\n    N3[Lib::add#40;#41;#59;]\n    ...",
   "hidden": false
 }
 ```
@@ -351,7 +362,7 @@ Both fields are nullable; the PATCH applies only the fields you send.
 
 ### Response 200
 ```json
-{ "fnId": "core|main|main|", "savedAt": "14:32" }
+{ "fnId": "Sample-Core|Core|init|", "savedAt": "14:32" }
 ```
 
 ### Errors
@@ -368,7 +379,7 @@ generated by the analyzer.
 ### Response 200
 ```json
 {
-  "id": "core|main|main|",
+  "id": "Sample-Core|Core|init|",
   "name": "main",
   "code": "flowchart TD\n    N1([Start: main])\n    N3[int result1 = calculate#40;#41;#59;]\n    ..."
 }
@@ -402,15 +413,15 @@ Exactly one of the two must yield a directory.
 ### Request body
 ```json
 {
-  "moduleId": "core",
+  "moduleId": "Support",
   "componentId": "FTL"
 }
 ```
 …or, for callers that don't use `?name=`:
 ```json
 {
-  "path": "C:\\aspice\\test_cpp_project",
-  "moduleId": "core",
+  "path": "C:\\aspice\\SampleCppProject",
+  "moduleId": "Support",
   "componentId": "FTL"
 }
 ```
@@ -418,18 +429,18 @@ Exactly one of the two must yield a directory.
 | Field | Required | Notes |
 |---|---|---|
 | `path` | no (required if `?name=` is omitted) | Absolute path to the CPP project. Relative paths resolve against analyzer repo root. |
-| `moduleId` | no (omit or `""` for full project) | Maps to `--selected-group <name>`. Validated against `modulesGroups` outer keys, case-insensitive. |
+| `moduleId` | no (omit or `""` for full project) | Maps to `--selected-group <name>`. Validated against `config.layers` group names, case- and space-insensitive. |
 | `componentId` | no | Accepted for shape parity, not forwarded to `run.py`. |
 
 ### Example calls
 ```
-POST /api/v1/jobs/prepare?name=test_cpp_project
-{ "moduleId": "core" }
+POST /api/v1/jobs/prepare?name=SampleCppProject
+{ "moduleId": "Support" }
 
 POST /api/v1/jobs/prepare
-{ "path": "C:\\aspice\\test_cpp_project", "moduleId": "core" }
+{ "path": "C:\\aspice\\SampleCppProject", "moduleId": "Support" }
 ```
-Both spawn the same `python run.py <path> --selected-group core` invocation.
+Both spawn the same `python run.py <path> --selected-group Support` invocation.
 
 ### Response 200
 ```json
@@ -439,7 +450,7 @@ Both spawn the same `python run.py <path> --selected-group core` invocation.
 ### Errors
 - 400 — neither `?name=` nor body `path` supplied, OR the resolved
   path isn't a directory
-- 400 — `moduleId` non-empty but doesn't match any `modulesGroups` key
+- 400 — `moduleId` non-empty but doesn't match any `config.layers` group
   (detail includes the valid list)
 - 404 — `?name=` doesn't match any configured repository
 - 500 — failed to spawn the subprocess (e.g. python not on PATH)
@@ -448,8 +459,8 @@ Both spawn the same `python run.py <path> --selected-group core` invocation.
 GET `/jobs/{job_id}/status` includes:
 ```json
 {
-  "selectedGroup": "core",
-  "commandLine": "python.exe run.py C:\\aspice\\test_cpp_project --selected-group core"
+  "selectedGroup": "Support",
+  "commandLine": "python.exe run.py C:\\aspice\\SampleCppProject --selected-group Support"
 }
 ```
 
@@ -514,8 +525,8 @@ Generic job status — works for BOTH prepare and export jobs.
   "phaseNumber": 2,
   "totalPhase": 4,
   "error": null,
-  "selectedGroup": "core",
-  "commandLine": "python.exe run.py C:\\aspice\\test_cpp_project --selected-group core"
+  "selectedGroup": "Support",
+  "commandLine": "python.exe run.py C:\\aspice\\SampleCppProject --selected-group Support"
 }
 ```
 
@@ -531,8 +542,8 @@ Generic job status — works for BOTH prepare and export jobs.
   "phaseNumber": 4,
   "totalPhase": 4,
   "error": null,
-  "selectedGroup": "core",
-  "commandLine": "python.exe run.py C:\\aspice\\test_cpp_project --selected-group core"
+  "selectedGroup": "Support",
+  "commandLine": "python.exe run.py C:\\aspice\\SampleCppProject --selected-group Support"
 }
 ```
 
@@ -549,8 +560,8 @@ Generic job status — works for BOTH prepare and export jobs.
   "totalPhase": 1,
   "stage": "running",
   "error": null,
-  "selectedGroup": "core",
-  "commandLine": "python.exe run.py C:\\aspice\\test_cpp_project --from-phase 4 --selected-group core"
+  "selectedGroup": "Support",
+  "commandLine": "python.exe run.py C:\\aspice\\SampleCppProject --from-phase 4 --selected-group Support"
 }
 ```
 
@@ -601,7 +612,7 @@ Same rules as POST /jobs/prepare (see API 8):
 ### Request body
 ```json
 {
-  "moduleId": "core",
+  "moduleId": "Support",
   "componentId": "FTL",
   "hiddenFns": {}
 }
@@ -609,8 +620,8 @@ Same rules as POST /jobs/prepare (see API 8):
 …or with `path` instead of `?name=`:
 ```json
 {
-  "path": "C:\\aspice\\test_cpp_project",
-  "moduleId": "core",
+  "path": "C:\\aspice\\SampleCppProject",
+  "moduleId": "Support",
   "componentId": "FTL"
 }
 ```
@@ -664,8 +675,8 @@ section for their exact semantics.
   "filename": null,
   "downloadUrl": null,
   "hiddenCount": 0,
-  "selectedGroup": "core",
-  "commandLine": "python.exe run.py C:\\... --selected-group core"
+  "selectedGroup": "Support",
+  "commandLine": "python.exe run.py C:\\... --selected-group Support"
 }
 ```
 
@@ -681,11 +692,11 @@ section for their exact semantics.
   "progress": 100,
   "overallProgress": 100,
   "error": null,
-  "filename": "software_detailed_design_core.docx",
+  "filename": "software_detailed_design_Support.docx",
   "downloadUrl": "/api/v1/jobs/prep_4f7a1b8e2c9d/export/download",
   "hiddenCount": 0,
-  "selectedGroup": "core",
-  "commandLine": "python.exe run.py C:\\... --selected-group core"
+  "selectedGroup": "Support",
+  "commandLine": "python.exe run.py C:\\... --selected-group Support"
 }
 ```
 
@@ -727,16 +738,20 @@ applied — only the canonical version-controlled values are returned.
   "views": { ... },
   "clang": { ... },
   "llm": { ... },
-  "modulesGroups": {
-    "core":    { "core":    ["app", "math"] },
-    "support": { "support": "outer/inner" },
-    "tests":   { "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
-                 "tests_b": ["tests/hub", "tests/poly", "tests/structs"] }
+  "layers": {
+    "Layer1": {
+      "path": "Layer1",
+      "groups": {
+        "My Sample": { "Sample Core": "Sample/Core", "Lib": "Sample/Lib", "Util": "Sample/Util" },
+        "Support":   { "Math": "Math", "App": "App", "Outer": "Outer/Inner" }
+      }
+    },
+    "Layer2": {
+      "path": "Layer2",
+      "groups": { "Platform": { "Gpio": "Platform/Gpio", "Uart": "Platform/Uart" } }
+    }
   },
-  "export": {
-    "docxPath": "output/software_detailed_design_{group}.docx",
-    "docxFontSize": 8
-  }
+  "ui": { "theme": "Light" }
 }
 ```
 
@@ -748,8 +763,8 @@ applied — only the canonical version-controlled values are returned.
 
 # 16. POST /api/v1/config
 
-Replace ONLY the `modulesGroups` block in `config/config.json`. Every
-other top-level key (`views`, `clang`, `llm`, `export`, ...), every
+Replace ONLY the `layers` block in `config/config.json`. Every
+other top-level key (`views`, `clang`, `llm`, `ui`, ...), every
 `//` and `/* */` comment, every trailing comma, and the whitespace /
 indentation everywhere else are preserved byte-for-byte.
 
@@ -757,7 +772,7 @@ indentation everywhere else are preserved byte-for-byte.
 
 Pure surgical splice — no fallback. A JSONC-aware key-finder walks
 the file with full string and comment awareness, so a literal
-`"modulesGroups"` substring appearing inside a string value or a `//`
+`"layers"` substring appearing inside a string value or a `//`
 comment can't trigger a false match. Once the real key is located,
 brace-nesting (also string/comment-aware) finds the matching `}` of
 its value and only that range is replaced.
@@ -771,16 +786,17 @@ file is never modified in that case. **No backup file is created**
 ### Request body
 ```json
 {
-  "modulesGroups": {
-    "core": {
-      "core": ["app", "math"]
+  "layers": {
+    "Layer1": {
+      "path": "Layer1",
+      "groups": {
+        "My Sample": { "Sample Core": "Sample/Core", "Lib": "Sample/Lib", "Util": "Sample/Util" },
+        "Support":   { "Math": "Math", "App": "App", "Outer": "Outer/Inner" }
+      }
     },
-    "support": {
-      "support": "outer/inner"
-    },
-    "tests": {
-      "tests_a": ["tests/direction", "tests/enum", "tests/flow"],
-      "tests_b": ["tests/hub", "tests/poly", "tests/structs"]
+    "Layer2": {
+      "path": "Layer2",
+      "groups": { "Platform": { "Gpio": "Platform/Gpio", "Uart": "Platform/Uart" } }
     }
   }
 }
@@ -788,19 +804,19 @@ file is never modified in that case. **No backup file is created**
 
 | Field | Required | Notes |
 |---|---|---|
-| `modulesGroups` | yes | Outer key = module name; inner key = logical group name; inner value = directory path (string) or list of directory paths. |
+| `layers` | yes | Layer name → `{ "path": <layer dir>, "groups": { <group>: { <component>: <path> \| [paths] } } }`. The whole `layers` object is replaced verbatim. |
 
 ### Query params
 - `dryRun=true` — run the parse + rewrite pipeline but do NOT touch
   disk. Returns the would-have-been-written byte size. Useful for
-  the UI to validate a new `modulesGroups` before committing.
+  the UI to validate a new `layers` block before committing.
 
 ### Response 200
 ```json
 {
   "status": "ok",
-  "moduleCount": 3,
-  "modules": ["core", "support", "tests"]
+  "layerCount": 2,
+  "layers": ["Layer1", "Layer2"]
 }
 ```
 
@@ -809,14 +825,14 @@ file is never modified in that case. **No backup file is created**
 {
   "status": "dryRun",
   "wouldWrite": "C:\\aspice_v2\\config\\config.json",
-  "moduleCount": 3,
-  "modules": ["core", "support", "tests"],
+  "layerCount": 2,
+  "layers": ["Layer1", "Layer2"],
   "previewBytes": 3214
 }
 ```
 
 ### Errors
-- 400 — body missing `modulesGroups`; OR existing on-disk `config.json`
+- 400 — body missing `layers`; OR existing on-disk `config.json`
   isn't parseable (the endpoint refuses to overwrite an already-broken
   file)
 - 404 — `config/config.json` doesn't exist
@@ -826,12 +842,12 @@ file is never modified in that case. **No backup file is created**
 
 | Element | Preserved? |
 |---|---|
-| Other top-level keys (`views`, `clang`, `llm`, `export`) | ✓ byte-identical |
-| `modulesGroups` content | replaced with body value |
+| Other top-level keys (`views`, `clang`, `llm`, `ui`) | ✓ byte-identical |
+| `layers` content | replaced with body value |
 | Single-line comments (`// ...`) | ✓ |
 | Block comments (`/* ... */`) | ✓ |
 | Trailing commas (JSONC quirk) | ✓ |
-| Whitespace / indentation outside the modulesGroups block | ✓ |
+| Whitespace / indentation outside the layers block | ✓ |
 
 Writes are atomic (temp-file + `os.replace`) so an interrupted save
 can't leave a half-written file. **No backup file is created** — the
@@ -861,20 +877,30 @@ returns 404.
 ### Example — `?dirsOnly=true`
 ```
 GET /api/v1/project/structure?dirsOnly=true
-GET /api/v1/project/structure?name=test_cpp_project&dirsOnly=true
+GET /api/v1/project/structure?name=SampleCppProject&dirsOnly=true
 ```
 ```json
 {
-  "name": "test_cpp_project",
+  "name": "SampleCppProject",
   "children": [
-    { "name": "app",   "children": [] },
-    { "name": "math",  "children": [] },
-    { "name": "outer", "children": [ { "name": "inner", "children": [] } ] },
-    { "name": "tests", "children": [
-      { "name": "access",    "children": [] },
-      { "name": "direction", "children": [] }
-      /* ... */
-    ] }
+    { "name": "Layer1", "children": [
+      { "name": "Sample", "children": [
+        { "name": "Core", "children": [] },
+        { "name": "Lib",  "children": [] },
+        { "name": "Util", "children": [] }
+      ] },
+      { "name": "Math", "children": [] },
+      { "name": "App",  "children": [] }
+      /* ... Direction, Types, Flow, Hub, Poly, Access, Diag, Outer/Inner ... */
+    ] },
+    { "name": "Layer2", "children": [
+      { "name": "Platform", "children": [
+        { "name": "Gpio", "children": [] },
+        { "name": "Uart", "children": [] }
+        /* ... 15 components ... */
+      ] }
+    ] },
+    { "name": "Layer3", "children": [] }
   ]
 }
 ```
@@ -903,39 +929,36 @@ UI infers type from presence/absence of `children` (`"children" in node`).
 ### Response 200 (abbreviated for the test project)
 ```json
 {
-  "name": "test_cpp_project",
+  "name": "SampleCppProject",
   "children": [
     {
-      "name": "app",
-      "children": [ { "name": "main.cpp" } ]
-    },
-    {
-      "name": "math",
+      "name": "Layer1",
       "children": [
-        { "name": "utils.cpp" },
-        { "name": "utils.h" }
+        {
+          "name": "Sample",
+          "children": [
+            { "name": "Core", "children": [ { "name": "Core.cpp" }, { "name": "Core.h" } ] },
+            { "name": "Lib",  "children": [ { "name": "Lib.cpp" },  { "name": "Lib.h" } ] },
+            { "name": "Util", "children": [ { "name": "Util.cpp" }, { "name": "Util.h" } ] }
+          ]
+        },
+        { "name": "Math", "children": [ { "name": "Math.cpp" }, { "name": "Math.h" } ] }
+        /* ... App, Direction, Types, Flow, Hub, Poly, Access, Diag, Outer/Inner ... */
       ]
     },
     {
-      "name": "outer",
+      "name": "Layer2",
       "children": [
         {
-          "name": "inner",
+          "name": "Platform",
           "children": [
-            { "name": "helper.cpp" },
-            { "name": "helper.h" }
+            { "name": "Gpio", "children": [ { "name": "Gpio.cpp" }, { "name": "Gpio.h" } ] }
+            /* ... Uart, Spi, I2c, Adc, ... 15 components */
           ]
         }
       ]
     },
-    {
-      "name": "tests",
-      "children": [
-        { "name": "access",    "children": [ { "name": "access_visibility.cpp" }, { "name": "access_visibility.h" } ] },
-        { "name": "direction", "children": [ { "name": "read_write.cpp" }, { "name": "read_write.h" } ] }
-        /* ... and so on for enum, flow, hub, poly, structs, void_alias */
-      ]
-    }
+    { "name": "Layer3", "children": [] }
   ]
 }
 ```
@@ -954,7 +977,7 @@ UI infers type from presence/absence of `children` (`"children" in node`).
 1. GET  /api/v1/repository                                // list of registered repos
 2. GET  /api/v1/components                                // sidebar
 3. GET  /api/v1/components/FTL                            // module tree
-4. POST /api/v1/jobs/prepare?name=test_cpp_project        // body: { "moduleId": "core" }
+4. POST /api/v1/jobs/prepare?name=SampleCppProject        // body: { "moduleId": "Support" }
 5. Loop:
      GET /api/v1/jobs/{jobId}/status                      // progress + phase
      GET /api/v1/jobs/{jobId}/prepare/logs                // optional, for log panel
@@ -967,7 +990,7 @@ Step 4 can also use `body.path` instead of `?name=` (legacy form).
 ```
 1. GET   /api/v1/functions/{fn_id}                        // load editor
 2. PATCH /api/v1/functions/{fn_id} {"description": "new text"}
-3. POST  /api/v1/jobs/export?name=test_cpp_project        // body: { "moduleId": "core" }
+3. POST  /api/v1/jobs/export?name=SampleCppProject        // body: { "moduleId": "Support" }
 4. Same status-poll + download as flow A from step 5 onward
 ```
 
@@ -1000,4 +1023,5 @@ narrative and field semantics; use the OpenAPI for codegen.
 ---
 
 _Generated against `backend/main.py` and `backend/models.py` on the
-`version3` branch. Update this file whenever a route signature changes._
+`version4` branch (backend adapted to main's `layers`/`component` schema).
+Update this file whenever a route signature changes._
