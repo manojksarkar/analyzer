@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en" style=""><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ASPICE Automator | SWE.3 Detailed Design</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "on-tertiary-container": "#00a572",
+                "surface-container-lowest": "#ffffff",
+                "on-primary-fixed": "#0b1d2d",
+                "surface": "#f8f9ff",
+                "tertiary": "#001a0f",
+                "surface-tint": "#4f6073",
+                "on-tertiary-fixed-variant": "#005236",
+                "on-primary-container": "#8192a7",
+                "tertiary-fixed-dim": "#4edea3",
+                "secondary-fixed": "#d8e2ff",
+                "primary-fixed": "#d2e4fb",
+                "surface-dim": "#cbdbf5",
+                "outline": "#74777d",
+                "on-primary": "#ffffff",
+                "tertiary-container": "#00311f",
+                "primary": "#041627",
+                "secondary-container": "#2170e4",
+                "surface-container-high": "#dce9ff",
+                "on-surface-variant": "#44474c",
+                "on-surface": "#0b1c30",
+                "on-background": "#0b1c30",
+                "secondary-fixed-dim": "#adc6ff",
+                "inverse-on-surface": "#eaf1ff",
+                "on-secondary-container": "#fefcff",
+                "surface-container-low": "#eff4ff",
+                "primary-container": "#1a2b3c",
+                "on-error": "#ffffff",
+                "surface-bright": "#f8f9ff",
+                "error-container": "#ffdad6",
+                "secondary": "#0058be",
+                "surface-container": "#e5eeff",
+                "error": "#ba1a1a",
+                "primary-fixed-dim": "#b7c8de",
+                "outline-variant": "#c4c6cd",
+                "tertiary-fixed": "#6ffbbe",
+                "surface-container-highest": "#d3e4fe",
+                "background": "#f8f9ff",
+                "on-tertiary": "#ffffff",
+                "on-secondary": "#ffffff",
+                "inverse-surface": "#213145",
+                "on-secondary-fixed": "#001a42",
+                "inverse-primary": "#b7c8de",
+                "on-primary-fixed-variant": "#38485a",
+                "on-tertiary-fixed": "#002113",
+                "on-error-container": "#93000a",
+                "on-secondary-fixed-variant": "#004395",
+                "surface-variant": "#d3e4fe"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+            },
+            "spacing": {
+                "inspector-width": "400px",
+                "gutter": "16px",
+                "unit": "4px",
+                "container-padding": "24px",
+                "sidebar-width": "280px"
+            },
+            "fontFamily": {
+                "display-lg": ["Inter"],
+                "body-md": ["Inter"],
+                "label-sm": ["JetBrains Mono"],
+                "headline-md": ["Inter"],
+                "body-lg": ["Inter"],
+                "headline-sm": ["Inter"],
+                "body-sm": ["Inter"],
+                "label-md": ["JetBrains Mono"]
+            },
+            "fontSize": {
+                "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                "headline-sm": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        body { background-color: #F9FAFB; font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass-panel { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(8px); }
+        .sidebar-item-active { border-left: 2px solid #0058be; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .code-console { background: #0b1d2d; color: #4edea3; font-family: 'JetBrains Mono', monospace; }
+        .doc-page { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    </style>
+</head>
+<body class="overflow-hidden">
+<!-- TopNavBar -->
+<header class="flex flex-col ml-sidebar-width w-[calc(100%-theme(spacing.sidebar-width))] bg-surface dark:bg-primary border-b border-outline-variant sticky top-0 z-40"><div class="flex justify-between items-center h-16 px-gutter w-full"><div class="flex items-center gap-6"><span class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-surface-tint">ASPICE Compliance Engine</span></div><div class="flex items-center gap-4"><div class="flex items-center gap-2 mr-4"><div class="relative"><span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">search</span><input class="bg-surface-container-low border border-outline-variant rounded-full py-1.5 pl-10 pr-4 text-body-sm w-64 focus:outline-none focus:border-secondary transition-colors" placeholder="Search artifacts..." type="text"/></div></div><div class="flex gap-4 mr-6 border-r border-outline-variant pr-6"><button class="text-on-surface-variant font-body-md hover:text-secondary transition-all">Documents</button><button class="text-on-surface-variant font-body-md hover:text-secondary transition-all">Traceability</button><button class="text-on-surface-variant font-body-md hover:text-secondary transition-all">Audit Logs</button></div><div class="flex gap-2"><button class="p-2 text-on-surface-variant hover:text-secondary transition-transform active:scale-95"><span class="material-symbols-outlined">notifications</span></button><button class="p-2 text-on-surface-variant hover:text-secondary transition-transform active:scale-95"><span class="material-symbols-outlined">settings</span></button><button class="p-2 text-on-surface-variant hover:text-secondary transition-transform active:scale-95"><span class="material-symbols-outlined">help</span></button></div><button class="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md flex items-center gap-2 opacity-50 cursor-not-allowed" disabled=""><span class="material-symbols-outlined text-[18px]">rocket_launch</span>Release Build</button></div></div><div class="flex items-center gap-4 px-gutter py-2 bg-surface-container-low border-t border-outline-variant"><div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-outline-variant"><span class="material-symbols-outlined text-[18px]">account_tree</span><span class="font-label-md text-label-md">branch: main</span><div class="h-4 w-[1px] bg-outline-variant mx-1"></div><span class="font-label-sm text-label-sm text-on-surface-variant">c0ffee7</span></div><div class="h-8 w-[1px] bg-outline-variant mx-1"></div><div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-outline-variant cursor-pointer hover:bg-surface-container transition-colors group relative"><span class="material-symbols-outlined text-[18px]">layers</span><div class="flex flex-col"><span class="text-[10px] font-bold text-on-surface-variant uppercase leading-none">Layer</span><span class="font-label-md text-label-md">APPLICATION_LAYER</span></div><span class="material-symbols-outlined text-[18px] ml-1">expand_more</span></div><div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-outline-variant cursor-pointer hover:bg-surface-container transition-colors group relative"><span class="material-symbols-outlined text-[18px]">view_module</span><div class="flex flex-col"><span class="text-[10px] font-bold text-on-surface-variant uppercase leading-none">Module</span><span class="font-label-md text-label-md">Chassis_Management</span></div><span class="material-symbols-outlined text-[18px] ml-1">expand_more</span></div><div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-outline-variant cursor-pointer hover:bg-surface-container transition-colors group relative"><span class="material-symbols-outlined text-[18px]">memory</span><div class="flex flex-col"><span class="text-[10px] font-bold text-on-surface-variant uppercase leading-none">Component</span><span class="font-label-md text-label-md">Brake Controller</span></div><span class="material-symbols-outlined text-[18px] ml-1">expand_more</span></div></div></header>
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-screen w-sidebar-width bg-white border-r border-outline-variant flex flex-col z-50">
+<div class="p-6">
+<div class="font-display-lg text-display-lg font-bold text-primary mb-1">ASPICE</div>
+<div class="font-label-md text-label-md text-on-surface-variant opacity-70">Automotive Tier 1</div>
+</div>
+<nav class="flex-1 overflow-y-auto px-2 space-y-1">
+<div class="flex items-center gap-3 p-3 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label-md text-label-md">Overview</span>
+</div>
+<div class="flex items-center gap-3 p-3 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined">account_tree</span>
+<span class="font-label-md text-label-md">SYS.1 Requirement Elicitation</span>
+</div>
+<div class="flex items-center gap-3 p-3 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined">settings_input_component</span>
+<span class="font-label-md text-label-md">SYS.2 System Requirements</span>
+</div>
+<div class="flex items-center gap-3 p-3 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined">description</span>
+<span class="font-label-md text-label-md">SWE.1 Software Requirements</span>
+</div>
+<div class="flex items-center gap-3 p-3 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined">architecture</span>
+<span class="font-label-md text-label-md">SWE.2 Software Architecture</span>
+</div>
+<div class="flex items-center gap-3 p-3 bg-primary text-on-primary border-l-2 border-secondary cursor-pointer rounded">
+<span class="material-symbols-outlined">account_tree</span>
+<span class="font-label-md text-label-md">SWE.3 Detailed Design</span>
+</div>
+<div class="flex items-center gap-3 p-3 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Project Configuration</span>
+</div>
+</nav>
+<div class="p-4 border-t border-outline-variant bg-surface-container-low">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-secondary flex items-center justify-center text-white font-bold">AL</div>
+<div>
+<div class="font-label-md text-label-md text-on-surface">Alex Lundqvist</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">Lead Architect</div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-sidebar-width h-[calc(100vh-64px)] flex overflow-hidden">
+<!-- Left Nav (Local Section Index) -->
+<div class="w-64 border-r border-outline-variant bg-white p-4 overflow-y-auto hidden" id="doc-index">
+<h3 class="font-label-md text-label-md text-outline mb-4 uppercase tracking-wider">Document Structure</h3>
+<ul class="space-y-2">
+<li class=""><a class="block p-2 rounded text-secondary font-label-md text-label-md bg-secondary-container/10 border-l-2 border-secondary" href="#section-1">1.0 Component Overview</a></li>
+<li class=""><a class="block p-2 rounded text-on-surface-variant hover:bg-surface-container-low font-label-md text-label-md" href="#section-2">2.0 Dynamic Behavior</a></li>
+<li class=""><a class="block p-2 rounded text-on-surface-variant hover:bg-surface-container-low font-label-md text-label-md" href="#section-3">3.0 Resource Utilization</a></li>
+<li class=""><a class="block p-2 rounded text-on-surface-variant hover:bg-surface-container-low font-label-md text-label-md" href="#section-4">4.0 Interfaces &amp; APIs</a></li>
+<li class=""><a class="block p-2 rounded text-on-surface-variant hover:bg-surface-container-low font-label-md text-label-md" href="#section-5">5.0 Error Handling</a></li>
+</ul>
+</div>
+<!-- Center Stage -->
+<div class="flex-1 relative bg-surface-container-low overflow-y-auto p-8" id="canvas-area">
+<!-- INITIAL STATE: Empty / No Document -->
+<div class="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto" id="initial-state">
+<div class="w-20 h-20 bg-surface-container-high rounded-full flex items-center justify-center mb-6">
+<span class="material-symbols-outlined text-[40px] text-outline">description</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-primary mb-2">No document available</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-8">Detailed design artifacts for the current commit (c0ffee7) have not been synthesized. Run the generation engine to parse requirements and architecture models.</p>
+<button class="bg-secondary text-white px-8 py-3 rounded-lg font-label-md text-label-md hover:bg-opacity-90 flex items-center gap-2 transition-all" onclick="startGeneration()">
+<span class="material-symbols-outlined">auto_awesome</span>
+                    Generate SWE.3 Document
+                </button>
+</div>
+<!-- ACTIVE STATE: Generating -->
+<div class="hidden h-full flex flex-col max-w-4xl mx-auto space-y-6" id="generating-state">
+<div class="bg-white p-8 border border-outline-variant rounded-xl">
+<div class="flex justify-between items-end mb-4">
+<div>
+<h3 class="font-headline-sm text-headline-sm text-primary">Synthesizing Detailed Design</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Traceability mapping: SWE.2 -&gt; SWE.3</p>
+</div>
+<div class="text-right">
+<span class="font-display-lg text-display-lg text-secondary" id="progress-percent">42%</span>
+</div>
+</div>
+<div class="w-full bg-surface-container-high h-2 rounded-full overflow-hidden">
+<div class="bg-secondary h-full transition-all duration-300" id="progress-bar" style="width: 42%"></div>
+</div>
+</div>
+<div class="flex-1 code-console p-6 rounded-xl overflow-y-auto text-sm border border-primary-container">
+<div class="flex items-center gap-2 mb-4 text-on-primary-fixed border-b border-primary-container pb-2">
+<span class="material-symbols-outlined text-[16px]">terminal</span>
+<span class="font-label-sm text-label-sm">LIVE GENERATION LOG</span>
+</div>
+<div class="space-y-1" id="log-entries">
+<p class="text-outline-variant">[09:21:04] Initializing ASPICE Engine v4.2.1...</p>
+<p class="text-outline-variant">[09:21:05] Fetching Architectural Design (SWE.2) from repository...</p>
+<p class="text-on-tertiary-container">[09:21:07] SUCCESS: 14 primary components identified.</p>
+<p class="text-outline-variant">[09:21:08] Parsing functional requirements (SWE.1)...</p>
+<p class="text-outline-variant">[09:21:10] Generating component detailed interface (SWE.3.BP1)...</p>
+<p class="text-secondary-fixed-dim">[09:21:12] PROCESSING: BrakeControlModule_DetailedDesign_v1</p>
+</div>
+</div>
+</div>
+<!-- DOCUMENT VIEW: Word-like layout -->
+<div class="hidden max-w-[800px] mx-auto space-y-8 pb-20" id="document-view">
+<div class="bg-white doc-page p-16 min-h-[1123px] relative">
+<div class="absolute top-8 right-16 text-right">
+<span class="font-label-sm text-label-sm text-outline-variant px-2 py-1 border border-outline-variant rounded">DRAFT - v0.1</span>
+</div>
+<section class="group relative mb-12" id="section-1">
+<div class="absolute -right-4 top-0 opacity-0 group-hover:opacity-100 flex flex-col gap-2 transition-opacity">
+<button class="p-2 bg-surface text-secondary border border-outline-variant rounded hover:bg-secondary-container hover:text-white transition-colors shadow-sm" title="Edit Section">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+<button class="p-2 bg-surface text-on-tertiary-container border border-outline-variant rounded hover:bg-on-tertiary-container hover:text-white transition-colors shadow-sm" onclick="approveSection(this)" title="Approve Section">
+<span class="material-symbols-outlined text-[18px]">check_circle</span>
+</button>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-primary mb-4">1.0 Component Overview</h2>
+<p class="font-body-md text-body-md text-on-surface mb-4">The Brake Control Module (BCM) is responsible for processing sensor input from the electronic brake pedal and wheel speed sensors to determine optimal hydraulic pressure distribution.</p>
+<div class="bg-surface-container-low border border-outline-variant p-4 rounded mb-4">
+<div class="flex items-center gap-2 mb-2 font-label-md text-label-md text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">link</span> TRACEABILITY: [SWE.2.BP1, SWE.1.REQ42]
+                            </div>
+<img class="w-full h-48 object-cover rounded border border-outline-variant" data-alt="A highly detailed technical architecture diagram showing interconnected software components in a modular block style. The design uses a professional palette of deep navy blues, crisp whites, and technical blue accents. The lighting is clean and uniform, typical of a high-end engineering software interface. Sharp lines and precise labels indicate data flow and interface points between various functional blocks." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDdmklMV7frJL6Z3BVf-BV31nKNRLhUvT1Gu7dh4jSgcUfMs5cgLkAiHEhrFTEOlyWRqa-hYUGK2O1qDq_YBRQgr38Pg1blNXaAn2bEceqwPMFQsGAoZMCF0Fu65te9i7UHR1I_1RkAK2uhig6ZG1_oyRtKXv7BtFPLII36OyTBEXvi2kD5s-z_DmPs01WM0egSqYWqigO79GiScc5-d2AeJ0NtmYg1YQduuMJzR5hQQhtWDEfAUr7B9dBooTgubDbMYextT8rzba4"/>
+</div>
+</section>
+<section class="group relative mb-12" id="section-2">
+<div class="absolute -right-4 top-0 opacity-0 group-hover:opacity-100 flex flex-col gap-2 transition-opacity">
+<button class="p-2 bg-surface text-secondary border border-outline-variant rounded hover:bg-secondary-container hover:text-white transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+<button class="p-2 bg-surface text-on-tertiary-container border border-outline-variant rounded hover:bg-on-tertiary-container hover:text-white transition-colors shadow-sm" onclick="approveSection(this)">
+<span class="material-symbols-outlined text-[18px]">check_circle</span>
+</button>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-primary mb-4">2.0 Dynamic Behavior</h2>
+<p class="font-body-md text-body-md text-on-surface mb-4">Dynamic interactions are governed by a state-machine that handles the transition from Passive to Active braking states within 5ms of interrupt trigger.</p>
+<div class="code-console p-4 rounded text-xs mb-4">
+<pre>typedef enum {
+    BCM_STATE_INIT,
+    BCM_STATE_IDLE,
+    BCM_STATE_ACTIVE,
+    BCM_STATE_FAILSAFE
+} BCM_State_t;
+
+void BCM_Execute(void) {
+    /* Main execution loop */
+}
+</pre>
+</div>
+</section>
+</div>
+</div>
+<!-- STICKY DOWNLOAD BAR -->
+<div class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 glass-panel border border-outline-variant px-6 py-4 rounded-full flex items-center gap-6 shadow-xl z-50" id="download-bar">
+<div class="flex items-center gap-2">
+<div class="flex -space-x-2">
+<img alt="Reviewer 1" class="w-6 h-6 rounded-full border-2 border-white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJYVeIydVo2fD9ML2wy3KbV5XXus6eKH0QQ9fMoBErNjd9wJmTEnoXIPIyZO78bNVjKuWy-EsEiHe2cQs7T_x1KxEfODuITiADgIdtjNmRWABPLh8FqbHYNJpV1w_v6gqJx0Af3x16zse8KzbXjJ_HOmrzvnB_c4qYPcETlS66lUsoVOUoK3A47jEyfLV4SI6S4oWnPPxy0h_ouYPdaFUe-eTq2nf8j6uWpR24n9u7fo67iINQLtvi4CdDYDDtS_U8CY5t_33921g"/>
+<img alt="Reviewer 2" class="w-6 h-6 rounded-full border-2 border-white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBv8mui2iwQYOPfOeiieq3mBF2duN1k2EqZHD4Dc9fmejE_iReetGsP_rcnL6Jo9eJ0ZxX8aavI5I0m2vhPxXoi4vdCDMuMLqbx4-8nX_DOjVv0xPQcxxtsFMXSFEx6WFko09FWZSfB7ssdjGMPetayRE_i_w0ZHEw8MfnIQsYAqjS7S7gTlg2gNweld4FtzuNK_gD3AlEnGbnDQ022_ph0g83vCLGs11NPWL98jkW__733xiVNmNGUoZ71CCXlM7B7sd5pjoemp3c"/>
+</div>
+<span class="text-body-sm font-body-sm text-on-surface-variant">2/5 sections approved</span>
+</div>
+<div class="h-4 w-[1px] bg-outline-variant"></div>
+<button class="flex items-center gap-2 px-6 py-2 rounded-full font-label-md text-label-md transition-all bg-surface-container-high text-outline cursor-not-allowed" disabled="" id="btn-download">
+<span class="material-symbols-outlined">download</span>
+                    Export PDF
+                </button>
+</div>
+</div>
+<!-- Right Side Panel: Review -->
+<aside class="w-inspector-width bg-white border-l border-outline-variant flex flex-col hidden">
+<div class="p-4 border-b border-outline-variant bg-surface-container-low flex justify-between items-center">
+<h3 class="font-headline-sm text-headline-sm text-primary">Compliance Check</h3>
+<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded text-label-sm font-label-sm">3 Alerts</span>
+</div>
+<div class="flex-1 overflow-y-auto p-4 space-y-4">
+<div class="space-y-3">
+<h4 class="font-label-md text-label-md text-outline uppercase">Non-Approved Changes</h4>
+<!-- Review Item 1 -->
+<div class="p-3 border border-outline-variant rounded-lg hover:border-secondary transition-colors cursor-pointer group">
+<div class="flex justify-between mb-1">
+<span class="font-label-md text-label-md text-primary">Section 1.0 Overview</span>
+<span class="text-error font-label-sm text-label-sm">Pending</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Auto-generated content requires architectural verification for safety-critical bounds.</p>
+<div class="mt-2 flex gap-2">
+<button class="text-secondary font-label-sm text-label-sm hover:underline">View Diff</button>
+<button class="text-on-surface-variant font-label-sm text-label-sm hover:underline">Add Comment</button>
+</div>
+</div>
+<!-- Review Item 2 -->
+<div class="p-3 border border-outline-variant rounded-lg hover:border-secondary transition-colors cursor-pointer group">
+<div class="flex justify-between mb-1">
+<span class="font-label-md text-label-md text-primary">Section 2.0 Behavior</span>
+<span class="text-error font-label-sm text-label-sm">Pending</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Traceability link to [SWE.1.REQ42] has been flagged as 'Draft' status.</p>
+</div>
+</div>
+<div class="pt-6 border-t border-outline-variant space-y-3">
+<h4 class="font-label-md text-label-md text-outline uppercase">Traceability Matrix</h4>
+<div class="space-y-2">
+<div class="flex items-center justify-between text-body-sm font-body-sm p-2 bg-surface-container-low rounded">
+<span class="">SWE.2.BP1 -&gt; SWE.3.BP1</span>
+<span class="material-symbols-outlined text-on-tertiary-container text-[18px]" style='font-variation-settings: "FILL" 1;'>check_circle</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm p-2 bg-surface-container-low rounded">
+<span class="">SWE.2.BP3 -&gt; SWE.3.BP2</span>
+<span class="material-symbols-outlined text-on-tertiary-container text-[18px]" style='font-variation-settings: "FILL" 1;'>check_circle</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm p-2 bg-error-container/20 rounded">
+<span class="">SWE.2.BP4 -&gt; SWE.3.BP5</span>
+<span class="material-symbols-outlined text-error text-[18px]">warning</span>
+</div>
+</div>
+</div>
+</div>
+<div class="p-4 border-t border-outline-variant">
+<button class="w-full bg-surface-container text-primary border border-outline-variant py-2 rounded font-label-md text-label-md hover:bg-surface-container-high transition-colors">
+                    Request Formal Review
+                </button>
+</div>
+</aside>
+</main>
+<script>
+        let approvedCount = 0;
+        const totalSections = 2;
+
+        function startGeneration() {
+            document.getElementById('initial-state').classList.add('hidden');
+            document.getElementById('generating-state').classList.remove('hidden');
+            
+            let progress = 0;
+            const bar = document.getElementById('progress-bar');
+            const percentText = document.getElementById('progress-percent');
+            const logEntries = document.getElementById('log-entries');
+
+            const intervals = setInterval(() => {
+                progress += Math.floor(Math.random() * 8) + 2;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(intervals);
+                    setTimeout(finishGeneration, 800);
+                }
+                bar.style.width = progress + '%';
+                percentText.innerText = progress + '%';
+
+                if (progress % 10 === 0) {
+                    const newLog = document.createElement('p');
+                    newLog.className = 'text-outline-variant';
+                    newLog.innerText = `[09:21:${20 + Math.floor(progress/5)}] Synthesizing Section ${Math.floor(progress/20) + 1}...`;
+                    logEntries.appendChild(newLog);
+                    logEntries.scrollTop = logEntries.scrollHeight;
+                }
+            }, 300);
+        }
+
+        function finishGeneration() {
+            document.getElementById('generating-state').classList.add('hidden');
+            document.getElementById('document-view').classList.remove('hidden');
+            document.getElementById('download-bar').classList.remove('hidden');
+            document.getElementById('doc-index').classList.remove('hidden');
+        }
+
+        function approveSection(btn) {
+            const section = btn.closest('section');
+            if (section.dataset.approved === 'true') return;
+
+            section.dataset.approved = 'true';
+            btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">verified</span>';
+            btn.classList.add('bg-on-tertiary-container', 'text-white');
+            
+            approvedCount++;
+            updateDownloadButton();
+        }
+
+        function updateDownloadButton() {
+            const btn = document.getElementById('btn-download');
+            if (approvedCount >= totalSections) {
+                btn.disabled = false;
+                btn.classList.remove('bg-surface-container-high', 'text-outline', 'cursor-not-allowed');
+                btn.classList.add('bg-secondary', 'text-white', 'hover:shadow-lg', 'cursor-pointer');
+            }
+        }
+    </script>
+</body></html>

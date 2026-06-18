@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project & Repository — [PRODUCT NAME]</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#041627", "primary-container": "#1a2b3c",
+          "on-primary": "#ffffff", "on-primary-container": "#8192a7",
+          "secondary": "#0058be", "secondary-container": "#2170e4",
+          "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
+          "on-tertiary-container": "#00a572", "tertiary-container": "#00311f",
+          "tertiary-fixed": "#6ffbbe", "tertiary-fixed-dim": "#4edea3",
+          "error": "#ba1a1a", "error-container": "#ffdad6",
+          "on-error": "#ffffff", "on-error-container": "#93000a",
+          "surface": "#f8f9ff", "background": "#f8f9ff",
+          "surface-container-lowest": "#ffffff",
+          "surface-container-low": "#eff4ff",
+          "surface-container": "#e5eeff",
+          "surface-container-high": "#dce9ff",
+          "surface-container-highest": "#d3e4fe",
+          "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
+          "outline": "#74777d", "outline-variant": "#c4c6cd",
+        },
+        borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+        spacing: { "sidebar-width": "280px", "gutter": "16px", "container-padding": "24px" },
+        fontFamily: {
+          "headline-sm": ["Inter"], "body-md": ["Inter"], "body-sm": ["Inter"],
+          "label-md": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"],
+        },
+        fontSize: {
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  .sym-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+
+  /* inputs */
+  .inp {
+    width: 100%; padding: 9px 12px;
+    background: #fff; border: 1px solid #c4c6cd; border-radius: 0.5rem;
+    font-family: Inter, sans-serif; font-size: 14px; line-height: 20px;
+    color: #0b1c30; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .inp:focus { border-color: #0058be; box-shadow: 0 0 0 3px rgba(0,88,190,.1); }
+  .inp::placeholder { color: #74777d; }
+  .inp.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: .04em; }
+  .inp.err  { border-color: #ba1a1a !important; box-shadow: 0 0 0 3px rgba(186,26,26,.1) !important; }
+  textarea.inp { resize: none; }
+  select.inp { appearance: auto; }
+
+  /* field label */
+  .lbl {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;
+    letter-spacing: .02em; color: #0b1c30;
+  }
+  .lbl .req { color: #ba1a1a; }
+  .lbl .hint { margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #74777d; }
+
+  /* help button */
+  .hbtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #eff4ff; border: 1px solid #c4c6cd;
+    cursor: pointer; color: #44474c; flex-shrink: 0;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .hbtn:hover { background: #e5eeff; border-color: #0058be; color: #0058be; }
+  .hbtn .material-symbols-outlined { font-size: 12px; }
+
+  /* section card */
+  .card { background: #fff; border: 1px solid #c4c6cd; border-radius: 0.75rem; padding: 12px 16px; }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #eff4ff;
+  }
+  .card-head-l { display: flex; align-items: center; gap: 11px; }
+  .card-icon { width: 30px; height: 30px; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* tab buttons */
+  .tab-btn {
+    padding: 7px 14px; border-radius: 0.5rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: .02em;
+    border: 1px solid #c4c6cd; background: #fff; color: #44474c; cursor: pointer; transition: all .15s;
+  }
+  .tab-btn.on { background: #0058be; border-color: #0058be; color: #fff; }
+
+  /* drop zone */
+  .drop-zone {
+    border: 2px dashed #c4c6cd; border-radius: 0.75rem;
+    padding: 20px 16px; text-align: center; background: #f8f9ff; cursor: pointer; transition: all .2s;
+  }
+  .drop-zone:hover, .drop-zone.dragover { border-color: #0058be; background: #eff4ff; }
+  .drop-zone.has-file { border-style: solid; border-color: #00a572; background: #f0fff9; }
+
+  /* path row */
+  .path-row { display: flex; gap: 8px; align-items: center; }
+
+  /* layer / architecture */
+  .layer-block { border: 1px solid #c4c6cd; border-radius: 0.5rem; overflow: hidden; }
+  .layer-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #eff4ff; border-bottom: 1px solid #c4c6cd; cursor: pointer; user-select: none; }
+  .layer-path-display { display: block; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #74777d; margin-top: 1px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .layer-path-display:hover { color: #0058be; }
+  .layer-path-display.empty { color: #b0b3b8; }
+  .layer-path-input { display: block; font-family: 'JetBrains Mono', monospace !important; font-size: 9px !important; line-height: 1.4; color: #0058be; background: none; border: none; border-bottom: 1px solid #0058be; outline: none; width: 100%; margin-top: 1px; padding: 0; }
+  .layer-expanded { padding: 4px 0 6px; }
+  /* tree rows — Windows Explorer style */
+  .tree-group-row { display: flex; align-items: center; gap: 3px; padding: 2px 10px; border-radius: 3px; cursor: default; }
+  .tree-group-row:hover { background: #e5eeff; }
+  .tree-toggle { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: #74777d; background: none; border: none; cursor: pointer; border-radius: 2px; }
+  .tree-toggle:hover { background: #dce9ff; color: #0058be; }
+  .tree-children { margin-left: 18px; padding-left: 8px; border-left: 1px solid #dde1e8; }
+  .tree-comp-row { display: flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 3px; cursor: default; }
+  .tree-comp-row:hover { background: #e5eeff; }
+  .comp-files { margin-left: 16px; padding-left: 8px; border-left: 1px solid #dde1e8; }
+  .file-row { display: flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #74777d; padding: 1px 6px; }
+  /* include paths */
+  .add-group-btn { display: flex; align-items: center; gap: 3px; padding: 2px 10px 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #74777d; background: none; border: none; cursor: pointer; width: 100%; text-align: left; }
+  .add-group-btn:hover { color: #0058be; }
+  .inline-add-row { display: flex; align-items: center; gap: 4px; padding: 3px 10px; }
+  .inline-add-input { font-family: 'JetBrains Mono', monospace !important; font-size: 11px !important; flex: 1; padding: 2px 6px; border: 1px solid #0058be; border-radius: 4px; outline: none; color: #0b1c30; }
+  .inline-add-confirm { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; padding: 2px 8px; background: #0058be; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  .inline-add-confirm:hover { background: #2170e4; }
+  .inline-add-cancel { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: #74777d; padding: 2px; }
+  .inline-add-cancel:hover { color: #ba1a1a; }
+  .inc-paths-section { margin: 6px 6px 4px; background: #f0f4fb; border-radius: 6px; padding: 5px 8px; }
+  .inc-paths-row { display: flex; gap: 10px; align-items: flex-start; }
+  .inc-paths-label { flex-shrink: 0; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #74777d; padding-top: 2px; cursor: help; }
+  .inc-paths-content { flex: 1; min-width: 0; }
+  .inc-add-btn { display: inline-flex; align-items: center; gap: 2px; margin-top: 2px; font-family: 'JetBrains Mono', monospace; font-size: 8px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #74777d; background: none; border: none; cursor: pointer; padding: 0; }
+  .inc-add-btn:hover { color: #0058be; }
+  .ext-path-row { display: flex; align-items: center; gap: 3px; padding: 0; height: 14px; }
+  .ext-path-input { font-family: 'JetBrains Mono', monospace !important; font-size: 9px !important; line-height: 1; color: #44474c; background: none; border: none; outline: none; flex: 1; padding: 0; height: 14px; }
+  .ext-path-input:focus { color: #0b1c30; }
+  .ext-path-input::placeholder { color: #b0b3b8; }
+  /* component sidebar */
+  .sidebar-folder-row { display: flex; align-items: center; gap: 4px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+  .sidebar-folder-row:hover { background: #eff4ff; }
+  .sidebar-file-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+  .sidebar-file-row:hover { background: #eff4ff; }
+
+  /* step rail */
+  .step-li { position: relative; display: flex; gap: 14px; padding-bottom: 24px; }
+  .step-li:last-child { padding-bottom: 0; }
+  .step-li::before {
+    content: ''; position: absolute; left: 14px; top: 30px; bottom: 0;
+    width: 1px; background: #c4c6cd;
+  }
+  .step-li:last-child::before { display: none; }
+  .step-dot {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; z-index: 1; position: relative;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;
+    transition: all .2s;
+  }
+  .step-dot.pending { background: #fff; border: 1.5px solid #c4c6cd; color: #74777d; }
+  .step-dot.active  { background: #0058be; border: 2px solid #0058be; color: #fff; box-shadow: 0 0 0 4px rgba(0,88,190,.15); }
+  .step-dot.done    { background: #00a572; border: 2px solid #00a572; color: #fff; }
+
+  /* review summary */
+  .rev-card { background: #fff; border: 1px solid #c4c6cd; border-radius: 0.75rem; overflow: hidden; }
+  .rev-card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; background: #f8f9ff; border-bottom: 1px solid #eff4ff;
+  }
+  .rev-row { display: flex; justify-content: space-between; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #eff4ff; font-size: 12px; }
+  .rev-row:last-child { border-bottom: none; }
+  .rev-row span:first-child { color: #44474c; }
+  .rev-row span:last-child  { font-family: 'JetBrains Mono', monospace; font-weight: 500; color: #0b1c30; text-align: right; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* init overlay */
+  #init-overlay { display: none; position: fixed; inset: 0; z-index: 200; background: rgba(4,22,39,.8); backdrop-filter: blur(4px); align-items: center; justify-content: center; }
+  #init-overlay.show { display: flex; }
+</style>
+</head>
+
+<body class="bg-background text-on-surface font-body-md overflow-hidden">
+
+<!-- ════════════════════════════════════════════
+     WIZARD TOP BAR (no sidebar)
+     ════════════════════════════════════════════ -->
+<header class="fixed top-0 left-0 right-0 h-14 bg-white border-b border-outline-variant flex items-center justify-between px-6 z-50 flex-shrink-0">
+  <!-- Left: Logo + product name -->
+  <div class="flex items-center gap-3">
+    <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+      <span class="material-symbols-outlined sym-fill text-on-primary" style="font-size:18px;">account_tree</span>
+    </div>
+    <div>
+      <span class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</span>
+      <span class="text-on-surface-variant ml-2" style="font-family:'JetBrains Mono';font-size:11px;opacity:.5;">/ New Project</span>
+    </div>
+  </div>
+  <!-- Center: Step counter -->
+  <div class="absolute left-1/2 -translate-x-1/2">
+    <span class="font-label-md text-label-md text-on-surface-variant" id="step-counter">Step 1 of 4</span>
+  </div>
+  <!-- Right: Help + Admin avatar -->
+  <div class="flex items-center gap-0.5">
+    <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
+      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">help</span>
+    </button>
+    <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+    <button class="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+      <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+        <span class="text-on-secondary-container font-bold text-xs" style="font-family:Inter;">EL</span>
+      </div>
+      <div class="text-left">
+        <div class="font-label-md text-label-md text-on-surface leading-tight" style="font-size:11px;">Engineering Lead</div>
+        <div class="flex items-center gap-1 mt-0.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container"></span>
+          <span class="text-on-surface-variant uppercase" style="font-family:'JetBrains Mono';font-size:8px;letter-spacing:.06em;">Admin</span>
+        </div>
+      </div>
+    </button>
+  </div>
+</header>
+
+<!-- ════════════════════════════════════════════
+     MAIN (full width, offset by fixed top bar)
+     ════════════════════════════════════════════ -->
+<main class="h-screen pt-14 flex flex-col">
+
+  <!-- Body -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- STEP RAIL -->
+    <aside id="step-rail-aside" class="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-y-auto">
+      <div class="px-4 pt-3 pb-3 border-b border-outline-variant">
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.1em] mb-2">Setup Progress</p>
+        <div class="flex items-center gap-3">
+          <div class="flex-1 bg-surface-container rounded-full h-1.5 overflow-hidden">
+            <div class="bg-secondary h-full rounded-full transition-all duration-500" id="progress-bar" style="width:0%"></div>
+          </div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant whitespace-nowrap" id="progress-label">0 / 4</span>
+        </div>
+      </div>
+      <div class="flex-1 px-4 py-4">
+        <div id="step-rail"></div>
+      </div>
+      <div class="px-4 pb-4">
+        <div class="flex items-start gap-2.5 p-3 bg-surface-container-low border border-outline-variant rounded-lg">
+          <span class="material-symbols-outlined text-secondary flex-shrink-0 mt-0.5" style="font-size:14px;">admin_panel_settings</span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant leading-snug">Admin-only setup. Developers gain access after initialization.</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- FORM AREA -->
+    <div class="flex-1 flex flex-col overflow-hidden bg-background">
+      <div class="flex-1 overflow-y-auto" id="form-scroll">
+
+
+        <!-- ══════════════ STEP 1 — PROJECT SETUP ══════════════ -->
+        <div id="step-1" class="max-w-3xl mx-auto px-6 py-4 space-y-3">
+          <div class="pb-3 border-b border-outline-variant">
+            <h2 class="font-headline-md text-headline-md text-on-surface mb-0.5">Project & Repository</h2>
+            <p class="font-body-md text-body-md text-on-surface-variant">Name your project and connect the repository.</p>
+          </div>
+
+          <div class="card space-y-3">
+            <!-- Row 1: Project Name -->
+            <div>
+              <div class="lbl">Project Name <span class="req">*</span></div>
+              <input class="inp" id="s1-name" type="text" placeholder="e.g. VCU Engine Firmware"
+                     oninput="this.classList.remove('err')">
+            </div>
+
+            <!-- Row 2: Repository URL -->
+            <div>
+              <div class="lbl">Repository URL <span class="req">*</span>
+                <button class="hbtn" title="GitHub, GitLab, or Bitbucket HTTPS URL."><span class="material-symbols-outlined">help</span></button>
+              </div>
+              <div class="flex gap-2">
+                <input class="inp flex-1" id="s1-repo" type="text" placeholder="https://github.com/your-org/firmware-repo"
+                       oninput="this.classList.remove('err'); resetConn();">
+                <button onclick="testConn()" id="conn-btn"
+                        class="px-4 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container active:scale-95 transition-all whitespace-nowrap">
+                  Test
+                </button>
+              </div>
+              <div id="conn-ok" class="hidden mt-2 flex items-center gap-2 font-body-sm text-body-sm" style="color:#00a572;">
+                <span class="material-symbols-outlined sym-fill" style="font-size:16px;">check_circle</span>
+                <span id="conn-meta">Connection verified</span>
+              </div>
+              <div id="conn-err" class="hidden mt-2 flex items-center gap-2 text-error font-body-sm text-body-sm">
+                <span class="material-symbols-outlined" style="font-size:16px;">error</span>
+                Could not reach repository. Check URL and access permissions.
+              </div>
+            </div>
+
+            <!-- Row 3: Branch + Snapshot -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <div class="lbl">Branch</div>
+                <select class="inp" id="s1-branch">
+                  <option>develop-mainline</option>
+                  <option>release-v2.1</option>
+                  <option>main</option>
+                  <option>hotfix-v2.0.4</option>
+                </select>
+              </div>
+              <div>
+                <div class="lbl">Snapshot
+                  <button class="hbtn" title="Documents are tied to a specific commit hash. HEAD = latest commit on the selected branch."><span class="material-symbols-outlined">help</span></button>
+                </div>
+                <div style="position:relative;">
+                  <input class="inp mono" id="s1-snapshot" type="text" value="HEAD (latest)" readonly>
+                  <span class="material-symbols-outlined text-on-surface-variant" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:15px;cursor:pointer;" title="Browse history">history</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /step-1 -->
+
+
+        <!-- ══════════════ STEP 2 — BUILD CONFIGURATION ══════════════ -->
+        <div id="step-2" class="hidden max-w-3xl mx-auto px-6 py-4 space-y-3">
+          <div class="pb-3 border-b border-outline-variant">
+            <h2 class="font-headline-md text-headline-md text-on-surface mb-0.5">Build Configuration</h2>
+            <p class="font-body-md text-body-md text-on-surface-variant">Preprocessor defines and data dictionary.</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <!-- Preprocessor Definitions -->
+            <div class="card">
+              <div class="card-head">
+                <div class="card-head-l">
+                  <div class="card-icon bg-primary-container">
+                    <span class="material-symbols-outlined text-on-primary-container" style="font-size:17px;">data_object</span>
+                  </div>
+                  <h3 class="font-headline-sm text-on-surface" style="font-size:15px;">Preprocessor Definitions</h3>
+                </div>
+                <button class="hbtn" style="width:22px;height:22px;" title="Macro definitions passed as -D flags to Clang. Upload a Makefile or CSV, or enter them manually.">
+                  <span class="material-symbols-outlined" style="font-size:13px;">help</span>
+                </button>
+              </div>
+              <div id="def-upload-tab">
+                <div class="drop-zone" id="def-drop-zone"
+                     onclick="document.getElementById('def-file').click()"
+                     ondragover="event.preventDefault();this.classList.add('dragover');"
+                     ondragleave="this.classList.remove('dragover');"
+                     ondrop="defFileDrop(event);">
+                  <span class="material-symbols-outlined text-on-surface-variant mb-2" style="font-size:28px;display:block;">upload_file</span>
+                  <p class="font-label-md text-label-md text-on-surface mb-1">Drop Makefile or CSV here</p>
+                  <p class="font-body-sm text-body-sm text-on-surface-variant">Supported: <span style="font-family:'JetBrains Mono';font-size:11px;">Makefile, .csv, .mk</span></p>
+                </div>
+                <input type="file" id="def-file" accept=".csv,.mk,Makefile" class="hidden" onchange="defFileChosen(this)">
+                <div id="def-file-chip" class="hidden mt-3 flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
+                  <span class="material-symbols-outlined text-secondary" style="font-size:18px;">description</span>
+                  <span class="font-label-md text-label-md text-on-surface flex-1" id="def-file-name"></span>
+                  <button onclick="clearDefFile()" class="text-on-surface-variant hover:text-error transition-colors">
+                    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+                  </button>
+                </div>
+              </div>
+              <div id="def-manual-tab" class="hidden">
+                <div class="lbl mb-2">One definition per line — KEY or KEY=VALUE</div>
+                <textarea class="inp mono" rows="5" placeholder="DEBUG=1&#10;PLATFORM_DRIVE_OS=QNX&#10;ASPICE_LEVEL_2&#10;MAX_SENSOR_INPUTS=64">DEBUG=1
+PLATFORM_DRIVE_OS=QNX
+ASPICE_LEVEL_2
+MAX_SENSOR_INPUTS=64
+CRC_CHECK_ENABLED=1</textarea>
+              </div>
+              <div class="flex gap-2 mt-4 pt-4 border-t border-outline-variant">
+                <button class="tab-btn on" id="tab-upload" onclick="switchDefTab('upload')">
+                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;">upload_file</span>Upload File
+                </button>
+                <button class="tab-btn" id="tab-manual" onclick="switchDefTab('manual')">
+                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px;">edit_note</span>Manual Entry
+                </button>
+              </div>
+            </div>
+
+            <!-- Data Dictionary -->
+            <div class="card">
+              <div class="card-head">
+                <div class="card-head-l">
+                  <div class="card-icon bg-tertiary-container">
+                    <span class="material-symbols-outlined" style="font-size:17px;color:#4edea3;">menu_book</span>
+                  </div>
+                  <div>
+                    <h3 class="font-headline-sm text-on-surface" style="font-size:15px;">Data Dictionary</h3>
+                    <p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Enrich descriptions with signal names, units, and ranges.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="drop-zone" id="dd-zone"
+                   onclick="document.getElementById('dd-file').click()"
+                   ondragover="event.preventDefault();this.classList.add('dragover');"
+                   ondragleave="this.classList.remove('dragover');"
+                   ondrop="ddFileDrop(event);">
+                <span class="material-symbols-outlined text-on-surface-variant mb-2" style="font-size:28px;display:block;">cloud_upload</span>
+                <p class="font-label-md text-label-md text-on-surface mb-1">Drop CSV or Excel here</p>
+                <p class="font-body-sm text-body-sm text-on-surface-variant">Supported: <span style="font-family:'JetBrains Mono';font-size:11px;">.csv, .xlsx, .xls</span> · Max 25 MB</p>
+              </div>
+              <input type="file" id="dd-file" accept=".csv,.xlsx,.xls" class="hidden" onchange="ddFileChosen(this)">
+              <div id="dd-chip" class="hidden mt-3 flex items-center gap-3 px-4 py-3 bg-surface-container-low border rounded-xl" style="border-color:rgba(0,165,114,.3);">
+                <span class="material-symbols-outlined sym-fill" style="font-size:22px;color:#00a572;">description</span>
+                <div class="flex-1 min-w-0">
+                  <div class="font-label-md text-label-md text-on-surface" id="dd-file-name"></div>
+                  <div class="font-label-sm text-label-sm text-on-surface-variant" id="dd-file-meta"></div>
+                </div>
+                <button onclick="clearDdFile()" class="text-on-surface-variant hover:text-error transition-colors p-1">
+                  <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div><!-- /step-2 -->
+
+
+        <!-- ══════════════ STEP 3 — ARCHITECTURE ══════════════ -->
+        <div id="step-3" class="hidden max-w-3xl mx-auto px-6 py-4 space-y-3">
+          <div class="pb-3 border-b border-outline-variant">
+            <h2 class="font-headline-md text-headline-md text-on-surface mb-0.5">Architecture</h2>
+            <p class="font-body-md text-body-md text-on-surface-variant">Map layers, groups, and components. Set include paths per layer.</p>
+          </div>
+
+          <!-- Architecture header -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-secondary" style="font-size:17px;">account_tree</span>
+              <span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[.08em]">Project Architecture</span>
+            </div>
+            <button onclick="showAddLayer()" class="flex items-center gap-1.5 px-3 py-1.5 text-secondary border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">
+              <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add Layer
+            </button>
+          </div>
+
+          <div id="arch-tree" class="space-y-2">
+
+            <!-- Layer: APPLICATION (expanded) -->
+            <div class="layer-block">
+              <div class="layer-head" onclick="toggleLayer(this)">
+                <span class="material-symbols-outlined" style="font-size:15px;color:#44474c;">keyboard_arrow_down</span>
+                <div class="flex-1 min-w-0">
+                  <div class="font-label-md font-bold text-on-surface" style="font-size:12px;line-height:1.3;">APPLICATION_LAYER</div>
+                  <span class="layer-path-display" onclick="event.stopPropagation();startEditPath(this)">/firmware/application_layer</span>
+                </div>
+                <button onclick="event.stopPropagation();" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+                  <span class="material-symbols-outlined" style="font-size:15px;">more_vert</span>
+                </button>
+              </div>
+              <div class="layer-expanded">
+                <div class="groups-container">
+                  <div class="tree-group">
+                    <div class="tree-group-row">
+                      <button onclick="toggleTreeGroup(this)" class="tree-toggle">
+                        <span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span>
+                      </button>
+                      <span class="material-symbols-outlined text-secondary" style="font-size:14px;">folder_open</span>
+                      <span class="font-label-md text-on-surface flex-1" style="font-size:11px;">Powertrain_Control_Group</span>
+                      <button onclick="event.stopPropagation();" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+                        <span class="material-symbols-outlined" style="font-size:14px;">more_vert</span>
+                      </button>
+                    </div>
+                    <div class="tree-children">
+                      <div class="comps-container">
+                        <div class="tree-comp-row">
+                          <button onclick="toggleCompFiles(this)" class="tree-toggle">
+                            <span class="material-symbols-outlined" style="font-size:13px;">keyboard_arrow_down</span>
+                          </button>
+                          <span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>
+                          <span class="font-label-md text-on-surface flex-1" style="font-size:11px;">TorqueManager</span>
+                          <button class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+                            <span class="material-symbols-outlined" style="font-size:13px;">more_vert</span>
+                          </button>
+                        </div>
+                        <div class="comp-files">
+                          <div class="file-row"><span class="material-symbols-outlined" style="font-size:12px;color:#b0b3b8;">description</span>torque_manager.cpp</div>
+                          <div class="file-row"><span class="material-symbols-outlined" style="font-size:12px;color:#b0b3b8;">description</span>torque_manager.h</div>
+                        </div>
+                        <div class="tree-comp-row">
+                          <button onclick="toggleCompFiles(this)" class="tree-toggle">
+                            <span class="material-symbols-outlined" style="font-size:13px;">keyboard_arrow_right</span>
+                          </button>
+                          <span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>
+                          <span class="font-label-md text-on-surface flex-1" style="font-size:11px;">EfficiencyOptimizer</span>
+                          <button class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+                            <span class="material-symbols-outlined" style="font-size:13px;">more_vert</span>
+                          </button>
+                        </div>
+                        <div class="comp-files hidden"></div>
+                      </div>
+                      <button onclick="openCompSidebar(this)" class="add-group-btn" style="padding-left:4px;">
+                        <span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Component
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <button onclick="addGroup(this)" class="add-group-btn">
+                  <span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group
+                </button>
+                <div class="inc-paths-section">
+                  <div class="inc-paths-row">
+                    <div class="inc-paths-label" title="External library paths passed as -I flags to the Clang parser.">Lib Paths</div>
+                    <div class="inc-paths-content">
+                      <div class="ext-paths-list">
+                        <div class="ext-path-row">
+                          <span class="material-symbols-outlined" style="font-size:9px;color:#a0a3a8;">folder_open</span>
+                          <input class="ext-path-input" type="text" value="/usr/local/include/autosar-lib">
+                          <button onclick="removeExtPath(this)" class="text-on-surface-variant hover:text-error transition-colors" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;">
+                            <span class="material-symbols-outlined" style="font-size:9px;line-height:1;">close</span>
+                          </button>
+                        </div>
+                      </div>
+                      <button onclick="addExtPath(this)" class="inc-add-btn">
+                        <span class="material-symbols-outlined" style="font-size:8px;vertical-align:middle;">add</span> Add path
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Layer: MIDDLEWARE (collapsed) -->
+            <div class="layer-block">
+              <div class="layer-head" onclick="toggleLayer(this)">
+                <span class="material-symbols-outlined" style="font-size:15px;color:#44474c;">keyboard_arrow_right</span>
+                <div class="flex-1 min-w-0">
+                  <div class="font-label-md font-bold text-on-surface" style="font-size:12px;line-height:1.3;">MIDDLEWARE_LAYER</div>
+                  <span class="layer-path-display empty" onclick="event.stopPropagation();startEditPath(this)">Set root path…</span>
+                </div>
+                <button onclick="event.stopPropagation();" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+                  <span class="material-symbols-outlined" style="font-size:15px;">more_vert</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Layer: MCAL (collapsed) -->
+            <div class="layer-block">
+              <div class="layer-head" onclick="toggleLayer(this)">
+                <span class="material-symbols-outlined" style="font-size:15px;color:#44474c;">keyboard_arrow_right</span>
+                <div class="flex-1 min-w-0">
+                  <div class="font-label-md font-bold text-on-surface" style="font-size:12px;line-height:1.3;">MCAL_LAYER</div>
+                  <span class="layer-path-display empty" onclick="event.stopPropagation();startEditPath(this)">Set root path…</span>
+                </div>
+                <button onclick="event.stopPropagation();" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+                  <span class="material-symbols-outlined" style="font-size:15px;">more_vert</span>
+                </button>
+              </div>
+            </div>
+
+          </div><!-- /arch-tree -->
+
+            <!-- Add layer inline -->
+            <div id="add-layer-row" class="hidden mt-2 p-3 bg-surface-container-low border-2 border-dashed border-secondary rounded-lg space-y-2">
+              <div>
+                <div class="lbl" style="margin-bottom:4px;">Layer Name</div>
+                <input class="inp mono" id="new-layer-name" type="text" placeholder="NEW_LAYER_NAME" style="text-transform:uppercase;">
+              </div>
+              <div>
+                <div class="lbl" style="margin-bottom:4px;">Layer Root Path</div>
+                <input class="inp mono" id="new-layer-path" type="text" placeholder="/path/to/layer/root">
+              </div>
+              <div class="flex gap-2 pt-1">
+                <button onclick="confirmAddLayer()" class="px-3 py-1.5 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Add Layer</button>
+                <button onclick="cancelAddLayer()" class="px-3 py-1.5 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
+              </div>
+            </div>
+
+          <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+            <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">Layer root path is scanned by Clang. Components define which files belong to each logical module. External Paths add include directories (<span style="font-family:'JetBrains Mono';font-size:11px;">-I</span> flags).</p>
+          </div>
+        </div><!-- /step-3 -->
+
+
+        <!-- ══════════════ STEP 4 — REVIEW & INITIALIZE ══════════════ -->
+        <div id="step-4" class="hidden max-w-3xl mx-auto px-6 py-4 space-y-3">
+          <div class="pb-3 border-b border-outline-variant">
+            <h2 class="font-headline-md text-headline-md text-on-surface mb-0.5">Review & Initialize</h2>
+            <p class="font-body-md text-body-md text-on-surface-variant">Confirm every setting before the first analysis run.</p>
+          </div>
+
+          <!-- ── Project & Repository ── -->
+          <div class="rev-card">
+            <div class="rev-card-head">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">label</span>
+                <span class="font-label-md text-label-md text-on-surface font-semibold">Project & Repository</span>
+              </div>
+              <button onclick="goToStep(1)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
+            </div>
+            <div class="rev-row"><span>Name</span><span id="r-name">—</span></div>
+            <div class="rev-row"><span>Repository</span><span id="r-repo">—</span></div>
+            <div class="rev-row"><span>Branch</span><span id="r-branch">—</span></div>
+            <div class="rev-row"><span>Snapshot</span><span id="r-snapshot">—</span></div>
+          </div>
+
+          <!-- ── Build Configuration ── -->
+          <div class="rev-card">
+            <div class="rev-card-head">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">data_object</span>
+                <span class="font-label-md text-label-md text-on-surface font-semibold">Build Configuration</span>
+              </div>
+              <button onclick="goToStep(2)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
+            </div>
+            <div class="rev-row"><span>Defines source</span><span id="r-defines">—</span></div>
+            <!-- Expanded defines block (shown when manual entry has content) -->
+            <div id="r-defines-block" class="hidden border-b border-outline-variant">
+              <div class="px-4 py-2 bg-surface-container-low">
+                <pre id="r-defines-text" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#0b1c30;margin:0;white-space:pre-wrap;max-height:96px;overflow-y:auto;line-height:1.7;"></pre>
+              </div>
+            </div>
+            <div class="rev-row"><span>Data Dictionary</span><span id="r-dict">—</span></div>
+          </div>
+
+          <!-- ── Architecture ── -->
+          <div class="rev-card">
+            <div class="rev-card-head">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">account_tree</span>
+                <span class="font-label-md text-label-md text-on-surface font-semibold">Architecture</span>
+              </div>
+              <button onclick="goToStep(3)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
+            </div>
+            <div class="rev-row"><span>Layers</span><span id="r-layers">—</span></div>
+            <div class="rev-row"><span>Components</span><span id="r-comps">—</span></div>
+            <!-- Full architecture tree -->
+            <div id="r-arch-tree" class="border-t border-outline-variant divide-y divide-outline-variant"></div>
+          </div>
+
+        </div><!-- /step-4 -->
+
+
+      </div><!-- /form-scroll -->
+
+      <!-- ACTION BAR -->
+      <div id="action-bar" class="h-16 flex-shrink-0 bg-white border-t border-outline-variant flex items-center justify-between px-8 gap-4">
+        <div class="flex items-center gap-1.5 text-on-surface-variant">
+          <span class="material-symbols-outlined" style="font-size:14px;">save</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant">Auto-saved</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <button id="back-btn" onclick="doBack()"
+                  class="flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors">
+            <span class="material-symbols-outlined" style="font-size:16px;">arrow_back</span> Back
+          </button>
+          <button id="draft-btn" onclick="saveDraft()"
+                  class="hidden flex items-center gap-2 px-4 py-2.5 border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors">
+            <span class="material-symbols-outlined" style="font-size:16px;">bookmark</span>
+            <span id="draft-label">Save Draft</span>
+          </button>
+          <button id="continue-btn" onclick="doContinue()"
+                  class="flex items-center gap-2 px-6 py-2.5 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container active:scale-[.98] transition-all shadow-sm">
+            Continue <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /form-area -->
+  </div><!-- /body -->
+</main>
+
+
+<!-- INIT OVERLAY -->
+<div id="init-overlay">
+  <div class="bg-white rounded-2xl p-8 max-w-sm w-full mx-4 text-center space-y-4">
+    <div class="w-14 h-14 rounded-2xl bg-secondary-container flex items-center justify-center mx-auto" id="init-icon">
+      <span class="material-symbols-outlined text-on-secondary-container" style="font-size:28px;">rocket_launch</span>
+    </div>
+    <h3 class="font-headline-sm text-headline-sm text-on-surface" id="init-title">Initializing project…</h3>
+    <p class="font-body-sm text-body-sm text-on-surface-variant" id="init-sub">Creating workspace and cloning repository…</p>
+    <div class="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+      <div class="bg-secondary h-full rounded-full transition-all duration-700" id="init-bar" style="width:0%"></div>
+    </div>
+    <p class="font-label-sm text-label-sm text-on-surface-variant" id="init-pct">0%</p>
+  </div>
+</div>
+
+<div class="fixed inset-0 pointer-events-none -z-10 opacity-[.025]"
+     style="background-image:radial-gradient(#041627 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
+
+<!-- Help tooltip -->
+<div id="help-tip" style="
+  display:none; position:fixed; z-index:999;
+  max-width:260px; padding:8px 12px;
+  background:#041627; color:#e5eeff;
+  font-family:Inter,sans-serif; font-size:12px; line-height:1.5;
+  border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.25);
+  pointer-events:none;
+"></div>
+
+
+<script>
+// ── State ─────────────────────────────────────────────────
+let cur = 1;
+const STEPS = [
+  { title: 'Project & Repository', sub: 'Name, repo, branch' },
+  { title: 'Build Configuration',  sub: 'Defines & data dictionary' },
+  { title: 'Architecture',         sub: 'Layers & components' },
+  { title: 'Review & Initialize',  sub: 'Confirm & create project' },
+];
+let done = new Set();
+
+// Initialise on page load
+goToStep(1);
+
+// ── Step rail ─────────────────────────────────────────────
+function renderRail() {
+  const rail = document.getElementById('step-rail');
+  rail.innerHTML = STEPS.map((s, i) => {
+    const n = i + 1;
+    const cls = done.has(n) ? 'done' : n === cur ? 'active' : 'pending';
+    const icon = cls === 'done'
+      ? '<span class="material-symbols-outlined sym-fill" style="font-size:14px;">check</span>' : n;
+    const titleColor = n === cur ? '#0058be' : done.has(n) ? '#0b1c30' : '#44474c';
+    const subColor   = n === cur ? '#0058be' : '#74777d';
+    const clickable  = n < cur || done.has(n) ? 'cursor-pointer' : '';
+    return `<div class="step-li ${clickable}" onclick="railClick(${n})">
+      <div class="step-dot ${cls}">${icon}</div>
+      <div style="padding-top:4px;">
+        <p class="font-label-md text-label-md" style="color:${titleColor};font-weight:${n===cur?'600':'500'};line-height:1.2;">${s.title}</p>
+        <p class="font-label-sm text-label-sm" style="color:${subColor};margin-top:2px;">${s.sub}</p>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function railClick(n) { if (n < cur || done.has(n)) goToStep(n); }
+
+function updateBar() {
+  const pct = Math.round((done.size / 4) * 100);
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = done.size + ' / 4';
+}
+
+// ── Wizard navigation ──────────────────────────────────────
+function goToStep(n) {
+  ['step-1','step-2','step-3','step-4'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  document.getElementById('step-' + n).classList.remove('hidden');
+  cur = n;
+
+  if (n === 4) populateReview();
+
+  // Update top bar step counter
+  document.getElementById('step-counter').textContent = 'Step ' + n + ' of 4';
+
+  // Save Draft visible on steps 2-4 only
+  const draftBtn = document.getElementById('draft-btn');
+  draftBtn.classList.toggle('hidden', n === 1);
+  document.getElementById('draft-label').textContent = 'Save Draft';
+  draftBtn.disabled = false;
+
+  const btn = document.getElementById('continue-btn');
+  if (n === 4) {
+    btn.innerHTML = '<span class="material-symbols-outlined sym-fill" style="font-size:16px;">rocket_launch</span> Initialize Project';
+    btn.className = 'flex items-center gap-2 px-6 py-2.5 rounded-lg font-label-md text-label-md transition-all shadow-sm active:scale-[.98] hover:opacity-90';
+    btn.style.background = '#00a572'; btn.style.color = '#fff';
+  } else {
+    btn.innerHTML = 'Continue <span class="material-symbols-outlined" style="font-size:16px;">arrow_forward</span>';
+    btn.className = 'flex items-center gap-2 px-6 py-2.5 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container active:scale-[.98] transition-all shadow-sm';
+    btn.style.background = ''; btn.style.color = '';
+  }
+
+  renderRail();
+  updateBar();
+  document.getElementById('form-scroll').scrollTop = 0;
+}
+
+function saveDraft() {
+  const btn = document.getElementById('draft-btn');
+  const lbl = document.getElementById('draft-label');
+  lbl.textContent = 'Saved!';
+  btn.disabled = true;
+  btn.style.borderColor = '#00a572';
+  btn.style.color = '#00a572';
+  setTimeout(() => {
+    lbl.textContent = 'Save Draft';
+    btn.disabled = false;
+    btn.style.borderColor = '';
+    btn.style.color = '';
+  }, 2000);
+}
+
+function doBack() {
+  if (cur > 1) { goToStep(cur - 1); return; }
+  window.location.href = 'shell.html';
+}
+
+function doContinue() {
+  if (!validate(cur)) return;
+  if (cur === 4) { initProject(); return; }
+  done.add(cur); updateBar();
+  goToStep(cur + 1);
+}
+
+// ── Validation ─────────────────────────────────────────────
+function validate(n) {
+  if (n === 1) {
+    const f = document.getElementById('s1-name');
+    if (!f.value.trim()) { f.classList.add('err'); f.focus(); return false; }
+    const r = document.getElementById('s1-repo');
+    if (!r.value.trim()) { r.classList.add('err'); r.focus(); return false; }
+  }
+  return true;
+}
+
+// ── Step 1 helpers ─────────────────────────────────────────
+function testConn() {
+  const url = document.getElementById('s1-repo').value.trim();
+  document.getElementById('conn-ok').classList.add('hidden');
+  document.getElementById('conn-err').classList.add('hidden');
+  if (!url) { document.getElementById('s1-repo').classList.add('err'); return; }
+  const btn = document.getElementById('conn-btn');
+  btn.textContent = 'Testing…'; btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = 'Test'; btn.disabled = false;
+    if (url.startsWith('http')) {
+      document.getElementById('conn-meta').textContent = 'Connection verified — 312 files detected';
+      document.getElementById('conn-ok').classList.remove('hidden');
+    } else {
+      document.getElementById('conn-err').classList.remove('hidden');
+    }
+  }, 1400);
+}
+function resetConn() {
+  document.getElementById('conn-ok').classList.add('hidden');
+  document.getElementById('conn-err').classList.add('hidden');
+}
+
+// ── Step 2 helpers ─────────────────────────────────────────
+function switchDefTab(tab) {
+  document.getElementById('def-upload-tab').classList.toggle('hidden', tab !== 'upload');
+  document.getElementById('def-manual-tab').classList.toggle('hidden', tab !== 'manual');
+  document.getElementById('tab-upload').classList.toggle('on', tab === 'upload');
+  document.getElementById('tab-manual').classList.toggle('on', tab === 'manual');
+}
+function defFileDrop(e) { e.preventDefault(); e.currentTarget.classList.remove('dragover'); if (e.dataTransfer.files[0]) showDefFile(e.dataTransfer.files[0]); }
+function defFileChosen(inp) { if (inp.files[0]) showDefFile(inp.files[0]); }
+function showDefFile(f) {
+  document.getElementById('def-drop-zone').classList.add('has-file');
+  document.getElementById('def-file-name').textContent = f.name;
+  document.getElementById('def-file-chip').classList.remove('hidden');
+}
+function clearDefFile() {
+  document.getElementById('def-drop-zone').classList.remove('has-file');
+  document.getElementById('def-file-chip').classList.add('hidden');
+  document.getElementById('def-file').value = '';
+}
+function ddFileDrop(e) { e.preventDefault(); e.currentTarget.classList.remove('dragover'); if (e.dataTransfer.files[0]) showDdFile(e.dataTransfer.files[0]); }
+function ddFileChosen(inp) { if (inp.files[0]) showDdFile(inp.files[0]); }
+function showDdFile(f) {
+  document.getElementById('dd-zone').classList.add('has-file');
+  document.getElementById('dd-file-name').textContent = f.name;
+  document.getElementById('dd-file-meta').textContent = (f.size/1024).toFixed(1) + ' KB';
+  document.getElementById('dd-chip').classList.remove('hidden');
+}
+function clearDdFile() {
+  document.getElementById('dd-zone').classList.remove('has-file');
+  document.getElementById('dd-chip').classList.add('hidden');
+  document.getElementById('dd-file').value = '';
+}
+
+// ── Step 3 helpers ─────────────────────────────────────────
+function toggleLayer(head) {
+  const block = head.closest('.layer-block');
+  const icon = head.querySelector('.material-symbols-outlined');
+  let body = block.querySelector('.layer-expanded');
+  if (!body) {
+    body = document.createElement('div');
+    body.className = 'layer-expanded';
+    body.innerHTML = `
+      <div class="groups-container"></div>
+      <button onclick="addGroup(this)" class="add-group-btn">
+        <span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group
+      </button>
+      <div class="inc-paths-section">
+        <div class="inc-paths-row">
+          <div class="inc-paths-label" title="External library paths passed as -I flags to the Clang parser.">Lib Paths</div>
+          <div class="inc-paths-content">
+            <div class="ext-paths-list"></div>
+            <button onclick="addExtPath(this)" class="inc-add-btn">
+              <span class="material-symbols-outlined" style="font-size:8px;vertical-align:middle;">add</span> Add path
+            </button>
+          </div>
+        </div>
+      </div>`;
+    block.appendChild(body);
+    icon.textContent = 'keyboard_arrow_down';
+    return;
+  }
+  const open = icon.textContent.trim() === 'keyboard_arrow_down';
+  body.style.display = open ? 'none' : '';
+  icon.textContent = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
+}
+function toggleTreeGroup(btn) {
+  const group = btn.closest('.tree-group');
+  const children = group.querySelector('.tree-children');
+  const icon = btn.querySelector('.material-symbols-outlined');
+  const open = icon.textContent.trim() === 'keyboard_arrow_down';
+  children.style.display = open ? 'none' : '';
+  icon.textContent = open ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
+}
+function toggleCompFiles(btn) {
+  const block = btn.closest('.tree-comp-block');
+  const files = block.querySelector('.comp-files');
+  const icon = btn.querySelector('.material-symbols-outlined');
+  if (!files) return;
+  files.classList.toggle('hidden');
+  icon.textContent = files.classList.contains('hidden') ? 'keyboard_arrow_right' : 'keyboard_arrow_down';
+}
+function addGroup(btn) {
+  const block = btn.closest('.layer-block');
+  let expanded = block.querySelector('.layer-expanded');
+  if (!expanded || expanded.style.display === 'none') {
+    toggleLayer(block.querySelector('.layer-head'));
+    expanded = block.querySelector('.layer-expanded');
+  }
+  const container = expanded.querySelector('.groups-container');
+
+  // Prevent duplicate inline rows
+  if (container.querySelector('.inline-add-row')) return;
+
+  const row = document.createElement('div');
+  row.className = 'inline-add-row';
+  row.innerHTML = `
+    <input class="inline-add-input" type="text" placeholder="Group name…" autocomplete="off">
+    <button class="inline-add-confirm" onclick="confirmAddGroup(this)">Add</button>
+    <button class="inline-add-cancel" onclick="this.closest('.inline-add-row').remove()">
+      <span class="material-symbols-outlined" style="font-size:13px;">close</span>
+    </button>`;
+  container.appendChild(row);
+  const inp = row.querySelector('.inline-add-input');
+  inp.focus();
+  inp.onkeydown = e => {
+    if (e.key === 'Enter') confirmAddGroup(row.querySelector('.inline-add-confirm'));
+    if (e.key === 'Escape') row.remove();
+  };
+}
+
+function confirmAddGroup(btn) {
+  const row = btn.closest('.inline-add-row');
+  const name = row.querySelector('.inline-add-input').value.trim();
+  if (!name) { row.querySelector('.inline-add-input').focus(); return; }
+  const container = row.closest('.groups-container');
+  const grp = document.createElement('div');
+  grp.className = 'tree-group';
+  grp.innerHTML = `
+    <div class="tree-group-row">
+      <button onclick="toggleTreeGroup(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span></button>
+      <span class="material-symbols-outlined text-secondary" style="font-size:14px;">folder_open</span>
+      <span class="font-label-md text-on-surface flex-1" style="font-size:11px;">${name}</span>
+      <button onclick="event.stopPropagation();" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+        <span class="material-symbols-outlined" style="font-size:14px;">more_vert</span>
+      </button>
+    </div>
+    <div class="tree-children">
+      <div class="comps-container"></div>
+      <button onclick="openCompSidebar(this)" class="add-group-btn" style="padding-left:4px;">
+        <span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Component
+      </button>
+    </div>`;
+  row.replaceWith(grp);
+}
+let _compTarget = null;
+function openCompSidebar(btn) {
+  const group = btn.closest('.tree-group');
+  _compTarget = group ? group.querySelector('.comps-container') : null;
+  const expanded = btn.closest('.layer-expanded');
+  const pathEl = btn.closest('.layer-block')?.querySelector('.layer-path-display');
+  const layerPath = pathEl && !pathEl.classList.contains('empty') ? pathEl.textContent : '';
+  document.getElementById('sidebar-layer-path').textContent = 'Layer root: ' + (layerPath || '—');
+  document.getElementById('sidebar-comp-name').value = '';
+  document.getElementById('sidebar-selected-count').textContent = '0 files selected';
+  document.querySelectorAll('#comp-sidebar input[type=checkbox]').forEach(cb => { cb.checked = false; cb.indeterminate = false; });
+  document.getElementById('comp-sidebar').classList.remove('hidden');
+  document.getElementById('comp-sidebar-backdrop').classList.remove('hidden');
+  document.getElementById('sidebar-comp-name').focus();
+}
+function closeCompSidebar() {
+  document.getElementById('comp-sidebar').classList.add('hidden');
+  document.getElementById('comp-sidebar-backdrop').classList.add('hidden');
+  _compTarget = null;
+}
+function confirmAddComponent() {
+  const name = document.getElementById('sidebar-comp-name').value.trim();
+  if (!name) { document.getElementById('sidebar-comp-name').focus(); return; }
+  const files = [...document.querySelectorAll('#comp-sidebar .file-cb:checked')].map(cb => {
+    const row = cb.closest('.sidebar-file-row');
+    return row ? row.querySelector('span:last-child').textContent.trim() : '';
+  }).filter(Boolean);
+  const hasFiles = files.length > 0;
+  const block = document.createElement('div');
+  block.className = 'tree-comp-block';
+  block.innerHTML = `
+    <div class="tree-comp-row">
+      <button onclick="toggleCompFiles(this)" class="tree-toggle">
+        <span class="material-symbols-outlined" style="font-size:13px;">${hasFiles ? 'keyboard_arrow_down' : 'keyboard_arrow_right'}</span>
+      </button>
+      <span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>
+      <span class="font-label-md text-on-surface flex-1" style="font-size:11px;">${name}</span>
+      <button class="p-1 text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined" style="font-size:13px;">more_vert</span></button>
+    </div>
+    <div class="comp-files${hasFiles ? '' : ' hidden'}">
+      ${files.map(f => `<div class="file-row"><span class="material-symbols-outlined" style="font-size:12px;color:#b0b3b8;">description</span>${f}</div>`).join('')}
+    </div>`;
+  if (_compTarget) _compTarget.appendChild(block);
+  closeCompSidebar();
+}
+function updateSidebarCount() {
+  const count = document.querySelectorAll('#comp-sidebar .file-cb:checked').length;
+  document.getElementById('sidebar-selected-count').textContent = count + ' file' + (count !== 1 ? 's' : '') + ' selected';
+}
+function syncFolderCb(block) {
+  const cb = block.querySelector(':scope > .sidebar-folder-row > .folder-cb');
+  if (!cb) return;
+  const fileCbs = [...block.querySelectorAll('.file-cb')];
+  const checked = fileCbs.filter(c => c.checked).length;
+  cb.indeterminate = checked > 0 && checked < fileCbs.length;
+  cb.checked = checked === fileCbs.length && fileCbs.length > 0;
+}
+function sidebarToggleFile(cb) {
+  updateSidebarCount();
+  // Sync all ancestor folder checkboxes
+  let block = cb.closest('.sidebar-folder-block');
+  while (block) { syncFolderCb(block); block = block.parentElement?.closest('.sidebar-folder-block'); }
+}
+function sidebarToggleFolder(cb) {
+  const block = cb.closest('.sidebar-folder-block');
+  const children = block.querySelector('.sidebar-folder-children');
+  // Check/uncheck all descendant file & folder checkboxes
+  block.querySelectorAll('.file-cb, .folder-cb').forEach(c => {
+    if (c !== cb) { c.checked = cb.checked; c.indeterminate = false; }
+  });
+  // Expand when selecting
+  if (cb.checked && children.classList.contains('hidden')) {
+    children.classList.remove('hidden');
+    const icon = block.querySelector(':scope > .sidebar-folder-row .tree-toggle .material-symbols-outlined');
+    const folderIcon = block.querySelector(':scope > .sidebar-folder-row .material-symbols-outlined:not(.tree-toggle .material-symbols-outlined)');
+    if (icon) icon.textContent = 'keyboard_arrow_down';
+    if (folderIcon) folderIcon.textContent = 'folder_open';
+  }
+  updateSidebarCount();
+  // Sync parent folder if nested
+  const parentBlock = block.parentElement?.closest('.sidebar-folder-block');
+  if (parentBlock) syncFolderCb(parentBlock);
+}
+function toggleSidebarFolder(btn) {
+  const block = btn.closest('.sidebar-folder-block');
+  const children = block.querySelector('.sidebar-folder-children');
+  const icon = btn.querySelector('.material-symbols-outlined');
+  if (!children) return;
+  children.classList.toggle('hidden');
+  const open = !children.classList.contains('hidden');
+  icon.textContent = open ? 'keyboard_arrow_down' : 'keyboard_arrow_right';
+  const folderIcon = btn.parentElement.querySelectorAll('.material-symbols-outlined')[2];
+  if (folderIcon) folderIcon.textContent = open ? 'folder_open' : 'folder';
+}
+function addExtPath(btn) {
+  const list = btn.closest('.inc-paths-section').querySelector('.ext-paths-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'ext-path-row';
+  row.innerHTML = `
+    <span class="material-symbols-outlined" style="font-size:9px;color:#a0a3a8;">folder_open</span>
+    <input class="ext-path-input" type="text" placeholder="/path/to/include">
+    <button onclick="removeExtPath(this)" class="text-on-surface-variant hover:text-error transition-colors" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;">
+      <span class="material-symbols-outlined" style="font-size:9px;line-height:1;">close</span>
+    </button>`;
+  list.appendChild(row);
+  row.querySelector('.ext-path-input').focus();
+}
+function removeExtPath(btn) { btn.closest('.ext-path-row').remove(); }
+
+function startEditPath(span) {
+  const val = span.classList.contains('empty') ? '' : span.textContent;
+  const inp = document.createElement('input');
+  inp.className = 'layer-path-input';
+  inp.type = 'text';
+  inp.value = val;
+  inp.placeholder = 'root path';
+  inp.onclick = e => e.stopPropagation();
+  inp.onblur = () => {
+    span.textContent = inp.value.trim() || 'Set root path…';
+    span.classList.toggle('empty', !inp.value.trim());
+    inp.replaceWith(span);
+  };
+  inp.onkeydown = e => { if (e.key === 'Enter' || e.key === 'Escape') inp.blur(); };
+  span.replaceWith(inp);
+  inp.focus(); inp.select();
+}
+function showAddLayer() {
+  document.getElementById('add-layer-row').classList.remove('hidden');
+  document.getElementById('new-layer-name').focus();
+}
+function cancelAddLayer() {
+  document.getElementById('add-layer-row').classList.add('hidden');
+  document.getElementById('new-layer-name').value = '';
+  document.getElementById('new-layer-path').value = '';
+}
+function confirmAddLayer() {
+  const name = document.getElementById('new-layer-name').value.trim().toUpperCase().replace(/\s+/g,'_');
+  const path = document.getElementById('new-layer-path').value.trim();
+  if (!name) { document.getElementById('new-layer-name').focus(); return; }
+  const tree = document.getElementById('arch-tree');
+  const count = tree.querySelectorAll('.layer-block').length + 1;
+  const block = document.createElement('div');
+  block.className = 'layer-block';
+  block.innerHTML = `
+    <div class="layer-head" onclick="toggleLayer(this)">
+      <span class="material-symbols-outlined" style="font-size:15px;color:#44474c;">keyboard_arrow_right</span>
+      <div class="flex-1 min-w-0">
+        <div class="font-label-md font-bold text-on-surface" style="font-size:12px;line-height:1.3;">${name}</div>
+        <span class="layer-path-display${path ? '' : ' empty'}" onclick="event.stopPropagation();startEditPath(this)">${path || 'Set root path…'}</span>
+      </div>
+      <button onclick="event.stopPropagation();" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined" style="font-size:15px;">more_vert</span></button>
+    </div>`;
+  tree.appendChild(block);
+  cancelAddLayer();
+}
+
+// ── Step 4: review ─────────────────────────────────────────
+function populateReview() {
+  // Project & Repository
+  document.getElementById('r-name').textContent     = document.getElementById('s1-name').value     || '—';
+  document.getElementById('r-repo').textContent     = document.getElementById('s1-repo').value     || '—';
+  document.getElementById('r-branch').textContent   = document.getElementById('s1-branch').value   || '—';
+  document.getElementById('r-snapshot').textContent = document.getElementById('s1-snapshot').value || 'HEAD (latest)';
+
+  // Build Configuration — defines
+  const isUpload = document.getElementById('tab-upload').classList.contains('on');
+  if (isUpload) {
+    const fname = document.getElementById('def-file-name').textContent;
+    document.getElementById('r-defines').textContent = fname || 'Upload (no file selected)';
+    document.getElementById('r-defines-block').classList.add('hidden');
+  } else {
+    document.getElementById('r-defines').textContent = 'Manual entry';
+    const manualText = (document.querySelector('#def-manual-tab textarea')?.value || '').trim();
+    if (manualText) {
+      document.getElementById('r-defines-text').textContent = manualText;
+      document.getElementById('r-defines-block').classList.remove('hidden');
+    } else {
+      document.getElementById('r-defines-block').classList.add('hidden');
+    }
+  }
+
+  // Data Dictionary
+  const ddName = document.getElementById('dd-file-name').textContent.trim();
+  const ddMeta = document.getElementById('dd-file-meta').textContent.trim();
+  document.getElementById('r-dict').textContent = ddName ? ddName + (ddMeta ? '  (' + ddMeta + ')' : '') : 'Not uploaded';
+  document.getElementById('r-dict').style.color = ddName ? '#0b1c30' : '#74777d';
+
+  // Architecture — summary counts
+  const layerBlocks = [...document.querySelectorAll('#arch-tree .layer-block')];
+  const totalComps  = document.querySelectorAll('#arch-tree .tree-comp-row').length;
+  document.getElementById('r-layers').textContent = layerBlocks.length + ' layer' + (layerBlocks.length !== 1 ? 's' : '');
+  document.getElementById('r-comps').textContent  = totalComps + ' component' + (totalComps !== 1 ? 's' : '') + ' mapped';
+
+  // Architecture — full tree
+  const archOut = document.getElementById('r-arch-tree');
+  if (!layerBlocks.length) {
+    archOut.innerHTML = '<p class="px-4 py-3 font-body-sm text-body-sm text-on-surface-variant">No layers defined.</p>';
+    return;
+  }
+  archOut.innerHTML = layerBlocks.map(block => {
+    const lName  = block.querySelector('.layer-head .font-bold')?.textContent.trim() || '—';
+    const pathEl = block.querySelector('.layer-head .layer-path-display');
+    const lPath  = pathEl && !pathEl.classList.contains('empty') ? pathEl.textContent.trim() : null;
+
+    const groups = [...(block.querySelector('.groups-container')?.querySelectorAll(':scope > .tree-group') || [])];
+    const layerCompCount = block.querySelectorAll('.tree-comp-row').length;
+
+    const groupHTML = groups.map(g => {
+      const gName = g.querySelector('.tree-group-row .flex-1')?.textContent.trim() || '?';
+      const comps = [...g.querySelectorAll('.tree-comp-row')];
+      const compHTML = comps.map(c => {
+        const cName = c.querySelector('.flex-1')?.textContent.trim() || '?';
+        return `<div class="flex items-center gap-1.5 py-0.5 pl-10">
+          <span class="material-symbols-outlined" style="font-size:11px;color:#b0b3b8;">folder</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#44474c;">${cName}</span>
+        </div>`;
+      }).join('');
+      return `<div class="py-0.5 pl-5">
+        <div class="flex items-center gap-1.5 py-0.5">
+          <span class="material-symbols-outlined text-secondary" style="font-size:12px;">folder_open</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#0b1c30;">${gName}</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#b0b3b8;">${comps.length} comp</span>
+        </div>${compHTML}
+      </div>`;
+    }).join('');
+
+    return `<div class="px-4 py-2.5">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="material-symbols-outlined text-secondary" style="font-size:14px;">layers</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#0b1c30;letter-spacing:.02em;">${lName}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#74777d;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${lPath || '<em style="color:#b0b3b8;">no path set</em>'}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#74777d;white-space:nowrap;">${layerCompCount} comp</span>
+      </div>
+      ${groupHTML || '<div class="pl-5 py-0.5" style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b0b3b8;">No groups</div>'}
+    </div>`;
+  }).join('');
+}
+
+// ── Initialize ─────────────────────────────────────────────
+function initProject() {
+  document.getElementById('init-overlay').classList.add('show');
+  const bar = document.getElementById('init-bar');
+  const pct = document.getElementById('init-pct');
+  const sub = document.getElementById('init-sub');
+  const steps = [[20,'Saving project configuration…'],[45,'Cloning repository…'],[65,'Running Clang parser…'],[82,'Applying architecture mapping…'],[100,'Done! Redirecting…']];
+  let i = 0;
+  const tick = setInterval(() => {
+    if (i >= steps.length) { clearInterval(tick); return; }
+    const [p, m] = steps[i++];
+    bar.style.width = p + '%'; pct.textContent = p + '%'; sub.textContent = m;
+    if (p === 100) {
+      document.getElementById('init-icon').innerHTML = '<span class="material-symbols-outlined sym-fill" style="font-size:28px;color:#00a572;">check_circle</span>';
+      document.getElementById('init-icon').style.background = 'rgba(0,165,114,.15)';
+      document.getElementById('init-title').textContent = 'Project created!';
+    }
+  }, 900);
+}
+
+// ── Help tooltips ──────────────────────────────────────────
+(function () {
+  const tip = document.getElementById('help-tip');
+  let active = null;
+
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.hbtn');
+    if (btn) {
+      e.stopPropagation();
+      if (active === btn) { tip.style.display = 'none'; active = null; return; }
+      active = btn;
+      tip.textContent = btn.getAttribute('title') || '';
+      tip.style.display = 'block';
+      const r = btn.getBoundingClientRect();
+      const tw = 260, th = tip.offsetHeight || 60;
+      let left = r.left + r.width / 2 - tw / 2;
+      let top  = r.bottom + 8;
+      if (left + tw > window.innerWidth - 8) left = window.innerWidth - tw - 8;
+      if (left < 8) left = 8;
+      if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+      tip.style.left = left + 'px';
+      tip.style.top  = top  + 'px';
+    } else {
+      tip.style.display = 'none';
+      active = null;
+    }
+  });
+})();
+</script>
+
+<!-- ══════════════ COMPONENT FILE PICKER SIDEBAR ══════════════ -->
+<div id="comp-sidebar-backdrop" class="hidden fixed inset-0 z-[99]" style="background:rgba(4,22,39,.25);" onclick="closeCompSidebar()"></div>
+<div id="comp-sidebar" class="hidden fixed top-0 right-0 h-screen bg-white border-l border-outline-variant z-[100] flex flex-col" style="width:340px;box-shadow:-4px 0 24px rgba(4,22,39,.12);">
+  <!-- Header -->
+  <div class="flex items-center justify-between px-5 py-4 border-b border-outline-variant flex-shrink-0">
+    <div>
+      <h3 class="font-headline-sm text-on-surface" style="font-size:14px;">Add Component</h3>
+      <p class="font-body-sm text-on-surface-variant mt-0.5" style="font-size:11px;font-family:'JetBrains Mono';" id="sidebar-layer-path">Layer root: —</p>
+    </div>
+    <button onclick="closeCompSidebar()" class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors">
+      <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+    </button>
+  </div>
+  <!-- Component name -->
+  <div class="px-4 py-3 border-b border-outline-variant flex-shrink-0">
+    <div class="lbl" style="margin-bottom:6px;">Component Name</div>
+    <input class="inp" id="sidebar-comp-name" type="text" placeholder="e.g. TorqueManager">
+  </div>
+  <!-- File tree -->
+  <div class="flex-1 overflow-y-auto px-3 py-3">
+    <div class="sect-label mb-2">Select files / folders</div>
+    <div id="sidebar-file-tree">
+      <!-- Folder: src/ -->
+      <div class="sidebar-folder-block">
+        <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
+          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span></button>
+          <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
+          <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder_open</span>
+          <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">src/</span>
+        </div>
+        <div class="sidebar-folder-children pl-5">
+          <div class="sidebar-file-row" onclick="if(event.target.tagName!=='INPUT')this.querySelector('input').click()">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;">torque_manager.cpp</span>
+          </div>
+          <div class="sidebar-file-row" onclick="if(event.target.tagName!=='INPUT')this.querySelector('input').click()">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;">torque_manager.h</span>
+          </div>
+          <div class="sidebar-file-row" onclick="if(event.target.tagName!=='INPUT')this.querySelector('input').click()">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;">efficiency_optimizer.cpp</span>
+          </div>
+          <div class="sidebar-file-row" onclick="if(event.target.tagName!=='INPUT')this.querySelector('input').click()">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;">efficiency_optimizer.h</span>
+          </div>
+          <!-- subfolder: diagnostics/ -->
+          <div class="sidebar-folder-block">
+            <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
+              <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_right</span></button>
+              <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
+              <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder</span>
+              <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">diagnostics/</span>
+            </div>
+            <div class="sidebar-folder-children pl-5 hidden">
+              <div class="sidebar-file-row" onclick="if(event.target.tagName!=='INPUT')this.querySelector('input').click()">
+                <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+                <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;">fault_logger.cpp</span>
+              </div>
+              <div class="sidebar-file-row" onclick="if(event.target.tagName!=='INPUT')this.querySelector('input').click()">
+                <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+                <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;">fault_logger.h</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Folder: include/ -->
+      <div class="sidebar-folder-block">
+        <div class="sidebar-folder-row" onclick="if(!event.target.closest('.tree-toggle')&&event.target.tagName!=='INPUT')this.querySelector('.folder-cb').click()">
+          <button onclick="event.stopPropagation();toggleSidebarFolder(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_right</span></button>
+          <input type="checkbox" class="folder-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFolder(this)">
+          <span class="material-symbols-outlined text-secondary" style="font-size:15px;">folder</span>
+          <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;flex:1;">include/</span>
+        </div>
+        <div class="sidebar-folder-children pl-5 hidden">
+          <div class="sidebar-file-row" onclick="if(event.target.tagName!=='INPUT')this.querySelector('input').click()">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;">app_types.h</span>
+          </div>
+          <div class="sidebar-file-row" onclick="if(event.target.tagName!=='INPUT')this.querySelector('input').click()">
+            <input type="checkbox" class="file-cb" style="width:14px;height:14px;accent-color:#0058be;cursor:pointer;flex-shrink:0;" onchange="sidebarToggleFile(this)">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">description</span>
+            <span style="font-family:'JetBrains Mono';font-size:11px;color:#0b1c30;">config.h</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Footer -->
+  <div class="px-4 py-3 border-t border-outline-variant flex items-center gap-3 flex-shrink-0">
+    <span class="font-label-sm text-on-surface-variant flex-1" style="font-size:11px;" id="sidebar-selected-count">0 files selected</span>
+    <button onclick="closeCompSidebar()" class="px-3 py-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
+    <button onclick="confirmAddComponent()" class="px-4 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container transition-colors">Add</button>
+  </div>
+</div>
+</body>
+</html>

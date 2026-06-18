@@ -1,0 +1,387 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>ASPICE Automator - SWE.3 Detailed Design</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+        .document-shadow {
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+        .transition-active {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#004395",
+                        "on-secondary-fixed": "#001a42",
+                        "inverse-surface": "#213145",
+                        "surface": "#f8f9ff",
+                        "on-tertiary-fixed": "#002113",
+                        "inverse-primary": "#b7c8de",
+                        "primary-container": "#1a2b3c",
+                        "on-error-container": "#93000a",
+                        "surface-container": "#e5eeff",
+                        "outline": "#74777d",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary": "#001a0f",
+                        "on-primary-fixed-variant": "#38485a",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#fefcff",
+                        "primary-fixed-dim": "#b7c8de",
+                        "on-primary-fixed": "#0b1d2d",
+                        "secondary-container": "#2170e4",
+                        "primary-fixed": "#d2e4fb",
+                        "background": "#f8f9ff",
+                        "tertiary-fixed": "#6ffbbe",
+                        "error": "#ba1a1a",
+                        "surface-container-highest": "#d3e4fe",
+                        "on-primary-container": "#8192a7",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#44474c",
+                        "surface-container-high": "#dce9ff",
+                        "surface-tint": "#4f6073",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "surface-variant": "#d3e4fe",
+                        "on-surface": "#0b1c30",
+                        "on-tertiary": "#ffffff",
+                        "surface-dim": "#cbdbf5",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#0b1c30",
+                        "secondary-fixed": "#d8e2ff",
+                        "surface-container-low": "#eff4ff",
+                        "surface-bright": "#f8f9ff",
+                        "secondary": "#0058be",
+                        "tertiary-container": "#00311f",
+                        "inverse-on-surface": "#eaf1ff",
+                        "primary": "#041627",
+                        "outline-variant": "#c4c6cd",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "on-tertiary-container": "#00a572"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "inspector-width": "400px",
+                        "sidebar-width": "280px",
+                        "container-padding": "24px",
+                        "unit": "4px",
+                        "gutter": "16px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["JetBrains Mono"],
+                        "body-md": ["Inter"],
+                        "label-md": ["JetBrains Mono"],
+                        "headline-md": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-sm": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body-md text-body-md overflow-hidden h-screen flex">
+<!-- SideNavBar (Shared Component) -->
+<aside class="fixed left-0 top-0 h-screen w-sidebar-width flex flex-col h-full border-r border-outline-variant bg-white dark:bg-primary z-50">
+<div class="p-gutter">
+<h1 class="font-display-lg text-display-lg font-bold text-primary dark:text-on-primary-fixed">ASPICE</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Automotive Tier 1</p>
+</div>
+<nav class="flex-1 overflow-y-auto px-2 space-y-1">
+<div class="flex items-center px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined mr-3">dashboard</span>
+<span class="font-label-md text-label-md">Overview</span>
+</div>
+<div class="flex items-center px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined mr-3">account_tree</span>
+<span class="font-label-md text-label-md">SYS.1 Requirement Elicitation</span>
+</div>
+<div class="flex items-center px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined mr-3">settings_input_component</span>
+<span class="font-label-md text-label-md">SYS.2 System Requirements</span>
+</div>
+<div class="flex items-center px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined mr-3">description</span>
+<span class="font-label-md text-label-md">SWE.1 Software Requirements</span>
+</div>
+<div class="flex items-center px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined mr-3">architecture</span>
+<span class="font-label-md text-label-md">SWE.2 Software Architecture</span>
+</div>
+<div class="flex items-center px-3 py-2 bg-primary dark:bg-secondary-container text-on-primary dark:text-on-secondary-container border-l-2 border-secondary transition-colors duration-150 cursor-pointer rounded-r">
+<span class="material-symbols-outlined mr-3">account_tree</span>
+<span class="font-label-md text-label-md">SWE.3 Detailed Design</span>
+</div>
+<div class="flex items-center px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+<span class="material-symbols-outlined mr-3">settings</span>
+<span class="font-label-md text-label-md">Project Configuration</span>
+</div>
+</nav>
+<div class="p-gutter border-t border-outline-variant">
+<div class="flex items-center">
+<div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center mr-3">
+<span class="material-symbols-outlined text-on-secondary-container">person</span>
+</div>
+<div>
+<p class="font-label-md text-label-md">Eng. Lead</p>
+<p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Active Session</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Application Area -->
+<div class="flex-1 ml-sidebar-width flex flex-col h-screen overflow-hidden">
+<!-- TopNavBar (Shared Component) -->
+<header class="flex flex-col w-full bg-surface dark:bg-primary border-b border-outline-variant sticky top-0 z-40">
+<!-- Row 1: Global Navigation -->
+<div class="flex justify-between items-center h-14 px-gutter border-b border-outline-variant">
+<div class="flex items-center gap-6">
+<span class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-surface-tint">ASPICE Compliance Engine</span>
+<nav class="flex gap-4 ml-4">
+
+
+
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex gap-2">
+<button class="p-2 text-on-surface-variant hover:text-secondary transition-transform active:scale-95"><span class="material-symbols-outlined">notifications</span></button>
+
+<button class="p-2 text-on-surface-variant hover:text-secondary transition-transform active:scale-95"><span class="material-symbols-outlined">help</span></button>
+</div>
+
+</div>
+</div>
+<!-- Row 2: Contextual Selectors -->
+<div class="flex items-center h-12 px-gutter gap-2 bg-surface-container-lowest">
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1 rounded border border-outline-variant">
+<span class="material-symbols-outlined text-[18px]">account_tree</span>
+<span class="font-label-md text-label-md">branch: main</span>
+</div>
+<div class="h-6 w-[1px] bg-outline-variant mx-1"></div>
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1 rounded border border-outline-variant cursor-pointer hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px]">layers</span>
+<div class="flex flex-col">
+<span class="text-[9px] font-bold text-on-surface-variant uppercase leading-none">Layer</span>
+<span class="font-label-md text-label-md">APPLICATION_LAYER</span>
+</div>
+<span class="material-symbols-outlined text-[18px]">expand_more</span>
+</div>
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1 rounded border border-outline-variant cursor-pointer hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px]">view_module</span>
+<div class="flex flex-col">
+<span class="text-[9px] font-bold text-on-surface-variant uppercase leading-none">Module</span>
+<span class="font-label-md text-label-md">Chassis_Management</span>
+</div>
+<span class="material-symbols-outlined text-[18px]">expand_more</span>
+</div>
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1 rounded border border-outline-variant cursor-pointer hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px]">memory</span>
+<div class="flex flex-col">
+<span class="text-[9px] font-bold text-on-surface-variant uppercase leading-none">Component</span>
+<span class="font-label-md text-label-md">Brake Controller</span>
+</div>
+<span class="material-symbols-outlined text-[18px]">expand_more</span>
+</div>
+</div>
+</header>
+<!-- Page Sub-Header (Specific to SWE.3) -->
+<div class="bg-white border-b border-outline-variant px-gutter py-3 flex justify-between items-center">
+<div class="flex items-center gap-4">
+<div class="flex flex-col">
+<span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.1em]">Process Step</span>
+<h2 class="font-headline-sm text-headline-sm text-primary">Software Detailed Design</h2>
+</div>
+<div class="h-8 w-[1px] bg-outline-variant"></div>
+<div class="flex flex-col">
+<span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.1em]">Approval Progress</span>
+<div class="flex items-center gap-2 mt-1">
+<div class="w-32 h-1.5 bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-on-tertiary-container w-[75%]" style="width: 85%;"></div>
+</div>
+<span class="font-label-sm text-label-sm text-on-tertiary-container">85% In Review</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded border border-secondary text-secondary cursor-pointer hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px]">compare_arrows</span>
+<div class="flex flex-col">
+<span class="text-[9px] font-bold uppercase leading-none">Action</span>
+<span class="font-label-md text-label-md">Compare Commit</span>
+</div>
+<span class="material-symbols-outlined text-[18px]">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Main Content Grid -->
+<main class="flex-1 flex overflow-hidden">
+<!-- Left Sidebar: Document Outline -->
+<aside class="w-64 bg-white border-r border-outline-variant flex flex-col p-4">
+<h3 class="font-label-md text-label-md text-on-surface-variant mb-4 uppercase tracking-wider">Document Outline</h3>
+<nav class="space-y-1 overflow-y-auto custom-scrollbar flex-1">
+<a class="flex items-center justify-between p-2 rounded bg-surface-container-low text-primary" href="#intro">
+<span class="font-label-md text-label-md">1. Introduction</span>
+<span class="material-symbols-outlined text-on-tertiary-container text-[16px] fill">check_circle</span>
+</a>
+<a class="flex items-center justify-between p-2 rounded hover:bg-surface-container-lowest transition-colors text-on-surface-variant" href="#brake-controller">
+<span class="font-label-md text-label-md">2. Unit: Brake Controller</span>
+<span class="material-symbols-outlined text-on-tertiary-container text-[16px] fill">check_circle</span>
+</a>
+<a class="flex items-center justify-between p-2 rounded hover:bg-surface-container-lowest transition-colors text-on-surface-variant" href="#interfaces">
+<span class="font-label-md text-label-md">3. Interfaces</span>
+<span class="material-symbols-outlined text-on-tertiary-container text-[16px] fill">check_circle</span>
+</a>
+<a class="flex items-center justify-between p-2 rounded border-l-2 border-secondary bg-surface-container text-on-secondary-fixed" href="#behavior">
+<span class="font-label-md text-label-md">4. Static/Dynamic Behavior</span>
+<span class="material-symbols-outlined text-error text-[16px]">pending</span>
+</a>
+<div class="pl-4 space-y-1 mt-1">
+<a class="block p-1.5 text-body-sm text-on-surface-variant hover:text-primary" href="#">4.1 Class Hierarchy</a>
+<a class="block p-1.5 text-body-sm text-on-surface-variant hover:text-primary" href="#">4.2 State Machine</a>
+</div>
+</nav>
+
+</aside>
+<!-- Central Document Viewer -->
+<section class="flex-1 bg-surface-container-low overflow-y-auto p-8 flex justify-center custom-scrollbar">
+<div class="w-full max-w-[800px] bg-white document-shadow min-h-[1200px] p-16 font-body-lg text-body-lg leading-relaxed flex flex-col gap-8">
+<!-- Doc Header -->
+<div class="border-b-2 border-primary pb-4 mb-4">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">Internal Reference: AS-SWE3-2024-001</p>
+<h1 class="font-display-lg text-display-lg text-primary">SWE.3 Software Detailed Design Specification</h1>
+</div>
+<!-- Section: Introduction -->
+<div class="group relative p-4 -mx-4 rounded hover:bg-surface-container-low transition-colors" id="intro"><div class="absolute right-4 top-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"><button class="p-1.5 bg-white border border-outline-variant rounded shadow-sm hover:text-secondary"><span class="material-symbols-outlined text-[18px]">edit</span></button><button class="p-1.5 bg-on-tertiary-container text-white rounded shadow-sm"><span class="material-symbols-outlined text-[18px]">check</span></button></div><div class="flex items-center gap-2 mb-4"><h2 class="font-headline-md text-headline-md text-primary">1. Introduction</h2><span class="bg-on-tertiary-container/10 text-on-tertiary-container text-[10px] px-2 py-0.5 rounded font-bold uppercase">Approved</span></div><p class="text-on-surface mb-4">This Software Detailed Design (SDD) document specifies the internal structure and behavior of the Brake Controller Software Unit. It serves as the primary technical reference for implementation and verification, ensuring compliance with ASPICE SWE.3 requirements.</p><p class="text-on-surface">The scope includes the definition of software unit interfaces, internal data structures, and the dynamic behavior required to meet the functional safety goals defined in the Software Architecture (SWE.2).</p></div>
+<!-- Section: Unit Design -->
+<div class="group relative p-4 -mx-4 rounded hover:bg-surface-container-low transition-colors border-l-2 border-transparent hover:border-secondary" id="brake-controller"><div class="absolute right-4 top-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"><button class="p-1.5 bg-white border border-outline-variant rounded shadow-sm hover:text-secondary"><span class="material-symbols-outlined text-[18px]">edit</span></button><button class="p-1.5 bg-on-tertiary-container text-white rounded shadow-sm"><span class="material-symbols-outlined text-[18px]">check</span></button></div><div class="flex items-center gap-2 mb-4"><h2 class="font-headline-md text-headline-md text-primary">2. Unit Design - Brake Controller</h2><span class="bg-on-tertiary-container/10 text-on-tertiary-container text-[10px] px-2 py-0.5 rounded font-bold uppercase">Approved</span></div><p class="mb-4">The Brake Controller unit implements the core logic for Electronic Braking Systems (EBS). It processes wheel speed sensor data and pressure requests to modulate hydraulic valves via high-frequency PWM signals.</p><div class="bg-surface-container rounded p-4 border border-outline-variant overflow-hidden mb-4"><img alt="Brake Controller Architecture" class="w-full rounded mb-2" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBIDFy49SNYiedlRRrAdkiO1UKgfTIrGok92F7OD-jrv6wmmZ1mSekdq6VX5xcK7iIu-iXX6aIUT8YI6SmQmlTVaXS_b6kWq2CgmCsl7vODdbnr_8QGH8PTQ6mdCNBZkkYisNyAPMyzhq13SwQNLlUr9tBw_Kyo2Dcn2QSPv8VRJH5bejDaUFj8o4h1rnrfTIVrLVN_2DcbSY_3ISxP6pacBQllZ7BLWw5YqXcr32yA2HFL3-ClBcURPSyee6blZ1B3KcZNg0hLkZ8"><p class="text-center text-[11px] text-on-surface-variant font-medium uppercase tracking-widest">Figure 2.1: Controller Logic Flow</p></div><p class="text-on-surface">Key sub-modules include the <b>Pressure Estimator</b>, <b>Slip Control Logic</b>, and the <b>Valve Driver Interface</b>. Each module is designed for deterministic execution within a 5ms task cycle.</p></div>
+<!-- Section: Behavior (Pending) -->
+<div class="group relative p-4 -mx-4 rounded hover:bg-surface-container-low transition-colors" id="interfaces"><div class="absolute right-4 top-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"><button class="p-1.5 bg-white border border-outline-variant rounded shadow-sm hover:text-secondary"><span class="material-symbols-outlined text-[18px]">edit</span></button><button class="p-1.5 bg-on-tertiary-container text-white rounded shadow-sm"><span class="material-symbols-outlined text-[18px]">check</span></button></div><div class="flex items-center gap-2 mb-4"><h2 class="font-headline-md text-headline-md text-primary">3. Interfaces</h2><span class="bg-on-tertiary-container/10 text-on-tertiary-container text-[10px] px-2 py-0.5 rounded font-bold uppercase">Approved</span></div><p class="mb-4">The unit exposes standardized AUTOSAR Sender-Receiver and Client-Server interfaces for inter-unit communication.</p><div class="overflow-hidden border border-outline-variant rounded-lg mb-4"><table class="w-full text-left text-body-sm"><thead class="bg-surface-container text-on-surface-variant font-bold"><tr><th class="p-2 border-b border-outline-variant">Interface ID</th><th class="p-2 border-b border-outline-variant">Type</th><th class="p-2 border-b border-outline-variant">Description</th></tr></thead><tbody><tr><td class="p-2 border-b border-outline-variant">IF_BrakeReq</td><td class="p-2 border-b border-outline-variant">Input</td><td class="p-2 border-b border-outline-variant">Target deceleration from VCU</td></tr><tr><td class="p-2 border-b border-outline-variant">IF_WheelSpeed</td><td class="p-2 border-b border-outline-variant">Input</td><td class="p-2 border-b border-outline-variant">Raw sensor pulses from encoders</td></tr><tr><td class="p-2 border-b border-outline-variant">IF_ValveCmd</td><td class="p-2 border-b border-outline-variant">Output</td><td class="p-2 border-b border-outline-variant">PWM duty cycle for solenoid valves</td></tr></tbody></table></div></div><div class="group relative p-4 -mx-4 rounded bg-error-container/5 border-l-4 border-error" id="behavior"><div class="absolute right-4 top-4 flex gap-2"><button class="p-1.5 bg-white border border-outline-variant rounded shadow-sm text-secondary hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[18px]">edit</span></button><button class="p-1.5 bg-white border border-outline-variant text-on-surface-variant rounded shadow-sm hover:bg-on-tertiary-container hover:text-white transition-colors"><span class="material-symbols-outlined text-[18px]">check</span></button></div><div class="flex items-center gap-2 mb-4"><h2 class="font-headline-md text-headline-md text-primary">4. Static/Dynamic Behavior</h2><span class="bg-secondary-container text-on-secondary-container text-[10px] px-2 py-0.5 rounded font-bold uppercase border border-secondary">In Review</span></div><p class="mb-4">The dynamic behavior is modeled as a hierarchical state machine. The system transitions from 'Standby' to 'Active' upon detection of a valid brake request signal.</p><div class="bg-white border-2 border-dashed border-outline-variant rounded p-6 flex flex-col items-center justify-center text-center mb-4"><span class="material-symbols-outlined text-[48px] text-outline mb-2">schema</span><p class="font-label-md text-label-md">State Transition Diagram v0.9</p><p class="text-body-sm text-on-surface-variant">Currently undergoing formal verification for ASIL-D compliance.</p></div><p class="text-on-surface">Critical timing paths have been analyzed to ensure a maximum latency of 12ms from sensor input to valve actuation.</p></div>
+</div>
+</section>
+<!-- Right Sidebar: Inspector/Compliance -->
+<aside class="w-inspector-width bg-white border-l border-outline-variant flex flex-col overflow-y-auto custom-scrollbar">
+<!-- Compliance Widget -->
+<div class="p-6 border-b border-outline-variant">
+<h3 class="font-label-md text-label-md text-on-surface-variant mb-4 uppercase tracking-wider">Traceability Status (SWE.3 → SWE.2)</h3>
+<div class="space-y-3">
+<div class="flex items-center justify-between">
+<span class="text-body-sm">Architecture Coverage</span>
+<span class="font-label-md text-label-md text-on-tertiary-container">100%</span>
+</div>
+<div class="w-full h-1 bg-surface-container rounded-full">
+<div class="h-full bg-on-tertiary-container w-[100%]" style="width: 85%;"></div>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-body-sm">Safety Requirements</span>
+<span class="font-label-md text-label-md text-on-tertiary-container">24/24</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-body-sm">Pending Verification</span>
+<span class="font-label-md text-label-md text-error">2 Items</span>
+</div>
+</div>
+</div>
+<!-- Non-Approved Changes Panel -->
+<div class="p-6 flex-1 flex flex-col">
+<div class="flex justify-between items-center mb-4">
+<h3 class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Unresolved Edits</h3>
+<span class="bg-error text-white text-[10px] px-2 py-0.5 rounded-full font-bold">3</span>
+</div>
+<div class="space-y-4">
+<!-- Change Item -->
+<div class="p-3 bg-surface-container-low rounded border-l-4 border-secondary">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-md text-label-md text-primary">Modify Interrupt Priority</span>
+<span class="text-[10px] text-on-surface-variant">2h ago</span>
+</div>
+<p class="text-body-sm text-on-surface-variant line-clamp-2">Changed BrakeTask priority from 4 to 2 to minimize jitter during hard deceleration.</p>
+<div class="flex gap-2 mt-3">
+<button class="text-[11px] font-bold text-secondary uppercase hover:underline">Compare</button>
+<button class="text-[11px] font-bold text-on-tertiary-container uppercase hover:underline">Accept</button>
+</div>
+</div>
+<!-- Change Item -->
+<div class="p-3 bg-surface-container-low rounded border-l-4 border-secondary">
+<div class="flex justify-between items-start mb-2">
+<span class="font-label-md text-label-md text-primary">Interface Update</span>
+<span class="text-[10px] text-on-surface-variant">5h ago</span>
+</div>
+<p class="text-body-sm text-on-surface-variant line-clamp-2">Added CAN_FD signal 'Pressure_Sync' to the External Interface mapping.</p>
+<div class="flex gap-2 mt-3">
+<button class="text-[11px] font-bold text-secondary uppercase hover:underline">Compare</button>
+<button class="text-[11px] font-bold text-on-tertiary-container uppercase hover:underline">Accept</button>
+</div>
+</div>
+</div>
+<!-- Audit Widget -->
+<div class="mt-auto pt-6 border-t border-outline-variant">
+
+</div>
+</div>
+</aside>
+</main>
+</div>
+<!-- Floating Action Button (Contextual) -->
+<button class="fixed bottom-8 right-8 w-14 h-14 bg-secondary text-white rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform z-50">
+
+</button>
+<script>
+        // Simple scroll spy or section navigation micro-interaction could go here
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+    </script>
+
+
+</body></html>

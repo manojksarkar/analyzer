@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PRODUCT NAME]</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#041627", "primary-container": "#1a2b3c",
+          "on-primary": "#ffffff", "on-primary-container": "#8192a7",
+          "secondary": "#0058be", "secondary-container": "#2170e4",
+          "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
+          "on-tertiary-container": "#00a572",
+          "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
+          "surface": "#f8f9ff", "background": "#f8f9ff",
+          "surface-container-lowest": "#ffffff", "surface-container-low": "#eff4ff",
+          "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
+          "surface-container-highest": "#d3e4fe",
+          "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
+          "outline": "#74777d", "outline-variant": "#c4c6cd",
+          "tertiary-container": "#00311f", "tertiary-fixed": "#6ffbbe",
+        },
+        borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+        spacing: {
+          "sidebar-width": "280px", "inspector-width": "400px",
+          "gutter": "16px", "container-padding": "24px",
+        },
+        fontFamily: {
+          "display-lg": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"],
+          "body-lg": ["Inter"], "body-md": ["Inter"], "body-sm": ["Inter"],
+          "label-md": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+
+  .nav-default { color: #44474c; }
+  .nav-default:hover { background: #eff4ff; color: #0b1c30; }
+  .nav-active { background: #041627; color: #ffffff; border-left: 2px solid #0058be; }
+  .nav-active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+</style>
+</head>
+
+<!-- ─── NOTE: body has overflow-hidden, NO flex ─── -->
+<body class="bg-background text-on-surface font-body-md overflow-hidden">
+
+<!-- ══════════════ SIDEBAR (fixed 280 px) ══════════════ -->
+<aside class="fixed left-0 top-0 h-screen w-sidebar-width bg-white border-r border-outline-variant flex flex-col z-50">
+
+  <!-- Brand -->
+  <div class="px-5 py-4 border-b border-outline-variant">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+        <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+      </div>
+      <div>
+        <h1 class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5">Automotive Tier 1</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nav -->
+  <nav class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5" id="main-nav">
+
+    <a href="#" data-page="overview"
+       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
+      <span class="material-symbols-outlined" style="font-size:20px;">dashboard</span>
+      <span class="font-label-md text-label-md">Overview</span>
+    </a>
+
+    <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] px-3 pt-4 pb-1.5 opacity-60">System Engineering</div>
+
+    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
+      <span class="material-symbols-outlined" style="font-size:20px;">architecture</span>
+      <span class="font-label-md text-label-md flex-1">SYS.1 Requirement Elicitation</span>
+      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
+    </a>
+    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
+      <span class="material-symbols-outlined" style="font-size:20px;">settings_input_component</span>
+      <span class="font-label-md text-label-md flex-1">SYS.2 System Requirements</span>
+      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
+    </a>
+
+    <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] px-3 pt-4 pb-1.5 opacity-60">Software Engineering</div>
+
+    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
+      <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+      <span class="font-label-md text-label-md flex-1">SWE.1 Software Requirements</span>
+      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
+    </a>
+    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
+      <span class="material-symbols-outlined" style="font-size:20px;">schema</span>
+      <span class="font-label-md text-label-md flex-1">SWE.2 Software Architecture</span>
+      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
+    </a>
+    <a href="#" data-page="swe3"
+       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+      <span class="material-symbols-outlined" style="font-size:20px;">account_tree</span>
+      <span class="font-label-md text-label-md">SWE.3 Detailed Design</span>
+    </a>
+
+  </nav>
+
+  <!-- Admin-only: Project Settings -->
+  <div class="px-2 pt-2 border-t border-outline-variant">
+    <a href="#" data-page="config"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
+      <span class="font-label-md text-label-md">Project Settings</span>
+    </a>
+  </div>
+
+  <!-- User profile -->
+  <div class="px-2 pb-3 pt-1">
+    <button class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group">
+      <div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+        <span class="text-on-secondary-container font-bold text-sm" style="font-family:Inter;">EL</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <p class="font-label-md text-label-md text-on-surface truncate leading-tight">Engineering Lead</p>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container"></span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide">Admin</p>
+        </div>
+      </div>
+      <span class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
+    </button>
+  </div>
+</aside>
+
+
+<!-- ══════════════ MAIN CONTENT (offset by sidebar) ══════════════ -->
+<main class="ml-sidebar-width h-screen flex flex-col">
+
+  <!-- Top bar — 56 px -->
+  <header class="h-14 flex-shrink-0 flex items-center justify-between px-gutter bg-white border-b border-outline-variant z-40">
+    <!-- Left: project selector + breadcrumb -->
+    <div class="flex items-center gap-2">
+      <div class="relative" id="project-selector-wrap">
+        <button id="project-selector-btn" onclick="toggleProjectDropdown()"
+                class="flex items-center gap-2 px-3 py-1.5 bg-surface-container-low hover:bg-surface-container border border-outline-variant rounded-xl transition-colors">
+          <span class="material-symbols-outlined text-secondary" style="font-size:16px;">folder_open</span>
+          <span class="font-label-md text-label-md text-on-surface" id="current-project-name">VCU Engine Firmware</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" style="font-size:16px;" id="project-chevron">expand_more</span>
+        </button>
+
+        <!-- Project dropdown -->
+        <div id="project-dropdown"
+             class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl shadow-lg overflow-hidden"
+             style="min-width:264px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+          <div class="py-1.5">
+            <button onclick="switchProject('VCU Engine Firmware')" data-project="VCU Engine Firmware"
+                    class="proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left"
+                    style="background:#eff4ff;">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-label-md text-label-md text-on-surface truncate">VCU Engine Firmware</span>
+                  <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#2170e4;color:#fff;padding:1px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap;">Active</span>
+                </div>
+              </div>
+              <span class="material-symbols-outlined text-secondary flex-shrink-0 proj-check" style="font-size:16px;">check</span>
+            </button>
+            <button onclick="switchProject('Brake Control Unit')" data-project="Brake Control Unit"
+                    class="proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-label-md text-label-md text-on-surface truncate">Brake Control Unit</span>
+                  <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:1px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap;">In Progress</span>
+                </div>
+              </div>
+              <span class="material-symbols-outlined text-outline-variant flex-shrink-0 proj-check" style="font-size:16px;opacity:0;">check</span>
+            </button>
+            <!-- Setup in progress project -->
+            <button onclick="resumeSetup('Body Control Module')" data-project="Body Control Module"
+                    class="w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left hover:bg-amber-50"
+                    style="background:#fffbf0;">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-label-md text-label-md text-on-surface truncate">Body Control Module</span>
+                  <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap;">Setup</span>
+                </div>
+                <p class="font-label-sm text-on-surface-variant mt-0.5" style="font-size:10px;font-family:'JetBrains Mono';">Step 2 of 4 — Build Config</p>
+              </div>
+              <span class="material-symbols-outlined flex-shrink-0" style="font-size:16px;color:#d97706;">warning</span>
+            </button>
+          </div>
+          <div class="border-t border-outline-variant">
+            <a href="onboarding.html"
+               class="flex items-center gap-2.5 px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+              <span class="material-symbols-outlined text-secondary" style="font-size:16px;">add_circle</span>
+              <span class="font-label-md text-label-md text-secondary">New Project</span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <span class="text-outline-variant select-none">/</span>
+      <span class="font-label-md text-label-md text-on-surface-variant" id="breadcrumb-page">Overview</span>
+    </div>
+    <!-- Right: actions -->
+    <div class="flex items-center gap-0.5">
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
+      </button>
+      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help & Docs">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+      </button>
+      <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+      <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+        <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+          <span class="text-on-secondary-container font-bold text-xs" style="font-family:Inter;">EL</span>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Page content placeholder -->
+  <div class="flex-1 overflow-y-auto bg-background flex items-center justify-center">
+    <div class="text-center space-y-4">
+      <div class="w-16 h-16 rounded-2xl bg-surface-container-low border border-outline-variant mx-auto flex items-center justify-center">
+        <span class="material-symbols-outlined text-outline-variant" style="font-size:32px;">crop_free</span>
+      </div>
+      <div>
+        <p class="font-label-md text-label-md text-on-surface-variant mb-1">Shared shell — canonical reference</p>
+        <p class="font-label-sm text-label-sm text-outline">Sidebar · Top bar · Design tokens · Layout grid</p>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Subtle dot grid -->
+<div class="fixed inset-0 pointer-events-none -z-10 opacity-[0.025]"
+     style="background-image:radial-gradient(#041627 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
+
+<script>
+  // ── Sidebar nav ────────────────────────────────────────────
+  const pages = { overview: 'Overview', swe3: 'SWE.3 Detailed Design', config: 'Project Settings' };
+
+  document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+    item.addEventListener('click', e => {
+      e.preventDefault();
+      const page = item.dataset.page;
+      document.querySelectorAll('.nav-item').forEach(n => {
+        n.classList.remove('nav-active');
+        n.classList.add('nav-default');
+      });
+      item.classList.remove('nav-default');
+      item.classList.add('nav-active');
+      document.getElementById('breadcrumb-page').textContent = pages[page] || page;
+    });
+  });
+
+  // ── Project selector dropdown ───────────────────────────────
+  function toggleProjectDropdown() {
+    const dropdown = document.getElementById('project-dropdown');
+    const chevron  = document.getElementById('project-chevron');
+    const isOpen   = !dropdown.classList.contains('hidden');
+    dropdown.classList.toggle('hidden', isOpen);
+    chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+  }
+
+  function resumeSetup(name) {
+    closeProjectDropdown();
+    window.location.href = 'onboarding.html';
+  }
+
+  function switchProject(name) {
+    document.getElementById('current-project-name').textContent = name;
+    document.querySelectorAll('.proj-opt').forEach(opt => {
+      const active = opt.dataset.project === name;
+      opt.style.background = active ? '#eff4ff' : '';
+      opt.querySelector('.proj-check').style.opacity = active ? '1' : '0';
+    });
+    closeProjectDropdown();
+  }
+
+  function closeProjectDropdown() {
+    document.getElementById('project-dropdown').classList.add('hidden');
+    document.getElementById('project-chevron').style.transform = '';
+  }
+
+  document.addEventListener('click', e => {
+    if (!document.getElementById('project-selector-wrap').contains(e.target)) {
+      closeProjectDropdown();
+    }
+  });
+</script>
+</body>
+</html>

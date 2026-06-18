@@ -1,0 +1,464 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-container": "#00a572",
+                      "surface-container-lowest": "#ffffff",
+                      "on-primary-fixed": "#0b1d2d",
+                      "surface": "#f8f9ff",
+                      "tertiary": "#001a0f",
+                      "surface-tint": "#4f6073",
+                      "on-tertiary-fixed-variant": "#005236",
+                      "on-primary-container": "#8192a7",
+                      "tertiary-fixed-dim": "#4edea3",
+                      "secondary-fixed": "#d8e2ff",
+                      "primary-fixed": "#d2e4fb",
+                      "surface-dim": "#cbdbf5",
+                      "outline": "#74777d",
+                      "on-primary": "#ffffff",
+                      "tertiary-container": "#00311f",
+                      "primary": "#041627",
+                      "secondary-container": "#2170e4",
+                      "surface-container-high": "#dce9ff",
+                      "on-surface-variant": "#44474c",
+                      "on-surface": "#0b1c30",
+                      "on-background": "#0b1c30",
+                      "secondary-fixed-dim": "#adc6ff",
+                      "inverse-on-surface": "#eaf1ff",
+                      "on-secondary-container": "#fefcff",
+                      "surface-container-low": "#eff4ff",
+                      "primary-container": "#1a2b3c",
+                      "on-error": "#ffffff",
+                      "surface-bright": "#f8f9ff",
+                      "error-container": "#ffdad6",
+                      "secondary": "#0058be",
+                      "surface-container": "#e5eeff",
+                      "error": "#ba1a1a",
+                      "primary-fixed-dim": "#b7c8de",
+                      "outline-variant": "#c4c6cd",
+                      "tertiary-fixed": "#6ffbbe",
+                      "surface-container-highest": "#d3e4fe",
+                      "background": "#f8f9ff",
+                      "on-tertiary": "#ffffff",
+                      "on-secondary": "#ffffff",
+                      "inverse-surface": "#213145",
+                      "on-secondary-fixed": "#001a42",
+                      "inverse-primary": "#b7c8de",
+                      "on-primary-fixed-variant": "#38485a",
+                      "on-tertiary-fixed": "#002113",
+                      "on-error-container": "#93000a",
+                      "on-secondary-fixed-variant": "#004395",
+                      "surface-variant": "#d3e4fe"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "inspector-width": "400px",
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "container-padding": "24px",
+                      "sidebar-width": "280px"
+              },
+              "fontFamily": {
+                      "display-lg": ["Inter"],
+                      "body-md": ["Inter"],
+                      "label-sm": ["JetBrains Mono"],
+                      "headline-md": ["Inter"],
+                      "body-lg": ["Inter"],
+                      "headline-sm": ["Inter"],
+                      "body-sm": ["Inter"],
+                      "label-md": ["JetBrains Mono"]
+              },
+              "fontSize": {
+                      "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "headline-sm": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                      "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                      "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500"}]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #74777d; }
+        .tree-line::before {
+            content: '';
+            position: absolute;
+            left: -16px;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: #e2e8f0;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md text-body-md overflow-hidden">
+<!-- Sidebar Navigation -->
+<aside class="fixed left-0 top-0 h-screen w-sidebar-width bg-white flex flex-col border-r border-outline-variant z-50">
+<div class="p-6 flex flex-col gap-1">
+<h1 class="font-display-lg text-display-lg font-bold text-primary">ASPICE Automator</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Automotive Tier 1</p>
+</div>
+<nav class="flex-1 px-3 mt-4 space-y-1"><div class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+    <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+    <span class="font-label-md text-label-md">Overview</span>
+  </div><!-- SYSTEM ENGINEERING SECTION -->
+<div class="px-3 pt-4 pb-2">
+  <span class="font-label-sm text-label-sm text-on-surface-variant uppercase opacity-70">System Engineering</span>
+</div>
+<div class="space-y-1">
+  
+  <div class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded"><span class="material-symbols-outlined" data-icon="architecture">architecture</span><span class="font-label-md text-label-md">System Architecture</span></div>
+  <div class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded"><span class="material-symbols-outlined" data-icon="settings_input_component">settings_input_component</span><span class="font-label-md text-label-md">System Requirements</span></div>
+</div>
+
+<!-- SOFTWARE ENGINEERING SECTION -->
+<div class="px-3 pt-6 pb-2">
+  <span class="font-label-sm text-label-sm text-on-surface-variant uppercase opacity-70">Software Engineering</span>
+</div>
+<div class="space-y-1">
+  <div class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+    <span class="material-symbols-outlined" data-icon="description">description</span>
+    <span class="font-label-md text-label-md">SWE.1 Software Requirements</span>
+  </div>
+  <div class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+    <span class="material-symbols-outlined" data-icon="architecture">architecture</span>
+    <span class="font-label-md text-label-md">SWE.2 Software Architecture</span>
+  </div>
+  <div class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors duration-150 cursor-pointer rounded">
+    <span class="material-symbols-outlined" data-icon="account_tree_flow">account_tree</span>
+    <span class="font-label-md text-label-md">SWE.3 Detailed Design</span>
+  </div>
+</div>
+
+<!-- SETTINGS SECTION -->
+<div class="px-3 pt-6 pb-2">
+  <span class="font-label-sm text-label-sm text-on-surface-variant uppercase opacity-70">Settings</span>
+</div>
+<div class="space-y-1">
+  <div class="flex items-center gap-3 px-3 py-2 bg-primary text-on-primary border-l-2 border-secondary transition-colors duration-150 cursor-pointer rounded">
+    <span class="material-symbols-outlined" data-icon="settings">settings</span>
+    <span class="font-label-md text-label-md">Project Configuration</span>
+  </div>
+</div></nav>
+<div class="p-4 border-t border-outline-variant flex items-center gap-3">
+<div class="w-10 h-10 bg-primary-container rounded-full flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+</div>
+<div>
+<div class="font-label-md text-label-md text-on-surface">Engineering Lead</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant uppercase">Admin Access</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-sidebar-width h-screen flex flex-col">
+<!-- Top Navigation Bar -->
+<header class="flex justify-between items-center h-16 px-gutter border-b border-outline-variant bg-surface sticky top-0 z-40">
+<div class="flex items-center gap-8">
+<span class="font-headline-sm text-headline-sm font-semibold text-primary">ASPICE Compliance Engine</span>
+<nav class="flex gap-6">
+
+
+
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative w-64">
+
+
+</div>
+
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors" data-icon="help">help</span>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="flex-1 overflow-y-auto p-gutter bg-background">
+<div class="max-w-5xl mx-auto space-y-8">
+<!-- Page Header -->
+<div class="border-b border-outline-variant pb-6">
+<h2 class="font-headline-md text-headline-md text-on-surface mb-2">Project Configuration</h2>
+<p class="text-on-surface-variant font-body-md text-body-md">Establish the technical foundation for automated ASPICE compliance tracking and traceability mapping.</p>
+</div>
+<!-- Bento Configuration Grid -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Section 1: GitHub Integration -->
+<section class="col-span-12 lg:col-span-7 bg-white border border-outline-variant rounded-xl p-6 hover:shadow-sm transition-all">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-8 h-8 rounded bg-on-primary-fixed flex items-center justify-center text-white">
+<span class="material-symbols-outlined" data-icon="code">code</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-primary">Source Control Integration</h3>
+</div>
+<div class="space-y-4">
+<div>
+<label class="block font-label-md text-label-md text-on-surface-variant mb-1.5">GitHub Repository URL</label>
+<div class="flex gap-2">
+<input class="flex-1 bg-surface-container-low border-outline-variant rounded px-3 py-2 font-label-md text-label-md border focus:ring-1 focus:ring-secondary outline-none" type="text" value="https://github.com/tier1-auto/vcu-engine-firmware">
+<button class="px-4 py-2 bg-secondary-container text-on-secondary-container rounded font-label-md text-label-md hover:bg-secondary-fixed transition-colors">Test</button>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div>
+<label class="block font-label-md text-label-md text-on-surface-variant mb-1.5">Target Branch</label>
+<select class="w-full bg-surface-container-low border-outline-variant rounded px-3 py-2 font-label-md text-label-md border focus:ring-1 focus:ring-secondary outline-none">
+<option>develop-mainline</option>
+<option>release-v2.1</option>
+<option>hotfix-v2.0.4</option>
+</select>
+</div>
+<div>
+<label class="block font-label-md text-label-md text-on-surface-variant mb-1.5">Commit Selection</label>
+<div class="relative">
+<input class="w-full bg-surface-container-low border-outline-variant rounded px-3 py-2 font-label-md text-label-md border cursor-not-allowed" readonly="" type="text" value="8f2a1c9 (Head)">
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm" data-icon="history">history</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 2: Data Dictionary Upload -->
+<section class="col-span-12 lg:col-span-5 bg-white border border-outline-variant rounded-xl p-6 flex flex-col">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-8 h-8 rounded bg-tertiary-container flex items-center justify-center text-tertiary-fixed">
+<span class="material-symbols-outlined" data-icon="upload_file">upload_file</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-primary">Data Dictionary</h3>
+</div>
+<div class="flex-1 border-2 border-dashed border-outline-variant rounded-xl flex flex-col items-center justify-center p-8 bg-surface-container-low hover:bg-surface-container-high transition-all cursor-pointer group">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant group-hover:text-secondary mb-3 transition-colors" data-icon="cloud_upload">cloud_upload</span>
+<p class="font-label-md text-label-md text-on-surface mb-1">Drop Excel or CSV here</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Max file size: 25MB</p>
+<div class="mt-4 flex gap-2">
+<div class="px-2 py-1 bg-surface border border-outline-variant rounded text-[10px] font-bold text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]" data-icon="description">description</span> dict_v2.xlsx
+                                </div>
+</div>
+</div>
+</section>
+<!-- Section 3: Clang Configuration -->
+<section class="col-span-12 bg-white border border-outline-variant rounded-xl p-6">
+<div class="flex items-center justify-between mb-6">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined" data-icon="memory">memory</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-primary">Clang Static Analysis Config</h3>
+</div>
+<span class="font-label-sm text-label-sm bg-surface-container text-on-surface-variant px-2 py-1 rounded">AUTOSAR C++14 Compliance</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="space-y-2">
+<label class="font-label-md text-label-md text-on-surface-variant">Include Directories</label>
+<textarea class="w-full bg-surface-container-lowest border-outline-variant rounded p-3 font-label-sm text-label-sm border focus:ring-1 focus:ring-secondary outline-none font-mono" placeholder="./src/include
+/usr/local/include/autosar-lib" rows="4"></textarea>
+</div>
+<div class="space-y-2">
+<label class="font-label-md text-label-md text-on-surface-variant">Macros &amp; Defines</label>
+<textarea class="w-full bg-surface-container-lowest border-outline-variant rounded p-3 font-label-sm text-label-sm border focus:ring-1 focus:ring-secondary outline-none font-mono" placeholder="DEBUG=1
+PLATFORM_DRIVE_OS=QNX
+ASPICE_LEVEL_2" rows="4">DEBUG=1
+PLATFORM_DRIVE_OS=QNX
+ASPICE_LEVEL_2
+MAX_SENSOR_INPUTS=64
+VEHICLE_TYPE_EV
+CRC_CHECK_ENABLED=1</textarea>
+</div>
+</div>
+</section>
+<!-- Section 4: Component Mapping Interface -->
+<section class="col-span-12 bg-white border border-outline-variant rounded-xl p-6">
+<div class="flex items-center justify-between mb-8">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-secondary-container flex items-center justify-center text-white">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-primary">System Architecture Mapping</h3>
+</div>
+<button class="flex items-center gap-2 text-secondary font-label-md text-label-md hover:bg-secondary-fixed px-3 py-1.5 rounded transition-all">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span> Add New Layer
+                            </button>
+</div>
+<!-- Hierarchical Tree UI -->
+<div class="space-y-4">
+<!-- Layer: Application -->
+<div class="border border-outline-variant rounded-lg overflow-hidden">
+<div class="bg-surface-container-low px-4 py-3 flex items-center justify-between border-b border-outline-variant">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+<span class="font-label-md text-label-md font-bold text-on-surface">APPLICATION_LAYER</span>
+<span class="bg-primary text-white text-[10px] px-1.5 py-0.5 rounded uppercase">Layer 01</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-sm cursor-pointer" data-icon="more_vert">more_vert</span>
+</div>
+<div class="p-4 pl-12 space-y-4 relative">
+<div class="tree-line absolute left-6 top-0 bottom-0"></div>
+<!-- Component Group -->
+<div class="space-y-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="folder_open">folder_open</span>
+<span class="font-label-md text-label-md text-primary font-medium">Powertrain_Control_Group</span>
+</div>
+<!-- Components -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 ml-6">
+<div class="bg-white border border-outline-variant p-3 rounded-lg flex items-center justify-between hover:border-secondary transition-colors group">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="settings_input_component">settings_input_component</span>
+<div>
+<div class="font-label-md text-label-md font-bold text-on-surface">TorqueManager</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant">4 Files associated</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-secondary opacity-0 group-hover:opacity-100 transition-all cursor-pointer" data-icon="link">link</span>
+</div>
+<div class="bg-white border border-outline-variant p-3 rounded-lg flex items-center justify-between hover:border-secondary transition-colors group">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="settings_input_component">settings_input_component</span>
+<div>
+<div class="font-label-md text-label-md font-bold text-on-surface">EfficiencyOptimizer</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant">2 Files associated</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-secondary opacity-0 group-hover:opacity-100 transition-all cursor-pointer" data-icon="link">link</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Layer: Middleware -->
+<div class="border border-outline-variant rounded-lg overflow-hidden">
+<div class="bg-surface-container-low px-4 py-3 flex items-center justify-between border-b border-outline-variant opacity-70">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer" data-icon="keyboard_arrow_right">keyboard_arrow_right</span>
+<span class="font-label-md text-label-md font-bold text-on-surface">MIDDLEWARE_LAYER</span>
+<span class="bg-outline-variant text-on-surface-variant text-[10px] px-1.5 py-0.5 rounded uppercase">Layer 02</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-sm cursor-pointer" data-icon="more_vert">more_vert</span>
+</div>
+</div>
+<!-- Layer: MCAL -->
+<div class="border border-outline-variant rounded-lg overflow-hidden">
+<div class="bg-surface-container-low px-4 py-3 flex items-center justify-between border-b border-outline-variant opacity-70">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer" data-icon="keyboard_arrow_right">keyboard_arrow_right</span>
+<span class="font-label-md text-label-md font-bold text-on-surface">MCAL_LAYER</span>
+<span class="bg-outline-variant text-on-surface-variant text-[10px] px-1.5 py-0.5 rounded uppercase">Layer 03</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-sm cursor-pointer" data-icon="more_vert">more_vert</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Action Bar -->
+<div class="flex items-center justify-between bg-surface-container-highest p-4 rounded-xl border border-outline-variant">
+<div class="flex items-center gap-4">
+<span class="flex h-3 w-3 relative">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-on-tertiary-container opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-on-tertiary-container"></span>
+</span>
+<span class="font-label-md text-label-md text-on-surface-variant italic">Configuration valid for SWE.1 &amp; SWE.2 analysis</span>
+</div>
+<div class="flex gap-3">
+<button class="px-6 py-2 bg-white border border-outline-variant text-primary rounded font-label-md text-label-md hover:bg-surface-container-low transition-all">Cancel Changes</button>
+<button class="px-8 py-2 bg-primary text-white rounded font-label-md text-label-md hover:bg-primary-container active:scale-95 transition-all shadow-md">Deploy Configuration</button>
+</div>
+</div>
+</div>
+<footer class="mt-12 text-center pb-12">
+<p class="font-label-sm text-label-sm text-outline">ASPICE Compliance Suite | Systematic V-Model Automation | v2.4.0-stable</p>
+</footer>
+</div>
+</main>
+<!-- Side Inspector Drawer (Hidden by default, triggered by mapping) -->
+<div class="fixed right-0 top-16 h-[calc(100vh-64px)] w-inspector-width bg-white border-l border-outline-variant transition-transform duration-300 z-30 flex flex-col translate-x-full" id="inspector">
+<div class="p-6 border-b border-outline-variant flex items-center justify-between">
+<h4 class="font-headline-sm text-headline-sm text-primary">Mapping Inspector</h4>
+<span class="material-symbols-outlined cursor-pointer hover:bg-surface-container-low p-1 rounded" data-icon="close" onclick="toggleInspector()">close</span>
+</div>
+<div class="flex-1 overflow-y-auto p-6 space-y-6">
+<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant">
+<div class="font-label-sm text-label-sm text-secondary uppercase mb-1">Context</div>
+<div class="font-label-md text-label-md text-on-surface font-bold">APPLICATION_LAYER / Powertrain_Control_Group / TorqueManager</div>
+</div>
+<div class="space-y-4">
+<h5 class="font-label-md text-label-md text-on-surface-variant uppercase">Associated Source Files</h5>
+<div class="space-y-2">
+<div class="flex items-center justify-between p-2 hover:bg-surface rounded border border-transparent hover:border-outline-variant transition-all">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-sm" data-icon="description">description</span>
+<span class="font-label-sm text-label-sm text-on-surface">torque_calc_v1.cpp</span>
+</div>
+<span class="material-symbols-outlined text-error text-sm cursor-pointer" data-icon="link_off">link_off</span>
+</div>
+<div class="flex items-center justify-between p-2 hover:bg-surface rounded border border-transparent hover:border-outline-variant transition-all">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-sm" data-icon="description">description</span>
+<span class="font-label-sm text-label-sm text-on-surface">torque_calc_v1.h</span>
+</div>
+<span class="material-symbols-outlined text-error text-sm cursor-pointer" data-icon="link_off">link_off</span>
+</div>
+<button class="w-full py-2 border-2 border-dashed border-outline-variant rounded-lg text-on-surface-variant font-label-md text-label-md hover:border-secondary hover:text-secondary transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span> Link New File
+                    </button>
+</div>
+</div>
+<div class="space-y-4 pt-6 border-t border-outline-variant">
+<h5 class="font-label-md text-label-md text-on-surface-variant uppercase">ASPICE Requirement Trace</h5>
+<div class="p-3 bg-tertiary-container text-on-tertiary-fixed rounded font-label-sm text-label-sm flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle">check_circle</span>
+                    SYS.1-REQ-004: Torque Response Time
+                </div>
+<div class="p-3 bg-surface text-on-surface-variant rounded border border-outline-variant font-label-sm text-label-sm italic">
+                    No SWE.1 mapping found for this component.
+                </div>
+</div>
+</div>
+<div class="p-4 bg-surface-container-high border-t border-outline-variant">
+<button class="w-full py-2 bg-secondary text-white rounded font-label-md text-label-md">Save Mapping</button>
+</div>
+</div>
+<script>
+        function toggleInspector() {
+            const inspector = document.getElementById('inspector');
+            inspector.classList.toggle('translate-x-full');
+        }
+
+        // Mock interaction: Clicking a component opens the inspector
+        document.querySelectorAll('.group').forEach(el => {
+            el.addEventListener('click', () => {
+                const inspector = document.getElementById('inspector');
+                inspector.classList.remove('translate-x-full');
+            });
+        });
+    </script>
+
+
+</body></html>
