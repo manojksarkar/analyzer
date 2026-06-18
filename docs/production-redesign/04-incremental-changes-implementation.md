@@ -19,7 +19,7 @@
 
 ## 1. Purpose & scope
 
-**Goal:** regenerate the SDD for a new commit by **reusing** everything that didn't change and
+**Goal:** regenerate the document for a new commit by **reusing** everything that didn't change and
 **regenerating only what changed (plus what depends on it)** — *hours → minutes* — with **no stale
 content**.
 
@@ -76,7 +76,7 @@ workspaces/
     project.json                 # [onboarding-owned]  name, layers, repo ref, current dataDictId, ...
     repo/                        # [onboarding-owned]  single git clone; incremental does `checkout <commit>`
     datadict/
-      <dataDictId>.csv           # [shared]  onboarding seeds the first; incremental can add new (per version)
+      <dataDictId>.csv           # [onboarding / separate API]  data dictionaries; generate references one by dataDictId
 
     # ───────────── owned by INCREMENTAL ─────────────
     cache/
@@ -94,6 +94,61 @@ workspaces/
         model/  output/          # the fully-assembled pipeline artifacts for THIS version (browse)
         documents/               # one or more .docx (multiple when component-per-docx)
 ```
+
+### Example file contents
+
+`versions/v4/hashes.json` — the full *entity → source-hash* snapshot at v4's commit:
+```json
+{
+  "Core|Core|init|":       "9af1…(64 hex)",
+  "Core|Core|helper|":     "3b7c…",
+  "Lib|Lib|add|int,int":   "c0d2…"
+}
+```
+
+`versions/v4/edges.json` — the dependency graph used by impact analysis (forward + reverse):
+```json
+{
+  "calls":        { "Core|Core|init|": ["Core|Core|helper|", "Lib|Lib|add|int,int"] },
+  "callsReverse": { "Core|Core|helper|": ["Core|Core|init|"], "Lib|Lib|add|int,int": ["Core|Core|init|"] },
+  "globals":      { "Core|Core|init|": ["Core|g_state"] },
+  "types":        { "Core|Core|init|": ["Core::Config"] },
+  "macros":       { "Core|Core|init|": ["MAX_RETRIES@Core/Core.h"] }
+}
+```
+
+`cache/outputs/Core|Core|helper|__<fingerprint>.json` — one reusable LLM-output blob:
+```json
+{
+  "description": "Validates the input buffer and returns its checksum.",
+  "behaviourInputName": "input buffer",
+  "behaviourOutputName": "checksum",
+  "flowchartMermaid": "flowchart TD\n  N1([Start: helper])\n  ..."
+}
+```
+
+`versions/v4/manifest.json` — the full version record:
+```json
+{
+  "versionId": "v4", "branch": "main", "commit": "C4_sha",
+  "scope": { "type": "project" }, "dataDictId": "dd-001",
+  "baselineVersionId": "v3", "recipeFingerprint": "a1b2…",
+  "decision": "incremental", "regenerated": 12, "reused": 988,
+  "status": "complete", "warnings": [], "createdAt": "2026-06-18T10:00:00Z"
+}
+```
+
+`versions/index.json` — the registry of all versions (one row each):
+```json
+[
+  { "versionId": "v3", "branch": "main", "commit": "C3_sha", "status": "complete", "createdAt": "…" },
+  { "versionId": "v4", "branch": "main", "commit": "C4_sha", "status": "complete", "createdAt": "…" }
+]
+```
+
+`versions/v4/config.json` — the resolved per-run config actually used (global `clang`/`llm`/`views`
+from `config/config.json` **+ this project's `layers`** injected via `--config`), stored so the run is
+reproducible.
 
 ### The two stores — the distinction that matters
 - **`versions/<vN>/hashes.json`** = a **complete snapshot** of *which entities existed and their
@@ -116,6 +171,14 @@ Where the hashes come from:
 ---
 
 ## 5. The incremental engine (the validated flow)
+
+**Terminology (so this section reads standalone):** a **version** is one past document generation,
+stored under `versions/<id>/`. In the walkthrough below, **v4** is an example *existing* version
+(already generated and stored) and **v7** is the *new* version being created now. **C4** and **C7**
+are their git **commits** — `C4` is the commit `v4` was built from; `C7` is the commit the user now
+wants a document for. **v4 is the "baseline"** — the existing version we reuse from (normally the
+nearest-ancestor version of `C7`; see §6). The numbers (v4, v7) are illustrative labels, not a fixed
+count.
 
 Generating **v7** at commit **C7**, baseline **v4** at commit **C4** (auto nearest-ancestor, or user
 override):
@@ -197,15 +260,9 @@ Base `http://<host>:8000`, prefix `/api/v1`. JSON unless noted. Errors `{ "detai
 These assume the project already exists (onboarded). **No onboarding endpoints are defined here.**
 
 ### 8.1 Generate a version  ← the incremental trigger
-`POST /api/v1/projects/{projectId}/generate` — `multipart/form-data` (so an optional replacement
-data dictionary can ride along).
+`POST /api/v1/projects/{projectId}/generate` — `application/json`.
 
-| Part | Type | Notes |
-|---|---|---|
-| `request` | JSON string | the generation request (below) |
-| `dataDictionary` | file | **optional** — a modified CSV for THIS version; omit to reuse the project's current one |
-
-`request` JSON:
+Request body:
 ```json
 {
   "branch": "feature/x",
@@ -214,7 +271,8 @@ data dictionary can ride along).
                                           //         | {"type":"group","names":[…]}
                                           //         | {"type":"component","names":[…]}
   "mode":   "auto",                       // "auto" (incremental if ancestor exists) | "full"
-  "baseVersionId": null                   // optional override; null = auto nearest-ancestor
+  "baseVersionId": null,                  // optional override; null = auto nearest-ancestor
+  "dataDictId":    null                   // optional; null = the project's current data dictionary
 }
 ```
 **200**
@@ -225,13 +283,17 @@ data dictionary can ride along).
 ```
 `scope.type` → analyzer flags (`project`→none, `layer`→`--selected-layer`, `group`→`--selected-group`,
 `component`→repeated `--selected-component`). `decision` = `incremental | full`. `warnings` carries
-base-override advice (`"base v-4 is not an ancestor — running close to full"`, etc.). When a
-`dataDictionary` file is sent it is stored as a new `dataDictId`; else the current one is reused.
-**Errors:** 400 (bad scope/commit/base), 404 (unknown project), 409 (commit not in repo).
+base-override advice (`"base v-4 is not an ancestor — running close to full"`, etc.). The **data
+dictionary file is uploaded/managed by a separate API (onboarding workstream)** — `generate` only
+*references* one by `dataDictId` (or uses the project's current). A data-dict-only change re-runs the
+**cheap** reassembly (interface-table ranges), **not** the LLM (D6).
+**Errors:** 400 (bad scope/commit/base/dataDictId), 404 (unknown project), 409 (commit not in repo).
 
-### 8.2 Generate preview (baseline advice, before committing)
+### 8.2 Generate preview (baseline advice — called BEFORE generate)
 `GET /api/v1/projects/{projectId}/generate/preview?commit=<sha>&baseVersionId=<vid?>`
-Returns what `generate` *would* do, so the UI can show the trade-off first:
+**When:** call this **before** `generate` — once the user has picked a target commit (and optionally a
+base) — to show the plan and let them confirm or change the base before starting the (possibly long)
+run. It is **read-only** (changes nothing) and returns what `generate` *would* do:
 ```json
 {
   "targetCommit": "a12b…",
@@ -271,6 +333,17 @@ Not onboarding, not incremental-core — these just let the UI choose a `branch`
 `git_service`; may be shared with the project-mgmt layer:
 - `GET /api/v1/projects/{projectId}/branches`
 - `GET /api/v1/projects/{projectId}/branches/{branch}/commits?limit=&offset=`
+
+### 8.6 Browsing a generated version (existing backend reads — reused, version-scoped)
+The existing read endpoints serve a generated version's results; for incremental they take
+`?projectId=&versionId=` so they read **that version's** `model/`+`output/` (which removes the
+single-shared-`model/` limitation). **Onboarding (`POST /projects`) and the old `repository/*` CRUD are
+NOT part of this feature.**
+- `GET /api/v1/components?projectId=&versionId=` — component / unit / function tree of the version
+- `GET /api/v1/functions/{fn_id}?projectId=&versionId=` · `PATCH …` — function detail / edit description
+- `GET /api/v1/flowcharts/{fn_id}?projectId=&versionId=` — raw Mermaid for one function
+- `GET /api/v1/config?projectId=` — the resolved config used (read-only)
+- `GET /api/v1/project/structure?projectId=` — source tree of the checked-out commit
 
 ---
 
