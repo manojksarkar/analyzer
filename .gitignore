@@ -24,6 +24,10 @@ Thumbs.db
 model*
 output*
 
+# Incremental workspaces — runtime data (clones, versions, cache).
+# The seed script (backend/seed_workspace.py) IS tracked; the data it creates is not.
+workspaces/
+
 .coverage
 logs
 
