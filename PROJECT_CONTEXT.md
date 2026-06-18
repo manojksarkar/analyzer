@@ -1,6 +1,7 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
+> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
 > Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
 > Previous update: 2026-06-16 (`--project-name <name>` CLI flag — overrides the project name written into `model/metadata.json` as `projectName`; default remains `os.path.basename(project_path)`; parsed in `parser.py` and forwarded via `group_planner._build_model_phases`; propagates automatically to `model_deriver` (reads `projectName` from metadata), flowchart engine, and LLM prompts; `ui/app.py` derives display name from path directly and is unaffected; see §5).
@@ -2677,6 +2678,105 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
 - **The whole incremental design biases to over-regenerate, never to stale** — every ambiguous case
   (indirect/virtual calls, formatting noise, non-ancestor commits) regenerates *more*, with a manual
   full-regen escape hatch.
+
+---
+
+## 23. version4 — Incremental Changes feature (this session, 2026-06-18)
+
+> `version4` is the **active working branch**. This section is the orientation + **decisions + status**
+> for the **incremental document regeneration** feature. Authoritative design lives in
+> **[docs/production-redesign/04-incremental-changes-implementation.md](docs/production-redesign/04-incremental-changes-implementation.md)**
+> (approach, v2.1) and **[docs/production-redesign/05-incremental-api-spec.md](docs/production-redesign/05-incremental-api-spec.md)**
+> (UI HTTP API). Read those for depth; this is the map.
+
+### 23.1 What `version4` is
+- Created off `origin/main` (`f3946bd`). `main` is the live code line: **`layers`/`component` schema** (§4d —
+  `modulesGroups`→`layers`, `module`→`component`, `modules.json`→`components.json`), plus
+  `--data-dictionary`/`--macros`/`--include-path`/`--selected-layer`/`--selected-component` CLI, a Streamlit
+  `ui/`, and the `SampleCppProject` fixture.
+- Brought over from `version3`: `backend/` and `docs/production-redesign/01..03`. This `PROJECT_CONTEXT.md`
+  = main's §1–§20 + §21 (backend) + §22 (production redesign) + this §23.
+
+### 23.2 Done this session
+1. **Backend adapted to layers/component** ([backend/main.py](backend/main.py), [backend/models.py](backend/models.py)):
+   config source `modulesGroups`→`get_flat_groups(layers)`; component-keyed `fn_id`s + `functions_<group>.json`
+   naming (`safe_filename` spaces→`-`); `_resolve_group_name` vs group names; `POST /config` splice generalized
+   to the `layers` key; `UpdateConfigRequest.layers`. Verified (25 routes import + functional probe).
+2. **Backend docs corrected** to layers/component ([backend/API_DOC.md](backend/API_DOC.md),
+   [backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md)); `backend/repository_config.json` → `SampleCppProject`.
+3. **`backend/git_service.py`** (M0 #1 — **DONE**): `clone_repo` (HTTPS user/token; token reset out of
+   `.git/config`, never logged), `fetch`, `checkout`, `current_commit`, `list_branches`, `list_commits`, and the
+   baseline primitives `is_ancestor` / `nearest_ancestor` / `merge_base` / `changed_files`. `shell=False`
+   deliberately (credential/URL safety). Verified against the repo + a local clone.
+4. **Design docs**: `04` (incremental approach, **v2.1**), `05` (UI API spec).
+
+### 23.3 Incremental — key decisions (do NOT re-derive these)
+- **Approach 2** (doc 03 §12): git-diff **narrowed parse** + stored-graph impact + selective regen; **full
+  parse is the fallback** (first version / no ancestor / `mode:"full"`).
+- **Version = one generation run** (`versionId`); records branch/commit/scope/dataDictId/baselineVersionId/
+  counts. **All versions kept.** Same commit generated twice (different scope/data-dict) = two versions.
+- **Baseline = auto nearest-ancestor** (`git merge-base --is-ancestor` over prior versions' commits; nearest by
+  `rev-list --count`); **optional user override** (`baseVersionId`) with ancestor/nearest **warnings**; none →
+  full gen. **Correctness is base-independent** — the base only affects *parse speed* (reuse is content-addressed).
+- **`edges.json` is SLIM** — only **type/macro usage**. Calls/globals come from `functions.json`
+  (`calledByIds`/`callsIds`, `reads`/`writesGlobalIds`); the **recursive/transitive closure is computed by
+  reverse-BFS**, not stored. (Don't re-store the call graph — it already exists in `functions.json`.)
+- **Reuse = `cache/index.json`**, a `{fingerprint → (versionId, entityKey)}` **POINTER index** — **NOT** a
+  duplicate blob store. Output content lives **once** in each version's `model/output`; reuse = look up the
+  fingerprint → copy from the pointed-to version. Plus **carry-forward** from the baseline version.
+- **`fingerprint`** = `sha256(source_hash + sorted(dependency source-hashes) + recipeFingerprint)`;
+  `recipeFingerprint` = LLM model + prompt version + cacheVersion (gives operator-change invalidation).
+- **Data dictionary** is per-version, replaceable; **uploaded by onboarding's separate API**; `generate` only
+  references a `dataDictId`. A data-dict-only change → cheap reassembly (interface-table ranges), **no LLM**.
+- **Onboarding is OUT of scope** (other engineer): registration, git credentials, the initial clone, the
+  project's `layers`, the data-dict upload. Incremental **consumes** `projectId` + `repo/` + `layers` +
+  data dict + `branch`+`commit`.
+- **version-id assignment**: sequential per project (`v1, v2, …`), assigned at generation start. **Collision-
+  free** because generations are **serialized per project** (single shared clone → one `git checkout` at a
+  time; a 2nd concurrent `generate` → `409`). Global key = `(projectId, versionId)`. `projectId` uniqueness is
+  onboarding's responsibility.
+- **Engine flow** (doc 04 §5 — validated 8 steps): copy baseline → new version; `git diff` changed files;
+  partial-parse + merge; classify changed/new/deleted; **impact BFS** (all axes; over-approx virtual/fn-ptr;
+  move/rename); selective regen (index-check before LLM); reassemble (Phase 3 + 4); record version.
+  **Impact analysis is the #1 correctness trap** — must regenerate dependents that live in *unchanged* files,
+  else the document goes stale.
+
+### 23.4 Storage (per project) — examples in doc 04 §4
+```
+workspaces/<projectId>/
+  project.json                 [onboarding]  name, layers, repo ref, current dataDictId
+  repo/                        [onboarding]  single clone; incremental does `checkout <commit>`
+  datadict/<dataDictId>.csv    [onboarding / separate API]
+  cache/index.json             [INCREMENTAL]  {fingerprint -> {versionId, entityKey}}  (pointer index)
+  versions/index.json          [INCREMENTAL]
+  versions/<versionId>/        manifest.json, hashes.json (full entity->source-hash snapshot),
+                               edges.json (SLIM: type/macro only), config.json, model/ output/ documents/
+```
+
+### 23.5 Implementation plan + status
+- **P0 `git_service` — ✅ done.** **P1 onboarding stub fixture** (minimal `project.json` + a local clone, to run/test without real onboarding) — *not started.*
+- **M1 — version-producing FULL gen + substrate** — *not started.* Per-project `--config`/`ANALYZER_CONFIG`
+  injection; **entity hashing** (parser); **slim type/macro index** (parser); backend **workspace + version
+  store**; `POST …/generate` (full path); `versions` APIs.
+- **M2 — incremental engine** — *not started.* Baseline pick + `generate/preview`; partial-parse + merge +
+  classify; **impact BFS** (all axes); selective regen (index-check); reassemble; `mode:"auto"`.
+- **M3 — hardening** — *not started.* move/rename + deletions; version-scoped reads (`?versionId=`);
+  recipe-fingerprint invalidation; multi-doc zip.
+- **Next concrete step:** P1 stub → **M1.1** (`--config`/`ANALYZER_CONFIG`).
+- **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
+  to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
+
+### 23.6 Analyzer changes M1/M2 will make
+`run.py` (`--config`/`ANALYZER_CONFIG`, `--incremental`); `core/config.py` (honor `ANALYZER_CONFIG`);
+`parser.py` (partial-parse; entity hashing; slim type/macro index); `model_deriver.py` (incremental mode;
+extend `EntityCache`); `views/flowcharts.py` (restrict the engine's functions file to the impact set; the
+`src/flowchart/` engine itself is unchanged); new `src/incremental/`.
+
+### 23.7 Key `version4` commits (this session)
+`a2edee1` bring-over backend+docs · `3498153` PROJECT_CONTEXT merge · `1cf4eb5` backend→layers/component ·
+`082ec8b` backend doc corrections · `a74a560` **git_service** · `4651fe9` + `d1ee2bd` + `98b2ce1` doc 04
+(incremental approach → slim edges + pointer index) · `8ea45a2` doc 05 (UI API spec). Branch is pushed to
+`origin/version4`.
 
 ---
 
