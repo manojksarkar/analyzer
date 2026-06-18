@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done** (`run.py --config`, `core/config.py load_config` honors `ANALYZER_CONFIG`; next: **M1.2** entity hashing + slim type/macro index in `parser.py`). **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
 > Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
 > Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
@@ -534,6 +534,7 @@ python run.py [options] <project_path>
 | Flag | Effect |
 |---|---|
 | `--clean` | Delete `model/` and `output/` before starting |
+| `--config <path>` | Use this config file instead of `config/config.json` — a per-project/per-version config (carries the project's `layers`). Resolved+validated, then exported as `ANALYZER_CONFIG` **before** the import-time config load in `utils`, so every phase subprocess (env inherited) honors it. `config.local.json` is **not** merged on top (used as-is, for reproducibility); a set-but-missing path fails loud. Foundation for incremental per-project runs (§23, M1.1). |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
@@ -760,7 +761,9 @@ in `src/utils.py` or one of the phase scripts.
 ### `core.config` — [src/core/config.py](src/core/config.py)
 
 - `_strip_json_comments` / `_strip_trailing_commas` — JSONC parser.
-- `load_config(project_root)` — merges `config/config.json` + `config.local.json`.
+- `load_config(project_root)` — merges `config/config.json` + `config.local.json`. **If `ANALYZER_CONFIG`
+  env points to a file, that file is loaded instead, as-is (JSONC), with no local merge** — the per-project
+  config-injection seam (§23, M1.1); set-but-missing fails loud.
 - `load_llm_config(cfg)` — env-var overlay + normalised `llm` block (see §6).
 - `app_config(*, refresh=False)` — process-cached merged dict.
 - Typed accessors: `llm_config()`, `views_config()`, `exporter_config()`,
@@ -2754,15 +2757,32 @@ workspaces/<projectId>/
 ```
 
 ### 23.5 Implementation plan + status
-- **P0 `git_service` — ✅ done.** **P1 onboarding stub fixture** (minimal `project.json` + a local clone, to run/test without real onboarding) — *not started.*
-- **M1 — version-producing FULL gen + substrate** — *not started.* Per-project `--config`/`ANALYZER_CONFIG`
-  injection; **entity hashing** (parser); **slim type/macro index** (parser); backend **workspace + version
-  store**; `POST …/generate` (full path); `versions` APIs.
+- **P0 `git_service` — ✅ done.**
+- **P1 onboarding stub fixture — ✅ done.** [backend/seed_workspace.py](backend/seed_workspace.py) seeds
+  `workspaces/<projectId>/` with the **onboarding-owned** parts only (doc 04 §4): `project.json` (name, the
+  project's `layers`, repo ref, `currentDataDictId`), `repo/` (a real **full** clone via
+  `git_service.clone_repo`, public/no-creds), and `datadict/dd-001.csv` (seeded from
+  `config/data_dictionary.csv`). Leaves `cache/`+`versions/` to the incremental engine. Default fixture =
+  `projectId=samplecpp`, repo `github.com/vishal9359/SampleCppProject` (branches `main` + `feature1/2/3`,
+  topology purpose-built for nearest/far/divergent-ancestor tests — see the repo's `README.md`). `workspaces/`
+  is gitignored (data); the seed script is tracked. Re-seed with `python backend/seed_workspace.py --force`.
+- **M1 — version-producing FULL gen + substrate** — *in progress.*
+  - **M1.1 `--config`/`ANALYZER_CONFIG` — ✅ done.** `run.py --config <path>` resolves+validates the path and
+    exports `ANALYZER_CONFIG` **before** importing `utils` (which loads config at import time), so this process
+    and every phase subprocess (env inherited) honor it. `core/config.py load_config()` reads `ANALYZER_CONFIG`
+    first: if set it loads that file **as-is** (JSONC) — **no `config.local.json` merge**, for reproducibility —
+    and **fails loud** (`FileNotFoundError`) on a set-but-missing path; unset → existing `config.json`+local
+    behavior. Tests: `tests/unit/test_core_config.py::TestLoadConfigAnalyzerConfigOverride` (5).
+  - *Remaining M1:* **entity hashing** (parser); **slim type/macro index** (parser); backend **workspace +
+    version store**; `POST …/generate` (full path); `versions` APIs.
 - **M2 — incremental engine** — *not started.* Baseline pick + `generate/preview`; partial-parse + merge +
   classify; **impact BFS** (all axes); selective regen (index-check); reassemble; `mode:"auto"`.
 - **M3 — hardening** — *not started.* move/rename + deletions; version-scoped reads (`?versionId=`);
   recipe-fingerprint invalidation; multi-doc zip.
-- **Next concrete step:** P1 stub → **M1.1** (`--config`/`ANALYZER_CONFIG`).
+- **Next concrete step:** **M1.2** — **entity hashing in `parser.py`** (token-based full SHA-256 over the 4
+  entity types: function/global/macro/type, keyed by identity incl. defining file/location) + the **slim
+  type/macro-usage index** emitted alongside the model. (M1.1 done; the `samplecpp` workspace is the test bed —
+  inject its config via `--config`, building the resolved per-run config from `app_config` + the project's `layers`.)
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 

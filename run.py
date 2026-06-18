@@ -5,6 +5,11 @@ Options:
   --clean              Delete output/ and model/ before running
   --selected-group <name>
                        Export only the named modulesGroup
+  --config <path>      Use this config file instead of config/config.json
+                       (a per-project/per-version config carrying the project's
+                       `layers`). Exported as ANALYZER_CONFIG so every phase
+                       subprocess honors it. config.local.json is NOT merged on
+                       top — the injected config is used as-is.
   --use-model          Skip Phase 1/2 and reuse existing model/ files
   --skip-model         Alias of --use-model
   --no-llm-summarize   Skip LLM phase/hierarchy summarization (faster, lower quality)
@@ -72,6 +77,23 @@ if _trace_prompts_flag:
     os.environ.setdefault("LLM_TRACE_PROMPTS", "1")
 _log_path = configure_logging(project_root=SCRIPT_DIR, quiet=_quiet_flag, verbose=_verbose_flag)
 
+# --config <path>: inject a per-project/per-version config (carries the project's
+# `layers`). Resolve + validate and export ANALYZER_CONFIG *before* importing
+# utils, which loads config at import time — so this process AND every phase
+# subprocess (env inherited) honor the override. core.config.load_config reads
+# ANALYZER_CONFIG. The flag is also consumed in the main argv loop below.
+if "--config" in sys.argv:
+    _ci = sys.argv.index("--config")
+    _cv = sys.argv[_ci + 1] if _ci + 1 < len(sys.argv) else None
+    if not _cv:
+        sys.stderr.write("--config requires a file path\n")
+        sys.exit(1)
+    _cfg_abs = _cv if os.path.isabs(_cv) else os.path.join(SCRIPT_DIR, _cv)
+    if not os.path.isfile(_cfg_abs):
+        sys.stderr.write(f"--config file not found: {_cfg_abs}\n")
+        sys.exit(1)
+    os.environ["ANALYZER_CONFIG"] = _cfg_abs
+
 from utils import log, load_config
 from core import PhaseRunner, plan_runs
 from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, COMPONENTS
@@ -103,6 +125,12 @@ while i < len(sys.argv):
         clean_all = True
     elif a in ("--quiet", "--verbose", "--trace-prompts"):
         pass  # consumed at top of file (configure_logging / env vars)
+    elif a == "--config":
+        # Value already resolved + applied to ANALYZER_CONFIG above; just consume it.
+        i += 1
+        if i >= len(sys.argv):
+            log("--config requires a file path", component="run", err=True)
+            sys.exit(1)
     elif a in ("--use-model", "--skip-model"):
         use_model = True
     elif a == "--no-llm-summarize":
@@ -234,6 +262,8 @@ if use_model:
 # ---------------------------------------------------------------------------
 # Plan and run
 # ---------------------------------------------------------------------------
+if os.environ.get("ANALYZER_CONFIG"):
+    log(f"Using injected config (--config): {os.environ['ANALYZER_CONFIG']}", component="run")
 cfg = load_config(SCRIPT_DIR)
 if not (cfg.get("llm") or {}).get("summarize", True):
     no_llm_summarize = True
