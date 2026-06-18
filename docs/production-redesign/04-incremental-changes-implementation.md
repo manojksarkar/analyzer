@@ -5,7 +5,7 @@
 | **Document** | Incremental Changes (Delta Regeneration) — Implementation Approach |
 | **Project** | C++ Codebase Analyzer — Production Platform (POC → Production) |
 | **Status** | Draft for Review |
-| **Version** | 2.0 |
+| **Version** | 2.1 |
 | **Date** | 2026-06-18 |
 | **Branch** | `version4` (off `main`: `layers`/`component` schema) |
 | **Builds on** | `03-incremental-changes-design.md` §12 (v1.2 — **Approach 2** chosen) |
@@ -23,7 +23,7 @@
 **regenerating only what changed (plus what depends on it)** — *hours → minutes* — with **no stale
 content**.
 
-**In scope (this doc):** the version model, per-version storage, the content-addressed reuse cache,
+**In scope (this doc):** the version model, per-version storage, the cross-version reuse index,
 the `detect → impact → regenerate → reassemble` engine, baseline selection, the analyzer-side
 changes, and **all incremental APIs**.
 
@@ -57,7 +57,7 @@ uses `clone_repo`/`list_branches`/`list_commits`; incremental uses `checkout`/`c
 |---|---|
 | D1 | **A "version" = one generation run** (`versionId`). It records `{branch, commit, scope, dataDictId, baselineVersionId, recipeFingerprint, counts, createdAt}`. The **commit** is stored and used to find the **ancestor** for future versions. **All versions kept.** |
 | D2 | **Approach 2** — git-diff narrowed parse + stored-graph impact + selective regen, with **full parse as the fallback** (first version, no ancestor, or `mode:"full"`). |
-| D3 | **Reuse is content-addressed across *all* versions** (the `cache/outputs/` store). The baseline **only narrows the parse**; it never limits reuse. |
+| D3 | **Reuse is content-addressed across *all* versions** via a fingerprint **pointer index** (`cache/index.json`) — the output content is **never duplicated**; the index points at the version where it already lives. The baseline **only narrows the parse**; it never limits reuse. |
 | D4 | **Baseline = auto nearest-ancestor (default).** The user may **override** with an explicit `baseVersionId`; the system **warns** if it is not an ancestor / not the nearest, but still runs it (correct, slower). See §6. |
 | D5 | **Scope is a request parameter** — whole project (all layers) / a layer / a group / a component → maps to `--selected-layer` / `--selected-group` / `--selected-component`. |
 | D6 | **Data dictionary is per-version, replaceable.** A data-dict-only change → recompute the **cheap** interface-table ranges at reassembly; **no forced LLM regeneration**. |
@@ -80,16 +80,16 @@ workspaces/
 
     # ───────────── owned by INCREMENTAL ─────────────
     cache/
-      outputs/
-        <entity_key>__<fingerprint>.json   # project-wide, ever-growing, DEDUPED store of LLM OUTPUTS only
-                                           #   = { description, behaviourInputName/OutputName, flowchartMermaid }
+      index.json                 # {fingerprint -> {versionId, entityKey}}  — cross-version reuse POINTER index
+                                 #   (NO output content here; the output lives once in that version's model/output)
     versions/
       index.json                 # [{versionId, branch, commit, scope, dataDictId, baselineVersionId,
                                  #   decision, regenerated, reused, status, createdAt}]
       <versionId>/
         manifest.json            # the full version record (incl. recipeFingerprint, counts, warnings)
         hashes.json              # {entity_key -> token-sha256}   ← FULL snapshot of all entities at this commit
-        edges.json               # dependency graph: call / global / type / macro / containment (+ reverse)
+        edges.json               # SLIM: type-usage + macro-usage only (axes functions.json lacks).
+                                 #   calls/globals read from model/functions.json; recursive closure via BFS
         config.json              # the resolved per-run config (global clang/llm + this project's layers)
         model/  output/          # the fully-assembled pipeline artifacts for THIS version (browse)
         documents/               # one or more .docx (multiple when component-per-docx)
@@ -106,26 +106,28 @@ workspaces/
 }
 ```
 
-`versions/v4/edges.json` — the dependency graph used by impact analysis (forward + reverse):
+`versions/v4/edges.json` — **SLIM**: only the axes `functions.json` does *not* already have —
+**type-usage** and **macro-usage** (reverse: which entities use each type / macro). The call graph and
+globals are read from `model/functions.json` (`callsIds` / `calledByIds`, `reads`/`writesGlobalIds`);
+the **recursive/transitive** closure is **computed by reverse-BFS** over those, not stored.
 ```json
 {
-  "calls":        { "Core|Core|init|": ["Core|Core|helper|", "Lib|Lib|add|int,int"] },
-  "callsReverse": { "Core|Core|helper|": ["Core|Core|init|"], "Lib|Lib|add|int,int": ["Core|Core|init|"] },
-  "globals":      { "Core|Core|init|": ["Core|g_state"] },
-  "types":        { "Core|Core|init|": ["Core::Config"] },
-  "macros":       { "Core|Core|init|": ["MAX_RETRIES@Core/Core.h"] }
+  "typeUsers":  { "Core::Config":           ["Core|Core|init|"] },
+  "macroUsers": { "MAX_RETRIES@Core/Core.h": ["Core|Core|init|"] }
 }
 ```
 
-`cache/outputs/Core|Core|helper|__<fingerprint>.json` — one reusable LLM-output blob:
+`cache/index.json` — the cross-version reuse **index**: one pointer per content fingerprint, **not** a
+copy of the output. The output itself (description / behaviour names / flowchart Mermaid) lives **once**,
+in the pointed-to version's `model/functions.json` + `output/flowcharts/*.json`:
 ```json
 {
-  "description": "Validates the input buffer and returns its checksum.",
-  "behaviourInputName": "input buffer",
-  "behaviourOutputName": "checksum",
-  "flowchartMermaid": "flowchart TD\n  N1([Start: helper])\n  ..."
+  "<fingerprint-of-helper>": { "versionId": "v2", "entityKey": "Core|Core|helper|" },
+  "<fingerprint-of-init>":   { "versionId": "v4", "entityKey": "Core|Core|init|" }
 }
 ```
+*Reuse:* compute an entity's fingerprint → look it up here → **copy its output from the pointed-to
+version** into the new version. The content is therefore never duplicated or regenerated.
 
 `versions/v4/manifest.json` — the full version record:
 ```json
@@ -150,22 +152,26 @@ workspaces/
 from `config/config.json` **+ this project's `layers`** injected via `--config`), stored so the run is
 reproducible.
 
-### The two stores — the distinction that matters
+### The stores — what lives where (no duplication)
+- **`versions/<vN>/model/` + `output/`** = the **single source of truth for every output**
+  (descriptions, behaviour names, flowchart Mermaid). The analyzer's Phase 3/4 read these to build the
+  document, so output content lives **here only**.
 - **`versions/<vN>/hashes.json`** = a **complete snapshot** of *which entities existed and their
-  source-hashes* at version N's commit. It is **per version** and is the thing the *next* version
-  **diffs against**. (Cheap — key → 32 bytes.)
-- **`cache/outputs/`** = the **project-wide, ever-growing, deduped** store of the **expensive LLM
-  outputs**, keyed by `entity_key + fingerprint`. Shared by all versions; it is the **reuse engine**.
-  It holds **outputs only**, not structural metadata.
+  source-hashes* at version N's commit. **Per version**; the thing the *next* version **diffs against**.
+- **`versions/<vN>/edges.json`** = the **slim** type/macro-usage index (calls/globals come from
+  `functions.json`).
+- **`cache/index.json`** = a project-wide **pointer index** `{fingerprint → (versionId, entityKey)}`
+  that lets a new version reuse an output **already produced by an earlier version** (revert /
+  cross-branch) **without copying it** — it only records *where* the content lives.
 
-> `versions/<vN>/` = a complete self-contained snapshot of version N (model + outputs + document).
-> `cache/outputs/` = the deduped bag of generated content that makes regeneration cheap.
+> `versions/<vN>/` = the complete self-contained snapshot of version N (model + outputs + document).
+> `cache/index.json` = a tiny pointer map for cross-version reuse — content is never duplicated.
 
 Where the hashes come from:
 - `source_hash(entity)` = token-based **full SHA-256** of the entity's own source (the 4 entity
   types: function / global / macro / type, keyed by identity incl. defining file/location).
 - `fingerprint(entity)` = `sha256(source_hash + sorted(dependency_source_hashes) + recipeFingerprint)`
-  — the **cache key** for that entity's output. `recipeFingerprint = sha256(llm.model + promptVersion
+  — the **reuse-index key** for that entity's output. `recipeFingerprint = sha256(llm.model + promptVersion
   + cacheVersion + engineVersion)` → an operator recipe change invalidates the cache automatically.
 
 ---
@@ -189,16 +195,18 @@ override):
 3. Parse ONLY changed files -> fresh entities/hashes/edges.
    Merge into v7: update changed, add new, REMOVE deleted.
 4. Classify vs v4/hashes.json -> {changed, new, deleted} entities.
-5. IMPACT ANALYSIS: from that set, walk UP v7's edges (calls/globals/types/macros/containment),
-   over-approximate virtual/fn-ptr, handle move/rename -> full impact set
-   (includes dependents in UNCHANGED files).
+5. IMPACT ANALYSIS: reverse-BFS UP the dependency graph -- calls/globals from functions.json,
+   types/macros from edges.json, containment derived from location (visited-set handles
+   recursion/cycles); over-approximate virtual/fn-ptr; handle move/rename
+   -> full impact set (includes dependents in UNCHANGED files).
 6. For each entity in {changed ∪ new ∪ impacted}:
-       fingerprint -> cache hit? reuse : LLM-regenerate + store in cache.
-   Reused (unchanged & unimpacted) entities keep v4's carried-forward output.
+       fingerprint -> index hit? copy that output from the pointed-to version
+                    :          LLM-regenerate, then add a cache/index.json entry -> v7.
+   Reused (unchanged & unimpacted) entities keep v4's carried-forward output (already in v7 from step 1).
 7. REASSEMBLE: merge v7's data-dict; run Phase 3 (views) + Phase 4 (export) over v7's (scoped) model
    -> v7/documents/.
 8. Write v7/manifest.json (commit C7, baselineVersionId v4, counts); append versions/index.json;
-   deposit new outputs in cache/outputs/.
+   add cache/index.json entries for the newly-generated fingerprints (-> v7).
 ```
 
 ### Why each non-obvious step is mandatory (the correctness checklist)
@@ -209,13 +217,13 @@ These are the difference between a **correct** and a **stale** document:
 | **5. Impact analysis** | "changed files" gives only the **directly** changed entities. If `a()` (unchanged file A) calls `b()` (changed file B), `a`'s description/flowchart describe `b`'s behavior → `a` is **stale** unless impact propagates UP to it. **This is the #1 trap.** |
 | **3. REMOVE deleted** | a changed file may have *removed* a function → it must be deleted from v7's model/outputs/edges (and its callers impacted). |
 | **5. Move/rename** | a moved entity's key changes → delete(old)+add(new); callers in unchanged files have a dangling edge → impact them **and** re-resolve their edges (re-parse the impacted caller's file). |
-| **5. All axes** | not just calls — a changed **global / macro / type** impacts its **users**, usually in unchanged files. |
-| **6. Cache-check before LLM** | for each impact-set entity, look up `cache/outputs` by fingerprint first — a **revert** or **cross-branch identical code** is a cache hit → reuse, no LLM. |
+| **5. All axes** | not just calls — a changed **global / macro / type** impacts its **users**, usually in unchanged files. (Calls/globals from `functions.json`; types/macros from `edges.json`.) |
+| **6. Index-check before LLM** | for each impact-set entity, look up `cache/index.json` by fingerprint first — a **revert** or **cross-branch identical code** is a hit → **copy** the existing output from the version it points at, no LLM. |
 | **7. Reassemble** | "updating entities" is not a document — Phase 3 + Phase 4 must run over v7's model to produce `documents/`. (No LLM here; cheap.) |
 
 ### Full-generation path (fallback / first version)
 When there is **no baseline** (first version, no ancestor, or `mode:"full"`): skip steps 1–2 and
-parse the **whole project**; everything is `new` → regenerate all (each still cache-checked, so a
+parse the **whole project**; everything is `new` → regenerate all (each still index-checked, so a
 re-run of an unchanged commit is cheap); then steps 7–8. This is the Approach-1 safety net.
 
 ---
@@ -232,8 +240,8 @@ re-run of an unchanged commit is cheap); then steps 7–8. This is the Approach-
   - **ancestor but not the nearest** → **mild warning** + suggest the nearest (faster).
 - **Correctness is independent of the base** (`git diff` compares trees; carried-forward
   byte-identical files are valid; impact analysis catches the rest). **The base only affects *parse
-  speed*** — because reuse (the LLM cost) is handled by the global content cache (D3). So a "wrong"
-  base is **slow, never stale**.
+  speed*** — because reuse (the LLM cost) is handled by carry-forward from the baseline plus the
+  cross-version pointer index (D3). So a "wrong" base is **slow, never stale**.
 
 ---
 
@@ -243,14 +251,14 @@ re-run of an unchanged commit is cheap); then steps 7–8. This is the Approach-
 |---|---|
 | `run.py` | `--config <path>` → sets `ANALYZER_CONFIG` env (inherited by phases); `--incremental --baseline-dir <versions/<base>> --changed-files <file>` path. |
 | `core/config.py` | `load_config()` honors `ANALYZER_CONFIG` (per-project `layers`) before falling back to `config/config.json`. |
-| `parser.py` | **partial-parse** a given file set; **entity hashing** (token-based full SHA-256, 4 types); **edge emission** (call / global / type / macro / containment). |
+| `parser.py` | **partial-parse** a given file set; **entity hashing** (token-based full SHA-256, 4 types); emit the **slim type/macro-usage index** (calls/globals already go into `functions.json`). |
 | `model_deriver.py` | **incremental mode**: regenerate impact set, carry the rest from baseline; **extend `EntityCache`** to behaviour names + summaries. |
 | `views/flowcharts.py` (Phase-3 view) | already filters `functions.json` → `functions_<group>.json` and **launches the `src/flowchart/` engine** via `--interface-json`. Change: restrict that functions file to the **impact set**; merge engine output into the carried-forward `flowcharts/*.json`. **The engine (`src/flowchart/`) is unchanged.** |
-| `src/incremental/` (new) | orchestrates the §5 flow; reads/writes `hashes.json` / `edges.json` / `cache/`. |
+| `src/incremental/` (new) | orchestrates the §5 flow; reads/writes `hashes.json` / `edges.json` / `cache/index.json`. |
 
-Most of the dependency graph already exists (parser builds call / reverse-call graphs, transitive
-globals, `knowledge_base.json`); the new work is **serializing edges**, **hashing entities**, and
-**partial-parse + merge**.
+Most of the dependency graph already exists in `functions.json` (call / reverse-call edges, transitive
+globals); the **recursive closure is just a BFS** over it. The genuinely-new work is the **slim
+type/macro-usage index**, **entity hashing**, and **partial-parse + merge**.
 
 ---
 
@@ -350,12 +358,12 @@ NOT part of this feature.**
 ## 9. Milestones (incremental delivery; `git_service` already done)
 
 - **M1 — Version-producing FULL generation + substrate.** Per-project run via `--config` (inject the
-  project's `layers`); after a full run, capture **entity hashes** + **dependency edges** + assembled
-  `model/output/documents`, store as a **version**; seed `cache/outputs/`. `POST …/generate` (full
-  path) + `versions` APIs. *This is the foundation — every incremental run diffs against a version.*
+  project's `layers`); after a full run, capture **entity hashes** + the **slim type/macro index** +
+  assembled `model/output/documents`, store as a **version**; seed `cache/index.json`. `POST …/generate`
+  (full path) + `versions` APIs. *This is the foundation — every incremental run diffs against a version.*
 - **M2 — Incremental engine (the §5 flow).** Baseline pick (auto nearest-ancestor + optional override),
   `generate/preview`, partial-parse + merge, classify, **impact BFS** (all axes), selective regen with
-  the content cache, reassemble; `mode:"auto"`. *Delivers hours → minutes.*
+  the reuse index, reassemble; `mode:"auto"`. *Delivers hours → minutes.*
 - **M3 — Hardening.** Move/rename re-resolution, deletions, over-approximation polish, version-scoped
   reads (`components`/`functions`/`flowcharts` take `?versionId=`), recipe-fingerprint invalidation,
   multi-doc zip download.
@@ -364,14 +372,15 @@ NOT part of this feature.**
 
 ## 10. Deferred (and the Postgres seam)
 
-- **Content-addressed PARSE cache** — mirror of the output cache, but for parsing: key each
+- **Content-addressed PARSE cache** — the parsing analogue of the reuse index: key each
   translation unit by the hash of its source + included headers; reuse the parsed entities/edges when
   unchanged. Would **eliminate baseline selection entirely** and reuse parsing across all branches.
   More complex (TU/include tracking) → **future, only if parse time becomes the measured bottleneck**.
 - **Per-artifact hashing**, **image-render cache**, **cross-version dedup** — deferred (see `03` §22.8).
 - **Postgres migration:** every JSON store → a table — `versions`, `entity_hashes`,
-  `dependency_edges`, `entity_outputs` (the content cache), `data_dictionaries`, `jobs`. Impact-BFS →
-  recursive CTE / closure table; baseline ancestry → stored commit graph.
+  `type_macro_usage`, `entity_outputs` (stored once per version), `reuse_index` (fingerprint →
+  version + entity), `data_dictionaries`, `jobs`. Impact-BFS → recursive CTE / closure table; baseline
+  ancestry → stored commit graph.
 
 ---
 
