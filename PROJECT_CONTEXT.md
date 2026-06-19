@@ -2743,6 +2743,19 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
   move/rename); selective regen (index-check before LLM); reassemble (Phase 3 + 4); record version.
   **Impact analysis is the #1 correctness trap** — must regenerate dependents that live in *unchanged* files,
   else the document goes stale.
+- **Regenerated dependents are cached too** (doc 04 §5 steps 6+8): every entity in
+  `{changed ∪ new ∪ impacted}` that is LLM-regenerated gets a **new `cache/index.json` pointer entry** (→ the
+  new version), so a future version / revert / cross-branch-identical run reuses it. Because the fingerprint
+  includes `sorted(dependency source-hashes)`, an impacted dependent correctly **misses** on this version
+  (its dep changed) and **hits** later when that dep state recurs. *Carried-forward* (unchanged & unimpacted)
+  entities get **no** new entry — their fingerprint already points at the version that first produced them.
+- **Storage interface (D9 — doc 04 §3):** all incremental-store access goes through a thin interface
+  (`src/incremental/stores.py`: `VersionStore`, `ReuseIndex`, `HashStore`, `EdgeStore`) — **JSON-file impl now,
+  Postgres impl later behind the same methods**. The §5 engine + the APIs call *only* the interface (no
+  scattered `open()`/`json.load`), so the §10 Postgres swap is one implementation, not a refactor. **Scope =
+  the incremental *metadata* stores only** (versions/hashes/edges/reuse-index/jobs); the analyzer's per-version
+  `model/`+`output/` stay file-based until the DB-native pipeline rewrite (§22.3). Git auth is **D8** (POC
+  plaintext: token injected into the URL then `origin` reset credential-free; `backend/git_service.py`).
 
 ### 23.4 Storage (per project) — examples in doc 04 §4
 ```
@@ -2773,8 +2786,12 @@ workspaces/<projectId>/
     first: if set it loads that file **as-is** (JSONC) — **no `config.local.json` merge**, for reproducibility —
     and **fails loud** (`FileNotFoundError`) on a set-but-missing path; unset → existing `config.json`+local
     behavior. Tests: `tests/unit/test_core_config.py::TestLoadConfigAnalyzerConfigOverride` (5).
-  - *Remaining M1:* **entity hashing** (parser); **slim type/macro index** (parser); backend **workspace +
-    version store**; `POST …/generate` (full path); `versions` APIs.
+  - **M1.2** (next) — **entity hashing** + **slim type/macro index** in `parser.py` (analyzer-side output:
+    `model/hashes.json` `{entityKey→token-sha256}` + `model/edges.json` `{typeUsers, macroUsers}`).
+  - **M1.3** — the **D9 store interface** `src/incremental/stores.py` (`VersionStore`/`ReuseIndex`/`HashStore`/
+    `EdgeStore`, JSON-file impl) + the backend **workspace + version store** (capture `model/output/documents`
+    + hashes + edges into `versions/<vN>/`; seed `cache/index.json`) + `POST …/generate` (full path) +
+    `versions` APIs. **Build M1.3 entirely against the interface — no direct file IO in the engine/APIs.**
 - **M2 — incremental engine** — *not started.* Baseline pick + `generate/preview`; partial-parse + merge +
   classify; **impact BFS** (all axes); selective regen (index-check); reassemble; `mode:"auto"`.
 - **M3 — hardening** — *not started.* move/rename + deletions; version-scoped reads (`?versionId=`);
@@ -2790,7 +2807,9 @@ workspaces/<projectId>/
 `run.py` (`--config`/`ANALYZER_CONFIG`, `--incremental`); `core/config.py` (honor `ANALYZER_CONFIG`);
 `parser.py` (partial-parse; entity hashing; slim type/macro index); `model_deriver.py` (incremental mode;
 extend `EntityCache`); `views/flowcharts.py` (restrict the engine's functions file to the impact set; the
-`src/flowchart/` engine itself is unchanged); new `src/incremental/`.
+`src/flowchart/` engine itself is unchanged); new `src/incremental/` — incl. `stores.py` (D9 interface:
+`VersionStore`/`ReuseIndex`/`HashStore`/`EdgeStore`, JSON-file impl now, Postgres later) that all version /
+hash / edge / reuse-index access goes through.
 
 ### 23.7 Key `version4` commits (this session)
 `a2edee1` bring-over backend+docs · `3498153` PROJECT_CONTEXT merge · `1cf4eb5` backend→layers/component ·

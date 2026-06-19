@@ -5,8 +5,8 @@
 | **Document** | Incremental Changes (Delta Regeneration) — Implementation Approach |
 | **Project** | C++ Codebase Analyzer — Production Platform (POC → Production) |
 | **Status** | Draft for Review |
-| **Version** | 2.1 |
-| **Date** | 2026-06-18 |
+| **Version** | 2.2 |
+| **Date** | 2026-06-19 |
 | **Branch** | `version4` (off `main`: `layers`/`component` schema) |
 | **Builds on** | `03-incremental-changes-design.md` §12 (v1.2 — **Approach 2** chosen) |
 | **Scope note** | **Onboarding is a SEPARATE workstream (other engineer).** This doc covers **incremental generation only** and *consumes* what onboarding produces (see §2). |
@@ -62,6 +62,8 @@ uses `clone_repo`/`list_branches`/`list_commits`; incremental uses `checkout`/`c
 | D5 | **Scope is a request parameter** — whole project (all layers) / a layer / a group / a component → maps to `--selected-layer` / `--selected-group` / `--selected-component`. |
 | D6 | **Data dictionary is per-version, replaceable.** A data-dict-only change → recompute the **cheap** interface-table ranges at reassembly; **no forced LLM regeneration**. |
 | D7 | **Bias to over-regenerate, never stale** — every ambiguous case (indirect/virtual calls, move/rename, non-ancestor base) regenerates *more*. |
+| D8 | **Auth (POC) = plaintext credentials.** For HTTPS, `username:token` is injected into the clone/fetch URL, then the clone's `origin` is reset to the credential-free URL so the token is **not** persisted in `.git/config`; the token is never logged. Production graduation: a deployment-appropriate secrets store (K8s Secrets / Vault / env injection). Implemented in `backend/git_service.py`. |
+| D9 | **All incremental-store access goes through a thin interface** (`src/incremental/stores.py`: `VersionStore`, `ReuseIndex`, `HashStore`, `EdgeStore`) — a **JSON-file** implementation now, a **Postgres** implementation later behind the *same* methods. The §5 engine and the APIs call only the interface — no scattered `open()` / `json.load`. This makes the §10 "Postgres seam" a **swap of one implementation**, not a refactor. **Scope: the incremental *metadata* stores only** (versions / hashes / edges / reuse-index / jobs); the analyzer's per-version `model/`+`output/` artifacts stay file-based until the DB-native pipeline rewrite (`03`/§22.3). |
 
 ---
 
@@ -360,7 +362,9 @@ NOT part of this feature.**
 - **M1 — Version-producing FULL generation + substrate.** Per-project run via `--config` (inject the
   project's `layers`); after a full run, capture **entity hashes** + the **slim type/macro index** +
   assembled `model/output/documents`, store as a **version**; seed `cache/index.json`. `POST …/generate`
-  (full path) + `versions` APIs. *This is the foundation — every incremental run diffs against a version.*
+  (full path) + `versions` APIs. All version / hash / edge / reuse-index persistence goes through the
+  **store interface** (D9 — `src/incremental/stores.py`), so the Postgres swap is one implementation, not a
+  rewrite. *This is the foundation — every incremental run diffs against a version.*
 - **M2 — Incremental engine (the §5 flow).** Baseline pick (auto nearest-ancestor + optional override),
   `generate/preview`, partial-parse + merge, classify, **impact BFS** (all axes), selective regen with
   the reuse index, reassemble; `mode:"auto"`. *Delivers hours → minutes.*
@@ -380,7 +384,11 @@ NOT part of this feature.**
 - **Postgres migration:** every JSON store → a table — `versions`, `entity_hashes`,
   `type_macro_usage`, `entity_outputs` (stored once per version), `reuse_index` (fingerprint →
   version + entity), `data_dictionaries`, `jobs`. Impact-BFS → recursive CTE / closure table; baseline
-  ancestry → stored commit graph.
+  ancestry → stored commit graph. **Because every store sits behind the D9 interface
+  (`src/incremental/stores.py`), this migration is adding a `Postgres*` implementation of those same
+  methods — the §5 engine and the APIs are untouched.** (The analyzer's per-version `model/`+`output/`
+  artifacts are *not* part of this seam — they stay file-based until the separate DB-native pipeline
+  rewrite, `03`/§22.3.)
 
 ---
 
