@@ -587,15 +587,15 @@ build_mermaid(cfg)
             _enforce_line_length(label, max_chars=40)
                 splits <br/>-separated segments, word-wraps long ones
             _escape_label(label)
-                single-pass _NODE_LABEL_RE.sub()
-                → #40; #41; #60; #91; #93; etc. (no double-encoding)
+                wraps in "..."; escapes only " < > & (fullwidth ＜ ＞ ＆ for
+                < > &), so it renders under any Mermaid htmlLabels setting
             shape:
-                START/END        → nodeId([label])   stadium
+                START/END        → nodeId(["label"])  stadium
                 DECISION/
                 LOOP_HEAD/
-                SWITCH_HEAD      → nodeId{label}      diamond
-                CATCH            → nodeId[[label]]    subroutine
-                all others       → nodeId[label]      rectangle
+                SWITCH_HEAD      → nodeId{"label"}    diamond
+                CATCH            → nodeId[["label"]]  subroutine
+                all others       → nodeId["label"]    rectangle
     for each edge:
         _edge_def(edge)
             normalize_edge_label(): Yes/No standardisation
