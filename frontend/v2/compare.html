@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PRODUCT NAME] — Compare</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#041627", "primary-container": "#1a2b3c",
+          "on-primary": "#ffffff", "on-primary-container": "#8192a7",
+          "secondary": "#0058be", "secondary-container": "#2170e4",
+          "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
+          "on-tertiary-container": "#00a572",
+          "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
+          "surface": "#f8f9ff", "background": "#f8f9ff",
+          "surface-container-lowest": "#ffffff", "surface-container-low": "#eff4ff",
+          "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
+          "surface-container-highest": "#d3e4fe",
+          "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
+          "outline": "#74777d", "outline-variant": "#c4c6cd",
+          "tertiary-container": "#00311f", "tertiary-fixed": "#6ffbbe",
+        },
+        borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+        spacing: {
+          "sidebar-width": "220px", "inspector-width": "400px",
+          "gutter": "16px", "container-padding": "24px",
+        },
+        fontFamily: {
+          "display-lg": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"],
+          "body-lg": ["Inter"], "body-md": ["Inter"], "body-sm": ["Inter"],
+          "label-md": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  .sym-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+
+  /* Sidebar collapse — starts collapsed on compare page */
+  :root { --sw: 56px; }
+  body.nav-expanded { --sw: 220px; }
+  #app-sidebar { width: var(--sw); transition: width .2s cubic-bezier(.4,0,.2,1); }
+  #app-main    { margin-left: var(--sw); transition: margin-left .2s cubic-bezier(.4,0,.2,1); }
+  body:not(.nav-expanded) .nav-label,
+  body:not(.nav-expanded) .brand-text,
+  body:not(.nav-expanded) .user-info,
+  body:not(.nav-expanded) .more-btn-icon { display: none; }
+  body:not(.nav-expanded) .nav-item  { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+  body:not(.nav-expanded) .nav-active { border-left: none; }
+  body:not(.nav-expanded) .brand-header { flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px; }
+  body:not(.nav-expanded) .user-btn  { justify-content: center; padding: 6px; gap: 0; }
+
+  /* Nav states */
+  .nav-default { color: #44474c; }
+  .nav-default:hover { background: #eff4ff; color: #0b1c30; }
+  .nav-active { background: #041627; color: #ffffff; border-left: 2px solid #0058be; }
+  .nav-active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  /* SWE.3 component tree items */
+  .tree-component {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: 4px; cursor: pointer;
+    font-family: 'JetBrains Mono'; font-size: 11px; line-height: 14px;
+    color: #44474c; transition: background 0.1s;
+  }
+  .tree-component:hover { background: #eff4ff; color: #0b1c30; }
+  .tree-component.active { background: #e5eeff; color: #0058be; border-left: 2px solid #0058be; padding-left: 8px; }
+  .tree-component.active .comp-dot { background: #0058be; }
+  .comp-dot { width: 6px; height: 6px; border-radius: 50%; background: #c4c6cd; flex-shrink: 0; }
+
+  /* Flat process doc rows */
+  .proc-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px; cursor: pointer; border-radius: 4px;
+    font-family: 'JetBrains Mono'; font-size: 11px; line-height: 14px;
+    color: #44474c; transition: background 0.1s;
+  }
+  .proc-row:hover { background: #eff4ff; color: #0b1c30; }
+  .proc-row.active { background: #e5eeff; color: #0058be; border-left: 2px solid #0058be; padding-left: 10px; }
+
+  /* Diff block highlights */
+  .diff-added   { border-left: 3px solid #00a572; background: rgba(0,165,114,.06); }
+  .diff-removed { border-left: 3px solid #ba1a1a; background: rgba(186,26,26,.06); }
+  .diff-changed { border-left: 3px solid #0058be; background: #eff4ff; }
+
+  /* Section review state accents — left pane only */
+  .sec-approved { border-left: 3px solid #00a572 !important; padding-left: 14px; margin-left: -14px; background: rgba(0,165,114,.02); border-radius: 0 4px 4px 0; }
+  .sec-ignored  { border-left: 3px solid #c4c6cd !important; padding-left: 14px; margin-left: -14px; background: rgba(196,198,205,.05); border-radius: 0 4px 4px 0; }
+  .sec-edited   { border-left: 3px solid #0058be !important; padding-left: 14px; margin-left: -14px; background: rgba(0,88,190,.02); border-radius: 0 4px 4px 0; }
+
+  /* Role toggle */
+  .role-btn { padding: 3px 10px; border-radius: 4px; font-family: 'JetBrains Mono'; font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; transition: all .15s; }
+  .role-btn.active-admin { background: #041627; color: #fff; }
+  .role-btn.active-dev   { background: #0058be; color: #fff; }
+  .role-btn.inactive     { background: transparent; color: #74777d; }
+  .role-btn.inactive:hover { background: #e5eeff; color: #0b1c30; }
+</style>
+</head>
+
+<body class="bg-background text-on-surface overflow-hidden">
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50 overflow-hidden">
+  <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant flex-shrink-0">
+    <a href="dashboard-admin.html" class="flex items-center gap-3 min-w-0 flex-1">
+      <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+        <span class="material-symbols-outlined text-on-primary sym-fill" style="font-size:18px;">account_tree</span>
+      </div>
+      <div class="brand-text min-w-0 overflow-hidden">
+        <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5 whitespace-nowrap">Automotive Tier 1</p>
+      </div>
+    </a>
+    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0">
+      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_right</span>
+    </button>
+  </div>
+
+  <nav class="flex-1 overflow-y-auto px-2 py-2">
+    <a href="dashboard-admin.html" title="All Projects"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
+      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
+    </a>
+    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:10px;">VCU Engine Firmware</p>
+    <div class="space-y-0.5">
+      <a href="project-detail.html" title="Overview"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">home</span>
+        <span class="nav-label font-label-md text-label-md">Overview</span>
+      </a>
+      <a href="documents.html" title="Documents"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
+        <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+        <span class="nav-label font-label-md text-label-md">Documents</span>
+      </a>
+      <a href="project-detail.html#versions" title="Versions"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
+        <span class="nav-label font-label-md text-label-md">Versions</span>
+      </a>
+      <a href="project-detail.html#team" title="Team"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">group</span>
+        <span class="nav-label font-label-md text-label-md">Team</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="px-2 pt-2 border-t border-outline-variant flex-shrink-0">
+    <a href="onboarding.html" title="Settings"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
+      <span class="nav-label font-label-md text-label-md">Settings</span>
+    </a>
+  </div>
+  <div class="px-2 pb-3 pt-1 flex-shrink-0">
+    <button class="user-btn w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group">
+      <div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+        <span class="text-on-secondary-container font-bold text-sm" style="font-family:Inter;" id="sidebar-initials">EL</span>
+      </div>
+      <div class="user-info flex-1 min-w-0">
+        <p class="font-label-md text-label-md text-on-surface truncate leading-tight" id="sidebar-username">Engineering Lead</p>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide" id="sidebar-role">Admin</p>
+        </div>
+      </div>
+      <span class="more-btn-icon material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
+    </button>
+  </div>
+</aside>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<div id="app-main" class="h-screen flex flex-col overflow-hidden">
+
+  <!-- ── TOP BAR ── -->
+  <header class="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-40">
+    <nav class="flex items-center gap-1.5" aria-label="Breadcrumb">
+      <a href="dashboard-admin.html"
+         class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+        <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
+      </a>
+      <span class="text-outline-variant select-none">/</span>
+      <a href="project-detail.html" class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors whitespace-nowrap">VCU Engine Firmware</a>
+      <span class="text-outline-variant select-none">/</span>
+      <a href="documents.html" class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors">Documents</a>
+      <span class="text-outline-variant select-none">/</span>
+      <span class="font-label-md text-label-md text-on-surface">Compare</span>
+    </nav>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <!-- Role toggle (demo) -->
+      <div class="flex items-center gap-0.5 bg-surface-container-low border border-outline-variant rounded-lg p-0.5" title="Switch role (demo)">
+        <button id="btn-role-admin" onclick="setRole('admin')" class="role-btn active-admin">Admin</button>
+        <button id="btn-role-dev"   onclick="setRole('dev')"   class="role-btn inactive">Dev</button>
+      </div>
+      <div class="w-px h-5 bg-outline-variant mx-1"></div>
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">notifications</span>
+        <span class="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-error rounded-full border border-white"></span>
+      </button>
+      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">help</span>
+      </button>
+      <div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center cursor-pointer ml-0.5">
+        <span class="text-on-secondary-container font-bold" style="font-family:Inter;font-size:11px;" id="topbar-initials">EL</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── SUBBAR ── -->
+  <div class="h-10 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-low border-b border-outline-variant">
+    <div class="flex items-center gap-2">
+
+      <!-- Project switcher -->
+      <div class="relative" id="sb-project-wrap">
+        <button onclick="toggleSbProject()"
+                class="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
+                style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:13px;">folder</span>
+          <span class="text-on-surface">VCU Engine Firmware</span>
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;" id="sb-project-chevron">expand_more</span>
+        </button>
+        <div id="sb-project-dropdown" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:240px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+          <div class="py-1.5">
+            <button class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low text-left" style="background:#eff4ff;">
+              <span class="font-label-md text-label-md text-on-surface" style="font-size:12px;">VCU Engine Firmware</span>
+              <span class="ml-auto material-symbols-outlined text-secondary" style="font-size:15px;">check</span>
+            </button>
+            <button class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low text-left">
+              <span class="font-label-md text-label-md text-on-surface" style="font-size:12px;">Brake Control Unit</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <span class="text-outline-variant select-none">·</span>
+
+      <!-- Version picker -->
+      <div class="relative" id="sb-version-wrap">
+        <button onclick="toggleSbVersion()"
+                class="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
+                style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">sell</span>
+          <span class="text-on-surface">v1.2.0</span>
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;" id="sb-version-chevron">expand_more</span>
+        </button>
+        <div id="sb-version-dropdown" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:200px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+          <div class="py-1.5">
+            <button class="w-full text-left px-3 py-2.5 hover:bg-surface-container-low font-label-md text-label-md text-on-surface" style="background:#eff4ff;font-size:12px;">v1.2.0</button>
+            <button class="w-full text-left px-3 py-2.5 hover:bg-surface-container-low font-label-md text-label-md text-on-surface" style="font-size:12px;">v1.1.0</button>
+            <button class="w-full text-left px-3 py-2.5 hover:bg-surface-container-low font-label-md text-label-md text-on-surface" style="font-size:12px;">v1.0.0</button>
+          </div>
+        </div>
+      </div>
+
+      <span class="text-outline-variant select-none">·</span>
+
+      <!-- Commit chip (read-only) -->
+      <div class="flex items-center gap-1.5 px-2"
+           style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;">
+        <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:13px;">alt_route</span>
+        <span>main @ b2e8d45</span>
+        <span class="text-outline-variant">·</span>
+        <span style="color:#74777d;">Jun 15</span>
+      </div>
+    </div>
+
+    <!-- Right CTAs -->
+    <div class="flex items-center gap-1.5">
+      <button class="flex items-center gap-1.5 px-3 py-1 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors"
+              style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;letter-spacing:.02em;">
+        <span class="material-symbols-outlined" style="font-size:15px;">download</span>Export
+      </button>
+      <a href="documents.html"
+         class="flex items-center gap-1 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors font-label-md text-label-md text-on-surface-variant">
+        <span class="material-symbols-outlined" style="font-size:14px;">close</span>Exit
+      </a>
+    </div>
+  </div>
+
+  <!-- ── BODY ROW ── -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- DOCUMENT TREE -->
+    <aside class="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-hidden">
+      <div class="px-3 py-2.5 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
+        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em]">Documents</span>
+        <div class="flex items-center rounded-lg border border-outline-variant overflow-hidden" style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
+          <button id="toggle-diff" onclick="setTreeMode('diff')"
+                  class="px-2 py-1 bg-primary text-white transition-colors">Diff</button>
+          <button id="toggle-all"  onclick="setTreeMode('all')"
+                  class="px-2 py-1 text-on-surface-variant hover:bg-surface-container transition-colors">All</button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto py-2" id="doc-tree"></div>
+      <div class="px-3 py-2 border-t border-outline-variant flex-shrink-0">
+        <span class="font-label-sm text-label-sm text-on-surface-variant" id="diff-count"></span>
+      </div>
+    </aside>
+
+    <!-- COMPARE AREA -->
+    <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+
+      <!-- COMPARE SUB-BAR -->
+      <div class="h-10 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:16px;">compare_arrows</span>
+
+          <!-- Current commit picker -->
+          <div class="relative" id="current-switch-wrap">
+            <button onclick="toggleCurrentSwitch()"
+                    class="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
+                    style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+              <span class="text-on-tertiary-container font-semibold">main</span>
+              <span class="text-outline">@</span>
+              <span class="text-on-surface-variant" id="current-commit-label">b2e8d45</span>
+              <span id="current-commit-badge" style="display:flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:10px;font-family:'JetBrains Mono';background:#fff8e6;color:#b45309;border:1px solid #f59e0b;">
+                <span class="material-symbols-outlined" style="font-size:10px;">rate_review</span>In Review
+              </span>
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;" id="current-switch-chevron">expand_more</span>
+            </button>
+            <div id="current-switch-dropdown" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:320px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+              <div class="px-3 py-2 border-b border-outline-variant">
+                <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
+                  <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+                  <input id="current-switch-search" type="text" placeholder="Search commits…"
+                         oninput="filterCurrentSwitch(this.value)"
+                         class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline"
+                         style="font-family:'JetBrains Mono';font-size:11px;">
+                </div>
+              </div>
+              <div class="overflow-y-auto" style="max-height:220px;" id="current-switch-list"></div>
+            </div>
+          </div>
+
+          <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:16px;">arrow_forward</span>
+
+          <!-- Baseline commit picker -->
+          <div class="relative" id="commit-picker-wrap">
+            <button onclick="toggleCommitPicker()"
+                    class="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
+                    style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+              <span class="text-on-surface-variant" id="baseline-label-text">develop @ a3f9c12</span>
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;" id="commit-chevron">expand_more</span>
+            </button>
+            <div id="commit-picker" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:320px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+              <div class="px-3 py-2 border-b border-outline-variant">
+                <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
+                  <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+                  <input id="commit-search" type="text" placeholder="Search commits…"
+                         oninput="filterCommits(this.value)"
+                         class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline"
+                         style="font-family:'JetBrains Mono';font-size:11px;">
+                </div>
+              </div>
+              <div class="overflow-y-auto" style="max-height:220px;" id="commit-list"></div>
+            </div>
+          </div>
+
+          <!-- Diff stats -->
+          <div class="flex items-center gap-2 ml-1">
+            <span class="flex items-center gap-1 text-on-tertiary-container font-label-sm text-label-sm">
+              <span class="w-2 h-2 rounded-sm bg-on-tertiary-container inline-block"></span>1 added
+            </span>
+            <span class="flex items-center gap-1 text-secondary font-label-sm text-label-sm">
+              <span class="w-2 h-2 rounded-sm bg-secondary inline-block"></span>1 changed
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- REVIEW BAR — shown when Dev + in_review -->
+      <div id="review-bar" style="display:none;background:#eff4ff;border-color:#c7d9fb;"
+           class="h-10 flex-shrink-0 flex items-center justify-between px-4 border-b z-30">
+        <div class="flex items-center gap-3">
+          <span class="w-2 h-2 rounded-full bg-secondary flex-shrink-0"></span>
+          <span class="font-label-md text-label-md text-secondary">Review Mode</span>
+          <span class="text-outline-variant">·</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant">
+            <span id="review-done-count">0</span> of <span id="review-total-count">4</span> sections resolved
+          </span>
+        </div>
+        <button onclick="submitReview()"
+                class="flex items-center gap-1.5 px-3 py-1 bg-secondary text-white hover:bg-secondary-container rounded-lg transition-colors"
+                style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+          <span class="material-symbols-outlined" style="font-size:13px;">check_circle</span>Submit Review
+        </button>
+      </div>
+
+      <!-- SPLIT CANVAS -->
+      <div class="flex-1 flex overflow-hidden">
+
+        <!-- CURRENT / LEFT pane -->
+        <div class="flex-1 flex flex-col overflow-hidden border-r border-outline-variant min-w-0">
+          <div class="flex-shrink-0 px-4 py-2 bg-white border-b border-outline-variant flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:#00a572;"></span>
+            <span class="font-label-md text-label-md text-on-surface">Current</span>
+            <span class="px-2 py-0.5 rounded" style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;text-transform:uppercase;background:#00a572;color:#fff;">Latest</span>
+            <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';" id="current-panel-ref">main @ b2e8d45</span>
+          </div>
+          <div class="flex-1 overflow-y-auto bg-surface-container-low" id="canvas-current">
+            <div class="max-w-2xl mx-auto px-5 py-6">
+              <div class="bg-white rounded-xl border border-outline-variant overflow-hidden" style="box-shadow:0 1px 4px rgba(4,22,39,.06);">
+                <div class="px-8 pt-8 pb-6 border-b border-outline-variant">
+                  <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] mb-1" style="font-family:'JetBrains Mono';" id="current-commit-hash">b2e8d45</p>
+                  <h1 class="font-headline-md text-headline-md text-primary" id="doc-title-current">Brake Controller</h1>
+                  <p class="text-body-sm text-on-surface-variant mt-0.5">Software Detailed Design Specification</p>
+                </div>
+                <div class="px-8 py-8 space-y-10">
+
+                  <!-- 1. Introduction -->
+                  <section id="c-intro" class="transition-all duration-200">
+                    <div class="flex items-start justify-between gap-3 mb-3">
+                      <h2 class="font-headline-sm text-headline-sm text-primary">1. Introduction</h2>
+                      <div class="review-ctrl flex-shrink-0 items-center gap-1.5 mt-0.5" style="display:none;" id="ctrl-c-intro">
+                        <span id="badge-c-intro" style="display:flex;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:#f8f9ff;color:#74777d;border:1px solid #c4c6cd;">○ Pending</span>
+                        <button onclick="approveSection('c-intro')" id="approve-btn-c-intro"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-on-tertiary-container hover:text-white hover:border-on-tertiary-container text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">check</span>Approve
+                        </button>
+                        <button onclick="ignoreSection('c-intro')" id="ignore-btn-c-intro"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">remove</span>Ignore
+                        </button>
+                        <button onclick="openEdit('c-intro','Introduction')" id="edit-btn-c-intro"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">edit</span>Edit
+                        </button>
+                      </div>
+                    </div>
+                    <p class="text-body-md text-on-surface leading-relaxed">
+                      The <strong>Brake Controller</strong> unit implements the core logic for the Electronic Braking System (EBS).
+                      It processes wheel speed sensor data and driver brake requests to modulate hydraulic valve actuators
+                      via high-frequency PWM signals.
+                    </p>
+                  </section>
+
+                  <!-- 2. Interfaces — has added row -->
+                  <section id="c-interfaces" class="transition-all duration-200">
+                    <div class="flex items-start justify-between gap-3 mb-3">
+                      <h2 class="font-headline-sm text-headline-sm text-primary">2. Interfaces</h2>
+                      <div class="review-ctrl flex-shrink-0 items-center gap-1.5 mt-0.5" style="display:flex;" id="ctrl-c-interfaces">
+                        <span id="badge-c-interfaces" style="display:flex;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:#f8f9ff;color:#74777d;border:1px solid #c4c6cd;">○ Pending</span>
+                        <button onclick="approveSection('c-interfaces')" id="approve-btn-c-interfaces"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-on-tertiary-container hover:text-white hover:border-on-tertiary-container text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">check</span>Approve
+                        </button>
+                        <button onclick="ignoreSection('c-interfaces')" id="ignore-btn-c-interfaces"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">remove</span>Ignore
+                        </button>
+                        <button onclick="openEdit('c-interfaces','Interfaces')" id="edit-btn-c-interfaces"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">edit</span>Edit
+                        </button>
+                      </div>
+                    </div>
+                    <div class="overflow-hidden border border-outline-variant rounded-lg">
+                      <table class="w-full text-left" style="font-size:12px;">
+                        <thead class="bg-surface-container text-on-surface-variant">
+                          <tr>
+                            <th class="px-3 py-2.5 border-b border-outline-variant font-semibold">Interface ID</th>
+                            <th class="px-3 py-2.5 border-b border-outline-variant font-semibold">Dir</th>
+                            <th class="px-3 py-2.5 border-b border-outline-variant font-semibold">Description</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr class="border-b border-outline-variant/60">
+                            <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_BrakeReq</td>
+                            <td class="px-3 py-2 text-on-surface-variant">Input</td>
+                            <td class="px-3 py-2 text-on-surface-variant">Target deceleration from VCU</td>
+                          </tr>
+                          <tr class="border-b border-outline-variant/60">
+                            <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_WheelSpeed[4]</td>
+                            <td class="px-3 py-2 text-on-surface-variant">Input</td>
+                            <td class="px-3 py-2 text-on-surface-variant">Raw encoder pulse counts</td>
+                          </tr>
+                          <tr class="border-b border-outline-variant/60">
+                            <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_ValveCmd</td>
+                            <td class="px-3 py-2 text-on-surface-variant">Output</td>
+                            <td class="px-3 py-2 text-on-surface-variant">PWM duty cycle for valves</td>
+                          </tr>
+                          <tr class="diff-added">
+                            <td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_DiagStatus</td>
+                            <td class="px-3 py-2 text-on-surface-variant">Output</td>
+                            <td class="px-3 py-2 text-on-surface-variant">
+                              Diagnostic trouble code bitmask
+                              <span class="ml-1.5 px-1.5 py-0.5 rounded text-on-tertiary-container bg-on-tertiary-container/10 font-label-sm text-label-sm">+ added</span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <!-- 3. Static Design -->
+                  <section id="c-static" class="transition-all duration-200">
+                    <div class="flex items-start justify-between gap-3 mb-3">
+                      <h2 class="font-headline-sm text-headline-sm text-primary">3. Static Design</h2>
+                      <div class="review-ctrl flex-shrink-0 items-center gap-1.5 mt-0.5" style="display:none;" id="ctrl-c-static">
+                        <span id="badge-c-static" style="display:flex;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:#f8f9ff;color:#74777d;border:1px solid #c4c6cd;">○ Pending</span>
+                        <button onclick="approveSection('c-static')" id="approve-btn-c-static"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-on-tertiary-container hover:text-white hover:border-on-tertiary-container text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">check</span>Approve
+                        </button>
+                        <button onclick="ignoreSection('c-static')" id="ignore-btn-c-static"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">remove</span>Ignore
+                        </button>
+                        <button onclick="openEdit('c-static','Static Design')" id="edit-btn-c-static"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">edit</span>Edit
+                        </button>
+                      </div>
+                    </div>
+                    <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-10 gap-2">
+                      <span class="material-symbols-outlined text-outline-variant" style="font-size:36px;">schema</span>
+                      <p class="font-label-md text-label-md text-on-surface-variant">Include dependency diagram</p>
+                    </div>
+                  </section>
+
+                  <!-- 4. Dynamic Design — changed CFG -->
+                  <section id="c-dynamic" class="transition-all duration-200">
+                    <div class="flex items-start justify-between gap-3 mb-3">
+                      <h2 class="font-headline-sm text-headline-sm text-primary">4. Dynamic Design</h2>
+                      <div class="review-ctrl flex-shrink-0 items-center gap-1.5 mt-0.5" style="display:flex;" id="ctrl-c-dynamic">
+                        <span id="badge-c-dynamic" style="display:flex;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:#f8f9ff;color:#74777d;border:1px solid #c4c6cd;">○ Pending</span>
+                        <button onclick="approveSection('c-dynamic')" id="approve-btn-c-dynamic"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-on-tertiary-container hover:text-white hover:border-on-tertiary-container text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">check</span>Approve
+                        </button>
+                        <button onclick="ignoreSection('c-dynamic')" id="ignore-btn-c-dynamic"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">remove</span>Ignore
+                        </button>
+                        <button onclick="openEdit('c-dynamic','Dynamic Design')" id="edit-btn-c-dynamic"
+                                class="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant transition-colors"
+                                style="font-size:10px;font-family:'JetBrains Mono';">
+                          <span class="material-symbols-outlined" style="font-size:11px;">edit</span>Edit
+                        </button>
+                      </div>
+                    </div>
+                    <div class="mb-6">
+                      <h3 class="font-label-md text-label-md text-on-surface mb-2 uppercase tracking-[0.06em]">4.1 Control Flow Graphs</h3>
+                      <div class="diff-changed rounded-lg p-4 flex flex-col items-center justify-center text-center py-10 gap-2 border border-secondary/20">
+                        <span class="material-symbols-outlined text-secondary" style="font-size:36px;">account_tree</span>
+                        <p class="font-label-md text-label-md text-on-surface-variant">CFG · 4 functions · 51 nodes</p>
+                        <span class="px-2 py-0.5 rounded text-secondary bg-secondary/10 font-label-sm text-label-sm">~ changed</span>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 class="font-label-md text-label-md text-on-surface mb-2 uppercase tracking-[0.06em]">4.2 State Machine</h3>
+                      <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-10 gap-2">
+                        <span class="material-symbols-outlined text-outline-variant" style="font-size:36px;">alt_route</span>
+                        <p class="font-label-md text-label-md text-on-surface-variant">State machine · INIT → STANDBY → ACTIVE → FAULT</p>
+                      </div>
+                    </div>
+                  </section>
+
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BASELINE / RIGHT pane (read-only) -->
+        <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+          <div class="flex-shrink-0 px-4 py-2 bg-white border-b border-outline-variant flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-outline"></span>
+            <span class="font-label-md text-label-md text-on-surface">Baseline</span>
+            <span class="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant border border-outline-variant" style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;text-transform:uppercase;" id="baseline-badge">a3f9c12</span>
+            <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';" id="baseline-ref-label">develop @ a3f9c12</span>
+          </div>
+          <div class="flex-1 overflow-y-auto bg-surface-container-low" id="canvas-baseline">
+            <div id="baseline-no-doc" class="hidden h-full flex items-center justify-center p-8">
+              <div class="text-center" style="max-width:300px;">
+                <span class="material-symbols-outlined text-outline-variant block mb-4" style="font-size:40px;">description</span>
+                <p class="font-headline-sm text-headline-sm text-on-surface mb-1">No document for <code class="font-label-md text-label-md text-secondary" id="baseline-no-doc-hash" style="font-size:15px;">hash</code></p>
+                <p class="text-body-sm text-on-surface-variant mb-6" id="baseline-no-doc-msg">No commit selected</p>
+                <p class="text-body-sm text-outline">Select a documented commit as baseline ←</p>
+              </div>
+            </div>
+            <div id="baseline-doc-content">
+              <div class="max-w-2xl mx-auto px-5 py-6">
+                <div class="bg-white rounded-xl border border-outline-variant overflow-hidden" style="box-shadow:0 1px 4px rgba(4,22,39,.06);">
+                  <div class="px-8 pt-8 pb-6 border-b border-outline-variant">
+                    <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] mb-1" style="font-family:'JetBrains Mono';" id="baseline-commit-hash">a3f9c12</p>
+                    <h1 class="font-headline-md text-headline-md text-primary" id="doc-title-baseline">Brake Controller</h1>
+                    <p class="text-body-sm text-on-surface-variant mt-0.5">Software Detailed Design Specification</p>
+                  </div>
+                  <div class="px-8 py-8 space-y-10">
+
+                    <section id="b-intro">
+                      <h2 class="font-headline-sm text-headline-sm text-primary mb-3">1. Introduction</h2>
+                      <p class="text-body-md text-on-surface leading-relaxed">
+                        The <strong>Brake Controller</strong> unit implements the core logic for the Electronic Braking System (EBS).
+                        It processes wheel speed sensor data and driver brake requests to modulate hydraulic valve actuators
+                        via high-frequency PWM signals.
+                      </p>
+                    </section>
+
+                    <section id="b-interfaces">
+                      <h2 class="font-headline-sm text-headline-sm text-primary mb-3">2. Interfaces</h2>
+                      <div class="overflow-hidden border border-outline-variant rounded-lg">
+                        <table class="w-full text-left" style="font-size:12px;">
+                          <thead class="bg-surface-container text-on-surface-variant">
+                            <tr>
+                              <th class="px-3 py-2.5 border-b border-outline-variant font-semibold">Interface ID</th>
+                              <th class="px-3 py-2.5 border-b border-outline-variant font-semibold">Dir</th>
+                              <th class="px-3 py-2.5 border-b border-outline-variant font-semibold">Description</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr class="border-b border-outline-variant/60"><td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_BrakeReq</td><td class="px-3 py-2 text-on-surface-variant">Input</td><td class="px-3 py-2 text-on-surface-variant">Target deceleration from VCU</td></tr>
+                            <tr class="border-b border-outline-variant/60"><td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_WheelSpeed[4]</td><td class="px-3 py-2 text-on-surface-variant">Input</td><td class="px-3 py-2 text-on-surface-variant">Raw encoder pulse counts</td></tr>
+                            <tr class="border-b border-outline-variant/60"><td class="px-3 py-2 font-label-md text-label-md text-secondary">IF_ValveCmd</td><td class="px-3 py-2 text-on-surface-variant">Output</td><td class="px-3 py-2 text-on-surface-variant">PWM duty cycle for valves</td></tr>
+                            <tr class="diff-removed opacity-40">
+                              <td class="px-3 py-2 font-label-md text-label-md line-through text-on-surface-variant" colspan="3">— IF_DiagStatus not in this version</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+
+                    <section id="b-static">
+                      <h2 class="font-headline-sm text-headline-sm text-primary mb-3">3. Static Design</h2>
+                      <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-10 gap-2">
+                        <span class="material-symbols-outlined text-outline-variant" style="font-size:36px;">schema</span>
+                        <p class="font-label-md text-label-md text-on-surface-variant">Include dependency diagram</p>
+                      </div>
+                    </section>
+
+                    <section id="b-dynamic">
+                      <h2 class="font-headline-sm text-headline-sm text-primary mb-3">4. Dynamic Design</h2>
+                      <div class="mb-6">
+                        <h3 class="font-label-md text-label-md text-on-surface mb-2 uppercase tracking-[0.06em]">4.1 Control Flow Graphs</h3>
+                        <div class="diff-changed rounded-lg p-4 flex flex-col items-center justify-center text-center py-10 gap-2 border border-secondary/20">
+                          <span class="material-symbols-outlined text-secondary" style="font-size:36px;">account_tree</span>
+                          <p class="font-label-md text-label-md text-on-surface-variant">CFG · 3 functions · 42 nodes</p>
+                          <span class="px-2 py-0.5 rounded text-secondary bg-secondary/10 font-label-sm text-label-sm">~ changed</span>
+                        </div>
+                      </div>
+                      <div>
+                        <h3 class="font-label-md text-label-md text-on-surface mb-2 uppercase tracking-[0.06em]">4.2 State Machine</h3>
+                        <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-10 gap-2">
+                          <span class="material-symbols-outlined text-outline-variant" style="font-size:36px;">alt_route</span>
+                          <p class="font-label-md text-label-md text-on-surface-variant">State machine · INIT → STANDBY → ACTIVE → FAULT</p>
+                        </div>
+                      </div>
+                    </section>
+
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /split canvas -->
+    </div><!-- /compare area -->
+  </div><!-- /body row -->
+</div><!-- /app-main -->
+
+<!-- EDIT MODAL -->
+<div id="edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-6" style="background:rgba(4,22,39,.4);">
+  <div class="bg-white rounded-xl w-full overflow-hidden" style="max-width:560px;box-shadow:0 8px 40px rgba(4,22,39,.2);">
+    <div class="px-6 py-4 border-b border-outline-variant flex items-center justify-between">
+      <h3 class="font-headline-sm text-headline-sm text-on-surface" id="edit-modal-title">Edit Section</h3>
+      <button onclick="closeEdit()" class="p-1 hover:bg-surface-container rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">close</span>
+      </button>
+    </div>
+    <div class="p-6">
+      <p class="text-body-sm text-on-surface-variant mb-3">Edit the content for this section. Changes will be marked as "Edited" in the review.</p>
+      <textarea id="edit-textarea" rows="7"
+                class="w-full border border-outline-variant rounded-lg px-3 py-2.5 text-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 resize-none"
+                style="font-family:Inter;"></textarea>
+    </div>
+    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-end gap-2">
+      <button onclick="closeEdit()" class="px-4 py-2 border border-outline-variant hover:bg-surface-container rounded-lg font-label-md text-label-md text-on-surface-variant transition-colors">Cancel</button>
+      <button onclick="saveEdit()" class="px-4 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg font-label-md text-label-md transition-colors flex items-center gap-1.5">
+        <span class="material-symbols-outlined" style="font-size:14px;">save</span>Save & Approve
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentRole   = 'admin';
+let currentHash   = 'b2e8d45';
+let selectedHash  = 'a3f9c12';
+let treeMode      = 'diff';
+let activeItem    = 'Brake Controller';
+let activeEditSec = null;
+let swe3Expanded  = true;
+
+const sectionStates = {
+  'c-intro': 'pending', 'c-interfaces': 'pending',
+  'c-static': 'pending', 'c-dynamic': 'pending',
+};
+
+// ── Commits ───────────────────────────────────────────────────────────────────
+const commits = [
+  { hash: 'b2e8d45', branch: 'main',    age: '2h ago',  msg: 'feat: add IF_DiagStatus interface',       docStatus: 'in_review' },
+  { hash: 'a3f9c12', branch: 'main',    age: '5h ago',  msg: 'fix: valve cmd threshold for ASIL-D',    docStatus: 'complete'  },
+  { hash: '9e2b881', branch: 'develop', age: '1d ago',  msg: 'refactor: slip control logic extraction', docStatus: 'approved'  },
+  { hash: '3d7a190', branch: 'develop', age: '2d ago',  msg: 'chore: update clang config',              docStatus: null        },
+  { hash: 'f4c8e02', branch: 'develop', age: '4d ago',  msg: 'fix: ABS Unit interface ID numbering',    docStatus: null        },
+  { hash: 'c91a3bb', branch: 'develop', age: '1w ago',  msg: 'feat: include dependency diagram phase',  docStatus: null        },
+  { hash: 'd4f2a31', branch: 'develop', age: '2w ago',  msg: 'init: initial project structure',         docStatus: null        },
+];
+
+function docStatusBadge(status) {
+  const map = {
+    in_review: { icon: 'rate_review', label: 'In Review', bg: '#fff8e6', color: '#b45309', border: '#f59e0b' },
+    approved:  { icon: 'task_alt',    label: 'Approved',  bg: '#f0fdf9', color: '#00a572', border: '#86efac' },
+    complete:  { icon: 'check_circle',label: 'Complete',  bg: '#f0fdf9', color: '#00a572', border: '#86efac' },
+  };
+  const b = map[status];
+  if (!b) return '';
+  return `<span style="display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;font-size:9px;font-family:'JetBrains Mono';font-weight:600;background:${b.bg};color:${b.color};border:1px solid ${b.border};">
+    <span class="material-symbols-outlined" style="font-size:9px;">${b.icon}</span>${b.label}</span>`;
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function toggleSidebar() {
+  document.body.classList.toggle('nav-expanded');
+  document.getElementById('sidebar-toggle-icon').textContent =
+    document.body.classList.contains('nav-expanded') ? 'chevron_left' : 'chevron_right';
+}
+
+// ── Subbar dropdowns ──────────────────────────────────────────────────────────
+function toggleSbProject() {
+  const dd = document.getElementById('sb-project-dropdown');
+  const ch = document.getElementById('sb-project-chevron');
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open); ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+function toggleSbVersion() {
+  const dd = document.getElementById('sb-version-dropdown');
+  const ch = document.getElementById('sb-version-chevron');
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open); ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+
+// ── Current commit switcher ───────────────────────────────────────────────────
+function renderCurrentSwitchList(filter = '') {
+  const el = document.getElementById('current-switch-list');
+  const filtered = commits.filter(c => c.hash.includes(filter) || c.msg.toLowerCase().includes(filter.toLowerCase()));
+  el.innerHTML = filtered.map(c => `
+    <button onclick="selectCurrentCommit('${c.hash}','${c.branch}')"
+            class="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left border-b border-outline-variant/50 last:border-0 ${c.hash === currentHash ? 'bg-surface-container-low' : ''}">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:600;color:${c.hash === currentHash ? '#0058be' : '#44474c'};">${c.hash}</span>
+          <span class="font-label-sm text-label-sm text-outline">${c.age}</span>
+          ${docStatusBadge(c.docStatus)}
+        </div>
+        <p class="text-body-sm text-on-surface-variant truncate mt-0.5">${c.msg}</p>
+      </div>
+      ${c.hash === currentHash ? '<span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:16px;margin-top:2px;">check</span>' : ''}
+    </button>`).join('');
+}
+
+function filterCurrentSwitch(val) { renderCurrentSwitchList(val); }
+
+function toggleCurrentSwitch() {
+  const dd = document.getElementById('current-switch-dropdown');
+  const ch = document.getElementById('current-switch-chevron');
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open); ch.style.transform = open ? '' : 'rotate(180deg)';
+  if (!open) {
+    document.getElementById('current-switch-search').value = '';
+    renderCurrentSwitchList();
+    setTimeout(() => document.getElementById('current-switch-search').focus(), 50);
+  }
+}
+
+function selectCurrentCommit(hash, branch) {
+  currentHash = hash;
+  document.getElementById('current-commit-label').textContent = hash;
+  document.getElementById('current-panel-ref').textContent    = `${branch} @ ${hash}`;
+  document.getElementById('current-commit-hash').textContent  = hash;
+  document.getElementById('current-switch-dropdown').classList.add('hidden');
+  document.getElementById('current-switch-chevron').style.transform = '';
+  renderCurrentSwitchList();
+  const c = commits.find(c => c.hash === hash);
+  setReviewMode(currentRole === 'dev' && c && c.docStatus === 'in_review');
+}
+
+// ── Baseline commit picker ────────────────────────────────────────────────────
+function renderCommitList(filter = '') {
+  const el = document.getElementById('commit-list');
+  const filtered = commits.filter(c => c.hash.includes(filter) || c.msg.toLowerCase().includes(filter.toLowerCase()));
+  el.innerHTML = filtered.map(c => `
+    <button onclick="selectBaselineCommit('${c.hash}','${c.branch}')"
+            class="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left border-b border-outline-variant/50 last:border-0 ${c.hash === selectedHash ? 'bg-surface-container-low' : ''}">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:600;color:${c.hash === selectedHash ? '#0058be' : '#44474c'};">${c.hash}</span>
+          <span class="font-label-sm text-label-sm text-outline">${c.age}</span>
+          ${docStatusBadge(c.docStatus)}
+        </div>
+        <p class="text-body-sm text-on-surface-variant truncate mt-0.5">${c.msg}</p>
+      </div>
+      ${c.hash === selectedHash ? '<span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:16px;margin-top:2px;">check</span>' : ''}
+    </button>`).join('');
+}
+
+function filterCommits(val) { renderCommitList(val); }
+
+function toggleCommitPicker() {
+  const p  = document.getElementById('commit-picker');
+  const ch = document.getElementById('commit-chevron');
+  const open = !p.classList.contains('hidden');
+  p.classList.toggle('hidden', open); ch.style.transform = open ? '' : 'rotate(180deg)';
+  if (!open) {
+    document.getElementById('commit-search').value = '';
+    renderCommitList();
+    setTimeout(() => document.getElementById('commit-search').focus(), 50);
+  }
+}
+
+function selectBaselineCommit(hash, branch) {
+  selectedHash = hash;
+  const c = commits.find(c => c.hash === hash);
+  const label = `${branch} @ ${hash}`;
+  document.getElementById('baseline-label-text').textContent = label;
+  document.getElementById('baseline-badge').textContent      = hash;
+  document.getElementById('baseline-ref-label').textContent  = label;
+  document.getElementById('commit-picker').classList.add('hidden');
+  document.getElementById('commit-chevron').style.transform = '';
+  renderCommitList();
+  const hasDoc = c && c.docStatus;
+  document.getElementById('baseline-no-doc').classList.toggle('hidden', !!hasDoc);
+  document.getElementById('baseline-doc-content').classList.toggle('hidden', !hasDoc);
+  if (!hasDoc && c) {
+    document.getElementById('baseline-no-doc-hash').textContent = c.hash;
+    document.getElementById('baseline-no-doc-msg').textContent  = `"${c.msg}" · ${c.age}`;
+  }
+}
+
+// ── Review mode ───────────────────────────────────────────────────────────────
+function setReviewMode(on) {
+  document.getElementById('review-bar').style.display = on ? 'flex' : 'none';
+  // diff sections (c-interfaces, c-dynamic) are always visible — only toggle non-diff sections
+  ['ctrl-c-intro','ctrl-c-static'].forEach(id => {
+    document.getElementById(id).style.display = on ? 'flex' : 'none';
+  });
+  if (!on) {
+    Object.keys(sectionStates).forEach(id => {
+      const sec = document.getElementById(id);
+      if (sec) sec.classList.remove('sec-approved','sec-ignored','sec-edited');
+    });
+  }
+  updateReviewCounter();
+}
+
+function approveSection(id) {
+  sectionStates[id] = 'approved';
+  setBadge(id, '#f0fdf9', '#00a572', '#00a572', 'check', 'Approved');
+  clearActionBtns(id);
+  const sec = document.getElementById(id);
+  sec.classList.remove('sec-ignored','sec-edited'); sec.classList.add('sec-approved');
+  updateReviewCounter();
+}
+
+function ignoreSection(id) {
+  sectionStates[id] = 'ignored';
+  setBadge(id, '#f8f9ff', '#74777d', '#c4c6cd', 'remove', 'Ignored');
+  clearActionBtns(id);
+  const sec = document.getElementById(id);
+  sec.classList.remove('sec-approved','sec-edited'); sec.classList.add('sec-ignored');
+  updateReviewCounter();
+}
+
+function setBadge(id, bg, color, border, icon, label) {
+  const badge = document.getElementById('badge-' + id);
+  badge.style.cssText = `display:flex;align-items:center;gap:2px;padding:2px 8px;border-radius:9999px;font-size:10px;font-family:'JetBrains Mono';font-weight:600;background:${bg};color:${color};border:1px solid ${border};`;
+  badge.innerHTML = `<span class="material-symbols-outlined" style="font-size:10px;">${icon}</span>${label}`;
+}
+
+function clearActionBtns(id) {
+  ['approve-btn-','ignore-btn-','edit-btn-'].forEach(prefix => {
+    const btn = document.getElementById(prefix + id);
+    if (btn) btn.remove();
+  });
+}
+
+function openEdit(sectionId, label) {
+  activeEditSec = sectionId;
+  const samples = {
+    'c-intro':      'The Brake Controller unit implements the core logic for the Electronic Braking System (EBS). It processes wheel speed sensor data and driver brake requests to modulate hydraulic valve actuators via high-frequency PWM signals.',
+    'c-interfaces': 'Input and output interfaces as derived from the SWE.2 Software Architecture. Note: IF_DiagStatus has been added in this commit.',
+    'c-static':     'Include dependencies and internal module structure derived from Clang AST analysis.',
+    'c-dynamic':    'Per-function control flow graphs and state machine diagram derived from Clang AST. CFG expanded from 3 to 4 functions.',
+  };
+  document.getElementById('edit-modal-title').textContent = `Edit: ${label}`;
+  document.getElementById('edit-textarea').value = samples[sectionId] || '';
+  document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function closeEdit() {
+  document.getElementById('edit-modal').classList.add('hidden');
+  activeEditSec = null;
+}
+
+function saveEdit() {
+  if (!activeEditSec) return;
+  sectionStates[activeEditSec] = 'edited';
+  setBadge(activeEditSec, '#eff4ff', '#0058be', '#0058be', 'edit', 'Edited');
+  clearActionBtns(activeEditSec);
+  const sec = document.getElementById(activeEditSec);
+  sec.classList.remove('sec-approved','sec-ignored'); sec.classList.add('sec-edited');
+  closeEdit();
+  updateReviewCounter();
+}
+
+function updateReviewCounter() {
+  const done  = Object.values(sectionStates).filter(s => s !== 'pending').length;
+  const total = Object.keys(sectionStates).length;
+  document.getElementById('review-done-count').textContent  = done;
+  document.getElementById('review-total-count').textContent = total;
+}
+
+function submitReview() {
+  const done  = Object.values(sectionStates).filter(s => s !== 'pending').length;
+  const total = Object.keys(sectionStates).length;
+  if (done < total && !confirm(`${total - done} section(s) still pending. Submit anyway?`)) return;
+  alert('Review submitted! The Admin will be notified.');
+  document.getElementById('review-bar').style.display = 'none';
+}
+
+// ── Role ──────────────────────────────────────────────────────────────────────
+function setRole(role) {
+  currentRole = role;
+  document.getElementById('btn-role-admin').className = `role-btn ${role === 'admin' ? 'active-admin' : 'inactive'}`;
+  document.getElementById('btn-role-dev').className   = `role-btn ${role === 'dev'   ? 'active-dev'   : 'inactive'}`;
+  const isAdmin = role === 'admin';
+  document.getElementById('sidebar-initials').textContent = isAdmin ? 'EL' : 'BK';
+  document.getElementById('sidebar-username').textContent = isAdmin ? 'Engineering Lead' : 'Bob Kumar';
+  document.getElementById('sidebar-role').textContent     = isAdmin ? 'Admin' : 'Developer';
+  document.getElementById('topbar-initials').textContent  = isAdmin ? 'EL' : 'BK';
+  const c = commits.find(c => c.hash === currentHash);
+  setReviewMode(role === 'dev' && c && c.docStatus === 'in_review');
+}
+
+// ── Document tree ─────────────────────────────────────────────────────────────
+const swe3Items = [
+  { name: 'Brake Controller',    diff: 'changed' },
+  { name: 'Throttle Controller', diff: 'added'   },
+  { name: 'ABS Unit',            diff: null       },
+  { name: 'Stability Control',   diff: null       },
+  { name: 'GPIO Driver',         diff: null       },
+  { name: 'CAN Driver',          diff: null       },
+];
+
+const flatDocs = [
+  { process: 'SWE.2', name: 'SW Architecture Spec',     bg: '#eef2ff', color: '#4f46e5', diff: null },
+  { process: 'SWE.1', name: 'SW Requirements Spec',     bg: '#f0fdf9', color: '#00a572', diff: null },
+  { process: 'SYS.1', name: 'System Requirements Spec', bg: '#faf5ff', color: '#7c3aed', diff: null },
+  { process: 'SYS.2', name: 'System Test Spec',         bg: '#fff7ed', color: '#c2410c', diff: null },
+];
+
+const diffMeta = {
+  changed: { label: '~', color: '#0058be', bg: '#e5eeff' },
+  added:   { label: '+', color: '#00a572', bg: 'rgba(0,165,114,.1)' },
+};
+
+function setTreeMode(mode) {
+  treeMode = mode;
+  document.getElementById('toggle-diff').className = `px-2 py-1 transition-colors ${mode === 'diff' ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface-container'}`;
+  document.getElementById('toggle-all').className  = `px-2 py-1 transition-colors ${mode === 'all'  ? 'bg-primary text-white' : 'text-on-surface-variant hover:bg-surface-container'}`;
+  renderTree();
+}
+
+function renderTree() {
+  const el = document.getElementById('doc-tree');
+  el.innerHTML = '';
+  const changedCount = swe3Items.filter(c => c.diff).length;
+  document.getElementById('diff-count').textContent = `${changedCount} document${changedCount !== 1 ? 's' : ''} changed`;
+
+  // SWE.3 accordion
+  const swe3HasDiff = swe3Items.some(c => c.diff);
+  if (treeMode === 'all' || swe3HasDiff) {
+    const hdr = document.createElement('div');
+    hdr.className = 'flex items-center gap-1.5 px-3 py-1.5 cursor-pointer hover:bg-surface-container-low transition-colors select-none';
+    hdr.innerHTML = `
+      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;transform:rotate(${swe3Expanded ? 90 : 0}deg);transition:transform .15s;">chevron_right</span>
+      <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:#e5eeff;color:#0058be;padding:1px 6px;border-radius:3px;">SWE.3</span>`;
+    hdr.onclick = () => { swe3Expanded = !swe3Expanded; renderTree(); };
+    el.appendChild(hdr);
+
+    if (swe3Expanded) {
+      swe3Items.forEach(({ name, diff }) => {
+        if (treeMode === 'diff' && !diff) return;
+        const isActive = name === activeItem;
+        const meta = diff ? diffMeta[diff] : null;
+        const row = document.createElement('div');
+        row.className = `tree-component${isActive ? ' active' : ''}`;
+        row.style.paddingLeft = '32px';
+        const dotColor = meta ? meta.color : (isActive ? '#0058be' : '#c4c6cd');
+        const badge = meta ? `<span style="margin-left:auto;font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:${meta.color};background:${meta.bg};padding:1px 5px;border-radius:3px;">${meta.label}</span>` : '';
+        row.innerHTML = `<span class="comp-dot" style="background:${dotColor};"></span><span class="${!diff && !isActive ? 'opacity-40' : ''}">${name}</span>${badge}`;
+        row.onclick = () => { selectItem(name); };
+        el.appendChild(row);
+      });
+    }
+  }
+
+  // Flat docs — no accordion
+  flatDocs.forEach(({ process, name, bg, color, diff }) => {
+    if (treeMode === 'diff' && !diff) return;
+    const isActive = name === activeItem;
+    const row = document.createElement('div');
+    row.className = `proc-row${isActive ? ' active' : ''}`;
+    row.innerHTML = `
+      <span class="comp-dot" style="background:${isActive ? '#0058be' : '#c4c6cd'};"></span>
+      <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:${bg};color:${color};padding:1px 6px;border-radius:3px;">${process}</span>
+      <span class="${!isActive ? 'opacity-50' : ''}" style="font-size:11px;font-family:'JetBrains Mono';">${name}</span>`;
+    row.onclick = () => { selectItem(name); };
+    el.appendChild(row);
+  });
+}
+
+function selectItem(name) {
+  activeItem = name;
+  document.getElementById('doc-title-current').textContent  = name;
+  document.getElementById('doc-title-baseline').textContent = name;
+  renderTree();
+}
+
+// ── Sync scroll ───────────────────────────────────────────────────────────────
+const canvasCurrent  = document.getElementById('canvas-current');
+const canvasBaseline = document.getElementById('canvas-baseline');
+let isSyncing = false;
+canvasCurrent.addEventListener('scroll',  () => { if (isSyncing) return; isSyncing = true; canvasBaseline.scrollTop = canvasCurrent.scrollTop;  requestAnimationFrame(() => { isSyncing = false; }); }, { passive: true });
+canvasBaseline.addEventListener('scroll', () => { if (isSyncing) return; isSyncing = true; canvasCurrent.scrollTop  = canvasBaseline.scrollTop; requestAnimationFrame(() => { isSyncing = false; }); }, { passive: true });
+
+// ── Outside click ─────────────────────────────────────────────────────────────
+document.addEventListener('click', e => {
+  [['sb-project-wrap','sb-project-dropdown','sb-project-chevron'],
+   ['sb-version-wrap','sb-version-dropdown','sb-version-chevron'],
+   ['current-switch-wrap','current-switch-dropdown','current-switch-chevron'],
+   ['commit-picker-wrap','commit-picker','commit-chevron']
+  ].forEach(([wrap, dd, ch]) => {
+    if (!document.getElementById(wrap).contains(e.target)) {
+      document.getElementById(dd).classList.add('hidden');
+      if (ch) document.getElementById(ch).style.transform = '';
+    }
+  });
+  if (e.target === document.getElementById('edit-modal')) closeEdit();
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+renderTree();
+renderCurrentSwitchList();
+renderCommitList();
+setRole('admin');
+</script>
+</body>
+</html>
