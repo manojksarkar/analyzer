@@ -16,6 +16,7 @@ from core.config import (
     clang_config as _clang_config,
     default_clang_macro_defs,
 )
+from incremental.hashing import hash_cursor, hash_macro_text
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -284,6 +285,10 @@ index = cindex.Index.create()
 functions = {}
 globals_data = {}
 data_dictionary = {}
+# Incremental (M1.2): entityKey -> token-sha256, for all four entity kinds.
+# Function/global keys are filled in build_metadata (need the model key); type and
+# macro keys are filled directly in their passes. Written to model/hashes.json.
+entity_hashes = {}
 call_graph = defaultdict(list)  # caller -> [callees]
 reverse_call_graph = defaultdict(list)  # callee -> [callers]
 component_functions = defaultdict(list)
@@ -502,6 +507,9 @@ def visit_type_definitions(cursor):
             if cmt:
                 struct_entry["comment"] = cmt
             data_dictionary[qn] = struct_entry
+            # Incremental (M1.2): type hash keyed by qn; a definition wins over a forward decl.
+            if cursor.is_definition() or qn not in entity_hashes:
+                entity_hashes[qn] = hash_cursor(cursor, comment=struct_entry.get("comment", ""))
             # Also add typedef entry when this struct participates in a 'typedef struct { ... } Name;' pattern.
             if cursor.kind == cindex.CursorKind.STRUCT_DECL and cursor.spelling:
                 _maybe_add_typedef_for_struct(name, qn, loc, rel_file)
@@ -535,6 +543,9 @@ def visit_type_definitions(cursor):
         if cmt:
             enum_dict["comment"] = cmt
         data_dictionary[qn] = enum_dict
+        # Incremental (M1.2): enum hash keyed by qn; a definition wins over a forward decl.
+        if cursor.is_definition() or qn not in entity_hashes:
+            entity_hashes[qn] = hash_cursor(cursor, comment=enum_dict.get("comment", ""))
 
     elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
         if cursor.spelling:
@@ -557,6 +568,9 @@ def visit_type_definitions(cursor):
             if cmt:
                 typedef_dict["comment"] = cmt
             data_dictionary[key] = typedef_dict
+            # Incremental (M1.2): typedef hash keyed by qn; don't clobber a struct/enum
+            # definition's hash that already owns this qn (e.g. typedef of a named enum).
+            entity_hashes.setdefault(qn, hash_cursor(cursor, comment=typedef_dict.get("comment", "")))
 
     for child in cursor.get_children():
         visit_type_definitions(child)
@@ -736,6 +750,8 @@ def visit_definitions(cursor):
             "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
             "description": _preceding_comment(cursor),
         }
+        # Incremental (M1.2): token hash of the body + doc comment, for output reuse.
+        entry["_sourceHash"] = hash_cursor(cursor, comment=entry["description"])
         if cursor.is_definition():
             functions[fk] = entry
             if fk not in function_to_component:
@@ -781,6 +797,7 @@ def visit_definitions(cursor):
                 "endLine": end_line,
                 "syntheticFromVarDecl": True,
                 "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
+                "_sourceHash": hash_cursor(cursor),
             }
             component_functions[component_name].append(fk)
             function_to_component[fk] = component_name
@@ -794,6 +811,7 @@ def visit_definitions(cursor):
                 "componentName": get_component_name(cursor.location.file.name),
                 "type": cursor.type.spelling if cursor.type else "",
                 "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
+                "_sourceHash": hash_cursor(cursor),
             }
             if value_str:
                 globals_data[var_id]["value"] = value_str
@@ -988,6 +1006,7 @@ def build_metadata():
             rel_file = file_path.replace("\\", "/")
         fid = make_function_key(f["componentName"], rel_file, f["qualifiedName"], f["parameters"])
         func_key_to_fid[func_key] = fid
+        entity_hashes[fid] = f.get("_sourceHash", "")  # incremental (M1.2)
         functions_dict[fid] = {
             "qualifiedName": f["qualifiedName"],
             "location": {
@@ -1019,6 +1038,7 @@ def build_metadata():
             rel_file = file_path.replace("\\", "/")
         vid = make_global_key(rel_file, g["qualifiedName"])
         var_id_to_vid[var_id] = vid
+        entity_hashes[vid] = g.get("_sourceHash", "")  # incremental (M1.2)
         g_entry = {
             "qualifiedName": g["qualifiedName"],
             "location": {"file": rel_file, "line": int(var_id.rsplit(":", 1)[1])},
@@ -1143,6 +1163,10 @@ def _scan_defines():
                 "text": full,
                 "location": {"file": rel_file, "line": line_no},
             }
+            # Incremental (M1.2): macro hash keyed by the line-stable `name@relFile`
+            # (matches edges.json macroUsers; avoids false "changed" when a macro
+            # shifts lines). Last definition of a name in a file wins.
+            entity_hashes[f"{name}@{rel_file}"] = hash_macro_text(full)
 
 
 def _merge_external_data_dictionary(path: str) -> None:
@@ -1280,7 +1304,7 @@ def main():
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
     }
-    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY
+    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -1293,6 +1317,10 @@ def main():
     if _data_dict_path:
         _merge_external_data_dictionary(_data_dict_path)
     write_model_file(DATA_DICTIONARY, data_dictionary)
+
+    # Incremental (M1.2): entity hash snapshot for change detection.
+    # Functions/globals were keyed in build_metadata; types/macros above.
+    write_model_file(HASHES, entity_hashes)
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
@@ -1307,6 +1335,7 @@ def main():
     plural = lambda k: "classes" if k == "class" else k + "s"
     parts = [f"{v} {plural(k)}" for k, v in sorted(kinds.items())]
     print(f"  model/dataDictionary.json ({n_types} types: {', '.join(parts)})")
+    print(f"  model/hashes.json ({len(entity_hashes)} entities)")
 
 
 if __name__ == "__main__":
