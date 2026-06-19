@@ -29,7 +29,7 @@
         },
         borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
         spacing: {
-          "sidebar-width": "280px", "inspector-width": "400px",
+          "sidebar-width": "220px", "inspector-width": "400px",
           "gutter": "16px", "container-padding": "24px",
         },
         fontFamily: {
@@ -80,90 +80,81 @@
   .claim-btn.claimed { background: #e5eeff; border-color: #0058be; color: #0058be; }
   .pool-row { transition: background .1s; }
   .pool-row:hover { background: #f8f9ff; }
+
+  /* ── Collapsible sidebar ── */
+  :root { --sw: 220px; }
+  body.nav-collapsed { --sw: 56px; }
+  #app-sidebar { width: var(--sw); transition: width .2s cubic-bezier(.4,0,.2,1); }
+  #app-main    { margin-left: var(--sw); transition: margin-left .2s cubic-bezier(.4,0,.2,1); }
+  body.nav-collapsed .nav-label,
+  body.nav-collapsed .brand-text,
+  body.nav-collapsed .user-info,
+  body.nav-collapsed .more-btn-icon { display: none; }
+  body.nav-collapsed .nav-item     { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+  body.nav-collapsed .nav-active   { border-left: none; }
+  body.nav-collapsed .brand-header { flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px; }
+  body.nav-collapsed .user-btn     { justify-content: center; padding: 6px; gap: 0; }
 </style>
 </head>
 
 <body class="bg-background text-on-surface font-body-md overflow-hidden">
 
 <!-- ══════════════ SIDEBAR ══════════════ -->
-<aside class="fixed left-0 top-0 h-screen w-sidebar-width bg-white border-r border-outline-variant flex flex-col z-50">
+<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50">
 
   <!-- Brand -->
-  <div class="px-5 py-4 border-b border-outline-variant">
+  <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant">
     <div class="flex items-center gap-3">
       <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
         <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
       </div>
-      <div>
+      <div class="brand-text">
         <h1 class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
         <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5">Automotive Tier 1</p>
       </div>
     </div>
+    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
+      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
+    </button>
   </div>
 
   <!-- Nav -->
   <nav class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
 
     <a href="dashboard-developer.html"
-       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
+       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active" title="Dashboard">
       <span class="material-symbols-outlined" style="font-size:20px;">dashboard</span>
-      <span class="font-label-md text-label-md">Dashboard</span>
-    </a>
-
-    <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] px-3 pt-4 pb-1.5 opacity-60">System Engineering</div>
-
-    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
-      <span class="material-symbols-outlined" style="font-size:20px;">architecture</span>
-      <span class="font-label-md text-label-md flex-1">SYS.1 Requirement Elicitation</span>
-      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
-    </a>
-    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
-      <span class="material-symbols-outlined" style="font-size:20px;">settings_input_component</span>
-      <span class="font-label-md text-label-md flex-1">SYS.2 System Requirements</span>
-      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
-    </a>
-
-    <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] px-3 pt-4 pb-1.5 opacity-60">Software Engineering</div>
-
-    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
-      <span class="material-symbols-outlined" style="font-size:20px;">description</span>
-      <span class="font-label-md text-label-md flex-1">SWE.1 Software Requirements</span>
-      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
-    </a>
-    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
-      <span class="material-symbols-outlined" style="font-size:20px;">schema</span>
-      <span class="font-label-md text-label-md flex-1">SWE.2 Software Architecture</span>
-      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
+      <span class="nav-label font-label-md text-label-md">Dashboard</span>
     </a>
     <a href="#"
-       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
-      <span class="material-symbols-outlined" style="font-size:20px;">account_tree</span>
-      <span class="font-label-md text-label-md">SWE.3 Detailed Design</span>
+       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default" title="Documents">
+      <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+      <span class="nav-label font-label-md text-label-md">Documents</span>
     </a>
 
   </nav>
 
   <!-- User profile — Developer role (no Project Settings link) -->
   <div class="px-2 pb-3 pt-2 border-t border-outline-variant">
-    <button class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group">
+    <button class="user-btn w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group" title="Manoj Kumar">
       <div class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0">
         <span class="text-on-surface font-bold text-sm" style="font-family:Inter;">MK</span>
       </div>
-      <div class="flex-1 min-w-0">
+      <div class="user-info flex-1 min-w-0">
         <p class="font-label-md text-label-md text-on-surface truncate leading-tight">Manoj Kumar</p>
         <div class="flex items-center gap-1.5 mt-0.5">
           <span class="w-1.5 h-1.5 rounded-full bg-on-surface-variant"></span>
           <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide">Developer</p>
         </div>
       </div>
-      <span class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
+      <span class="more-btn-icon material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
     </button>
   </div>
 </aside>
 
 
 <!-- ══════════════ MAIN CONTENT ══════════════ -->
-<main class="ml-sidebar-width h-screen flex flex-col">
+<main id="app-main" class="h-screen flex flex-col">
 
   <!-- Top bar -->
   <header class="h-14 flex-shrink-0 flex items-center justify-between px-gutter bg-white border-b border-outline-variant z-40">
@@ -222,6 +213,68 @@
       </button>
     </div>
   </header>
+
+  <!-- ══════ SUB-BAR ══════ -->
+  <div class="h-10 flex-shrink-0 flex items-center px-4 bg-surface-container-low border-b border-outline-variant">
+    <div class="flex items-center gap-2">
+
+      <!-- Commit / version picker -->
+      <div class="relative" id="branch-wrap">
+        <button id="branch-btn" onclick="toggleBranchDropdown()"
+                class="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
+                style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+          <div id="branch-icon-spin" class="spin flex-shrink-0" style="display:none;width:11px;height:11px;border:1.5px solid #0058be;border-top-color:transparent;border-radius:9999px;"></div>
+          <span class="text-on-surface font-semibold">main</span>
+          <span class="text-outline">@</span>
+          <span id="branch-btn-commit" class="text-on-surface-variant">abc1234</span>
+          <span id="branch-btn-version" class="hidden" style="font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;border:1px solid #c4c6cd;padding:1px 5px;border-radius:3px;"></span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="branch-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+
+        <!-- Dropdown with Commits / Versions tabs -->
+        <div id="branch-dropdown"
+             class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden"
+             style="min-width:380px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+
+          <!-- Tab bar inside dropdown -->
+          <div class="flex items-center border-b border-outline-variant px-3">
+            <button id="dp-tab-commits" onclick="switchDropdownTab('commits')"
+                    class="px-1 py-2.5 mr-5 font-label-md text-label-md border-b-2 border-secondary text-secondary -mb-px transition-colors">
+              Commits
+            </button>
+            <button id="dp-tab-versions" onclick="switchDropdownTab('versions')"
+                    class="px-1 py-2.5 font-label-md text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-on-surface -mb-px transition-colors">
+              Versions
+            </button>
+          </div>
+
+          <!-- Commits panel -->
+          <div id="dp-panel-commits">
+            <div class="px-3 py-2 border-b border-outline-variant">
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+                <input id="commit-search-input" type="text" placeholder="Search commits…"
+                       oninput="filterDropdownCommits(this.value)"
+                       class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline"
+                       style="font-family:'JetBrains Mono';font-size:11px;">
+              </div>
+            </div>
+            <div class="overflow-y-auto" style="max-height:240px;" id="commits-list"></div>
+          </div>
+
+          <!-- Versions panel -->
+          <div id="dp-panel-versions" style="display:none;">
+            <div class="overflow-y-auto" style="max-height:280px;" id="versions-list"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Status label -->
+      <span class="text-outline-variant select-none">·</span>
+      <span id="subbar-status" class="font-label-sm text-label-sm text-on-surface-variant">Generated 2 hours ago</span>
+    </div>
+  </div>
 
   <!-- Dashboard content -->
   <div class="flex-1 overflow-y-auto bg-background">
@@ -622,6 +675,177 @@
      style="background-image:radial-gradient(#041627 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
 
 <script>
+  function toggleSidebar() {
+    const collapsed = document.body.classList.toggle('nav-collapsed');
+    document.getElementById('sidebar-toggle-icon').textContent = collapsed ? 'chevron_right' : 'chevron_left';
+  }
+
+  // ── Branch data ──
+  const BRANCH = { id: 'main', label: 'main', state: 'in_review', commit: 'abc1234', version: null, generatedAt: '2 hours ago' };
+
+  const COMMITS = [
+    { sha: 'abc1234', msg: 'feat: add brake system FMEA table',         author: 'Manoj S.',   time: '2h ago',   current: true,  status: 'in_review', version: null    },
+    { sha: 'f7e3b12', msg: 'fix: correct signal naming in CAN matrix',  author: 'Priya R.',   time: '5h ago',   current: false, status: 'never',     version: null    },
+    { sha: 'd9a0c55', msg: 'docs: update SWE.3 traceability links',     author: 'Manoj S.',   time: '1d ago',   current: false, status: 'in_review', version: 'v1.2.0'},
+    { sha: 'b2c841f', msg: 'refactor: split EngineControl component',   author: 'Arjun M.',   time: '2d ago',   current: false, status: 'approved',  version: 'v1.1.0'},
+    { sha: '3ef70a9', msg: 'feat: add ADAS perception group',            author: 'Priya R.',   time: '3d ago',   current: false, status: 'approved',  version: 'v1.0.0'},
+    { sha: '91c3d17', msg: 'fix: missing include path for diagnostics',  author: 'Manoj S.',   time: '4d ago',   current: false, status: 'never',     version: null    },
+    { sha: '07fa8b2', msg: 'chore: update Clang config to 17',          author: 'Arjun M.',   time: '5d ago',   current: false, status: 'never',     version: null    },
+  ];
+
+  const VERSIONS = [
+    { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups', date: '2026-06-15', status: 'in_review' },
+    { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete', date: '2026-06-10', status: 'approved' },
+    { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',        date: '2026-06-01', status: 'approved' },
+  ];
+
+  // ── Branch dropdown ──
+  function toggleBranchDropdown(force) {
+    const dd = document.getElementById('branch-dropdown');
+    const ch = document.getElementById('branch-chevron');
+    const shouldClose = force !== undefined ? !force : !dd.classList.contains('hidden');
+    dd.classList.toggle('hidden', shouldClose);
+    ch.style.transform = shouldClose ? '' : 'rotate(180deg)';
+    if (!shouldClose) {
+      document.getElementById('commit-search-input').value = '';
+      renderDropdownCommits('');
+      renderDropdownVersions();
+      switchDropdownTab('commits');
+    }
+  }
+
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('branch-wrap');
+    if (wrap && !wrap.contains(e.target)) toggleBranchDropdown(false);
+  });
+
+  function switchDropdownTab(tab) {
+    const isCommits = tab === 'commits';
+    document.getElementById('dp-panel-commits').style.display  = isCommits ? '' : 'none';
+    document.getElementById('dp-panel-versions').style.display = isCommits ? 'none' : '';
+    const tabCommits  = document.getElementById('dp-tab-commits');
+    const tabVersions = document.getElementById('dp-tab-versions');
+    tabCommits.classList.toggle('border-secondary',       isCommits);
+    tabCommits.classList.toggle('text-secondary',         isCommits);
+    tabCommits.classList.toggle('border-transparent',     !isCommits);
+    tabCommits.classList.toggle('text-on-surface-variant',!isCommits);
+    tabVersions.classList.toggle('border-secondary',      !isCommits);
+    tabVersions.classList.toggle('text-secondary',        !isCommits);
+    tabVersions.classList.toggle('border-transparent',    isCommits);
+    tabVersions.classList.toggle('text-on-surface-variant',isCommits);
+  }
+
+  function filterDropdownCommits(val) { renderDropdownCommits(val); }
+
+  function commitStatusBadge(c) {
+    if (c.current)             return `<span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:1px 7px;border-radius:3px;text-transform:uppercase;">current</span>`;
+    if (c.status === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:2px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:1px 7px;border-radius:3px;text-transform:uppercase;"><span class="material-symbols-outlined" style="font-size:9px;vertical-align:middle;">task_alt</span>Approved</span>`;
+    if (c.status === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:2px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:1px 7px;border-radius:3px;text-transform:uppercase;"><span class="material-symbols-outlined" style="font-size:9px;vertical-align:middle;">rate_review</span>In Review</span>`;
+    return `<span style="font-family:'JetBrains Mono';font-size:9px;color:#74777d;padding:1px 4px;">Not run</span>`;
+  }
+
+  function renderDropdownCommits(filter) {
+    filter = (filter || '').toLowerCase();
+    const list = document.getElementById('commits-list');
+    const filtered = COMMITS.filter(c =>
+      !filter || c.sha.includes(filter) || c.msg.toLowerCase().includes(filter) || c.author.toLowerCase().includes(filter)
+    );
+    if (!filtered.length) {
+      list.innerHTML = `<div class="px-4 py-6 text-center text-sm text-on-surface-variant">No commits match</div>`;
+      return;
+    }
+    list.innerHTML = filtered.map(c => `
+      <button onclick="selectCommit('${c.sha}')"
+        class="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left border-b border-outline-variant/40 last:border-0"
+        style="${c.current ? 'background:#eff4ff;' : ''}">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:600;color:#0b1c30;">${c.sha.slice(0,7)}</span>
+            ${commitStatusBadge(c)}
+            ${c.version ? `<span style="font-family:'JetBrains Mono';font-size:9px;font-weight:600;background:#f3f4f6;color:#44474c;border:1px solid #c4c6cd;padding:1px 6px;border-radius:3px;"><span class="material-symbols-outlined" style="font-size:9px;vertical-align:middle;">sell</span> ${c.version}</span>` : ''}
+          </div>
+          <div class="text-xs text-on-surface mt-0.5 truncate" style="max-width:310px;">${c.msg}</div>
+          <div style="font-size:10px;color:#74777d;margin-top:1px;">${c.author} · ${c.time}</div>
+        </div>
+        ${c.current ? '<span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:15px;margin-top:2px;">check</span>' : ''}
+      </button>`).join('');
+  }
+
+  function renderDropdownVersions() {
+    const list = document.getElementById('versions-list');
+    const statusBadge = s => {
+      if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:2px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:1px 7px;border-radius:3px;text-transform:uppercase;"><span class="material-symbols-outlined" style="font-size:9px;vertical-align:middle;">task_alt</span>Approved</span>`;
+      if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:2px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:1px 7px;border-radius:3px;text-transform:uppercase;"><span class="material-symbols-outlined" style="font-size:9px;vertical-align:middle;">rate_review</span>In Review</span>`;
+      return '';
+    };
+    list.innerHTML = VERSIONS.map(v => {
+      const linkedCommit = COMMITS.find(c => c.sha === v.sha);
+      return `
+      <button onclick="selectVersion('${v.tag}')"
+        class="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left border-b border-outline-variant/40 last:border-0">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:600;color:#0b1c30;">${v.tag}</span>
+            ${statusBadge(v.status)}
+          </div>
+          <div class="text-xs text-on-surface mt-0.5 truncate" style="max-width:310px;">${v.desc}</div>
+          <div class="flex items-center gap-2 mt-1 flex-wrap">
+            <span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;">${v.sha.slice(0,7)}</span>
+            ${linkedCommit ? `<span style="font-size:10px;color:#74777d;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${linkedCommit.msg}</span>` : ''}
+            <span style="font-size:10px;color:#74777d;">${v.date}</span>
+          </div>
+        </div>
+      </button>`;
+    }).join('');
+  }
+
+  function selectCommit(sha) {
+    toggleBranchDropdown(false);
+    const c = COMMITS.find(x => x.sha === sha);
+    if (!c) return;
+    COMMITS.forEach(x => x.current = (x.sha === sha));
+    BRANCH.commit = sha;
+    BRANCH.version = c.version || null;
+    BRANCH.state  = c.status;
+    BRANCH.generatedAt = c.status !== 'never' ? c.time : null;
+    document.getElementById('branch-btn-commit').textContent = sha.slice(0, 7);
+    updateSubBar();
+  }
+
+  function selectVersion(tag) {
+    const v = VERSIONS.find(x => x.tag === tag);
+    if (!v) return;
+    selectCommit(v.sha);
+  }
+
+  function updateSubBar() {
+    const b = BRANCH;
+    const statusEl = document.getElementById('subbar-status');
+    if (b.state === 'in_review') {
+      statusEl.textContent = `In review · ${b.generatedAt}`;
+      statusEl.style.color = '#b45309';
+    } else if (b.state === 'approved') {
+      statusEl.textContent = `Approved · ${b.generatedAt}`;
+      statusEl.style.color = '#00a572';
+    } else if (b.state === 'complete') {
+      statusEl.textContent = `All documents complete · ${b.generatedAt}`;
+      statusEl.style.color = '#00a572';
+    } else {
+      statusEl.textContent = 'Never run';
+      statusEl.style.color = '#74777d';
+    }
+
+    const verEl = document.getElementById('branch-btn-version');
+    if (verEl) {
+      if (b.version) {
+        verEl.textContent = b.version;
+        verEl.classList.remove('hidden');
+      } else {
+        verEl.classList.add('hidden');
+      }
+    }
+  }
+
   // Project dropdown
   function toggleProjectDropdown() {
     const d = document.getElementById('project-dropdown');

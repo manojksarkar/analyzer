@@ -592,8 +592,67 @@ CRC_CHECK_ENABLED=1</textarea>
         </div><!-- /step-3 -->
 
 
-        <!-- ══════════════ STEP 4 — REVIEW & INITIALIZE ══════════════ -->
+        <!-- ══════════════ STEP 4 — TEAM ══════════════ -->
         <div id="step-4" class="hidden max-w-3xl mx-auto px-6 py-4 space-y-3">
+          <div class="pb-3 border-b border-outline-variant">
+            <h2 class="font-headline-md text-headline-md text-on-surface mb-0.5">Team</h2>
+            <p class="font-body-md text-body-md text-on-surface-variant">Invite developers to this project. You can also do this later from Project Settings.</p>
+          </div>
+
+          <!-- Invite row -->
+          <div class="card space-y-3">
+            <div class="card-head" style="margin-bottom:0;padding-bottom:0;border-bottom:none;">
+              <div class="card-head-l">
+                <div class="card-icon bg-secondary-container">
+                  <span class="material-symbols-outlined text-secondary" style="font-size:17px;">person_add</span>
+                </div>
+                <h3 class="font-headline-sm text-on-surface" style="font-size:15px;">Invite Member</h3>
+              </div>
+            </div>
+            <div class="grid gap-2" style="grid-template-columns:1fr 160px auto;">
+              <div>
+                <div class="lbl">Email <span class="req">*</span></div>
+                <input class="inp" id="t-email" type="email" placeholder="engineer@company.com"
+                       onkeydown="if(event.key==='Enter')addTeamMember()">
+              </div>
+              <div>
+                <div class="lbl">Role</div>
+                <select class="inp" id="t-role">
+                  <option value="developer">Developer</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <button onclick="addTeamMember()"
+                        class="flex items-center gap-1.5 px-4 py-2.5 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md hover:bg-secondary-container active:scale-[.98] transition-all whitespace-nowrap">
+                  <span class="material-symbols-outlined" style="font-size:15px;">add</span> Add
+                </button>
+              </div>
+            </div>
+            <div id="t-email-err" class="hidden flex items-center gap-1.5 font-body-sm text-body-sm text-error">
+              <span class="material-symbols-outlined" style="font-size:14px;">error</span>
+              <span id="t-email-err-msg">Enter a valid email address.</span>
+            </div>
+          </div>
+
+          <!-- Member list -->
+          <div id="t-member-list" class="space-y-2"></div>
+
+          <!-- Empty state (shown when list is empty) -->
+          <div id="t-empty" class="flex flex-col items-center gap-2 py-10 text-center">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:36px;opacity:.3;">group</span>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">No members added yet.<br>Invite at least one developer, or skip and add later.</p>
+          </div>
+
+          <!-- Info note -->
+          <div class="flex items-start gap-3 p-3.5 bg-surface-container-low border border-outline-variant rounded-xl">
+            <span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:18px;">info</span>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">Invited members will receive an email with a link to join. The project creator is always the Admin.</p>
+          </div>
+        </div><!-- /step-4 -->
+
+
+        <!-- ══════════════ STEP 5 — REVIEW & INITIALIZE ══════════════ -->
+        <div id="step-5" class="hidden max-w-3xl mx-auto px-6 py-4 space-y-3">
           <div class="pb-3 border-b border-outline-variant">
             <h2 class="font-headline-md text-headline-md text-on-surface mb-0.5">Review & Initialize</h2>
             <p class="font-body-md text-body-md text-on-surface-variant">Confirm every setting before the first analysis run.</p>
@@ -648,16 +707,35 @@ CRC_CHECK_ENABLED=1</textarea>
             <div id="r-arch-tree" class="border-t border-outline-variant divide-y divide-outline-variant"></div>
           </div>
 
-        </div><!-- /step-4 -->
+          <!-- ── Team ── -->
+          <div class="rev-card">
+            <div class="rev-card-head">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">group</span>
+                <span class="font-label-md text-label-md text-on-surface font-semibold">Team</span>
+              </div>
+              <button onclick="goToStep(4)" class="font-label-sm text-label-sm text-secondary hover:underline">Edit</button>
+            </div>
+            <div class="rev-row"><span>Members</span><span id="r-team-count">—</span></div>
+            <div id="r-team-list" class="hidden border-t border-outline-variant divide-y divide-outline-variant"></div>
+          </div>
+
+        </div><!-- /step-5 -->
 
 
       </div><!-- /form-scroll -->
 
       <!-- ACTION BAR -->
       <div id="action-bar" class="h-16 flex-shrink-0 bg-white border-t border-outline-variant flex items-center justify-between px-8 gap-4">
-        <div class="flex items-center gap-1.5 text-on-surface-variant">
-          <span class="material-symbols-outlined" style="font-size:14px;">save</span>
-          <span class="font-label-sm text-label-sm text-on-surface-variant">Auto-saved</span>
+        <div class="flex items-center gap-3 text-on-surface-variant">
+          <div class="flex items-center gap-1.5">
+            <span class="material-symbols-outlined" style="font-size:14px;">save</span>
+            <span class="font-label-sm text-label-sm text-on-surface-variant">Auto-saved</span>
+          </div>
+          <button id="skip-btn" onclick="doSkipTeam()"
+                  class="hidden font-label-sm text-label-sm text-secondary hover:underline">
+            Skip for now
+          </button>
         </div>
         <div class="flex items-center gap-3">
           <button id="back-btn" onclick="doBack()"
@@ -717,9 +795,14 @@ const STEPS = [
   { title: 'Project & Repository', sub: 'Name, repo, branch' },
   { title: 'Build Configuration',  sub: 'Defines & data dictionary' },
   { title: 'Architecture',         sub: 'Layers & components' },
+  { title: 'Team',                 sub: 'Invite members' },
   { title: 'Review & Initialize',  sub: 'Confirm & create project' },
 ];
 let done = new Set();
+
+// ── Team state ─────────────────────────────────────────────
+let teamMembers = []; // { id, email, role }
+let _teamIdSeq  = 1;
 
 // Initialise on page load
 goToStep(1);
@@ -748,33 +831,36 @@ function renderRail() {
 function railClick(n) { if (n < cur || done.has(n)) goToStep(n); }
 
 function updateBar() {
-  const pct = Math.round((done.size / 4) * 100);
+  const pct = Math.round((done.size / 5) * 100);
   document.getElementById('progress-bar').style.width = pct + '%';
-  document.getElementById('progress-label').textContent = done.size + ' / 4';
+  document.getElementById('progress-label').textContent = done.size + ' / 5';
 }
 
 // ── Wizard navigation ──────────────────────────────────────
 function goToStep(n) {
-  ['step-1','step-2','step-3','step-4'].forEach(id => {
+  ['step-1','step-2','step-3','step-4','step-5'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
   });
   document.getElementById('step-' + n).classList.remove('hidden');
   cur = n;
 
-  if (n === 4) populateReview();
+  if (n === 5) populateReview();
 
   // Update top bar step counter
-  document.getElementById('step-counter').textContent = 'Step ' + n + ' of 4';
+  document.getElementById('step-counter').textContent = 'Step ' + n + ' of 5';
 
-  // Save Draft visible on steps 2-4 only
+  // Save Draft visible on steps 2-5 only
   const draftBtn = document.getElementById('draft-btn');
   draftBtn.classList.toggle('hidden', n === 1);
   document.getElementById('draft-label').textContent = 'Save Draft';
   draftBtn.disabled = false;
 
+  // Skip button visible on step 4 (Team) only
+  document.getElementById('skip-btn').classList.toggle('hidden', n !== 4);
+
   const btn = document.getElementById('continue-btn');
-  if (n === 4) {
+  if (n === 5) {
     btn.innerHTML = '<span class="material-symbols-outlined sym-fill" style="font-size:16px;">rocket_launch</span> Initialize Project';
     btn.className = 'flex items-center gap-2 px-6 py-2.5 rounded-lg font-label-md text-label-md transition-all shadow-sm active:scale-[.98] hover:opacity-90';
     btn.style.background = '#00a572'; btn.style.color = '#fff';
@@ -811,9 +897,14 @@ function doBack() {
 
 function doContinue() {
   if (!validate(cur)) return;
-  if (cur === 4) { initProject(); return; }
+  if (cur === 5) { initProject(); return; }
   done.add(cur); updateBar();
   goToStep(cur + 1);
+}
+
+function doSkipTeam() {
+  done.add(4);
+  goToStep(5);
 }
 
 // ── Validation ─────────────────────────────────────────────
@@ -1221,6 +1312,91 @@ function populateReview() {
       ${groupHTML || '<div class="pl-5 py-0.5" style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b0b3b8;">No groups</div>'}
     </div>`;
   }).join('');
+
+  // Team summary
+  const teamCount = document.getElementById('r-team-count');
+  const teamList  = document.getElementById('r-team-list');
+  if (teamMembers.length === 0) {
+    teamCount.textContent = 'None (can be added later)';
+    teamCount.style.color = '#74777d';
+    teamList.classList.add('hidden');
+    teamList.innerHTML = '';
+  } else {
+    teamCount.textContent = teamMembers.length + ' member' + (teamMembers.length !== 1 ? 's' : '');
+    teamCount.style.color = '#0b1c30';
+    teamList.classList.remove('hidden');
+    teamList.innerHTML = teamMembers.map(m => `
+      <div class="flex items-center gap-3 px-4 py-2">
+        <div class="w-6 h-6 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+          <span class="text-secondary font-bold" style="font-family:Inter;font-size:9px;">${m.email[0].toUpperCase()}</span>
+        </div>
+        <span class="font-label-md text-label-md text-on-surface flex-1" style="font-size:11px;">${m.email}</span>
+        <span class="px-1.5 py-0.5 rounded font-label-sm" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#eff4ff;color:#0058be;">${m.role}</span>
+      </div>`).join('');
+  }
+}
+
+// ── Team helpers ───────────────────────────────────────────
+function addTeamMember() {
+  const emailEl = document.getElementById('t-email');
+  const roleEl  = document.getElementById('t-role');
+  const errEl   = document.getElementById('t-email-err');
+  const errMsg  = document.getElementById('t-email-err-msg');
+  const email   = emailEl.value.trim().toLowerCase();
+
+  errEl.classList.add('hidden');
+  emailEl.classList.remove('err');
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    emailEl.classList.add('err');
+    errMsg.textContent = 'Enter a valid email address.';
+    errEl.classList.remove('hidden');
+    emailEl.focus();
+    return;
+  }
+  if (teamMembers.some(m => m.email === email)) {
+    emailEl.classList.add('err');
+    errMsg.textContent = 'This email has already been added.';
+    errEl.classList.remove('hidden');
+    emailEl.focus();
+    return;
+  }
+
+  teamMembers.push({ id: _teamIdSeq++, email, role: roleEl.value });
+  emailEl.value = '';
+  renderTeamList();
+  emailEl.focus();
+}
+
+function removeTeamMember(id) {
+  teamMembers = teamMembers.filter(m => m.id !== id);
+  renderTeamList();
+}
+
+function renderTeamList() {
+  const list  = document.getElementById('t-member-list');
+  const empty = document.getElementById('t-empty');
+
+  if (teamMembers.length === 0) {
+    list.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  list.innerHTML = teamMembers.map(m => `
+    <div class="flex items-center gap-3 px-4 py-3 bg-white border border-outline-variant rounded-lg">
+      <div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+        <span class="text-secondary font-bold" style="font-family:Inter;font-size:11px;">${m.email[0].toUpperCase()}</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="font-label-md text-label-md text-on-surface" style="font-size:12px;">${m.email}</div>
+        <div class="font-label-sm text-on-surface-variant" style="font-size:9px;font-family:'JetBrains Mono';text-transform:uppercase;letter-spacing:.06em;margin-top:1px;">ID #${m.id}</div>
+      </div>
+      <span class="px-2 py-0.5 rounded font-label-sm" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#eff4ff;color:#0058be;">${m.role}</span>
+      <button onclick="removeTeamMember(${m.id})" class="p-1 text-on-surface-variant hover:text-error transition-colors" title="Remove">
+        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+      </button>
+    </div>`).join('');
 }
 
 // ── Initialize ─────────────────────────────────────────────

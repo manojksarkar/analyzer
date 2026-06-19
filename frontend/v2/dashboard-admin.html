@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PRODUCT NAME] — Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#041627", "primary-container": "#1a2b3c",
+          "on-primary": "#ffffff", "on-primary-container": "#8192a7",
+          "secondary": "#0058be", "secondary-container": "#2170e4",
+          "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
+          "on-tertiary-container": "#00a572",
+          "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
+          "surface": "#f8f9ff", "background": "#f8f9ff",
+          "surface-container-lowest": "#ffffff", "surface-container-low": "#eff4ff",
+          "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
+          "surface-container-highest": "#d3e4fe",
+          "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
+          "outline": "#74777d", "outline-variant": "#c4c6cd",
+          "tertiary-container": "#00311f", "tertiary-fixed": "#6ffbbe",
+        },
+        borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+        spacing: {
+          "sidebar-width": "220px", "inspector-width": "400px",
+          "gutter": "16px", "container-padding": "24px",
+        },
+        fontFamily: {
+          "display-lg": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"],
+          "body-lg": ["Inter"], "body-md": ["Inter"], "body-sm": ["Inter"],
+          "label-md": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+
+  .progress-track { height: 6px; background: #e5eeff; border-radius: 9999px; overflow: hidden; }
+  .progress-fill  { height: 100%; border-radius: 9999px; }
+
+  .project-row { cursor: pointer; transition: background .1s; }
+  .project-row:hover td { background: #f8f9ff; }
+
+  .review-row { cursor: pointer; transition: background .1s; }
+  .review-row:hover { background: #f8f9ff; }
+
+  .run-row { transition: background .1s; }
+  .run-row:hover { background: #f8f9ff; }
+
+  @keyframes slideInRight  { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+  @keyframes slideOutRight { from { transform: translateX(0); opacity:1; } to { transform: translateX(110%); opacity:0; } }
+  .toast-in  { animation: slideInRight  .3s ease forwards; }
+  .toast-out { animation: slideOutRight .3s ease forwards; }
+</style>
+</head>
+
+<body class="bg-background text-on-surface font-body-md overflow-hidden">
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main class="h-screen flex flex-col">
+
+  <!-- Top bar -->
+  <header class="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-white border-b border-outline-variant z-40">
+    <a href="dashboard-admin.html" class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+        <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+      </div>
+      <div>
+        <h1 class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5">Automotive Tier 1</p>
+      </div>
+    </a>
+    <div class="flex items-center gap-0.5">
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
+      </button>
+      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+      </button>
+      <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+      <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+        <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+          <span class="text-on-secondary-container font-bold text-xs" style="font-family:Inter;">EL</span>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="flex-1 overflow-y-auto bg-background">
+  <div class="px-6 py-6 mx-auto" style="max-width:1280px;">
+
+    <!-- Page heading -->
+    <div class="flex items-center justify-between mb-5">
+      <div>
+        <h1 class="text-headline-md text-on-surface" style="font-family:Inter;font-weight:600;">Projects</h1>
+        <p class="font-body-sm text-on-surface-variant mt-0.5">System-wide · all projects</p>
+      </div>
+      <a href="dashboard-no-project.html"
+         class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors"
+         style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;text-decoration:none;">
+        <span class="material-symbols-outlined" style="font-size:14px;">add</span>
+        NEW PROJECT
+      </a>
+    </div>
+
+    <!-- ═══ PROJECTS TABLE ═══ -->
+    <div class="bg-white border border-outline-variant rounded-xl overflow-hidden mb-6">
+      <table class="w-full">
+        <thead>
+          <tr class="bg-surface-container-low border-b border-outline-variant">
+            <th class="text-left px-5 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Name</th>
+            <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Standard</th>
+            <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Latest</th>
+            <th class="text-right px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">In Review</th>
+            <th class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Progress</th>
+            <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Last Run</th>
+            <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Team</th>
+            <th class="px-4 py-3" style="width:44px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <!-- VCU Engine Firmware -->
+          <tr class="project-row border-b border-outline-variant" onclick="location.href='project-detail.html'">
+            <td class="px-5 py-3.5">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-secondary-container flex items-center justify-center flex-shrink-0">
+                  <span class="material-symbols-outlined text-secondary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">memory</span>
+                </div>
+                <div>
+                  <p class="font-label-md text-label-md text-on-surface">VCU Engine Firmware</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">BMW</p>
+                </div>
+              </div>
+            </td>
+            <td class="px-4 py-3.5">
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ISO 26262</span>
+            </td>
+            <td class="px-4 py-3.5">
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#f3f4f6;color:#44474c;border:1px solid #c4c6cd;padding:2px 7px;border-radius:3px;">v1.2.0</span>
+            </td>
+            <td class="text-right px-4 py-3.5 text-secondary" style="font-family:'JetBrains Mono';font-size:12px;font-weight:600;">26</td>
+            <td class="px-4 py-3.5">
+              <div class="flex items-center gap-2">
+                <div class="progress-track flex-1"><div class="progress-fill bg-on-tertiary-container" style="width:12%;"></div></div>
+                <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';width:28px;text-align:right;">12%</span>
+              </div>
+            </td>
+            <td class="px-4 py-3.5 text-on-surface-variant" style="font-family:'JetBrains Mono';font-size:11px;white-space:nowrap;">Jun 15, 2026</td>
+            <td class="px-4 py-3.5">
+              <div style="display:flex;align-items:center;">
+                <div title="Manoj S." style="width:26px;height:26px;border-radius:50%;background:#e0f2fe;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;position:relative;z-index:4;flex-shrink:0;"><span style="font-family:Inter;font-size:9px;font-weight:700;color:#0369a1;">MS</span></div>
+                <div title="Sarah Chen" style="width:26px;height:26px;border-radius:50%;background:#dbeafe;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:3;flex-shrink:0;"><span style="font-family:Inter;font-size:9px;font-weight:700;color:#1e40af;">SC</span></div>
+                <div title="Ana Ferreira" style="width:26px;height:26px;border-radius:50%;background:#fce7f3;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:2;flex-shrink:0;"><span style="font-family:Inter;font-size:9px;font-weight:700;color:#be185d;">AF</span></div>
+                <div title="+2 more" style="width:26px;height:26px;border-radius:50%;background:#f3f4f6;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:1;flex-shrink:0;font-family:Inter;font-size:9px;font-weight:700;color:#44474c;">+2</div>
+              </div>
+            </td>
+            <td class="px-4 py-3.5">
+              <button onclick="event.stopPropagation();" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+              </button>
+            </td>
+          </tr>
+
+          <!-- ADAS Sensor Fusion -->
+          <tr class="project-row border-b border-outline-variant" onclick="location.href='project-detail.html'">
+            <td class="px-5 py-3.5">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
+                  <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">sensors</span>
+                </div>
+                <div>
+                  <p class="font-label-md text-label-md text-on-surface">ADAS Sensor Fusion</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Continental</p>
+                </div>
+              </div>
+            </td>
+            <td class="px-4 py-3.5">
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ASPICE L2</span>
+            </td>
+            <td class="px-4 py-3.5">
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#f3f4f6;color:#44474c;border:1px solid #c4c6cd;padding:2px 7px;border-radius:3px;">v0.9.0</span>
+            </td>
+            <td class="text-right px-4 py-3.5 text-secondary" style="font-family:'JetBrains Mono';font-size:12px;font-weight:600;">2</td>
+            <td class="px-4 py-3.5">
+              <div class="flex items-center gap-2">
+                <div class="progress-track flex-1"><div class="progress-fill bg-on-tertiary-container" style="width:25%;"></div></div>
+                <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';width:28px;text-align:right;">25%</span>
+              </div>
+            </td>
+            <td class="px-4 py-3.5 text-on-surface-variant" style="font-family:'JetBrains Mono';font-size:11px;white-space:nowrap;">Jun 12, 2026</td>
+            <td class="px-4 py-3.5">
+              <div style="display:flex;align-items:center;">
+                <div title="Priya R." style="width:26px;height:26px;border-radius:50%;background:#fef9c3;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;position:relative;z-index:2;flex-shrink:0;"><span style="font-family:Inter;font-size:9px;font-weight:700;color:#92400e;">PR</span></div>
+                <div title="Marcus Webb" style="width:26px;height:26px;border-radius:50%;background:#f3e8ff;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:1;flex-shrink:0;"><span style="font-family:Inter;font-size:9px;font-weight:700;color:#7c3aed;">MW</span></div>
+              </div>
+            </td>
+            <td class="px-4 py-3.5">
+              <button onclick="event.stopPropagation();" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+              </button>
+            </td>
+          </tr>
+
+          <!-- EPS Control Unit -->
+          <tr class="project-row border-b border-outline-variant" onclick="location.href='project-detail.html'">
+            <td class="px-5 py-3.5">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
+                  <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">tune</span>
+                </div>
+                <div>
+                  <p class="font-label-md text-label-md text-on-surface">EPS Control Unit</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">ZF</p>
+                </div>
+              </div>
+            </td>
+            <td class="px-4 py-3.5">
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ISO 26262</span>
+            </td>
+            <td class="px-4 py-3.5">
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#f3f4f6;color:#44474c;border:1px solid #c4c6cd;padding:2px 7px;border-radius:3px;">v2.1.0</span>
+            </td>
+            <td class="text-right px-4 py-3.5 text-secondary" style="font-family:'JetBrains Mono';font-size:12px;font-weight:600;">1</td>
+            <td class="px-4 py-3.5">
+              <div class="flex items-center gap-2">
+                <div class="progress-track flex-1"><div class="progress-fill bg-on-tertiary-container" style="width:50%;"></div></div>
+                <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';width:28px;text-align:right;">50%</span>
+              </div>
+            </td>
+            <td class="px-4 py-3.5 text-on-surface-variant" style="font-family:'JetBrains Mono';font-size:11px;white-space:nowrap;">Jun 8, 2026</td>
+            <td class="px-4 py-3.5">
+              <div style="display:flex;align-items:center;">
+                <div title="Arjun M." style="width:26px;height:26px;border-radius:50%;background:#fef9c3;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;position:relative;z-index:2;flex-shrink:0;"><span style="font-family:Inter;font-size:9px;font-weight:700;color:#92400e;">AM</span></div>
+                <div title="Zara Patel" style="width:26px;height:26px;border-radius:50%;background:#fff7ed;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;margin-left:-8px;position:relative;z-index:1;flex-shrink:0;"><span style="font-family:Inter;font-size:9px;font-weight:700;color:#c2410c;">ZP</span></div>
+              </div>
+            </td>
+            <td class="px-4 py-3.5">
+              <button onclick="event.stopPropagation();" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+              </button>
+            </td>
+          </tr>
+
+          <!-- Brake-by-Wire ECU — stale -->
+          <tr class="project-row border-b border-outline-variant" onclick="location.href='project-detail.html'" style="background:#fffcf5;">
+            <td class="px-5 py-3.5">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background:#fff8e6;border:1px solid #f59e0b;">
+                  <span class="material-symbols-outlined" style="font-size:18px;color:#d97706;">warning</span>
+                </div>
+                <div>
+                  <p class="font-label-md text-label-md text-on-surface">Brake-by-Wire ECU</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Bosch</p>
+                </div>
+              </div>
+            </td>
+            <td class="px-4 py-3.5">
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ISO 26262</span>
+            </td>
+            <td class="px-4 py-3.5">
+              <span class="font-label-sm text-label-sm text-on-surface-variant">—</span>
+            </td>
+            <td class="text-right px-4 py-3.5 text-on-surface-variant" style="font-family:'JetBrains Mono';font-size:12px;">—</td>
+            <td class="px-4 py-3.5">
+              <div class="flex items-center gap-2">
+                <div class="progress-track flex-1"><div class="progress-fill bg-on-tertiary-container" style="width:0%;"></div></div>
+                <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';width:28px;text-align:right;">0%</span>
+              </div>
+            </td>
+            <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;white-space:nowrap;color:#d97706;">47d ago</td>
+            <td class="px-4 py-3.5">
+              <button onclick="event.stopPropagation();" title="Add team members"
+                      style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1.5px dashed #c4c6cd;border-radius:99px;background:transparent;cursor:pointer;color:#74777d;font-size:10px;font-family:'JetBrains Mono';"
+                      onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'" onmouseout="this.style.borderColor='#c4c6cd';this.style.color='#74777d'">
+                <span class="material-symbols-outlined" style="font-size:12px;">person_add</span>
+                Add
+              </button>
+            </td>
+            <td class="px-4 py-3.5">
+              <button onclick="event.stopPropagation();" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+              </button>
+            </td>
+          </tr>
+
+          <!-- Powertrain Control — never run -->
+          <tr class="project-row" onclick="location.href='project-detail.html'" style="background:#fffcf5;">
+            <td class="px-5 py-3.5">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background:#fff8e6;border:1px solid #f59e0b;">
+                  <span class="material-symbols-outlined" style="font-size:18px;color:#d97706;">warning</span>
+                </div>
+                <div>
+                  <p class="font-label-md text-label-md text-on-surface">Powertrain Control Module</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Denso</p>
+                </div>
+              </div>
+            </td>
+            <td class="px-4 py-3.5">
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5f7f0;color:#00a572;padding:2px 7px;border-radius:3px;text-transform:uppercase;">ASPICE L3</span>
+            </td>
+            <td class="px-4 py-3.5">
+              <span class="font-label-sm text-label-sm text-on-surface-variant">—</span>
+            </td>
+            <td class="text-right px-4 py-3.5 text-on-surface-variant" style="font-family:'JetBrains Mono';font-size:12px;">—</td>
+            <td class="px-4 py-3.5">
+              <div class="flex items-center gap-2">
+                <div class="progress-track flex-1"><div class="progress-fill bg-on-tertiary-container" style="width:0%;"></div></div>
+                <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';width:28px;text-align:right;">0%</span>
+              </div>
+            </td>
+            <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;white-space:nowrap;color:#d97706;">Never run</td>
+            <td class="px-4 py-3.5">
+              <button onclick="event.stopPropagation();" title="Add team members"
+                      style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1.5px dashed #c4c6cd;border-radius:99px;background:transparent;cursor:pointer;color:#74777d;font-size:10px;font-family:'JetBrains Mono';"
+                      onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'" onmouseout="this.style.borderColor='#c4c6cd';this.style.color='#74777d'">
+                <span class="material-symbols-outlined" style="font-size:12px;">person_add</span>
+                Add
+              </button>
+            </td>
+            <td class="px-4 py-3.5">
+              <button onclick="event.stopPropagation();" class="p-1 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+                <span class="material-symbols-outlined" style="font-size:18px;">more_vert</span>
+              </button>
+            </td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+    <!-- end Projects table -->
+
+
+    <!-- ═══ BOTTOM CARDS ═══ -->
+    <div class="flex gap-5 mb-8">
+
+      <!-- Review Queue (wider left) -->
+      <div class="bg-white border border-outline-variant rounded-xl overflow-hidden" style="flex:3;min-width:0;">
+        <div class="px-5 py-4 border-b border-outline-variant flex items-center justify-between">
+          <h2 class="text-headline-sm text-on-surface">Review Queue</h2>
+          <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 10px;border-radius:99px;">4 pending</span>
+        </div>
+        <div class="divide-y divide-outline-variant">
+
+          <!-- Brake-FMEA — due tomorrow (red) -->
+          <div class="review-row px-5 py-3.5 flex items-center gap-4" onclick="location.href='documents.html'">
+            <div class="flex-1 min-w-0">
+              <p class="font-label-md text-label-md text-on-surface truncate">Brake-FMEA — Detailed Design</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">VCU Engine Firmware</p>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+              <div style="display:flex;align-items:center;">
+                <div title="Manoj S." style="width:24px;height:24px;border-radius:50%;background:#e0f2fe;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;">
+                  <span style="font-family:Inter;font-size:9px;font-weight:700;color:#0369a1;">MS</span>
+                </div>
+              </div>
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#ffdad6;color:#ba1a1a;padding:2px 9px;border-radius:99px;">Jun 20</span>
+            </div>
+            <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:16px;">chevron_right</span>
+          </div>
+
+          <!-- System Architecture — due in 6 days (amber) -->
+          <div class="review-row px-5 py-3.5 flex items-center gap-4" onclick="location.href='documents.html'">
+            <div class="flex-1 min-w-0">
+              <p class="font-label-md text-label-md text-on-surface truncate">System Architecture Document</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">EPS Control Unit</p>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+              <div style="display:flex;align-items:center;">
+                <div title="Ana Ferreira" style="width:24px;height:24px;border-radius:50%;background:#fce7f3;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;">
+                  <span style="font-family:Inter;font-size:9px;font-weight:700;color:#be185d;">AF</span>
+                </div>
+              </div>
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#fff8e6;color:#d97706;padding:2px 9px;border-radius:99px;">Jun 25</span>
+            </div>
+            <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:16px;">chevron_right</span>
+          </div>
+
+          <!-- Layer1-Sample SDD — due in 11 days (neutral) -->
+          <div class="review-row px-5 py-3.5 flex items-center gap-4" onclick="location.href='documents.html'">
+            <div class="flex-1 min-w-0">
+              <p class="font-label-md text-label-md text-on-surface truncate">Layer1-Sample — Detailed Design</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">VCU Engine Firmware</p>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+              <div style="display:flex;align-items:center;">
+                <div title="Manoj S." style="width:24px;height:24px;border-radius:50%;background:#e0f2fe;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;z-index:2;position:relative;">
+                  <span style="font-family:Inter;font-size:9px;font-weight:700;color:#0369a1;">MS</span>
+                </div>
+                <div title="Sarah Chen" style="width:24px;height:24px;border-radius:50%;background:#dbeafe;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;margin-left:-7px;position:relative;z-index:1;">
+                  <span style="font-family:Inter;font-size:9px;font-weight:700;color:#1e40af;">SC</span>
+                </div>
+              </div>
+              <span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;padding:2px 9px;">Jun 30</span>
+            </div>
+            <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:16px;">chevron_right</span>
+          </div>
+
+          <!-- SW Requirements — due in 12 days (neutral) -->
+          <div class="review-row px-5 py-3.5 flex items-center gap-4" onclick="location.href='documents.html'">
+            <div class="flex-1 min-w-0">
+              <p class="font-label-md text-label-md text-on-surface truncate">SW Requirements Specification</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">ADAS Sensor Fusion</p>
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+              <div style="display:flex;align-items:center;">
+                <div title="Marcus Webb" style="width:24px;height:24px;border-radius:50%;background:#f3e8ff;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;">
+                  <span style="font-family:Inter;font-size:9px;font-weight:700;color:#7c3aed;">MW</span>
+                </div>
+              </div>
+              <span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;padding:2px 9px;">Jul 1</span>
+            </div>
+            <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:16px;">chevron_right</span>
+          </div>
+
+        </div>
+      </div>
+      <!-- end Review Queue -->
+
+      <!-- Recent Runs -->
+      <div style="flex:2;min-width:0;">
+
+        <!-- Recent Runs -->
+        <div class="bg-white border border-outline-variant rounded-xl overflow-hidden">
+          <div class="px-5 py-4 border-b border-outline-variant">
+            <h2 class="text-headline-sm text-on-surface">Recent Runs</h2>
+          </div>
+          <div class="divide-y divide-outline-variant">
+
+            <!-- Run 1: success -->
+            <div class="run-row px-5 py-3.5 flex items-center gap-3">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#e5fff3;">
+                <span class="material-symbols-outlined" style="font-size:15px;color:#00a572;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="font-label-md text-label-md text-on-surface truncate">VCU Engine Firmware</p>
+                <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Jun 15 · 4h 22m · Manoj S.</p>
+              </div>
+            </div>
+
+            <!-- Run 2: success -->
+            <div class="run-row px-5 py-3.5 flex items-center gap-3">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#e5fff3;">
+                <span class="material-symbols-outlined" style="font-size:15px;color:#00a572;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="font-label-md text-label-md text-on-surface truncate">ADAS Sensor Fusion</p>
+                <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Jun 12 · 2h 10m · Priya R.</p>
+              </div>
+            </div>
+
+            <!-- Run 3: failed -->
+            <div class="run-row px-5 py-3.5 flex items-center gap-3">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#ffdad6;">
+                <span class="material-symbols-outlined" style="font-size:15px;color:#ba1a1a;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">cancel</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="font-label-md text-label-md text-on-surface truncate">EPS Control Unit</p>
+                <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Jun 8 · Phase 2 failed · Arjun M.</p>
+              </div>
+              <button onclick="showToast('Re-queued EPS Control Unit')"
+                      class="flex-shrink-0 text-secondary hover:underline"
+                      style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;white-space:nowrap;">
+                retry →
+              </button>
+            </div>
+
+            <!-- Run 4: success -->
+            <div class="run-row px-5 py-3.5 flex items-center gap-3">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#e5fff3;">
+                <span class="material-symbols-outlined" style="font-size:15px;color:#00a572;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="font-label-md text-label-md text-on-surface truncate">EPS Control Unit</p>
+                <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Jun 5 · 1h 48m · Sarah C.</p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <!-- end Recent Runs -->
+
+      </div>
+      <!-- end right column -->
+
+    </div>
+    <!-- end bottom cards -->
+
+  </div>
+  </div>
+</main>
+
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 bg-primary rounded-xl"
+     style="min-width:300px;max-width:380px;box-shadow:0 4px 24px rgba(4,22,39,.32);">
+  <span id="toast-icon" class="material-symbols-outlined flex-shrink-0"
+        style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;color:#00a572;">check_circle</span>
+  <p id="toast-msg" class="font-label-sm text-label-sm text-white flex-1">Done.</p>
+  <button onclick="hideToast()" class="text-on-primary-container hover:text-white transition-colors flex-shrink-0">
+    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+  </button>
+</div>
+
+<!-- Subtle dot grid background -->
+<div class="fixed inset-0 pointer-events-none -z-10 opacity-[0.025]"
+     style="background-image:radial-gradient(#041627 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
+
+
+<script>
+// ── Toast ──
+var toastTimer;
+function showToast(msg, isError) {
+  clearTimeout(toastTimer);
+  var t    = document.getElementById('toast');
+  var icon = document.getElementById('toast-icon');
+  document.getElementById('toast-msg').textContent = msg;
+  icon.textContent = isError ? 'error' : 'check_circle';
+  icon.style.color = isError ? '#ff7070' : '#00a572';
+  t.classList.remove('hidden', 'toast-out');
+  t.classList.add('toast-in');
+  toastTimer = setTimeout(hideToast, 4000);
+}
+function hideToast() {
+  var t = document.getElementById('toast');
+  t.classList.remove('toast-in');
+  t.classList.add('toast-out');
+  setTimeout(function() { t.classList.add('hidden'); }, 300);
+}
+</script>
+</body>
+</html>

@@ -29,7 +29,7 @@
         },
         borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
         spacing: {
-          "sidebar-width": "280px", "inspector-width": "400px",
+          "sidebar-width": "220px", "inspector-width": "400px",
           "gutter": "16px", "container-padding": "24px",
         },
         fontFamily: {
@@ -64,66 +64,85 @@
   .nav-default:hover { background: #eff4ff; color: #0b1c30; }
   .nav-active { background: #041627; color: #ffffff; border-left: 2px solid #0058be; }
   .nav-active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  /* ── Collapsible sidebar ── */
+  :root { --sw: 220px; }
+  body.nav-collapsed { --sw: 56px; }
+  #app-sidebar { width: var(--sw); transition: width .2s cubic-bezier(.4,0,.2,1); }
+  #app-main    { margin-left: var(--sw); transition: margin-left .2s cubic-bezier(.4,0,.2,1); }
+  body.nav-collapsed .nav-label,
+  body.nav-collapsed .brand-text,
+  body.nav-collapsed .nav-section-label,
+  body.nav-collapsed .soon-badge,
+  body.nav-collapsed .user-info,
+  body.nav-collapsed .more-btn-icon { display: none; }
+  body.nav-collapsed .nav-item     { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+  body.nav-collapsed .nav-active   { border-left: none; }
+  body.nav-collapsed .brand-header { flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px; }
+  body.nav-collapsed .user-btn     { justify-content: center; padding: 6px; gap: 0; }
 </style>
 </head>
 
 <!-- ─── NOTE: body has overflow-hidden, NO flex ─── -->
 <body class="bg-background text-on-surface font-body-md overflow-hidden">
 
-<!-- ══════════════ SIDEBAR (fixed 280 px) ══════════════ -->
-<aside class="fixed left-0 top-0 h-screen w-sidebar-width bg-white border-r border-outline-variant flex flex-col z-50">
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50">
 
   <!-- Brand -->
-  <div class="px-5 py-4 border-b border-outline-variant">
+  <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant">
     <div class="flex items-center gap-3">
       <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
         <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
       </div>
-      <div>
+      <div class="brand-text">
         <h1 class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
         <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5">Automotive Tier 1</p>
       </div>
     </div>
+    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
+      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
+    </button>
   </div>
 
   <!-- Nav -->
   <nav class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5" id="main-nav">
 
     <a href="#" data-page="overview"
-       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
+       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active" title="Overview">
       <span class="material-symbols-outlined" style="font-size:20px;">dashboard</span>
-      <span class="font-label-md text-label-md">Overview</span>
+      <span class="nav-label font-label-md text-label-md">Overview</span>
     </a>
 
-    <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] px-3 pt-4 pb-1.5 opacity-60">System Engineering</div>
+    <div class="nav-section-label font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] px-3 pt-4 pb-1.5 opacity-60">System Engineering</div>
 
-    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
+    <a class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" title="SYS.1 Requirement Elicitation" style="pointer-events:none;">
       <span class="material-symbols-outlined" style="font-size:20px;">architecture</span>
-      <span class="font-label-md text-label-md flex-1">SYS.1 Requirement Elicitation</span>
-      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
+      <span class="nav-label font-label-md text-label-md flex-1">SYS.1 Requirement Elicitation</span>
+      <span class="soon-badge font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
     </a>
-    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
+    <a class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" title="SYS.2 System Requirements" style="pointer-events:none;">
       <span class="material-symbols-outlined" style="font-size:20px;">settings_input_component</span>
-      <span class="font-label-md text-label-md flex-1">SYS.2 System Requirements</span>
-      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
+      <span class="nav-label font-label-md text-label-md flex-1">SYS.2 System Requirements</span>
+      <span class="soon-badge font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
     </a>
 
-    <div class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] px-3 pt-4 pb-1.5 opacity-60">Software Engineering</div>
+    <div class="nav-section-label font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] px-3 pt-4 pb-1.5 opacity-60">Software Engineering</div>
 
-    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
+    <a class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" title="SWE.1 Software Requirements" style="pointer-events:none;">
       <span class="material-symbols-outlined" style="font-size:20px;">description</span>
-      <span class="font-label-md text-label-md flex-1">SWE.1 Software Requirements</span>
-      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
+      <span class="nav-label font-label-md text-label-md flex-1">SWE.1 Software Requirements</span>
+      <span class="soon-badge font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
     </a>
-    <a class="flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style="pointer-events:none;">
+    <a class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" title="SWE.2 Software Architecture" style="pointer-events:none;">
       <span class="material-symbols-outlined" style="font-size:20px;">schema</span>
-      <span class="font-label-md text-label-md flex-1">SWE.2 Software Architecture</span>
-      <span class="font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
+      <span class="nav-label font-label-md text-label-md flex-1">SWE.2 Software Architecture</span>
+      <span class="soon-badge font-label-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded" style="font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Soon</span>
     </a>
     <a href="#" data-page="swe3"
-       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+       class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default" title="SWE.3 Detailed Design">
       <span class="material-symbols-outlined" style="font-size:20px;">account_tree</span>
-      <span class="font-label-md text-label-md">SWE.3 Detailed Design</span>
+      <span class="nav-label font-label-md text-label-md">SWE.3 Detailed Design</span>
     </a>
 
   </nav>
@@ -131,33 +150,33 @@
   <!-- Admin-only: Project Settings -->
   <div class="px-2 pt-2 border-t border-outline-variant">
     <a href="#" data-page="config"
-       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default" title="Project Settings">
       <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
-      <span class="font-label-md text-label-md">Project Settings</span>
+      <span class="nav-label font-label-md text-label-md">Project Settings</span>
     </a>
   </div>
 
   <!-- User profile -->
   <div class="px-2 pb-3 pt-1">
-    <button class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group">
+    <button class="user-btn w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group" title="Engineering Lead">
       <div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
         <span class="text-on-secondary-container font-bold text-sm" style="font-family:Inter;">EL</span>
       </div>
-      <div class="flex-1 min-w-0">
+      <div class="user-info flex-1 min-w-0">
         <p class="font-label-md text-label-md text-on-surface truncate leading-tight">Engineering Lead</p>
         <div class="flex items-center gap-1.5 mt-0.5">
           <span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container"></span>
           <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide">Admin</p>
         </div>
       </div>
-      <span class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
+      <span class="more-btn-icon material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
     </button>
   </div>
 </aside>
 
 
 <!-- ══════════════ MAIN CONTENT (offset by sidebar) ══════════════ -->
-<main class="ml-sidebar-width h-screen flex flex-col">
+<main id="app-main" class="h-screen flex flex-col">
 
   <!-- Top bar — 56 px -->
   <header class="h-14 flex-shrink-0 flex items-center justify-between px-gutter bg-white border-b border-outline-variant z-40">
@@ -262,6 +281,11 @@
      style="background-image:radial-gradient(#041627 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
 
 <script>
+  function toggleSidebar() {
+    const collapsed = document.body.classList.toggle('nav-collapsed');
+    document.getElementById('sidebar-toggle-icon').textContent = collapsed ? 'chevron_right' : 'chevron_left';
+  }
+
   // ── Sidebar nav ────────────────────────────────────────────
   const pages = { overview: 'Overview', swe3: 'SWE.3 Detailed Design', config: 'Project Settings' };
 

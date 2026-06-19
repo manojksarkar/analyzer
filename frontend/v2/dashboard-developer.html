@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PRODUCT NAME] — VCU Engine Firmware · My Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#041627", "primary-container": "#1a2b3c",
+          "on-primary": "#ffffff", "on-primary-container": "#8192a7",
+          "secondary": "#0058be", "secondary-container": "#2170e4",
+          "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
+          "on-tertiary-container": "#00a572",
+          "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
+          "surface": "#f8f9ff", "background": "#f8f9ff",
+          "surface-container-lowest": "#ffffff", "surface-container-low": "#eff4ff",
+          "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
+          "surface-container-highest": "#d3e4fe",
+          "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
+          "outline": "#74777d", "outline-variant": "#c4c6cd",
+          "tertiary-container": "#00311f", "tertiary-fixed": "#6ffbbe",
+        },
+        borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+        spacing: {
+          "sidebar-width": "220px", "inspector-width": "400px",
+          "gutter": "16px", "container-padding": "24px",
+        },
+        fontFamily: {
+          "display-lg": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"],
+          "body-lg": ["Inter"], "body-md": ["Inter"], "body-sm": ["Inter"],
+          "label-md": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+  .nav-default { color: #44474c; }
+  .nav-default:hover { background: #eff4ff; color: #0b1c30; }
+  .nav-active { background: #041627; color: #ffffff; border-left: 2px solid #0058be; }
+  .nav-active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  :root { --sw: 220px; }
+  body.nav-collapsed { --sw: 56px; }
+  #app-sidebar { width: var(--sw); transition: width .2s cubic-bezier(.4,0,.2,1); }
+  #app-main    { margin-left: var(--sw); transition: margin-left .2s cubic-bezier(.4,0,.2,1); }
+  body.nav-collapsed .nav-label,
+  body.nav-collapsed .brand-text,
+  body.nav-collapsed .user-info,
+  body.nav-collapsed .more-btn-icon { display: none; }
+  body.nav-collapsed .nav-item     { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+  body.nav-collapsed .nav-active   { border-left: none; }
+  body.nav-collapsed .brand-header { flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px; }
+  body.nav-collapsed .user-btn     { justify-content: center; padding: 6px; gap: 0; }
+
+  /* Status badges */
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .badge-review   { background: #fff8e6; color: #b45309; border: 1px solid #f59e0b; }
+  .badge-approved { background: #f0fdf9; color: #00a572; border: 1px solid #86efac; }
+  .badge-draft    { background: #f8f9ff; color: #74777d; border: 1px solid #c4c6cd; }
+
+  /* Process pills */
+  .proc-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono'; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .pill-swe3 { background: #e5eeff; color: #0058be; }
+  .pill-swe2 { background: #eef2ff; color: #4f46e5; }
+  .pill-swe1 { background: #f0fdf9; color: #00a572; }
+  .pill-sys2 { background: #fff7ed; color: #c2410c; }
+  .pill-sys1 { background: #faf5ff; color: #7c3aed; }
+
+  /* Document row */
+  .doc-row { transition: background .1s; }
+  .doc-row:hover { background: #f8f9ff; }
+
+  /* Subbar pill */
+  .subbar-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid #c4c6cd; border-radius: 6px; background: #fff; transition: background .1s, border-color .1s; cursor: pointer; }
+  .subbar-pill:hover { background: #eff4ff; border-color: #0058be; }
+
+  /* Dropdown */
+  .dropdown { position: absolute; top: calc(100% + 6px); left: 0; background: white; border: 1px solid #c4c6cd; border-radius: 8px; overflow: hidden; z-index: 200; box-shadow: 0 4px 20px rgba(4,22,39,.12); }
+
+  /* KPI card */
+  .kpi-card { background: white; border: 1px solid #c4c6cd; border-radius: 8px; padding: 16px 20px; transition: box-shadow .15s; }
+  .kpi-card:hover { box-shadow: 0 2px 12px rgba(4,22,39,.08); }
+
+  /* Run analysis button states */
+  .run-btn-idle   { background: #041627; color: #fff; }
+  .run-btn-idle:hover { background: #0058be; }
+  .run-btn-running { background: #b45309; color: #fff; cursor: not-allowed; }
+  .run-btn-done   { background: #00a572; color: #fff; }
+
+  /* Progress pulse */
+  @keyframes pulse-ring { 0% { opacity: .6; } 50% { opacity: .2; } 100% { opacity: .6; } }
+  .pulse { animation: pulse-ring 1.4s ease infinite; }
+
+  /* Toast */
+  @keyframes slideInRight { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+  @keyframes slideOutRight { from { transform: translateX(0); opacity:1; } to { transform: translateX(110%); opacity:0; } }
+  .toast-in  { animation: slideInRight .3s ease forwards; }
+  .toast-out { animation: slideOutRight .3s ease forwards; }
+</style>
+</head>
+
+<body class="bg-background text-on-surface font-body-md overflow-hidden">
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50">
+  <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant">
+    <a href="dashboard-admin.html" class="flex items-center gap-3 min-w-0 flex-1">
+      <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+        <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+      </div>
+      <div class="brand-text min-w-0 overflow-hidden">
+        <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5 whitespace-nowrap">Automotive Tier 1</p>
+      </div>
+    </a>
+    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
+      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
+    </button>
+  </div>
+
+  <nav class="flex-1 overflow-y-auto px-2 py-2">
+    <a href="dashboard-admin.html" title="All Projects"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
+      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
+    </a>
+    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:10px;">VCU Engine Firmware</p>
+    <div class="space-y-0.5">
+      <a href="dashboard-developer.html" title="Overview"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
+        <span class="material-symbols-outlined" style="font-size:20px;">home</span>
+        <span class="nav-label font-label-md text-label-md">Overview</span>
+      </a>
+      <a href="documents.html" title="Documents"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+        <span class="nav-label font-label-md text-label-md">Documents</span>
+      </a>
+      <a href="project-detail.html#versions" title="Versions"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
+        <span class="nav-label font-label-md text-label-md">Versions</span>
+      </a>
+      <a href="project-detail.html#team" title="Team"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">group</span>
+        <span class="nav-label font-label-md text-label-md">Team</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="px-2 pt-2 border-t border-outline-variant">
+    <a href="onboarding.html" title="Settings"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
+      <span class="nav-label font-label-md text-label-md">Settings</span>
+    </a>
+  </div>
+  <div class="px-2 pb-3 pt-1">
+    <button class="user-btn w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group" title="Sarah Chen">
+      <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style="background:#e0f2ff;">
+        <span class="font-bold text-sm" style="font-family:Inter;color:#0058be;">SC</span>
+      </div>
+      <div class="user-info flex-1 min-w-0">
+        <p class="font-label-md text-label-md text-on-surface truncate leading-tight">Sarah Chen</p>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container"></span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide">Developer</p>
+        </div>
+      </div>
+      <span class="more-btn-icon material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
+    </button>
+  </div>
+</aside>
+
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main id="app-main" class="h-screen flex flex-col">
+
+  <!-- ── Top bar ── -->
+  <header class="h-14 flex-shrink-0 flex items-center justify-between px-gutter bg-white border-b border-outline-variant z-40">
+    <nav class="flex items-center gap-1.5" aria-label="Breadcrumb">
+      <a href="dashboard-admin.html"
+         class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+         title="Dashboard">
+        <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">hexagon</span>
+      </a>
+      <span class="text-outline-variant select-none">/</span>
+      <span class="font-label-md text-label-md text-on-surface">VCU Engine Firmware</span>
+    </nav>
+    <div class="flex items-center gap-0.5">
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
+      </button>
+      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+      </button>
+      <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+      <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center" style="background:#e0f2ff;">
+          <span class="font-bold text-xs" style="font-family:Inter;color:#0058be;">SC</span>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Subbar ── -->
+  <div class="flex-shrink-0 h-12 bg-white border-b border-outline-variant flex items-center justify-between px-gutter z-30">
+    <div class="flex items-center gap-2">
+
+      <!-- Project switcher -->
+      <div class="relative" id="sb-project-wrap">
+        <button id="sb-project-btn" onclick="toggleSbProject()" class="subbar-pill">
+          <span class="material-symbols-outlined text-secondary" style="font-size:14px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">folder</span>
+          <span class="font-label-md text-label-md text-on-surface" id="sb-project-name" style="font-size:12px;">VCU Engine Firmware</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <div id="sb-project-dropdown" class="hidden dropdown" style="min-width:264px;">
+          <div class="py-1.5">
+            <button onclick="switchSbProject('VCU Engine Firmware')" data-proj="VCU Engine Firmware"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left" style="background:#eff4ff;">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">VCU Engine Firmware</span>
+              <span class="ml-auto material-symbols-outlined text-secondary sb-proj-check" style="font-size:15px;">check</span>
+            </button>
+            <button onclick="switchSbProject('Brake Control Unit')" data-proj="Brake Control Unit"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake Control Unit</span>
+              <span class="ml-auto material-symbols-outlined text-outline-variant sb-proj-check" style="font-size:15px;opacity:0;">check</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <span class="text-outline-variant select-none">·</span>
+
+      <!-- Version picker -->
+      <div class="relative" id="sb-version-wrap">
+        <button id="sb-version-btn" onclick="toggleSbVersion()" class="subbar-pill">
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">sell</span>
+          <span class="font-label-md text-label-md text-on-surface" id="sb-version-label" style="font-family:'JetBrains Mono';font-size:12px;">v1.2.0</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-version-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <div id="sb-version-dropdown" class="hidden dropdown" style="min-width:320px;">
+          <div id="sb-version-list"></div>
+        </div>
+      </div>
+
+      <span class="text-outline-variant select-none">·</span>
+
+      <!-- Commit (read-only) -->
+      <div class="flex items-center gap-1.5 px-2.5 py-1"
+           style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;">
+        <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:13px;">alt_route</span>
+        <span id="sb-commit-ref">main @ d9a0c55</span>
+        <span class="text-outline-variant">·</span>
+        <span id="sb-commit-date" style="color:#74777d;">Jun 15</span>
+      </div>
+    </div>
+
+    <!-- CTA: Run Analysis -->
+    <button id="run-btn" onclick="startAnalysis()"
+            class="run-btn-idle flex items-center gap-2 px-4 py-2 rounded-xl transition-colors"
+            style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;">
+      <span class="material-symbols-outlined" id="run-btn-icon" style="font-size:14px;">play_arrow</span>
+      <span id="run-btn-label">RUN ANALYSIS</span>
+    </button>
+  </div>
+
+  <!-- ── Scrollable content ── -->
+  <div class="flex-1 overflow-y-auto bg-background">
+    <div class="px-container-padding py-6" style="max-width:1280px;">
+
+      <!-- ═══ KPI STRIP ═══ -->
+      <div class="grid gap-4 mb-6" style="grid-template-columns: repeat(4, 1fr);">
+
+        <div class="kpi-card">
+          <div class="flex items-start justify-between mb-3">
+            <div class="w-9 h-9 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center">
+              <span class="material-symbols-outlined text-secondary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">assignment_ind</span>
+            </div>
+            <a href="documents.html" class="font-label-sm text-label-sm text-secondary hover:underline">View all</a>
+          </div>
+          <p class="text-headline-md text-on-surface font-bold leading-none mb-1">5</p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant">Assigned to me</p>
+        </div>
+
+        <div class="kpi-card">
+          <div class="flex items-start justify-between mb-3">
+            <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:#fff8e6;border:1px solid #f59e0b;">
+              <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;color:#b45309;">rate_review</span>
+            </div>
+          </div>
+          <p class="text-headline-md text-on-surface font-bold leading-none mb-1">3</p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant">In Review</p>
+        </div>
+
+        <div class="kpi-card">
+          <div class="flex items-start justify-between mb-3">
+            <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:#f0fdf9;border:1px solid #86efac;">
+              <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;color:#00a572;">task_alt</span>
+            </div>
+          </div>
+          <p class="text-headline-md text-on-surface font-bold leading-none mb-1">1</p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant">Approved</p>
+        </div>
+
+        <div class="kpi-card">
+          <div class="flex items-start justify-between mb-3">
+            <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:#ffdad6;border:1px solid #ffb4ab;">
+              <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;color:#ba1a1a;">schedule</span>
+            </div>
+          </div>
+          <p class="text-headline-md text-on-surface font-bold leading-none mb-1">2</p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant">Due This Week</p>
+        </div>
+
+      </div>
+
+      <!-- ═══ MAIN 2-COLUMN ═══ -->
+      <div class="flex gap-5">
+
+        <!-- LEFT: My Documents -->
+        <div class="flex-1 min-w-0 bg-white border border-outline-variant rounded-xl overflow-hidden">
+
+          <div class="px-5 py-4 border-b border-outline-variant flex items-center justify-between">
+            <div>
+              <h2 class="text-headline-sm text-on-surface">My Documents</h2>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">5 documents assigned to you · v1.2.0</p>
+            </div>
+            <a href="documents.html"
+               class="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container-low transition-colors"
+               style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;">
+              <span class="material-symbols-outlined" style="font-size:13px;">open_in_full</span>
+              All Documents
+            </a>
+          </div>
+
+          <table class="w-full">
+            <thead>
+              <tr class="bg-surface-container-low border-b border-outline-variant">
+                <th class="text-left px-5 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Document</th>
+                <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:95px;">Process</th>
+                <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:105px;">Status</th>
+                <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:90px;">Due</th>
+                <th class="px-4 py-3" style="width:72px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="doc-row border-b border-outline-variant">
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center gap-3">
+                    <div class="w-7 h-7 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
+                      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">article</span>
+                    </div>
+                    <div>
+                      <a href="documents.html" class="font-label-md text-label-md text-on-surface hover:text-secondary hover:underline transition-colors" style="font-size:13px;">EngineControl</a>
+                      <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Detailed Design</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-3.5"><span class="proc-pill pill-swe3">SWE.3</span></td>
+                <td class="px-4 py-3.5"><span class="badge badge-review" style="font-family:'JetBrains Mono';">In Review</span></td>
+                <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">Jun 25</td>
+                <td class="px-4 py-3.5">
+                  <div class="flex items-center gap-1">
+                    <a href="documents.html" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-secondary" title="View">
+                      <span class="material-symbols-outlined" style="font-size:14px;">open_in_new</span>
+                    </a>
+                    <button onclick="showToast('download','Downloading EngineControl.docx…','#0058be')" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant" title="Download">
+                      <span class="material-symbols-outlined" style="font-size:14px;">download</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr class="doc-row border-b border-outline-variant">
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center gap-3">
+                    <div class="w-7 h-7 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
+                      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">article</span>
+                    </div>
+                    <div>
+                      <a href="documents.html" class="font-label-md text-label-md text-on-surface hover:text-secondary hover:underline transition-colors" style="font-size:13px;">PowerManagement</a>
+                      <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Detailed Design</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-3.5"><span class="proc-pill pill-swe3">SWE.3</span></td>
+                <td class="px-4 py-3.5"><span class="badge badge-review" style="font-family:'JetBrains Mono';">In Review</span></td>
+                <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">Jun 26</td>
+                <td class="px-4 py-3.5">
+                  <div class="flex items-center gap-1">
+                    <a href="documents.html" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-secondary" title="View">
+                      <span class="material-symbols-outlined" style="font-size:14px;">open_in_new</span>
+                    </a>
+                    <button onclick="showToast('download','Downloading PowerManagement.docx…','#0058be')" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant" title="Download">
+                      <span class="material-symbols-outlined" style="font-size:14px;">download</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr class="doc-row border-b border-outline-variant">
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center gap-3">
+                    <div class="w-7 h-7 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
+                      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">article</span>
+                    </div>
+                    <div>
+                      <a href="documents.html" class="font-label-md text-label-md text-on-surface hover:text-secondary hover:underline transition-colors" style="font-size:13px;">FuelSystem</a>
+                      <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Detailed Design</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-3.5"><span class="proc-pill pill-swe3">SWE.3</span></td>
+                <td class="px-4 py-3.5"><span class="badge badge-approved" style="font-family:'JetBrains Mono';">Approved</span></td>
+                <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">Jun 20</td>
+                <td class="px-4 py-3.5">
+                  <div class="flex items-center gap-1">
+                    <a href="documents.html" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-secondary" title="View">
+                      <span class="material-symbols-outlined" style="font-size:14px;">open_in_new</span>
+                    </a>
+                    <button onclick="showToast('download','Downloading FuelSystem.docx…','#0058be')" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant" title="Download">
+                      <span class="material-symbols-outlined" style="font-size:14px;">download</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr class="doc-row border-b border-outline-variant">
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center gap-3">
+                    <div class="w-7 h-7 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
+                      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">article</span>
+                    </div>
+                    <div>
+                      <a href="documents.html" class="font-label-md text-label-md text-on-surface hover:text-secondary hover:underline transition-colors" style="font-size:13px;">ThrottleControl</a>
+                      <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Detailed Design</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-3.5"><span class="proc-pill pill-swe3">SWE.3</span></td>
+                <td class="px-4 py-3.5"><span class="badge badge-draft" style="font-family:'JetBrains Mono';">Draft</span></td>
+                <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">Jul 05</td>
+                <td class="px-4 py-3.5">
+                  <div class="flex items-center gap-1">
+                    <a href="documents.html" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-secondary" title="View">
+                      <span class="material-symbols-outlined" style="font-size:14px;">open_in_new</span>
+                    </a>
+                    <button onclick="showToast('download','Downloading ThrottleControl.docx…','#0058be')" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant" title="Download">
+                      <span class="material-symbols-outlined" style="font-size:14px;">download</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr class="doc-row">
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center gap-3">
+                    <div class="w-7 h-7 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
+                      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">article</span>
+                    </div>
+                    <div>
+                      <a href="documents.html" class="font-label-md text-label-md text-on-surface hover:text-secondary hover:underline transition-colors" style="font-size:13px;">Engine Interface Spec</a>
+                      <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Architecture Design</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-3.5"><span class="proc-pill pill-swe2">SWE.2</span></td>
+                <td class="px-4 py-3.5"><span class="badge badge-review" style="font-family:'JetBrains Mono';">In Review</span></td>
+                <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">Jun 30</td>
+                <td class="px-4 py-3.5">
+                  <div class="flex items-center gap-1">
+                    <a href="documents.html" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-secondary" title="View">
+                      <span class="material-symbols-outlined" style="font-size:14px;">open_in_new</span>
+                    </a>
+                    <button onclick="showToast('download','Downloading EngineInterfaceSpec.docx…','#0058be')" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant" title="Download">
+                      <span class="material-symbols-outlined" style="font-size:14px;">download</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- RIGHT: Analysis + Project info -->
+        <div class="flex flex-col gap-4" style="width:308px;flex-shrink:0;">
+
+          <!-- Analysis status card -->
+          <div class="bg-white border border-outline-variant rounded-xl overflow-hidden">
+            <div class="px-5 pt-4 pb-3 border-b border-outline-variant">
+              <div class="flex items-center justify-between">
+                <h3 class="text-headline-sm text-on-surface" style="font-size:15px;">Last Analysis</h3>
+                <span class="badge badge-approved" id="analysis-status-badge" style="font-family:'JetBrains Mono';">Success</span>
+              </div>
+            </div>
+
+            <!-- Idle state -->
+            <div id="analysis-idle" class="px-5 py-4 space-y-3">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-on-tertiary-container flex-shrink-0" style="font-size:14px;">alt_route</span>
+                <span style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">main @ d9a0c55</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:14px;">calendar_today</span>
+                <span class="font-label-sm text-label-sm text-on-surface-variant">Jun 15, 2026 · 2:34 PM</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:14px;">timer</span>
+                <span class="font-label-sm text-label-sm text-on-surface-variant">Duration: 4m 12s</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:14px;">description</span>
+                <span class="font-label-sm text-label-sm text-on-surface-variant">45 documents generated</span>
+              </div>
+            </div>
+
+            <!-- Running state (hidden by default) -->
+            <div id="analysis-running" class="hidden px-5 py-4 space-y-3">
+              <div class="flex items-center gap-3 mb-1">
+                <div class="w-8 h-8 rounded-full border-2 border-secondary flex items-center justify-center flex-shrink-0 pulse">
+                  <span class="material-symbols-outlined text-secondary" style="font-size:14px;">autorenew</span>
+                </div>
+                <div>
+                  <p class="font-label-md text-label-md text-on-surface" id="run-phase-label">Phase 1 — Parsing C++ sources</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" id="run-elapsed">0:00 elapsed</p>
+                </div>
+              </div>
+              <!-- Progress bar -->
+              <div class="w-full h-1.5 rounded-full bg-surface-container overflow-hidden">
+                <div id="run-progress-bar" class="h-full bg-secondary rounded-full transition-all duration-500" style="width:0%"></div>
+              </div>
+              <p class="font-label-sm text-label-sm text-on-surface-variant" id="run-progress-label">Starting…</p>
+            </div>
+
+            <div class="px-5 pb-4">
+              <button onclick="startAnalysis()" id="run-card-btn"
+                      class="w-full flex items-center justify-center gap-2 py-2.5 bg-primary hover:bg-secondary rounded-xl text-white transition-colors"
+                      style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;">
+                <span class="material-symbols-outlined" style="font-size:14px;">play_arrow</span>
+                RUN ANALYSIS
+              </button>
+            </div>
+          </div>
+
+          <!-- Project info card -->
+          <div class="bg-white border border-outline-variant rounded-xl">
+            <div class="px-5 pt-4 pb-3 border-b border-outline-variant flex items-center justify-between">
+              <h3 class="text-headline-sm text-on-surface" style="font-size:15px;">Project</h3>
+              <a href="project-detail.html" class="font-label-sm text-label-sm text-secondary hover:underline flex items-center gap-1">
+                <span class="material-symbols-outlined" style="font-size:13px;">open_in_new</span>
+                Detail
+              </a>
+            </div>
+            <div class="px-5 py-4 space-y-3">
+              <div>
+                <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-1">Project</p>
+                <p class="font-label-md text-label-md text-on-surface">VCU Engine Firmware</p>
+              </div>
+              <div>
+                <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-1">Client</p>
+                <p class="font-label-md text-label-md text-on-surface">Automotive GmbH</p>
+              </div>
+              <div>
+                <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-1">Standard</p>
+                <p class="font-label-md text-label-md text-on-surface">ISO 26262 / ASPICE</p>
+              </div>
+              <div class="flex items-center gap-3 pt-1 border-t border-outline-variant mt-3">
+                <div>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-1">Current Version</p>
+                  <p class="font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono';">v1.2.0</p>
+                </div>
+                <div class="ml-auto">
+                  <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-1">Total Docs</p>
+                  <p class="font-label-md text-label-md text-on-surface text-right">45</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Team card (my team members) -->
+          <div class="bg-white border border-outline-variant rounded-xl">
+            <div class="px-5 pt-4 pb-3 border-b border-outline-variant">
+              <h3 class="text-headline-sm text-on-surface" style="font-size:15px;">Team</h3>
+            </div>
+            <div class="px-5 py-3 space-y-2.5">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center" style="background:#e0f2ff;">
+                  <span class="font-bold text-xs" style="font-family:Inter;color:#0058be;">SC</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="font-label-md text-label-md text-on-surface leading-tight">Sarah Chen <span class="text-secondary text-xs">(you)</span></p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant">Developer</p>
+                </div>
+                <span class="badge badge-review" style="font-family:'JetBrains Mono';">3 active</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center" style="background:#f3e8ff;">
+                  <span class="font-bold text-xs" style="font-family:Inter;color:#7c3aed;">MW</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="font-label-md text-label-md text-on-surface leading-tight">Marcus Webb</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant">Developer</p>
+                </div>
+                <span class="badge badge-review" style="font-family:'JetBrains Mono';">2 active</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center" style="background:#8192a7;opacity:.85;">
+                  <span class="font-bold text-xs" style="font-family:Inter;color:#fff;">EL</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="font-label-md text-label-md text-on-surface leading-tight">Engineering Lead</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant">Admin</p>
+                </div>
+                <span class="font-label-sm text-label-sm text-on-surface-variant">owner</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="h-8"></div>
+    </div>
+  </div>
+</main>
+
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 bg-primary rounded-xl" style="min-width:300px;max-width:380px;box-shadow:0 4px 24px rgba(4,22,39,.32);">
+  <span id="toast-icon" class="material-symbols-outlined flex-shrink-0" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;color:#00a572;">check_circle</span>
+  <p id="toast-msg" class="font-label-sm text-label-sm text-white flex-1">Done.</p>
+  <button onclick="hideToast()" class="text-on-primary-container hover:text-white transition-colors flex-shrink-0">
+    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+  </button>
+</div>
+
+<div class="fixed inset-0 pointer-events-none -z-10 opacity-[0.025]"
+     style="background-image:radial-gradient(#041627 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
+
+<script>
+const VERSIONS = [
+  { tag: 'v1.2.0', sha: 'd9a0c55', branch: 'main', date: 'Jun 15', desc: 'SWE.3 review draft — all groups', status: 'in_review', docs: 45 },
+  { tag: 'v1.1.0', sha: 'b2c841f', branch: 'main', date: 'Jun 10', desc: 'Engine + Brake subsystems complete', status: 'approved', docs: 40 },
+  { tag: 'v1.0.0', sha: '3ef70a9', branch: 'main', date: 'Jun 01', desc: 'Initial ADAS SWE.3 baseline', status: 'approved', docs: 35 },
+];
+
+let currentVersion = VERSIONS[0];
+let analysisRunning = false;
+let runTimer = null;
+let elapsedSec = 0;
+
+// ── Sidebar ──
+function toggleSidebar() {
+  const collapsed = document.body.classList.toggle('nav-collapsed');
+  document.getElementById('sidebar-toggle-icon').textContent = collapsed ? 'chevron_right' : 'chevron_left';
+}
+
+// ── Subbar: project switcher ──
+function toggleSbProject() {
+  const dd = document.getElementById('sb-project-dropdown');
+  const ch = document.getElementById('sb-project-chevron');
+  const open = dd.classList.toggle('hidden');
+  ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+
+function switchSbProject(name) {
+  document.getElementById('sb-project-name').textContent = name;
+  document.getElementById('sb-project-dropdown').classList.add('hidden');
+  document.getElementById('sb-project-chevron').style.transform = '';
+  document.querySelectorAll('.sb-proj-opt').forEach(btn => {
+    const isActive = btn.dataset.proj === name;
+    btn.style.background = isActive ? '#eff4ff' : '';
+    btn.querySelector('.sb-proj-check').style.opacity = isActive ? '1' : '0';
+    btn.querySelector('.sb-proj-check').className = `ml-auto material-symbols-outlined sb-proj-check ${isActive ? 'text-secondary' : 'text-outline-variant'}`;
+    btn.querySelector('.sb-proj-check').style.fontSize = '15px';
+  });
+}
+
+// ── Subbar: version picker ──
+function renderVersionList() {
+  const list = document.getElementById('sb-version-list');
+  list.innerHTML = VERSIONS.map(v => {
+    const isCurrent = v.tag === currentVersion.tag;
+    const statusColor = v.status === 'approved' ? '#00a572' : '#b45309';
+    const statusBg    = v.status === 'approved' ? '#f0fdf9' : '#fff8e6';
+    const statusBdr   = v.status === 'approved' ? '#86efac' : '#f59e0b';
+    const statusLabel = v.status === 'approved' ? 'Approved' : 'In Review';
+    return `
+      <button onclick="pickVersion('${v.tag}')"
+              class="w-full flex items-start gap-3 px-4 py-3 hover:bg-surface-container-low transition-colors text-left"
+              style="${isCurrent ? 'background:#eff4ff;' : ''}">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-0.5">
+            <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;">${v.tag}</span>
+            <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:${statusBg};color:${statusColor};border:1px solid ${statusBdr};padding:1px 6px;border-radius:3px;text-transform:uppercase;">${statusLabel}</span>
+            ${isCurrent ? `<span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:1px 6px;border-radius:3px;text-transform:uppercase;">current</span>` : ''}
+          </div>
+          <p style="font-size:11px;color:#74777d;font-family:Inter;">${v.desc}</p>
+          <div class="flex items-center gap-2 mt-1" style="font-family:'JetBrains Mono';font-size:10px;color:#44474c;">
+            <span>⑂ ${v.branch} @ ${v.sha}</span>
+            <span style="color:#c4c6cd;">·</span>
+            <span>${v.date}</span>
+            <span style="color:#c4c6cd;">·</span>
+            <span>${v.docs} docs</span>
+          </div>
+        </div>
+        ${isCurrent ? `<span class="material-symbols-outlined text-secondary flex-shrink-0" style="font-size:16px;margin-top:2px;">check</span>` : ''}
+      </button>`;
+  }).join('<div class="border-t border-outline-variant"></div>');
+}
+
+function toggleSbVersion() {
+  const dd = document.getElementById('sb-version-dropdown');
+  const ch = document.getElementById('sb-version-chevron');
+  const willOpen = dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', !willOpen);
+  ch.style.transform = willOpen ? 'rotate(180deg)' : '';
+  if (willOpen) renderVersionList();
+}
+
+function pickVersion(tag) {
+  currentVersion = VERSIONS.find(v => v.tag === tag);
+  document.getElementById('sb-version-label').textContent = currentVersion.tag;
+  document.getElementById('sb-commit-ref').textContent = `${currentVersion.branch} @ ${currentVersion.sha}`;
+  document.getElementById('sb-commit-date').textContent = currentVersion.date;
+  document.getElementById('sb-version-dropdown').classList.add('hidden');
+  document.getElementById('sb-version-chevron').style.transform = '';
+}
+
+// ── Run Analysis ──
+const PHASES = [
+  { label: 'Phase 1 — Parsing C++ sources', pct: 15 },
+  { label: 'Phase 1 — Resolving includes', pct: 30 },
+  { label: 'Phase 2 — Deriving model', pct: 48 },
+  { label: 'Phase 2 — LLM enrichment', pct: 65 },
+  { label: 'Phase 3 — Generating views', pct: 78 },
+  { label: 'Phase 4 — Exporting DOCX', pct: 92 },
+  { label: 'Finalizing…', pct: 98 },
+];
+let phaseIdx = 0;
+
+function startAnalysis() {
+  if (analysisRunning) return;
+  analysisRunning = true;
+  phaseIdx = 0;
+  elapsedSec = 0;
+
+  // Switch button to running state
+  const btn = document.getElementById('run-btn');
+  btn.className = 'run-btn-running flex items-center gap-2 px-4 py-2 rounded-xl transition-colors';
+  document.getElementById('run-btn-icon').textContent = 'stop';
+  document.getElementById('run-btn-label').textContent = 'RUNNING…';
+
+  // Switch card button
+  const cardBtn = document.getElementById('run-card-btn');
+  cardBtn.disabled = true;
+  cardBtn.style.opacity = '.5';
+  cardBtn.style.cursor = 'not-allowed';
+
+  // Switch analysis card content
+  document.getElementById('analysis-idle').classList.add('hidden');
+  document.getElementById('analysis-running').classList.remove('hidden');
+  document.getElementById('analysis-status-badge').className = 'badge badge-review';
+  document.getElementById('analysis-status-badge').textContent = 'Running';
+
+  advancePhase();
+  runTimer = setInterval(tick, 1000);
+}
+
+function advancePhase() {
+  if (phaseIdx < PHASES.length) {
+    const p = PHASES[phaseIdx++];
+    document.getElementById('run-phase-label').textContent = p.label;
+    document.getElementById('run-progress-bar').style.width = p.pct + '%';
+    document.getElementById('run-progress-label').textContent = `${p.pct}% complete`;
+    if (phaseIdx < PHASES.length) setTimeout(advancePhase, 1800 + Math.random() * 600);
+    else setTimeout(finishAnalysis, 2000);
+  }
+}
+
+function tick() {
+  elapsedSec++;
+  const m = Math.floor(elapsedSec / 60);
+  const s = elapsedSec % 60;
+  document.getElementById('run-elapsed').textContent = `${m}:${String(s).padStart(2,'0')} elapsed`;
+}
+
+function finishAnalysis() {
+  clearInterval(runTimer);
+  analysisRunning = false;
+
+  const btn = document.getElementById('run-btn');
+  btn.className = 'run-btn-idle flex items-center gap-2 px-4 py-2 rounded-xl transition-colors';
+  document.getElementById('run-btn-icon').textContent = 'play_arrow';
+  document.getElementById('run-btn-label').textContent = 'RUN ANALYSIS';
+
+  const cardBtn = document.getElementById('run-card-btn');
+  cardBtn.disabled = false;
+  cardBtn.style.opacity = '';
+  cardBtn.style.cursor = '';
+
+  document.getElementById('run-progress-bar').style.width = '100%';
+  document.getElementById('run-phase-label').textContent = 'Analysis complete';
+  document.getElementById('run-progress-label').textContent = '100% complete · 45 documents generated';
+
+  setTimeout(() => {
+    document.getElementById('analysis-running').classList.add('hidden');
+    document.getElementById('analysis-idle').classList.remove('hidden');
+    document.getElementById('analysis-status-badge').className = 'badge badge-approved';
+    document.getElementById('analysis-status-badge').textContent = 'Success';
+  }, 1200);
+
+  showToast('check_circle', 'Analysis complete — 45 documents generated', '#00a572');
+}
+
+// ── Toast ──
+let toastTimer;
+function showToast(icon, msg, iconColor = '#00a572') {
+  const el = document.getElementById('toast');
+  document.getElementById('toast-icon').textContent = icon;
+  document.getElementById('toast-icon').style.color = iconColor;
+  document.getElementById('toast-msg').textContent = msg;
+  el.classList.remove('hidden', 'toast-out');
+  el.classList.add('toast-in');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => hideToast(), 3500);
+}
+function hideToast() {
+  const el = document.getElementById('toast');
+  el.classList.remove('toast-in');
+  el.classList.add('toast-out');
+  setTimeout(() => el.classList.add('hidden'), 300);
+}
+
+// ── Close dropdowns on outside click ──
+document.addEventListener('click', e => {
+  [
+    ['sb-project-wrap', 'sb-project-dropdown', 'sb-project-chevron'],
+    ['sb-version-wrap',  'sb-version-dropdown',  'sb-version-chevron'],
+  ].forEach(([wrapId, ddId, chId]) => {
+    const wrap = document.getElementById(wrapId);
+    const dd   = document.getElementById(ddId);
+    const ch   = document.getElementById(chId);
+    if (wrap && !wrap.contains(e.target)) {
+      dd.classList.add('hidden');
+      if (ch) ch.style.transform = '';
+    }
+  });
+});
+</script>
+</body>
+</html>

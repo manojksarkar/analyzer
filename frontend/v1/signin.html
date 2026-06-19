@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PRODUCT NAME] — Sign In</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#041627", "primary-container": "#1a2b3c",
+          "on-primary": "#ffffff", "on-primary-container": "#8192a7",
+          "secondary": "#0058be", "secondary-container": "#2170e4",
+          "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
+          "on-tertiary-container": "#00a572",
+          "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
+          "surface": "#f8f9ff", "background": "#f8f9ff",
+          "surface-container-lowest": "#ffffff", "surface-container-low": "#eff4ff",
+          "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
+          "surface-container-highest": "#d3e4fe",
+          "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
+          "outline": "#74777d", "outline-variant": "#c4c6cd",
+          "tertiary-container": "#00311f", "tertiary-fixed": "#6ffbbe",
+        },
+        borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+        fontFamily: {
+          "display-lg": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"],
+          "body-lg": ["Inter"], "body-md": ["Inter"], "body-sm": ["Inter"],
+          "label-md": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  body { font-family: 'Inter', sans-serif; }
+  input[type="email"], input[type="password"], input[type="text"] {
+    outline: none;
+  }
+  input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focus {
+    border-color: #0058be;
+    box-shadow: 0 0 0 3px rgba(0,88,190,0.12);
+  }
+  .feat-item { display: flex; align-items: flex-start; gap: 12px; }
+</style>
+</head>
+<body class="bg-background text-on-surface font-body-md min-h-screen flex items-center justify-center p-6">
+
+<div class="w-full max-w-5xl bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg overflow-hidden grid lg:grid-cols-[1fr_1.1fr]" style="box-shadow:0 4px 32px rgba(4,22,39,.10);">
+
+  <!-- Left Panel -->
+  <div class="hidden lg:flex flex-col justify-between p-12 bg-primary text-on-primary">
+
+    <div>
+      <!-- Logo -->
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+          <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+        </div>
+        <div>
+          <h1 class="font-bold tracking-tight" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
+          <p class="font-label-sm text-label-sm uppercase tracking-[0.08em] mt-0.5 text-on-primary-container">Automotive Tier 1</p>
+        </div>
+      </div>
+
+      <!-- Headline -->
+      <div class="mt-14">
+        <p class="font-label-sm text-label-sm uppercase tracking-[0.2em] text-secondary-container mb-4">AI Documentation Platform</p>
+        <h2 class="text-display-lg leading-tight" style="font-size:28px;line-height:36px;">
+          Build compliant documentation 10× faster.
+        </h2>
+        <p class="mt-4 text-body-lg text-on-primary-container leading-relaxed" style="max-width:340px;">
+          Generate requirements, architecture, traceability, test documentation,
+          and compliance artifacts automatically.
+        </p>
+      </div>
+    </div>
+
+    <!-- Feature badges -->
+    <div class="grid grid-cols-2 gap-3 mt-10">
+      <div class="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+          <span class="font-label-md text-label-md text-on-primary-container">ASPICE Ready</span>
+        </div>
+      </div>
+      <div class="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+          <span class="font-label-md text-label-md text-on-primary-container">ISO 26262 Support</span>
+        </div>
+      </div>
+      <div class="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+          <span class="font-label-md text-label-md text-on-primary-container">End-to-End Traceability</span>
+        </div>
+      </div>
+      <div class="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+          <span class="font-label-md text-label-md text-on-primary-container">Enterprise Security</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right Panel -->
+  <div class="p-10 lg:p-14 flex items-center justify-center">
+    <div class="w-full" style="max-width:360px;">
+
+      <!-- Mobile logo -->
+      <div class="lg:hidden flex items-center gap-3 mb-8">
+        <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+          <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+        </div>
+        <h1 class="text-primary font-bold tracking-tight" style="font-family:Inter;font-size:15px;">[PRODUCT NAME]</h1>
+      </div>
+
+      <!-- Heading -->
+      <div class="mb-8">
+        <h2 class="text-headline-md text-on-surface">Welcome back</h2>
+        <p class="text-body-md text-on-surface-variant mt-1.5">Sign in to access your workspace.</p>
+      </div>
+
+      <!-- SSO Button -->
+      <button class="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low transition-colors font-label-md text-label-md text-on-surface mb-5" style="font-family:Inter;font-size:13px;font-weight:500;">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">domain</span>
+        Continue with Company SSO
+      </button>
+
+      <!-- Divider -->
+      <div class="flex items-center gap-3 mb-5">
+        <div class="flex-1 border-t border-outline-variant"></div>
+        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em]">or</span>
+        <div class="flex-1 border-t border-outline-variant"></div>
+      </div>
+
+      <!-- Form -->
+      <form class="space-y-4" onsubmit="return false;">
+
+        <!-- Email -->
+        <div>
+          <label class="block font-label-md text-label-md text-on-surface-variant uppercase tracking-[0.08em] mb-1.5" style="font-size:11px;">Work Email</label>
+          <input
+            type="email"
+            placeholder="name@company.com"
+            class="w-full h-11 px-3 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-body-md transition-shadow"
+            style="font-family:Inter;"
+          >
+        </div>
+
+        <!-- Password -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="font-label-md text-label-md text-on-surface-variant uppercase tracking-[0.08em]" style="font-size:11px;">Password</label>
+            <a href="#" class="text-body-sm text-secondary hover:underline" style="font-size:12px;">Forgot password?</a>
+          </div>
+          <div class="relative">
+            <input
+              id="password"
+              type="password"
+              placeholder="••••••••"
+              class="w-full h-11 px-3 pr-11 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-body-md transition-shadow"
+              style="font-family:Inter;"
+            >
+            <button
+              type="button"
+              onclick="togglePassword()"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
+            >
+              <span class="material-symbols-outlined" id="eye-icon" style="font-size:18px;">visibility_off</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Remember me -->
+        <div class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="remember"
+            class="w-4 h-4 rounded border-outline-variant text-secondary accent-secondary cursor-pointer"
+          >
+          <label for="remember" class="text-body-sm text-on-surface-variant cursor-pointer" style="font-size:13px;">Remember me</label>
+        </div>
+
+        <!-- Submit -->
+        <button
+          type="submit"
+          class="w-full h-11 rounded-xl bg-secondary text-on-secondary font-label-md text-label-md hover:bg-secondary-container transition-colors mt-1"
+          style="font-family:Inter;font-size:13px;font-weight:600;"
+        >
+          Continue
+        </button>
+
+      </form>
+
+      <!-- Footer -->
+      <div class="mt-8 pt-6 border-t border-outline-variant text-center">
+        <p class="text-body-sm text-on-surface-variant" style="font-size:13px;">
+          New to the platform?
+          <a href="#" class="text-secondary font-medium hover:underline">Request Access</a>
+        </p>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+function togglePassword() {
+  const input = document.getElementById('password');
+  const icon  = document.getElementById('eye-icon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.textContent = 'visibility';
+  } else {
+    input.type = 'password';
+    icon.textContent = 'visibility_off';
+  }
+}
+</script>
+
+</body>
+</html>

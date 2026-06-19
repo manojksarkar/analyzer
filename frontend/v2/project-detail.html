@@ -1,0 +1,1681 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PRODUCT NAME] — VCU Engine Firmware</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#041627", "primary-container": "#1a2b3c",
+          "on-primary": "#ffffff", "on-primary-container": "#8192a7",
+          "secondary": "#0058be", "secondary-container": "#2170e4",
+          "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
+          "on-tertiary-container": "#00a572",
+          "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
+          "surface": "#f8f9ff", "background": "#f8f9ff",
+          "surface-container-lowest": "#ffffff", "surface-container-low": "#eff4ff",
+          "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
+          "surface-container-highest": "#d3e4fe",
+          "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
+          "outline": "#74777d", "outline-variant": "#c4c6cd",
+          "tertiary-container": "#00311f", "tertiary-fixed": "#6ffbbe",
+        },
+        borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+        spacing: {
+          "sidebar-width": "220px", "inspector-width": "400px",
+          "gutter": "16px", "container-padding": "24px",
+        },
+        fontFamily: {
+          "display-lg": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"],
+          "body-lg": ["Inter"], "body-md": ["Inter"], "body-sm": ["Inter"],
+          "label-md": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+  .nav-default { color: #44474c; }
+  .nav-default:hover { background: #eff4ff; color: #0b1c30; }
+  .nav-active { background: #041627; color: #ffffff; border-left: 2px solid #0058be; }
+  .nav-active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .stat-card { transition: box-shadow .15s; }
+  .stat-card:hover { box-shadow: 0 2px 12px rgba(4,22,39,.08); }
+  .proc-row { transition: background .1s; cursor: pointer; }
+  .proc-row:hover { background: #f8f9ff; }
+  .proc-row:hover .proc-arrow { opacity: 1; transform: translateX(2px); }
+  .proc-arrow { opacity: 0; transition: opacity .1s, transform .15s; }
+  .progress-track { height: 6px; background: #e5eeff; border-radius: 9999px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 9999px; transition: width .6s ease; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+
+  @keyframes pulseRing {
+    0%   { box-shadow: 0 0 0 0 rgba(0,88,190,.35); }
+    70%  { box-shadow: 0 0 0 7px rgba(0,88,190,0); }
+    100% { box-shadow: 0 0 0 0 rgba(0,88,190,0); }
+  }
+  .pulse-ring { animation: pulseRing 2s ease infinite; }
+
+  @keyframes slideInRight { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+  @keyframes slideOutRight { from { transform: translateX(0); opacity:1; } to { transform: translateX(110%); opacity:0; } }
+  .toast-in  { animation: slideInRight .3s ease forwards; }
+  .toast-out { animation: slideOutRight .3s ease forwards; }
+
+  .adv-body { overflow: hidden; max-height: 0; transition: max-height .25s ease; }
+  .adv-body.open { max-height: 240px; }
+
+  .phase-line { height: 2px; flex: 1; margin: 0 6px; margin-top: 11px; border-radius: 9999px; }
+  .ph-done   { background: #00a572; }
+  .ph-active { background: #0058be; }
+  .ph-pending { background: #e5eeff; }
+
+  /* Collapsible sidebar */
+  :root { --sw: 220px; }
+  body.nav-collapsed { --sw: 56px; }
+  #app-sidebar { width: var(--sw); transition: width .2s cubic-bezier(.4,0,.2,1); }
+  #app-main    { margin-left: var(--sw); transition: margin-left .2s cubic-bezier(.4,0,.2,1); }
+  body.nav-collapsed .nav-label,
+  body.nav-collapsed .brand-text,
+  body.nav-collapsed .user-info,
+  body.nav-collapsed .more-btn-icon { display: none; }
+  body.nav-collapsed .nav-item     { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+  body.nav-collapsed .nav-active   { border-left: none; }
+  body.nav-collapsed .brand-header { flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px; }
+  body.nav-collapsed .user-btn     { justify-content: center; padding: 6px; gap: 0; }
+</style>
+</head>
+
+<body class="bg-background text-on-surface font-body-md overflow-hidden">
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50">
+  <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant">
+    <a href="dashboard-admin.html" class="flex items-center gap-3 min-w-0 flex-1">
+      <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+        <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
+      </div>
+      <div class="brand-text min-w-0 overflow-hidden">
+        <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5 whitespace-nowrap">Automotive Tier 1</p>
+      </div>
+    </a>
+    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
+      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_left</span>
+    </button>
+  </div>
+
+  <nav class="flex-1 overflow-y-auto px-2 py-2">
+    <a href="dashboard-admin.html" title="All Projects"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
+      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
+    </a>
+    <div class="space-y-0.5 mt-1">
+      <a href="project-detail.html" title="Overview"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
+        <span class="material-symbols-outlined" style="font-size:20px;">home</span>
+        <span class="nav-label font-label-md text-label-md">Overview</span>
+      </a>
+      <a href="documents.html" title="Documents"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+        <span class="nav-label font-label-md text-label-md">Documents</span>
+      </a>
+      <a href="project-detail.html#versions" title="Versions"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
+        <span class="nav-label font-label-md text-label-md">Versions</span>
+      </a>
+      <a href="project-detail.html#team" title="Team"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">group</span>
+        <span class="nav-label font-label-md text-label-md">Team</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="px-2 pt-2 border-t border-outline-variant">
+    <a href="onboarding.html" title="Settings"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
+      <span class="nav-label font-label-md text-label-md">Settings</span>
+    </a>
+  </div>
+  <div class="px-2 pb-3 pt-1">
+    <button class="user-btn w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group" title="Engineering Lead">
+      <div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+        <span class="text-on-secondary-container font-bold text-sm" style="font-family:Inter;">EL</span>
+      </div>
+      <div class="user-info flex-1 min-w-0">
+        <p class="font-label-md text-label-md text-on-surface truncate leading-tight">Engineering Lead</p>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide">Admin</p>
+        </div>
+      </div>
+      <span class="more-btn-icon material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
+    </button>
+  </div>
+</aside>
+
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main id="app-main" class="h-screen flex flex-col">
+
+  <!-- Top bar — breadcrumb navigation -->
+  <header class="h-14 flex-shrink-0 flex items-center justify-between px-gutter bg-white border-b border-outline-variant z-40">
+    <div class="flex items-center gap-2">
+      <a href="dashboard-admin.html" class="font-label-md text-label-md text-secondary hover:underline transition-colors">Dashboard</a>
+      <span class="text-outline-variant select-none">/</span>
+      <!-- Project switcher -->
+      <div class="relative" id="project-selector-wrap">
+        <button id="project-selector-btn" onclick="toggleProjectDropdown()"
+                class="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low hover:bg-surface-container border border-outline-variant rounded-xl transition-colors">
+          <span class="material-symbols-outlined text-secondary" style="font-size:14px;">folder_open</span>
+          <span class="font-label-md text-label-md text-on-surface" id="current-project-name">VCU Engine Firmware</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" style="font-size:14px;" id="project-chevron">expand_more</span>
+        </button>
+        <div id="project-dropdown" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:272px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+          <div class="py-1.5">
+            <button onclick="switchProject('VCU Engine Firmware')" data-project="VCU Engine Firmware"
+                    class="proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left" style="background:#eff4ff;">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-label-md text-label-md text-on-surface truncate">VCU Engine Firmware</span>
+                  <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#2170e4;color:#fff;padding:1px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap;">Active</span>
+                </div>
+              </div>
+              <span class="material-symbols-outlined text-secondary flex-shrink-0 proj-check" style="font-size:16px;">check</span>
+            </button>
+            <button onclick="switchProject('Brake Control Unit')" data-project="Brake Control Unit"
+                    class="proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-label-md text-label-md text-on-surface truncate">Brake Control Unit</span>
+                  <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:1px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap;">In Progress</span>
+                </div>
+              </div>
+              <span class="material-symbols-outlined text-outline-variant flex-shrink-0 proj-check" style="font-size:16px;opacity:0;">check</span>
+            </button>
+          </div>
+          <div class="border-t border-outline-variant">
+            <a href="onboarding.html" class="flex items-center gap-2.5 px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+              <span class="material-symbols-outlined text-secondary" style="font-size:16px;">add_circle</span>
+              <span class="font-label-md text-label-md text-secondary">New Project</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-0.5">
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
+      </button>
+      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+      </button>
+      <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+      <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+        <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+          <span class="text-on-secondary-container font-bold text-xs" style="font-family:Inter;">EL</span>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Scrollable content — no subbar -->
+  <div class="flex-1 overflow-y-auto bg-background">
+    <div class="px-container-padding py-6" style="max-width:1280px;">
+
+      <!-- ═══ PAGE HEADER ═══ -->
+      <div class="flex items-start justify-between mb-6">
+        <!-- Left: name + commit chip -->
+        <div class="flex-1 min-w-0">
+          <h1 class="text-headline-md text-on-surface" id="name-display" style="font-family:Inter;font-weight:600;">VCU Engine Firmware</h1>
+
+          <div class="flex items-center gap-3 mt-2 flex-wrap">
+
+            <!-- Commit chip with picker dropdown -->
+            <div class="relative" id="commit-chip-wrap">
+              <button id="commit-chip-btn" onclick="toggleCommitPicker()"
+                      class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low border border-outline-variant rounded-lg hover:bg-surface-container transition-colors"
+                      style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+                <span id="chip-icon-sym" class="material-symbols-outlined text-on-tertiary-container flex-shrink-0" style="font-size:13px;">alt_route</span>
+                <div id="chip-icon-spin" class="spin flex-shrink-0" style="display:none;width:11px;height:11px;border:1.5px solid #0058be;border-top-color:transparent;border-radius:9999px;"></div>
+                <span id="chip-ref" class="text-on-surface font-semibold">main @ abc1234</span>
+                <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="chip-chevron" style="font-size:13px;">expand_more</span>
+              </button>
+
+              <!-- Commit picker dropdown -->
+              <div id="commit-picker"
+                   class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden"
+                   style="min-width:380px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+                <div class="flex items-center border-b border-outline-variant px-3">
+                  <button id="cp-tab-versions" onclick="switchPickerTab('versions')"
+                          class="px-1 py-2.5 mr-5 font-label-md text-label-md border-b-2 border-secondary text-secondary -mb-px transition-colors">
+                    Versions
+                  </button>
+                  <button id="cp-tab-commits" onclick="switchPickerTab('commits')"
+                          class="px-1 py-2.5 font-label-md text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-on-surface -mb-px transition-colors">
+                    Commits
+                  </button>
+                </div>
+                <div id="cp-panel-versions">
+                  <div class="overflow-y-auto" style="max-height:280px;" id="cp-versions-list"></div>
+                </div>
+                <div id="cp-panel-commits" style="display:none;">
+                  <div class="px-3 py-2 border-b border-outline-variant">
+                    <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
+                      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+                      <input type="text" placeholder="Search commits…" oninput="filterPickerCommits(this.value)"
+                             class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline"
+                             style="font-family:'JetBrains Mono';font-size:11px;">
+                    </div>
+                  </div>
+                  <div class="overflow-y-auto" style="max-height:240px;" id="cp-commits-list"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: CTA buttons (one visible at a time) -->
+        <div class="flex items-center gap-2 flex-shrink-0 ml-6 mt-0.5">
+          <button id="cta-run" onclick="openRunConfig()"
+                  class="flex items-center gap-2 px-4 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors"
+                  style="display:none;font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;">
+            <span class="material-symbols-outlined" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">play_circle</span>
+            RUN ANALYSIS
+          </button>
+          <button id="cta-cancel" onclick="cancelGeneration()"
+                  class="flex items-center gap-2 px-4 py-2.5 rounded-xl transition-colors"
+                  style="display:none;border:1px solid #fca5a5;color:#ba1a1a;background:transparent;font-family:'JetBrains Mono';font-size:12px;font-weight:500;"
+                  onmouseenter="this.style.background='#fff0f0'" onmouseleave="this.style.background='transparent'">
+            <span class="material-symbols-outlined" style="font-size:16px;">stop_circle</span>
+            Cancel Job
+          </button>
+          <button id="cta-rerun" onclick="openRunConfig()"
+                  class="flex items-center gap-2 px-4 py-2.5 border border-outline-variant hover:bg-surface-container text-on-surface-variant rounded-xl transition-colors"
+                  style="display:none;font-family:'JetBrains Mono';font-size:12px;font-weight:500;">
+            <span class="material-symbols-outlined" style="font-size:14px;">replay</span>
+            Re-run
+          </button>
+          <button id="cta-delete" onclick="confirmDeleteVersion(VERSIONS[0]?.tag)"
+                  style="display:none;width:36px;height:36px;display:none;align-items:center;justify-content:center;border:1px solid #e2e3e8;border-radius:10px;background:transparent;cursor:pointer;color:#74777d;transition:all .15s;"
+                  onmouseover="this.style.borderColor='#fca5a5';this.style.color='#ba1a1a';this.style.background='#fff0f0'"
+                  onmouseleave="this.style.borderColor='#e2e3e8';this.style.color='#74777d';this.style.background='transparent'"
+                  title="Delete current version">
+            <span class="material-symbols-outlined" style="font-size:16px;">delete_outline</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ═══ EMPTY STATE BANNER ═══ -->
+      <div id="empty-banner" style="display:none;"
+           class="mb-7 rounded-xl border border-outline-variant bg-white px-8 py-10 flex flex-col items-center text-center gap-5">
+        <div class="w-14 h-14 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center">
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:28px;">auto_awesome</span>
+        </div>
+        <div>
+          <h3 class="text-headline-sm text-on-surface">No documents generated yet</h3>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-2" style="max-width:340px;">
+            Run analysis on <strong>main @ abc1234</strong> to generate ASPICE-compliant documents for all 5 processes.
+          </p>
+        </div>
+        <button onclick="openRunConfig()"
+                class="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors"
+                style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;">
+          <span class="material-symbols-outlined" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">play_circle</span>
+          RUN ANALYSIS
+        </button>
+      </div>
+
+      <!-- ═══ GENERATION RUNNING PANEL ═══ -->
+      <div id="gen-panel" style="display:none;" class="mb-7 rounded-xl overflow-hidden border border-outline-variant">
+
+        <!-- Dark header -->
+        <div id="gen-header" class="px-5 py-4 flex items-center justify-between" style="background:#041627;">
+          <div class="flex items-center gap-3">
+            <div id="panel-spinner-wrap" class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring" style="border:2px solid #0058be;border-top-color:transparent;">
+              <div class="w-full h-full rounded-full spin" style="border:2px solid #0058be;border-top-color:transparent;border-radius:9999px;"></div>
+            </div>
+            <div>
+              <div class="flex items-center gap-2.5">
+                <p class="text-white font-semibold" style="font-family:Inter;font-size:14px;" id="gen-header-title">Analysis Running</p>
+                <span id="gen-live-badge" style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#0058be;color:#fff;padding:1px 7px;border-radius:3px;text-transform:uppercase;letter-spacing:.05em;">Live</span>
+              </div>
+              <div class="flex items-center gap-2 mt-0.5" style="color:#8192a7;">
+                <span class="material-symbols-outlined" style="font-size:12px;">source</span>
+                <p style="font-size:11px;font-family:'JetBrains Mono';">Branch <span id="panel-branch" style="color:#4d9fff;">main</span></p>
+                <span style="color:#1e3045;">·</span>
+                <p style="font-size:11px;font-family:'JetBrains Mono';">Commit <span id="panel-commit" style="color:#4d9fff;">abc1234</span></p>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-5">
+            <div class="text-right">
+              <p style="font-size:10px;font-family:'JetBrains Mono';color:#44474c;text-transform:uppercase;letter-spacing:.08em;">Started</p>
+              <p id="panel-started" style="font-family:'JetBrains Mono';font-size:12px;color:#8192a7;">14:32</p>
+            </div>
+            <div class="text-right">
+              <p style="font-size:10px;font-family:'JetBrains Mono';color:#44474c;text-transform:uppercase;letter-spacing:.08em;">Elapsed</p>
+              <p id="panel-elapsed" style="font-family:'JetBrains Mono';font-size:12px;color:#ffffff;">00:00:00</p>
+            </div>
+            <button onclick="cancelGeneration()"
+                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors font-label-sm text-label-sm"
+                    style="border:1px solid #4d2020;color:#ff7070;"
+                    onmouseenter="this.style.background='#1a0a0a'" onmouseleave="this.style.background='transparent'">
+              <span class="material-symbols-outlined" style="font-size:14px;">stop_circle</span>
+              Cancel Job
+            </button>
+          </div>
+        </div>
+
+        <!-- Phase steps -->
+        <div class="bg-white px-6 pt-5 pb-3">
+          <div class="flex items-start">
+            <div class="flex flex-col items-center text-center" style="min-width:105px;">
+              <div id="ph1-icon" class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#00a572;">
+                <span class="material-symbols-outlined text-white" style="font-size:14px;font-variation-settings:'FILL' 1,'wght' 700,'GRAD' 0,'opsz' 24;">check</span>
+              </div>
+              <p id="ph1-name" class="mt-1.5 font-semibold text-on-surface" style="font-size:11px;">Phase 1</p>
+              <p class="text-on-surface-variant" style="font-size:10px;">Parse C++</p>
+              <p id="ph1-time" class="mt-0.5" style="font-size:10px;color:#00a572;font-family:'JetBrains Mono';">Done · 3m 12s</p>
+            </div>
+            <div id="line12" class="phase-line ph-done"></div>
+            <div class="flex flex-col items-center text-center" style="min-width:105px;">
+              <div id="ph2-icon" class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring" style="background:#0058be;">
+                <div class="spin" style="width:14px;height:14px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:9999px;"></div>
+              </div>
+              <p id="ph2-name" class="mt-1.5 font-semibold text-on-surface" style="font-size:11px;">Phase 2</p>
+              <p class="text-on-surface-variant" style="font-size:10px;">Derive Model</p>
+              <p id="ph2-time" class="mt-0.5" style="font-size:10px;color:#0058be;font-family:'JetBrains Mono';">Running...</p>
+            </div>
+            <div id="line23" class="phase-line ph-pending"></div>
+            <div class="flex flex-col items-center text-center" style="min-width:105px;">
+              <div id="ph3-icon" class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#e5eeff;">
+                <span style="font-size:13px;font-weight:600;color:#74777d;">3</span>
+              </div>
+              <p id="ph3-name" class="mt-1.5 font-semibold" style="font-size:11px;color:#74777d;">Phase 3</p>
+              <p class="text-on-surface-variant" style="font-size:10px;">Run Views</p>
+              <p id="ph3-time" class="mt-0.5" style="font-size:10px;color:#c4c6cd;font-family:'JetBrains Mono';">Pending</p>
+            </div>
+            <div id="line34" class="phase-line ph-pending"></div>
+            <div class="flex flex-col items-center text-center" style="min-width:105px;">
+              <div id="ph4-icon" class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#e5eeff;">
+                <span style="font-size:13px;font-weight:600;color:#74777d;">4</span>
+              </div>
+              <p id="ph4-name" class="mt-1.5 font-semibold" style="font-size:11px;color:#74777d;">Phase 4</p>
+              <p class="text-on-surface-variant" style="font-size:10px;">Export DOCX</p>
+              <p id="ph4-time" class="mt-0.5" style="font-size:10px;color:#c4c6cd;font-family:'JetBrains Mono';">Pending</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity row -->
+        <div class="bg-white px-6 pb-5">
+          <div class="bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span id="act-icon" class="material-symbols-outlined text-secondary" style="font-size:14px;">psychology</span>
+                <p id="act-text" class="font-label-sm text-label-sm text-on-surface">Enriching function descriptions with LLM...</p>
+              </div>
+              <span id="act-pct" class="font-label-md text-label-md text-secondary" style="font-family:'JetBrains Mono'">37%</span>
+            </div>
+            <div class="progress-track mb-2">
+              <div id="act-bar" class="progress-fill" style="width:37%;background:#0058be;"></div>
+            </div>
+            <div class="flex items-center justify-between">
+              <p id="act-sub" class="font-label-sm text-label-sm text-on-surface-variant">312 of 842 functions · LLM enrichment enabled</p>
+              <p id="act-eta" class="font-label-sm text-label-sm" style="color:#74777d;font-family:'JetBrains Mono'">Est. ~4h 20m remaining</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-2 px-1">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">info</span>
+            <p class="font-label-sm text-label-sm text-on-surface-variant">Job runs on the server — switch branches or close this tab safely. Return any time to check progress.</p>
+          </div>
+        </div>
+
+      </div>
+      <!-- ═══ END GEN PANEL ═══ -->
+
+      <!-- ═══ KPI STRIP (generated state only) ═══ -->
+      <div id="kpi-strip" class="mb-6" style="display:none;">
+        <div id="kpi-cards" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;"></div>
+      </div>
+
+      <!-- ═══ DOCUMENTS SUMMARY (full width) ═══ -->
+      <div id="docs-section" class="bg-white border border-outline-variant rounded-xl overflow-hidden mb-6" style="display:none;">
+        <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
+          <h2 class="text-headline-sm text-on-surface">Documents</h2>
+          <a href="documents.html" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#0058be;text-decoration:none;font-weight:500;"
+            onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+            View all
+            <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+          </a>
+        </div>
+        <table class="w-full">
+          <thead>
+            <tr class="bg-surface-container-low border-b border-outline-variant">
+              <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Process</th>
+              <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:210px;">Assignment</th>
+              <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Team</th>
+              <th style="width:44px;"></th>
+            </tr>
+          </thead>
+          <tbody id="docs-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- ═══ BOTTOM ROW: TEAM + HISTORY ═══ -->
+      <div id="bottom-row" class="flex gap-6 mb-8" style="display:none;">
+
+        <!-- Team -->
+        <div class="bg-white border border-outline-variant rounded-xl overflow-hidden flex flex-col" style="flex:62;min-width:0;">
+          <div class="px-5 py-4 border-b border-outline-variant flex items-center justify-between flex-shrink-0">
+            <h2 class="text-headline-sm text-on-surface">Team</h2>
+            <button class="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant hover:bg-surface-container text-on-surface-variant rounded-lg transition-colors font-label-sm text-label-sm">
+              <span class="material-symbols-outlined" style="font-size:14px;">person_add</span>
+              Add
+            </button>
+          </div>
+          <table class="w-full">
+            <thead>
+              <tr class="bg-surface-container-low border-b border-outline-variant">
+                <th class="text-left px-5 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Member</th>
+                <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Role</th>
+                <th class="text-right px-5 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Assigned</th>
+                <th style="width:40px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
+                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#dbeafe;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#1e40af;">SC</span></div><span class="font-label-md text-label-md text-on-surface">Sarah Chen</span></div></td>
+                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Admin</span></td>
+                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">12 docs</td>
+                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
+              </tr>
+              <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
+                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#f3e8ff;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#7c3aed;">MW</span></div><span class="font-label-md text-label-md text-on-surface">Marcus Webb</span></div></td>
+                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Developer</span></td>
+                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">8 docs</td>
+                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
+              </tr>
+              <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
+                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#fce7f3;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#be185d;">AF</span></div><span class="font-label-md text-label-md text-on-surface">Ana Ferreira</span></div></td>
+                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Developer</span></td>
+                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">4 docs</td>
+                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
+              </tr>
+              <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
+                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#ecfdf5;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#065f46;">LP</span></div><span class="font-label-md text-label-md text-on-surface">Liam Park</span></div></td>
+                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Developer</span></td>
+                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">6 docs</td>
+                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
+              </tr>
+              <tr class="hover:bg-surface-container-low transition-colors">
+                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#fff7ed;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#c2410c;">ZP</span></div><span class="font-label-md text-label-md text-on-surface">Zara Patel</span></div></td>
+                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Admin</span></td>
+                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">11 docs</td>
+                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- History -->
+        <div class="bg-white border border-outline-variant rounded-xl overflow-hidden flex flex-col" style="flex:38;min-width:0;">
+          <div class="px-5 py-4 border-b border-outline-variant flex-shrink-0">
+            <h2 class="text-headline-sm text-on-surface">History</h2>
+          </div>
+          <div class="flex items-center border-b border-outline-variant px-5 flex-shrink-0">
+            <button id="vc-tab-versions" onclick="switchVcTab('versions')" class="px-1 py-2.5 mr-5 font-label-md text-label-md border-b-2 border-secondary text-secondary -mb-px transition-colors">Versions</button>
+            <button id="vc-tab-commits" onclick="switchVcTab('commits')" class="px-1 py-2.5 font-label-md text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-on-surface -mb-px transition-colors">Commits</button>
+          </div>
+          <div id="vc-panel-versions" class="overflow-y-auto" style="height:280px;"></div>
+          <div id="vc-panel-commits" class="overflow-y-auto" style="display:none;height:280px;"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</main>
+
+
+<!-- ══════════════ ASSIGNEE PICKER ══════════════ -->
+<div id="assignee-picker" style="display:none;position:absolute;z-index:300;min-width:220px;background:white;border:1px solid #e2e3e8;border-radius:12px;box-shadow:0 4px 20px rgba(4,22,39,.12);overflow:hidden;">
+  <div style="padding:8px 10px;border-bottom:1px solid #e2e3e8;">
+    <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:#f3f4f6;border:1px solid #e2e3e8;border-radius:8px;">
+      <span class="material-symbols-outlined" style="font-size:14px;color:#74777d;">search</span>
+      <input id="assignee-search" type="text" placeholder="Search members…" oninput="renderAssigneePicker(this.value)"
+        style="flex:1;background:transparent;border:none;outline:none;font-size:12px;color:#0b1c30;" />
+    </div>
+  </div>
+  <div id="assignee-picker-list" style="max-height:210px;overflow-y:auto;"></div>
+  <div style="padding:6px 12px;border-top:1px solid #e2e3e8;display:flex;align-items:center;justify-content:space-between;">
+    <span id="assignee-picker-count" style="font-size:11px;color:#74777d;"></span>
+    <button onclick="clearAssignees()" style="font-size:11px;color:#74777d;background:none;border:none;cursor:pointer;padding:0;" onmouseover="this.style.color='#b91c1c'" onmouseout="this.style.color='#74777d'">Clear all</button>
+  </div>
+</div>
+
+<!-- ══════════════ MODAL: RUN CONFIG ══════════════ -->
+<div id="run-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(4,22,39,.5);">
+  <div class="bg-white rounded-xl border border-outline-variant w-full mx-4" style="max-width:496px;box-shadow:0 8px 48px rgba(4,22,39,.24);">
+
+    <!-- Header -->
+    <div class="px-6 py-5 border-b border-outline-variant">
+      <h3 class="text-headline-sm text-on-surface">Run Analysis</h3>
+      <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Pick a commit to analyze — the output will be saved as a new named version.</p>
+    </div>
+
+    <div class="px-6 py-5 space-y-5">
+
+      <!-- ── SOURCE ── -->
+      <div>
+        <p style="font-size:10px;font-weight:700;color:#9aa0a6;text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;">Source</p>
+
+        <!-- Branch context (not a field) -->
+        <div style="display:flex;align-items:center;gap:8px;padding:9px 13px;background:#f4f6fb;border:1px solid #e2e3e8;border-radius:8px;margin-bottom:12px;">
+          <span class="material-symbols-outlined" style="font-size:14px;color:#74777d;">alt_route</span>
+          <span style="font-size:11px;color:#74777d;">Branch</span>
+          <span id="run-modal-branch" style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;"></span>
+          <span style="margin-left:auto;font-size:10px;color:#c4c6cd;">fixed</span>
+        </div>
+
+        <!-- Commit -->
+        <div>
+          <label style="font-size:11px;color:#44474c;font-weight:500;display:block;margin-bottom:5px;">Commit</label>
+          <select id="run-modal-commit"
+            style="width:100%;border:1px solid #e2e3e8;border-radius:8px;padding:8px 12px;font-family:'JetBrains Mono';font-size:12px;color:#0b1c30;background:white;cursor:pointer;"
+            onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#e2e3e8'">
+          </select>
+        </div>
+      </div>
+
+      <!-- ── COMPARE ── -->
+      <div>
+        <p style="font-size:10px;font-weight:700;color:#9aa0a6;text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;">Compare against <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:#c4c6cd;">optional</span></p>
+        <select id="run-modal-reference"
+          style="width:100%;border:1px solid #e2e3e8;border-radius:8px;padding:8px 12px;font-family:'JetBrains Mono';font-size:12px;color:#0b1c30;background:white;cursor:pointer;"
+          onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#e2e3e8'">
+          <option value="">— None —</option>
+        </select>
+        <p style="font-size:11px;color:#9aa0a6;margin-top:6px;">Enables diff view between this run and the selected version.</p>
+      </div>
+
+      <!-- ── OUTPUT ── -->
+      <div>
+        <p style="font-size:10px;font-weight:700;color:#9aa0a6;text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;">Output</p>
+        <label style="font-size:11px;color:#44474c;font-weight:500;display:block;margin-bottom:5px;">New version name</label>
+        <input id="run-modal-new-version" type="text" placeholder="e.g. v1.3.0" autocomplete="off" spellcheck="false"
+          style="width:100%;border:1px solid #e2e3e8;border-radius:8px;padding:8px 12px;font-family:'JetBrains Mono';font-size:13px;font-weight:600;color:#0058be;background:white;box-sizing:border-box;letter-spacing:.02em;"
+          onfocus="this.style.borderColor='#0058be';this.style.background='#f8fbff'"
+          onblur="this.style.borderColor='#e2e3e8';this.style.background='white'">
+      </div>
+
+      <!-- Advanced accordion -->
+      <div>
+        <button onclick="toggleAdv()" class="flex items-center gap-1.5 text-secondary font-label-sm text-label-sm">
+          <span id="adv-ch" class="material-symbols-outlined transition-transform duration-200" style="font-size:15px;">chevron_right</span>
+          Advanced options
+        </button>
+        <div id="adv-body" class="adv-body">
+          <div class="mt-3 space-y-3 pl-1">
+            <div>
+              <label class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] block mb-2">Layer / Group (optional)</label>
+              <select class="w-full border border-outline-variant rounded-lg px-3 py-2.5 font-label-md text-label-md text-on-surface bg-white focus:outline-none focus:border-secondary" style="font-family:'JetBrains Mono'">
+                <option>All layers (default)</option>
+                <option>Layer1 — Sample</option>
+                <option>Layer1 — Full</option>
+                <option>Layer2 — Platform</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="skip-llm" class="rounded border-outline-variant text-secondary">
+              <label for="skip-llm" class="font-label-sm text-label-sm text-on-surface">Skip LLM enrichment (faster, lower quality)</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Warning -->
+      <div class="flex items-start gap-2.5 bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3">
+        <span class="material-symbols-outlined mt-0.5 flex-shrink-0" style="font-size:16px;color:#d97706;">schedule</span>
+        <div>
+          <p class="font-label-sm text-label-sm text-on-surface font-medium">Long-running job</p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Analysis with LLM enrichment can take <strong>several hours or overnight</strong>. Runs server-side — safe to navigate away after starting.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-end gap-3">
+      <button onclick="closeRunModal()" class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors">Cancel</button>
+      <button onclick="startGeneration()"
+        class="flex items-center gap-2 px-4 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors"
+        style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;">
+        <span class="material-symbols-outlined" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">rocket_launch</span>
+        START ANALYSIS
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════ MODAL: DELETE VERSION ══════════════ -->
+<div id="delete-version-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(4,22,39,.5);">
+  <div class="bg-white rounded-xl border border-outline-variant w-full mx-4" style="max-width:380px;box-shadow:0 8px 48px rgba(4,22,39,.24);">
+    <div class="px-6 py-5 border-b border-outline-variant">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style="background:#ffdad6;">
+          <span class="material-symbols-outlined" style="font-size:20px;color:#ba1a1a;">delete_outline</span>
+        </div>
+        <div>
+          <h3 class="text-headline-sm text-on-surface">Delete version</h3>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">This action cannot be undone</p>
+        </div>
+      </div>
+    </div>
+    <div class="px-6 py-5">
+      <p class="font-body-md text-on-surface">Delete <strong id="delete-version-tag" style="font-family:'JetBrains Mono';"></strong>? All documents and history tied to this version will be permanently removed.</p>
+    </div>
+    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-end gap-3">
+      <button onclick="closeDeleteVersionModal()" class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors">Cancel</button>
+      <button onclick="executeDeleteVersion()"
+              class="flex items-center gap-2 px-4 py-2.5 rounded-xl transition-colors"
+              style="background:#ba1a1a;color:#ffffff;font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;"
+              onmouseover="this.style.background='#93000a'" onmouseout="this.style.background='#ba1a1a'">
+        <span class="material-symbols-outlined" style="font-size:16px;">delete_forever</span>
+        DELETE VERSION
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 bg-primary rounded-xl" style="min-width:300px;max-width:380px;box-shadow:0 4px 24px rgba(4,22,39,.32);">
+  <span id="toast-icon" class="material-symbols-outlined flex-shrink-0" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;color:#00a572;">check_circle</span>
+  <p id="toast-msg" class="font-label-sm text-label-sm text-white flex-1">Done.</p>
+  <button onclick="hideToast()" class="text-on-primary-container hover:text-white transition-colors flex-shrink-0">
+    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+  </button>
+</div>
+
+<div class="fixed inset-0 pointer-events-none -z-10 opacity-[0.025]"
+     style="background-image:radial-gradient(#041627 0.5px,transparent 0.5px);background-size:24px 24px;"></div>
+
+<script>
+// ── Sidebar ──
+function toggleSidebar() {
+  const collapsed = document.body.classList.toggle('nav-collapsed');
+  document.getElementById('sidebar-toggle-icon').textContent = collapsed ? 'chevron_right' : 'chevron_left';
+}
+
+// ── Data ──
+const BRANCH = { label: 'main', commit: 'abc1234', version: null, state: 'in_review', generatedAt: '2 hours ago' };
+
+const COMMITS = [
+  { sha: 'abc1234', msg: 'feat: add brake system FMEA table',         author: 'Manoj S.',   time: '2h ago',   current: true,  status: 'in_review', version: null     },
+  { sha: 'f7e3b12', msg: 'fix: correct signal naming in CAN matrix',  author: 'Priya R.',   time: '5h ago',   current: false, status: 'never',     version: null     },
+  { sha: 'd9a0c55', msg: 'docs: update SWE.3 traceability links',     author: 'Manoj S.',   time: '1d ago',   current: false, status: 'in_review', version: 'v1.2.0' },
+  { sha: 'b2c841f', msg: 'refactor: split EngineControl component',   author: 'Arjun M.',   time: '2d ago',   current: false, status: 'approved',  version: 'v1.1.0' },
+  { sha: '3ef70a9', msg: 'feat: add ADAS perception group',            author: 'Priya R.',   time: '3d ago',   current: false, status: 'approved',  version: 'v1.0.0' },
+  { sha: '91c3d17', msg: 'fix: missing include path for diagnostics',  author: 'Manoj S.',   time: '4d ago',   current: false, status: 'never',     version: null     },
+  { sha: '07fa8b2', msg: 'chore: update Clang config to 17',          author: 'Arjun M.',   time: '5d ago',   current: false, status: 'never',     version: null     },
+];
+
+const VERSIONS = [
+  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',          date: '2026-06-15', status: 'in_review', docs: 45 },
+  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete',        date: '2026-06-10', status: 'approved',  docs: 40 },
+  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',               date: '2026-06-01', status: 'approved',  docs: 35 },
+];
+
+const TEAM_MEMBERS = [
+  { id: 'SC', name: 'Sarah Chen',   role: 'Admin',     bg: '#dbeafe', text: '#1e40af' },
+  { id: 'MW', name: 'Marcus Webb',  role: 'Developer', bg: '#f3e8ff', text: '#7c3aed' },
+  { id: 'AF', name: 'Ana Ferreira', role: 'Developer', bg: '#fce7f3', text: '#be185d' },
+  { id: 'LP', name: 'Liam Park',    role: 'Developer', bg: '#ecfdf5', text: '#065f46' },
+  { id: 'ZP', name: 'Zara Patel',   role: 'Admin',     bg: '#fff7ed', text: '#c2410c' },
+  { id: 'AM', name: 'Arjun M.',     role: 'Developer', bg: '#fef9c3', text: '#92400e' },
+  { id: 'MS', name: 'Manoj S.',     role: 'Developer', bg: '#e0f2fe', text: '#0369a1' },
+];
+
+const DOCUMENTS = [
+  { id:1,  name: 'Layer1-Sample — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', assignees: ['MS','SC'],       status: 'in_review', due: 'Jun 30' },
+  { id:2,  name: 'Layer2-Engine — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', assignees: [],                status: 'never',     due: '—'      },
+  { id:3,  name: 'Brake-FMEA — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', assignees: ['MS'],            status: 'approved',  due: 'Jun 20' },
+  { id:4,  name: 'ADAS-Control — Detailed Design',      process: 'SWE.3', version: 'v1.2.0', assignees: ['ZP','LP'],       status: 'in_review', due: 'Jul 5'  },
+  { id:5,  name: 'Signal-Interface — Design',           process: 'SWE.3', version: 'v1.2.0', assignees: [],                status: 'never',     due: '—'      },
+  { id:6,  name: 'Powertrain — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', assignees: ['AF'],            status: 'in_review', due: 'Jul 8'  },
+  { id:7,  name: 'CAN-Matrix — Detailed Design',        process: 'SWE.3', version: 'v1.1.0', assignees: ['AM','SC'],       status: 'approved',  due: 'Jun 18' },
+  { id:8,  name: 'Diagnostics — Detailed Design',       process: 'SWE.3', version: 'v1.1.0', assignees: ['SC','MW','LP'],  status: 'in_review', due: 'Jul 2'  },
+  { id:9,  name: 'SYS Requirements Specification',      process: 'SYS.1', version: 'v1.1.0', assignees: ['AM'],            status: 'never',     due: '—'      },
+  { id:10, name: 'System Architecture Document',        process: 'SYS.2', version: 'v1.1.0', assignees: ['AF'],            status: 'in_review', due: 'Jun 25' },
+  { id:11, name: 'SW Requirements Specification',       process: 'SWE.1', version: 'v1.0.0', assignees: ['MW'],            status: 'in_review', due: 'Jul 1'  },
+  { id:12, name: 'Detailed SW Design Specification',    process: 'SWE.2', version: 'v1.1.0', assignees: ['MS','ZP'],       status: 'approved',  due: 'Jun 15' },
+  { id:13, name: 'Interface Control Document',          process: 'SWE.2', version: 'v1.1.0', assignees: [],                status: 'in_review', due: 'Jul 3'  },
+];
+
+const PROCESSES = [
+  { key: 'SWE.3', label: 'Detailed Design' },
+  { key: 'SYS.1', label: 'Req. Elicitation' },
+  { key: 'SYS.2', label: 'System Architecture' },
+  { key: 'SWE.1', label: 'SW Requirements' },
+  { key: 'SWE.2', label: 'SW Architecture' },
+];
+
+let pickerDocId = null;
+
+function memberAvatar(m, size) {
+  size = size || 26;
+  return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${m.bg};border:2px solid white;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">
+    <span style="font-family:Inter;font-size:${Math.round(size*0.42)}px;font-weight:700;color:${m.text};">${m.id}</span>
+  </div>`;
+}
+
+function renderAssigneeCell(doc) {
+  if (!doc.assignees.length) {
+    return `<button onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)"
+      style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1.5px dashed #c4c6cd;border-radius:99px;background:transparent;cursor:pointer;color:#74777d;font-size:11px;"
+      onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
+      onmouseout="this.style.borderColor='#c4c6cd';this.style.color='#74777d'">
+      <span class="material-symbols-outlined" style="font-size:13px;">person_add</span>
+      Assign
+    </button>`;
+  }
+  const shown = doc.assignees.slice(0, 3);
+  const overflow = doc.assignees.length - 3;
+  const avatars = shown.map((id, i) => {
+    const m = TEAM_MEMBERS.find(x => x.id === id);
+    if (!m) return '';
+    return `<div title="${m.name}" style="margin-left:${i > 0 ? '-6px' : '0'};position:relative;z-index:${10-i};">${memberAvatar(m, 26)}</div>`;
+  }).join('');
+  const overflowChip = overflow > 0
+    ? `<div style="margin-left:-6px;width:26px;height:26px;border-radius:50%;background:#f3f4f6;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#44474c;">+${overflow}</div>`
+    : '';
+  return `<div style="display:flex;align-items:center;gap:4px;">
+    <div style="display:flex;align-items:center;" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)" title="Manage assignees" class="cursor-pointer">${avatars}${overflowChip}</div>
+    <button onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)" title="Add assignee"
+      style="width:22px;height:22px;border-radius:50%;border:1.5px dashed #c4c6cd;background:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:#74777d;flex-shrink:0;"
+      onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
+      onmouseout="this.style.borderColor='#c4c6cd';this.style.color='#74777d'">
+      <span class="material-symbols-outlined" style="font-size:13px;">add</span>
+    </button>
+  </div>`;
+}
+
+function renderKpi() {
+  const container = document.getElementById('kpi-cards');
+  if (!container) return;
+
+  const total      = DOCUMENTS.length;
+  const approved   = DOCUMENTS.filter(d => d.status === 'approved').length;
+  const inReview   = DOCUMENTS.filter(d => d.status === 'in_review').length;
+  const notStarted = DOCUMENTS.filter(d => d.status === 'never').length;
+  const assigned   = DOCUMENTS.filter(d => d.assignees.length > 0).length;
+  const unassigned = total - assigned;
+  const assignPct  = total ? Math.round(assigned / total * 100) : 0;
+
+  // SVG donut: r=33, C=2π×33≈207.35
+  const C = 207.35;
+  const aArc = approved   / total * C;
+  const rArc = inReview   / total * C;
+  const nArc = notStarted / total * C;
+
+  const donutCard = `
+    <div class="bg-white border border-outline-variant rounded-xl p-5">
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-4">Document Status</p>
+      <div style="display:flex;align-items:center;gap:18px;">
+        <div style="flex-shrink:0;position:relative;">
+          <svg width="86" height="86" viewBox="0 0 86 86">
+            <g transform="rotate(-90 43 43)">
+              <circle cx="43" cy="43" r="33" fill="none" stroke="#e8eaed" stroke-width="10"/>
+              <circle cx="43" cy="43" r="33" fill="none" stroke="#00a572" stroke-width="10"
+                stroke-dasharray="${aArc.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="0"/>
+              <circle cx="43" cy="43" r="33" fill="none" stroke="#f59e0b" stroke-width="10"
+                stroke-dasharray="${rArc.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-aArc).toFixed(2)}"/>
+              <circle cx="43" cy="43" r="33" fill="none" stroke="#c4c6cd" stroke-width="10"
+                stroke-dasharray="${nArc.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-(aArc + rArc)).toFixed(2)}"/>
+            </g>
+            <text x="43" y="38" text-anchor="middle" font-size="19" font-weight="700" fill="#0b1c30" font-family="Inter,sans-serif">${total}</text>
+            <text x="43" y="52" text-anchor="middle" font-size="9" fill="#9aa0a6" font-family="Inter,sans-serif" letter-spacing="0.5">docs</text>
+          </svg>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:9px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:7px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:#00a572;flex-shrink:0;"></span>
+              <span style="font-size:12px;color:#44474c;">Approved</span>
+            </div>
+            <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${approved}</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:7px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
+              <span style="font-size:12px;color:#44474c;">In Review</span>
+            </div>
+            <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${inReview}</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:7px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:#c4c6cd;flex-shrink:0;"></span>
+              <span style="font-size:12px;color:#44474c;">Not started</span>
+            </div>
+            <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${notStarted}</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  const assignCard = `
+    <div class="bg-white border border-outline-variant rounded-xl p-5">
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Assignment</p>
+      <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:10px;">
+        <span style="font-family:'JetBrains Mono';font-size:34px;font-weight:700;color:#0b1c30;line-height:1;">${assigned}</span>
+        <span style="font-size:14px;color:#9aa0a6;line-height:1;">/ ${total} assigned</span>
+      </div>
+      <div style="height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;margin-bottom:10px;">
+        <div style="height:100%;width:${assignPct}%;background:${assignPct === 100 ? '#00a572' : '#0058be'};border-radius:99px;transition:width .4s;"></div>
+      </div>
+      ${unassigned > 0
+        ? `<p style="font-size:12px;color:#b45309;"><span style="font-weight:600;">${unassigned} docs</span> need an owner</p>`
+        : `<p style="font-size:12px;color:#00a572;font-weight:500;">All docs have owners</p>`}
+    </div>`;
+
+  const versions = (window.VERSIONS || []);
+  const latestTag = versions.length ? versions[0].tag : 'v1.2.0';
+  const projectCard = `
+    <div class="bg-white border border-outline-variant rounded-xl p-5">
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Overview</p>
+      <div style="display:flex;flex-direction:column;gap:11px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:#74777d;">Latest version</span>
+          <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;color:#0058be;background:#e5eeff;padding:2px 9px;border-radius:5px;">${latestTag}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:#74777d;">Team members</span>
+          <span style="font-family:'JetBrains Mono';font-size:14px;font-weight:700;color:#0b1c30;">${TEAM_MEMBERS.length}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:#74777d;">Processes</span>
+          <span style="font-family:'JetBrains Mono';font-size:14px;font-weight:700;color:#0b1c30;">${PROCESSES.length}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:#74777d;">Versions</span>
+          <span style="font-family:'JetBrains Mono';font-size:14px;font-weight:700;color:#0b1c30;">${versions.length || 3}</span>
+        </div>
+      </div>
+    </div>`;
+
+  container.innerHTML = donutCard + assignCard + projectCard;
+}
+
+function renderDocs() {
+  const tbody = document.getElementById('docs-tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = PROCESSES.map(p => {
+    const docs  = DOCUMENTS.filter(d => d.process === p.key);
+    if (!docs.length) return '';
+    const total      = docs.length;
+    const assigned   = docs.filter(d => d.assignees.length > 0).length;
+    const unassigned = total - assigned;
+    const pct        = Math.round(assigned / total * 100);
+    const barColor   = pct === 100 ? '#00a572' : pct === 0 ? '#e2e3e8' : '#f59e0b';
+    const textColor  = pct === 100 ? '#00a572' : pct === 0 ? '#9aa0a6' : '#b45309';
+
+    const allIds = [...new Set(docs.flatMap(d => d.assignees))];
+    const shown  = allIds.slice(0, 4);
+    const extra  = allIds.length - 4;
+    const avatarStack = shown.length === 0
+      ? `<span style="font-size:11px;color:#c4c6cd;font-style:italic;">Unassigned</span>`
+      : `<div style="display:flex;align-items:center;">
+          ${shown.map((id, i) => {
+            const m = TEAM_MEMBERS.find(x => x.id === id);
+            return m ? `<div title="${m.name}" style="margin-left:${i>0?'-6px':'0'};position:relative;z-index:${10-i};">${memberAvatar(m,24)}</div>` : '';
+          }).join('')}
+          ${extra > 0 ? `<div style="margin-left:-6px;width:24px;height:24px;border-radius:50%;background:#f3f4f6;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#44474c;">+${extra}</div>` : ''}
+        </div>`;
+
+    return `
+      <tr style="border-bottom:1px solid #e2e3e8;cursor:pointer;" onclick="window.location.href='documents.html'"
+        onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background=''">
+        <td style="padding:13px 20px;">
+          <div style="display:flex;align-items:center;gap:9px;">
+            <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;color:#0058be;background:#e5eeff;padding:2px 8px;border-radius:5px;flex-shrink:0;">${p.key}</span>
+            <div>
+              <div style="font-size:13px;font-weight:500;color:#0b1c30;line-height:1.3;">${p.label}</div>
+              <div style="font-size:11px;color:#74777d;">${total} doc${total !== 1 ? 's' : ''}</div>
+            </div>
+          </div>
+        </td>
+        <td style="padding:13px 16px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;height:4px;border-radius:99px;background:#e8eaed;overflow:hidden;min-width:72px;">
+              <div style="height:100%;width:${pct}%;background:${barColor};border-radius:99px;"></div>
+            </div>
+            <span style="font-size:11px;color:${textColor};font-weight:600;white-space:nowrap;">${assigned} / ${total}</span>
+            ${unassigned > 0 ? `<span style="font-size:10px;color:#b45309;background:#fff8e6;border:1px solid #f59e0b;padding:0 6px;border-radius:99px;font-weight:600;white-space:nowrap;">${unassigned} left</span>` : ''}
+          </div>
+        </td>
+        <td style="padding:13px 16px;">${avatarStack}</td>
+        <td style="padding:8px 12px;">
+          <button onclick="event.stopPropagation();window.location.href='documents.html'"
+            style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #e2e3e8;border-radius:6px;background:white;cursor:pointer;color:#74777d;"
+            onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
+            onmouseout="this.style.borderColor='#e2e3e8';this.style.color='#74777d'">
+            <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+          </button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// ── Assignee picker ──
+function openAssigneePicker(docId, anchor) {
+  pickerDocId = docId;
+  const picker = document.getElementById('assignee-picker');
+  const rect = anchor.getBoundingClientRect();
+  picker.style.display = 'block';
+  picker.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
+  picker.style.left = Math.min(rect.left, window.innerWidth - 240) + 'px';
+  document.getElementById('assignee-search').value = '';
+  renderAssigneePicker('');
+}
+function closeAssigneePicker() {
+  document.getElementById('assignee-picker').style.display = 'none';
+  pickerDocId = null;
+}
+function renderAssigneePicker(filter) {
+  const doc = DOCUMENTS.find(d => d.id === pickerDocId);
+  if (!doc) return;
+  filter = (filter || '').toLowerCase();
+  const members = TEAM_MEMBERS.filter(m => !filter || m.name.toLowerCase().includes(filter) || m.id.toLowerCase().includes(filter));
+  const list = document.getElementById('assignee-picker-list');
+  list.innerHTML = members.map(m => {
+    const checked = doc.assignees.includes(m.id);
+    return `<button onclick="toggleAssignee('${m.id}')"
+      style="width:100%;display:flex;align-items:center;gap:10px;padding:8px 12px;border:none;background:${checked ? '#f5f8ff' : 'transparent'};cursor:pointer;text-align:left;"
+      onmouseover="this.style.background='${checked ? '#eef3ff' : '#f8f9fa'}'"
+      onmouseout="this.style.background='${checked ? '#f5f8ff' : 'transparent'}'">
+      ${memberAvatar(m, 28)}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;color:#0b1c30;font-weight:500;">${m.name}</div>
+        <div style="font-size:10px;color:#74777d;">${m.role}</div>
+      </div>
+      ${checked ? '<span class="material-symbols-outlined" style="font-size:16px;color:#0058be;flex-shrink:0;">check</span>' : ''}
+    </button>`;
+  }).join('');
+  const count = doc.assignees.length;
+  document.getElementById('assignee-picker-count').textContent = count === 0 ? 'Unassigned' : `${count} assigned`;
+}
+function toggleAssignee(memberId) {
+  const doc = DOCUMENTS.find(d => d.id === pickerDocId);
+  if (!doc) return;
+  const idx = doc.assignees.indexOf(memberId);
+  if (idx === -1) doc.assignees.push(memberId);
+  else doc.assignees.splice(idx, 1);
+  renderDocs();
+  renderAssigneePicker(document.getElementById('assignee-search').value);
+}
+function clearAssignees() {
+  const doc = DOCUMENTS.find(d => d.id === pickerDocId);
+  if (!doc) return;
+  doc.assignees = [];
+  renderDocs();
+  renderAssigneePicker('');
+}
+document.addEventListener('click', e => {
+  const picker = document.getElementById('assignee-picker');
+  if (picker && !picker.contains(e.target)) closeAssigneePicker();
+});
+
+let runningJob = false;
+
+// ── Commit chip + picker ──
+function toggleCommitPicker() {
+  const picker = document.getElementById('commit-picker');
+  const chevron = document.getElementById('chip-chevron');
+  const isHidden = picker.classList.contains('hidden');
+  picker.classList.toggle('hidden', !isHidden);
+  chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+  if (isHidden) {
+    renderPickerCommits('');
+    renderPickerVersions();
+    switchPickerTab('versions');
+  }
+}
+
+document.addEventListener('click', e => {
+  if (!document.getElementById('commit-chip-wrap').contains(e.target))
+    document.getElementById('commit-picker').classList.add('hidden');
+  document.getElementById('chip-chevron').style.transform = '';
+});
+
+function switchPickerTab(tab) {
+  const isCommits = tab === 'commits';
+  document.getElementById('cp-panel-commits').style.display  = isCommits ? '' : 'none';
+  document.getElementById('cp-panel-versions').style.display = isCommits ? 'none' : '';
+  const tabC = document.getElementById('cp-tab-commits');
+  const tabV = document.getElementById('cp-tab-versions');
+  tabC.classList.toggle('border-secondary', isCommits);
+  tabC.classList.toggle('text-secondary',   isCommits);
+  tabC.classList.toggle('border-transparent', !isCommits);
+  tabC.classList.toggle('text-on-surface-variant', !isCommits);
+  tabV.classList.toggle('border-secondary', !isCommits);
+  tabV.classList.toggle('text-secondary',   !isCommits);
+  tabV.classList.toggle('border-transparent', isCommits);
+  tabV.classList.toggle('text-on-surface-variant', isCommits);
+}
+
+function filterPickerCommits(val) { renderPickerCommits(val); }
+
+function commitStatusBadge(c) {
+  if (c.current)               return `<span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:1px 7px;border-radius:3px;text-transform:uppercase;">current</span>`;
+  if (c.status === 'approved')  return `<span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:1px 7px;border-radius:3px;text-transform:uppercase;">Approved</span>`;
+  if (c.status === 'in_review') return `<span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:1px 7px;border-radius:3px;text-transform:uppercase;">In Review</span>`;
+  return `<span style="font-family:'JetBrains Mono';font-size:9px;color:#74777d;padding:1px 4px;">Not run</span>`;
+}
+
+function renderPickerCommits(filter) {
+  filter = (filter || '').toLowerCase();
+  const list = document.getElementById('cp-commits-list');
+  const filtered = COMMITS.filter(c =>
+    !filter || c.sha.includes(filter) || c.msg.toLowerCase().includes(filter) || c.author.toLowerCase().includes(filter)
+  );
+  if (!filtered.length) {
+    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#74777d;">No commits match</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map((c, i) => {
+    const isLast    = i === filtered.length - 1;
+    const dotColor  = c.version ? '#00a572' : c.current ? '#0058be' : '#c4c6cd';
+    const dotBorder = c.current ? '2px solid #0058be' : c.version ? '2px solid #00a572' : '2px solid #c4c6cd';
+    const dotFill   = (c.current || c.version) ? dotColor : 'white';
+    const currentBadge = c.current
+      ? `<span style="font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#e5eeff;color:#0058be;border:1px solid #bfcfff;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
+      : '';
+    const versionTag = c.version
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:600;color:#00a572;background:#f0fdf9;border:1px solid #86efac;padding:0px 6px;border-radius:99px;">
+           <span class="material-symbols-outlined" style="font-size:10px;color:#00a572;">sell</span>${c.version}
+         </span>`
+      : '';
+    return `
+    <button onclick="selectCommit('${c.sha}')" style="width:100%;display:flex;gap:0;padding:0 12px;text-align:left;background:${c.current ? '#f5f8ff' : 'transparent'};border:none;cursor:pointer;" onmouseover="if(!${c.current})this.style.background='#f8f9fa'" onmouseout="if(!${c.current})this.style.background='transparent'">
+      <div style="display:flex;flex-direction:column;align-items:center;width:18px;flex-shrink:0;padding-top:12px;">
+        <div style="width:9px;height:9px;border-radius:50%;background:${dotFill};border:${dotBorder};flex-shrink:0;"></div>
+        ${!isLast ? `<div style="width:2px;flex:1;min-height:10px;background:#e2e3e8;margin-top:3px;"></div>` : ''}
+      </div>
+      <div style="flex:1;min-width:0;padding:10px 0 10px 8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+            <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#44474c;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
+            ${currentBadge}
+            ${versionTag}
+          </div>
+          ${c.current ? '<span class="material-symbols-outlined" style="font-size:14px;color:#0058be;flex-shrink:0;">check</span>' : ''}
+        </div>
+        <div style="font-size:11px;color:#0b1c30;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;">${c.msg}</div>
+        <div style="font-size:10px;color:#74777d;margin-top:1px;">${c.author} · ${c.time}</div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function renderPickerVersions() {
+  const list = document.getElementById('cp-versions-list');
+  const accentColor = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
+  const pill = s => {
+    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+    return '';
+  };
+  const activeSha = (COMMITS.find(x => x.current) || {}).sha;
+  list.innerHTML = VERSIONS.map(v => {
+    const isActive = v.sha === activeSha;
+    return `
+    <button onclick="selectVersion('${v.tag}')" style="width:100%;display:flex;border:none;cursor:pointer;border-bottom:1px solid #e2e3e8;text-align:left;background:${isActive ? '#f5f8ff' : 'transparent'};" onmouseover="if(!${isActive})this.style.background='#f8f9fa'" onmouseout="if(!${isActive})this.style.background='${isActive ? '#f5f8ff' : 'transparent'}'">
+      <div style="width:3px;flex-shrink:0;background:${accentColor(v.status)};"></div>
+      <div style="flex:1;min-width:0;padding:11px 12px 10px 10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+            <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;">${v.tag}</span>
+            ${pill(v.status)}
+          </div>
+          ${isActive ? '<span class="material-symbols-outlined" style="font-size:15px;color:#0058be;flex-shrink:0;">check</span>' : ''}
+        </div>
+        <div style="font-size:11px;color:#44474c;margin-bottom:4px;line-height:1.4;">${v.desc}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
+          <span style="font-size:10px;color:#74777d;">${v.date}</span>
+          <span style="font-size:10px;color:#74777d;">${v.docs} docs</span>
+        </div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function selectCommit(sha) {
+  document.getElementById('commit-picker').classList.add('hidden');
+  const c = COMMITS.find(x => x.sha === sha);
+  if (!c) return;
+  COMMITS.forEach(x => x.current = (x.sha === sha));
+  BRANCH.commit = sha;
+  BRANCH.version = c.version || null;
+  BRANCH.state = c.status;
+  updateChip();
+  if (c.status !== 'never') setState('generated');
+  else                      setState('never');
+}
+
+function updateChip() {
+  const c = COMMITS.find(x => x.current);
+  if (!c) return;
+  const refEl  = document.getElementById('chip-ref');
+  const iconEl = document.getElementById('chip-icon-sym');
+  const version = c.version || (VERSIONS.length ? VERSIONS[0].tag : null);
+  if (version) {
+    refEl.textContent  = version;
+    iconEl.textContent = 'sell';
+    iconEl.style.color = '#00a572';
+  } else {
+    refEl.textContent  = `main @ ${c.sha.slice(0, 7)}`;
+    iconEl.textContent = 'alt_route';
+    iconEl.style.color = '';
+  }
+}
+
+function selectVersion(tag) {
+  const v = VERSIONS.find(x => x.tag === tag);
+  if (v) selectCommit(v.sha);
+}
+
+// ── Versions & Commits right panel ──
+function switchVcTab(tab) {
+  const isVersions = tab === 'versions';
+  document.getElementById('vc-panel-versions').style.display = isVersions ? '' : 'none';
+  document.getElementById('vc-panel-commits').style.display  = isVersions ? 'none' : '';
+  const tabV = document.getElementById('vc-tab-versions');
+  const tabC = document.getElementById('vc-tab-commits');
+  tabV.classList.toggle('border-secondary', isVersions);
+  tabV.classList.toggle('text-secondary',   isVersions);
+  tabV.classList.toggle('border-transparent', !isVersions);
+  tabV.classList.toggle('text-on-surface-variant', !isVersions);
+  tabC.classList.toggle('border-secondary', !isVersions);
+  tabC.classList.toggle('text-secondary',   !isVersions);
+  tabC.classList.toggle('border-transparent', isVersions);
+  tabC.classList.toggle('text-on-surface-variant', isVersions);
+}
+
+function renderVcVersions() {
+  const el = document.getElementById('vc-panel-versions');
+  const accentColor = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
+  const pill = s => {
+    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:1px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:1px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+    return '';
+  };
+  el.innerHTML = VERSIONS.map(v => {
+    const mid = 'vmenu-' + v.tag.replace(/[^a-zA-Z0-9]/g, '-');
+    return `
+    <div style="display:flex;border-bottom:1px solid #e2e3e8;">
+      <div style="width:3px;flex-shrink:0;background:${accentColor(v.status)};"></div>
+      <div style="flex:1;padding:14px 14px 12px 12px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${v.tag}</span>
+            ${pill(v.status)}
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-top:1px;">
+            <a href="compare.html" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;color:#0058be;text-decoration:none;"
+              onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+              Compare
+              <span class="material-symbols-outlined" style="font-size:11px;">open_in_new</span>
+            </a>
+            <div style="position:relative;">
+              <button onclick="event.stopPropagation();toggleVersionMenu('${mid}')"
+                style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;cursor:pointer;border-radius:5px;color:#74777d;"
+                onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                <span class="material-symbols-outlined" style="font-size:17px;">more_vert</span>
+              </button>
+              <div id="${mid}" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:white;border:1px solid #e2e3e8;border-radius:10px;box-shadow:0 4px 20px rgba(4,22,39,.12);min-width:140px;z-index:300;overflow:hidden;">
+                <button onclick="rerunVersion('${v.tag}')"
+                  style="width:100%;display:flex;align-items:center;gap:9px;padding:9px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;color:#0b1c30;text-align:left;"
+                  onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='transparent'">
+                  <span class="material-symbols-outlined" style="font-size:15px;color:#0058be;">replay</span>
+                  Re-run
+                </button>
+                <div style="height:1px;background:#f0f1f3;margin:0 10px;"></div>
+                <button onclick="closeVersionMenu();confirmDeleteVersion('${v.tag}')"
+                  style="width:100%;display:flex;align-items:center;gap:9px;padding:9px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;color:#ba1a1a;text-align:left;"
+                  onmouseover="this.style.background='#fff0f0'" onmouseout="this.style.background='transparent'">
+                  <span class="material-symbols-outlined" style="font-size:15px;">delete_outline</span>
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p style="font-size:12px;color:#44474c;margin:0 0 6px;line-height:1.4;">${v.desc}</p>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;background:#f3f4f6;padding:1px 6px;border-radius:4px;">${v.sha.slice(0,7)}</span>
+          <span style="font-size:10px;color:#74777d;">${v.date}</span>
+          <span style="font-size:10px;color:#74777d;">${v.docs} docs</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderVcCommits() {
+  const el = document.getElementById('vc-panel-commits');
+  el.innerHTML = COMMITS.map((c, i) => {
+    const isLast = i === COMMITS.length - 1;
+    const dotColor  = c.version ? '#00a572' : c.current ? '#0058be' : '#c4c6cd';
+    const dotBorder = c.current ? '2px solid #0058be' : c.version ? '2px solid #00a572' : '2px solid #c4c6cd';
+    const dotFill   = (c.current || c.version) ? dotColor : 'white';
+    const lineColor = '#e2e3e8';
+    const currentBadge = c.current
+      ? `<span style="font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#e5eeff;color:#0058be;border:1px solid #bfcfff;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
+      : '';
+    const versionTag = c.version
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:600;color:#00a572;background:#f0fdf9;border:1px solid #86efac;padding:0px 6px;border-radius:99px;">
+           <span class="material-symbols-outlined" style="font-size:10px;color:#00a572;">sell</span>${c.version}
+         </span>`
+      : '';
+    return `
+    <div style="display:flex;gap:0;padding:0 16px;${c.current ? 'background:#f5f8ff;' : ''}">
+      <!-- Timeline spine -->
+      <div style="display:flex;flex-direction:column;align-items:center;width:20px;flex-shrink:0;padding-top:14px;">
+        <div style="width:10px;height:10px;border-radius:50%;background:${dotFill};border:${dotBorder};flex-shrink:0;"></div>
+        ${!isLast ? `<div style="width:2px;flex:1;min-height:12px;background:${lineColor};margin-top:3px;margin-bottom:0;"></div>` : ''}
+      </div>
+      <!-- Content -->
+      <div style="flex:1;min-width:0;padding:12px 0 12px 10px;">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#44474c;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
+          ${currentBadge}
+          ${versionTag}
+        </div>
+        <p style="font-size:12px;color:#0b1c30;margin:0 0 2px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.msg}</p>
+        <p style="font-size:10px;color:#74777d;margin:0;">${c.author} · ${c.time}</p>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── State management ──
+function setState(state) {
+  const isGenerated  = state === 'generated';
+  const isGenerating = state === 'generating';
+  const isNever      = state === 'never';
+
+  document.getElementById('gen-panel').style.display    = isGenerating ? '' : 'none';
+  document.getElementById('empty-banner').style.display = isNever      ? '' : 'none';
+  document.getElementById('kpi-strip').style.display    = isGenerated  ? 'block' : 'none';
+  document.getElementById('docs-section').style.display = isGenerated  ? 'block' : 'none';
+  document.getElementById('bottom-row').style.display   = isGenerated  ? 'flex'  : 'none';
+
+  document.getElementById('cta-run').style.display    = isNever      ? ''           : 'none';
+  document.getElementById('cta-cancel').style.display = isGenerating ? ''           : 'none';
+  document.getElementById('cta-rerun').style.display  = isGenerated  ? ''           : 'none';
+  document.getElementById('cta-delete').style.display = isGenerated  ? 'inline-flex': 'none';
+
+  // Commit chip spinner
+  const sym  = document.getElementById('chip-icon-sym');
+  const spin = document.getElementById('chip-icon-spin');
+  sym.style.display  = isGenerating ? 'none' : '';
+  spin.style.display = isGenerating ? '' : 'none';
+}
+
+
+// ── Project switcher ──
+function toggleProjectDropdown() {
+  const dd = document.getElementById('project-dropdown');
+  const ch = document.getElementById('project-chevron');
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open);
+  ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+function switchProject(name) {
+  document.getElementById('current-project-name').textContent = name;
+  document.getElementById('name-display').textContent = name;
+  document.querySelectorAll('.proj-opt').forEach(o => {
+    const active = o.dataset.project === name;
+    o.style.background = active ? '#eff4ff' : '';
+    o.querySelector('.proj-check').style.opacity = active ? '1' : '0';
+  });
+  document.getElementById('project-dropdown').classList.add('hidden');
+  document.getElementById('project-chevron').style.transform = '';
+}
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('project-selector-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('project-dropdown').classList.add('hidden');
+    document.getElementById('project-chevron').style.transform = '';
+  }
+});
+
+// ── Advanced options ──
+function toggleAdv() {
+  const b = document.getElementById('adv-body');
+  const c = document.getElementById('adv-ch');
+  const open = b.classList.contains('open');
+  b.classList.toggle('open', !open);
+  c.style.transform = open ? '' : 'rotate(90deg)';
+}
+
+// ── Version card kebab menu ──
+let _openVersionMenu = null;
+function toggleVersionMenu(id) {
+  const menu = document.getElementById(id);
+  if (!menu) return;
+  const isOpen = menu.style.display === 'block';
+  closeVersionMenu();
+  if (!isOpen) { menu.style.display = 'block'; _openVersionMenu = menu; }
+}
+function closeVersionMenu() {
+  if (_openVersionMenu) { _openVersionMenu.style.display = 'none'; _openVersionMenu = null; }
+}
+document.addEventListener('click', () => closeVersionMenu());
+
+function rerunVersion(tag) {
+  closeVersionMenu();
+  const v = VERSIONS.find(x => x.tag === tag);
+  openRunConfig();
+  if (!v) return;
+  const cSel = document.getElementById('run-modal-commit');
+  if (cSel) Array.from(cSel.options).forEach(o => { o.selected = o.value === v.sha; });
+}
+
+// ── Run modal ──
+function suggestNextVersion() {
+  if (!VERSIONS.length) return 'v1.0.0';
+  const m = VERSIONS[0].tag.match(/^v?(\d+)\.(\d+)\.(\d+)$/);
+  return m ? `v${m[1]}.${parseInt(m[2]) + 1}.0` : '';
+}
+
+function openRunConfig() {
+  document.getElementById('run-modal-branch').textContent = BRANCH.label;
+
+  const cSel = document.getElementById('run-modal-commit');
+  cSel.innerHTML = '';
+  COMMITS.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.sha;
+    const tag = c.version ? ` [${c.version}]` : '';
+    opt.textContent = `${c.sha.slice(0,7)}${tag}  ·  ${c.time}  —  ${c.msg}`;
+    if (c.current) opt.selected = true;
+    cSel.appendChild(opt);
+  });
+
+  const rSel = document.getElementById('run-modal-reference');
+  rSel.innerHTML = '<option value="">— None —</option>';
+  VERSIONS.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.tag;
+    opt.textContent = `${v.tag}  ·  ${v.sha.slice(0,7)}  —  ${v.desc}`;
+    rSel.appendChild(opt);
+  });
+
+  document.getElementById('run-modal-new-version').value = suggestNextVersion();
+  document.getElementById('run-modal').classList.remove('hidden');
+}
+function closeRunModal() { document.getElementById('run-modal').classList.add('hidden'); }
+document.getElementById('run-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('run-modal')) closeRunModal();
+});
+
+// ── Generation ──
+let _elapsed = 0, _elapsedTick = null, _phaseTimers = [], _phase = 1;
+
+function formatElapsed(s) {
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+}
+
+const PHASE_DATA = {
+  1: { icon:'manage_search', text:'Parsing C++ source files with libclang...', sub:'1,247 of 3,412 files · Layer1 + Layer2', pct:36, eta:'Est. ~6m remaining' },
+  2: { icon:'psychology',    text:'Enriching function descriptions with LLM...', sub:'312 of 842 functions · LLM enrichment enabled', pct:37, eta:'Est. ~4h 20m remaining' },
+  3: { icon:'polyline',      text:'Generating Mermaid flowcharts and diagrams...', sub:'28 of 41 components · CFG flowcharts + diagrams', pct:68, eta:'Est. ~18m remaining' },
+  4: { icon:'description',   text:'Building DOCX documents...', sub:'3 of 12 groups · Software Detailed Design', pct:25, eta:'Est. ~4m remaining' },
+};
+
+function startGeneration() {
+  closeRunModal();
+  runningJob = true;
+  document.getElementById('panel-branch').textContent = BRANCH.label;
+  document.getElementById('panel-commit').textContent = BRANCH.commit || 'HEAD';
+  const now = new Date();
+  document.getElementById('panel-started').textContent =
+    String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+
+  _elapsed = 0; _phase = 1;
+  resetPhasesVisual();
+  setActivity(1);
+
+  document.getElementById('gen-header').style.background = '#041627';
+  document.getElementById('gen-header-title').textContent = 'Analysis Running';
+  document.getElementById('gen-live-badge').style.background = '#0058be';
+  document.getElementById('gen-live-badge').textContent = 'Live';
+  const sw = document.getElementById('panel-spinner-wrap');
+  sw.className = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring';
+  sw.style.cssText = 'border:2px solid #0058be;border-top-color:transparent;';
+  sw.innerHTML = '<div class="w-full h-full rounded-full spin" style="border:2px solid #0058be;border-top-color:transparent;border-radius:9999px;"></div>';
+
+  clearInterval(_elapsedTick);
+  _elapsedTick = setInterval(() => {
+    _elapsed++;
+    document.getElementById('panel-elapsed').textContent = formatElapsed(_elapsed);
+  }, 1000);
+
+  _phaseTimers.forEach(clearTimeout);
+  _phaseTimers = [
+    setTimeout(() => advanceToPhase(2),  9000),
+    setTimeout(() => advanceToPhase(3), 18000),
+    setTimeout(() => advanceToPhase(4), 27000),
+    setTimeout(() => finishGeneration(), 36000),
+  ];
+
+  setState('generating');
+}
+
+function resetPhasesVisual() {
+  setPhDone(1, 'Done · 3m 12s');
+  setPhActive(2);
+  setPhPending(3);
+  setPhPending(4);
+  setLine('line12', 'ph-done');
+  setLine('line23', 'ph-pending');
+  setLine('line34', 'ph-pending');
+}
+
+function setPhDone(n, label) {
+  const ic = document.getElementById('ph'+n+'-icon');
+  ic.style.background = '#00a572';
+  ic.className = 'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0';
+  ic.innerHTML = '<span class="material-symbols-outlined text-white" style="font-size:14px;font-variation-settings:\'FILL\' 1,\'wght\' 700,\'GRAD\' 0,\'opsz\' 24;">check</span>';
+  const t = document.getElementById('ph'+n+'-time'); t.textContent = label; t.style.color = '#00a572';
+  document.getElementById('ph'+n+'-name').style.color = '#0b1c30';
+}
+function setPhActive(n) {
+  const ic = document.getElementById('ph'+n+'-icon');
+  ic.style.background = '#0058be';
+  ic.className = 'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 pulse-ring';
+  ic.innerHTML = '<div class="spin" style="width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:9999px;"></div>';
+  const t = document.getElementById('ph'+n+'-time'); t.textContent = 'Running...'; t.style.color = '#0058be';
+  document.getElementById('ph'+n+'-name').style.color = '#0b1c30';
+}
+function setPhPending(n) {
+  const ic = document.getElementById('ph'+n+'-icon');
+  ic.style.background = '#e5eeff';
+  ic.className = 'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0';
+  ic.innerHTML = '<span style="font-size:13px;font-weight:600;color:#74777d;">'+n+'</span>';
+  const t = document.getElementById('ph'+n+'-time'); t.textContent = 'Pending'; t.style.color = '#c4c6cd';
+  document.getElementById('ph'+n+'-name').style.color = '#74777d';
+}
+function setLine(id, cls) {
+  document.getElementById(id).className = 'phase-line ' + cls;
+}
+function setActivity(phase) {
+  const d = PHASE_DATA[phase]; if (!d) return;
+  document.getElementById('act-icon').textContent = d.icon;
+  document.getElementById('act-icon').style.color = '#0058be';
+  document.getElementById('act-text').textContent = d.text;
+  document.getElementById('act-text').style.color = '#0b1c30';
+  document.getElementById('act-sub').textContent  = d.sub;
+  document.getElementById('act-eta').textContent  = d.eta;
+  document.getElementById('act-pct').textContent  = d.pct + '%';
+  document.getElementById('act-pct').style.color  = '#0058be';
+  const bar = document.getElementById('act-bar');
+  bar.style.background = '#0058be'; bar.style.width = '2%';
+  setTimeout(() => { bar.style.width = d.pct + '%'; }, 80);
+}
+function advanceToPhase(n) {
+  const m = Math.floor(_elapsed/60), s = _elapsed%60;
+  setPhDone(n-1, 'Done · '+m+'m '+s+'s');
+  setLine('line'+(n-1)+n, 'ph-done');
+  setPhActive(n);
+  const nextLine = 'line'+n+(n+1);
+  if (document.getElementById(nextLine)) setLine(nextLine, 'ph-pending');
+  setActivity(n);
+  _phase = n;
+}
+
+function finishGeneration() {
+  clearInterval(_elapsedTick);
+  _phaseTimers.forEach(clearTimeout);
+  runningJob = false;
+
+  const m = Math.floor(_elapsed/60), s = _elapsed%60;
+  setPhDone(4, 'Done · '+m+'m '+s+'s');
+  setLine('line34', 'ph-done');
+
+  document.getElementById('act-icon').textContent = 'check_circle';
+  document.getElementById('act-icon').style.color = '#00a572';
+  document.getElementById('act-text').textContent = 'Analysis complete — all documents generated successfully.';
+  document.getElementById('act-text').style.color = '#00a572';
+  document.getElementById('act-sub').textContent  = '41 components · 12 groups · 5 DOCX documents produced';
+  document.getElementById('act-eta').textContent  = '';
+  document.getElementById('act-pct').textContent  = '100%';
+  document.getElementById('act-pct').style.color  = '#00a572';
+  document.getElementById('act-bar').style.width  = '100%';
+  document.getElementById('act-bar').style.background = '#00a572';
+
+  document.getElementById('gen-header').style.background = '#00311f';
+  document.getElementById('gen-header-title').textContent = 'Analysis Complete';
+  document.getElementById('gen-live-badge').style.background = '#00a572';
+  document.getElementById('gen-live-badge').textContent = 'Done';
+
+  const sw = document.getElementById('panel-spinner-wrap');
+  sw.style.cssText = 'background:#00a572;';
+  sw.className = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0';
+  sw.innerHTML = '<span class="material-symbols-outlined text-white" style="font-size:18px;font-variation-settings:\'FILL\' 1,\'wght\' 700,\'GRAD\' 0,\'opsz\' 24;">check_circle</span>';
+
+  BRANCH.state = 'in_review';
+  BRANCH.generatedAt = 'just now';
+
+  setState('generated');
+  showToast('check_circle', 'Analysis complete — documents ready for assignment.', '#00a572');
+}
+
+function cancelGeneration() {
+  clearInterval(_elapsedTick);
+  _phaseTimers.forEach(clearTimeout);
+  runningJob = false;
+  if (BRANCH.state !== 'never') setState('generated');
+  else                           setState('never');
+  showToast('cancel', 'Analysis job cancelled.', '#d97706');
+}
+
+// ── Toast ──
+let _toastTimer = null;
+function showToast(icon, msg, color) {
+  const el = document.getElementById('toast');
+  document.getElementById('toast-icon').textContent = icon;
+  document.getElementById('toast-icon').style.color = color || '#00a572';
+  document.getElementById('toast-msg').textContent = msg;
+  el.classList.remove('hidden','toast-out');
+  el.classList.add('toast-in');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(hideToast, 4500);
+}
+function hideToast() {
+  const el = document.getElementById('toast');
+  el.classList.remove('toast-in');
+  el.classList.add('toast-out');
+  setTimeout(() => el.classList.add('hidden'), 320);
+}
+
+// ── Delete version ──
+let _deleteVersionTag = null;
+
+function confirmDeleteVersion(tag) {
+  _deleteVersionTag = tag;
+  document.getElementById('delete-version-tag').textContent = tag;
+  document.getElementById('delete-version-modal').classList.remove('hidden');
+}
+
+function closeDeleteVersionModal() {
+  document.getElementById('delete-version-modal').classList.add('hidden');
+  _deleteVersionTag = null;
+}
+
+function executeDeleteVersion() {
+  if (!_deleteVersionTag) return;
+  const tag = _deleteVersionTag;
+  const idx = VERSIONS.findIndex(v => v.tag === tag);
+  if (idx !== -1) {
+    VERSIONS.splice(idx, 1);
+    COMMITS.forEach(c => { if (c.version === tag) c.version = null; });
+    renderVcVersions();
+    renderVcCommits();
+    updateChip();
+  }
+  closeDeleteVersionModal();
+  showToast('delete_outline', `Version ${tag} deleted.`, '#d97706');
+}
+
+document.getElementById('delete-version-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('delete-version-modal')) closeDeleteVersionModal();
+});
+
+// ── Init ──
+updateChip();
+renderVcVersions();
+renderVcCommits();
+renderKpi();
+renderDocs();
+setState('generated');
+</script>
+</body>
+</html>

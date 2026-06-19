@@ -1,6 +1,6 @@
 # Frontend UI Design Context
 
-> Last updated: 2026-06-17
+> Last updated: 2026-06-22
 > Active branch: `feat/product-ui-redesign`
 > Read this file before doing any UI design work in this repo.
 
@@ -31,18 +31,20 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 
 ---
 
-## Reference designs
+## Design files
 
-6 HTML mockups are in `frontend/reference/`. Read these before designing any page.
+8 HTML mockups live in `frontend/designs/`. Read these before implementing any page in React.
 
-| File | What it shows |
-|---|---|
-| `signin.html` | Login page — SSO + credentials + registration |
-| `overview.html` | Compliance dashboard — stats, process status cards, traceability matrix |
-| `config.html` | Project configuration — repo, data dictionary, Clang config, architecture mapping |
-| `SWE.3.html` | SWE.3 document viewer + right inspector panel (traceability, unresolved edits) |
-| `SWE.3 empty.html` | SWE.3 empty state + document generation flow with live log console |
-| `SWE.3 compare.html` | SWE.3 commit comparison — side-by-side diff view |
+| File | Sidebar | Subbar | What it shows |
+|---|---|---|---|
+| `signin.html` | none | no | Two-panel auth: left = product branding + feature bullets; right = SSO button, email/password form, remember-me, sign-up link |
+| `projects.html` | 220px | yes | All-projects table — project name, standard (ISO 26262/ASPICE level), latest version, docs in review, progress bar, last run, team avatars, row kebab menu (Settings / Archive / Delete) |
+| `projects-empty.html` | 220px | yes | Empty state → 5-step new-project wizard (Project & Repo → Build Config → Architecture → Team & Access → Review & Init); plus "Request Project Access" modal |
+| `project-detail.html` | 220px | yes | Project overview: KPI cards, live generation progress (phases), documents table, team list, review queue, function-visibility slide-over, Admin/Developer role switcher, Run Analysis modal, version/commit picker |
+| `documents.html` | 56px collapsed | yes | Document list with process filter tabs (All / SYS.1 / SYS.2 / SWE.1 / SWE.2 / SWE.3), status + assignee filters, batch actions (Download / Assign / Approve), edit-section modal, assign-reviewers slide panel |
+| `compare.html` | 56px collapsed | yes | Split diff view: left = reference version, right = current version; per-section Accept / Decline / Edit controls; section progress dots; approve/submit footer |
+| `team.html` | 220px | yes | Team table: member, role dropdown (Admin/Developer), last active, row actions; pending-invite rows with Resend / Revoke; Invite Member modal; permission legend card |
+| `versions.html` | 56px collapsed | yes | Tagged version cards (status: In Review / Approved, commit hash, doc count, View Docs + Compare buttons); untagged commits timeline below; filter tabs (All / In Review / Complete) |
 
 ---
 
@@ -108,15 +110,18 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 
 ---
 
-## Pages to design (priority order)
+## Pages — implementation order
 
-1. **Shared shell** — sidebar navigation, top bar, design tokens, responsive layout
-2. **Onboarding / Project Configuration** — Admin role, guided setup flow
-3. **SWE.3 document view** — document canvas + inspector panel
-4. **SWE.3 empty state + generation flow** — progress, live log console
-5. **SWE.3 comparison view** — GitHub-level diff
-6. **Overview dashboard** — compliance metrics, process status
-7. **Sign-in** — SSO + credentials
+All pages are designed as HTML mockups in `frontend/designs/`. Build in React in this order:
+
+1. **Shared shell** — sidebar (220px / 56px collapsed), top bar, subbar, design tokens (`signin.html`, `projects.html`)
+2. **Sign-in** — `signin.html`
+3. **Projects list** — `projects.html` + empty state / onboarding wizard (`projects-empty.html`)
+4. **Project detail / overview** — `project-detail.html` (covers KPIs, generation progress, run analysis, function visibility)
+5. **Documents** — `documents.html` (list view, filters, batch actions, edit modal)
+6. **Compare** — `compare.html` (split diff, review controls)
+7. **Versions** — `versions.html`
+8. **Team** — `team.html`
 
 ---
 
@@ -133,18 +138,36 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 
 ---
 
-## Navigation structure (from reference designs)
+## Navigation structure (from designs)
 
+**Global (no project selected):**
+- Top bar: `[⬡ PRODUCT NAME]` left; notifications · help · user avatar right
+- `projects.html` — full-width, no sidebar; logo top-left links home
+
+**Project-scoped sidebar (220px expanded / 56px collapsed):**
 ```
-Sidebar:
-  Overview
-  ── System Engineering ──
-  SYS.1 Requirement Elicitation
-  SYS.2 System Requirements
-  ── Software Engineering ──
-  SWE.1 Software Requirements
-  SWE.2 Software Architecture
-  SWE.3 Detailed Design          ← primary built feature
-  ── Settings ──
-  Project Configuration / Onboarding
+← All Projects
+[Project Name]          ← 10px uppercase label
+
+Overview                → project-detail.html
+Documents               → documents.html
+Compare                 → compare.html
+Versions                → versions.html
+Team                    → team.html
+─────────────────
+Settings                (bottom, below border-t)
 ```
+
+**Subbar (all project-scoped pages):**
+```
+[ 📁 VCU Engine Firmware ▾ ]  ·  [ v1.2.0 ▾ ]  ·  ⑂ main @ d9a0c55  ·  Jun 15    [CTA]
+```
+- Project switcher → version/commit picker (Versions / Commits tabs) → read-only commit chip → page CTA
+- CTAs: Overview `[▶ RUN ANALYSIS]`, Documents `[↓ Download All]`, Compare `[✓ Accept All] [✗ Reject All]`, Versions — none, Team `[+ Invite]`
+
+**Breadcrumbs** — always start with `[⬡]` home icon (→ projects.html):
+- Overview:   `[⬡] / VCU Engine Firmware / Overview`
+- Documents:  `[⬡] / VCU Engine Firmware / Documents`
+- Compare:    `[⬡] / VCU Engine Firmware / Documents / Compare`
+- Versions:   `[⬡] / VCU Engine Firmware / Versions`
+- Team:       `[⬡] / VCU Engine Firmware / Team`
