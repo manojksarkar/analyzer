@@ -337,6 +337,16 @@
         <div class="flex items-center gap-2">
           <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:16px;">compare_arrows</span>
 
+          <!-- Reference (static — not changeable) -->
+          <div class="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low border border-outline-variant rounded-lg"
+               style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+            <span class="text-on-surface-variant">Reference</span>
+            <span class="text-outline-variant">·</span>
+            <span class="text-on-surface-variant" id="baseline-label-text">a3f9c12</span>
+          </div>
+
+          <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:16px;">arrow_forward</span>
+
           <!-- Current commit picker -->
           <div class="relative" id="current-switch-wrap">
             <button onclick="toggleCurrentSwitch()"
@@ -361,30 +371,6 @@
                 </div>
               </div>
               <div class="overflow-y-auto" style="max-height:220px;" id="current-switch-list"></div>
-            </div>
-          </div>
-
-          <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:16px;">arrow_forward</span>
-
-          <!-- Baseline commit picker -->
-          <div class="relative" id="commit-picker-wrap">
-            <button onclick="toggleCommitPicker()"
-                    class="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
-                    style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
-              <span class="text-on-surface-variant" id="baseline-label-text">develop @ a3f9c12</span>
-              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;" id="commit-chevron">expand_more</span>
-            </button>
-            <div id="commit-picker" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:320px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
-              <div class="px-3 py-2 border-b border-outline-variant">
-                <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
-                  <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
-                  <input id="commit-search" type="text" placeholder="Search commits…"
-                         oninput="filterCommits(this.value)"
-                         class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline"
-                         style="font-family:'JetBrains Mono';font-size:11px;">
-                </div>
-              </div>
-              <div class="overflow-y-auto" style="max-height:220px;" id="commit-list"></div>
             </div>
           </div>
 
@@ -427,8 +413,8 @@
             </div>
             <h2 class="font-headline-sm text-headline-sm text-on-surface mb-2">Select a document to compare</h2>
             <p class="text-body-sm text-on-surface-variant mb-1">
-              Comparing <span class="font-label-md text-label-md text-on-tertiary-container" id="empty-current-ref">main @ b2e8d45</span>
-              against <span class="font-label-md text-label-md text-outline" id="empty-baseline-ref">develop @ a3f9c12</span>
+              Reference <span class="font-label-md text-label-md text-outline" id="empty-baseline-ref">a3f9c12</span>
+              → Current <span class="font-label-md text-label-md text-on-tertiary-container" id="empty-current-ref">main @ b2e8d45</span>
             </p>
             <p class="text-body-sm text-outline mb-8">Pick a document from the left panel, or click a changed document below.</p>
 
@@ -441,8 +427,8 @@
       <!-- SPLIT CANVAS — shown when a document is selected -->
       <div id="split-canvas" class="flex-1 flex overflow-hidden" style="display:none;">
 
-        <!-- CURRENT / LEFT pane -->
-        <div class="flex-1 flex flex-col overflow-hidden border-r border-outline-variant min-w-0">
+        <!-- CURRENT / RIGHT pane — order:1 makes it appear on the right -->
+        <div class="flex-1 flex flex-col overflow-hidden min-w-0" style="order:1;">
           <div class="flex-shrink-0 px-4 py-2 bg-white border-b border-outline-variant flex items-center gap-2">
             <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:#00a572;"></span>
             <span class="font-label-md text-label-md text-on-surface">Current</span>
@@ -625,13 +611,13 @@
           </div>
         </div>
 
-        <!-- BASELINE / RIGHT pane (read-only) -->
-        <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+        <!-- REFERENCE / LEFT pane — order:0 makes it appear on the left -->
+        <div class="flex-1 flex flex-col overflow-hidden border-r border-outline-variant min-w-0" style="order:0;">
           <div class="flex-shrink-0 px-4 py-2 bg-white border-b border-outline-variant flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-outline"></span>
-            <span class="font-label-md text-label-md text-on-surface">Baseline</span>
+            <span class="w-2 h-2 rounded-full bg-outline-variant"></span>
+            <span class="font-label-md text-label-md text-on-surface">Reference</span>
             <span class="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant border border-outline-variant" style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;text-transform:uppercase;" id="baseline-badge">a3f9c12</span>
-            <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';" id="baseline-ref-label">develop @ a3f9c12</span>
+            <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';" id="baseline-ref-label">a3f9c12</span>
           </div>
           <div class="flex-1 overflow-y-auto bg-surface-container-low" id="canvas-baseline">
             <div id="baseline-no-doc" class="hidden h-full flex items-center justify-center p-8">
