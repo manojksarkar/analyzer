@@ -25,10 +25,42 @@ import datetime as _dt
 import json
 import os
 import shutil
+import stat
 import sys
 
+
+def _rmtree_force(path: str) -> None:
+    """Remove a tree, including read-only files. Git pack files under repo/.git are
+    read-only, and on Windows shutil.rmtree cannot unlink them without first
+    clearing the read-only bit — so retry each failed unlink after chmod +w."""
+    def _retry(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    # Python 3.12 renamed the rmtree error hook onerror -> onexc (same (func, path) args).
+    kwargs = {"onexc": _retry} if sys.version_info >= (3, 12) else {"onerror": _retry}
+    shutil.rmtree(path, **kwargs)
+
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-_ANALYZER_ROOT = os.path.dirname(_BACKEND_DIR)
+
+
+def _find_analyzer_root(start: str) -> str:
+    """Walk up from `start` to the analyzer root (the dir holding `src/core` +
+    `run.py`). Don't assume backend is a direct child of the root — it may be
+    nested deeper (e.g. analyzer/frontend/backend/)."""
+    d = start
+    while True:
+        if os.path.isdir(os.path.join(d, "src", "core")) and os.path.isfile(os.path.join(d, "run.py")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            raise RuntimeError(
+                "could not locate the analyzer root (a dir containing src/core and run.py) "
+                f"above {start!r}"
+            )
+        d = parent
+
+
+_ANALYZER_ROOT = _find_analyzer_root(_BACKEND_DIR)
 sys.path.insert(0, _BACKEND_DIR)                          # git_service
 sys.path.insert(0, os.path.join(_ANALYZER_ROOT, "src"))  # core.config
 
@@ -56,7 +88,7 @@ def seed(project_id: str, repo_url: str, branch: str, force: bool) -> str:
             raise SystemExit(
                 f"workspace already exists: {ws}\n  re-run with --force to recreate."
             )
-        shutil.rmtree(ws)
+        _rmtree_force(ws)
     os.makedirs(ws)
 
     # repo/ — real full clone via the onboarding primitive (public repo: no creds).
