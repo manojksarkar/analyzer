@@ -43,10 +43,11 @@ def _rmtree_force(path: str) -> None:
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def _find_analyzer_root(start: str) -> str:
-    """Walk up from `start` to the analyzer root (the dir holding `src/core` +
-    `run.py`). Don't assume backend is a direct child of the root — it may be
-    nested deeper (e.g. analyzer/frontend/backend/)."""
+def _find_project_root(start: str) -> str:
+    """Walk up from `start` to the project root, detected by *structure* (the dir
+    holding `src/core` + `run.py`) — never by a hard-coded directory name, so the
+    repo/root can be called anything. Also doesn't assume the backend is a direct
+    child of the root: it may be nested deeper (e.g. <root>/frontend/backend/)."""
     d = start
     while True:
         if os.path.isdir(os.path.join(d, "src", "core")) and os.path.isfile(os.path.join(d, "run.py")):
@@ -54,15 +55,15 @@ def _find_analyzer_root(start: str) -> str:
         parent = os.path.dirname(d)
         if parent == d:
             raise RuntimeError(
-                "could not locate the analyzer root (a dir containing src/core and run.py) "
+                "could not locate the project root (a dir containing src/core and run.py) "
                 f"above {start!r}"
             )
         d = parent
 
 
-_ANALYZER_ROOT = _find_analyzer_root(_BACKEND_DIR)
+_PROJECT_ROOT = _find_project_root(_BACKEND_DIR)
 sys.path.insert(0, _BACKEND_DIR)                          # git_service
-sys.path.insert(0, os.path.join(_ANALYZER_ROOT, "src"))  # core.config
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, "src"))   # core.config
 
 import git_service                       # noqa: E402  (sibling module in backend/)
 from core.config import load_config      # noqa: E402
@@ -76,13 +77,13 @@ _DATADICT_ID = "dd-001"
 def _project_layers() -> dict:
     """The project's ``layers`` config (drops layers that define no groups, e.g.
     a placeholder Layer3) so the stored record matches the repo's real content."""
-    cfg = load_config(_ANALYZER_ROOT)
+    cfg = load_config(_PROJECT_ROOT)
     layers = cfg.get("layers") or {}
     return {name: spec for name, spec in layers.items() if (spec.get("groups") or {})}
 
 
 def seed(project_id: str, repo_url: str, branch: str, force: bool) -> str:
-    ws = os.path.join(_ANALYZER_ROOT, "workspaces", project_id)
+    ws = os.path.join(_PROJECT_ROOT, "workspaces", project_id)
     if os.path.isdir(ws):
         if not force:
             raise SystemExit(
@@ -98,10 +99,10 @@ def seed(project_id: str, repo_url: str, branch: str, force: bool) -> str:
     head = git_service.current_commit(repo_dir)
     branches = [b["name"] for b in git_service.list_branches(repo_dir)]
 
-    # datadict/<id>.csv — seed from the analyzer's sample data dictionary.
+    # datadict/<id>.csv — seed from the project's sample data dictionary.
     datadict_dir = os.path.join(ws, "datadict")
     os.makedirs(datadict_dir)
-    src_dd = os.path.join(_ANALYZER_ROOT, "config", "data_dictionary.csv")
+    src_dd = os.path.join(_PROJECT_ROOT, "config", "data_dictionary.csv")
     dst_dd = os.path.join(datadict_dir, f"{_DATADICT_ID}.csv")
     if os.path.isfile(src_dd):
         shutil.copyfile(src_dd, dst_dd)
