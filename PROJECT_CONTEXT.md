@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2a entity hashing — done** (`src/incremental/hashing.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros; token-based, comment-inclusive, deterministic; next: **M1.2b** slim type/macro usage index `model/edges.json`). **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes; next: **M1.3** D9 store interface `src/incremental/stores.py` + version store + `POST /generate` full path + `versions` APIs). **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
 > Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
 > Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
@@ -2795,10 +2795,18 @@ workspaces/<projectId>/
     gains `HASHES`/`EDGES` (not in `ALL_MODEL_NAMES`). Verified on `SampleCppProject`: 353 entities, all 64-hex,
     **deterministic** across re-parse, and a one-function edit changed **exactly 1** hash while a whitespace-only
     reformat of a sibling changed **none**. Tests: `tests/unit/test_incremental_hashing.py` (12).
-  - **M1.2b** (next) — the **slim type/macro usage index** `model/edges.json` `{typeUsers, macroUsers}` in
-    `parser.py` (per-function type refs via AST, macro uses via token/instantiation scan; invert to users).
-    Must key types/macros identically to `hashes.json` so M2 impact BFS can cross-reference; handle the
-    typedef-from-struct entries that M1.2a's cursor-based hashing skips.
+  - **M1.2b slim usage index — ✅ done.** `parser.py` adds a `visit_usage` pass (3rd walk on the same TU, no
+    extra parse) that threads the enclosing function like `visit_calls`: **type usage** via AST
+    (`_project_type_qn` resolves return/param/`TYPE_REF`/`VAR_DECL` types through pointer/ref/array layers to a
+    project type's qn) and **macro usage** via per-function identifier-token capture. New pure
+    `src/incremental/edges.py::build_edges` (no libclang — unit-tested) inverts to
+    `model/edges.json` `{typeUsers, macroUsers}` keyed by model fid, **filtered to types/macros that have a hash**
+    so every key cross-references `hashes.json`; keys+values sorted for byte-stable output. Macro keys
+    `name@relFile`, type keys qn — identical to `hashes.json`. Calls/globals are deliberately **not** here
+    (functions.json has them). Verified on `SampleCppProject`: 14 types / 1 macro used, **0** key/fid mismatches
+    vs `hashes.json`, `Point`/`Status`/`Mode` resolve to the right functions, deterministic. Tests:
+    `tests/unit/test_incremental_edges.py` (8). *Known limits (M2/M3): typedef→underlying transitive type edges
+    and synthetic-from-VAR_DECL functions are not tracked; macro detection over-approximates (token-name match).*
   - **M1.3** — the **D9 store interface** `src/incremental/stores.py` (`VersionStore`/`ReuseIndex`/`HashStore`/
     `EdgeStore`, JSON-file impl) + the backend **workspace + version store** (capture `model/output/documents`
     + hashes + edges into `versions/<vN>/`; seed `cache/index.json`) + `POST …/generate` (full path) +
@@ -2807,9 +2815,11 @@ workspaces/<projectId>/
   classify; **impact BFS** (all axes); selective regen (index-check); reassemble; `mode:"auto"`.
 - **M3 — hardening** — *not started.* move/rename + deletions; version-scoped reads (`?versionId=`);
   recipe-fingerprint invalidation; multi-doc zip.
-- **Next concrete step:** **M1.2b** — the **slim type/macro usage index** `model/edges.json` in `parser.py`
-  (per-function type refs + macro uses, inverted to `{typeUsers, macroUsers}`), keyed identically to
-  `hashes.json`. (M1.1 + M1.2a done; the `samplecpp` workspace is the test bed.)
+- **Next concrete step:** **M1.3** — the **D9 store interface** `src/incremental/stores.py`
+  (`VersionStore`/`ReuseIndex`/`HashStore`/`EdgeStore`, JSON-file impl) + backend **workspace + version store**
+  (capture `model/output/documents` + `hashes.json` + `edges.json` into `versions/<vN>/`; seed `cache/index.json`)
+  + `POST …/generate` (full path) + `versions` APIs. Build it entirely against the interface — no direct file IO
+  in the engine/APIs. (M1.1 + M1.2a + M1.2b done; `parser.py` now emits `model/hashes.json` + `model/edges.json`.)
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 
