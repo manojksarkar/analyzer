@@ -127,7 +127,7 @@
 <!-- ══════════════ SIDEBAR ══════════════ -->
 <aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50 overflow-hidden">
   <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant flex-shrink-0">
-    <a href="dashboard-admin.html" class="flex items-center gap-3 min-w-0 flex-1">
+    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1">
       <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
         <span class="material-symbols-outlined text-on-primary sym-fill" style="font-size:18px;">account_tree</span>
       </div>
@@ -142,7 +142,7 @@
   </div>
 
   <nav class="flex-1 overflow-y-auto px-2 py-2">
-    <a href="dashboard-admin.html" title="All Projects"
+    <a href="projects.html" title="All Projects"
        class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
       <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
       <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
@@ -202,7 +202,7 @@
   <!-- ── TOP BAR ── -->
   <header class="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-40">
     <nav class="flex items-center gap-1.5" aria-label="Breadcrumb">
-      <a href="dashboard-admin.html"
+      <a href="projects.html"
          class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
         <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
       </a>
@@ -413,8 +413,28 @@
         </button>
       </div>
 
-      <!-- SPLIT CANVAS -->
-      <div class="flex-1 flex overflow-hidden">
+      <!-- EMPTY STATE — shown when no document selected -->
+      <div id="canvas-empty" class="flex-1 flex flex-col overflow-hidden">
+        <div class="flex-1 flex items-center justify-center p-8">
+          <div class="text-center" style="max-width:480px;">
+            <div class="w-16 h-16 rounded-2xl bg-surface-container flex items-center justify-center mx-auto mb-5">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:32px;">difference</span>
+            </div>
+            <h2 class="font-headline-sm text-headline-sm text-on-surface mb-2">Select a document to compare</h2>
+            <p class="text-body-sm text-on-surface-variant mb-1">
+              Comparing <span class="font-label-md text-label-md text-on-tertiary-container" id="empty-current-ref">main @ b2e8d45</span>
+              against <span class="font-label-md text-label-md text-outline" id="empty-baseline-ref">develop @ a3f9c12</span>
+            </p>
+            <p class="text-body-sm text-outline mb-8">Pick a document from the left panel, or click a changed document below.</p>
+
+            <!-- Changed documents quick-pick -->
+            <div id="empty-diff-cards" class="text-left space-y-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SPLIT CANVAS — shown when a document is selected -->
+      <div id="split-canvas" class="flex-1 flex overflow-hidden" style="display:none;">
 
         <!-- CURRENT / LEFT pane -->
         <div class="flex-1 flex flex-col overflow-hidden border-r border-outline-variant min-w-0">
@@ -728,7 +748,7 @@ let currentRole   = 'admin';
 let currentHash   = 'b2e8d45';
 let selectedHash  = 'a3f9c12';
 let treeMode      = 'diff';
-let activeItem    = 'Brake Controller';
+let activeItem    = null;
 let activeEditSec = null;
 let swe3Expanded  = true;
 
@@ -816,9 +836,10 @@ function toggleCurrentSwitch() {
 
 function selectCurrentCommit(hash, branch) {
   currentHash = hash;
-  document.getElementById('current-commit-label').textContent = hash;
-  document.getElementById('current-panel-ref').textContent    = `${branch} @ ${hash}`;
-  document.getElementById('current-commit-hash').textContent  = hash;
+  document.getElementById('current-commit-label').textContent  = hash;
+  document.getElementById('current-panel-ref').textContent     = `${branch} @ ${hash}`;
+  document.getElementById('current-commit-hash').textContent   = hash;
+  document.getElementById('empty-current-ref').textContent     = `${branch} @ ${hash}`;
   document.getElementById('current-switch-dropdown').classList.add('hidden');
   document.getElementById('current-switch-chevron').style.transform = '';
   renderCurrentSwitchList();
@@ -863,9 +884,10 @@ function selectBaselineCommit(hash, branch) {
   selectedHash = hash;
   const c = commits.find(c => c.hash === hash);
   const label = `${branch} @ ${hash}`;
-  document.getElementById('baseline-label-text').textContent = label;
-  document.getElementById('baseline-badge').textContent      = hash;
-  document.getElementById('baseline-ref-label').textContent  = label;
+  document.getElementById('baseline-label-text').textContent  = label;
+  document.getElementById('baseline-badge').textContent       = hash;
+  document.getElementById('baseline-ref-label').textContent   = label;
+  document.getElementById('empty-baseline-ref').textContent   = label;
   document.getElementById('commit-picker').classList.add('hidden');
   document.getElementById('commit-chevron').style.transform = '';
   renderCommitList();
@@ -1065,7 +1087,25 @@ function selectItem(name) {
   activeItem = name;
   document.getElementById('doc-title-current').textContent  = name;
   document.getElementById('doc-title-baseline').textContent = name;
+  document.getElementById('canvas-empty').style.display  = 'none';
+  document.getElementById('split-canvas').style.display  = 'flex';
   renderTree();
+}
+
+function renderEmptyCards() {
+  const el = document.getElementById('empty-diff-cards');
+  const changed = swe3Items.filter(c => c.diff).map(c => ({ ...c, process: 'SWE.3' }));
+  if (!changed.length) { el.innerHTML = '<p class="text-body-sm text-outline text-center">No changes detected between these commits.</p>'; return; }
+  el.innerHTML = changed.map(({ name, diff, process }) => {
+    const meta = diffMeta[diff];
+    return `<button onclick="selectItem('${name}')"
+      class="w-full flex items-center gap-3 px-4 py-3 bg-white border border-outline-variant hover:bg-surface-container-low hover:border-secondary/40 rounded-xl transition-colors text-left group">
+      <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 6px;border-radius:3px;flex-shrink:0;">${process}</span>
+      <span class="flex-1 font-label-md text-label-md text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">${name}</span>
+      <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:${meta.color};background:${meta.bg};padding:2px 6px;border-radius:3px;flex-shrink:0;">${diff === 'added' ? '+ added' : '~ changed'}</span>
+      <span class="material-symbols-outlined text-outline-variant group-hover:text-secondary transition-colors" style="font-size:16px;flex-shrink:0;">arrow_forward</span>
+    </button>`;
+  }).join('');
 }
 
 // ── Sync scroll ───────────────────────────────────────────────────────────────
@@ -1092,6 +1132,7 @@ document.addEventListener('click', e => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderTree();
+renderEmptyCards();
 renderCurrentSwitchList();
 renderCommitList();
 setRole('admin');
