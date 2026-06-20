@@ -113,12 +113,9 @@
   .sec-ignored  { border-left: 3px solid #c4c6cd !important; padding-left: 14px; margin-left: -14px; background: rgba(196,198,205,.05); border-radius: 0 4px 4px 0; }
   .sec-edited   { border-left: 3px solid #0058be !important; padding-left: 14px; margin-left: -14px; background: rgba(0,88,190,.02); border-radius: 0 4px 4px 0; }
 
-  /* Role toggle */
-  .role-btn { padding: 3px 10px; border-radius: 4px; font-family: 'JetBrains Mono'; font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; transition: all .15s; }
-  .role-btn.active-admin { background: #041627; color: #fff; }
-  .role-btn.active-dev   { background: #0058be; color: #fff; }
-  .role-btn.inactive     { background: transparent; color: #74777d; }
-  .role-btn.inactive:hover { background: #e5eeff; color: #0b1c30; }
+  .subbar-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid #c4c6cd; border-radius: 6px; background: #fff; transition: background .1s, border-color .1s; cursor: pointer; }
+  .subbar-pill:hover { background: #eff4ff; border-color: #0058be; }
+  .dropdown { position: absolute; top: calc(100% + 6px); left: 0; background: #fff; border: 1px solid #c4c6cd; border-radius: 12px; box-shadow: 0 4px 20px rgba(4,22,39,.12); z-index: 200; overflow: hidden; }
 </style>
 </head>
 
@@ -208,7 +205,7 @@
   <header class="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-40">
     <nav class="flex items-center gap-1.5" aria-label="Breadcrumb">
       <a href="projects.html"
-         class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+         class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" title="Dashboard">
         <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
       </a>
       <span class="text-outline-variant select-none">/</span>
@@ -216,42 +213,43 @@
       <span class="text-outline-variant select-none">/</span>
       <a href="compare.html" class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors">Compare</a>
       <span class="text-outline-variant select-none" id="bc-sep" style="display:none;">/</span>
-      <span class="font-label-md text-label-md text-on-surface" id="bc-doc" style="display:none;"></span>
+      <span class="font-label-md text-label-md text-on-surface truncate" id="bc-doc" style="display:none;"></span>
     </nav>
-    <div class="flex items-center gap-2 flex-shrink-0">
-      <!-- Role toggle (demo) -->
-      <div class="flex items-center gap-0.5 bg-surface-container-low border border-outline-variant rounded-lg p-0.5" title="Switch role (demo)">
-        <button id="btn-role-admin" onclick="setRole('admin')" class="role-btn active-admin">Admin</button>
-        <button id="btn-role-dev"   onclick="setRole('dev')"   class="role-btn inactive">Dev</button>
-      </div>
+    <div class="flex items-center gap-0.5">
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
+      </button>
+      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+      </button>
+      <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+      <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+        <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+          <span class="text-on-secondary-container font-bold text-xs" style="font-family:Inter;" id="topbar-initials">EL</span>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      </button>
       <div class="w-px h-5 bg-outline-variant mx-1"></div>
-      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">notifications</span>
-        <span class="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-error rounded-full border border-white"></span>
-      </button>
-      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
-        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">help</span>
-      </button>
-      <div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center cursor-pointer ml-0.5">
-        <span class="text-on-secondary-container font-bold" style="font-family:Inter;font-size:11px;" id="topbar-initials">EL</span>
+      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
+        <button onclick="setRole('admin')" id="btn-role-admin" class="px-2.5 py-1 transition-colors bg-secondary text-white">Admin</button>
+        <button onclick="setRole('dev')"   id="btn-role-dev"   class="px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container">Dev</button>
       </div>
     </div>
   </header>
 
   <!-- ── SUBBAR ── -->
-  <div class="h-10 flex-shrink-0 flex items-center justify-between px-4 bg-surface-container-low border-b border-outline-variant">
+  <div class="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-30">
     <div class="flex items-center gap-2">
 
       <!-- Project switcher -->
       <div class="relative" id="sb-project-wrap">
-        <button onclick="toggleSbProject()"
-                class="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
-                style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
-          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:13px;">folder</span>
-          <span class="text-on-surface">VCU Engine Firmware</span>
-          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;" id="sb-project-chevron">expand_more</span>
+        <button id="sb-project-btn" onclick="toggleSbProject()" class="subbar-pill">
+          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:14px;">folder</span>
+          <span class="font-label-md text-label-md text-on-surface" style="font-size:12px;">VCU Engine Firmware</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
         </button>
-        <div id="sb-project-dropdown" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:240px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+        <div id="sb-project-dropdown" class="hidden dropdown" style="min-width:240px;">
           <div class="py-1.5">
             <button class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low text-left" style="background:#eff4ff;">
               <span class="font-label-md text-label-md text-on-surface" style="font-size:12px;">VCU Engine Firmware</span>
@@ -268,14 +266,12 @@
 
       <!-- Version picker -->
       <div class="relative" id="sb-version-wrap">
-        <button onclick="toggleSbVersion()"
-                class="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
-                style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+        <button id="sb-version-btn" onclick="toggleSbVersion()" class="subbar-pill">
           <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;">sell</span>
-          <span class="text-on-surface">v1.2.0</span>
-          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:13px;" id="sb-version-chevron">expand_more</span>
+          <span class="font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono';font-size:12px;">v1.2.0</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-version-chevron" style="font-size:13px;">expand_more</span>
         </button>
-        <div id="sb-version-dropdown" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:200px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+        <div id="sb-version-dropdown" class="hidden dropdown" style="min-width:200px;">
           <div class="py-1.5">
             <button class="w-full text-left px-3 py-2.5 hover:bg-surface-container-low font-label-md text-label-md text-on-surface" style="background:#eff4ff;font-size:12px;">v1.2.0</button>
             <button class="w-full text-left px-3 py-2.5 hover:bg-surface-container-low font-label-md text-label-md text-on-surface" style="font-size:12px;">v1.1.0</button>
@@ -287,7 +283,7 @@
       <span class="text-outline-variant select-none">·</span>
 
       <!-- Commit chip (read-only) -->
-      <div class="flex items-center gap-1.5 px-2"
+      <div class="flex items-center gap-1.5 px-2.5 py-1"
            style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;">
         <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:13px;">alt_route</span>
         <span>main @ b2e8d45</span>
@@ -298,12 +294,13 @@
 
     <!-- Right CTAs -->
     <div class="flex items-center gap-1.5">
-      <button class="flex items-center gap-1.5 px-3 py-1 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors"
+      <button class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors"
               style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;letter-spacing:.02em;">
         <span class="material-symbols-outlined" style="font-size:15px;">download</span>Export
       </button>
       <a href="documents.html"
-         class="flex items-center gap-1 px-2.5 py-1 bg-white border border-outline-variant hover:bg-surface-container rounded-lg transition-colors font-label-md text-label-md text-on-surface-variant">
+         class="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant hover:bg-surface-container rounded-lg transition-colors font-label-md text-label-md text-on-surface-variant"
+         style="font-size:11px;">
         <span class="material-symbols-outlined" style="font-size:14px;">close</span>Exit
       </a>
     </div>
@@ -985,8 +982,8 @@ function submitReview() {
 // ── Role ──────────────────────────────────────────────────────────────────────
 function setRole(role) {
   currentRole = role;
-  document.getElementById('btn-role-admin').className = `role-btn ${role === 'admin' ? 'active-admin' : 'inactive'}`;
-  document.getElementById('btn-role-dev').className   = `role-btn ${role === 'dev'   ? 'active-dev'   : 'inactive'}`;
+  document.getElementById('btn-role-admin').className = `px-2.5 py-1 transition-colors ${role === 'admin' ? 'bg-secondary text-white' : 'text-on-surface-variant hover:bg-surface-container'}`;
+  document.getElementById('btn-role-dev').className   = `px-2.5 py-1 transition-colors ${role === 'dev'   ? 'bg-secondary text-white' : 'text-on-surface-variant hover:bg-surface-container'}`;
   const isAdmin = role === 'admin';
   document.getElementById('sidebar-initials').textContent = isAdmin ? 'EL' : 'BK';
   document.getElementById('sidebar-username').textContent = isAdmin ? 'Engineering Lead' : 'Bob Kumar';
