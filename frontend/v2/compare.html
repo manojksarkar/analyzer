@@ -214,9 +214,9 @@
       <span class="text-outline-variant select-none">/</span>
       <a href="project-detail.html" class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors whitespace-nowrap">VCU Engine Firmware</a>
       <span class="text-outline-variant select-none">/</span>
-      <a href="documents.html" class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors">Documents</a>
-      <span class="text-outline-variant select-none">/</span>
-      <span class="font-label-md text-label-md text-on-surface">Compare</span>
+      <a href="compare.html" class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors">Compare</a>
+      <span class="text-outline-variant select-none" id="bc-sep" style="display:none;">/</span>
+      <span class="font-label-md text-label-md text-on-surface" id="bc-doc" style="display:none;"></span>
     </nav>
     <div class="flex items-center gap-2 flex-shrink-0">
       <!-- Role toggle (demo) -->
@@ -1094,6 +1094,9 @@ function selectItem(name) {
   document.getElementById('doc-title-baseline').textContent = name;
   document.getElementById('canvas-empty').style.display  = 'none';
   document.getElementById('split-canvas').style.display  = 'flex';
+  document.getElementById('bc-doc').textContent    = name;
+  document.getElementById('bc-doc').style.display  = '';
+  document.getElementById('bc-sep').style.display  = '';
   renderTree();
 }
 
