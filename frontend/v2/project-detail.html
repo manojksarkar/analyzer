@@ -56,6 +56,7 @@
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     vertical-align: middle; line-height: 1;
   }
+  .sym-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
@@ -91,6 +92,9 @@
   .adv-body.open { max-height: 240px; }
 
   .phase-line { height: 2px; flex: 1; margin: 0 6px; margin-top: 11px; border-radius: 9999px; }
+  .subbar-pill { display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid #c4c6cd;border-radius:6px;background:#fff;transition:background .1s,border-color .1s;cursor:pointer; }
+  .subbar-pill:hover { background:#eff4ff;border-color:#0058be; }
+  .dropdown { position:absolute;top:calc(100% + 6px);left:0;background:white;border:1px solid #c4c6cd;border-radius:8px;overflow:hidden;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12); }
   .ph-done   { background: #00a572; }
   .ph-active { background: #0058be; }
   .ph-pending { background: #e5eeff; }
@@ -116,7 +120,7 @@
 <!-- ══════════════ SIDEBAR ══════════════ -->
 <aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50">
   <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant">
-    <a href="dashboard-admin.html" class="flex items-center gap-3 min-w-0 flex-1">
+    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1">
       <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
         <span class="material-symbols-outlined text-on-primary" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">account_tree</span>
       </div>
@@ -131,7 +135,7 @@
   </div>
 
   <nav class="flex-1 overflow-y-auto px-2 py-2">
-    <a href="dashboard-admin.html" title="All Projects"
+    <a href="projects.html" title="All Projects"
        class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
       <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
       <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
@@ -146,6 +150,11 @@
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
         <span class="material-symbols-outlined" style="font-size:20px;">description</span>
         <span class="nav-label font-label-md text-label-md">Documents</span>
+      </a>
+      <a href="compare.html" title="Compare"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">difference</span>
+        <span class="nav-label font-label-md text-label-md">Compare</span>
       </a>
       <a href="project-detail.html#versions" title="Versions"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
@@ -167,20 +176,46 @@
       <span class="nav-label font-label-md text-label-md">Settings</span>
     </a>
   </div>
-  <div class="px-2 pb-3 pt-1">
-    <button class="user-btn w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group" title="Engineering Lead">
-      <div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
-        <span class="text-on-secondary-container font-bold text-sm" style="font-family:Inter;">EL</span>
-      </div>
-      <div class="user-info flex-1 min-w-0">
-        <p class="font-label-md text-label-md text-on-surface truncate leading-tight">Engineering Lead</p>
-        <div class="flex items-center gap-1.5 mt-0.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide">Admin</p>
+  <div class="px-2 pb-3 pt-1" style="position:relative;">
+    <div id="role-switcher" style="position:relative;">
+      <button id="role-chip" onclick="toggleRoleMenu()"
+        class="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left">
+        <div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+          <span class="text-on-secondary-container font-bold text-sm" style="font-family:Inter;">EL</span>
         </div>
+        <div class="user-info flex-1 min-w-0">
+          <p class="font-label-md text-label-md text-on-surface truncate leading-tight">Engineering Lead</p>
+          <div class="flex items-center gap-1.5 mt-0.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+            <p id="role-chip-label" class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide">Admin</p>
+          </div>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" id="role-chip-chevron" style="font-size:16px;transition:transform .15s;">unfold_more</span>
+      </button>
+      <div id="role-menu" class="hidden" style="position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:white;border:1px solid #e2e3e8;border-radius:10px;box-shadow:0 4px 20px rgba(4,22,39,.13);z-index:400;overflow:hidden;">
+        <div style="padding:8px 12px 5px;font-size:10px;color:#9aa0a6;font-weight:600;text-transform:uppercase;letter-spacing:.07em;">Viewing as</div>
+        <button onclick="setRole('admin')"
+          style="width:100%;display:flex;align-items:center;gap:10px;padding:8px 12px;border:none;background:transparent;cursor:pointer;text-align:left;"
+          onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='transparent'">
+          <span class="material-symbols-outlined" style="font-size:17px;color:#0058be;font-variation-settings:'FILL' 1;flex-shrink:0;">manage_accounts</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:500;color:#0b1c30;">Admin</div>
+            <div style="font-size:10px;color:#74777d;">Full access — run, assign, manage</div>
+          </div>
+          <span id="role-check-admin" class="material-symbols-outlined" style="font-size:15px;color:#0058be;flex-shrink:0;">check</span>
+        </button>
+        <button onclick="setRole('developer')"
+          style="width:100%;display:flex;align-items:center;gap:10px;padding:8px 12px 12px;border:none;background:transparent;cursor:pointer;text-align:left;"
+          onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='transparent'">
+          <span class="material-symbols-outlined" style="font-size:17px;color:#7c3aed;font-variation-settings:'FILL' 1;flex-shrink:0;">code</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:500;color:#0b1c30;">Developer</div>
+            <div style="font-size:10px;color:#74777d;">View only — no actions</div>
+          </div>
+          <span id="role-check-developer" class="material-symbols-outlined" style="font-size:15px;color:#0058be;flex-shrink:0;visibility:hidden;">check</span>
+        </button>
       </div>
-      <span class="more-btn-icon material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
-    </button>
+    </div>
   </div>
 </aside>
 
@@ -188,57 +223,27 @@
 <!-- ══════════════ MAIN ══════════════ -->
 <main id="app-main" class="h-screen flex flex-col">
 
-  <!-- Top bar — breadcrumb navigation -->
-  <header class="h-14 flex-shrink-0 flex items-center justify-between px-gutter bg-white border-b border-outline-variant z-40">
-    <div class="flex items-center gap-2">
-      <a href="dashboard-admin.html" class="font-label-md text-label-md text-secondary hover:underline transition-colors">Dashboard</a>
+  <!-- ── TOP BAR ── -->
+  <header class="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-40">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-1.5" aria-label="Breadcrumb">
+      <a href="projects.html"
+         class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+         title="Dashboard">
+        <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
+      </a>
       <span class="text-outline-variant select-none">/</span>
-      <!-- Project switcher -->
-      <div class="relative" id="project-selector-wrap">
-        <button id="project-selector-btn" onclick="toggleProjectDropdown()"
-                class="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low hover:bg-surface-container border border-outline-variant rounded-xl transition-colors">
-          <span class="material-symbols-outlined text-secondary" style="font-size:14px;">folder_open</span>
-          <span class="font-label-md text-label-md text-on-surface" id="current-project-name">VCU Engine Firmware</span>
-          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" style="font-size:14px;" id="project-chevron">expand_more</span>
-        </button>
-        <div id="project-dropdown" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:272px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
-          <div class="py-1.5">
-            <button onclick="switchProject('VCU Engine Firmware')" data-project="VCU Engine Firmware"
-                    class="proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left" style="background:#eff4ff;">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="font-label-md text-label-md text-on-surface truncate">VCU Engine Firmware</span>
-                  <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#2170e4;color:#fff;padding:1px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap;">Active</span>
-                </div>
-              </div>
-              <span class="material-symbols-outlined text-secondary flex-shrink-0 proj-check" style="font-size:16px;">check</span>
-            </button>
-            <button onclick="switchProject('Brake Control Unit')" data-project="Brake Control Unit"
-                    class="proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="font-label-md text-label-md text-on-surface truncate">Brake Control Unit</span>
-                  <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:1px 6px;border-radius:3px;text-transform:uppercase;white-space:nowrap;">In Progress</span>
-                </div>
-              </div>
-              <span class="material-symbols-outlined text-outline-variant flex-shrink-0 proj-check" style="font-size:16px;opacity:0;">check</span>
-            </button>
-          </div>
-          <div class="border-t border-outline-variant">
-            <a href="onboarding.html" class="flex items-center gap-2.5 px-3 py-2.5 hover:bg-surface-container-low transition-colors">
-              <span class="material-symbols-outlined text-secondary" style="font-size:16px;">add_circle</span>
-              <span class="font-label-md text-label-md text-secondary">New Project</span>
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
+      <span class="font-label-md text-label-md text-on-surface" id="current-project-name">VCU Engine Firmware</span>
+      <span class="text-outline-variant select-none">/</span>
+      <span class="font-label-md text-label-md text-on-surface-variant">Overview</span>
+    </nav>
+    <!-- Right actions -->
     <div class="flex items-center gap-0.5">
-      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors">
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
         <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
         <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
       </button>
-      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors">
+      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
         <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
       </button>
       <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
@@ -248,95 +253,118 @@
         </div>
         <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
       </button>
+      <div class="w-px h-5 bg-outline-variant mx-1"></div>
+      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
+        <button onclick="setRole('admin')" id="role-btn-admin" class="px-2.5 py-1 transition-colors bg-secondary text-white">Admin</button>
+        <button onclick="setRole('developer')" id="role-btn-dev" class="px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container">Dev</button>
+      </div>
     </div>
   </header>
 
-  <!-- Scrollable content — no subbar -->
-  <div class="flex-1 overflow-y-auto bg-background">
-    <div class="px-container-padding py-6" style="max-width:1280px;">
-
-      <!-- ═══ PAGE HEADER ═══ -->
-      <div class="flex items-start justify-between mb-6">
-        <!-- Left: name + commit chip -->
-        <div class="flex-1 min-w-0">
-          <h1 class="text-headline-md text-on-surface" id="name-display" style="font-family:Inter;font-weight:600;">VCU Engine Firmware</h1>
-
-          <div class="flex items-center gap-3 mt-2 flex-wrap">
-
-            <!-- Commit chip with picker dropdown -->
-            <div class="relative" id="commit-chip-wrap">
-              <button id="commit-chip-btn" onclick="toggleCommitPicker()"
-                      class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low border border-outline-variant rounded-lg hover:bg-surface-container transition-colors"
-                      style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
-                <span id="chip-icon-sym" class="material-symbols-outlined text-on-tertiary-container flex-shrink-0" style="font-size:13px;">alt_route</span>
-                <div id="chip-icon-spin" class="spin flex-shrink-0" style="display:none;width:11px;height:11px;border:1.5px solid #0058be;border-top-color:transparent;border-radius:9999px;"></div>
-                <span id="chip-ref" class="text-on-surface font-semibold">main @ abc1234</span>
-                <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="chip-chevron" style="font-size:13px;">expand_more</span>
-              </button>
-
-              <!-- Commit picker dropdown -->
-              <div id="commit-picker"
-                   class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden"
-                   style="min-width:380px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
-                <div class="flex items-center border-b border-outline-variant px-3">
-                  <button id="cp-tab-versions" onclick="switchPickerTab('versions')"
-                          class="px-1 py-2.5 mr-5 font-label-md text-label-md border-b-2 border-secondary text-secondary -mb-px transition-colors">
-                    Versions
-                  </button>
-                  <button id="cp-tab-commits" onclick="switchPickerTab('commits')"
-                          class="px-1 py-2.5 font-label-md text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-on-surface -mb-px transition-colors">
-                    Commits
-                  </button>
-                </div>
-                <div id="cp-panel-versions">
-                  <div class="overflow-y-auto" style="max-height:280px;" id="cp-versions-list"></div>
-                </div>
-                <div id="cp-panel-commits" style="display:none;">
-                  <div class="px-3 py-2 border-b border-outline-variant">
-                    <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
-                      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
-                      <input type="text" placeholder="Search commits…" oninput="filterPickerCommits(this.value)"
-                             class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline"
-                             style="font-family:'JetBrains Mono';font-size:11px;">
-                    </div>
-                  </div>
-                  <div class="overflow-y-auto" style="max-height:240px;" id="cp-commits-list"></div>
-                </div>
-              </div>
-            </div>
+  <!-- ── SUBBAR ── -->
+  <div class="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-30">
+    <div class="flex items-center gap-2">
+      <!-- Project switcher -->
+      <div class="relative" id="sb-project-wrap">
+        <button id="sb-project-btn" onclick="toggleSbProject()" class="subbar-pill">
+          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:14px;">folder</span>
+          <span class="font-label-md text-label-md text-on-surface" id="sb-project-name" style="font-size:12px;">VCU Engine Firmware</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <div id="sb-project-dropdown" class="hidden dropdown" style="min-width:264px;">
+          <div class="py-1.5">
+            <button onclick="switchSbProject('VCU Engine Firmware')" data-proj="VCU Engine Firmware"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left" style="background:#eff4ff;">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">VCU Engine Firmware</span>
+              <span class="ml-auto material-symbols-outlined text-secondary sb-proj-check" style="font-size:15px;">check</span>
+            </button>
+            <button onclick="switchSbProject('Brake Control Unit')" data-proj="Brake Control Unit"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake Control Unit</span>
+              <span class="ml-auto material-symbols-outlined text-outline-variant sb-proj-check" style="font-size:15px;opacity:0;">check</span>
+            </button>
+          </div>
+          <div class="border-t border-outline-variant">
+            <a href="onboarding.html" class="flex items-center gap-2 px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+              <span class="material-symbols-outlined text-secondary" style="font-size:14px;">add_circle</span>
+              <span class="font-label-md text-label-md text-secondary" style="font-size:12px;">New Project</span>
+            </a>
           </div>
         </div>
+      </div>
 
-        <!-- Right: CTA buttons (one visible at a time) -->
-        <div class="flex items-center gap-2 flex-shrink-0 ml-6 mt-0.5">
-          <button id="cta-run" onclick="openRunConfig()"
-                  class="flex items-center gap-2 px-4 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors"
-                  style="display:none;font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;">
-            <span class="material-symbols-outlined" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">play_circle</span>
-            RUN ANALYSIS
-          </button>
-          <button id="cta-cancel" onclick="cancelGeneration()"
-                  class="flex items-center gap-2 px-4 py-2.5 rounded-xl transition-colors"
-                  style="display:none;border:1px solid #fca5a5;color:#ba1a1a;background:transparent;font-family:'JetBrains Mono';font-size:12px;font-weight:500;"
-                  onmouseenter="this.style.background='#fff0f0'" onmouseleave="this.style.background='transparent'">
-            <span class="material-symbols-outlined" style="font-size:16px;">stop_circle</span>
-            Cancel Job
-          </button>
-          <button id="cta-rerun" onclick="openRunConfig()"
-                  class="flex items-center gap-2 px-4 py-2.5 border border-outline-variant hover:bg-surface-container text-on-surface-variant rounded-xl transition-colors"
-                  style="display:none;font-family:'JetBrains Mono';font-size:12px;font-weight:500;">
-            <span class="material-symbols-outlined" style="font-size:14px;">replay</span>
-            Re-run
-          </button>
-          <button id="cta-delete" onclick="confirmDeleteVersion(VERSIONS[0]?.tag)"
-                  style="display:none;width:36px;height:36px;display:none;align-items:center;justify-content:center;border:1px solid #e2e3e8;border-radius:10px;background:transparent;cursor:pointer;color:#74777d;transition:all .15s;"
-                  onmouseover="this.style.borderColor='#fca5a5';this.style.color='#ba1a1a';this.style.background='#fff0f0'"
-                  onmouseleave="this.style.borderColor='#e2e3e8';this.style.color='#74777d';this.style.background='transparent'"
-                  title="Delete current version">
-            <span class="material-symbols-outlined" style="font-size:16px;">delete_outline</span>
-          </button>
+      <span class="text-outline-variant select-none">·</span>
+
+      <!-- Commit chip with picker dropdown -->
+      <div class="relative" id="commit-chip-wrap">
+        <button id="commit-chip-btn" onclick="toggleCommitPicker()"
+                class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors"
+                style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+          <span id="chip-icon-sym" class="material-symbols-outlined text-on-tertiary-container flex-shrink-0" style="font-size:13px;">alt_route</span>
+          <div id="chip-icon-spin" class="spin flex-shrink-0" style="display:none;width:11px;height:11px;border:1.5px solid #0058be;border-top-color:transparent;border-radius:9999px;"></div>
+          <span id="chip-ref" class="text-on-surface font-semibold">main @ abc1234</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="chip-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <!-- Commit picker dropdown -->
+        <div id="commit-picker"
+             class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden"
+             style="min-width:380px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+          <div class="flex items-center border-b border-outline-variant px-3">
+            <button id="cp-tab-versions" onclick="switchPickerTab('versions')"
+                    class="px-1 py-2.5 mr-5 font-label-md text-label-md border-b-2 border-secondary text-secondary -mb-px transition-colors">
+              Versions
+            </button>
+            <button id="cp-tab-commits" onclick="switchPickerTab('commits')"
+                    class="px-1 py-2.5 font-label-md text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-on-surface -mb-px transition-colors">
+              Commits
+            </button>
+          </div>
+          <div id="cp-panel-versions">
+            <div class="overflow-y-auto" style="max-height:280px;" id="cp-versions-list"></div>
+          </div>
+          <div id="cp-panel-commits" style="display:none;">
+            <div class="px-3 py-2 border-b border-outline-variant">
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+                <input type="text" placeholder="Search commits…" oninput="filterPickerCommits(this.value)"
+                       class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline"
+                       style="font-family:'JetBrains Mono';font-size:11px;">
+              </div>
+            </div>
+            <div class="overflow-y-auto" style="max-height:240px;" id="cp-commits-list"></div>
+          </div>
         </div>
       </div>
+    </div>
+    <!-- Admin-only CTAs -->
+    <div class="flex items-center gap-1.5">
+      <button id="cta-run" onclick="openRunConfig()"
+              class="admin-only flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors"
+              style="display:none;font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
+        <span class="material-symbols-outlined" style="font-size:15px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">play_circle</span>
+        RUN ANALYSIS
+      </button>
+      <button id="cta-cancel" onclick="cancelGeneration()"
+              class="admin-only flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors"
+              style="display:none;border:1px solid #fca5a5;color:#ba1a1a;background:transparent;font-family:'JetBrains Mono';font-size:11px;font-weight:500;"
+              onmouseenter="this.style.background='#fff0f0'" onmouseleave="this.style.background='transparent'">
+        <span class="material-symbols-outlined" style="font-size:15px;">stop_circle</span>
+        Cancel Job
+      </button>
+      <a id="cta-versions" href="versions.html"
+         class="admin-only"
+         style="display:none;align-items:center;gap:4px;padding:5px 12px;border:1px solid #e2e3e8;border-radius:8px;background:white;cursor:pointer;font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;text-decoration:none;transition:all .15s;"
+         onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
+         onmouseleave="this.style.borderColor='#e2e3e8';this.style.color='#44474c'">
+        <span class="material-symbols-outlined" style="font-size:14px;">sell</span>
+        Versions
+      </a>
+    </div>
+  </div>
+
+  <!-- Scrollable content -->
+  <div class="flex-1 overflow-y-auto bg-background">
+    <div class="px-container-padding py-6" style="max-width:1280px;">
 
       <!-- ═══ EMPTY STATE BANNER ═══ -->
       <div id="empty-banner" style="display:none;"
@@ -469,102 +497,122 @@
 
       <!-- ═══ KPI STRIP (generated state only) ═══ -->
       <div id="kpi-strip" class="mb-6" style="display:none;">
-        <div id="kpi-cards" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;"></div>
+        <div id="kpi-cards" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:1rem;align-items:stretch;"></div>
       </div>
 
-      <!-- ═══ DOCUMENTS SUMMARY (full width) ═══ -->
-      <div id="docs-section" class="bg-white border border-outline-variant rounded-xl overflow-hidden mb-6" style="display:none;">
-        <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
-          <h2 class="text-headline-sm text-on-surface">Documents</h2>
-          <a href="documents.html" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#0058be;text-decoration:none;font-weight:500;"
-            onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
-            View all
-            <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
-          </a>
+      <!-- ═══ CONTENT ROW: DOCS (left) + TEAM & HISTORY (right) ═══ -->
+      <div id="content-row" class="flex gap-6 mb-8 items-stretch" style="display:none;">
+
+        <!-- Left column: docs table + team -->
+        <div id="left-col" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1rem;">
+        <div id="docs-section" class="bg-white border border-outline-variant rounded-xl overflow-hidden">
+          <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
+            <div>
+              <h2 id="docs-section-title" class="text-headline-sm text-on-surface">Documents</h2>
+              <p id="docs-section-subtitle" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="display:none;"></p>
+            </div>
+            <a id="docs-section-link" href="documents.html" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#0058be;text-decoration:none;font-weight:500;"
+              onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+              View all
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </a>
+          </div>
+          <table class="w-full">
+            <thead id="docs-thead">
+              <tr class="bg-surface-container-low border-b border-outline-variant">
+                <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Process</th>
+                <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:210px;">Assignment</th>
+                <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Team</th>
+                <th style="width:44px;"></th>
+              </tr>
+            </thead>
+            <tbody id="docs-tbody"></tbody>
+          </table>
         </div>
-        <table class="w-full">
-          <thead>
-            <tr class="bg-surface-container-low border-b border-outline-variant">
-              <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Process</th>
-              <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:210px;">Assignment</th>
-              <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Team</th>
-              <th style="width:44px;"></th>
-            </tr>
-          </thead>
-          <tbody id="docs-tbody"></tbody>
-        </table>
-      </div>
 
-      <!-- ═══ BOTTOM ROW: TEAM + HISTORY ═══ -->
-      <div id="bottom-row" class="flex gap-6 mb-8" style="display:none;">
-
-        <!-- Team -->
-        <div class="bg-white border border-outline-variant rounded-xl overflow-hidden flex flex-col" style="flex:62;min-width:0;">
-          <div class="px-5 py-4 border-b border-outline-variant flex items-center justify-between flex-shrink-0">
+        <!-- Team (always below documents) -->
+        <div id="team-card" class="bg-white border border-outline-variant rounded-xl overflow-hidden">
+          <div class="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
             <h2 class="text-headline-sm text-on-surface">Team</h2>
-            <button class="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant hover:bg-surface-container text-on-surface-variant rounded-lg transition-colors font-label-sm text-label-sm">
+            <button class="flex items-center gap-1 px-2.5 py-1.5 border border-outline-variant hover:bg-surface-container text-on-surface-variant rounded-lg transition-colors font-label-sm text-label-sm">
               <span class="material-symbols-outlined" style="font-size:14px;">person_add</span>
               Add
             </button>
           </div>
-          <table class="w-full">
-            <thead>
-              <tr class="bg-surface-container-low border-b border-outline-variant">
-                <th class="text-left px-5 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Member</th>
-                <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Role</th>
-                <th class="text-right px-5 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Assigned</th>
-                <th style="width:40px;"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
-                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#dbeafe;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#1e40af;">SC</span></div><span class="font-label-md text-label-md text-on-surface">Sarah Chen</span></div></td>
-                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Admin</span></td>
-                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">12 docs</td>
-                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
-              </tr>
-              <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
-                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#f3e8ff;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#7c3aed;">MW</span></div><span class="font-label-md text-label-md text-on-surface">Marcus Webb</span></div></td>
-                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Developer</span></td>
-                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">8 docs</td>
-                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
-              </tr>
-              <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
-                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#fce7f3;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#be185d;">AF</span></div><span class="font-label-md text-label-md text-on-surface">Ana Ferreira</span></div></td>
-                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Developer</span></td>
-                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">4 docs</td>
-                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
-              </tr>
-              <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
-                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#ecfdf5;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#065f46;">LP</span></div><span class="font-label-md text-label-md text-on-surface">Liam Park</span></div></td>
-                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Developer</span></td>
-                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">6 docs</td>
-                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
-              </tr>
-              <tr class="hover:bg-surface-container-low transition-colors">
-                <td class="px-5 py-3.5"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style="background:#fff7ed;"><span style="font-family:Inter;font-size:11px;font-weight:700;color:#c2410c;">ZP</span></div><span class="font-label-md text-label-md text-on-surface">Zara Patel</span></div></td>
-                <td class="px-4 py-3.5"><span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 8px;border-radius:99px;text-transform:uppercase;">Admin</span></td>
-                <td class="text-right px-5 py-3.5 font-label-md text-label-md text-on-surface" style="font-family:'JetBrains Mono'">11 docs</td>
-                <td class="px-3 py-3.5"><button class="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:16px;">more_vert</span></button></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- History -->
-        <div class="bg-white border border-outline-variant rounded-xl overflow-hidden flex flex-col" style="flex:38;min-width:0;">
-          <div class="px-5 py-4 border-b border-outline-variant flex-shrink-0">
-            <h2 class="text-headline-sm text-on-surface">History</h2>
+          <div class="divide-y divide-outline-variant">
+            <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#dbeafe;"><span style="font-family:Inter;font-size:10px;font-weight:700;color:#1e40af;">SC</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Sarah Chen</p></div>
+              <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Admin</span>
+            </div>
+            <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#f3e8ff;"><span style="font-family:Inter;font-size:10px;font-weight:700;color:#7c3aed;">MW</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Marcus Webb</p></div>
+              <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Dev</span>
+            </div>
+            <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#fce7f3;"><span style="font-family:Inter;font-size:10px;font-weight:700;color:#be185d;">AF</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Ana Ferreira</p></div>
+              <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Dev</span>
+            </div>
+            <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#ecfdf5;"><span style="font-family:Inter;font-size:10px;font-weight:700;color:#065f46;">LP</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Liam Park</p></div>
+              <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#44474c;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Dev</span>
+            </div>
+            <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-container-low transition-colors">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:#fff7ed;"><span style="font-family:Inter;font-size:10px;font-weight:700;color:#c2410c;">ZP</span></div>
+              <div class="flex-1 min-w-0"><p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Zara Patel</p></div>
+              <span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#e5eeff;color:#0058be;padding:1px 7px;border-radius:99px;text-transform:uppercase;">Admin</span>
+            </div>
           </div>
-          <div class="flex items-center border-b border-outline-variant px-5 flex-shrink-0">
-            <button id="vc-tab-versions" onclick="switchVcTab('versions')" class="px-1 py-2.5 mr-5 font-label-md text-label-md border-b-2 border-secondary text-secondary -mb-px transition-colors">Versions</button>
-            <button id="vc-tab-commits" onclick="switchVcTab('commits')" class="px-1 py-2.5 font-label-md text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-on-surface -mb-px transition-colors">Commits</button>
-          </div>
-          <div id="vc-panel-versions" class="overflow-y-auto" style="height:280px;"></div>
-          <div id="vc-panel-commits" class="overflow-y-auto" style="display:none;height:280px;"></div>
         </div>
+        </div><!-- end left-col -->
 
-      </div>
+        <!-- Right: role-aware sidebar -->
+        <div id="right-sidebar" style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:1rem;">
+
+          <!-- Review Queue (admin only) -->
+          <div id="review-queue-card" class="bg-white border border-outline-variant rounded-xl overflow-hidden">
+            <div class="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
+              <h2 class="text-headline-sm text-on-surface">Review Queue</h2>
+              <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#e5eeff;color:#0058be;padding:2px 10px;border-radius:99px;">3 pending</span>
+            </div>
+            <div class="divide-y divide-outline-variant">
+              <div class="px-4 py-3 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
+                <div class="flex-1 min-w-0">
+                  <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake-FMEA — Detailed Design</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Assigned to you</p>
+                </div>
+                <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#ffdad6;color:#ba1a1a;padding:2px 7px;border-radius:99px;flex-shrink:0;">Jun 20</span>
+              </div>
+              <div class="px-4 py-3 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
+                <div class="flex-1 min-w-0">
+                  <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">System Architecture Document</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Ana Ferreira</p>
+                </div>
+                <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;background:#fff8e6;color:#d97706;padding:2px 7px;border-radius:99px;flex-shrink:0;">Jun 25</span>
+              </div>
+              <div class="px-4 py-3 flex items-center gap-3 hover:bg-surface-container-low transition-colors cursor-pointer" onclick="location.href='documents.html'">
+                <div class="flex-1 min-w-0">
+                  <p class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Layer1-Sample — Detailed Design</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Marcus Webb</p>
+                </div>
+                <span style="font-size:10px;color:#74777d;flex-shrink:0;">Jun 30</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Last Actions (both roles — content differs) -->
+          <div id="last-actions-card" class="bg-white border border-outline-variant rounded-xl overflow-hidden" style="flex:1;display:flex;flex-direction:column;">
+            <div class="px-4 py-3.5 border-b border-outline-variant">
+              <h2 class="text-headline-sm text-on-surface">Last Actions</h2>
+            </div>
+            <div id="last-actions-body" class="overflow-y-auto" style="flex:1;"></div>
+          </div>
+
+        </div><!-- end right sidebar -->
+      </div><!-- end content-row -->
     </div>
   </div>
 </main>
@@ -770,7 +818,7 @@ const TEAM_MEMBERS = [
 ];
 
 const DOCUMENTS = [
-  { id:1,  name: 'Layer1-Sample — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', assignees: ['MS','SC'],       status: 'in_review', due: 'Jun 30' },
+  { id:1,  name: 'Layer1-Sample — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', assignees: ['MS','SC'],       status: 'in_review', due: 'Jun 18', overdue: true },
   { id:2,  name: 'Layer2-Engine — Detailed Design',     process: 'SWE.3', version: 'v1.2.0', assignees: [],                status: 'never',     due: '—'      },
   { id:3,  name: 'Brake-FMEA — Detailed Design',        process: 'SWE.3', version: 'v1.2.0', assignees: ['MS'],            status: 'approved',  due: 'Jun 20' },
   { id:4,  name: 'ADAS-Control — Detailed Design',      process: 'SWE.3', version: 'v1.2.0', assignees: ['ZP','LP'],       status: 'in_review', due: 'Jul 5'  },
@@ -793,7 +841,22 @@ const PROCESSES = [
   { key: 'SWE.2', label: 'SW Architecture' },
 ];
 
+const LAST_ACTIONS_ADMIN = [
+  { icon: 'check_circle', iconColor: '#00a572', text: 'Sarah C. approved CAN-Matrix',                time: '1d ago' },
+  { icon: 'play_circle',  iconColor: '#0058be', text: 'Manoj S. ran analysis — v1.2.0',             time: '3d ago' },
+  { icon: 'person_add',   iconColor: '#7c3aed', text: 'Ana F. assigned to System Architecture',     time: '4d ago' },
+  { icon: 'sell',         iconColor: '#00a572', text: 'v1.1.0 tagged — Engine + Brake complete',    time: '6d ago' },
+  { icon: 'rate_review',  iconColor: '#f59e0b', text: 'Liam P. submitted Diagnostics for review',  time: '1w ago' },
+];
+const LAST_ACTIONS_DEV = [
+  { icon: 'check_circle', iconColor: '#00a572', text: 'Sarah C. approved your Brake-FMEA',          time: '1d ago' },
+  { icon: 'play_circle',  iconColor: '#0058be', text: 'Analysis ran — v1.2.0 ready',                time: '3d ago' },
+  { icon: 'person_add',   iconColor: '#7c3aed', text: 'Zara P. assigned you to Detailed SW Design', time: '5d ago' },
+  { icon: 'rate_review',  iconColor: '#f59e0b', text: 'Ana F. submitted System Arch for review',    time: '1w ago' },
+];
+
 let pickerDocId = null;
+const CURRENT_DEV_ID = 'MS'; // developer persona for demo
 
 function memberAvatar(m, size) {
   size = size || 26;
@@ -803,8 +866,10 @@ function memberAvatar(m, size) {
 }
 
 function renderAssigneeCell(doc) {
+  const isAdmin = currentRole === 'admin';
   if (!doc.assignees.length) {
-    return `<button onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)"
+    if (!isAdmin) return `<span style="font-size:11px;color:#c4c6cd;">—</span>`;
+    return `<button class="assignee-cell-btn" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)"
       style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border:1.5px dashed #c4c6cd;border-radius:99px;background:transparent;cursor:pointer;color:#74777d;font-size:11px;"
       onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
       onmouseout="this.style.borderColor='#c4c6cd';this.style.color='#74777d'">
@@ -822,9 +887,12 @@ function renderAssigneeCell(doc) {
   const overflowChip = overflow > 0
     ? `<div style="margin-left:-6px;width:26px;height:26px;border-radius:50%;background:#f3f4f6;border:2px solid white;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#44474c;">+${overflow}</div>`
     : '';
+  if (!isAdmin) {
+    return `<div style="display:flex;align-items:center;">${avatars}${overflowChip}</div>`;
+  }
   return `<div style="display:flex;align-items:center;gap:4px;">
     <div style="display:flex;align-items:center;" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)" title="Manage assignees" class="cursor-pointer">${avatars}${overflowChip}</div>
-    <button onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)" title="Add assignee"
+    <button class="assignee-cell-btn" onclick="event.stopPropagation();openAssigneePicker(${doc.id},this)" title="Add assignee"
       style="width:22px;height:22px;border-radius:50%;border:1.5px dashed #c4c6cd;background:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:#74777d;flex-shrink:0;"
       onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
       onmouseout="this.style.borderColor='#c4c6cd';this.style.color='#74777d'">
@@ -845,63 +913,82 @@ function renderKpi() {
   const unassigned = total - assigned;
   const assignPct  = total ? Math.round(assigned / total * 100) : 0;
 
-  // SVG donut: r=33, C=2π×33≈207.35
-  const C = 207.35;
-  const aArc = approved   / total * C;
-  const rArc = inReview   / total * C;
-  const nArc = notStarted / total * C;
+  // SVG donut r=52, C=2π×52≈326.73
+  const C2 = 326.73;
+  const aArc2 = approved   / total * C2;
+  const rArc2 = inReview   / total * C2;
+  const nArc2 = notStarted / total * C2;
 
   const donutCard = `
-    <div class="bg-white border border-outline-variant rounded-xl p-5">
-      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-4">Document Status</p>
-      <div style="display:flex;align-items:center;gap:18px;">
-        <div style="flex-shrink:0;position:relative;">
-          <svg width="86" height="86" viewBox="0 0 86 86">
-            <g transform="rotate(-90 43 43)">
-              <circle cx="43" cy="43" r="33" fill="none" stroke="#e8eaed" stroke-width="10"/>
-              <circle cx="43" cy="43" r="33" fill="none" stroke="#00a572" stroke-width="10"
-                stroke-dasharray="${aArc.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="0"/>
-              <circle cx="43" cy="43" r="33" fill="none" stroke="#f59e0b" stroke-width="10"
-                stroke-dasharray="${rArc.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-aArc).toFixed(2)}"/>
-              <circle cx="43" cy="43" r="33" fill="none" stroke="#c4c6cd" stroke-width="10"
-                stroke-dasharray="${nArc.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-(aArc + rArc)).toFixed(2)}"/>
-            </g>
-            <text x="43" y="38" text-anchor="middle" font-size="19" font-weight="700" fill="#0b1c30" font-family="Inter,sans-serif">${total}</text>
-            <text x="43" y="52" text-anchor="middle" font-size="9" fill="#9aa0a6" font-family="Inter,sans-serif" letter-spacing="0.5">docs</text>
-          </svg>
-        </div>
-        <div style="flex:1;display:flex;flex-direction:column;gap:9px;">
+    <div class="bg-white border border-outline-variant rounded-xl p-6" style="display:flex;align-items:center;gap:32px;">
+      <div style="flex-shrink:0;">
+        <svg width="136" height="136" viewBox="0 0 136 136">
+          <g transform="rotate(-90 68 68)">
+            <circle cx="68" cy="68" r="52" fill="none" stroke="#e8eaed" stroke-width="14"/>
+            <circle cx="68" cy="68" r="52" fill="none" stroke="#00a572" stroke-width="14"
+              stroke-dasharray="${aArc2.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="0"/>
+            <circle cx="68" cy="68" r="52" fill="none" stroke="#f59e0b" stroke-width="14"
+              stroke-dasharray="${rArc2.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="${(-aArc2).toFixed(2)}"/>
+            <circle cx="68" cy="68" r="52" fill="none" stroke="#c4c6cd" stroke-width="14"
+              stroke-dasharray="${nArc2.toFixed(2)} ${C2.toFixed(2)}" stroke-dashoffset="${(-(aArc2 + rArc2)).toFixed(2)}"/>
+          </g>
+          <text x="68" y="61" text-anchor="middle" font-size="30" font-weight="700" fill="#0b1c30" font-family="Inter,sans-serif">${total}</text>
+          <text x="68" y="79" text-anchor="middle" font-size="11" fill="#9aa0a6" font-family="Inter,sans-serif" letter-spacing="0.5">documents</text>
+        </svg>
+      </div>
+      <div style="flex:1;">
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-5">Document Status</p>
+        <div style="display:flex;flex-direction:column;gap:13px;">
           <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:7px;">
-              <span style="width:8px;height:8px;border-radius:50%;background:#00a572;flex-shrink:0;"></span>
-              <span style="font-size:12px;color:#44474c;">Approved</span>
+            <div style="display:flex;align-items:center;gap:9px;">
+              <span style="width:10px;height:10px;border-radius:50%;background:#00a572;flex-shrink:0;"></span>
+              <span style="font-size:13px;color:#44474c;">Approved</span>
             </div>
-            <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${approved}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${approved}</span>
+              <span style="font-size:11px;color:#9aa0a6;min-width:36px;text-align:right;">${total ? Math.round(approved/total*100) : 0}%</span>
+            </div>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:7px;">
-              <span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
-              <span style="font-size:12px;color:#44474c;">In Review</span>
+            <div style="display:flex;align-items:center;gap:9px;">
+              <span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
+              <span style="font-size:13px;color:#44474c;">In Review</span>
             </div>
-            <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${inReview}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${inReview}</span>
+              <span style="font-size:11px;color:#9aa0a6;min-width:36px;text-align:right;">${total ? Math.round(inReview/total*100) : 0}%</span>
+            </div>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:7px;">
-              <span style="width:8px;height:8px;border-radius:50%;background:#c4c6cd;flex-shrink:0;"></span>
-              <span style="font-size:12px;color:#44474c;">Not started</span>
+            <div style="display:flex;align-items:center;gap:9px;">
+              <span style="width:10px;height:10px;border-radius:50%;background:#c4c6cd;flex-shrink:0;"></span>
+              <span style="font-size:13px;color:#44474c;">Not started</span>
             </div>
-            <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${notStarted}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:#0b1c30;">${notStarted}</span>
+              <span style="font-size:11px;color:#9aa0a6;min-width:36px;text-align:right;">${total ? Math.round(notStarted/total*100) : 0}%</span>
+            </div>
           </div>
         </div>
       </div>
     </div>`;
 
-  const assignCard = `
+  const versions = (window.VERSIONS || []);
+  const latestTag = versions.length ? versions[0].tag : 'v1.2.0';
+
+  const myDocs       = DOCUMENTS.filter(d => d.assignees.includes(CURRENT_DEV_ID));
+  const myAssigned   = myDocs.length;
+  const myInReview   = myDocs.filter(d => d.status === 'in_review').length;
+  const myApproved   = myDocs.filter(d => d.status === 'approved').length;
+  const myOverdue    = myDocs.filter(d => d.overdue).length;
+  const myPct        = total ? Math.round(myAssigned / total * 100) : 0;
+
+  const assignCardAdmin = `
     <div class="bg-white border border-outline-variant rounded-xl p-5">
       <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Assignment</p>
       <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:10px;">
-        <span style="font-family:'JetBrains Mono';font-size:34px;font-weight:700;color:#0b1c30;line-height:1;">${assigned}</span>
-        <span style="font-size:14px;color:#9aa0a6;line-height:1;">/ ${total} assigned</span>
+        <span style="font-family:'JetBrains Mono';font-size:32px;font-weight:700;color:#0b1c30;line-height:1;">${assigned}</span>
+        <span style="font-size:13px;color:#9aa0a6;line-height:1;">/ ${total} assigned</span>
       </div>
       <div style="height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;margin-bottom:10px;">
         <div style="height:100%;width:${assignPct}%;background:${assignPct === 100 ? '#00a572' : '#0058be'};border-radius:99px;transition:width .4s;"></div>
@@ -911,93 +998,207 @@ function renderKpi() {
         : `<p style="font-size:12px;color:#00a572;font-weight:500;">All docs have owners</p>`}
     </div>`;
 
-  const versions = (window.VERSIONS || []);
-  const latestTag = versions.length ? versions[0].tag : 'v1.2.0';
-  const projectCard = `
+  const assignCardDev = `
+    <div class="bg-white border border-outline-variant rounded-xl p-5" style="${myOverdue > 0 ? 'border-color:#fca5a5;' : ''}">
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">My Assignments</p>
+      <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:10px;">
+        <span style="font-family:'JetBrains Mono';font-size:32px;font-weight:700;color:#0b1c30;line-height:1;">${myAssigned}</span>
+        <span style="font-size:13px;color:#9aa0a6;line-height:1;">/ ${total} docs</span>
+      </div>
+      <div style="height:6px;border-radius:99px;background:#e8eaed;overflow:hidden;margin-bottom:10px;">
+        <div style="height:100%;width:${myPct}%;background:${myOverdue > 0 ? '#ba1a1a' : '#0058be'};border-radius:99px;transition:width .4s;"></div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        ${myOverdue > 0 ? `<div style="display:flex;align-items:center;gap:5px;">
+          <span class="material-symbols-outlined" style="font-size:13px;color:#ba1a1a;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">warning</span>
+          <span style="font-size:11px;color:#ba1a1a;font-weight:600;">${myOverdue} overdue</span>
+        </div>` : ''}
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
+          <span style="font-size:11px;color:#74777d;">${myInReview} in review</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="width:7px;height:7px;border-radius:50%;background:#00a572;flex-shrink:0;"></span>
+          <span style="font-size:11px;color:#74777d;">${myApproved} approved</span>
+        </div>
+      </div>
+    </div>`;
+
+  const projectInfoCard = `
     <div class="bg-white border border-outline-variant rounded-xl p-5">
-      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Overview</p>
-      <div style="display:flex;flex-direction:column;gap:11px;">
+      <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] mb-3">Project Info</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <span style="font-size:12px;color:#74777d;">Latest version</span>
           <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;color:#0058be;background:#e5eeff;padding:2px 9px;border-radius:5px;">${latestTag}</span>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <span style="font-size:12px;color:#74777d;">Team members</span>
-          <span style="font-family:'JetBrains Mono';font-size:14px;font-weight:700;color:#0b1c30;">${TEAM_MEMBERS.length}</span>
+          <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${TEAM_MEMBERS.length}</span>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <span style="font-size:12px;color:#74777d;">Processes</span>
-          <span style="font-family:'JetBrains Mono';font-size:14px;font-weight:700;color:#0b1c30;">${PROCESSES.length}</span>
+          <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${PROCESSES.length}</span>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <span style="font-size:12px;color:#74777d;">Versions</span>
-          <span style="font-family:'JetBrains Mono';font-size:14px;font-weight:700;color:#0b1c30;">${versions.length || 3}</span>
+          <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0b1c30;">${versions.length || 3}</span>
         </div>
       </div>
     </div>`;
 
-  container.innerHTML = donutCard + assignCard + projectCard;
+  container.innerHTML = donutCard
+    + (currentRole === 'developer' ? assignCardDev : assignCardAdmin)
+    + projectInfoCard;
+}
+
+function renderLastActions() {
+  const body = document.getElementById('last-actions-body');
+  if (!body) return;
+  const actions = currentRole === 'developer' ? LAST_ACTIONS_DEV : LAST_ACTIONS_ADMIN;
+  body.innerHTML = actions.map(a => `
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-bottom:1px solid #f0f1f3;">
+      <span class="material-symbols-outlined" style="font-size:15px;color:${a.iconColor};flex-shrink:0;margin-top:1px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${a.icon}</span>
+      <div style="flex:1;min-width:0;">
+        <p style="font-size:12px;color:#0b1c30;line-height:1.4;">${a.text}</p>
+        <p style="font-size:10px;color:#9aa0a6;margin-top:2px;font-family:'JetBrains Mono';">${a.time}</p>
+      </div>
+    </div>`).join('');
 }
 
 function renderDocs() {
-  const tbody = document.getElementById('docs-tbody');
+  const tbody  = document.getElementById('docs-tbody');
+  const thead  = document.getElementById('docs-thead');
+  const title  = document.getElementById('docs-section-title');
+  const sub    = document.getElementById('docs-section-subtitle');
+  const link   = document.getElementById('docs-section-link');
   if (!tbody) return;
 
-  tbody.innerHTML = PROCESSES.map(p => {
-    const docs  = DOCUMENTS.filter(d => d.process === p.key);
-    if (!docs.length) return '';
-    const total      = docs.length;
-    const assigned   = docs.filter(d => d.assignees.length > 0).length;
-    const unassigned = total - assigned;
-    const pct        = Math.round(assigned / total * 100);
-    const barColor   = pct === 100 ? '#00a572' : pct === 0 ? '#e2e3e8' : '#f59e0b';
-    const textColor  = pct === 100 ? '#00a572' : pct === 0 ? '#9aa0a6' : '#b45309';
+  if (currentRole === 'developer') {
+    const myDocs = DOCUMENTS.filter(d => d.assignees.includes(CURRENT_DEV_ID));
+    title.textContent = 'My Documents';
+    sub.textContent   = `${myDocs.length} document${myDocs.length !== 1 ? 's' : ''} assigned to you`;
+    sub.style.display = '';
+    link.textContent  = '';
+    link.innerHTML    = 'All Documents <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>';
 
-    const allIds = [...new Set(docs.flatMap(d => d.assignees))];
-    const shown  = allIds.slice(0, 4);
-    const extra  = allIds.length - 4;
-    const avatarStack = shown.length === 0
-      ? `<span style="font-size:11px;color:#c4c6cd;font-style:italic;">Unassigned</span>`
-      : `<div style="display:flex;align-items:center;">
-          ${shown.map((id, i) => {
-            const m = TEAM_MEMBERS.find(x => x.id === id);
-            return m ? `<div title="${m.name}" style="margin-left:${i>0?'-6px':'0'};position:relative;z-index:${10-i};">${memberAvatar(m,24)}</div>` : '';
-          }).join('')}
-          ${extra > 0 ? `<div style="margin-left:-6px;width:24px;height:24px;border-radius:50%;background:#f3f4f6;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#44474c;">+${extra}</div>` : ''}
-        </div>`;
+    thead.innerHTML = `<tr class="bg-surface-container-low border-b border-outline-variant">
+      <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Document</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Process</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:120px;">Status</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:90px;">Due</th>
+      <th style="width:72px;"></th>
+    </tr>`;
 
-    return `
-      <tr style="border-bottom:1px solid #e2e3e8;cursor:pointer;" onclick="window.location.href='documents.html'"
-        onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background=''">
-        <td style="padding:13px 20px;">
-          <div style="display:flex;align-items:center;gap:9px;">
-            <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;color:#0058be;background:#e5eeff;padding:2px 8px;border-radius:5px;flex-shrink:0;">${p.key}</span>
-            <div>
-              <div style="font-size:13px;font-weight:500;color:#0b1c30;line-height:1.3;">${p.label}</div>
-              <div style="font-size:11px;color:#74777d;">${total} doc${total !== 1 ? 's' : ''}</div>
+    const statusBadge = s => {
+      if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:2px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
+      if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:2px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+      return `<span style="font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f3f4f6;color:#74777d;border:1px solid #e2e3e8;padding:2px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">Not Started</span>`;
+    };
+
+    tbody.innerHTML = myDocs.map(doc => {
+      const proc = PROCESSES.find(p => p.key === doc.process);
+      const rowBg = doc.overdue ? '#fff5f5' : '';
+      const dueCl = doc.overdue ? '#ba1a1a' : doc.due === '—' ? '#c4c6cd' : '#44474c';
+      return `
+        <tr style="border-bottom:1px solid #e2e3e8;cursor:pointer;${doc.overdue ? 'box-shadow:inset 3px 0 0 #ba1a1a;' : ''}" onclick="window.location.href='documents.html'"
+          onmouseover="this.style.background='${doc.overdue ? '#ffe8e8' : '#f8f9fa'}'" onmouseout="this.style.background='${rowBg}'">
+          <td style="padding:13px 20px;background:${rowBg};">
+            <div style="font-size:13px;font-weight:500;color:#0b1c30;line-height:1.3;">${doc.name}</div>
+            <div style="font-size:11px;color:#74777d;margin-top:2px;">${proc ? proc.label : doc.process}</div>
+          </td>
+          <td style="padding:13px 16px;background:${rowBg};">
+            <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;color:#0058be;background:#e5eeff;padding:2px 8px;border-radius:5px;">${doc.process}</span>
+          </td>
+          <td style="padding:13px 16px;background:${rowBg};">${statusBadge(doc.status)}</td>
+          <td style="padding:13px 16px;background:${rowBg};font-family:'JetBrains Mono';font-size:11px;color:${dueCl};font-weight:${doc.overdue ? '600' : '400'};">${doc.overdue ? '⚠ ' : ''}${doc.due}</td>
+          <td style="padding:8px 12px;background:${rowBg};">
+            <div style="display:flex;align-items:center;gap:4px;">
+              <button onclick="event.stopPropagation()" title="Open"
+                style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #e2e3e8;border-radius:6px;background:white;cursor:pointer;color:#74777d;"
+                onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
+                onmouseout="this.style.borderColor='#e2e3e8';this.style.color='#74777d'">
+                <span class="material-symbols-outlined" style="font-size:14px;">open_in_new</span>
+              </button>
+              <button onclick="event.stopPropagation()" title="Download"
+                style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #e2e3e8;border-radius:6px;background:white;cursor:pointer;color:#74777d;"
+                onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
+                onmouseout="this.style.borderColor='#e2e3e8';this.style.color='#74777d'">
+                <span class="material-symbols-outlined" style="font-size:14px;">download</span>
+              </button>
             </div>
-          </div>
-        </td>
-        <td style="padding:13px 16px;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <div style="flex:1;height:4px;border-radius:99px;background:#e8eaed;overflow:hidden;min-width:72px;">
-              <div style="height:100%;width:${pct}%;background:${barColor};border-radius:99px;"></div>
+          </td>
+        </tr>`;
+    }).join('');
+
+  } else {
+    title.textContent = 'Documents';
+    sub.style.display = 'none';
+    link.innerHTML    = 'View all <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>';
+
+    thead.innerHTML = `<tr class="bg-surface-container-low border-b border-outline-variant">
+      <th class="text-left px-5 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Process</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:210px;">Assignment</th>
+      <th class="text-left px-4 py-2.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:160px;">Team</th>
+      <th style="width:44px;"></th>
+    </tr>`;
+
+    tbody.innerHTML = PROCESSES.map(p => {
+      const docs  = DOCUMENTS.filter(d => d.process === p.key);
+      if (!docs.length) return '';
+      const total      = docs.length;
+      const assigned   = docs.filter(d => d.assignees.length > 0).length;
+      const unassigned = total - assigned;
+      const pct        = Math.round(assigned / total * 100);
+      const barColor   = pct === 100 ? '#00a572' : pct === 0 ? '#e2e3e8' : '#f59e0b';
+      const textColor  = pct === 100 ? '#00a572' : pct === 0 ? '#9aa0a6' : '#b45309';
+
+      const allIds = [...new Set(docs.flatMap(d => d.assignees))];
+      const shown  = allIds.slice(0, 4);
+      const extra  = allIds.length - 4;
+      const avatarStack = shown.length === 0
+        ? `<span style="font-size:11px;color:#c4c6cd;font-style:italic;">Unassigned</span>`
+        : `<div style="display:flex;align-items:center;">
+            ${shown.map((id, i) => {
+              const m = TEAM_MEMBERS.find(x => x.id === id);
+              return m ? `<div title="${m.name}" style="margin-left:${i>0?'-6px':'0'};position:relative;z-index:${10-i};">${memberAvatar(m,24)}</div>` : '';
+            }).join('')}
+            ${extra > 0 ? `<div style="margin-left:-6px;width:24px;height:24px;border-radius:50%;background:#f3f4f6;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#44474c;">+${extra}</div>` : ''}
+          </div>`;
+
+      return `
+        <tr style="border-bottom:1px solid #e2e3e8;cursor:pointer;" onclick="window.location.href='documents.html'"
+          onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background=''">
+          <td style="padding:13px 20px;">
+            <div style="display:flex;align-items:center;gap:9px;">
+              <span style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;color:#0058be;background:#e5eeff;padding:2px 8px;border-radius:5px;flex-shrink:0;">${p.key}</span>
+              <div>
+                <div style="font-size:13px;font-weight:500;color:#0b1c30;line-height:1.3;">${p.label}</div>
+                <div style="font-size:11px;color:#74777d;">${total} doc${total !== 1 ? 's' : ''}</div>
+              </div>
             </div>
-            <span style="font-size:11px;color:${textColor};font-weight:600;white-space:nowrap;">${assigned} / ${total}</span>
-            ${unassigned > 0 ? `<span style="font-size:10px;color:#b45309;background:#fff8e6;border:1px solid #f59e0b;padding:0 6px;border-radius:99px;font-weight:600;white-space:nowrap;">${unassigned} left</span>` : ''}
-          </div>
-        </td>
-        <td style="padding:13px 16px;">${avatarStack}</td>
-        <td style="padding:8px 12px;">
-          <button onclick="event.stopPropagation();window.location.href='documents.html'"
-            style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #e2e3e8;border-radius:6px;background:white;cursor:pointer;color:#74777d;"
-            onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
-            onmouseout="this.style.borderColor='#e2e3e8';this.style.color='#74777d'">
-            <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
-          </button>
-        </td>
-      </tr>`;
-  }).join('');
+          </td>
+          <td style="padding:13px 16px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="flex:1;height:4px;border-radius:99px;background:#e8eaed;overflow:hidden;min-width:72px;">
+                <div style="height:100%;width:${pct}%;background:${barColor};border-radius:99px;"></div>
+              </div>
+              <span style="font-size:11px;color:${textColor};font-weight:600;white-space:nowrap;">${assigned} / ${total}</span>
+              ${unassigned > 0 ? `<span style="font-size:10px;color:#b45309;background:#fff8e6;border:1px solid #f59e0b;padding:0 6px;border-radius:99px;font-weight:600;white-space:nowrap;">${unassigned} left</span>` : ''}
+            </div>
+          </td>
+          <td style="padding:13px 16px;">${avatarStack}</td>
+          <td style="padding:8px 12px;">
+            <button onclick="event.stopPropagation();window.location.href='documents.html'"
+              style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #e2e3e8;border-radius:6px;background:white;cursor:pointer;color:#74777d;"
+              onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
+              onmouseout="this.style.borderColor='#e2e3e8';this.style.color='#74777d'">
+              <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+            </button>
+          </td>
+        </tr>`;
+    }).join('');
+  }
 }
 
 // ── Assignee picker ──
@@ -1079,7 +1280,30 @@ document.addEventListener('click', e => {
   if (!document.getElementById('commit-chip-wrap').contains(e.target))
     document.getElementById('commit-picker').classList.add('hidden');
   document.getElementById('chip-chevron').style.transform = '';
+  if (!document.getElementById('sb-project-wrap').contains(e.target)) closeSbProject();
 });
+
+function toggleSbProject() {
+  const dd = document.getElementById('sb-project-dropdown');
+  const ch = document.getElementById('sb-project-chevron');
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open);
+  ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+function switchSbProject(name) {
+  document.getElementById('sb-project-name').textContent = name;
+  document.getElementById('current-project-name').textContent = name;
+  document.querySelectorAll('.sb-proj-opt').forEach(opt => {
+    const active = opt.dataset.proj === name;
+    opt.style.background = active ? '#eff4ff' : '';
+    opt.querySelector('.sb-proj-check').style.opacity = active ? '1' : '0';
+  });
+  closeSbProject();
+}
+function closeSbProject() {
+  document.getElementById('sb-project-dropdown').classList.add('hidden');
+  document.getElementById('sb-project-chevron').style.transform = '';
+}
 
 function switchPickerTab(tab) {
   const isCommits = tab === 'commits';
@@ -1222,22 +1446,50 @@ function selectVersion(tag) {
 // ── Versions & Commits right panel ──
 function switchVcTab(tab) {
   const isVersions = tab === 'versions';
+  const isCommits  = tab === 'commits';
+  const isRuns     = tab === 'runs';
   document.getElementById('vc-panel-versions').style.display = isVersions ? '' : 'none';
-  document.getElementById('vc-panel-commits').style.display  = isVersions ? 'none' : '';
+  document.getElementById('vc-panel-commits').style.display  = isCommits  ? '' : 'none';
+  document.getElementById('vc-panel-runs').style.display     = isRuns     ? '' : 'none';
+  if (isRuns) renderVcRuns();
   const tabV = document.getElementById('vc-tab-versions');
   const tabC = document.getElementById('vc-tab-commits');
-  tabV.classList.toggle('border-secondary', isVersions);
-  tabV.classList.toggle('text-secondary',   isVersions);
-  tabV.classList.toggle('border-transparent', !isVersions);
-  tabV.classList.toggle('text-on-surface-variant', !isVersions);
-  tabC.classList.toggle('border-secondary', !isVersions);
-  tabC.classList.toggle('text-secondary',   !isVersions);
-  tabC.classList.toggle('border-transparent', isVersions);
-  tabC.classList.toggle('text-on-surface-variant', isVersions);
+  const tabR = document.getElementById('vc-tab-runs');
+  [tabV, tabC, tabR].forEach(t => {
+    t.classList.remove('border-secondary','text-secondary');
+    t.classList.add('border-transparent','text-on-surface-variant');
+  });
+  const active = isVersions ? tabV : isCommits ? tabC : tabR;
+  active.classList.add('border-secondary','text-secondary');
+  active.classList.remove('border-transparent','text-on-surface-variant');
+}
+
+function renderVcRuns() {
+  const el = document.getElementById('vc-panel-runs');
+  if (el.innerHTML) return; // already rendered
+  const runs = [
+    { ok: true,  label: 'v2.4.1',  date: 'Jun 15', dur: '4h 22m', user: 'Manoj S.' },
+    { ok: true,  label: 'v2.4.0',  date: 'Jun 5',  dur: '1h 48m', user: 'Sarah C.' },
+    { ok: false, label: 'v2.3.9',  date: 'Jun 8',  dur: '—',      user: 'Arjun M.', note: 'Phase 2 failed' },
+    { ok: true,  label: 'v2.3.8',  date: 'May 29', dur: '3h 05m', user: 'Marcus W.' },
+    { ok: true,  label: 'v2.3.7',  date: 'May 20', dur: '2h 51m', user: 'Manoj S.' },
+  ];
+  el.innerHTML = runs.map(r => `
+    <div class="px-5 py-3.5 flex items-center gap-3">
+      <div class="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style="background:${r.ok ? '#e5fff3' : '#ffdad6'};">
+        <span class="material-symbols-outlined" style="font-size:15px;color:${r.ok ? '#00a572' : '#ba1a1a'};font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">${r.ok ? 'check_circle' : 'cancel'}</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <p class="font-label-md text-label-md text-on-surface">${r.label}${r.note ? ` <span style="font-weight:400;color:#74777d;">· ${r.note}</span>` : ''}</p>
+        <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">${r.date} · ${r.dur} · ${r.user}</p>
+      </div>
+      ${!r.ok ? `<button onclick="showToast('play_circle','Re-queued analysis','#0058be')" class="flex-shrink-0 text-secondary hover:underline" style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;">retry →</button>` : ''}
+    </div>`).join('');
 }
 
 function renderVcVersions() {
   const el = document.getElementById('vc-panel-versions');
+  if (!el) return;
   const accentColor = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
   const pill = s => {
     if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:1px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:5px;height:5px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
@@ -1261,7 +1513,7 @@ function renderVcVersions() {
               Compare
               <span class="material-symbols-outlined" style="font-size:11px;">open_in_new</span>
             </a>
-            <div style="position:relative;">
+            ${currentRole === 'admin' ? `<div style="position:relative;">
               <button onclick="event.stopPropagation();toggleVersionMenu('${mid}')"
                 style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;cursor:pointer;border-radius:5px;color:#74777d;"
                 onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
@@ -1282,7 +1534,7 @@ function renderVcVersions() {
                   Delete
                 </button>
               </div>
-            </div>
+            </div>` : ''}
           </div>
         </div>
         <p style="font-size:12px;color:#44474c;margin:0 0 6px;line-height:1.4;">${v.desc}</p>
@@ -1342,13 +1594,12 @@ function setState(state) {
   document.getElementById('gen-panel').style.display    = isGenerating ? '' : 'none';
   document.getElementById('empty-banner').style.display = isNever      ? '' : 'none';
   document.getElementById('kpi-strip').style.display    = isGenerated  ? 'block' : 'none';
-  document.getElementById('docs-section').style.display = isGenerated  ? 'block' : 'none';
-  document.getElementById('bottom-row').style.display   = isGenerated  ? 'flex'  : 'none';
+  document.getElementById('content-row').style.display  = isGenerated  ? 'flex'  : 'none';
 
-  document.getElementById('cta-run').style.display    = isNever      ? ''           : 'none';
-  document.getElementById('cta-cancel').style.display = isGenerating ? ''           : 'none';
-  document.getElementById('cta-rerun').style.display  = isGenerated  ? ''           : 'none';
-  document.getElementById('cta-delete').style.display = isGenerated  ? 'inline-flex': 'none';
+  const isAdmin = currentRole === 'admin';
+  document.getElementById('cta-run').style.display      = (isNever      && isAdmin) ? ''           : 'none';
+  document.getElementById('cta-cancel').style.display   = (isGenerating && isAdmin) ? ''           : 'none';
+  document.getElementById('cta-versions').style.display = (isGenerated  && isAdmin) ? 'inline-flex': 'none';
 
   // Commit chip spinner
   const sym  = document.getElementById('chip-icon-sym');
@@ -1393,6 +1644,49 @@ function toggleAdv() {
   b.classList.toggle('open', !open);
   c.style.transform = open ? '' : 'rotate(90deg)';
 }
+
+// ── Role switcher ──
+let currentRole = 'admin';
+
+function setRole(role) {
+  currentRole = role;
+  document.getElementById('role-chip-label').textContent = role === 'admin' ? 'Admin' : 'Developer';
+  document.getElementById('role-check-admin').style.visibility     = role === 'admin'     ? 'visible' : 'hidden';
+  document.getElementById('role-check-developer').style.visibility = role === 'developer' ? 'visible' : 'hidden';
+  // Sync topbar pills
+  document.getElementById('role-btn-admin').className = role === 'admin'
+    ? 'px-2.5 py-1 transition-colors bg-secondary text-white'
+    : 'px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container';
+  document.getElementById('role-btn-dev').className = role === 'developer'
+    ? 'px-2.5 py-1 transition-colors bg-secondary text-white'
+    : 'px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container';
+  closeRoleMenu();
+  // Re-run setState to update CTA visibility based on new role
+  const currentState = document.getElementById('gen-panel').style.display !== 'none' ? 'generating'
+                     : document.getElementById('empty-banner').style.display !== 'none' ? 'never'
+                     : 'generated';
+  setState(currentState);
+  renderKpi();
+  renderDocs();
+  renderLastActions();
+  document.getElementById('review-queue-card').style.display = role === 'developer' ? 'none' : '';
+  document.getElementById('team-card').style.display         = role === 'developer' ? 'none' : '';
+}
+function toggleRoleMenu() {
+  const menu = document.getElementById('role-menu');
+  const chevron = document.getElementById('role-chip-chevron');
+  const isHidden = menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !isHidden);
+  chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+}
+function closeRoleMenu() {
+  document.getElementById('role-menu').classList.add('hidden');
+  document.getElementById('role-chip-chevron').style.transform = '';
+}
+document.addEventListener('click', e => {
+  const sw = document.getElementById('role-switcher');
+  if (sw && !sw.contains(e.target)) closeRoleMenu();
+});
 
 // ── Version card kebab menu ──
 let _openVersionMenu = null;
@@ -1671,10 +1965,9 @@ document.getElementById('delete-version-modal').addEventListener('click', e => {
 
 // ── Init ──
 updateChip();
-renderVcVersions();
-renderVcCommits();
 renderKpi();
 renderDocs();
+renderLastActions();
 setState('generated');
 </script>
 </body>
