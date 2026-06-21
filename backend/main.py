@@ -2378,12 +2378,12 @@ def _scope_to_cli(scope: Optional[dict]) -> str:
     return f"{stype}:{','.join(names)}"
 
 
-def _spawn_generate(extra_args: List[str], output_file_path: str) -> subprocess.Popen:
-    """Spawn `python src/incremental/generate.py ...`, capturing stdout+stderr
-    (which includes the inherited run.py phase markers) into output_file_path so
-    the existing job-status machinery can track progress. Mirrors _spawn_run_py's
-    process-group flags for clean tree-kill on cancel."""
-    cmd = [sys.executable, os.path.join("src", "incremental", "generate.py"), *extra_args]
+def _spawn_generate(script_rel: str, extra_args: List[str], output_file_path: str) -> subprocess.Popen:
+    """Spawn `python <script_rel> ...` (the full-gen `generate.py` or the incremental
+    `engine.py`), capturing stdout+stderr (which includes the inherited run.py phase
+    markers) into output_file_path so the existing job-status machinery can track
+    progress. Mirrors _spawn_run_py's process-group flags for clean tree-kill."""
+    cmd = [sys.executable, script_rel, *extra_args]
     os.makedirs(os.path.dirname(output_file_path) or ".", exist_ok=True)
     out_fh = open(output_file_path, "w", encoding="utf-8", buffering=1)
     popen_kwargs: Dict = dict(cwd=_REPO_ROOT, stdout=out_fh, stderr=subprocess.STDOUT)
@@ -2399,9 +2399,12 @@ def _spawn_generate(extra_args: List[str], output_file_path: str) -> subprocess.
 
 @app.post("/api/v1/projects/{project_id}/generate")
 async def generate_version(project_id: str, request: dict, background_tasks: BackgroundTasks):
-    """Start a full-generation version (doc 05 §5.2). M1.3b implements the FULL
-    path only; mode:"auto"/baseline (incremental) arrives in M2. Returns a jobId
-    (poll /jobs/{jobId}/status) and the versionId being produced.
+    """Start a generation (doc 05 §5.2). `mode:"auto"` (default) runs INCREMENTAL
+    when a baseline ancestor exists (else full); `mode:"full"` forces a full gen.
+    The baseline decision (auto nearest-ancestor or an explicit `baseVersionId`
+    override) is computed here and returned, and dispatches to engine.py
+    (incremental) or generate.py (full). Returns a jobId (poll /jobs/{jobId}/status)
+    + the versionId being produced.
 
     Body: {branch, commit, scope?, mode?, baseVersionId?, dataDictId?, noLlm?}.
     Generations are serialized per project (409 if one is already running)."""
@@ -2411,6 +2414,8 @@ async def generate_version(project_id: str, request: dict, background_tasks: Bac
     if not branch or not commit:
         raise HTTPException(status_code=400, detail="branch and commit are required")
     scope = request.get("scope") or {"type": "project"}
+    mode = (request.get("mode") or "auto").strip()
+    base_version_id = request.get("baseVersionId")
     data_dict_id = request.get("dataDictId") or ws.project().get("currentDataDictId")
 
     for jid, j in _jobs.items():
@@ -2419,6 +2424,16 @@ async def generate_version(project_id: str, request: dict, background_tasks: Bac
             raise HTTPException(status_code=409,
                                 detail=f"a generation is already running for {project_id!r} (job {jid})")
 
+    # Resolve the target + decide the baseline (same logic as /generate/preview).
+    from incremental import git_ops
+    from incremental.baseline import select_baseline
+    target = git_ops.resolve(ws.repo_dir, commit)
+    if not target:
+        raise HTTPException(status_code=409, detail=f"commit {commit!r} not in repo")
+    base = select_baseline(ws.repo_dir, vstore.list(), target, base_version_id)
+    # mode:"full" forces full; mode:"auto" follows the baseline decision.
+    decision = "full" if mode == "full" else base["decision"]
+
     version_id = vstore.next_version_id()
     args = ["--project-id", project_id, "--branch", branch, "--commit", commit,
             "--scope", _scope_to_cli(scope), "--version-id", version_id, "--force"]
@@ -2426,13 +2441,19 @@ async def generate_version(project_id: str, request: dict, background_tasks: Bac
         args += ["--data-dict-id", data_dict_id]
     if request.get("noLlm"):
         args += ["--no-llm"]
+    if decision == "incremental":
+        script = os.path.join("src", "incremental", "engine.py")
+        if base_version_id:                       # forward an explicit override only
+            args += ["--base-version-id", base_version_id]
+    else:
+        script = os.path.join("src", "incremental", "generate.py")
 
     job_id = _new_job_id("gen")
     output_file = os.path.join(_REPO_ROOT, "logs", f"job_{job_id}.out.log")
     log_file = _expected_log_file_path()
     log_offset = os.path.getsize(log_file) if os.path.isfile(log_file) else 0
     try:
-        proc = _spawn_generate(args, output_file)
+        proc = _spawn_generate(script, args, output_file)
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to spawn generate: {exc}")
 
@@ -2440,15 +2461,16 @@ async def generate_version(project_id: str, request: dict, background_tasks: Bac
         "type": "generate", "process": proc, "pid": proc.pid,
         "log_file": log_file, "log_offset": log_offset, "output_file": output_file,
         "project_id": project_id, "version_id": version_id,
-        "command_line": "generate.py " + " ".join(args), "selected_group": None,
+        "command_line": f"{os.path.basename(script)} " + " ".join(args), "selected_group": None,
         "total_phase_markers": 0,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "complete": False, "cancelled": False, "error": None, "return_code": None,
     }
     background_tasks.add_task(_watch_subprocess_job, job_id)
-    return {"versionId": version_id, "jobId": job_id, "decision": "full",
-            "baselineVersionId": None, "baselineCommit": None,
-            "dataDictId": data_dict_id, "warnings": []}
+    return {"versionId": version_id, "jobId": job_id, "decision": decision,
+            "baselineVersionId": base["chosenBaseVersionId"] if decision == "incremental" else None,
+            "baselineCommit": base["chosenBaseCommit"] if decision == "incremental" else None,
+            "dataDictId": data_dict_id, "warnings": base["warnings"]}
 
 
 @app.get("/api/v1/projects/{project_id}/generate/preview")
