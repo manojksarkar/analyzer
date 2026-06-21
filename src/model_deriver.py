@@ -29,6 +29,21 @@ def _load_model():
     return base_path, project_name, m[FUNCTIONS], m[GLOBALS]
 
 
+def _read_incremental_plan() -> dict | None:
+    """Incremental mode (M3): the engine writes model/incremental_plan.json before
+    Phase 2 with {impactFids, impactedGlobals, impactedFiles, baselineVersionDir}.
+    When present, Phase 2 restricts LLM enrichment to the impact set and carries the
+    rest forward. Absent -> full enrichment (unchanged behaviour)."""
+    p = os.path.join(MODEL_DIR, "incremental_plan.json")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def _file_path(data: dict, base_path: str) -> str:
     return norm_path((data.get("location") or {}).get("file", ""), base_path)
 
@@ -389,8 +404,12 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         g["interfaceId"] = f"{prefix}_{layer_code}_{group_code}_{unit_name_code}_{idx_code}" if group_code else f"{prefix}_{layer_code}_{unit_name_code}_{idx_code}"
 
 
-def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict):
-    """LLM enrichment for descriptions only. Direction comes from parser (global read/write analysis)."""
+def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data: dict, config: dict, only_globals=None):
+    """LLM enrichment for descriptions only. Direction comes from parser (global read/write analysis).
+
+    Incremental (M3.2): function descriptions already skip when already present (the
+    engine carries them forward). For globals, when only_globals is given, only those
+    are sent to the LLM; the rest keep their carried-forward descriptions."""
     llm = config.get("llm") or {}
     if not llm.get("descriptions", True):
         return
@@ -421,15 +440,18 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
         if desc.get(key, {}).get("description"):
             f["description"] = desc[key]["description"]
 
-    # Rich global enrichment
+    # Rich global enrichment — incremental: restrict to impacted globals (the rest
+    # keep their carried-forward descriptions).
+    globals_to_enrich = global_variables_data if only_globals is None else {
+        k: v for k, v in global_variables_data.items() if k in only_globals}
     enrichment_cfg = llm.get("enrichment") or {}
     if enrichment_cfg.get("variableEnrichment", True):
         g_desc = enrich_globals_rich(
-            global_variables_data, functions_data, base_path, config,
+            globals_to_enrich, functions_data, base_path, config,
             knowledge=knowledge,
         )
     else:
-        globals_list = list(global_variables_data.values())
+        globals_list = list(globals_to_enrich.values())
         g_desc = enrich_globals_with_descriptions(globals_list, base_path, config)
     for g in global_variables_data.values():
         key = f"{g.get('location', {}).get('file', '')}:{g.get('location', {}).get('line', '')}"
@@ -489,10 +511,15 @@ def _propagate_global_access(functions_data: dict):
             f["writesGlobalIdsTransitive"] = sorted(writes_map[fid])
 
 
-def _enrich_behaviour_names(functions_data: dict, global_variables_data: dict):
-    """Populate behaviourInputName / behaviourOutputName statically from params, globals, returnType."""
+def _enrich_behaviour_names(functions_data: dict, global_variables_data: dict, only_fids=None):
+    """Populate behaviourInputName / behaviourOutputName statically from params, globals, returnType.
+
+    Incremental (M3.2): when only_fids is given, skip functions not in it so the
+    reuse set keeps its carried-forward (baseline) behaviour names."""
     primitive_types = {"void", "int", "bool", "float", "double", "char", "short", "long"}
     for fid, f in functions_data.items():
+        if only_fids is not None and fid not in only_fids:
+            continue
         params = f.get("parameters") or f.get("params") or []
         # Prefer transitive read/write sets if present (includes inner calls)
         reads_ids = f.get("readsGlobalIdsTransitive") or f.get("readsGlobalIds") or []
@@ -576,8 +603,12 @@ def _enrich_behaviour_names_llm(
     functions_data: dict,
     global_variables_data: dict,
     config: dict,
+    only_fids=None,
 ):
-    """Use LLM to improve behaviourInputName/behaviourOutputName when static names are poor. Uses abbreviations."""
+    """Use LLM to improve behaviourInputName/behaviourOutputName when static names are poor. Uses abbreviations.
+
+    Incremental (M3.2): when only_fids is given, only impacted functions are sent to
+    the LLM — the dominant Phase-2 cost — and the reuse set keeps its carried names."""
     llm = config.get("llm") or {}
     if not llm.get("behaviourNames", True):
         return
@@ -600,6 +631,8 @@ def _enrich_behaviour_names_llm(
     progress = ProgressReporter("LLM-behaviour-names", total=n, logger=get_logger("model_deriver"))
     progress.start()
     for idx, fid in enumerate(order):
+        if only_fids is not None and fid not in only_fids:
+            continue
         f = functions_data.get(fid)
         if not f or not _static_behaviour_name_is_poor(f):
             continue
@@ -661,6 +694,7 @@ def _run_hierarchy_summarizer(
     project_name: str,
     functions_data: dict,
     config: dict,
+    plan: dict = None,
 ) -> dict:
     """
     Run the Flowchart engine's HierarchySummarizer on the current model data.
@@ -717,6 +751,30 @@ def _run_hierarchy_summarizer(
     client = _build_llm_client_from_config(load_llm_config(config))
 
     # Run the 4-level summarization (function summaries, phases, file, component, project)
+    # Incremental (M3.3): pre-populate file/component summaries for UNCHANGED files
+    # (and components with no impacted file) from the baseline, so the summarizer
+    # skips them (it skips files/components already in the knowledge maps).
+    if plan:
+        impacted_files = set(plan.get("impactedFiles") or [])
+        base_dir = plan.get("baselineVersionDir") or ""
+        base_summ_path = os.path.join(base_dir, "model", "summaries.json")
+        if os.path.isfile(base_summ_path):
+            try:
+                with open(base_summ_path, "r", encoding="utf-8") as f:
+                    base_summ = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                base_summ = {}
+            def _comp_of(fp):
+                parts = fp.replace("\\", "/").split("/")
+                return "/".join(parts[:-1]) if len(parts) > 1 else "."
+            impacted_comps = {_comp_of(f) for f in impacted_files}
+            for fpath, summ in (base_summ.get("files") or {}).items():
+                if fpath not in impacted_files and summ:
+                    knowledge.file_summaries[fpath] = summ
+            for cpath, summ in (base_summ.get("components") or {}).items():
+                if cpath not in impacted_comps and summ:
+                    knowledge.component_summaries[cpath] = summ
+
     summarizer = HierarchySummarizer(knowledge, client, base_path)
     summarizer.summarize()
 
@@ -925,10 +983,19 @@ def main():
     _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id, config)
     # Propagate global access along call graph so outers inherit inner globals
     _propagate_global_access(functions_data)
+    # Incremental mode (M3.2): restrict LLM enrichment to the impact set; the engine
+    # has already carried forward baseline outputs for the reuse set.
+    _plan = _read_incremental_plan()
+    only_fids = set(_plan.get("impactFids") or []) if _plan else None
+    only_globals = set(_plan.get("impactedGlobals") or []) if _plan else None
+    if _plan is not None:
+        print(f"  incremental: enriching {len(only_fids or [])} function(s) + "
+              f"{len(only_globals or [])} global(s); reusing the rest")
+
     # Static behaviour names (Input Name / Output Name) from params/globals/returnType
-    _enrich_behaviour_names(functions_data, global_variables_data)
+    _enrich_behaviour_names(functions_data, global_variables_data, only_fids=only_fids)
     # LLM polish for poor static names (uses abbreviations)
-    _enrich_behaviour_names_llm(base_path, functions_data, global_variables_data, config)
+    _enrich_behaviour_names_llm(base_path, functions_data, global_variables_data, config, only_fids=only_fids)
 
     # LLM summarization (--llm-summarize only): phases + file/component/project hierarchy.
     # Runs before _enrich_from_llm so that phases are in functions_data when knowledge_base
@@ -937,11 +1004,11 @@ def main():
     if llm_summarize:
         from core.model_io import write_model_file as _write, SUMMARIES
         print("Running LLM summarization (phases + hierarchy)...")
-        summaries = _run_hierarchy_summarizer(base_path, project_name, functions_data, config)
+        summaries = _run_hierarchy_summarizer(base_path, project_name, functions_data, config, plan=_plan)
         _write(SUMMARIES, summaries, ensure_ascii=False)
         print("  model/summaries.json")
 
-    _enrich_from_llm(base_path, functions_data, global_variables_data, config)
+    _enrich_from_llm(base_path, functions_data, global_variables_data, config, only_globals=only_globals)
 
     # Functions: must be In or Out (never -)
     for fentry in functions_data.values():

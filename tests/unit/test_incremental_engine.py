@@ -8,7 +8,7 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
-from incremental.engine import plan_incremental, carry_forward_descriptions
+from incremental.engine import plan_incremental, carry_forward_descriptions, carry_forward_globals
 
 
 # target model:  a -> b -> c  (calledByIds carry reverse edges)
@@ -77,3 +77,17 @@ class TestCarryForward:
 
     def test_missing_target_entry_skipped(self):
         assert carry_forward_descriptions({"z"}, {}, {"z": {"description": "x"}}) == 0
+
+
+class TestCarryForwardGlobals:
+    def test_copies_description_for_reused(self):
+        base = {"C|U|g_a": {"description": "good A"}, "C|U|g_b": {"description": "good B"}}
+        targ = {"C|U|g_a": {"description": ""}, "C|U|g_b": {"description": ""}}
+        n = carry_forward_globals({"C|U|g_a"}, targ, base)
+        assert n == 1
+        assert targ["C|U|g_a"]["description"] == "good A"
+        assert targ["C|U|g_b"]["description"] == ""   # not reused -> untouched
+
+    def test_missing_entries_skipped(self):
+        assert carry_forward_globals({"x"}, {}, {"x": {"description": "d"}}) == 0
+        assert carry_forward_globals({"x"}, {"x": {"description": ""}}, {}) == 0

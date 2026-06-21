@@ -34,7 +34,7 @@ if _SRC not in sys.path:
 
 from core.paths import paths as _paths
 from incremental import git_ops
-from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex
+from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
 from incremental.baseline import select_baseline
 from incremental.impact import classify, impact_set
 from incremental.fingerprint import recipe_fingerprint, compute_fingerprints
@@ -84,6 +84,21 @@ def carry_forward_descriptions(reused_fids: Iterable[str],
             if field in bf:
                 tf[field] = bf[field]
         n += 1
+    return n
+
+
+def carry_forward_globals(reused_keys: Iterable[str],
+                          target_globals: Dict[str, dict],
+                          baseline_globals: Dict[str, dict]) -> int:
+    """Pure (mutates target_globals): copy the baseline's `description` into the
+    reuse set so reused globals keep their description without an LLM call."""
+    n = 0
+    for key in reused_keys:
+        bg = baseline_globals.get(key)
+        tg = target_globals.get(key)
+        if bg and tg is not None and "description" in bg:
+            tg["description"] = bg["description"]
+            n += 1
     return n
 
 
@@ -149,6 +164,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     dd_path = ws.datadict_path(data_dict_id) if data_dict_id and os.path.isfile(
         ws.datadict_path(data_dict_id)) else None
     model_dir = os.path.join(project_root, "model")
+    # Clean the shared output/ so this version captures only its own documents
+    # (the flowchart-reuse step re-seeds output/<scope>/flowcharts from the baseline).
+    _rmtree_force(os.path.join(project_root, "output"))
 
     def _fail(stage: str, rc: int):
         vstore.write_manifest(version_id, _manifest(
@@ -167,18 +185,36 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     if rc != 0:
         _fail("parse", rc)
 
+    base_model_dir = os.path.join(vstore.version_dir(base_vid), "model")
     target_hashes = _read(model_dir, "hashes.json")
     target_functions = _read(model_dir, "functions.json")
     target_edges = _read(model_dir, "edges.json")
+    target_globals = _read(model_dir, "globalVariables.json")
     base_hashes = hstore.read(base_vid)
-    base_functions = _read(os.path.join(vstore.version_dir(base_vid), "model"), "functions.json")
+    base_functions = _read(base_model_dir, "functions.json")
+    base_globals = _read(base_model_dir, "globalVariables.json")
 
-    # Precise impact (classify + reverse-BFS over the fresh model) drives BOTH the
-    # summary/description carry-forward AND the flowchart restriction.
+    # Precise impact (classify + reverse-BFS over the fresh model) drives ALL reuse:
+    # function descriptions/behaviour-names/summaries (Phase 2) AND flowcharts (Phase 3).
     plan = plan_incremental(base_hashes, target_hashes, target_functions, target_edges, base_functions)
+
+    # Impacted GLOBALS = changed/new globals + globals used by impacted functions.
+    cls = plan["classify"]
+    impacted_globals = {k for k in (cls["changed"] | cls["new"]) if k.count("|") == 2}
+    for fid in plan["impact"]:
+        f = target_functions.get(fid) or {}
+        impacted_globals.update(f.get("readsGlobalIds") or [])
+        impacted_globals.update(f.get("writesGlobalIds") or [])
+    impacted_globals &= set(target_globals)
+    reused_globals = set(target_globals) - impacted_globals
+
+    # Carry forward baseline outputs for the reuse set so Phase 2 skips them.
     n_carried = carry_forward_descriptions(plan["reused"], target_functions, base_functions)
+    n_carried_g = carry_forward_globals(reused_globals, target_globals, base_globals)
     with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as fh:
         json.dump(target_functions, fh, indent=2)
+    with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as fh:
+        json.dump(target_globals, fh, indent=2)
 
     # Impacted FILES = source files of the impacted functions (function-level precision).
     impacted_files = sorted({
@@ -186,7 +222,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         for fid in plan["impact"]
     } - {None})
     with open(os.path.join(model_dir, "incremental_plan.json"), "w", encoding="utf-8") as fh:
-        json.dump({"impactedFiles": impacted_files,
+        json.dump({"impactFids": sorted(plan["impact"]),
+                   "impactedGlobals": sorted(impacted_globals),
+                   "impactedFiles": impacted_files,
                    "baselineVersionDir": vstore.version_dir(base_vid)}, fh, indent=2)
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse

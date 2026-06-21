@@ -39,7 +39,7 @@ if _SRC not in sys.path:
 from core.paths import paths as _paths
 from core.config import load_config
 from incremental import git_ops
-from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex
+from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
 from incremental.fingerprint import recipe_fingerprint, compute_fingerprints
 from incremental.edges import build_edges  # noqa: F401  (kept for symmetry / future use)
 
@@ -119,7 +119,9 @@ def generate_full(
         version_id, branch, actual_commit, scope, data_dict_id, recipe_fp="",
         decision="full", regenerated=0, reused=0, status="running", warnings=[]))
 
-    # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited)
+    # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited).
+    # Clean output/ first so the version captures only its own documents.
+    _rmtree_force(os.path.join(project_root, "output"))
     cmd = [sys.executable, "run.py", "--config", vcfg_path]
     cmd += scope_to_args(scope)
     if no_llm:

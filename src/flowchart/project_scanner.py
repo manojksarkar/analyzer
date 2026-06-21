@@ -981,8 +981,10 @@ class HierarchySummarizer:
                 seen_qnames.add(fk.qualified_name)
                 by_file.setdefault(fk.file, []).append(fk)
 
-        logger.info("  Summarizing %d files...", len(by_file))
-        for file_path, funcs in sorted(by_file.items()):
+        pending = [(fp, fns) for fp, fns in sorted(by_file.items())
+                   if fp not in self._k.file_summaries]   # incremental: skip carried-forward
+        logger.info("  Summarizing %d files (%d reused)...", len(pending), len(by_file) - len(pending))
+        for file_path, funcs in pending:
             try:
                 summary = self._summarize_one_file(file_path, funcs)
                 if summary:
@@ -1020,8 +1022,11 @@ class HierarchySummarizer:
             component = "/".join(parts[:-1]) if len(parts) > 1 else "."
             by_component.setdefault(component, []).append(file_path)
 
-        logger.info("  Summarizing %d components...", len(by_component))
-        for component_path, files in sorted(by_component.items()):
+        pending = [(cp, fs) for cp, fs in sorted(by_component.items())
+                   if cp not in self._k.component_summaries]   # incremental: skip carried-forward
+        logger.info("  Summarizing %d components (%d reused)...",
+                    len(pending), len(by_component) - len(pending))
+        for component_path, files in pending:
             try:
                 summary = self._summarize_one_component(component_path, files)
                 if summary:
