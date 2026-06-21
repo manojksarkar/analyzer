@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1 baseline selection + `generate/preview` done** (`src/incremental/git_ops.py` + `baseline.py`; auto nearest-ancestor + override warnings); next: **M2.2** partial-parse + merge, then classify + impact BFS + selective regen. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline selection + `generate/preview` (`git_ops.py` + `baseline.py`) **+ M2.2** classify + impact BFS (`impact.py`) **done**; **parse strategy fixed to FULL-parse + selective-LLM-regen (D10; narrowed parse deferred)**; next: **M2.3** the incremental engine (`generate_incremental` + `mode:"auto"`). **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
 > Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
 > Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
@@ -2839,18 +2839,32 @@ workspaces/<projectId>/
     `git_ops`. Verified: tmp-repo unit tests (`test_incremental_git_ops.py` 12 + `test_incremental_baseline.py` 11)
     + TestClient preview on `samplecpp` (main→incremental/v2/nearest/0-changed, feature1→full, override-v2→divergent
     +warning, unknown→404).
-  - **M2.2** (next) — **partial parse** in `parser.py` (parse only `--changed-files` + the baseline's
-    carried-forward model) + merge (update changed / add new / **remove deleted**).
-  - **M2.3** — classify {changed/new/deleted} vs baseline `hashes.json` + **impact BFS** (reverse-reachability over
-    calls/globals from functions.json + types/macros from edges.json; over-approx virtual/fn-ptr). *#1 trap.*
-  - **M2.4** — selective regen (fingerprint→reuse index hit→copy, else LLM) + reassemble (Phase 3+4) + wire
-    `mode:"auto"` into `POST /generate`.
+  - **M2.2 classify + impact BFS — ✅ done.** `src/incremental/impact.py` (pure): `classify(baseline_hashes,
+    target_hashes)` → {changed/new/deleted/unchanged}; `impact_set(changed_keys, functions, edges,
+    extra_seed_functions=)` → set of function fids to regenerate = changed/new functions + **everything
+    transitively depending on any changed entity** (reverse-BFS: callers via `calledByIds`, global users via
+    inverted reads/writes, type/macro users via `edges.json`; visited-set handles cycles; `extra_seed_functions`
+    injects deleted entities' baseline callers). The #1 staleness trap — covered. Tests:
+    `tests/unit/test_incremental_impact.py` (12).
+  - **PARSE-STRATEGY DECISION (D10):** the M2 engine uses a **FULL parse** of the checked-out commit (correct
+    call graph by construction), and the incremental win comes from **selective LLM regeneration** (classify →
+    impact BFS → reuse). **Narrowed/partial parse (doc 03 D2 "Approach 2") is DEFERRED** to a later optimization
+    (doc 04 §10's parse cache): correct narrowed parse needs cross-file call/reverse-edge reconciliation that is
+    complex and easy to get subtly wrong → staleness, whereas the *primary* benefit (skip the rate-limited LLM for
+    unchanged+unimpacted entities = hours→minutes) is parse-strategy-independent and a full parse is **never
+    stale** (D7). Parse time becomes the bottleneck to optimize only after LLM time is removed.
+  - **M2.3** (next) — the **incremental engine** `generate_incremental`: baseline-pick → checkout → **full parse**
+    → classify vs baseline `hashes.json` → impact BFS → **selective regen** (impact set: fingerprint→reuse-index
+    hit→copy, else LLM via the existing version3 `EntityCache`; non-impacted: carry forward baseline output) →
+    reassemble (Phase 3+4) → record version + seed cache. Wire `mode:"auto"` into `POST /generate`.
 - **M3 — hardening** — *not started.* move/rename + deletions; version-scoped reads (`?versionId=`);
   recipe-fingerprint invalidation; multi-doc zip.
-- **Next concrete step:** **M2.2 — partial parse** in `parser.py` (a `--changed-files <file>` mode that parses
-  only those files and emits their entities/hashes/edges) + the **merge** into the baseline's carried-forward
-  model (update changed / add new / remove deleted). Then M2.3 (classify + impact BFS) and M2.4 (selective regen +
-  reassemble + `mode:"auto"`). (M2.1 done: baseline selection + `git_ops` + `generate/preview`.)
+- **Next concrete step:** **M2.3 — the incremental engine** `src/incremental/incremental.py::generate_incremental`:
+  baseline-pick (M2.1) → checkout → **full parse** (run.py) → `classify` vs baseline `hashes.json` (M2.2) →
+  `impact_set` (M2.2) → **selective regen** (reuse for unchanged/unimpacted via carry-forward + the version3
+  `EntityCache`/`ReuseIndex`; LLM only for the impact set) → reassemble (Phase 3+4) → record version + cache. Then
+  wire `mode:"auto"` into `POST /generate` (preview chooses incremental vs full). (M2.1 + M2.2 done; parse-strategy
+  fixed to full-parse per D10 — narrowed parse deferred.)
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 
