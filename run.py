@@ -14,6 +14,9 @@ Options:
   --skip-model         Alias of --use-model
   --no-llm-summarize   Skip LLM phase/hierarchy summarization (faster, lower quality)
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
+  --to-phase N         Stop after phase N (1-4). Lets the incremental engine run
+                       parse+derive only (--to-phase 2), compute impact, then
+                       resume views+export (--from-phase 3).
   --data-dictionary <path>
                        CSV file to merge into model/dataDictionary.json (overrides
                        auto-parsed entries). See config/data_dictionary.csv for format.
@@ -106,6 +109,7 @@ clean_all               = False
 use_model               = False
 no_llm_summarize        = False
 from_phase              = 1
+to_phase                = None   # stop after this phase (1-4); None = run through phase 4
 selected_group_arg      = None
 selected_layer_arg      = None
 selected_components_arg = []
@@ -199,6 +203,18 @@ while i < len(sys.argv):
                 raise ValueError
         except ValueError:
             log(f"--from-phase must be 1, 2, 3, or 4 (got: {sys.argv[i]})", component="run", err=True)
+            sys.exit(1)
+    elif a == "--to-phase":
+        i += 1
+        if i >= len(sys.argv):
+            log("--to-phase requires an integer argument (1-4)", component="run", err=True)
+            sys.exit(1)
+        try:
+            to_phase = int(sys.argv[i])
+            if to_phase < 1 or to_phase > 4:
+                raise ValueError
+        except ValueError:
+            log(f"--to-phase must be 1, 2, 3, or 4 (got: {sys.argv[i]})", component="run", err=True)
             sys.exit(1)
     else:
         raw_args.append(a)
@@ -399,6 +415,23 @@ try:
 except ValueError as e:
     log(str(e), component="run", err=True)
     sys.exit(2)
+
+# --to-phase N: stop after global phase N. Drop phases mapped above N from every
+# plan (and any plan left empty). Lets the incremental engine Phase-split (run
+# parse+derive, compute impact, then resume views+export). Additive: when
+# to_phase is None, plans are untouched.
+if to_phase is not None:
+    from core.group_planner import RunPlan as _RunPlan
+    _SCRIPT_PHASE = {"parser.py": 1, "model_deriver.py": 2, "run_views.py": 3, "docx_exporter.py": 4}
+    _filtered = []
+    for _plan in plans:
+        _kept = [ph for ph in _plan.phases
+                 if _SCRIPT_PHASE.get(os.path.basename(ph.script), 99) <= to_phase]
+        if _kept and _plan.runner_from_phase <= len(_kept):
+            _filtered.append(_RunPlan(label=_plan.label, phases=_kept,
+                                      runner_from_phase=_plan.runner_from_phase))
+    plans = _filtered
+    log(f"--to-phase {to_phase}: running {len(plans)} plan(s) up to phase {to_phase}.", component="run")
 
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0

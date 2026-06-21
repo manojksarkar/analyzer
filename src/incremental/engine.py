@@ -148,65 +148,55 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     dd_path = ws.datadict_path(data_dict_id) if data_dict_id and os.path.isfile(
         ws.datadict_path(data_dict_id)) else None
-
-    # M2.4b: compute IMPACTED FILES from the baseline model + git diff (over-approx,
-    # safe), and write the flowchart-reuse plan BEFORE the run so Phase 3's flowcharts
-    # view restricts the engine to those files and carries forward the baseline's rest.
     model_dir = os.path.join(project_root, "model")
-    os.makedirs(model_dir, exist_ok=True)
-    base_model_dir = os.path.join(vstore.version_dir(base_vid), "model")
-    base_functions = _read(base_model_dir, "functions.json")
-    base_edges = estore.read(base_vid)
-    try:
-        changed_files = set(git_ops.changed_files(ws.repo_dir, decision["chosenBaseCommit"], target))
-    except Exception:
-        changed_files = set()
-    seed = {fid for fid, f in base_functions.items()
-            if (f.get("location") or {}).get("file") in changed_files}
-    impacted_files = set(changed_files)
-    for fid in impact_set(seed, base_functions, base_edges):
-        loc = (base_functions.get(fid) or {}).get("location") or {}
-        if loc.get("file"):
-            impacted_files.add(loc["file"])
-    with open(os.path.join(model_dir, "incremental_plan.json"), "w", encoding="utf-8") as fh:
-        json.dump({"impactedFiles": sorted(impacted_files),
-                   "baselineVersionDir": vstore.version_dir(base_vid)}, fh, indent=2)
 
-    # FULL parse + initial assembly at the target (descriptions reuse via EntityCache;
-    # flowcharts restricted to impacted files via the plan above).
-    rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root)
-    if rc != 0:
+    def _fail(stage: str, rc: int):
         vstore.write_manifest(version_id, _manifest(
             version_id, branch, target, scope, data_dict_id, recipe_fp="",
             decision="incremental", regenerated=0, reused=0, status="failed",
-            warnings=decision["warnings"] + [f"analyzer exited {rc}"]))
-        raise RuntimeError(f"analyzer run failed (exit {rc})")
+            warnings=decision["warnings"] + [f"{stage} exited {rc}"]))
+        raise RuntimeError(f"{stage} failed (exit {rc})")
+
+    # PHASE-SPLIT (M3) — run parse+derive only, so impact is computed from the FRESH
+    # target model (precise, function-level) before views/export run.
+    rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
+                       extra_args=["--to-phase", "2"])
+    if rc != 0:
+        _fail("parse+derive", rc)
+
+    target_hashes = _read(model_dir, "hashes.json")
+    target_functions = _read(model_dir, "functions.json")
+    target_edges = _read(model_dir, "edges.json")
+    base_hashes = hstore.read(base_vid)
+    base_functions = _read(os.path.join(vstore.version_dir(base_vid), "model"), "functions.json")
+
+    # Precise impact (classify + reverse-BFS over the fresh model) drives BOTH the
+    # description carry-forward AND the flowchart restriction.
+    plan = plan_incremental(base_hashes, target_hashes, target_functions, target_edges, base_functions)
+    n_carried = carry_forward_descriptions(plan["reused"], target_functions, base_functions)
+    with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as fh:
+        json.dump(target_functions, fh, indent=2)
+
+    # Impacted FILES = source files of the impacted functions (function-level precision).
+    impacted_files = sorted({
+        (target_functions.get(fid) or {}).get("location", {}).get("file")
+        for fid in plan["impact"]
+    } - {None})
+    with open(os.path.join(model_dir, "incremental_plan.json"), "w", encoding="utf-8") as fh:
+        json.dump({"impactedFiles": impacted_files,
+                   "baselineVersionDir": vstore.version_dir(base_vid)}, fh, indent=2)
+
+    # Resume views+export: flowcharts restricted to impacted files (rest carried forward).
+    rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
+                       extra_args=["--from-phase", "3", "--use-model"])
+    if rc != 0:
+        _fail("views+export", rc)
 
     # The plan file has done its job (Phase 3 read it); remove so it isn't captured.
     try:
         os.remove(os.path.join(model_dir, "incremental_plan.json"))
     except OSError:
         pass
-
-    target_hashes = _read(model_dir, "hashes.json")
-    target_functions = _read(model_dir, "functions.json")
-    target_edges = _read(model_dir, "edges.json")
-    base_hashes = hstore.read(base_vid)
-
-    plan = plan_incremental(base_hashes, target_hashes, target_functions, target_edges, base_functions)
-    n_carried = carry_forward_descriptions(plan["reused"], target_functions, base_functions)
-    with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as fh:
-        json.dump(target_functions, fh, indent=2)
-
-    # Reassemble the document from the merged model (Phase 4 export; no LLM).
-    rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
-                       extra_args=["--from-phase", "4", "--use-model"])
-    if rc != 0:
-        vstore.write_manifest(version_id, _manifest(
-            version_id, branch, target, scope, data_dict_id, recipe_fp="",
-            decision="incremental", regenerated=len(plan["impact"]), reused=len(plan["reused"]),
-            status="failed", warnings=decision["warnings"] + [f"reassembly exited {rc}"]))
-        raise RuntimeError(f"reassembly failed (exit {rc})")
 
     # Capture artifacts + snapshots, seed the reuse index, finalize the manifest.
     documents = vstore.capture_artifacts(version_id, model_dir=model_dir,
