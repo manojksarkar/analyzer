@@ -149,7 +149,31 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     dd_path = ws.datadict_path(data_dict_id) if data_dict_id and os.path.isfile(
         ws.datadict_path(data_dict_id)) else None
 
-    # FULL parse + initial assembly at the target (descriptions reuse via EntityCache).
+    # M2.4b: compute IMPACTED FILES from the baseline model + git diff (over-approx,
+    # safe), and write the flowchart-reuse plan BEFORE the run so Phase 3's flowcharts
+    # view restricts the engine to those files and carries forward the baseline's rest.
+    model_dir = os.path.join(project_root, "model")
+    os.makedirs(model_dir, exist_ok=True)
+    base_model_dir = os.path.join(vstore.version_dir(base_vid), "model")
+    base_functions = _read(base_model_dir, "functions.json")
+    base_edges = estore.read(base_vid)
+    try:
+        changed_files = set(git_ops.changed_files(ws.repo_dir, decision["chosenBaseCommit"], target))
+    except Exception:
+        changed_files = set()
+    seed = {fid for fid, f in base_functions.items()
+            if (f.get("location") or {}).get("file") in changed_files}
+    impacted_files = set(changed_files)
+    for fid in impact_set(seed, base_functions, base_edges):
+        loc = (base_functions.get(fid) or {}).get("location") or {}
+        if loc.get("file"):
+            impacted_files.add(loc["file"])
+    with open(os.path.join(model_dir, "incremental_plan.json"), "w", encoding="utf-8") as fh:
+        json.dump({"impactedFiles": sorted(impacted_files),
+                   "baselineVersionDir": vstore.version_dir(base_vid)}, fh, indent=2)
+
+    # FULL parse + initial assembly at the target (descriptions reuse via EntityCache;
+    # flowcharts restricted to impacted files via the plan above).
     rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root)
     if rc != 0:
         vstore.write_manifest(version_id, _manifest(
@@ -158,12 +182,16 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             warnings=decision["warnings"] + [f"analyzer exited {rc}"]))
         raise RuntimeError(f"analyzer run failed (exit {rc})")
 
-    model_dir = os.path.join(project_root, "model")
+    # The plan file has done its job (Phase 3 read it); remove so it isn't captured.
+    try:
+        os.remove(os.path.join(model_dir, "incremental_plan.json"))
+    except OSError:
+        pass
+
     target_hashes = _read(model_dir, "hashes.json")
     target_functions = _read(model_dir, "functions.json")
     target_edges = _read(model_dir, "edges.json")
     base_hashes = hstore.read(base_vid)
-    base_functions = _read(os.path.join(vstore.version_dir(base_vid), "model"), "functions.json")
 
     plan = plan_incremental(base_hashes, target_hashes, target_functions, target_edges, base_functions)
     n_carried = carry_forward_descriptions(plan["reused"], target_functions, base_functions)

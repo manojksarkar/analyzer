@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2.4a** `mode:"auto"` dispatch in `POST /generate` (incremental vs full) **done**; next: **M2.4b** flowchart-level reuse. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete — incremental engine + API work e2e on `samplecpp`**; next: **M3 hardening** (precise function-level flowchart reuse via Phase-split, version-scoped reads, etc.) or an LLM-on payoff measurement. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
 > Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
 > Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
@@ -2829,7 +2829,7 @@ workspaces/<projectId>/
     versions list/detail/download (real 47 KB docx) + validation (404/400/409). *POST happy-path not exercised
     live (TestClient blocks on the watcher; orchestrator is e2e-tested via the identical CLI path) — test live on a
     running server. `mode:"auto"`/baseline (incremental) is M2.*
-- **M2 — incremental engine** — *in progress.*
+- **M2 — incremental engine — ✅ done** (M2.1–M2.4 below; incremental generation works e2e + via the API).
   - **M2.1 baseline selection + preview — ✅ done.** `src/incremental/git_ops.py` (engine-local git wrapper —
     checkout/current_commit/is_ancestor/merge_base/rev_list_count/changed_files/nearest_ancestor; decoupled from
     `backend/git_service.py`, consolidation deferred to M3) + `src/incremental/baseline.py::select_baseline`
@@ -2871,17 +2871,23 @@ workspaces/<projectId>/
     `decision` + `baselineVersionId`/`baselineCommit` + `warnings`; `baseVersionId` override forwarded. `commit not
     in repo` → 409. Verified via TestClient (auto@main→incremental/engine.py/baseline=v2, full→generate.py,
     auto@feature1[no ancestor]→full, 400/409).
-  - **M2.4b** (next) — **flowchart-level reuse**: restrict the flowchart engine's input file to the impact set +
-    carry forward the baseline's `output/flowcharts/*.json` for the rest, so LLM-on runs skip flowchart labeling
-    for reused functions. Needs a Phase-split (compute impact between Phase 2 and Phase 3) — likely a
-    `run.py --to-phase N` + `views/flowcharts.py` impact-filter (engine in `src/flowchart/` unchanged).
-- **M3 — hardening** — *not started.* move/rename + deletions; version-scoped reads (`?versionId=`);
-  recipe-fingerprint invalidation; multi-doc zip.
-- **Next concrete step:** **M2.4b — flowchart-level reuse.** Add `run.py --to-phase N` (stop after a phase) so
-  the engine can Phase-split (parse+derive → compute impact → views+export); make `views/flowcharts.py` read a
-  per-run impact set (restrict the engine's functions file to it) + carry forward the baseline's
-  `output/flowcharts/*.json` for the reuse set; wire it into `generate_incremental`. Then **M3** (hardening).
-  (M2.1–M2.3 + M2.4a done — incremental engine + mode:auto dispatch work e2e.)
+  - **M2.4b flowchart-level reuse — ✅ done (file-level).** `views/flowcharts.py::_apply_incremental_plan`
+    (gated on `model/incremental_plan.json`; absent → unchanged full behaviour) **carries forward** the baseline
+    version's `output/<scope>/flowcharts/*.json` then **restricts** the flowchart engine's functions file to the
+    impacted source files (engine overwrites only those). `engine.py` computes `impactedFiles` BEFORE the run
+    from the **baseline model + `git diff`** (over-approx, safe — no Phase-split) and writes/cleans the plan.
+    The `src/flowchart/` engine is unchanged. Verified e2e on `samplecpp` (carried 3 / restricted 16 in 9 files;
+    output complete, plan not leaked into the version). **Limitation:** seeding is file-level + git-diff, so a
+    change to a busy/central file over-regenerates (safe). **Precise function-level flowchart reuse needs a
+    Phase-split (`run.py --to-phase` → compute impact from the fresh model → restrict) — deferred to M3.**
+- **M3 — hardening** — *not started.* **Precise function-level flowchart reuse** (Phase-split via
+  `run.py --to-phase` → impact from the fresh model → restrict, replacing M2.4b's coarse file+git-diff seeding);
+  move/rename re-resolution + deletions polish; version-scoped reads (`?versionId=` on
+  `components`/`functions`/`flowcharts`); recipe-fingerprint invalidation; multi-doc zip download; consolidate
+  `git_ops`/`git_service`.
+- **Next concrete step:** **M3 hardening** (above) — or validate M2 end-to-end **LLM-on** on a real project first
+  to measure the hours→minutes payoff. (M1 + M2 fully done: the incremental engine + `mode:"auto"` API work e2e
+  on `samplecpp`.)
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 
