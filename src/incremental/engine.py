@@ -157,12 +157,15 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             warnings=decision["warnings"] + [f"{stage} exited {rc}"]))
         raise RuntimeError(f"{stage} failed (exit {rc})")
 
-    # PHASE-SPLIT (M3) — run parse+derive only, so impact is computed from the FRESH
-    # target model (precise, function-level) before views/export run.
+    # PHASE-SPLIT (M3.2) — run PARSE only (Phase 1). This gives the fresh hashes +
+    # call graph + edges to compute the precise impact, AND lets us carry forward
+    # the baseline's summaries BEFORE Phase 2 runs — the hierarchy summarizer only
+    # summarizes functions with no `description`, so carrying it forward makes it
+    # skip the reuse set (the dominant LLM cost) with no model_deriver change.
     rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
-                       extra_args=["--to-phase", "2"])
+                       extra_args=["--to-phase", "1"])
     if rc != 0:
-        _fail("parse+derive", rc)
+        _fail("parse", rc)
 
     target_hashes = _read(model_dir, "hashes.json")
     target_functions = _read(model_dir, "functions.json")
@@ -171,7 +174,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     base_functions = _read(os.path.join(vstore.version_dir(base_vid), "model"), "functions.json")
 
     # Precise impact (classify + reverse-BFS over the fresh model) drives BOTH the
-    # description carry-forward AND the flowchart restriction.
+    # summary/description carry-forward AND the flowchart restriction.
     plan = plan_incremental(base_hashes, target_hashes, target_functions, target_edges, base_functions)
     n_carried = carry_forward_descriptions(plan["reused"], target_functions, base_functions)
     with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as fh:
@@ -186,11 +189,12 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         json.dump({"impactedFiles": impacted_files,
                    "baselineVersionDir": vstore.version_dir(base_vid)}, fh, indent=2)
 
-    # Resume views+export: flowcharts restricted to impacted files (rest carried forward).
+    # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
+    # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
     rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
-                       extra_args=["--from-phase", "3", "--use-model"])
+                       extra_args=["--from-phase", "2"])
     if rc != 0:
-        _fail("views+export", rc)
+        _fail("derive+views+export", rc)
 
     # The plan file has done its job (Phase 3 read it); remove so it isn't captured.
     try:
