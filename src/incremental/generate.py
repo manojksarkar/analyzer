@@ -38,6 +38,7 @@ if _SRC not in sys.path:
 
 from core.paths import paths as _paths
 from core.config import load_config
+from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex
 from incremental.fingerprint import recipe_fingerprint, compute_fingerprints
 from incremental.edges import build_edges  # noqa: F401  (kept for symmetry / future use)
@@ -45,13 +46,6 @@ from incremental.edges import build_edges  # noqa: F401  (kept for symmetry / fu
 
 def _now_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _git(args: List[str], cwd: str) -> str:
-    p = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True)
-    if p.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed (exit {p.returncode}): {p.stderr.strip()}")
-    return p.stdout.strip()
 
 
 def scope_to_args(scope: Dict[str, Any]) -> List[str]:
@@ -112,8 +106,8 @@ def generate_full(
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
     # 1. checkout
-    _git(["checkout", commit], ws.repo_dir)
-    actual_commit = _git(["rev-parse", "HEAD"], ws.repo_dir)
+    git_ops.checkout(ws.repo_dir, commit)
+    actual_commit = git_ops.current_commit(ws.repo_dir)
 
     # 2. resolved config -> versions/<id>/config.json + a "running" manifest so the
     #    version is queryable immediately (status flips to complete/failed below).

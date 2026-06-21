@@ -2451,6 +2451,20 @@ async def generate_version(project_id: str, request: dict, background_tasks: Bac
             "dataDictId": data_dict_id, "warnings": []}
 
 
+@app.get("/api/v1/projects/{project_id}/generate/preview")
+async def generate_preview(project_id: str, commit: str, baseVersionId: Optional[str] = None):
+    """Preview the baseline decision before generating (doc 05 §5.1). Read-only —
+    no checkout, changes nothing. Returns what generate WOULD do: auto/chosen
+    baseline, ancestor/nearest flags, changed-file count, decision, warnings."""
+    ws, vstore = _open_workspace(project_id)
+    from incremental import git_ops
+    from incremental.baseline import select_baseline
+    target = git_ops.resolve(ws.repo_dir, commit)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"commit {commit!r} not found in repo")
+    return select_baseline(ws.repo_dir, vstore.list(), target, baseVersionId)
+
+
 @app.get("/api/v1/projects/{project_id}/versions")
 async def list_versions(project_id: str):
     """List generated versions, newest first (doc 05 §6.3)."""
