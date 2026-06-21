@@ -89,8 +89,16 @@ def generate_full(
     data_dict_id: Optional[str] = None,
     no_llm: bool = False,
     force: bool = False,
+    version_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Produce a new full-generation version. Returns the manifest dict."""
+    """Produce a new full-generation version. Returns the manifest dict.
+
+    `version_id` may be pre-allocated by the caller (the backend reserves it so
+    the API can return it immediately); otherwise the next sequential id is used.
+    Analyzer stdout/stderr are *inherited* (not captured) so the caller controls
+    where they land — the backend points them at the per-job log so progress
+    markers are visible to the existing job-status machinery.
+    """
     scope = scope or {"type": "project"}
     project_root = _paths().project_root
 
@@ -100,20 +108,24 @@ def generate_full(
     hstore, estore = HashStore(vstore), EdgeStore(vstore)
     ridx = ReuseIndex(ws)
 
-    version_id = vstore.next_version_id()
+    version_id = version_id or vstore.next_version_id()
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
     # 1. checkout
     _git(["checkout", commit], ws.repo_dir)
     actual_commit = _git(["rev-parse", "HEAD"], ws.repo_dir)
 
-    # 2. resolved config -> versions/<id>/config.json
+    # 2. resolved config -> versions/<id>/config.json + a "running" manifest so the
+    #    version is queryable immediately (status flips to complete/failed below).
     vdir = vstore.create_dir(version_id, force=force)
     cfg = _resolved_config(project, project_root)
     vstore.write_config(version_id, cfg)
     vcfg_path = os.path.join(vdir, "config.json")
+    vstore.write_manifest(version_id, _manifest(
+        version_id, branch, actual_commit, scope, data_dict_id, recipe_fp="",
+        decision="full", regenerated=0, reused=0, status="running", warnings=[]))
 
-    # 3. run the analyzer (full) against the workspace repo
+    # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited)
     cmd = [sys.executable, "run.py", "--config", vcfg_path]
     cmd += scope_to_args(scope)
     if no_llm:
@@ -124,16 +136,13 @@ def generate_full(
             cmd += ["--data-dictionary", dd]
     cmd += [ws.repo_dir]
 
-    log_path = os.path.join(vdir, "generate.log")
-    with open(log_path, "w", encoding="utf-8") as log:
-        proc = subprocess.run(cmd, cwd=project_root, shell=(os.name == "nt"),
-                              stdout=log, stderr=subprocess.STDOUT)
+    proc = subprocess.run(cmd, cwd=project_root, shell=(os.name == "nt"))
     if proc.returncode != 0:
-        manifest = _manifest(version_id, branch, actual_commit, scope, data_dict_id,
-                             recipe_fp="", decision="full", regenerated=0, reused=0,
-                             status="failed", warnings=[f"analyzer exited {proc.returncode}; see generate.log"])
-        vstore.write_manifest(version_id, manifest)
-        raise RuntimeError(f"analyzer run failed (exit {proc.returncode}); see {log_path}")
+        vstore.write_manifest(version_id, _manifest(
+            version_id, branch, actual_commit, scope, data_dict_id, recipe_fp="",
+            decision="full", regenerated=0, reused=0, status="failed",
+            warnings=[f"analyzer exited {proc.returncode}"]))
+        raise RuntimeError(f"analyzer run failed (exit {proc.returncode})")
 
     # 4. capture artifacts (model/output/documents) + hashes/edges snapshots
     model_dir = os.path.join(project_root, "model")
@@ -190,11 +199,13 @@ def main() -> None:
     ap.add_argument("--scope", default="project",
                     help="project | layer:L | group:G | component:C1,C2")
     ap.add_argument("--data-dict-id", default=None)
+    ap.add_argument("--version-id", default=None, help="use this (pre-allocated) version id")
     ap.add_argument("--no-llm", action="store_true", help="skip LLM hierarchy summarization")
     ap.add_argument("--force", action="store_true", help="overwrite the version dir if it exists")
     args = ap.parse_args()
     m = generate_full(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
-                      data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force)
+                      data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
+                      version_id=args.version_id)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, regenerated={m['regenerated']}, "
           f"documents={m.get('documents')}")

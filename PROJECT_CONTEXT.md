@@ -1,6 +1,6 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1.3a substrate — done** (`src/incremental/{stores,fingerprint,generate}.py`: D9 JSON store interface + reuse fingerprints + version-producing full-gen orchestrator; verified e2e on `samplecpp` — `versions/v2` + seeded `cache/index.json`; next: **M1.3b** backend `POST /generate` + `versions` APIs). **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **next: M2 — the incremental engine** (baseline pick + partial-parse + classify + impact BFS + selective regen + reassemble). **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
 > Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
 > Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
@@ -2819,17 +2819,27 @@ workspaces/<projectId>/
     e2e on `samplecpp` (scope group:Support, LLM off): `versions/v2` complete, 127 entities fingerprinted, docx
     captured, reuse index seeded; failed attempts recorded (status=failed) and still consume a versionId. Tests:
     `tests/unit/test_incremental_stores.py` (13) + `test_incremental_fingerprint.py` (7).
-  - **M1.3b** (next) — backend HTTP: `POST /api/v1/projects/{id}/generate` (full path → spawns the orchestrator
-    as a job) + `GET …/versions` + `GET …/versions/{id}` + `…/versions/{id}/download`, reusing the existing job
-    lifecycle (status/logs/cancel). Build against the D9 stores — no direct file IO in the API layer.
+  - **M1.3b backend HTTP — ✅ done.** [backend/main.py](backend/main.py) gains `POST /api/v1/projects/{id}/generate`
+    (FULL path only — spawns `src/incremental/generate.py` as a job via `_spawn_generate`; pre-allocates the
+    versionId, serializes per project with **409**, returns `{versionId, jobId, decision:"full", …}`),
+    `GET …/versions`, `GET …/versions/{id}` (+ per-doc `downloadUrl`), `…/versions/{id}/download`
+    (`.docx`, or `.zip` for multi-doc). generate.py: `--version-id` (pre-allocatable) + early **running** manifest
+    (so the version is queryable immediately) + analyzer stdout/stderr **inherited** (so run.py phase markers land
+    in the per-job log → existing `/jobs/{id}/status` tracks progress). Verified via TestClient on `samplecpp`:
+    versions list/detail/download (real 47 KB docx) + validation (404/400/409). *POST happy-path not exercised
+    live (TestClient blocks on the watcher; orchestrator is e2e-tested via the identical CLI path) — test live on a
+    running server. `mode:"auto"`/baseline (incremental) is M2.*
 - **M2 — incremental engine** — *not started.* Baseline pick + `generate/preview`; partial-parse + merge +
   classify; **impact BFS** (all axes); selective regen (index-check); reassemble; `mode:"auto"`.
 - **M3 — hardening** — *not started.* move/rename + deletions; version-scoped reads (`?versionId=`);
   recipe-fingerprint invalidation; multi-doc zip.
-- **Next concrete step:** **M1.3b** — backend HTTP wiring: `POST /api/v1/projects/{id}/generate` (full path →
-  spawn `src/incremental/generate.py` as a job) + `GET …/versions` + `GET …/versions/{id}` +
-  `…/versions/{id}/download`, reusing the existing job lifecycle. Against the D9 stores. (M1.1 + M1.2a/b + M1.3a
-  done; `src/incremental/{stores,fingerprint,generate}.py` produce versions + reuse index; CLI works e2e.)
+- **Next concrete step:** **M2 — the incremental engine** (doc 04 §5). Baseline pick (auto nearest-ancestor via
+  `git_service.nearest_ancestor` + optional override) + `GET …/generate/preview`; `git diff` changed files →
+  **partial-parse** changed files only (new `parser.py` mode) + merge into the baseline's carried-forward model;
+  classify {changed/new/deleted} vs the baseline's `hashes.json`; **impact BFS** (calls/globals from
+  functions.json, types/macros from edges.json, over-approx virtual/fn-ptr); selective regen with the reuse index
+  (fingerprint hit → copy, else LLM); reassemble (Phase 3+4); `mode:"auto"`. *Delivers hours→minutes.* (M1 fully
+  done: `--config`, hashing, edges, D9 stores + fingerprints + full-gen orchestrator + generate/versions APIs.)
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 

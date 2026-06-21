@@ -2355,6 +2355,151 @@ async def start_export(
     return JobStartResult(jobId=job_id)
 
 
+# ---------------------------------------------------------------------------
+# Incremental document versioning (M1.3b — doc 05 §5/§6).
+# Workspace/version/reuse persistence goes through the D9 stores (src/incremental).
+# ---------------------------------------------------------------------------
+
+def _open_workspace(project_id: str):
+    """Return (Workspace, VersionStore) for a project, or 404."""
+    from incremental.stores import Workspace, VersionStore, WorkspaceNotFound
+    try:
+        ws = Workspace(project_id)
+    except WorkspaceNotFound:
+        raise HTTPException(status_code=404, detail=f"unknown project {project_id!r}")
+    return ws, VersionStore(ws)
+
+
+def _scope_to_cli(scope: Optional[dict]) -> str:
+    stype = (scope or {}).get("type", "project")
+    names = (scope or {}).get("names") or []
+    if stype == "project" or not names:
+        return "project"
+    return f"{stype}:{','.join(names)}"
+
+
+def _spawn_generate(extra_args: List[str], output_file_path: str) -> subprocess.Popen:
+    """Spawn `python src/incremental/generate.py ...`, capturing stdout+stderr
+    (which includes the inherited run.py phase markers) into output_file_path so
+    the existing job-status machinery can track progress. Mirrors _spawn_run_py's
+    process-group flags for clean tree-kill on cancel."""
+    cmd = [sys.executable, os.path.join("src", "incremental", "generate.py"), *extra_args]
+    os.makedirs(os.path.dirname(output_file_path) or ".", exist_ok=True)
+    out_fh = open(output_file_path, "w", encoding="utf-8", buffering=1)
+    popen_kwargs: Dict = dict(cwd=_REPO_ROOT, stdout=out_fh, stderr=subprocess.STDOUT)
+    if sys.platform == "win32":
+        popen_kwargs["shell"] = True
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+    proc._spawn_output_fh = out_fh  # type: ignore[attr-defined]
+    return proc
+
+
+@app.post("/api/v1/projects/{project_id}/generate")
+async def generate_version(project_id: str, request: dict, background_tasks: BackgroundTasks):
+    """Start a full-generation version (doc 05 §5.2). M1.3b implements the FULL
+    path only; mode:"auto"/baseline (incremental) arrives in M2. Returns a jobId
+    (poll /jobs/{jobId}/status) and the versionId being produced.
+
+    Body: {branch, commit, scope?, mode?, baseVersionId?, dataDictId?, noLlm?}.
+    Generations are serialized per project (409 if one is already running)."""
+    ws, vstore = _open_workspace(project_id)
+    branch = (request.get("branch") or "").strip()
+    commit = (request.get("commit") or "").strip()
+    if not branch or not commit:
+        raise HTTPException(status_code=400, detail="branch and commit are required")
+    scope = request.get("scope") or {"type": "project"}
+    data_dict_id = request.get("dataDictId") or ws.project().get("currentDataDictId")
+
+    for jid, j in _jobs.items():
+        if (j.get("type") == "generate" and j.get("project_id") == project_id
+                and not j.get("complete")):
+            raise HTTPException(status_code=409,
+                                detail=f"a generation is already running for {project_id!r} (job {jid})")
+
+    version_id = vstore.next_version_id()
+    args = ["--project-id", project_id, "--branch", branch, "--commit", commit,
+            "--scope", _scope_to_cli(scope), "--version-id", version_id, "--force"]
+    if data_dict_id:
+        args += ["--data-dict-id", data_dict_id]
+    if request.get("noLlm"):
+        args += ["--no-llm"]
+
+    job_id = _new_job_id("gen")
+    output_file = os.path.join(_REPO_ROOT, "logs", f"job_{job_id}.out.log")
+    log_file = _expected_log_file_path()
+    log_offset = os.path.getsize(log_file) if os.path.isfile(log_file) else 0
+    try:
+        proc = _spawn_generate(args, output_file)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to spawn generate: {exc}")
+
+    _jobs[job_id] = {
+        "type": "generate", "process": proc, "pid": proc.pid,
+        "log_file": log_file, "log_offset": log_offset, "output_file": output_file,
+        "project_id": project_id, "version_id": version_id,
+        "command_line": "generate.py " + " ".join(args), "selected_group": None,
+        "total_phase_markers": 0,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "complete": False, "cancelled": False, "error": None, "return_code": None,
+    }
+    background_tasks.add_task(_watch_subprocess_job, job_id)
+    return {"versionId": version_id, "jobId": job_id, "decision": "full",
+            "baselineVersionId": None, "baselineCommit": None,
+            "dataDictId": data_dict_id, "warnings": []}
+
+
+@app.get("/api/v1/projects/{project_id}/versions")
+async def list_versions(project_id: str):
+    """List generated versions, newest first (doc 05 §6.3)."""
+    _, vstore = _open_workspace(project_id)
+    return vstore.list()
+
+
+@app.get("/api/v1/projects/{project_id}/versions/{version_id}")
+async def get_version_detail(project_id: str, version_id: str):
+    """Version detail + a download link per produced document (doc 05 §6.4)."""
+    _, vstore = _open_workspace(project_id)
+    man = vstore.get(version_id)
+    if man is None:
+        raise HTTPException(status_code=404, detail=f"unknown version {version_id!r}")
+    base = f"/api/v1/projects/{project_id}/versions/{version_id}/download"
+    out = dict(man)
+    out["documents"] = [{"name": d, "downloadUrl": base} for d in (man.get("documents") or [])]
+    return out
+
+
+@app.get("/api/v1/projects/{project_id}/versions/{version_id}/download")
+async def download_version(project_id: str, version_id: str):
+    """Stream the document(s) — a .docx for single-document scopes, else a .zip
+    (doc 05 §6.5)."""
+    _, vstore = _open_workspace(project_id)
+    if not vstore.exists(version_id):
+        raise HTTPException(status_code=404, detail=f"unknown version {version_id!r}")
+    man = vstore.get(version_id) or {}
+    if man.get("status") != "complete":
+        raise HTTPException(status_code=409, detail=f"version {version_id} is not complete")
+    docs_dir = os.path.join(vstore.version_dir(version_id), "documents")
+    docs = sorted(f for f in os.listdir(docs_dir)
+                  if f.lower().endswith(".docx")) if os.path.isdir(docs_dir) else []
+    if not docs:
+        raise HTTPException(status_code=404, detail="no documents for this version")
+    if len(docs) == 1:
+        return FileResponse(
+            os.path.join(docs_dir, docs[0]), filename=docs[0],
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    import zipfile
+    fd, zpath = tempfile.mkstemp(suffix=".zip", prefix=f"{project_id}_{version_id}_")
+    os.close(fd)
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as zf:
+        for d in docs:
+            zf.write(os.path.join(docs_dir, d), arcname=d)
+    return FileResponse(zpath, filename=f"{project_id}_{version_id}_documents.zip",
+                        media_type="application/zip")
+
+
 if __name__ == "__main__":
     import uvicorn
 
