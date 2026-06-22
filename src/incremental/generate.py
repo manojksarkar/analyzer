@@ -185,6 +185,7 @@ def generate_full(
         "llmModel": llm.get("defaultModel"), "elapsedSeconds": time.perf_counter() - _t0,
         "functions": {"total": len(functions), "regenerated": len(functions), "reused": 0},
         "globals": {"total": len(globals_), "regenerated": len(globals_), "reused": 0},
+        "flowcharts": {"total": len(functions), "regenerated": len(functions), "carried": 0},
         "files": {"total": files_total, "regenerated": files_total, "carried": 0},
         "documents": documents, "warnings": [],
     }), version_dir=vstore.version_dir(version_id))

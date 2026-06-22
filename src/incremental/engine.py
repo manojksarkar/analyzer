@@ -256,11 +256,16 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         if bf:
             flowchart_files.add((bf.get("location") or {}).get("file"))
     flowchart_files = sorted(flowchart_files - {None})
+    # flowchartFids (for FUNCTION-LEVEL flowchart reuse, M3.6) = the directly changed/
+    # new function fids themselves. The flowcharts view regenerates ONLY these and
+    # splices them into the baseline file JSONs, instead of regenerating every function
+    # in a changed file. (flowchartFiles is kept for older readers / file-level fallback.)
     with open(os.path.join(model_dir, "incremental_plan.json"), "w", encoding="utf-8") as fh:
         json.dump({"impactFids": sorted(plan["impact"]),
                    "impactedGlobals": sorted(impacted_globals),
                    "impactedFiles": impacted_files,
                    "flowchartFiles": flowchart_files,
+                   "flowchartFids": sorted(direct_fns),
                    "baselineVersionDir": vstore.version_dir(base_vid)}, fh, indent=2)
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
@@ -313,8 +318,14 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         "classification": classification,
         "functions": {"total": fn_total, "regenerated": fn_regen, "reused": fn_total - fn_regen},
         "globals": {"total": gl_total, "regenerated": gl_regen, "reused": gl_total - gl_regen},
-        "files": {"total": len(all_files), "regenerated": len(flowchart_files),
-                  "carried": len(all_files) - len(flowchart_files)},
+        # Flowcharts now reuse at FUNCTION granularity (M3.6): only the directly changed/
+        # new functions are re-labelled; the rest are spliced from the baseline.
+        "flowcharts": {"total": fn_total, "regenerated": len(direct_fns),
+                       "carried": fn_total - len(direct_fns)},
+        # files = file-level SUMMARIES (a caller's file-summary depends on its callees),
+        # so it tracks the full impact set's files, not the directly-changed ones.
+        "files": {"total": len(all_files), "regenerated": len(impacted_files),
+                  "carried": len(all_files) - len(impacted_files)},
         "documents": documents, "warnings": decision["warnings"],
     }
     emit_report(build_report(stats), version_dir=vdir)
