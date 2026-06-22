@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'developer'
 
-export type DocStatus = 'in_review' | 'approved' | 'complete' | 'draft'
+export type DocStatus = 'in_review' | 'approved' | 'complete' | 'draft' | 'unchanged'
 export type VersionStatus = 'in_review' | 'approved' | 'complete'
 export type PageState = 'never' | 'running' | 'in_review' | 'complete' | 'stale'
 
@@ -13,6 +13,7 @@ export interface TeamMember {
   lastActive: string
   avatarColor: string
   avatarTextColor: string
+  pending?: boolean
 }
 
 export interface Project {
@@ -62,4 +63,9 @@ export interface Document {
   assignee?: string
   version: string
   updatedAt: string
+  subtitle?: string
+  due?: string
+  assigneeInitials?: string
+  assigneeColor?: string
+  assigneeTextColor?: string
 }

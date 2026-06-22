@@ -1,31 +1,23 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useDocuments, useTeam } from '../hooks/useProjects'
-import { useAuthStore } from '../store/auth'
+import { useProject, useDocuments, useTeam } from '../hooks/useProjects'
+import { useUIStore } from '../store/ui'
 import { Button, Badge, RoleBadge, ProcessBadge, TableSkeleton } from '../components/ui'
 import type { PageState, DocStatus, TeamMember } from '../types'
-
-/* ─── State switcher (dev toolbar) ─── */
-const PAGE_STATES: { value: PageState; label: string }[] = [
-  { value: 'never',     label: 'Never run' },
-  { value: 'running',   label: 'Running'   },
-  { value: 'in_review', label: 'In Review' },
-  { value: 'complete',  label: 'Complete'  },
-  { value: 'stale',     label: 'Stale'     },
-]
 
 /* ─── Doc status config ─── */
 const STATUS_CONFIG: Record<DocStatus, { label: string; variant: 'warning' | 'success' | 'primary' | 'default' }> = {
   in_review: { label: 'In Review', variant: 'warning' },
   approved:  { label: 'Approved',  variant: 'success' },
-  complete:  { label: 'Complete',  variant: 'primary' },
+  complete:  { label: 'Complete',  variant: 'success' },
   draft:     { label: 'Draft',     variant: 'default' },
+  unchanged: { label: 'Unchanged', variant: 'default' },
 }
 
 /* ─── KPI card ─── */
 function KpiCard({ label, value, sub, icon, color }: { label: string; value: string; sub?: string; icon: string; color: string }) {
   return (
-    <div className="stat-card bg-white border border-outline-variant rounded-xl p-5 hover:shadow-sm transition-shadow">
+    <div className="bg-white border border-outline-variant rounded-xl p-5 hover:shadow-sm transition-shadow">
       <div className="flex items-center justify-between mb-3">
         <span
           className="text-on-surface-variant uppercase"
@@ -50,15 +42,10 @@ function TeamRow({ member }: { member: TeamMember }) {
         style={{ background: member.avatarColor, color: member.avatarTextColor }}
         aria-hidden
       >
-        <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 700 }}>
-          {member.initials}
-        </span>
+        <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 700 }}>{member.initials}</span>
       </div>
       <div className="flex-1 min-w-0">
-        <p
-          className="text-on-surface truncate"
-          style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 500 }}
-        >
+        <p className="text-on-surface truncate" style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 500 }}>
           {member.name}
         </p>
       </div>
@@ -67,50 +54,56 @@ function TeamRow({ member }: { member: TeamMember }) {
   )
 }
 
+/* ─── Phase step (running panel) ─── */
+type PhaseStatus = 'done' | 'active' | 'pending'
+function PhaseStep({ n, label, status, time }: { n: number; label: string; status: PhaseStatus; time: string }) {
+  const timeColor = status === 'done' ? '#00a572' : status === 'active' ? '#0058be' : '#c4c6cd'
+  return (
+    <div className="flex flex-col items-center text-center" style={{ minWidth: 105 }}>
+      <div
+        className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+        style={{ background: status === 'done' ? '#00a572' : status === 'active' ? '#0058be' : '#e5eeff' }}
+      >
+        {status === 'done' ? (
+          <span className="material-symbols-outlined text-white sym-fill" style={{ fontSize: 14 }} aria-hidden>check</span>
+        ) : status === 'active' ? (
+          <div className="animate-spin" style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,.35)', borderTopColor: '#fff', borderRadius: '9999px' }} />
+        ) : (
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#74777d' }}>{n}</span>
+        )}
+      </div>
+      <p className="mt-1.5 font-semibold" style={{ fontSize: 11, color: status === 'pending' ? '#74777d' : '#0b1c30' }}>Phase {n}</p>
+      <p className="text-on-surface-variant" style={{ fontSize: 10 }}>{label}</p>
+      <p className="mt-0.5" style={{ fontSize: 10, color: timeColor, fontFamily: "'JetBrains Mono'" }}>{time}</p>
+    </div>
+  )
+}
+
 export function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
-  const user = useAuthStore((s) => s.user)
-  const isAdmin = user?.role === 'admin'
+  const roleView = useUIStore((s) => s.roleView)
+  const isAdmin = roleView === 'admin'
 
-  const [pageState, setPageState] = useState<PageState>('in_review')
-
+  const { data: project } = useProject(projectId ?? '')
   const { data: documents, isLoading: docsLoading } = useDocuments(projectId ?? '')
   const { data: team, isLoading: teamLoading } = useTeam(projectId ?? '')
 
-  const previewDocs = documents?.slice(0, 6) ?? []
-  const reviewQueue = documents?.filter((d) => d.status === 'in_review') ?? []
-  const unassigned  = documents?.filter((d) => !d.assignee) ?? []
+  // State driven by the project's own pageState; mutable so Run/Re-run can switch to "running"
+  const [pageState, setPageState] = useState<PageState>('in_review')
+  useEffect(() => {
+    if (project?.pageState) setPageState(project.pageState)
+  }, [project?.pageState])
+
+  const previewDocs  = documents?.slice(0, 6) ?? []
+  const reviewQueue  = documents?.filter((d) => d.status === 'in_review') ?? []
+  const unassigned   = documents?.filter((d) => !d.assignee) ?? []
 
   const showContent = ['in_review', 'complete', 'stale'].includes(pageState)
 
   return (
     <div className="flex-1 overflow-y-auto bg-background">
       <div className="px-6 py-6" style={{ maxWidth: 1280, margin: '0 auto' }}>
-
-        {/* ── Dev toolbar: state switcher ── */}
-        <div className="flex items-center gap-3 mb-5 pb-4 border-b border-outline-variant">
-          <span
-            className="text-on-surface-variant"
-            style={{ fontFamily: "'JetBrains Mono'", fontSize: 11 }}
-          >
-            Simulate state:
-          </span>
-          <div className="flex items-center gap-1 bg-surface-container rounded-lg p-0.5" role="group">
-            {PAGE_STATES.map(({ value, label }) => (
-              <button
-                key={value}
-                onClick={() => setPageState(value)}
-                className={`px-3 py-1.5 rounded-md transition-colors ${
-                  pageState === value ? 'bg-secondary text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface'
-                }`}
-                style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: pageState === value ? 700 : 500 }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* ══ EMPTY STATE ══ */}
         {pageState === 'never' && (
@@ -120,14 +113,12 @@ export function ProjectDetailPage() {
             </div>
             <div>
               <h3 className="text-on-surface font-semibold" style={{ fontSize: 18 }}>No documents generated yet</h3>
-              <p
-                className="text-on-surface-variant mt-2"
-                style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, maxWidth: 340 }}
-              >
+              <p className="text-on-surface-variant mt-2" style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, maxWidth: 340 }}>
                 Run analysis on <strong>main @ abc1234</strong> to generate ASPICE-compliant documents for all 5 processes.
               </p>
             </div>
             <button
+              onClick={() => setPageState('running')}
               className="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors"
               style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 700, letterSpacing: '0.04em' }}
             >
@@ -141,70 +132,78 @@ export function ProjectDetailPage() {
         {pageState === 'running' && (
           <div className="mb-7 rounded-xl overflow-hidden border border-outline-variant">
             {/* Dark header */}
-            <div className="px-5 py-4 flex items-center gap-4" style={{ background: '#041627' }}>
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ border: '2px solid #0058be', borderTopColor: 'transparent' }}
-              >
-                <div
-                  className="animate-spin w-full h-full rounded-full"
-                  style={{ border: '2px solid #0058be', borderTopColor: 'transparent', borderRadius: '9999px' }}
-                />
-              </div>
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <p className="text-white font-semibold" style={{ fontFamily: 'Inter', fontSize: 14 }}>Analysis Running</p>
-                  <span
-                    style={{
-                      fontFamily: "'JetBrains Mono'", fontSize: 9, fontWeight: 700,
-                      background: '#0058be', color: '#fff', padding: '1px 7px',
-                      borderRadius: 3, textTransform: 'uppercase', letterSpacing: '0.05em',
-                    }}
-                  >
-                    Live
-                  </span>
+            <div className="px-5 py-4 flex items-center justify-between" style={{ background: '#041627' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: '2px solid #0058be', borderTopColor: 'transparent' }}>
+                  <div className="animate-spin w-full h-full rounded-full" style={{ border: '2px solid #0058be', borderTopColor: 'transparent', borderRadius: '9999px' }} />
                 </div>
-                <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: '#8192a7', marginTop: 2 }}>
-                  Branch <span style={{ color: '#4d9fff' }}>main</span>
-                  <span style={{ color: '#1e3045', margin: '0 6px' }}>·</span>
-                  Commit <span style={{ color: '#4d9fff' }}>abc1234</span>
-                </p>
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <p className="text-white font-semibold" style={{ fontFamily: 'Inter', fontSize: 14 }}>Analysis Running</p>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, fontWeight: 700, background: '#0058be', color: '#fff', padding: '1px 7px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Live</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5" style={{ color: '#8192a7' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 12 }} aria-hidden>source</span>
+                    <p style={{ fontSize: 11, fontFamily: "'JetBrains Mono'" }}>Branch <span style={{ color: '#4d9fff' }}>main</span></p>
+                    <span style={{ color: '#1e3045' }}>·</span>
+                    <p style={{ fontSize: 11, fontFamily: "'JetBrains Mono'" }}>Commit <span style={{ color: '#4d9fff' }}>abc1234</span></p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-5">
+                <div className="text-right">
+                  <p style={{ fontSize: 10, fontFamily: "'JetBrains Mono'", color: '#44474c', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Started</p>
+                  <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: '#8192a7' }}>14:32</p>
+                </div>
+                <div className="text-right">
+                  <p style={{ fontSize: 10, fontFamily: "'JetBrains Mono'", color: '#44474c', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Elapsed</p>
+                  <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: '#ffffff' }}>00:12:47</p>
+                </div>
+                <button
+                  onClick={() => setPageState(project?.pageState ?? 'in_review')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors"
+                  style={{ border: '1px solid #4d2020', color: '#ff7070', fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 500 }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 14 }} aria-hidden>stop_circle</span>
+                  Cancel Job
+                </button>
               </div>
             </div>
+
             {/* Phase steps */}
-            <div className="bg-white px-6 py-5">
-              <div className="flex items-start gap-0">
-                {[
-                  { n: 1, label: 'Parse C++',    status: 'done',    time: 'Done · 3m 12s', color: '#00a572' },
-                  { n: 2, label: 'Derive Model', status: 'active',  time: 'Running...',     color: '#0058be' },
-                  { n: 3, label: 'Run Views',    status: 'pending', time: 'Pending',        color: '#c4c6cd' },
-                  { n: 4, label: 'Export DOCX',  status: 'pending', time: 'Pending',        color: '#c4c6cd' },
-                ].map((phase, i, arr) => (
-                  <div key={phase.n} className="flex items-start flex-1">
-                    <div className="flex flex-col items-center text-center" style={{ minWidth: 105 }}>
-                      <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                        style={{ background: phase.status === 'done' ? '#00a572' : phase.status === 'active' ? '#0058be' : '#e5eeff' }}
-                      >
-                        {phase.status === 'done'
-                          ? <span className="material-symbols-outlined text-white sym-fill" style={{ fontSize: 14 }}>check</span>
-                          : phase.status === 'active'
-                          ? <div className="animate-spin" style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,.35)', borderTopColor: '#fff', borderRadius: '9999px' }} />
-                          : <span style={{ fontSize: 13, fontWeight: 600, color: '#74777d' }}>{phase.n}</span>
-                        }
-                      </div>
-                      <p className="mt-1.5 font-semibold text-on-surface" style={{ fontSize: 11 }}>Phase {phase.n}</p>
-                      <p className="text-on-surface-variant" style={{ fontSize: 10 }}>{phase.label}</p>
-                      <p className="mt-0.5" style={{ fontSize: 10, color: phase.color, fontFamily: "'JetBrains Mono'" }}>{phase.time}</p>
-                    </div>
-                    {i < arr.length - 1 && (
-                      <div
-                        className="flex-1 mt-[14px]"
-                        style={{ height: 2, background: i === 0 ? '#00a572' : '#e5eeff', borderRadius: 9999, margin: '14px 6px 0' }}
-                      />
-                    )}
+            <div className="bg-white px-6 pt-5 pb-3">
+              <div className="flex items-start">
+                <PhaseStep n={1} label="Parse C++"     status="done"    time="Done · 3m 12s" />
+                <div className="flex-1 mt-[14px]" style={{ height: 2, background: '#00a572', borderRadius: 9999, margin: '14px 6px 0' }} />
+                <PhaseStep n={2} label="Derive Model"  status="active"  time="Running..." />
+                <div className="flex-1 mt-[14px]" style={{ height: 2, background: '#e5eeff', borderRadius: 9999, margin: '14px 6px 0' }} />
+                <PhaseStep n={3} label="Run Views"     status="pending" time="Pending" />
+                <div className="flex-1 mt-[14px]" style={{ height: 2, background: '#e5eeff', borderRadius: 9999, margin: '14px 6px 0' }} />
+                <PhaseStep n={4} label="Export DOCX"   status="pending" time="Pending" />
+              </div>
+            </div>
+
+            {/* Activity row */}
+            <div className="bg-white px-6 pb-5">
+              <div className="bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-secondary" style={{ fontSize: 14 }} aria-hidden>psychology</span>
+                    <p className="text-on-surface" style={{ fontFamily: "'JetBrains Mono'", fontSize: 11 }}>Enriching function descriptions with LLM...</p>
                   </div>
-                ))}
+                  <span className="text-secondary" style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 500 }}>37%</span>
+                </div>
+                <div className="progress-track mb-2">
+                  <div className="progress-fill" style={{ width: '37%', background: '#0058be' }} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-on-surface-variant" style={{ fontFamily: "'JetBrains Mono'", fontSize: 11 }}>312 of 842 functions · LLM enrichment enabled</p>
+                  <p style={{ color: '#74777d', fontFamily: "'JetBrains Mono'", fontSize: 11 }}>Est. ~4h 20m remaining</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 mt-2 px-1">
+                <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 13 }} aria-hidden>info</span>
+                <p className="text-on-surface-variant" style={{ fontFamily: "'JetBrains Mono'", fontSize: 11 }}>Job runs on the server — switch branches or close this tab safely. Return any time to check progress.</p>
               </div>
             </div>
           </div>
@@ -216,11 +215,10 @@ export function ProjectDetailPage() {
             <span className="material-symbols-outlined sym-fill flex-shrink-0" style={{ fontSize: 20, color: '#d97706' }} aria-hidden>warning</span>
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-on-surface" style={{ fontSize: 13 }}>3 new commits since this analysis</p>
-              <p style={{ fontSize: 11, color: '#74777d', fontFamily: "'JetBrains Mono'", marginTop: 2 }}>
-                Results may be outdated — re-run to analyze the latest code.
-              </p>
+              <p style={{ fontSize: 11, color: '#74777d', fontFamily: "'JetBrains Mono'", marginTop: 2 }}>Results may be outdated — re-run to analyze the latest code.</p>
             </div>
             <button
+              onClick={() => setPageState('running')}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors flex-shrink-0"
               style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 700, letterSpacing: '0.04em' }}
             >
@@ -233,27 +231,9 @@ export function ProjectDetailPage() {
         {/* ══ KPI STRIP ══ */}
         {showContent && (
           <div className="mb-6" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem' }}>
-            <KpiCard
-              label="Documents"
-              value="45"
-              sub="26 in review"
-              icon="description"
-              color="#0058be"
-            />
-            <KpiCard
-              label="Completion"
-              value="12%"
-              sub="across all processes"
-              icon="fact_check"
-              color="#00a572"
-            />
-            <KpiCard
-              label="Version"
-              value="v1.2.0"
-              sub="SWE.3 review draft"
-              icon="sell"
-              color="#f59e0b"
-            />
+            <KpiCard label="Documents"  value={String(documents?.length ?? 45)} sub={`${reviewQueue.length} in review`} icon="description" color="#0058be" />
+            <KpiCard label="Completion" value={`${project?.progress ?? 12}%`}    sub="across all processes" icon="fact_check" color="#00a572" />
+            <KpiCard label="Version"    value={project?.latestVersion ?? 'v1.2.0'} sub="SWE.3 review draft" icon="sell" color="#f59e0b" />
           </div>
         )}
 
@@ -261,7 +241,7 @@ export function ProjectDetailPage() {
         {showContent && (
           <div className="flex gap-6 items-stretch">
 
-            {/* Left column: docs table + team */}
+            {/* Left column */}
             <div className="flex-1 min-w-0 flex flex-col gap-4">
 
               {/* Documents table */}
@@ -270,7 +250,7 @@ export function ProjectDetailPage() {
                   <div>
                     <h2 className="text-on-surface font-semibold" style={{ fontSize: 18 }}>Documents</h2>
                     <p className="text-on-surface-variant mt-0.5" style={{ fontFamily: "'JetBrains Mono'", fontSize: 11 }}>
-                      {reviewQueue.length} in review · v1.2.0
+                      {reviewQueue.length} in review · {project?.latestVersion ?? 'v1.2.0'}
                     </p>
                   </div>
                   <a
@@ -293,7 +273,7 @@ export function ProjectDetailPage() {
                           <th
                             key={h + i}
                             className="text-left px-5 py-2.5 text-on-surface-variant uppercase"
-                            style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 500, letterSpacing: '0.07em', width: i === 3 ? 44 : undefined }}
+                            style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 500, letterSpacing: '0.07em', width: i === 1 ? 210 : i === 2 ? 160 : i === 3 ? 44 : undefined }}
                           >
                             {h}
                           </th>
@@ -310,13 +290,11 @@ export function ProjectDetailPage() {
                           <td className="px-5 py-3">
                             <div className="flex flex-col gap-0.5">
                               <p className="text-on-surface font-medium" style={{ fontSize: 12 }}>{doc.name}</p>
-                              <ProcessBadge process={doc.process} />
+                              <div><ProcessBadge process={doc.process} /></div>
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <Badge variant={STATUS_CONFIG[doc.status].variant}>
-                              {STATUS_CONFIG[doc.status].label}
-                            </Badge>
+                            <Badge variant={STATUS_CONFIG[doc.status].variant}>{STATUS_CONFIG[doc.status].label}</Badge>
                           </td>
                           <td className="px-4 py-3 text-xs text-on-surface-variant">
                             {doc.assignee ?? <span className="text-outline">Unassigned</span>}
@@ -393,7 +371,7 @@ export function ProjectDetailPage() {
               </div>
             </div>
 
-            {/* Right sidebar: 300px */}
+            {/* Right sidebar */}
             <div style={{ width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
               {/* Review Queue — admin only */}
@@ -401,13 +379,7 @@ export function ProjectDetailPage() {
                 <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
                   <div className="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
                     <h2 className="text-on-surface font-semibold" style={{ fontSize: 18 }}>Review Queue</h2>
-                    <span
-                      style={{
-                        fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 700,
-                        background: '#e5eeff', color: '#0058be',
-                        padding: '2px 10px', borderRadius: 99,
-                      }}
-                    >
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 700, background: '#e5eeff', color: '#0058be', padding: '2px 10px', borderRadius: 99 }}>
                       {reviewQueue.length} pending
                     </span>
                   </div>
@@ -421,24 +393,33 @@ export function ProjectDetailPage() {
                         onClick={() => navigate(`/projects/${projectId}/documents`)}
                       >
                         <div className="flex-1 min-w-0">
-                          <p className="text-on-surface truncate" style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 500 }}>
-                            {doc.name}
-                          </p>
-                          <p className="text-on-surface-variant mt-0.5" style={{ fontFamily: "'JetBrains Mono'", fontSize: 11 }}>
-                            {doc.assignee ?? 'Unassigned'}
-                          </p>
+                          <p className="text-on-surface truncate" style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 500 }}>{doc.name}</p>
+                          <p className="text-on-surface-variant mt-0.5" style={{ fontFamily: "'JetBrains Mono'", fontSize: 11 }}>{doc.assignee ?? 'Unassigned'}</p>
                         </div>
-                        <span
-                          style={{
-                            fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 700,
-                            background: '#fff8e6', color: '#d97706',
-                            padding: '2px 7px', borderRadius: 99, flexShrink: 0,
-                          }}
-                        >
+                        <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 700, background: '#fff8e6', color: '#d97706', padding: '2px 7px', borderRadius: 99, flexShrink: 0 }}>
                           {doc.updatedAt}
                         </span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Function Visibility — developer only */}
+              {!isAdmin && (
+                <div className="bg-white border border-outline-variant rounded-xl overflow-hidden">
+                  <div className="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
+                    <div>
+                      <h2 className="text-on-surface font-semibold" style={{ fontSize: 18 }}>Function Visibility</h2>
+                      <p className="text-on-surface-variant mt-0.5" style={{ fontFamily: "'JetBrains Mono'", fontSize: 11 }}>3 of 26 functions hidden from DOCX</p>
+                    </div>
+                  </div>
+                  <div className="px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined" style={{ fontSize: 14, color: '#ba1a1a' }} aria-hidden>visibility_off</span>
+                      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: '#ba1a1a' }}>3 hidden</span>
+                    </div>
+                    <span className="text-on-surface-variant" style={{ fontFamily: "'JetBrains Mono'", fontSize: 11 }}>Last: v1.1.0</span>
                   </div>
                 </div>
               )}
@@ -450,16 +431,14 @@ export function ProjectDetailPage() {
                 </div>
                 <div className="divide-y divide-outline-variant">
                   {[
-                    { icon: 'check_circle', color: '#00a572', text: 'Sarah C. approved CAN-Matrix',       time: '1d ago' },
-                    { icon: 'play_circle',  color: '#0058be', text: 'Manoj S. ran analysis — v1.2.0',    time: '3d ago' },
-                    { icon: 'person_add',   color: '#7c3aed', text: 'Ana F. assigned to System Arch.',   time: '4d ago' },
-                    { icon: 'sell',         color: '#00a572', text: 'v1.1.0 tagged — Engine complete',   time: '6d ago' },
-                    { icon: 'rate_review',  color: '#f59e0b', text: 'Liam P. submitted Diagnostics',     time: '1w ago' },
+                    { icon: 'check_circle', color: '#00a572', text: 'Sarah C. approved CAN-Matrix',      time: '1d ago' },
+                    { icon: 'play_circle',  color: '#0058be', text: 'Manoj S. ran analysis — v1.2.0',   time: '3d ago' },
+                    { icon: 'person_add',   color: '#7c3aed', text: 'Ana F. assigned to System Arch.',  time: '4d ago' },
+                    { icon: 'sell',         color: '#00a572', text: 'v1.1.0 tagged — Engine complete',  time: '6d ago' },
+                    { icon: 'rate_review',  color: '#f59e0b', text: 'Liam P. submitted Diagnostics',    time: '1w ago' },
                   ].map((item, i) => (
                     <div key={i} className="px-4 py-3 flex items-start gap-3 hover:bg-surface-container-low transition-colors">
-                      <span className="material-symbols-outlined sym-fill flex-shrink-0 mt-0.5" style={{ fontSize: 16, color: item.color }} aria-hidden>
-                        {item.icon}
-                      </span>
+                      <span className="material-symbols-outlined sym-fill flex-shrink-0 mt-0.5" style={{ fontSize: 16, color: item.color }} aria-hidden>{item.icon}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-on-surface" style={{ fontSize: 12 }}>{item.text}</p>
                         <p className="text-on-surface-variant mt-0.5" style={{ fontFamily: "'JetBrains Mono'", fontSize: 10 }}>{item.time}</p>

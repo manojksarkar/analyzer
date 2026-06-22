@@ -9,6 +9,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   { id: 'AM', name: 'Arjun M.',     initials: 'AM', email: 'arjun@example.com',  role: 'developer', lastActive: '4 days ago',  avatarColor: '#fef9c3', avatarTextColor: '#92400e' },
   { id: 'ZP', name: 'Zara Patel',   initials: 'ZP', email: 'zara@example.com',   role: 'admin',     lastActive: '5 days ago',  avatarColor: '#fff7ed', avatarTextColor: '#c2410c' },
   { id: 'LP', name: 'Liam Park',    initials: 'LP', email: 'liam@example.com',   role: 'developer', lastActive: '1 week ago',  avatarColor: '#ecfdf5', avatarTextColor: '#065f46' },
+  { id: 'TR', name: 'Tom Reyes',    initials: 'TR', email: 'tom@example.com',    role: 'developer', lastActive: 'Invited 2d ago', avatarColor: '#f3f4f6', avatarTextColor: '#44474c', pending: true },
 ]
 
 export const PROJECTS: Project[] = [
@@ -153,19 +154,21 @@ export const COMMITS: Commit[] = [
 ]
 
 export const DOCUMENTS: Document[] = [
-  { id: 'd1',  name: 'Layer1-Sample — Detailed Design',        process: 'SWE.3', status: 'in_review', assignee: 'Manoj S.',    version: 'v1.2.0', updatedAt: 'Jun 18' },
-  { id: 'd2',  name: 'Layer2-Engine — Detailed Design',        process: 'SWE.3', status: 'draft',     assignee: undefined,     version: 'v1.2.0', updatedAt: 'Jun 17' },
-  { id: 'd3',  name: 'Brake-FMEA — Detailed Design',           process: 'SWE.3', status: 'approved',  assignee: 'Manoj S.',    version: 'v1.2.0', updatedAt: 'Jun 16' },
-  { id: 'd4',  name: 'ADAS-Control — Detailed Design',         process: 'SWE.3', status: 'in_review', assignee: 'Zara Patel',  version: 'v1.2.0', updatedAt: 'Jun 15' },
-  { id: 'd5',  name: 'Signal-Interface — Design',              process: 'SWE.3', status: 'draft',     assignee: undefined,     version: 'v1.2.0', updatedAt: 'Jun 14' },
-  { id: 'd6',  name: 'Powertrain — Detailed Design',           process: 'SWE.3', status: 'in_review', assignee: 'Ana Ferreira',version: 'v1.2.0', updatedAt: 'Jun 13' },
-  { id: 'd7',  name: 'CAN-Matrix — Detailed Design',           process: 'SWE.3', status: 'approved',  assignee: 'Arjun M.',   version: 'v1.1.0', updatedAt: 'Jun 18' },
-  { id: 'd8',  name: 'Diagnostics — Detailed Design',          process: 'SWE.3', status: 'in_review', assignee: 'Sarah Chen',  version: 'v1.1.0', updatedAt: 'Jun 12' },
-  { id: 'd9',  name: 'SYS Requirements Specification',         process: 'SYS.1', status: 'draft',     assignee: 'Arjun M.',   version: 'v1.1.0', updatedAt: 'Jun 10' },
-  { id: 'd10', name: 'System Architecture Document',           process: 'SYS.2', status: 'in_review', assignee: 'Ana Ferreira',version: 'v1.1.0', updatedAt: 'Jun 25' },
-  { id: 'd11', name: 'SW Requirements Specification',          process: 'SWE.1', status: 'in_review', assignee: 'Marcus Webb', version: 'v1.0.0', updatedAt: 'Jun 22' },
-  { id: 'd12', name: 'Detailed SW Design Specification',       process: 'SWE.2', status: 'approved',  assignee: 'Manoj S.',   version: 'v1.1.0', updatedAt: 'Jun 15' },
-  { id: 'd13', name: 'Interface Control Document',             process: 'SWE.2', status: 'in_review', assignee: undefined,     version: 'v1.1.0', updatedAt: 'Jun 18' },
+  { id: 'd1',  process: 'SYS.1', name: 'System Requirements Spec',   subtitle: 'Customer Requirements', status: 'approved',  version: 'v1.2.0', due: 'Jun 15', assignee: 'Alice Chen',  assigneeInitials: 'AC', assigneeColor: '#e0f2ff', assigneeTextColor: '#0058be', updatedAt: 'Jun 15' },
+  { id: 'd2',  process: 'SYS.2', name: 'System Test Spec',           subtitle: 'System Verification',   status: 'in_review', version: 'v1.2.0', due: 'Jun 28', assignee: 'Bob Kumar',   assigneeInitials: 'BK', assigneeColor: '#f3e8ff', assigneeTextColor: '#7c3aed', updatedAt: 'Jun 28' },
+  { id: 'd3',  process: 'SWE.1', name: 'SW Requirements Spec',       subtitle: 'Software Requirements', status: 'approved',  version: 'v1.2.0', due: 'Jun 10', assignee: 'Carol Singh', assigneeInitials: 'CS', assigneeColor: '#fff7ed', assigneeTextColor: '#c2410c', updatedAt: 'Jun 10' },
+  { id: 'd4',  process: 'SWE.2', name: 'Software Architecture Spec', subtitle: 'Architecture Design',   status: 'in_review', version: 'v1.2.0', due: 'Jun 30', assignee: 'Bob Kumar',   assigneeInitials: 'BK', assigneeColor: '#f3e8ff', assigneeTextColor: '#7c3aed', updatedAt: 'Jun 30' },
+  { id: 'd5',  process: 'SWE.3', name: 'Brake Controller',           subtitle: 'Detailed Design',       status: 'approved',  version: 'v1.2.0', due: 'Jun 20', assignee: 'Bob Kumar',   assigneeInitials: 'BK', assigneeColor: '#f3e8ff', assigneeTextColor: '#7c3aed', updatedAt: 'Jun 20' },
+  { id: 'd6',  process: 'SWE.3', name: 'ABS Unit',                   subtitle: 'Detailed Design',       status: 'approved',  version: 'v1.2.0', due: 'Jun 18', assignee: 'Alice Chen',  assigneeInitials: 'AC', assigneeColor: '#e0f2ff', assigneeTextColor: '#0058be', updatedAt: 'Jun 18' },
+  { id: 'd7',  process: 'SWE.3', name: 'Stability Control',          subtitle: 'Detailed Design',       status: 'in_review', version: 'v1.2.0', due: 'Jun 25', assignee: 'Carol Singh', assigneeInitials: 'CS', assigneeColor: '#fff7ed', assigneeTextColor: '#c2410c', updatedAt: 'Jun 25' },
+  { id: 'd8',  process: 'SWE.3', name: 'Throttle Controller',        subtitle: 'Detailed Design',       status: 'in_review', version: 'v1.2.0', due: 'Jun 27', assignee: 'Carol Singh', assigneeInitials: 'CS', assigneeColor: '#fff7ed', assigneeTextColor: '#c2410c', updatedAt: 'Jun 27' },
+  { id: 'd9',  process: 'SWE.3', name: 'Fuel Injector',              subtitle: 'Detailed Design',       status: 'unchanged', version: 'v1.2.0', due: 'Jul 05', assignee: undefined,     updatedAt: 'Jul 05' },
+  { id: 'd10', process: 'SWE.3', name: 'Lighting Ctrl',              subtitle: 'Detailed Design',       status: 'unchanged', version: 'v1.2.0', due: 'Jul 08', assignee: undefined,     updatedAt: 'Jul 08' },
+  { id: 'd11', process: 'SWE.3', name: 'HVAC Ctrl',                  subtitle: 'Detailed Design',       status: 'in_review', version: 'v1.2.0', due: 'Jun 29', assignee: 'Alice Chen',  assigneeInitials: 'AC', assigneeColor: '#e0f2ff', assigneeTextColor: '#0058be', updatedAt: 'Jun 29' },
+  { id: 'd12', process: 'SWE.3', name: 'GPIO Driver',                subtitle: 'Detailed Design',       status: 'approved',  version: 'v1.2.0', due: 'Jun 12', assignee: 'Bob Kumar',   assigneeInitials: 'BK', assigneeColor: '#f3e8ff', assigneeTextColor: '#7c3aed', updatedAt: 'Jun 12' },
+  { id: 'd13', process: 'SWE.3', name: 'CAN Driver',                 subtitle: 'Detailed Design',       status: 'unchanged', version: 'v1.2.0', due: 'Jul 10', assignee: undefined,     updatedAt: 'Jul 10' },
+  { id: 'd14', process: 'SWE.3', name: 'SPI Driver',                 subtitle: 'Detailed Design',       status: 'unchanged', version: 'v1.2.0', due: 'Jul 12', assignee: undefined,     updatedAt: 'Jul 12' },
+  { id: 'd15', process: 'SWE.3', name: 'PWM Driver',                 subtitle: 'Detailed Design',       status: 'in_review', version: 'v1.2.0', due: 'Jul 01', assignee: 'Carol Singh', assigneeInitials: 'CS', assigneeColor: '#fff7ed', assigneeTextColor: '#c2410c', updatedAt: 'Jul 01' },
 ]
 
 export const CURRENT_PROJECT = PROJECTS[0]
