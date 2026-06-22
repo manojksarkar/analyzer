@@ -148,17 +148,17 @@
   /* ── Layer / architecture ── */
   .layer-block { border: 1px solid #c4c6cd; border-radius: 0.5rem; overflow: hidden; }
   .layer-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #eff4ff; border-bottom: 1px solid #c4c6cd; cursor: pointer; user-select: none; }
-  .layer-path-display { display: block; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #74777d; margin-top: 2px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .layer-path-display { display: block; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #74777d; margin-top: 2px; cursor: pointer; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .layer-path-display:hover { color: #0058be; }
   .layer-path-display.empty { color: #b0b3b8; }
-  .layer-path-input { display: block; font-family: 'JetBrains Mono', monospace !important; font-size: 9px !important; line-height: 1.4; color: #0058be; background: none; border: none; border-bottom: 1px solid #0058be; outline: none; width: 100%; margin-top: 2px; padding: 0; }
+  .layer-path-input { display: block; font-family: 'JetBrains Mono', monospace !important; font-size: 11px !important; line-height: 1.4; color: #0058be; background: none; border: none; border-bottom: 1px solid #0058be; outline: none; width: 100%; margin-top: 2px; padding: 0; }
   .layer-body { padding: 4px 0 8px; }
   .tree-group-row { display: flex; align-items: center; gap: 3px; padding: 3px 12px; border-radius: 3px; cursor: default; }
   .tree-group-row:hover { background: #e5eeff; }
   .tree-toggle { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: #74777d; background: none; border: none; cursor: pointer; border-radius: 2px; }
   .tree-toggle:hover { background: #dce9ff; color: #0058be; }
   .tree-children { margin-left: 18px; padding-left: 8px; border-left: 1px solid #dde1e8; }
-  .add-group-btn { display: flex; align-items: center; gap: 3px; padding: 3px 12px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; color: #0058be; background: none; border: none; cursor: pointer; width: 100%; text-align: left; }
+  .add-group-btn { display: flex; align-items: center; gap: 3px; padding: 4px 12px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: #0058be; background: none; border: none; cursor: pointer; width: 100%; text-align: left; }
   .add-group-btn:hover { color: #2170e4; }
   .inline-add-row { display: flex; align-items: center; gap: 4px; padding: 4px 12px; }
   .inline-add-input { font-family: 'JetBrains Mono', monospace !important; font-size: 11px !important; flex: 1; padding: 3px 8px; border: 1px solid #0058be; border-radius: 4px; outline: none; color: #0b1c30; }
@@ -166,16 +166,19 @@
   .inline-add-confirm:hover { background: #2170e4; }
   .inline-add-cancel { display: flex; align-items: center; background: none; border: none; cursor: pointer; color: #74777d; padding: 2px; }
   .inline-add-cancel:hover { color: #ba1a1a; }
-  .inc-paths-section { margin: 4px 8px 6px; background: #f0f4fb; border-radius: 6px; padding: 6px 10px; }
+  .inc-paths-section { margin: 4px 8px 6px; background: #f0faf6; border: 1px solid rgba(0,165,114,.15); border-radius: 6px; padding: 6px 10px; }
   .inc-paths-row { display: flex; gap: 10px; align-items: flex-start; }
-  .inc-paths-label { flex-shrink: 0; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #74777d; padding-top: 2px; cursor: help; }
+  .inc-paths-label { flex-shrink: 0; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #00815a; padding-top: 5px; cursor: help; }
   .inc-paths-content { flex: 1; min-width: 0; }
-  .inc-add-btn { display: inline-flex; align-items: center; gap: 2px; margin-top: 2px; font-family: 'JetBrains Mono', monospace; font-size: 8px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #74777d; background: none; border: none; cursor: pointer; padding: 0; }
+  .inc-add-btn { display: inline-flex; align-items: center; gap: 3px; margin-top: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: #00815a; background: none; border: none; cursor: pointer; padding: 0; }
   .inc-add-btn:hover { color: #0058be; }
-  .ext-path-row { display: flex; align-items: center; gap: 3px; padding: 0; height: 16px; }
-  .ext-path-input { font-family: 'JetBrains Mono', monospace !important; font-size: 9px !important; line-height: 1; color: #44474c; background: none; border: none; outline: none; flex: 1; padding: 0; height: 16px; }
-  .ext-path-input:focus { color: #0b1c30; }
-  .ext-path-input::placeholder { color: #b0b3b8; }
+  .ext-path-row { display: flex; align-items: center; gap: 5px; border-bottom: 1px solid rgba(0,165,114,.2); padding: 2px 0; margin-bottom: 1px; }
+  .ext-path-row:last-of-type { border-bottom: none; margin-bottom: 0; }
+  .ext-path-input { font-family: 'JetBrains Mono', monospace !important; font-size: 11px !important; line-height: 1.3; color: #006e45; background: none; border: none; outline: none; flex: 1; min-width: 0; padding: 0; height: 18px; }
+  .ext-path-input:focus { color: #004d30; }
+  .ext-path-input::placeholder { color: #a0c4b8; }
+  .ext-browse-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px; border: 1px solid rgba(0,165,114,.35); border-radius: 3px; background: transparent; cursor: pointer; font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 700; letter-spacing: .04em; color: #00815a; }
+  .ext-browse-btn:hover { background: #d6f5ea; }
 
   /* ── Review cards ── */
   .rev-card { background: #fff; border: 1px solid #c4c6cd; border-radius: 0.75rem; overflow: hidden; }
@@ -226,7 +229,7 @@
      TOP BAR
      ══════════════════════════════════════════ -->
 <header class="fixed top-0 left-0 right-0 h-14 bg-white border-b border-outline-variant flex items-center justify-between px-6 z-50">
-  <a href="dashboard-admin.html" class="flex items-center gap-3">
+  <a href="projects.html" class="flex items-center gap-3">
     <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
       <span class="material-symbols-outlined sym-fill text-on-primary" style="font-size:18px;">account_tree</span>
     </div>
@@ -306,7 +309,7 @@
     <!-- Demo shortcut -->
     <p class="mt-10 text-body-sm text-on-surface-variant" style="font-size:12px;">
       Want to explore with sample data?
-      <a href="dashboard-admin.html" class="text-secondary hover:underline font-medium">Load demo projects</a>
+      <a href="projects.html" class="text-secondary hover:underline font-medium">Load demo projects</a>
     </p>
 
   </div>
@@ -1166,7 +1169,7 @@ function toggleLayer(head) {
       + '<button onclick="addGroup(this)" class="add-group-btn"><span class="material-symbols-outlined" style="font-size:12px;">add</span> Add Group</button>'
       + '<div class="inc-paths-section"><div class="inc-paths-row"><div class="inc-paths-label" title="External include paths for this layer">Lib Paths</div>'
       + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
-      + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:8px;vertical-align:middle;">add</span> Add path</button>'
+      + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
       + '</div></div></div>';
     block.appendChild(body);
     icon.textContent = 'keyboard_arrow_down';
@@ -1207,7 +1210,7 @@ function confirmAddGroup(btn) {
   grp.innerHTML = '<div class="tree-group-row">'
     + '<button onclick="toggleTreeGroup(this)" class="tree-toggle"><span class="material-symbols-outlined" style="font-size:14px;">keyboard_arrow_down</span></button>'
     + '<span class="material-symbols-outlined text-secondary" style="font-size:14px;">folder_open</span>'
-    + '<span class="font-label-md text-on-surface flex-1" style="font-size:11px;">' + escHtml(name) + '</span>'
+    + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
     + '<button onclick="removeGroup(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:14px;">close</span></button>'
     + '</div>'
     + '<div class="tree-children">'
@@ -1292,7 +1295,7 @@ function confirmAddComponent() {
     + '<button onclick="toggleCompFiles(this)" class="tree-toggle">'
     + '<span class="material-symbols-outlined" style="font-size:13px;">' + (hasFiles ? 'keyboard_arrow_down' : 'keyboard_arrow_right') + '</span></button>'
     + '<span class="material-symbols-outlined text-secondary" style="font-size:13px;opacity:.6;">folder</span>'
-    + '<span class="font-label-md text-on-surface flex-1" style="font-size:11px;">' + escHtml(name) + '</span>'
+    + '<span class="font-label-md text-on-surface flex-1" style="font-size:13px;">' + escHtml(name) + '</span>'
     + '<button onclick="removeComponent(this)" class="p-1 text-on-surface-variant hover:text-error transition-colors">'
     + '<span class="material-symbols-outlined" style="font-size:13px;">close</span></button>'
     + '</div>'
@@ -1422,7 +1425,7 @@ function confirmAddLayer() {
   block.innerHTML = '<div class="layer-head" onclick="toggleLayer(this)">'
     + '<span class="material-symbols-outlined" style="font-size:15px;color:#44474c;">keyboard_arrow_down</span>'
     + '<div class="flex-1 min-w-0">'
-    + '<div class="font-label-md font-bold text-on-surface" style="font-size:12px;line-height:1.3;">' + escHtml(name) + '</div>'
+    + '<div class="font-label-md font-bold text-on-surface" style="font-size:13px;line-height:1.3;">' + escHtml(name) + '</div>'
     + '<span class="layer-path-display' + (path ? '' : ' empty') + '" onclick="event.stopPropagation();startEditPath(this)">' + (path ? escHtml(path) : 'Set root path…') + '</span>'
     + '</div>'
     + '<button onclick="event.stopPropagation();removeLayer(this);" class="p-1 text-on-surface-variant hover:text-error transition-colors"><span class="material-symbols-outlined" style="font-size:15px;">close</span></button>'
@@ -1433,7 +1436,7 @@ function confirmAddLayer() {
     + '<div class="inc-paths-section"><div class="inc-paths-row">'
     + '<div class="inc-paths-label" title="External include paths (-I flags) specific to this layer.">Lib Paths</div>'
     + '<div class="inc-paths-content"><div class="ext-paths-list"></div>'
-    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:8px;vertical-align:middle;">add</span> Add path</button>'
+    + '<button onclick="addExtPath(this)" class="inc-add-btn"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle;">add</span> Add path</button>'
     + '</div></div></div>'
     + '</div>';
   tree.appendChild(block);
@@ -1484,10 +1487,12 @@ function addExtPath(btn) {
   if (!list) return;
   var row = document.createElement('div');
   row.className = 'ext-path-row';
-  row.innerHTML = '<span class="material-symbols-outlined" style="font-size:9px;color:#a0a3a8;">folder_open</span>'
+  row.innerHTML = '<span class="material-symbols-outlined" style="font-size:13px;color:#00a572;flex-shrink:0;">folder_open</span>'
     + '<input class="ext-path-input" type="text" placeholder="/path/to/include">'
-    + '<button onclick="removeExtPath(this)" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;" class="text-on-surface-variant hover:text-error transition-colors">'
-    + '<span class="material-symbols-outlined" style="font-size:9px;line-height:1;">close</span></button>';
+    + '<button type="button" class="ext-browse-btn" onclick="openFolderPicker(this.closest(\'.ext-path-row\').querySelector(\'.ext-path-input\'))">'
+    + '<span class="material-symbols-outlined" style="font-size:11px;">folder_open</span>BROWSE</button>'
+    + '<button onclick="removeExtPath(this)" style="display:flex;align-items:center;background:none;border:none;cursor:pointer;padding:0;color:#74777d;" onmouseover="this.style.color=\'#ba1a1a\'" onmouseout="this.style.color=\'#74777d\'">'
+    + '<span class="material-symbols-outlined" style="font-size:13px;line-height:1;">close</span></button>';
   list.appendChild(row);
   row.querySelector('.ext-path-input').focus();
 }

@@ -53,23 +53,20 @@
     vertical-align: middle; line-height: 1;
   }
   body { font-family: 'Inter', sans-serif; }
-  input[type="email"], input[type="password"], input[type="text"] {
-    outline: none;
-  }
   input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focus {
     border-color: #0058be;
     box-shadow: 0 0 0 3px rgba(0,88,190,0.12);
+    outline: none;
   }
-  .feat-item { display: flex; align-items: flex-start; gap: 12px; }
+  input[type="email"], input[type="password"], input[type="text"] { outline: none; }
 </style>
 </head>
 <body class="bg-background text-on-surface font-body-md min-h-screen flex items-center justify-center p-6">
 
-<div class="w-full max-w-5xl bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg overflow-hidden grid lg:grid-cols-[1fr_1.1fr]" style="box-shadow:0 4px 32px rgba(4,22,39,.10);">
+<div class="w-full max-w-5xl bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden grid lg:grid-cols-[1fr_1.1fr]" style="box-shadow:0 4px 32px rgba(4,22,39,.10);">
 
   <!-- Left Panel -->
   <div class="hidden lg:flex flex-col justify-between p-12 bg-primary text-on-primary">
-
     <div>
       <!-- Logo -->
       <div class="flex items-center gap-3">
@@ -84,9 +81,9 @@
 
       <!-- Headline -->
       <div class="mt-14">
-        <p class="font-label-sm text-label-sm uppercase tracking-[0.2em] text-secondary-container mb-4">AI Documentation Platform</p>
+        <p class="font-label-sm text-label-sm uppercase tracking-[0.2em] text-secondary-container mb-4">AI Software Intelligence Platform</p>
         <h2 class="text-display-lg leading-tight" style="font-size:28px;line-height:36px;">
-          Build compliant documentation 10× faster.
+          Turn your codebase into compliance — automatically.
         </h2>
         <p class="mt-4 text-body-lg text-on-primary-container leading-relaxed" style="max-width:340px;">
           Generate requirements, architecture, traceability, test documentation,
@@ -95,34 +92,21 @@
       </div>
     </div>
 
-    <!-- Feature badges -->
-    <div class="grid grid-cols-2 gap-3 mt-10">
-      <div class="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-        <div class="flex items-center gap-2">
-          <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
-          <span class="font-label-md text-label-md text-on-primary-container">ASPICE Ready</span>
-        </div>
+    <!-- Feature list -->
+    <div class="flex flex-col gap-2.5 mt-10">
+      <div class="flex items-center gap-2.5">
+        <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+        <span class="font-label-md text-label-md text-on-primary-container">ASPICE Ready</span>
       </div>
-      <div class="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-        <div class="flex items-center gap-2">
-          <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
-          <span class="font-label-md text-label-md text-on-primary-container">ISO 26262 Support</span>
-        </div>
+      <div class="flex items-center gap-2.5">
+        <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+        <span class="font-label-md text-label-md text-on-primary-container">End-to-End Traceability</span>
       </div>
-      <div class="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-        <div class="flex items-center gap-2">
-          <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
-          <span class="font-label-md text-label-md text-on-primary-container">End-to-End Traceability</span>
-        </div>
-      </div>
-      <div class="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-        <div class="flex items-center gap-2">
-          <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
-          <span class="font-label-md text-label-md text-on-primary-container">Enterprise Security</span>
-        </div>
+      <div class="flex items-center gap-2.5">
+        <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">check_circle</span>
+        <span class="font-label-md text-label-md text-on-primary-container">Enterprise Security</span>
       </div>
     </div>
-
   </div>
 
   <!-- Right Panel -->
@@ -139,12 +123,12 @@
 
       <!-- Heading -->
       <div class="mb-8">
-        <h2 class="text-headline-md text-on-surface">Welcome back</h2>
-        <p class="text-body-md text-on-surface-variant mt-1.5">Sign in to access your workspace.</p>
+        <h2 class="text-headline-md text-on-surface">Sign in to continue</h2>
+        <p class="text-body-md text-on-surface-variant mt-1.5">Access your workspace.</p>
       </div>
 
       <!-- SSO Button -->
-      <button class="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low transition-colors font-label-md text-label-md text-on-surface mb-5" style="font-family:Inter;font-size:13px;font-weight:500;">
+      <button onclick="signIn()" class="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low transition-colors font-label-md text-label-md text-on-surface mb-5" style="font-family:Inter;font-size:13px;font-weight:500;">
         <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">domain</span>
         Continue with Company SSO
       </button>
@@ -157,7 +141,7 @@
       </div>
 
       <!-- Form -->
-      <form class="space-y-4" onsubmit="return false;">
+      <form class="space-y-4" onsubmit="signIn(); return false;">
 
         <!-- Email -->
         <div>
@@ -239,6 +223,10 @@ function togglePassword() {
     input.type = 'password';
     icon.textContent = 'visibility_off';
   }
+}
+
+function signIn() {
+  window.location.href = 'projects-empty.html';
 }
 </script>
 

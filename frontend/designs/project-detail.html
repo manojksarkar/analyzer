@@ -88,8 +88,14 @@
   .toast-in  { animation: slideInRight .3s ease forwards; }
   .toast-out { animation: slideOutRight .3s ease forwards; }
 
-  .adv-body { overflow: hidden; max-height: 0; transition: max-height .25s ease; }
-  .adv-body.open { max-height: 240px; }
+  .adv-body { overflow:hidden; max-height:0; transition:max-height .25s ease; }
+  .adv-body.open { max-height:120px; }
+  .fn-panel { position:fixed;top:0;right:0;height:100vh;width:70%;max-width:860px;background:white;border-left:1px solid #c4c6cd;z-index:60;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column; }
+  .fn-panel.open { transform:translateX(0); }
+  .fn-backdrop { position:fixed;inset:0;background:rgba(4,22,39,.35);z-index:59;opacity:0;pointer-events:none;transition:opacity .3s ease; }
+  .fn-backdrop.open { opacity:1;pointer-events:auto; }
+  .unit-body { overflow:hidden;max-height:0;transition:max-height .25s ease; }
+  .unit-body.open { max-height:800px; }
 
   .phase-line { height: 2px; flex: 1; margin: 0 6px; margin-top: 11px; border-radius: 9999px; }
   .subbar-pill { display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid #c4c6cd;border-radius:6px;background:#fff;transition:background .1s,border-color .1s;cursor:pointer; }
@@ -156,12 +162,12 @@
         <span class="material-symbols-outlined" style="font-size:20px;">compare_arrows</span>
         <span class="nav-label font-label-md text-label-md">Compare</span>
       </a>
-      <a href="project-detail.html#versions" title="Versions"
+      <a href="versions.html" title="Versions"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
         <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
         <span class="nav-label font-label-md text-label-md">Versions</span>
       </a>
-      <a href="project-detail.html#team" title="Team"
+      <a href="team.html" title="Team"
          class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
         <span class="material-symbols-outlined" style="font-size:20px;">group</span>
         <span class="nav-label font-label-md text-label-md">Team</span>
@@ -335,30 +341,25 @@
           </div>
         </div>
       </div>
+
+      <span class="text-outline-variant select-none">·</span>
+      <span id="sb-status-badge"></span>
     </div>
-    <!-- Admin-only CTAs -->
+    <!-- Subbar CTAs -->
     <div class="flex items-center gap-1.5">
       <button id="cta-run" onclick="openRunConfig()"
-              class="admin-only flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors"
+              class="flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors"
               style="display:none;font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
         <span class="material-symbols-outlined" style="font-size:15px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">play_circle</span>
-        RUN ANALYSIS
+        <span id="cta-run-label">RUN ANALYSIS</span>
       </button>
       <button id="cta-cancel" onclick="cancelGeneration()"
-              class="admin-only flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors"
+              class="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors"
               style="display:none;border:1px solid #fca5a5;color:#ba1a1a;background:transparent;font-family:'JetBrains Mono';font-size:11px;font-weight:500;"
               onmouseenter="this.style.background='#fff0f0'" onmouseleave="this.style.background='transparent'">
         <span class="material-symbols-outlined" style="font-size:15px;">stop_circle</span>
         Cancel Job
       </button>
-      <a id="cta-versions" href="versions.html"
-         class="admin-only"
-         style="display:none;align-items:center;gap:4px;padding:5px 12px;border:1px solid #e2e3e8;border-radius:8px;background:white;cursor:pointer;font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;text-decoration:none;transition:all .15s;"
-         onmouseover="this.style.borderColor='#0058be';this.style.color='#0058be'"
-         onmouseleave="this.style.borderColor='#e2e3e8';this.style.color='#44474c'">
-        <span class="material-symbols-outlined" style="font-size:14px;">sell</span>
-        Versions
-      </a>
     </div>
   </div>
 
@@ -495,6 +496,22 @@
       </div>
       <!-- ═══ END GEN PANEL ═══ -->
 
+      <!-- ═══ STALE BANNER ═══ -->
+      <div id="stale-banner" style="display:none;" class="mb-6">
+        <div class="flex items-center gap-3 px-5 py-3.5 rounded-xl" style="background:#fffbeb;border:1px solid #f59e0b;">
+          <span class="material-symbols-outlined sym-fill flex-shrink-0" style="font-size:20px;color:#d97706;">warning</span>
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-on-surface" style="font-size:13px;"><span id="stale-commits-count">3</span> new commits since this analysis</p>
+            <p style="font-size:11px;color:#74777d;font-family:'JetBrains Mono';margin-top:2px;">Results may be outdated — re-run to analyze the latest code.</p>
+          </div>
+          <button onclick="openRunConfig()" class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-lg transition-colors flex-shrink-0"
+                  style="font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
+            <span class="material-symbols-outlined" style="font-size:14px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">play_circle</span>
+            Re-run
+          </button>
+        </div>
+      </div>
+
       <!-- ═══ KPI STRIP (generated state only) ═══ -->
       <div id="kpi-strip" class="mb-6" style="display:none;">
         <div id="kpi-cards" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:1rem;align-items:stretch;"></div>
@@ -528,6 +545,17 @@
             </thead>
             <tbody id="docs-tbody"></tbody>
           </table>
+        </div>
+
+        <!-- Unassigned pool — developer only -->
+        <div id="unassigned-pool-card" class="bg-white border border-outline-variant rounded-xl overflow-hidden" style="display:none;">
+          <div class="px-5 py-3.5 border-b border-outline-variant flex items-center justify-between">
+            <div>
+              <h2 class="text-headline-sm text-on-surface">Available to Claim</h2>
+              <p id="pool-subtitle" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5"></p>
+            </div>
+          </div>
+          <div id="pool-list"></div>
         </div>
 
         <!-- Team (always below documents) -->
@@ -603,6 +631,28 @@
             </div>
           </div>
 
+          <!-- Function Visibility card -->
+          <div id="fn-vis-card" class="bg-white border border-outline-variant rounded-xl overflow-hidden" style="display:none;">
+            <div class="px-4 py-3.5 border-b border-outline-variant flex items-center justify-between">
+              <div>
+                <h2 class="text-headline-sm text-on-surface">Function Visibility</h2>
+                <p id="fv-card-summary" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">3 of 26 functions hidden from DOCX</p>
+              </div>
+              <button onclick="openFnPanel()"
+                class="flex items-center gap-1 px-3 py-1.5 border border-outline-variant rounded-lg hover:bg-surface-container transition-colors font-label-sm text-label-sm text-secondary">
+                Manage
+                <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+              </button>
+            </div>
+            <div class="px-4 py-3 flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined" style="font-size:14px;color:#ba1a1a;">visibility_off</span>
+                <span id="fv-card-hidden" class="font-label-md text-label-md" style="color:#ba1a1a;">3 hidden</span>
+              </div>
+              <span class="font-label-sm text-label-sm text-on-surface-variant">Last: v1.1.0</span>
+            </div>
+          </div>
+
           <!-- Last Actions (both roles — content differs) -->
           <div id="last-actions-card" class="bg-white border border-outline-variant rounded-xl overflow-hidden" style="flex:1;display:flex;flex-direction:column;">
             <div class="px-4 py-3.5 border-b border-outline-variant">
@@ -635,102 +685,117 @@
 </div>
 
 <!-- ══════════════ MODAL: RUN CONFIG ══════════════ -->
-<div id="run-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(4,22,39,.5);">
-  <div class="bg-white rounded-xl border border-outline-variant w-full mx-4" style="max-width:496px;box-shadow:0 8px 48px rgba(4,22,39,.24);">
+<div id="run-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(4,22,39,.55);">
+  <div class="bg-white rounded-2xl w-full mx-4" style="max-width:468px;box-shadow:0 24px 64px rgba(4,22,39,.28);">
 
     <!-- Header -->
-    <div class="px-6 py-5 border-b border-outline-variant">
-      <h3 class="text-headline-sm text-on-surface">Run Analysis</h3>
-      <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Pick a commit to analyze — the output will be saved as a new named version.</p>
+    <div class="px-6 pt-6 pb-5 flex items-start justify-between">
+      <div>
+        <h3 class="text-on-surface font-semibold" style="font-family:Inter;font-size:17px;line-height:1.25;">Run Analysis</h3>
+        <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Analyze a commit and save it as a named version.</p>
+      </div>
+      <button onclick="closeRunModal()" class="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-container transition-colors text-on-surface-variant flex-shrink-0 -mt-1 -mr-2">
+        <span class="material-symbols-outlined" style="font-size:19px;">close</span>
+      </button>
     </div>
 
-    <div class="px-6 py-5 space-y-5">
-
-      <!-- ── SOURCE ── -->
-      <div>
-        <p style="font-size:10px;font-weight:700;color:#9aa0a6;text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;">Source</p>
-
-        <!-- Branch context (not a field) -->
-        <div style="display:flex;align-items:center;gap:8px;padding:9px 13px;background:#f4f6fb;border:1px solid #e2e3e8;border-radius:8px;margin-bottom:12px;">
-          <span class="material-symbols-outlined" style="font-size:14px;color:#74777d;">alt_route</span>
-          <span style="font-size:11px;color:#74777d;">Branch</span>
-          <span id="run-modal-branch" style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;"></span>
-          <span style="margin-left:auto;font-size:10px;color:#c4c6cd;">fixed</span>
-        </div>
-
-        <!-- Commit -->
-        <div>
-          <label style="font-size:11px;color:#44474c;font-weight:500;display:block;margin-bottom:5px;">Commit</label>
-          <select id="run-modal-commit"
-            style="width:100%;border:1px solid #e2e3e8;border-radius:8px;padding:8px 12px;font-family:'JetBrains Mono';font-size:12px;color:#0b1c30;background:white;cursor:pointer;"
-            onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#e2e3e8'">
-          </select>
-        </div>
+    <!-- Source card -->
+    <div class="mx-6 mb-5 rounded-xl border border-outline-variant overflow-hidden">
+      <!-- Branch row -->
+      <div class="flex items-center gap-2.5 px-4 py-2.5 bg-surface-container-low border-b border-outline-variant">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;">alt_route</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Branch</span>
+        <span id="run-modal-branch" style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;"></span>
+        <span class="ml-auto font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;opacity:.5;letter-spacing:.04em;">FIXED</span>
       </div>
+      <!-- Commit row -->
+      <div class="px-4 py-3">
+        <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Commit</label>
+        <select id="run-modal-commit"
+          class="w-full rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none border border-outline-variant"
+          style="font-family:'JetBrains Mono';font-size:12px;"
+          onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#c4c6cd'">
+        </select>
+      </div>
+    </div>
 
-      <!-- ── COMPARE ── -->
+    <div class="px-6 space-y-4 pb-5">
+
+      <!-- Compare against -->
       <div>
-        <p style="font-size:10px;font-weight:700;color:#9aa0a6;text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;">Compare against <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:#c4c6cd;">optional</span></p>
+        <div class="flex items-center justify-between mb-2">
+          <label class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:11px;">Compare against</label>
+          <span style="font-size:10px;color:#c4c6cd;font-family:'JetBrains Mono';">OPTIONAL</span>
+        </div>
         <select id="run-modal-reference"
-          style="width:100%;border:1px solid #e2e3e8;border-radius:8px;padding:8px 12px;font-family:'JetBrains Mono';font-size:12px;color:#0b1c30;background:white;cursor:pointer;"
-          onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#e2e3e8'">
+          class="w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none"
+          style="font-family:'JetBrains Mono';font-size:12px;"
+          onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#c4c6cd'">
           <option value="">— None —</option>
         </select>
-        <p style="font-size:11px;color:#9aa0a6;margin-top:6px;">Enables diff view between this run and the selected version.</p>
+        <p class="font-label-sm text-label-sm text-on-surface-variant mt-1.5" style="font-size:11px;">Enables diff view between this run and the selected version.</p>
       </div>
 
-      <!-- ── OUTPUT ── -->
+      <!-- Version name -->
       <div>
-        <p style="font-size:10px;font-weight:700;color:#9aa0a6;text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;">Output</p>
-        <label style="font-size:11px;color:#44474c;font-weight:500;display:block;margin-bottom:5px;">New version name</label>
-        <input id="run-modal-new-version" type="text" placeholder="e.g. v1.3.0" autocomplete="off" spellcheck="false"
-          style="width:100%;border:1px solid #e2e3e8;border-radius:8px;padding:8px 12px;font-family:'JetBrains Mono';font-size:13px;font-weight:600;color:#0058be;background:white;box-sizing:border-box;letter-spacing:.02em;"
-          onfocus="this.style.borderColor='#0058be';this.style.background='#f8fbff'"
-          onblur="this.style.borderColor='#e2e3e8';this.style.background='white'">
+        <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Version name</label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant" style="font-size:15px;">sell</span>
+          <input id="run-modal-new-version" type="text" placeholder="e.g. v1.3.0" autocomplete="off" spellcheck="false"
+            class="w-full border border-outline-variant rounded-lg pl-9 pr-3 py-2.5 bg-white focus:outline-none"
+            style="font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:#0058be;letter-spacing:.03em;box-sizing:border-box;"
+            onfocus="this.style.borderColor='#0058be';this.style.background='#f4f8ff'"
+            onblur="this.style.borderColor='#c4c6cd';this.style.background='white'">
+        </div>
       </div>
 
-      <!-- Advanced accordion -->
+      <!-- Pause checkbox -->
+      <label class="flex items-start gap-3 cursor-pointer group">
+        <input type="checkbox" id="pause-phase1" class="mt-0.5 rounded border-outline-variant text-secondary flex-shrink-0" style="width:15px;height:15px;">
+        <div>
+          <span class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors" style="font-size:12px;">Pause after Phase 1 to review function visibility</span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-size:11px;">Lets you hide functions before diagrams and DOCX are generated.</p>
+        </div>
+      </label>
+
+      <!-- Advanced (collapsible) -->
       <div>
-        <button onclick="toggleAdv()" class="flex items-center gap-1.5 text-secondary font-label-sm text-label-sm">
-          <span id="adv-ch" class="material-symbols-outlined transition-transform duration-200" style="font-size:15px;">chevron_right</span>
-          Advanced options
+        <button onclick="toggleAdv()" class="flex items-center gap-2 w-full text-left py-0.5 group">
+          <span id="adv-ch" class="material-symbols-outlined transition-transform duration-200 text-on-surface-variant" style="font-size:14px;">chevron_right</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant group-hover:text-on-surface transition-colors" style="font-size:11px;letter-spacing:.05em;text-transform:uppercase;">Advanced</span>
+          <div class="flex-1 h-px bg-outline-variant ml-1"></div>
         </button>
         <div id="adv-body" class="adv-body">
-          <div class="mt-3 space-y-3 pl-1">
-            <div>
-              <label class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em] block mb-2">Layer / Group (optional)</label>
-              <select class="w-full border border-outline-variant rounded-lg px-3 py-2.5 font-label-md text-label-md text-on-surface bg-white focus:outline-none focus:border-secondary" style="font-family:'JetBrains Mono'">
-                <option>All layers (default)</option>
-                <option>Layer1 — Sample</option>
-                <option>Layer1 — Full</option>
-                <option>Layer2 — Platform</option>
-              </select>
-            </div>
-            <div class="flex items-center gap-2">
-              <input type="checkbox" id="skip-llm" class="rounded border-outline-variant text-secondary">
-              <label for="skip-llm" class="font-label-sm text-label-sm text-on-surface">Skip LLM enrichment (faster, lower quality)</label>
-            </div>
+          <div class="pt-3 pl-5">
+            <label class="font-label-sm text-label-sm text-on-surface-variant block mb-2" style="font-size:11px;">Layer / Group</label>
+            <select class="w-full border border-outline-variant rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none"
+              style="font-family:'JetBrains Mono';font-size:12px;"
+              onfocus="this.style.borderColor='#0058be'" onblur="this.style.borderColor='#c4c6cd'">
+              <option>All layers (default)</option>
+              <option>Layer1 — Sample</option>
+              <option>Layer1 — Full</option>
+              <option>Layer2 — Platform</option>
+            </select>
           </div>
         </div>
       </div>
 
       <!-- Warning -->
-      <div class="flex items-start gap-2.5 bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3">
-        <span class="material-symbols-outlined mt-0.5 flex-shrink-0" style="font-size:16px;color:#d97706;">schedule</span>
-        <div>
-          <p class="font-label-sm text-label-sm text-on-surface font-medium">Long-running job</p>
-          <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">Analysis with LLM enrichment can take <strong>several hours or overnight</strong>. Runs server-side — safe to navigate away after starting.</p>
-        </div>
+      <div class="flex items-center gap-2.5 rounded-xl px-4 py-3" style="background:#f0f4ff;border:1px solid #c7d8ff;">
+        <span class="material-symbols-outlined flex-shrink-0" style="font-size:15px;color:#0058be;">schedule</span>
+        <p class="font-label-sm text-label-sm" style="color:#0b2e6b;font-size:11px;">Analysis runs server-side and can take <strong>several hours</strong> — safe to navigate away.</p>
       </div>
 
     </div>
 
-    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-end gap-3">
-      <button onclick="closeRunModal()" class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors">Cancel</button>
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-between">
+      <button onclick="closeRunModal()" class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors text-sm">Cancel</button>
       <button onclick="startGeneration()"
-        class="flex items-center gap-2 px-4 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors"
-        style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;">
-        <span class="material-symbols-outlined" style="font-size:16px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">rocket_launch</span>
+        class="flex items-center gap-2 px-5 py-2.5 bg-secondary text-on-secondary rounded-xl transition-colors"
+        style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;"
+        onmouseover="this.style.background='#0049a3'" onmouseout="this.style.background='#0058be'">
+        <span class="material-symbols-outlined sym-fill" style="font-size:16px;">rocket_launch</span>
         START ANALYSIS
       </button>
     </div>
@@ -769,6 +834,94 @@
 </div>
 
 
+<!-- ══════════════ FUNCTION VISIBILITY SLIDE-OVER ══════════════ -->
+<div id="fn-backdrop" class="fn-backdrop" onclick="closeFnPanel()"></div>
+<div id="fn-panel" class="fn-panel">
+  <!-- Panel header -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant flex-shrink-0">
+    <div>
+      <h2 class="text-headline-sm text-on-surface">Function Visibility</h2>
+      <p id="fn-panel-summary" class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">26 functions · 3 hidden</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="reexport-btn" onclick="startReexport()"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-on-secondary"
+        style="background:#0058be;font-family:'JetBrains Mono';font-size:11px;font-weight:700;letter-spacing:.04em;">
+        <span class="material-symbols-outlined" style="font-size:15px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;">upload</span>
+        Re-export DOCX
+      </button>
+      <button onclick="closeFnPanel()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+        <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      </button>
+    </div>
+  </div>
+  <!-- Search -->
+  <div class="px-6 py-3 border-b border-outline-variant flex-shrink-0">
+    <div class="flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
+      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">search</span>
+      <input id="fn-panel-search" type="text" placeholder="Search functions..."
+        oninput="renderFnPanel(this.value)"
+        class="flex-1 bg-transparent outline-none text-on-surface"
+        style="font-size:13px;">
+      <button onclick="document.getElementById('fn-panel-search').value='';renderFnPanel('');"
+        class="text-on-surface-variant hover:text-on-surface transition-colors"
+        style="display:none;" id="fn-search-clear">
+        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+      </button>
+    </div>
+  </div>
+  <!-- Tree -->
+  <div class="flex-1 overflow-y-auto px-6 py-4" id="fn-panel-tree"></div>
+</div>
+
+
+<!-- ══════════════ MODAL: PHASE 1 FUNCTION REVIEW ══════════════ -->
+<div id="fn-review-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center" style="background:rgba(4,22,39,.6);">
+  <div class="bg-white rounded-xl border border-outline-variant w-full mx-4" style="max-width:560px;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 8px 48px rgba(4,22,39,.24);">
+    <!-- Header -->
+    <div class="px-6 py-5 border-b border-outline-variant flex-shrink-0">
+      <h3 class="text-headline-sm text-on-surface">Review functions before export</h3>
+      <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Phase 1 complete · 26 functions discovered</p>
+    </div>
+    <!-- New functions banner -->
+    <div class="px-6 pt-4 flex-shrink-0">
+      <div class="flex items-center gap-2.5 px-4 py-2.5 rounded-lg" style="background:#fffbeb;border:1px solid #f59e0b;">
+        <span class="material-symbols-outlined sym-fill" style="font-size:16px;color:#d97706;">new_releases</span>
+        <p class="font-label-sm text-label-sm" style="color:#92400e;">3 new functions since v1.1.0 — review before continuing</p>
+      </div>
+    </div>
+    <!-- Search -->
+    <div class="px-6 pt-3 pb-1 flex-shrink-0">
+      <div class="flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+        <input id="review-search" type="text" placeholder="Search functions..."
+          oninput="renderReviewTree(this.value)"
+          class="flex-1 bg-transparent outline-none text-on-surface"
+          style="font-size:12px;">
+      </div>
+    </div>
+    <!-- Tree -->
+    <div class="flex-1 overflow-y-auto px-6 py-3" id="review-tree"></div>
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-outline-variant flex items-center justify-between flex-shrink-0">
+      <p id="review-hidden-count" class="font-label-sm text-label-sm text-on-surface-variant">3 hidden</p>
+      <div class="flex items-center gap-3">
+        <button onclick="cancelGeneration();document.getElementById('fn-review-modal').classList.add('hidden');"
+          class="px-4 py-2 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors">
+          Cancel run
+        </button>
+        <button onclick="continueAfterReview()"
+          class="flex items-center gap-2 px-4 py-2.5 bg-secondary hover:bg-secondary-container text-on-secondary rounded-xl transition-colors"
+          style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;letter-spacing:.04em;">
+          Continue
+          <span class="material-symbols-outlined" style="font-size:15px;">arrow_forward</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <!-- Toast -->
 <div id="toast" class="hidden fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 bg-primary rounded-xl" style="min-width:300px;max-width:380px;box-shadow:0 4px 24px rgba(4,22,39,.32);">
   <span id="toast-icon" class="material-symbols-outlined flex-shrink-0" style="font-size:18px;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24;color:#00a572;">check_circle</span>
@@ -789,22 +942,22 @@ function toggleSidebar() {
 }
 
 // ── Data ──
-const BRANCH = { label: 'main', commit: 'abc1234', version: null, state: 'in_review', generatedAt: '2 hours ago' };
+const BRANCH = { label: 'main', commit: 'd9a0c55', version: 'v1.2.0', state: 'in_review', generatedAt: '1 day ago' };
 
 const COMMITS = [
-  { sha: 'abc1234', msg: 'feat: add brake system FMEA table',         author: 'Manoj S.',   time: '2h ago',   current: true,  status: 'in_review', version: null     },
-  { sha: 'f7e3b12', msg: 'fix: correct signal naming in CAN matrix',  author: 'Priya R.',   time: '5h ago',   current: false, status: 'never',     version: null     },
-  { sha: 'd9a0c55', msg: 'docs: update SWE.3 traceability links',     author: 'Manoj S.',   time: '1d ago',   current: false, status: 'in_review', version: 'v1.2.0' },
-  { sha: 'b2c841f', msg: 'refactor: split EngineControl component',   author: 'Arjun M.',   time: '2d ago',   current: false, status: 'approved',  version: 'v1.1.0' },
-  { sha: '3ef70a9', msg: 'feat: add ADAS perception group',            author: 'Priya R.',   time: '3d ago',   current: false, status: 'approved',  version: 'v1.0.0' },
-  { sha: '91c3d17', msg: 'fix: missing include path for diagnostics',  author: 'Manoj S.',   time: '4d ago',   current: false, status: 'never',     version: null     },
-  { sha: '07fa8b2', msg: 'chore: update Clang config to 17',          author: 'Arjun M.',   time: '5d ago',   current: false, status: 'never',     version: null     },
+  { sha: 'abc1234', msg: 'feat: add brake system FMEA table',         author: 'Manoj S.',   time: '2h ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+  { sha: 'f7e3b12', msg: 'fix: correct signal naming in CAN matrix',  author: 'Priya R.',   time: '5h ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+  { sha: 'd9a0c55', msg: 'docs: update SWE.3 traceability links',     author: 'Manoj S.',   time: '1d ago',   current: true,  status: 'in_review', version: 'v1.2.0', pageState: 'in_review', newCommitsSince: 0 },
+  { sha: 'b2c841f', msg: 'refactor: split EngineControl component',   author: 'Arjun M.',   time: '2d ago',   current: false, status: 'approved',  version: 'v1.1.0', pageState: 'stale',     newCommitsSince: 3 },
+  { sha: '3ef70a9', msg: 'feat: add ADAS perception group',            author: 'Priya R.',   time: '3d ago',   current: false, status: 'approved',  version: 'v1.0.0', pageState: 'complete',  newCommitsSince: 0 },
+  { sha: '91c3d17', msg: 'fix: missing include path for diagnostics',  author: 'Manoj S.',   time: '4d ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+  { sha: '07fa8b2', msg: 'chore: update Clang config to 17',          author: 'Arjun M.',   time: '5d ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
 ];
 
 const VERSIONS = [
-  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',          date: '2026-06-15', status: 'in_review', docs: 45 },
-  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete',        date: '2026-06-10', status: 'approved',  docs: 40 },
-  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',               date: '2026-06-01', status: 'approved',  docs: 35 },
+  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',          date: '2026-06-15', status: 'in_review', docs: 45, hiddenFunctions: ['f3'] },
+  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete',        date: '2026-06-10', status: 'approved',  docs: 40, hiddenFunctions: ['f3', 'f7'] },
+  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',               date: '2026-06-01', status: 'approved',  docs: 35, hiddenFunctions: [] },
 ];
 
 const TEAM_MEMBERS = [
@@ -1052,6 +1205,48 @@ function renderKpi() {
     + projectInfoCard;
 }
 
+function renderUnassignedPool() {
+  const card     = document.getElementById('unassigned-pool-card');
+  const list     = document.getElementById('pool-list');
+  const subtitle = document.getElementById('pool-subtitle');
+  const pool = DOCUMENTS.filter(d => d.assignees.length === 0);
+  if (!pool.length) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  subtitle.textContent = `${pool.length} document${pool.length !== 1 ? 's' : ''} without an owner`;
+  list.innerHTML = pool.map(doc => {
+    const proc = PROCESSES.find(p => p.key === doc.process);
+    return `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid #e2e3e8;">
+      <span class="material-symbols-outlined" style="font-size:18px;color:#c4c6cd;flex-shrink:0;">description</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:500;color:#0b1c30;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${doc.name}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:#0058be;background:#e5eeff;padding:1px 7px;border-radius:4px;">${doc.process}</span>
+          <span style="font-size:11px;color:#74777d;">${proc ? proc.label : ''}</span>
+        </div>
+      </div>
+      <button onclick="claimDoc(${doc.id})"
+        style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:8px;border:1px solid #0058be;background:white;color:#0058be;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;"
+        onmouseover="this.style.background='#e5eeff'" onmouseout="this.style.background='white'">
+        <span class="material-symbols-outlined" style="font-size:14px;">add</span>
+        Claim
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function claimDoc(docId) {
+  const doc = DOCUMENTS.find(d => d.id === docId);
+  if (!doc) return;
+  if (!doc.assignees.includes(CURRENT_DEV_ID)) doc.assignees.push(CURRENT_DEV_ID);
+  renderDocs();
+  renderKpi();
+  showToast('check_circle', `You've been assigned to "${doc.name}".`, '#00a572');
+}
+
 function renderLastActions() {
   const body = document.getElementById('last-actions-body');
   if (!body) return;
@@ -1131,7 +1326,10 @@ function renderDocs() {
         </tr>`;
     }).join('');
 
+    renderUnassignedPool();
+
   } else {
+    document.getElementById('unassigned-pool-card').style.display = 'none';
     title.textContent = 'Documents';
     sub.style.display = 'none';
     link.innerHTML    = 'View all <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>';
@@ -1305,6 +1503,7 @@ function closeSbProject() {
   document.getElementById('sb-project-chevron').style.transform = '';
 }
 
+
 function switchPickerTab(tab) {
   const isCommits = tab === 'commits';
   document.getElementById('cp-panel-commits').style.display  = isCommits ? '' : 'none';
@@ -1345,12 +1544,21 @@ function renderPickerCommits(filter) {
     const dotColor  = c.version ? '#00a572' : c.current ? '#0058be' : '#c4c6cd';
     const dotBorder = c.current ? '2px solid #0058be' : c.version ? '2px solid #00a572' : '2px solid #c4c6cd';
     const dotFill   = (c.current || c.version) ? dotColor : 'white';
-    const currentBadge = c.current
-      ? `<span style="font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#e5eeff;color:#0058be;border:1px solid #bfcfff;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
-      : '';
     const versionTag = c.version
       ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:600;color:#00a572;background:#f0fdf9;border:1px solid #86efac;padding:0px 6px;border-radius:99px;">
            <span class="material-symbols-outlined" style="font-size:10px;color:#00a572;">sell</span>${c.version}
+         </span>`
+      : '';
+    const stateMap = {
+      never:     { icon:'radio_button_unchecked', text:'Not Run',   color:'#74777d', bg:'#f3f4f6',  border:'#e2e3e8' },
+      in_review: { icon:'rate_review',            text:'In Review', color:'#b45309', bg:'#fff8e6',  border:'#f59e0b' },
+      complete:  { icon:'check_circle',           text:'Complete',  color:'#00a572', bg:'#f0fdf9',  border:'#86efac' },
+      stale:     { icon:'warning',                text:'Stale',     color:'#d97706', bg:'#fffbeb',  border:'#f59e0b' },
+    };
+    const sm = stateMap[c.pageState];
+    const stateBadge = sm
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;color:${sm.color};background:${sm.bg};border:1px solid ${sm.border};padding:0px 5px;border-radius:99px;white-space:nowrap;">
+           <span class="material-symbols-outlined sym-fill" style="font-size:9px;color:${sm.color};">${sm.icon}</span>${sm.text}
          </span>`
       : '';
     return `
@@ -1363,8 +1571,8 @@ function renderPickerCommits(filter) {
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;">
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
             <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#44474c;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
-            ${currentBadge}
             ${versionTag}
+            ${stateBadge}
           </div>
           ${c.current ? '<span class="material-symbols-outlined" style="font-size:14px;color:#0058be;flex-shrink:0;">check</span>' : ''}
         </div>
@@ -1379,7 +1587,6 @@ function renderPickerVersions() {
   const list = document.getElementById('cp-versions-list');
   const accentColor = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
   const pill = s => {
-    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
     if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
     return '';
   };
@@ -1410,15 +1617,20 @@ function renderPickerVersions() {
 
 function selectCommit(sha) {
   document.getElementById('commit-picker').classList.add('hidden');
+  document.getElementById('chip-chevron').style.transform = '';
   const c = COMMITS.find(x => x.sha === sha);
   if (!c) return;
   COMMITS.forEach(x => x.current = (x.sha === sha));
   BRANCH.commit = sha;
   BRANCH.version = c.version || null;
-  BRANCH.state = c.status;
+  BRANCH.state = c.pageState;
   updateChip();
-  if (c.status !== 'never') setState('generated');
-  else                      setState('never');
+  setState(c.pageState, c);
+  if (c.pageState !== 'never' && c.pageState !== 'running') {
+    renderKpi();
+    renderDocs();
+    renderLastActions();
+  }
 }
 
 function updateChip() {
@@ -1556,9 +1768,6 @@ function renderVcCommits() {
     const dotBorder = c.current ? '2px solid #0058be' : c.version ? '2px solid #00a572' : '2px solid #c4c6cd';
     const dotFill   = (c.current || c.version) ? dotColor : 'white';
     const lineColor = '#e2e3e8';
-    const currentBadge = c.current
-      ? `<span style="font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#e5eeff;color:#0058be;border:1px solid #bfcfff;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
-      : '';
     const versionTag = c.version
       ? `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:600;color:#00a572;background:#f0fdf9;border:1px solid #86efac;padding:0px 6px;border-radius:99px;">
            <span class="material-symbols-outlined" style="font-size:10px;color:#00a572;">sell</span>${c.version}
@@ -1575,7 +1784,6 @@ function renderVcCommits() {
       <div style="flex:1;min-width:0;padding:12px 0 12px 10px;">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">
           <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#44474c;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
-          ${currentBadge}
           ${versionTag}
         </div>
         <p style="font-size:12px;color:#0b1c30;margin:0 0 2px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.msg}</p>
@@ -1586,26 +1794,62 @@ function renderVcCommits() {
 }
 
 // ── State management ──
-function setState(state) {
-  const isGenerated  = state === 'generated';
-  const isGenerating = state === 'generating';
-  const isNever      = state === 'never';
+let currentState = 'in_review';
 
-  document.getElementById('gen-panel').style.display    = isGenerating ? '' : 'none';
-  document.getElementById('empty-banner').style.display = isNever      ? '' : 'none';
-  document.getElementById('kpi-strip').style.display    = isGenerated  ? 'block' : 'none';
-  document.getElementById('content-row').style.display  = isGenerated  ? 'flex'  : 'none';
+function updateStatusBadge(state) {
+  const badge = document.getElementById('sb-status-badge');
+  const cfgs = {
+    never:     { icon: 'radio_button_unchecked', text: 'Not Run',   color: '#74777d', bg: '#f3f4f6', border: '#e2e3e8' },
+    running:   { icon: 'sync',                   text: 'Running',   color: '#0058be', bg: '#e5eeff', border: '#bfcfff' },
+    in_review: { icon: 'rate_review',             text: 'In Review', color: '#b45309', bg: '#fff8e6', border: '#f59e0b' },
+    complete:  { icon: 'check_circle',            text: 'Complete',  color: '#00a572', bg: '#f0fdf9', border: '#86efac' },
+    stale:     { icon: 'warning',                 text: 'Stale',     color: '#d97706', bg: '#fffbeb', border: '#f59e0b' },
+  };
+  const cfg = cfgs[state] || cfgs.never;
+  badge.innerHTML = `<span class="material-symbols-outlined sym-fill" style="font-size:11px;color:${cfg.color};">${cfg.icon}</span>${cfg.text}`;
+  badge.style.cssText = `display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:${cfg.color};background:${cfg.bg};border:1px solid ${cfg.border};padding:2px 8px;border-radius:99px;white-space:nowrap;`;
+}
 
-  const isAdmin = currentRole === 'admin';
-  document.getElementById('cta-run').style.display      = (isNever      && isAdmin) ? ''           : 'none';
-  document.getElementById('cta-cancel').style.display   = (isGenerating && isAdmin) ? ''           : 'none';
-  document.getElementById('cta-versions').style.display = (isGenerated  && isAdmin) ? 'inline-flex': 'none';
+function setState(state, commit) {
+  currentState = state;
 
-  // Commit chip spinner
+  const isNever    = state === 'never';
+  const isRunning  = state === 'running';
+  const isInReview = state === 'in_review';
+  const isComplete = state === 'complete';
+  const isStale    = state === 'stale';
+  const hasContent = isInReview || isComplete || isStale;
+  const isAdmin    = currentRole === 'admin';
+
+  document.getElementById('empty-banner').style.display  = isNever   ? '' : 'none';
+  document.getElementById('gen-panel').style.display     = isRunning  ? '' : 'none';
+  document.getElementById('stale-banner').style.display  = isStale    ? '' : 'none';
+  document.getElementById('kpi-strip').style.display     = hasContent ? 'block' : 'none';
+  document.getElementById('content-row').style.display   = hasContent ? 'flex'  : 'none';
+  document.getElementById('fn-vis-card').style.display   = hasContent ? ''      : 'none';
+
+  if (isStale && commit && commit.newCommitsSince) {
+    document.getElementById('stale-commits-count').textContent = commit.newCommitsSince;
+  }
+
+  // Subbar CTAs
+  document.getElementById('cta-run').style.display    = ((isNever || isStale || isComplete) && isAdmin) ? '' : 'none';
+  document.getElementById('cta-cancel').style.display = (isRunning && isAdmin) ? '' : 'none';
+  document.getElementById('cta-run-label').textContent = (isStale || isComplete) ? 'RE-RUN' : 'RUN ANALYSIS';
+
+
+  // Chip spinner
   const sym  = document.getElementById('chip-icon-sym');
   const spin = document.getElementById('chip-icon-spin');
-  sym.style.display  = isGenerating ? 'none' : '';
-  spin.style.display = isGenerating ? '' : 'none';
+  sym.style.display  = isRunning ? 'none' : '';
+  spin.style.display = isRunning ? '' : 'none';
+
+  // Right sidebar cards
+  document.getElementById('review-queue-card').style.display = (hasContent && isAdmin) ? '' : 'none';
+  document.getElementById('last-actions-card').style.display = hasContent ? '' : 'none';
+  document.getElementById('team-card').style.display         = (hasContent && isAdmin) ? '' : 'none';
+
+  updateStatusBadge(state);
 }
 
 
@@ -1636,13 +1880,269 @@ document.addEventListener('click', e => {
   }
 });
 
-// ── Advanced options ──
+
+
+// ── Advanced toggle ──
 function toggleAdv() {
-  const b = document.getElementById('adv-body');
-  const c = document.getElementById('adv-ch');
-  const open = b.classList.contains('open');
-  b.classList.toggle('open', !open);
-  c.style.transform = open ? '' : 'rotate(90deg)';
+  const open = document.getElementById('adv-body').classList.toggle('open');
+  document.getElementById('adv-ch').style.transform = open ? 'rotate(90deg)' : '';
+}
+
+// ── Function Visibility ──
+const FUNCTION_TREE = [
+  { component: 'Core', unit: 'BrakeCtrl', id: 'u1', fns: [
+    { id: 'f1', name: 'BrakeCtrl_Run' },
+    { id: 'f2', name: 'BrakeCtrl_Init' },
+    { id: 'f3', name: 'BrakeCtrl_Diag' },
+    { id: 'f4', name: 'BrakeCtrl_Shutdown' },
+    { id: 'f5', name: 'BrakeCtrl_Reset' },
+    { id: 'f6', name: 'BrakeCtrl_GetStatus' },
+    { id: 'f7', name: 'BrakeCtrl_SetMode' },
+    { id: 'f8', name: 'BrakeCtrl_ReadSensor' },
+  ]},
+  { component: 'Core', unit: 'SensorFusion', id: 'u2', fns: [
+    { id: 'f9',  name: 'SensorFusion_Init' },
+    { id: 'f10', name: 'SensorFusion_Update' },
+    { id: 'f11', name: 'SensorFusion_GetOutput', isNew: true },
+    { id: 'f12', name: 'SensorFusion_Reset',     isNew: true },
+  ]},
+  { component: 'Lib', unit: 'LibUtils', id: 'u3', fns: [
+    { id: 'f13', name: 'LibUtils_Process' },
+    { id: 'f14', name: 'LibUtils_Reset' },
+    { id: 'f15', name: 'LibUtils_Validate' },
+    { id: 'f16', name: 'LibUtils_GetError' },
+    { id: 'f17', name: 'LibUtils_SetConfig' },
+  ]},
+  { component: 'Lib', unit: 'MathHelper', id: 'u4', fns: [
+    { id: 'f18', name: 'MathHelper_Sqrt' },
+    { id: 'f19', name: 'MathHelper_Clamp' },
+    { id: 'f20', name: 'MathHelper_Lerp', isNew: true },
+  ]},
+  { component: 'Util', unit: 'SensorCalib', id: 'u5', fns: [
+    { id: 'f21', name: 'SensorCalib_Init' },
+    { id: 'f22', name: 'SensorCalib_Run' },
+    { id: 'f23', name: 'SensorCalib_Validate' },
+    { id: 'f24', name: 'SensorCalib_GetOffset' },
+    { id: 'f25', name: 'SensorCalib_SetGain' },
+    { id: 'f26', name: 'SensorCalib_Reset' },
+  ]},
+];
+let _fnHidden = { f3: true, f18: true, f19: true };
+let _unitOpen  = {};
+const _newFnIds = new Set(['f11', 'f12', 'f20']);
+
+function _totalFns()  { return FUNCTION_TREE.reduce((s, u) => s + u.fns.length, 0); }
+function _hiddenCount(){ return Object.values(_fnHidden).filter(Boolean).length; }
+
+// ── Slide-over panel ──
+function openFnPanel() {
+  document.getElementById('fn-panel-search').value = '';
+  renderFnPanel('');
+  document.getElementById('fn-panel').classList.add('open');
+  document.getElementById('fn-backdrop').classList.add('open');
+}
+function closeFnPanel() {
+  document.getElementById('fn-panel').classList.remove('open');
+  document.getElementById('fn-backdrop').classList.remove('open');
+}
+
+function renderFnPanel(filter) {
+  const q = filter.trim().toLowerCase();
+  const byComp = {};
+  FUNCTION_TREE.forEach(u => { (byComp[u.component] = byComp[u.component] || []).push(u); });
+
+  let html = '';
+  Object.entries(byComp).forEach(([comp, units]) => {
+    const visibleUnits = q ? units.filter(u => u.fns.some(f => f.name.toLowerCase().includes(q))) : units;
+    if (!visibleUnits.length) return;
+    const compHidden = units.reduce((s, u) => s + u.fns.filter(f => _fnHidden[f.id]).length, 0);
+    const compTotal  = units.reduce((s, u) => s + u.fns.length, 0);
+
+    html += `<div class="mb-5">
+      <div class="flex items-center gap-2 mb-1.5 pb-1.5 border-b border-outline-variant">
+        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.09em]" style="font-size:10px;font-weight:700;">${comp}</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">${compTotal} fns${compHidden ? ` · ${compHidden} hidden` : ''}</span>
+      </div>`;
+
+    visibleUnits.forEach(unit => {
+      const hiddenCnt  = unit.fns.filter(f => _fnHidden[f.id]).length;
+      const allHidden  = hiddenCnt === unit.fns.length;
+      const isOpen     = !!_unitOpen[unit.id] || (q && unit.fns.some(f => f.name.toLowerCase().includes(q)));
+      const displayFns = q ? unit.fns.filter(f => f.name.toLowerCase().includes(q)) : unit.fns;
+
+      html += `<div class="mb-1">
+        <div class="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-surface-container-low transition-colors">
+          <button onclick="togglePanelUnit('${unit.id}')" class="flex items-center gap-2 flex-1 min-w-0 text-left">
+            <span id="pch-${unit.id}" class="material-symbols-outlined transition-transform duration-200" style="font-size:14px;color:#74777d;transform:${isOpen ? 'rotate(90deg)' : ''};">chevron_right</span>
+            <span class="font-label-md text-label-md text-on-surface" style="font-size:12px;">${unit.unit}</span>
+            <span class="font-label-sm text-label-sm text-on-surface-variant ml-1" style="font-size:11px;">${unit.fns.length} fns${hiddenCnt ? ` · <span style="color:#ba1a1a;">${hiddenCnt} hidden</span>` : ''}</span>
+          </button>
+          <button onclick="${allHidden ? `showAllInUnit('${unit.id}')` : `hideAllInUnit('${unit.id}')`}"
+            class="px-2 py-0.5 rounded hover:bg-surface-container transition-colors flex-shrink-0"
+            style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;border:1px solid #e2e3e8;">
+            ${allHidden ? 'show all' : 'hide all'}
+          </button>
+        </div>
+        <div id="unit-body-${unit.id}" class="unit-body${isOpen ? ' open' : ''}">
+          <div class="pl-8 pr-2 pb-1">
+            ${displayFns.map(fn => {
+              const hidden = !!_fnHidden[fn.id];
+              return `<div class="flex items-center justify-between py-1 px-2 rounded group hover:bg-surface-container-low">
+                <span style="font-family:'JetBrains Mono';font-size:11px;${hidden ? 'text-decoration:line-through;color:#9aa0a6;' : 'color:#0b1c30;'}">${fn.name}()</span>
+                <button onclick="panelToggleFn('${fn.id}')"
+                  class="w-6 h-6 flex items-center justify-center rounded hover:bg-surface-container transition-colors opacity-0 group-hover:opacity-100"
+                  title="${hidden ? 'Show in output' : 'Hide from output'}">
+                  <span class="material-symbols-outlined" style="font-size:15px;color:${hidden ? '#ba1a1a' : '#c4c6cd'};">${hidden ? 'visibility_off' : 'visibility'}</span>
+                </button>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  });
+
+  document.getElementById('fn-panel-tree').innerHTML = html ||
+    '<p class="text-on-surface-variant font-label-sm text-label-sm py-6 text-center">No functions match your search.</p>';
+  updateFnCard();
+}
+
+function togglePanelUnit(uid) {
+  _unitOpen[uid] = !_unitOpen[uid];
+  renderFnPanel(document.getElementById('fn-panel-search').value);
+}
+function panelToggleFn(fid) {
+  _fnHidden[fid] = !_fnHidden[fid];
+  renderFnPanel(document.getElementById('fn-panel-search').value);
+}
+function hideAllInUnit(uid) {
+  const unit = FUNCTION_TREE.find(u => u.id === uid);
+  if (unit) { unit.fns.forEach(f => { _fnHidden[f.id] = true; }); }
+  renderFnPanel(document.getElementById('fn-panel-search').value);
+}
+function showAllInUnit(uid) {
+  const unit = FUNCTION_TREE.find(u => u.id === uid);
+  if (unit) { unit.fns.forEach(f => { delete _fnHidden[f.id]; }); }
+  renderFnPanel(document.getElementById('fn-panel-search').value);
+}
+
+function updateFnCard() {
+  const total  = _totalFns();
+  const hidden = _hiddenCount();
+  const sumEl  = document.getElementById('fv-card-summary');
+  const hidEl  = document.getElementById('fv-card-hidden');
+  const panEl  = document.getElementById('fn-panel-summary');
+  if (sumEl) sumEl.textContent = `${hidden} of ${total} functions hidden from DOCX`;
+  if (hidEl) { hidEl.textContent = hidden > 0 ? `${hidden} hidden` : 'All visible'; hidEl.style.color = hidden > 0 ? '#ba1a1a' : '#9aa0a6'; }
+  if (panEl) panEl.textContent = `${total} functions · ${hidden} hidden`;
+}
+
+function startReexport() {
+  const btn = document.getElementById('reexport-btn');
+  btn.disabled = true;
+  btn.style.background = '#74777d';
+  btn.innerHTML = '<div class="spin" style="width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:9999px;"></div><span>Re-exporting...</span>';
+  setTimeout(() => {
+    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;font-variation-settings:\'FILL\' 1,\'wght\' 400,\'GRAD\' 0,\'opsz\' 24;">check_circle</span><span>Done</span>';
+    btn.style.background = '#00a572';
+    showToast('check_circle', 'DOCX re-exported with updated function visibility.', '#00a572');
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;font-variation-settings:\'FILL\' 1,\'wght\' 400,\'GRAD\' 0,\'opsz\' 24;">upload</span><span>Re-export DOCX</span>';
+      btn.style.background = '#0058be';
+    }, 1800);
+  }, 2500);
+}
+
+// ── Post-Phase-1 review modal ──
+let _unitOpenReview = {};
+
+function showFnReviewModal() {
+  _unitOpenReview = {};
+  document.getElementById('review-search').value = '';
+  renderReviewTree('');
+  updateReviewCount();
+  document.getElementById('fn-review-modal').classList.remove('hidden');
+}
+
+function renderReviewTree(filter) {
+  const q = filter.trim().toLowerCase();
+  const byComp = {};
+  FUNCTION_TREE.forEach(u => { (byComp[u.component] = byComp[u.component] || []).push(u); });
+
+  let html = '';
+  Object.entries(byComp).forEach(([comp, units]) => {
+    const visibleUnits = q ? units.filter(u => u.fns.some(f => f.name.toLowerCase().includes(q))) : units;
+    if (!visibleUnits.length) return;
+
+    html += `<div class="mb-3"><p class="px-1 pb-1.5 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.09em]" style="font-size:10px;font-weight:700;">${comp}</p>`;
+
+    visibleUnits.forEach(unit => {
+      const hasNew     = unit.fns.some(f => _newFnIds.has(f.id));
+      const isOpen     = hasNew || !!_unitOpenReview[unit.id] || (q && unit.fns.some(f => f.name.toLowerCase().includes(q)));
+      const hiddenCnt  = unit.fns.filter(f => _fnHidden[f.id]).length;
+      const displayFns = q ? unit.fns.filter(f => f.name.toLowerCase().includes(q)) : unit.fns;
+
+      html += `<div class="mb-1.5 border border-outline-variant rounded-lg overflow-hidden">
+        <button onclick="toggleReviewUnit('${unit.id}')" class="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-container-low transition-colors">
+          <span class="material-symbols-outlined transition-transform duration-200" style="font-size:14px;color:#74777d;transform:${isOpen ? 'rotate(90deg)' : ''};">chevron_right</span>
+          <span class="font-label-md text-label-md text-on-surface flex-1 text-left" style="font-size:12px;">${unit.unit}</span>
+          ${hasNew ? `<span style="font-size:9px;font-weight:700;background:#fef9c3;color:#92400e;padding:1px 7px;border-radius:3px;font-family:'JetBrains Mono';">NEW</span>` : ''}
+          ${hiddenCnt ? `<span class="font-label-sm text-label-sm" style="font-size:10px;color:#ba1a1a;margin-left:4px;">${hiddenCnt} hidden</span>` : ''}
+        </button>
+        <div id="rv-unit-${unit.id}" class="unit-body${isOpen ? ' open' : ''}">
+          <div class="border-t border-outline-variant">
+            ${displayFns.map(fn => {
+              const hidden  = !!_fnHidden[fn.id];
+              const isNewFn = _newFnIds.has(fn.id);
+              return `<div class="flex items-center justify-between py-1.5 px-4 group" style="${isNewFn ? 'background:#fffbeb;' : ''}">
+                <div class="flex items-center gap-2 min-w-0">
+                  ${isNewFn
+                    ? `<span class="material-symbols-outlined sym-fill flex-shrink-0" style="font-size:13px;color:#d97706;">fiber_new</span>`
+                    : `<span style="width:17px;flex-shrink:0;"></span>`}
+                  <span style="font-family:'JetBrains Mono';font-size:11px;${hidden ? 'text-decoration:line-through;color:#9aa0a6;' : 'color:#0b1c30;'}">${fn.name}()</span>
+                </div>
+                <button onclick="reviewToggleFn('${fn.id}')"
+                  class="w-6 h-6 flex items-center justify-center rounded hover:bg-surface-container transition-colors flex-shrink-0"
+                  style="opacity:${hidden ? '1' : '.35'};" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity='${hidden ? '1' : '.35'}'">
+                  <span class="material-symbols-outlined" style="font-size:15px;color:${hidden ? '#ba1a1a' : '#c4c6cd'};">${hidden ? 'visibility_off' : 'visibility'}</span>
+                </button>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  });
+
+  document.getElementById('review-tree').innerHTML = html ||
+    '<p class="text-on-surface-variant font-label-sm text-label-sm py-4 text-center">No functions match.</p>';
+}
+
+function toggleReviewUnit(uid) {
+  _unitOpenReview[uid] = !_unitOpenReview[uid];
+  renderReviewTree(document.getElementById('review-search').value);
+}
+function reviewToggleFn(fid) {
+  _fnHidden[fid] = !_fnHidden[fid];
+  renderReviewTree(document.getElementById('review-search').value);
+  updateReviewCount();
+}
+function updateReviewCount() {
+  const h = _hiddenCount();
+  document.getElementById('review-hidden-count').textContent = h > 0 ? `${h} hidden` : 'All visible';
+}
+function continueAfterReview() {
+  document.getElementById('fn-review-modal').classList.add('hidden');
+  updateFnCard();
+  advanceToPhase(2);
+  _phaseTimers.push(
+    setTimeout(() => advanceToPhase(3),  9000),
+    setTimeout(() => advanceToPhase(4), 18000),
+    setTimeout(() => finishGeneration(), 27000),
+  );
 }
 
 // ── Role switcher ──
@@ -1661,16 +2161,11 @@ function setRole(role) {
     ? 'px-2.5 py-1 transition-colors bg-secondary text-white'
     : 'px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container';
   closeRoleMenu();
-  // Re-run setState to update CTA visibility based on new role
-  const currentState = document.getElementById('gen-panel').style.display !== 'none' ? 'generating'
-                     : document.getElementById('empty-banner').style.display !== 'none' ? 'never'
-                     : 'generated';
-  setState(currentState);
+  const c = COMMITS.find(x => x.current);
+  setState(currentState, c);
   renderKpi();
   renderDocs();
   renderLastActions();
-  document.getElementById('review-queue-card').style.display = role === 'developer' ? 'none' : '';
-  document.getElementById('team-card').style.display         = role === 'developer' ? 'none' : '';
 }
 function toggleRoleMenu() {
   const menu = document.getElementById('role-menu');
@@ -1774,8 +2269,6 @@ function startGeneration() {
     String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
 
   _elapsed = 0; _phase = 1;
-  resetPhasesVisual();
-  setActivity(1);
 
   document.getElementById('gen-header').style.background = '#041627';
   document.getElementById('gen-header-title').textContent = 'Analysis Running';
@@ -1793,14 +2286,33 @@ function startGeneration() {
   }, 1000);
 
   _phaseTimers.forEach(clearTimeout);
-  _phaseTimers = [
-    setTimeout(() => advanceToPhase(2),  9000),
-    setTimeout(() => advanceToPhase(3), 18000),
-    setTimeout(() => advanceToPhase(4), 27000),
-    setTimeout(() => finishGeneration(), 36000),
-  ];
+  _phaseTimers = [];
 
-  setState('generating');
+  const pauseAfterPhase1 = document.getElementById('pause-phase1') && document.getElementById('pause-phase1').checked;
+
+  if (pauseAfterPhase1) {
+    setPhActive(1);
+    setPhPending(2); setPhPending(3); setPhPending(4);
+    setLine('line12', 'ph-pending'); setLine('line23', 'ph-pending'); setLine('line34', 'ph-pending');
+    setActivity(1);
+    _phaseTimers.push(setTimeout(() => {
+      const m = Math.floor(_elapsed / 60), s = _elapsed % 60;
+      setPhDone(1, 'Done · ' + m + 'm ' + s + 's');
+      setLine('line12', 'ph-done');
+      showFnReviewModal();
+    }, 5000));
+  } else {
+    resetPhasesVisual();
+    setActivity(1);
+    _phaseTimers = [
+      setTimeout(() => advanceToPhase(2),  9000),
+      setTimeout(() => advanceToPhase(3), 18000),
+      setTimeout(() => advanceToPhase(4), 27000),
+      setTimeout(() => finishGeneration(), 36000),
+    ];
+  }
+
+  setState('running');
 }
 
 function resetPhasesVisual() {
@@ -1898,7 +2410,10 @@ function finishGeneration() {
   BRANCH.state = 'in_review';
   BRANCH.generatedAt = 'just now';
 
-  setState('generated');
+  const c = COMMITS.find(x => x.current);
+  if (c) c.pageState = 'in_review';
+  setState('in_review', c);
+  renderKpi(); renderDocs(); renderLastActions();
   showToast('check_circle', 'Analysis complete — documents ready for assignment.', '#00a572');
 }
 
@@ -1906,8 +2421,9 @@ function cancelGeneration() {
   clearInterval(_elapsedTick);
   _phaseTimers.forEach(clearTimeout);
   runningJob = false;
-  if (BRANCH.state !== 'never') setState('generated');
-  else                           setState('never');
+  const c = COMMITS.find(x => x.current);
+  const prevState = (c && c.pageState !== 'running') ? c.pageState : 'never';
+  setState(prevState, c);
   showToast('cancel', 'Analysis job cancelled.', '#d97706');
 }
 
@@ -1964,11 +2480,13 @@ document.getElementById('delete-version-modal').addEventListener('click', e => {
 });
 
 // ── Init ──
+const _initCommit = COMMITS.find(c => c.current);
+currentState = _initCommit ? _initCommit.pageState : 'in_review';
 updateChip();
 renderKpi();
 renderDocs();
 renderLastActions();
-setState('generated');
+setState(currentState, _initCommit);
 </script>
 </body>
 </html>
