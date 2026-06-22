@@ -237,15 +237,30 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as fh:
         json.dump(target_globals, fh, indent=2)
 
-    # Impacted FILES = source files of the impacted functions (function-level precision).
+    # impactedFiles (for SUMMARIES) = files of the full impact set (a caller's
+    # description/file-summary does depend on its callees). flowchartFiles (for
+    # FLOWCHARTS) = files of only the DIRECTLY changed/new/deleted functions — a
+    # function's flowchart is its own control flow + call-site labels, so it does NOT
+    # change when a callee's *body* changes. This keeps flowchart regen (the dominant
+    # LLM cost) scoped to what actually changed, not its (often large) callers.
     impacted_files = sorted({
         (target_functions.get(fid) or {}).get("location", {}).get("file")
         for fid in plan["impact"]
     } - {None})
+    cls = plan["classify"]
+    direct_fns = {k for k in (cls["changed"] | cls["new"]) if k in target_functions}
+    flowchart_files = {(target_functions.get(fid) or {}).get("location", {}).get("file")
+                       for fid in direct_fns}
+    for fid in cls["deleted"]:                      # a deleted fn's file must drop its flowchart
+        bf = base_functions.get(fid)
+        if bf:
+            flowchart_files.add((bf.get("location") or {}).get("file"))
+    flowchart_files = sorted(flowchart_files - {None})
     with open(os.path.join(model_dir, "incremental_plan.json"), "w", encoding="utf-8") as fh:
         json.dump({"impactFids": sorted(plan["impact"]),
                    "impactedGlobals": sorted(impacted_globals),
                    "impactedFiles": impacted_files,
+                   "flowchartFiles": flowchart_files,
                    "baselineVersionDir": vstore.version_dir(base_vid)}, fh, indent=2)
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
@@ -298,8 +313,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         "classification": classification,
         "functions": {"total": fn_total, "regenerated": fn_regen, "reused": fn_total - fn_regen},
         "globals": {"total": gl_total, "regenerated": gl_regen, "reused": gl_total - gl_regen},
-        "files": {"total": len(all_files), "regenerated": len(impacted_files),
-                  "carried": len(all_files) - len(impacted_files)},
+        "files": {"total": len(all_files), "regenerated": len(flowchart_files),
+                  "carried": len(all_files) - len(flowchart_files)},
         "documents": documents, "warnings": decision["warnings"],
     }
     emit_report(build_report(stats), version_dir=vdir)

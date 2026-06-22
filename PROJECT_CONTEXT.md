@@ -2921,9 +2921,20 @@ workspaces/<projectId>/
     regenerated vs reused + %; summaries note). Tests: `tests/unit/test_incremental_report.py` (6). Example on
     C1→C3: `Functions regenerated 9/113 -> reused 104 (92%)`, `Globals 3/12 -> reused 9 (75%)`, `Flowcharts 5/18
     files -> carried 13 (72%)`.
+  - **M3.5 flowchart impact-scoping fix — ✅ done (big speedup).** An LLM-on real-diff (C1→C3) took 1021s with the
+    **flowchart engine alone = 497s**, even though only 3 functions changed. Cause: flowcharts were regenerated
+    for the **full impact set** (changed + transitive callers), pulling in `App/Main.cpp`'s *large* functions
+    because they call the changed `Math`. But **a function's flowchart is its own CFG + call-site labels — it does
+    NOT change when a callee's *body* changes**. Fix: the plan now carries a separate **`flowchartFiles`** = files
+    of only the *directly* changed/new/deleted functions (descriptions/summaries keep the full-impact
+    `impactedFiles`, since those genuinely depend on callees, and are cheap); `views/flowcharts.py` restricts on
+    `flowchartFiles`. (Also confirmed: the flowchart `PkbCache` caches the PKB *index* keyed by the whole
+    functions.json hash — **not** LLM labels; there is no label cache — so unifying caches wouldn't help; reuse is
+    handled by version-level carry-forward.) Verified e2e: C1→C3 flowcharts dropped from **12 functions / 5 files**
+    to **3 functions / 1 file** (App no longer re-labeled); report shows `Flowcharts carried 15/18 (83%)`.
   - *Remaining:* **version-scoped reads** (`?versionId=` on `components`/`functions`/`flowcharts`); move/rename
-    polish; consolidate `git_ops`/`git_service`. (Recipe-fingerprint invalidation is automatic; multi-doc zip
-    shipped in M1.3b.)
+    polish; consolidate `git_ops`/`git_service`; unit-diagram reuse. (Recipe-fingerprint invalidation is
+    automatic; multi-doc zip shipped in M1.3b.)
 - **Next concrete step:** **M3.2 — version-scoped reads**: `?versionId=` on the browse endpoints
   (`/components`, `/functions/{fn_id}`, `/flowcharts/{fn_id}`) so the UI reads a specific version's
   `model/`+`output/` (removes the single-shared-`model/` limitation; doc 05 §8). Then the remaining M3 items.

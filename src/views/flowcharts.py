@@ -37,7 +37,10 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
             plan = json.load(f)
     except (OSError, json.JSONDecodeError):
         return functions_arg_path, None
-    impacted = set(plan.get("impactedFiles") or [])
+    # Flowcharts regenerate only for DIRECTLY changed/new files (flowchartFiles) — a
+    # function's flowchart is its own control flow, not its callees' bodies. Fall back
+    # to impactedFiles for older plans that didn't split the two.
+    impacted = set(plan.get("flowchartFiles") or plan.get("impactedFiles") or [])
     base_ver_dir = plan.get("baselineVersionDir")
     # impacted source-file stems (e.g. "Utils" for Layer1/Math/Utils.cpp) — these
     # units' PNGs are re-rendered; everything else's PNGs are carried forward.
