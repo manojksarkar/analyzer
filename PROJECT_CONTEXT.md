@@ -13,7 +13,8 @@
 > Previous update: 2026-06-11 (feat/auto-clang-includes branch: `--selected-component` flag added — repeatable, accumulates a list; all components must be in the same layer; output to `output/<C1_C2>/`; new `get_component_layer_name` in `core.config`; `group_planner` has a fifth dispatch shape; `run_views` and `docx_exporter` both handle the new flag; see §5).
 > Previous update: 2026-06-09 (feat/auto-clang-includes branch: Phase 1 parsing scoped to selected layer — `--selected-group` passes itself to `parser.py` which derives the layer via `get_group_layer_name`; new `--selected-layer` flag parses one layer and generates DOCX for all its groups; both flags together are an error; `clang_include_paths.json` also scoped to the selected layer; new `get_group_layer_name` / `get_layer_flat_groups` helpers in `core.config`; see §4e, §5, §7).
 > Previous update: 2026-06-09 (feat/from-main branch: `module` → `component` rename throughout source + model + config; `modulesGroups` → `layers` two-level config schema; same-layer model filtering in Phase 3 + Phase 4; `SampleCppProject` restructured with Layer1 + Layer2/Platform; `model/modules.json` → `model/components.json`; new `get_flat_groups` / `get_layer_components` helpers in `core.config`; `--trace-prompts` + `--filter-mode` CLI flags; `model/clang_include_paths.json` written by `run.py` before any phase; see §5, §6, §7, §9, §10, §11, §12, §15).
-> Current active branch: `version4` (integration base off `main`: main code + version3 backend + production-redesign docs).
+> Current active branch: `feat/product-ui-redesign` (React frontend implementation — HTML designs in `frontend/designs/`; last pipeline branch: `version4`).
+> Previous active branch: `version4` (integration base off `main`: main code + version3 backend + production-redesign docs).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
@@ -2955,6 +2956,61 @@ hash / edge / reuse-index access goes through.
 `082ec8b` backend doc corrections · `a74a560` **git_service** · `4651fe9` + `d1ee2bd` + `98b2ce1` doc 04
 (incremental approach → slim edges + pointer index) · `8ea45a2` doc 05 (UI API spec). Branch is pushed to
 `origin/version4`.
+
+---
+
+## 24. Frontend — `frontend/designs/`
+
+Branch: `feat/product-ui-redesign`. HTML design mockups in `frontend/designs/` are the reference specs for the React frontend implementation. Full UI context in `frontend/UI_CONTEXT.md`.
+
+### Design system
+
+- Tailwind CSS + Material Symbols Outlined (Google Fonts)
+- Fonts: Inter (body/headlines), JetBrains Mono (labels/code)
+- Color tokens: navy `#041627`, blue `#0058be`, green `#00a572`
+
+### Page inventory
+
+| # | File | Sidebar | Subbar | What it covers |
+|---|------|---------|--------|----------------|
+| 1 | `signin.html` | none | no | Two-panel auth: branding left, SSO + email/password form right |
+| 2 | `projects.html` | 220px | yes | All-projects table; ADMIN/DEV badges, row kebab menu (Settings / Archive / Delete) |
+| 3 | `projects-empty.html` | 220px | yes | Empty state + 5-step onboarding wizard; Request Project Access modal |
+| 4 | `project-detail.html` | 220px | yes | Project overview: KPI cards, generation progress, documents table, team list, review queue, function-visibility slide-over, Run Analysis modal, Admin/Developer role switcher |
+| 5 | `documents.html` | 56px collapsed | yes | Document list: process filter tabs, status/assignee filters, batch actions, edit-section modal, assign-reviewers slide panel |
+| 6 | `compare.html` | 56px collapsed | yes | Split diff: reference left / current right; per-section Accept/Decline/Edit; review footer with progress dots |
+| 7 | `versions.html` | 56px collapsed | yes | Tagged version cards (In Review / Approved); untagged commits timeline; filter tabs |
+| 8 | `team.html` | 220px | yes | Team table: role dropdowns, pending invites, Invite Member modal, permission legend |
+
+### Shell rules
+
+**Sidebar** — context-progressive:
+- `signin.html` and `projects.html` have **no sidebar** — full-width, logo top-left.
+- All project-scoped pages (4–8): **project sidebar** (220px expanded / 56px collapsed):
+  - `← All Projects` → `projects.html`
+  - Project name label (10px uppercase)
+  - Overview → `project-detail.html` · Documents → `documents.html` · Compare → `compare.html` · Versions → `versions.html` · Team → `team.html`
+  - Settings at bottom (below `border-t`)
+- `documents.html`, `compare.html`, `versions.html` default to **collapsed (56px)**.
+
+**Subbar** (all project-scoped pages):
+```
+[ 📁 VCU Engine Firmware ▾ ]  ·  [ v1.2.0 ▾ ]  ·  ⑂ main @ d9a0c55  ·  Jun 15    [CTA]
+```
+- CTAs: project-detail `[▶ RUN ANALYSIS]`, documents `[↓ Download All]`, compare `[✓ Accept All] [✗ Reject All]`, team `[+ Invite]`, versions — none
+
+**Breadcrumbs** — always start with `[⬡]` home (→ `projects.html`):
+`Overview` · `Documents` · `Documents / Compare` · `Versions` · `Team`
+
+### Navigation flow
+
+```
+signin.html → projects.html (no sidebar)
+  └─ click row → project-detail.html (220px sidebar)
+       ├─ Documents → documents.html (56px) → Compare → compare.html (56px)
+       ├─ Versions  → versions.html (56px)
+       └─ Team      → team.html (220px)
+```
 
 ---
 

@@ -1,0 +1,1975 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[PRODUCT NAME] — SWE.3 Detailed Design</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#041627", "primary-container": "#1a2b3c",
+          "on-primary": "#ffffff", "on-primary-container": "#8192a7",
+          "secondary": "#0058be", "secondary-container": "#2170e4",
+          "on-secondary": "#ffffff", "on-secondary-container": "#fefcff",
+          "on-tertiary-container": "#00a572",
+          "error": "#ba1a1a", "error-container": "#ffdad6", "on-error-container": "#93000a",
+          "surface": "#f8f9ff", "background": "#f8f9ff",
+          "surface-container-lowest": "#ffffff", "surface-container-low": "#eff4ff",
+          "surface-container": "#e5eeff", "surface-container-high": "#dce9ff",
+          "surface-container-highest": "#d3e4fe",
+          "on-surface": "#0b1c30", "on-surface-variant": "#44474c",
+          "outline": "#74777d", "outline-variant": "#c4c6cd",
+          "tertiary-container": "#00311f", "tertiary-fixed": "#6ffbbe",
+        },
+        borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+        spacing: {
+          "sidebar-width": "220px", "inspector-width": "400px",
+          "gutter": "16px", "container-padding": "24px",
+        },
+        fontFamily: {
+          "display-lg": ["Inter"], "headline-md": ["Inter"], "headline-sm": ["Inter"],
+          "body-lg": ["Inter"], "body-md": ["Inter"], "body-sm": ["Inter"],
+          "label-md": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"],
+        },
+        fontSize: {
+          "display-lg":  ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
+          "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+          "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+          "body-lg":     ["16px", { lineHeight: "24px", fontWeight: "400" }],
+          "body-md":     ["14px", { lineHeight: "20px", fontWeight: "400" }],
+          "body-sm":     ["12px", { lineHeight: "16px", fontWeight: "400" }],
+          "label-md":    ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
+          "label-sm":    ["11px", { lineHeight: "14px", fontWeight: "500" }],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle; line-height: 1;
+  }
+  .sym-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+
+  /* Sidebar collapse */
+  :root { --sw: 56px; }
+  body.nav-expanded { --sw: 220px; }
+  #app-sidebar { width: var(--sw); transition: width .2s cubic-bezier(.4,0,.2,1); }
+  #app-main    { margin-left: var(--sw); transition: margin-left .2s cubic-bezier(.4,0,.2,1); }
+  body:not(.nav-expanded) .nav-label,
+  body:not(.nav-expanded) .brand-text,
+  body:not(.nav-expanded) .user-info,
+  body:not(.nav-expanded) .more-btn-icon { display: none; }
+  body:not(.nav-expanded) .nav-item  { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+  body:not(.nav-expanded) .nav-active { border-left: none; }
+  body:not(.nav-expanded) .brand-header { flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px; }
+  body:not(.nav-expanded) .user-btn  { justify-content: center; padding: 6px; gap: 0; }
+
+  /* Nav states */
+  .nav-default { color: #44474c; }
+  .nav-default:hover { background: #eff4ff; color: #0b1c30; }
+  .nav-active { background: #041627; color: #ffffff; border-left: 2px solid #0058be; }
+  .nav-active .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  /* Outline panel active link */
+  .outline-link.active { color: #0058be; background: #eff4ff; font-weight: 500; }
+
+  /* Component tree */
+  .tree-component {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: 4px; cursor: pointer;
+    font-family: 'JetBrains Mono'; font-size: 11px; line-height: 14px;
+    color: #44474c; transition: background 0.1s;
+  }
+  .tree-component:hover { background: #eff4ff; color: #0b1c30; }
+  .tree-component.active { background: #e5eeff; color: #0058be; border-left: 2px solid #0058be; padding-left: 8px; }
+  .tree-component.active .comp-dot { background: #0058be; }
+  .comp-dot { width: 6px; height: 6px; border-radius: 50%; background: #c4c6cd; flex-shrink: 0; }
+
+
+  /* Assign panel */
+  .assign-panel {
+    width: 0; flex-shrink: 0; overflow: hidden;
+    transition: width 0.3s cubic-bezier(0.4,0,0.2,1);
+    border-left: 1px solid #c4c6cd; background: #ffffff;
+    display: flex; flex-direction: column;
+  }
+  .assign-panel.open { width: 308px; }
+
+  /* Diff blocks */
+  .diff-added   { border-left: 3px solid #00a572; background: rgba(0,165,114,.06); border-radius: 4px; }
+  .diff-removed { border-left: 3px solid #ba1a1a; background: rgba(186,26,26,.06); border-radius: 4px; }
+  .diff-changed { border-left: 3px solid #0058be; background: #eff4ff; border-radius: 4px; }
+
+  /* Generation animations */
+  @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .spin-slow { animation: spin-slow 1.4s linear infinite; display: inline-block; }
+  @keyframes log-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+  .log-line { animation: log-in 0.18s ease forwards; }
+  @keyframes bar-pulse { 0%,100% { opacity:1; } 50% { opacity:.7; } }
+  .bar-pulse { animation: bar-pulse 1.2s ease-in-out infinite; }
+
+  /* Review tracker bar */
+  .rev-bar { height: 6px; border-radius: 3px; background: #e5eeff; overflow: hidden; }
+  .rev-bar-fill { height: 100%; border-radius: 3px; background: #0058be; transition: width 0.4s ease; }
+  .rev-bar-fill.done { background: #00a572; }
+
+  /* Subbar pills */
+  .subbar-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid #c4c6cd; border-radius: 6px; background: #fff; transition: background .1s, border-color .1s; cursor: pointer; }
+  .subbar-pill:hover { background: #eff4ff; border-color: #0058be; }
+
+  /* Dropdown */
+  .dropdown { position: absolute; top: calc(100% + 6px); left: 0; background: white; border: 1px solid #c4c6cd; border-radius: 8px; overflow: hidden; z-index: 200; box-shadow: 0 4px 20px rgba(4,22,39,.12); }
+
+  /* List view */
+  .proc-tab { padding: 8px 14px; border-bottom: 2px solid transparent; font-family: 'JetBrains Mono'; font-size: 11px; font-weight: 600; color: #74777d; transition: color .1s, border-color .1s; white-space: nowrap; cursor: pointer; }
+  .proc-tab:hover:not(.active) { color: #0b1c30; }
+  .proc-tab.active { color: #0058be; border-bottom-color: #0058be; }
+  .proc-filter-btn { flex-shrink: 0; padding: 2px 8px; border-radius: 4px; font-family: 'JetBrains Mono'; font-size: 10px; font-weight: 600; color: #44474c; background: transparent; border: 1px solid transparent; cursor: pointer; transition: all .1s; white-space: nowrap; }
+  .proc-filter-btn:hover { background: #e5eeff; color: #0058be; }
+  .proc-filter-btn.active { background: #e5eeff; color: #0058be; border-color: #0058be; }
+  .doc-row:hover { background: #f8f9ff; cursor: pointer; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono'; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .badge-approved { background: #f0fdf9; color: #00a572; border: 1px solid #86efac; }
+  .badge-review   { background: #fff8e6; color: #b45309; border: 1px solid #f59e0b; }
+  .badge-unchanged { background: #f3f4f6; color: #74777d; border: 1px solid #c4c6cd; }
+  .proc-pill { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono'; }
+  .pill-swe3 { background: #e5eeff; color: #0058be; }
+  .pill-swe2 { background: #eef2ff; color: #4f46e5; }
+  .pill-swe1 { background: #f0fdf9; color: #00a572; }
+  .pill-sys1 { background: #faf5ff; color: #7c3aed; }
+  .pill-sys2 { background: #fff7ed; color: #c2410c; }
+  .doc-checkbox { accent-color: #0058be; width: 15px; height: 15px; cursor: pointer; }
+  .doc-row.row-selected { background: #eff4ff; }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+
+  /* Project status chip */
+  .proj-status-chip { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-family:'JetBrains Mono'; font-size:10px; font-weight:700; letter-spacing:.04em; white-space:nowrap; border:1px solid transparent; }
+  .proj-status-chip .s-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+  .s-dot-pulse { animation:pulse-dot 1.1s ease-in-out infinite; }
+</style>
+</head>
+
+<body class="bg-background text-on-surface overflow-hidden">
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside id="app-sidebar" class="fixed left-0 top-0 h-screen bg-white border-r border-outline-variant flex flex-col z-50 overflow-hidden">
+  <div class="brand-header flex items-center justify-between px-4 py-3.5 border-b border-outline-variant flex-shrink-0">
+    <a href="projects.html" class="flex items-center gap-3 min-w-0 flex-1">
+      <div class="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+        <span class="material-symbols-outlined text-on-primary sym-fill" style="font-size:18px;">account_tree</span>
+      </div>
+      <div class="brand-text min-w-0 overflow-hidden">
+        <h1 class="text-primary font-bold tracking-tight whitespace-nowrap" style="font-family:Inter;font-size:15px;line-height:1.2;">[PRODUCT NAME]</h1>
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mt-0.5 whitespace-nowrap">Automotive Tier 1</p>
+      </div>
+    </a>
+    <button onclick="toggleSidebar()" class="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors flex-shrink-0" title="Toggle sidebar">
+      <span class="material-symbols-outlined" id="sidebar-toggle-icon" style="font-size:18px;">chevron_right</span>
+    </button>
+  </div>
+
+  <nav class="flex-1 overflow-y-auto px-2 py-2">
+    <a href="projects.html" title="All Projects"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default mb-2">
+      <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+      <span class="nav-label font-label-sm text-label-sm text-on-surface-variant">All Projects</span>
+    </a>
+    <p class="nav-label px-3 pb-1.5 font-label-sm text-on-surface-variant uppercase tracking-[.09em] truncate" style="font-size:10px;">VCU Engine Firmware</p>
+    <div class="space-y-0.5">
+      <a href="project-detail.html" title="Overview"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">home</span>
+        <span class="nav-label font-label-md text-label-md">Overview</span>
+      </a>
+      <a href="#" onclick="showListState(); return false;" title="Documents"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-active">
+        <span class="material-symbols-outlined" style="font-size:20px;">description</span>
+        <span class="nav-label font-label-md text-label-md">Documents</span>
+      </a>
+      <a href="compare.html" title="Compare"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">compare_arrows</span>
+        <span class="nav-label font-label-md text-label-md">Compare</span>
+      </a>
+      <a href="versions.html" title="Versions"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">local_offer</span>
+        <span class="nav-label font-label-md text-label-md">Versions</span>
+      </a>
+      <a href="team.html" title="Team"
+         class="nav-item flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+        <span class="material-symbols-outlined" style="font-size:20px;">group</span>
+        <span class="nav-label font-label-md text-label-md">Team</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="px-2 pt-2 border-t border-outline-variant flex-shrink-0">
+    <a href="onboarding.html" title="Settings"
+       class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150 nav-default">
+      <span class="material-symbols-outlined" style="font-size:18px;">settings</span>
+      <span class="nav-label font-label-md text-label-md">Settings</span>
+    </a>
+  </div>
+  <div class="px-2 pb-3 pt-1 flex-shrink-0">
+    <button class="user-btn w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-surface-container transition-colors text-left group" title="Engineering Lead">
+      <div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+        <span class="text-on-secondary-container font-bold text-sm" id="user-initials" style="font-family:Inter;">EL</span>
+      </div>
+      <div class="user-info flex-1 min-w-0">
+        <p class="font-label-md text-label-md text-on-surface truncate leading-tight" id="user-name">Engineering Lead</p>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-secondary" id="user-role-dot"></span>
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide" id="user-role-label">Admin</p>
+        </div>
+      </div>
+      <span class="more-btn-icon material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" style="font-size:18px;">more_vert</span>
+    </button>
+  </div>
+</aside>
+
+<!-- ══════════════ APP MAIN ══════════════ -->
+<div id="app-main" class="h-screen flex flex-col">
+
+  <!-- ── TOP BAR ── -->
+  <header class="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-40">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-1.5" aria-label="Breadcrumb">
+      <a href="projects.html"
+         class="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+         title="Dashboard">
+        <span class="material-symbols-outlined sym-fill" style="font-size:18px;">hexagon</span>
+      </a>
+      <span class="text-outline-variant select-none">/</span>
+      <a href="project-detail.html"
+         class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors whitespace-nowrap">
+        VCU Engine Firmware
+      </a>
+      <span class="text-outline-variant select-none">/</span>
+      <button onclick="showListState()"
+         class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:underline transition-colors">
+        Documents
+      </button>
+      <span class="text-outline-variant select-none" id="breadcrumb-doc-sep" style="display:none;">/</span>
+      <span class="font-label-md text-label-md text-on-surface truncate" id="breadcrumb-doc" style="display:none;">SWE.3 — Brake Controller</span>
+    </nav>
+    <!-- Right actions -->
+    <div class="flex items-center gap-0.5">
+      <button class="relative p-2 hover:bg-surface-container rounded-lg transition-colors" title="Notifications">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">notifications</span>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
+      </button>
+      <button class="p-2 hover:bg-surface-container rounded-lg transition-colors" title="Help">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:22px;">help</span>
+      </button>
+      <div class="w-px h-5 bg-outline-variant mx-1.5"></div>
+      <button class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-surface-container rounded-lg transition-colors">
+        <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
+          <span class="text-on-secondary-container font-bold text-xs" style="font-family:Inter;">EL</span>
+        </div>
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:16px;">expand_more</span>
+      </button>
+      <div class="w-px h-5 bg-outline-variant mx-1"></div>
+      <div class="flex items-center rounded-full border border-outline-variant overflow-hidden" style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
+        <button onclick="applyRole('admin')" id="role-btn-admin" class="px-2.5 py-1 transition-colors bg-secondary text-white">Admin</button>
+        <button onclick="applyRole('developer')" id="role-btn-dev" class="px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container">Dev</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── SUBBAR ── -->
+  <div class="h-12 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-30">
+    <div class="flex items-center gap-2">
+
+      <!-- Project switcher -->
+      <div class="relative" id="sb-project-wrap">
+        <button id="sb-project-btn" onclick="toggleSbProject()" class="subbar-pill">
+          <span class="material-symbols-outlined text-secondary sym-fill" style="font-size:14px;">folder</span>
+          <span class="font-label-md text-label-md text-on-surface" id="sb-project-name" style="font-size:12px;">VCU Engine Firmware</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="sb-project-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <div id="sb-project-dropdown" class="hidden dropdown" style="min-width:264px;">
+          <div class="py-1.5">
+            <button onclick="switchSbProject('VCU Engine Firmware')" data-proj="VCU Engine Firmware"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left" style="background:#eff4ff;">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">VCU Engine Firmware</span>
+              <span class="ml-auto material-symbols-outlined text-secondary sb-proj-check" style="font-size:15px;">check</span>
+            </button>
+            <button onclick="switchSbProject('Brake Control Unit')" data-proj="Brake Control Unit"
+                    class="sb-proj-opt w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-low transition-colors text-left">
+              <span class="font-label-md text-label-md text-on-surface truncate" style="font-size:12px;">Brake Control Unit</span>
+              <span class="ml-auto material-symbols-outlined text-outline-variant sb-proj-check" style="font-size:15px;opacity:0;">check</span>
+            </button>
+          </div>
+          <div class="border-t border-outline-variant">
+            <a href="onboarding.html" class="flex items-center gap-2 px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+              <span class="material-symbols-outlined text-secondary" style="font-size:14px;">add_circle</span>
+              <span class="font-label-md text-label-md text-secondary" style="font-size:12px;">New Project</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <span class="text-outline-variant select-none">·</span>
+
+      <!-- Commit chip with picker dropdown -->
+      <div class="relative" id="commit-chip-wrap">
+        <button id="commit-chip-btn" onclick="toggleCommitPicker()" class="subbar-pill">
+          <span id="chip-icon-sym" class="material-symbols-outlined text-on-tertiary-container flex-shrink-0" style="font-size:13px;">sell</span>
+          <div id="chip-icon-spin" class="spin flex-shrink-0" style="display:none;width:11px;height:11px;border:1.5px solid #0058be;border-top-color:transparent;border-radius:9999px;"></div>
+          <span id="chip-ref" class="text-on-surface font-semibold" style="font-family:'JetBrains Mono';font-size:11px;">v1.2.0</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="chip-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <div id="commit-picker" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-outline-variant rounded-xl overflow-hidden" style="min-width:380px;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+          <div class="flex items-center border-b border-outline-variant px-3">
+            <button id="cp-tab-versions" onclick="switchPickerTab('versions')" class="px-1 py-2.5 mr-5 font-label-md text-label-md border-b-2 border-secondary text-secondary -mb-px transition-colors">Versions</button>
+            <button id="cp-tab-commits" onclick="switchPickerTab('commits')" class="px-1 py-2.5 font-label-md text-label-md border-b-2 border-transparent text-on-surface-variant hover:text-on-surface -mb-px transition-colors">Commits</button>
+          </div>
+          <div id="cp-panel-versions">
+            <div class="overflow-y-auto" style="max-height:280px;" id="cp-versions-list"></div>
+          </div>
+          <div id="cp-panel-commits" style="display:none;">
+            <div class="px-3 py-2 border-b border-outline-variant">
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">search</span>
+                <input type="text" placeholder="Search commits…" oninput="filterPickerCommits(this.value)" class="flex-1 bg-transparent outline-none text-on-surface placeholder-outline" style="font-family:'JetBrains Mono';font-size:11px;">
+              </div>
+            </div>
+            <div class="overflow-y-auto" style="max-height:240px;" id="cp-commits-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <span class="text-outline-variant select-none">·</span>
+
+      <!-- Project status chip -->
+      <div id="proj-status-chip" class="proj-status-chip" style="background:#f0fdf9;color:#00a572;border-color:#86efac;">
+        <span class="s-dot" id="proj-chip-dot" style="background:#00a572;"></span>
+        <span id="proj-chip-label">Complete</span>
+      </div>
+
+      <!-- Compare button — only shown for In Review docs -->
+      <div id="compare-wrap-sub" style="display:none;">
+        <div class="w-px h-5 bg-outline-variant mx-1"></div>
+        <a href="compare.html"
+           class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant text-on-surface-variant hover:bg-surface-container hover:border-secondary hover:text-secondary rounded-lg transition-colors"
+           style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+          <span class="material-symbols-outlined" style="font-size:13px;">compare_arrows</span>
+          Compare
+        </a>
+      </div>
+    </div>
+
+    <!-- Right CTAs -->
+    <div class="flex items-center gap-1.5">
+      <button id="cta-download" class="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary-container text-white rounded-lg transition-colors"
+              style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;letter-spacing:.02em;">
+        <span class="material-symbols-outlined" style="font-size:15px;">download</span>
+        <span id="cta-download-label">Download All</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── CONTENT AREA ── -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- DOCUMENT TREE -->
+    <aside id="doc-tree-panel" class="w-60 flex-shrink-0 bg-white border-r border-outline-variant flex flex-col overflow-hidden" style="display:none;">
+      <!-- Panel header -->
+      <div class="px-3 py-2.5 border-b border-outline-variant flex-shrink-0">
+        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] block">Documents</span>
+      </div>
+      <!-- Assignee filter -->
+      <div class="px-3 py-2 border-b border-outline-variant flex-shrink-0 relative" id="list-assignee-wrap">
+        <button onclick="toggleListAssignee()" id="list-assignee-btn"
+                class="w-full flex items-center gap-2 px-2.5 py-1.5 border border-outline-variant rounded-lg bg-white hover:bg-surface-container-low transition-colors"
+                style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;">
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;">person</span>
+          <span id="list-assignee-label" class="flex-1 text-left">Assignee</span>
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="list-assignee-chevron" style="font-size:13px;">expand_more</span>
+        </button>
+        <div id="list-assignee-dd" class="hidden" style="position:absolute;top:calc(100% - 4px);left:8px;right:8px;background:white;border:1px solid #c4c6cd;border-radius:8px;overflow:hidden;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);">
+          <div class="py-1.5">
+            <button onclick="setListAssignee(ROLES.developer.assignee,'My Assignments')" id="my-assign-opt" class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface" style="display:none;">My Assignments</button>
+            <div id="my-assign-divider" class="border-t border-outline-variant my-0.5" style="display:none;"></div>
+            <button onclick="setListAssignee('')"            class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface" style="background:#eff4ff;">All assignees</button>
+            <button onclick="setListAssignee('Alice Chen')"  class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">Alice Chen</button>
+            <button onclick="setListAssignee('Bob Kumar')"   class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">Bob Kumar</button>
+            <button onclick="setListAssignee('Carol Singh')" class="list-assignee-opt w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">Carol Singh</button>
+          </div>
+        </div>
+      </div>
+      <!-- Tree -->
+      <div class="flex-1 overflow-y-auto py-2" id="component-tree"></div>
+    </aside>
+
+    <!-- CANVAS + RIGHT PANELS -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+      <!-- DOCUMENT CANVAS -->
+      <main class="flex-1 overflow-y-auto bg-surface-container-low" id="canvas">
+
+        <!-- LIST VIEW (default) -->
+        <div id="view-list" class="p-6">
+
+          <!-- Stale banner -->
+          <div id="stale-banner" class="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl border" style="display:none;background:#fffbeb;border-color:#fcd34d;">
+            <span class="material-symbols-outlined flex-shrink-0" style="color:#b45309;font-size:18px;">warning</span>
+            <div class="flex-1 min-w-0">
+              <p class="font-label-sm text-label-sm" style="color:#92400e;">Documents generated from <code style="font-family:'JetBrains Mono';font-size:10px;background:#fef3c7;padding:1px 4px;border-radius:3px;">d9a0c55</code> — HEAD is now at <code style="font-family:'JetBrains Mono';font-size:10px;background:#fef3c7;padding:1px 4px;border-radius:3px;">f3a1b22</code> · 4 commits ahead</p>
+            </div>
+            <button onclick="startGeneration()" class="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white transition-colors" style="background:#b45309;font-family:'JetBrains Mono';font-size:10px;font-weight:600;white-space:nowrap;">
+              <span class="material-symbols-outlined" style="font-size:12px;">play_arrow</span>Re-run
+            </button>
+          </div>
+
+          <div class="bg-white border border-outline-variant rounded-xl overflow-hidden">
+
+            <!-- Card header -->
+            <div class="px-5 pt-4 pb-0 border-b border-outline-variant">
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <h2 class="font-headline-sm text-headline-sm text-on-surface">Documents</h2>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">
+                    <span id="list-count-label">15 documents</span><span id="dev-show-all-wrap" style="display:none;"> · <button onclick="toggleDevShowAll()" id="dev-show-all-btn" class="text-secondary hover:underline transition-colors" style="font-family:'JetBrains Mono';font-size:11px;">Show all</button></span> · <span id="list-version-label">v1.2.0</span> · VCU Engine Firmware
+                  </p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <!-- Status filter -->
+                  <div class="relative" id="list-status-wrap">
+                    <button onclick="toggleListStatus()" id="list-status-btn"
+                            class="flex items-center gap-1.5 px-3 py-2 border border-outline-variant rounded-lg bg-white hover:bg-surface-container-low transition-colors"
+                            style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;color:#44474c;">
+                      <span class="material-symbols-outlined text-on-surface-variant" style="font-size:14px;">filter_list</span>
+                      <span id="list-status-label">Status</span>
+                      <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" id="list-status-chevron" style="font-size:13px;">expand_more</span>
+                    </button>
+                    <div id="list-status-dd" class="hidden" style="position:absolute;top:calc(100% + 6px);right:0;background:white;border:1px solid #c4c6cd;border-radius:8px;overflow:hidden;z-index:200;box-shadow:0 4px 20px rgba(4,22,39,.12);min-width:180px;">
+                      <div class="py-1.5">
+                        <button onclick="toggleListStatus('approved')"  class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
+                          <span>Approved</span>
+                          <span class="material-symbols-outlined text-secondary" id="ls-check-approved" style="font-size:14px;display:none;">check</span>
+                        </button>
+                        <button onclick="toggleListStatus('review')"    class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
+                          <span>In Review</span>
+                          <span class="material-symbols-outlined text-secondary" id="ls-check-review" style="font-size:14px;display:none;">check</span>
+                        </button>
+                        <button onclick="toggleListStatus('unchanged')" class="list-status-opt w-full flex items-center justify-between px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface">
+                          <span>Unchanged</span>
+                          <span class="material-symbols-outlined text-secondary" id="ls-check-unchanged" style="font-size:14px;display:none;">check</span>
+                        </button>
+                      </div>
+                      <div class="border-t border-outline-variant py-1">
+                        <button onclick="clearListStatus()" class="w-full text-left px-3 py-2 hover:bg-surface-container-low font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';font-size:11px;">Clear filter</button>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Search -->
+                  <div class="flex items-center gap-1.5 px-2.5 py-1.5 border border-outline-variant rounded-lg bg-white hover:border-secondary transition-colors" style="min-width:180px;">
+                    <span class="material-symbols-outlined text-on-surface-variant flex-shrink-0" style="font-size:14px;">search</span>
+                    <input id="doc-search" type="text" placeholder="Search documents…"
+                           class="flex-1 bg-transparent outline-none text-on-surface placeholder:text-on-surface-variant"
+                           style="font-family:'JetBrains Mono';font-size:11px;" oninput="filterDocSearch(this.value)" />
+                  </div>
+                </div>
+              </div>
+              <!-- Process tabs -->
+              <div class="flex items-center gap-0 -mb-px overflow-x-auto">
+                <button class="proc-tab active" data-filter="" onclick="setListFilter(this, '')">All</button>
+                <button class="proc-tab" data-filter="SYS.1" onclick="setListFilter(this, 'SYS.1')">SYS.1</button>
+                <button class="proc-tab" data-filter="SYS.2" onclick="setListFilter(this, 'SYS.2')">SYS.2</button>
+                <button class="proc-tab" data-filter="SWE.1" onclick="setListFilter(this, 'SWE.1')">SWE.1</button>
+                <button class="proc-tab" data-filter="SWE.2" onclick="setListFilter(this, 'SWE.2')">SWE.2</button>
+                <button class="proc-tab" data-filter="SWE.3" onclick="setListFilter(this, 'SWE.3')">SWE.3</button>
+              </div>
+            </div>
+
+            <!-- In Review summary bar -->
+            <div id="review-summary-bar" class="px-5 py-3 border-b border-outline-variant flex items-center gap-4" style="display:none;background:#fffbeb;">
+              <span class="material-symbols-outlined flex-shrink-0" style="color:#b45309;font-size:16px;">rate_review</span>
+              <div class="flex-1">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="font-label-sm text-label-sm" style="color:#92400e;">Review in progress · 8 of 15 documents reviewed</span>
+                  <span class="font-label-sm text-label-sm" style="color:#b45309;font-family:'JetBrains Mono';">53%</span>
+                </div>
+                <div class="rev-bar"><div class="rev-bar-fill" style="width:53%;background:#b45309;"></div></div>
+              </div>
+            </div>
+
+            <!-- Batch bar -->
+            <div id="list-batch-bar" class="hidden bg-secondary border-b border-secondary-container px-5 py-2.5 flex items-center justify-between" style="animation:slideDown .18s ease;">
+              <div class="flex items-center gap-3">
+                <span id="list-batch-count" class="text-on-secondary font-semibold" style="font-family:'JetBrains Mono';font-size:12px;"></span>
+                <div class="w-px h-4 bg-on-secondary opacity-30"></div>
+                <button onclick="listBatchDownload()" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+                  <span class="material-symbols-outlined" style="font-size:13px;">download</span>Download
+                </button>
+                <button id="batch-assign-btn" onclick="listBatchAssign()" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+                  <span class="material-symbols-outlined" style="font-size:13px;">person_add</span>Assign
+                </button>
+                <button id="batch-approve-btn" onclick="listBatchApprove()" class="flex items-center gap-1.5 px-3 py-1.5 bg-white bg-opacity-10 hover:bg-opacity-20 text-on-secondary rounded-lg transition-colors" style="font-family:'JetBrains Mono';font-size:11px;font-weight:500;">
+                  <span class="material-symbols-outlined" style="font-size:13px;">task_alt</span>Approve
+                </button>
+              </div>
+              <button onclick="clearListSelection()" class="flex items-center gap-1 text-on-secondary opacity-70 hover:opacity-100 transition-opacity" style="font-family:'JetBrains Mono';font-size:11px;">
+                <span class="material-symbols-outlined" style="font-size:14px;">close</span>Clear
+              </button>
+            </div>
+
+            <!-- Table -->
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead>
+                  <tr class="bg-surface-container-low border-b border-outline-variant">
+                    <th class="px-4 py-3" style="width:40px;">
+                      <input type="checkbox" class="doc-checkbox" id="list-select-all" onchange="toggleSelectAllDocs(this)">
+                    </th>
+                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]">Document</th>
+                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Process</th>
+                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:90px;">Version</th>
+                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:155px;">Assignee</th>
+                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:110px;">Status</th>
+                    <th class="text-left px-4 py-3 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[.07em]" style="width:100px;">Due Date</th>
+                    <th class="px-4 py-3" style="width:90px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="doc-list-body"></tbody>
+              </table>
+              <div id="list-empty-state" class="hidden py-14 flex flex-col items-center text-center gap-4">
+                <div class="w-12 h-12 rounded-full bg-surface-container-low border border-outline-variant flex items-center justify-center">
+                  <span class="material-symbols-outlined text-on-surface-variant" style="font-size:24px;">search_off</span>
+                </div>
+                <div>
+                  <p class="font-headline-sm text-on-surface">No documents found</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Try adjusting your filters.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div id="list-footer" class="px-5 py-3.5 border-t border-outline-variant flex items-center justify-between bg-white">
+              <p class="font-label-sm text-label-sm text-on-surface-variant" id="list-footer-label">Showing 15 documents</p>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- NOT RUN STATE -->
+        <div id="view-not-run" class="p-6" style="display:none;">
+          <div class="bg-white border border-outline-variant rounded-xl overflow-hidden">
+            <div class="py-20 flex flex-col items-center text-center gap-5">
+              <div class="w-16 h-16 rounded-2xl bg-surface-container-low border border-outline-variant flex items-center justify-center">
+                <span class="material-symbols-outlined text-on-surface-variant" style="font-size:32px;">play_circle</span>
+              </div>
+              <div>
+                <p class="font-headline-sm text-headline-sm text-on-surface mb-1">No documents yet</p>
+                <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Run analysis on <span id="not-run-version" style="font-family:'JetBrains Mono';font-size:11px;color:#0058be;">v1.1.0</span> to generate design specifications</p>
+              </div>
+              <a href="project-detail.html" class="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-secondary-container text-white rounded-xl font-label-md text-label-md transition-colors">
+                <span class="material-symbols-outlined" style="font-size:16px;">play_arrow</span>
+                Run Analysis
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- DOC VIEW (hidden until a doc is selected) -->
+        <div id="view-doc" style="display:none;">
+        <div class="max-w-3xl mx-auto px-6 py-8">
+          <div class="bg-white rounded-xl border border-outline-variant overflow-hidden"
+               style="box-shadow:0 1px 4px rgba(4,22,39,.06);">
+
+            <!-- Doc header -->
+            <div class="px-12 pt-10 pb-8 border-b border-outline-variant">
+              <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em] mb-2">
+                <span id="doc-header-process">SWE.3</span> · <span style="font-family:'JetBrains Mono';" id="doc-header-commit">9e2b881</span>
+              </p>
+              <h1 class="font-display-lg text-display-lg text-primary" id="doc-title">Brake Controller</h1>
+              <p class="text-body-md text-on-surface-variant mt-1">Software Detailed Design Specification</p>
+            </div>
+
+            <!-- Sections -->
+            <div class="px-12 py-10 space-y-14">
+
+              <!-- 1. Introduction -->
+              <section id="s-intro" class="transition-all duration-200">
+                <h2 class="font-headline-md text-headline-md text-primary mb-4">1. Introduction</h2>
+                <p class="text-body-lg text-on-surface leading-relaxed mb-3">
+                  The <strong>Brake Controller</strong> unit implements the core logic for the Electronic Braking System (EBS).
+                  It processes wheel speed sensor data and driver brake requests to modulate hydraulic valve actuators
+                  via high-frequency PWM signals.
+                </p>
+                <p class="text-body-lg text-on-surface leading-relaxed">
+                  This unit is allocated to the
+                  <code class="font-label-md text-label-md bg-surface-container px-1.5 py-0.5 rounded text-secondary">APP_LAYER / Chassis_Mgmt</code>
+                  group and interfaces with the HAL layer through standardised driver abstractions.
+                  The unit executes within a 5 ms cyclic task context under the AUTOSAR OS.
+                </p>
+              </section>
+
+              <!-- 2. Interfaces -->
+              <section id="s-interfaces" class="transition-all duration-200">
+                <h2 class="font-headline-md text-headline-md text-primary mb-4">2. Interfaces</h2>
+                <p class="text-body-md text-on-surface-variant mb-5">Input and output interfaces as derived from the SWE.2 Software Architecture.</p>
+                <div class="overflow-hidden border border-outline-variant rounded-lg">
+                  <table class="w-full text-left" style="font-size:13px;">
+                    <thead class="bg-surface-container text-on-surface-variant">
+                      <tr>
+                        <th class="px-4 py-3 border-b border-outline-variant font-semibold">Interface ID</th>
+                        <th class="px-4 py-3 border-b border-outline-variant font-semibold">Dir</th>
+                        <th class="px-4 py-3 border-b border-outline-variant font-semibold">Type</th>
+                        <th class="px-4 py-3 border-b border-outline-variant font-semibold">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody class="text-on-surface">
+                      <tr class="border-b border-outline-variant/60 hover:bg-surface-container-low">
+                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_BrakeReq</td>
+                        <td class="px-4 py-3 text-on-surface-variant">Input</td>
+                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">float32</td>
+                        <td class="px-4 py-3 text-on-surface-variant">Target deceleration from VCU [m/s²]</td>
+                      </tr>
+                      <tr class="border-b border-outline-variant/60 hover:bg-surface-container-low">
+                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_WheelSpeed[4]</td>
+                        <td class="px-4 py-3 text-on-surface-variant">Input</td>
+                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">uint16[4]</td>
+                        <td class="px-4 py-3 text-on-surface-variant">Raw encoder pulse counts per wheel</td>
+                      </tr>
+                      <tr class="border-b border-outline-variant/60 hover:bg-surface-container-low">
+                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_Pressure_Est</td>
+                        <td class="px-4 py-3 text-on-surface-variant">Input</td>
+                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">float32</td>
+                        <td class="px-4 py-3 text-on-surface-variant">Estimated hydraulic line pressure [bar]</td>
+                      </tr>
+                      <tr class="border-b border-outline-variant/60 hover:bg-surface-container-low">
+                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_ValveCmd</td>
+                        <td class="px-4 py-3 text-on-surface-variant">Output</td>
+                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">uint8[4]</td>
+                        <td class="px-4 py-3 text-on-surface-variant">PWM duty cycle for solenoid valves [0–100%]</td>
+                      </tr>
+                      <tr class="hover:bg-surface-container-low">
+                        <td class="px-4 py-3 font-label-md text-label-md text-secondary">IF_DiagStatus</td>
+                        <td class="px-4 py-3 text-on-surface-variant">Output</td>
+                        <td class="px-4 py-3 font-label-sm text-label-sm text-on-surface-variant">uint32</td>
+                        <td class="px-4 py-3 text-on-surface-variant">Bitmask of active diagnostic trouble codes</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <!-- 3. Static Design -->
+              <section id="s-static" class="transition-all duration-200">
+                <h2 class="font-headline-md text-headline-md text-primary mb-4">3. Static Design</h2>
+                <p class="text-body-md text-on-surface-variant mb-5">Include dependencies and internal module structure derived from Clang AST analysis.</p>
+                <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-14 gap-3">
+                  <span class="material-symbols-outlined text-outline-variant" style="font-size:44px;">schema</span>
+                  <div>
+                    <p class="font-label-md text-label-md text-on-surface-variant">Include dependency diagram</p>
+                    <p class="font-label-sm text-label-sm text-outline mt-1">Generated from Clang AST</p>
+                  </div>
+                </div>
+              </section>
+
+              <!-- 4. Dynamic Design -->
+              <section id="s-dynamic" class="transition-all duration-200">
+                <h2 class="font-headline-md text-headline-md text-primary mb-6">4. Dynamic Design</h2>
+                <div class="space-y-10">
+                  <div>
+                    <h3 class="font-headline-sm text-headline-sm text-on-surface mb-3" id="s-cfg">4.1 Control Flow Graphs</h3>
+                    <p class="text-body-md text-on-surface-variant mb-4">
+                      Per-function CFGs derived from Clang AST — covering
+                      <code class="font-label-md text-label-md bg-surface-container px-1.5 py-0.5 rounded">BrakeCtrl_Run</code>,
+                      <code class="font-label-md text-label-md bg-surface-container px-1.5 py-0.5 rounded">BrakeCtrl_Init</code>,
+                      <code class="font-label-md text-label-md bg-surface-container px-1.5 py-0.5 rounded">BrakeCtrl_Diag</code>.
+                    </p>
+                    <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-12 gap-3">
+                      <span class="material-symbols-outlined text-outline-variant" style="font-size:44px;">account_tree</span>
+                      <div>
+                        <p class="font-label-md text-label-md text-on-surface-variant">Control flow graphs</p>
+                        <p class="font-label-sm text-label-sm text-outline mt-1">3 functions · 42 nodes</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 class="font-headline-sm text-headline-sm text-on-surface mb-3" id="s-state">4.2 State Machine</h3>
+                    <p class="text-body-md text-on-surface-variant mb-4">Unit lifecycle states and transitions. Critical timing path: sensor input → valve actuation ≤ 12 ms.</p>
+                    <div class="bg-surface-container-low border border-outline-variant rounded-lg flex flex-col items-center justify-center text-center py-12 gap-3">
+                      <span class="material-symbols-outlined text-outline-variant" style="font-size:44px;">alt_route</span>
+                      <div>
+                        <p class="font-label-md text-label-md text-on-surface-variant">State machine diagram</p>
+                        <p class="font-label-sm text-label-sm text-outline mt-1">INIT → STANDBY → ACTIVE → FAULT</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+            </div>
+          </div>
+        </div>
+        </div><!-- /view-doc -->
+      </main>
+
+      <!-- OUTLINE / TRACKER PANEL -->
+      <aside class="w-44 flex-shrink-0 bg-white border-l border-outline-variant flex flex-col overflow-hidden transition-all duration-300" id="outline-panel">
+        <div class="px-3 py-3 border-b border-outline-variant flex-shrink-0 flex items-center justify-between">
+          <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.1em]" id="panel-title">On this page</span>
+        </div>
+
+        <!-- Normal outline -->
+        <nav class="flex-1 overflow-y-auto py-2 px-2 space-y-0.5" id="outline-nav">
+          <a href="#s-intro"      class="outline-link block px-2 py-1.5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-intro">1. Introduction</a>
+          <a href="#s-interfaces" class="outline-link block px-2 py-1.5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-interfaces">2. Interfaces</a>
+          <a href="#s-static"     class="outline-link block px-2 py-1.5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-static">3. Static Design</a>
+          <a href="#s-dynamic"    class="outline-link block px-2 py-1.5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-dynamic">4. Dynamic Design</a>
+          <a href="#s-cfg"        class="outline-link block px-2 py-1.5 pl-5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-cfg">4.1 CFG</a>
+          <a href="#s-state"      class="outline-link block px-2 py-1.5 pl-5 rounded text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors" data-target="s-state">4.2 State Machine</a>
+        </nav>
+
+        <!-- Review tracker (Admin, shown when version is in_review) -->
+        <div class="hidden flex-1 overflow-y-auto py-3 px-3 space-y-4" id="review-tracker">
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mb-2">Reviewer</p>
+            <div class="flex items-center gap-2 mb-2">
+              <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+                <span class="font-bold text-on-secondary-container" style="font-size:9px;font-family:Inter;">BK</span>
+              </div>
+              <span class="font-label-md text-label-md text-on-surface" style="font-size:11px;">Bob Kumar</span>
+            </div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">Progress</span>
+              <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-size:10px;">75%</span>
+            </div>
+            <div class="rev-bar"><div class="rev-bar-fill" style="width:75%"></div></div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant mt-1" style="font-size:10px;">3 of 4 sections</p>
+          </div>
+          <div>
+            <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mb-2">Sections</p>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:12px;">check_circle</span>
+                <span class="text-on-surface-variant" style="font-size:10px;font-family:'JetBrains Mono';">1. Intro</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-secondary" style="font-size:12px;">edit</span>
+                <span class="text-on-surface-variant" style="font-size:10px;font-family:'JetBrains Mono';">2. Interfaces</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:12px;">check_circle</span>
+                <span class="text-on-surface-variant" style="font-size:10px;font-family:'JetBrains Mono';">3. Static</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-outline" style="font-size:12px;">radio_button_unchecked</span>
+                <span class="text-on-surface-variant" style="font-size:10px;font-family:'JetBrains Mono';">4. Dynamic</span>
+              </div>
+            </div>
+          </div>
+          <div class="space-y-2 pt-1 border-t border-outline-variant">
+            <button onclick="markComplete()"
+                    class="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-on-tertiary-container text-white rounded-lg hover:opacity-90 transition-opacity"
+                    style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
+              <span class="material-symbols-outlined" style="font-size:12px;">check_circle</span>
+              Mark Complete
+            </button>
+            <button onclick="openAssignPanel()" id="review-reassign-btn"
+                    class="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 border border-outline-variant hover:bg-surface-container rounded-lg transition-colors"
+                    style="font-family:'JetBrains Mono';font-size:10px;color:#44474c;">
+              <span class="material-symbols-outlined" style="font-size:12px;">person_add</span>
+              Re-assign
+            </button>
+            <button onclick="assignToMeDoc()" id="review-assign-me-btn"
+                    class="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 border border-secondary text-secondary hover:bg-surface-container-low rounded-lg transition-colors"
+                    style="display:none;font-family:'JetBrains Mono';font-size:10px;font-weight:600;">
+              <span class="material-symbols-outlined" style="font-size:12px;">person_add</span>
+              Assign to me
+            </button>
+          </div>
+        </div>
+      </aside>
+
+
+      <!-- ASSIGN REVIEWERS PANEL -->
+      <div class="assign-panel" id="assign-panel">
+        <div class="flex-shrink-0 px-4 py-3 border-b border-outline-variant flex items-center justify-between">
+          <div>
+            <p class="font-label-md text-label-md text-on-surface">Assign Reviewers</p>
+            <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" id="assign-panel-version" style="font-family:'JetBrains Mono';">v1.1.0 · 9e2b881</p>
+          </div>
+          <button onclick="closeAssignPanel()" class="p-1 hover:bg-surface-container rounded-lg transition-colors">
+            <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">close</span>
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto px-4 py-4">
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mb-2">Select reviewer</p>
+          <div class="space-y-1" id="reviewer-options">
+            <button onclick="selectReviewer('Alice Chen','AC')" data-rev="Alice Chen"
+                    class="rev-opt w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant hover:border-secondary hover:bg-surface-container-low transition-colors text-left">
+              <div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0">
+                <span class="font-bold text-on-secondary-container" style="font-size:10px;font-family:Inter;">AC</span>
+              </div>
+              <span class="flex-1 font-label-md text-label-md text-on-surface" style="font-size:12px;">Alice Chen</span>
+              <span class="rev-check hidden material-symbols-outlined text-secondary" style="font-size:16px;">check</span>
+            </button>
+            <button onclick="selectReviewer('Bob Kumar','BK')" data-rev="Bob Kumar"
+                    class="rev-opt w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant hover:border-secondary hover:bg-surface-container-low transition-colors text-left">
+              <div class="w-7 h-7 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0">
+                <span class="font-bold text-on-surface-variant" style="font-size:10px;font-family:Inter;">BK</span>
+              </div>
+              <span class="flex-1 font-label-md text-label-md text-on-surface" style="font-size:12px;">Bob Kumar</span>
+              <span class="rev-check hidden material-symbols-outlined text-secondary" style="font-size:16px;">check</span>
+            </button>
+            <button onclick="selectReviewer('Carol Singh','CS')" data-rev="Carol Singh"
+                    class="rev-opt w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-outline-variant hover:border-secondary hover:bg-surface-container-low transition-colors text-left">
+              <div class="w-7 h-7 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0">
+                <span class="font-bold text-on-surface-variant" style="font-size:10px;font-family:Inter;">CS</span>
+              </div>
+              <span class="flex-1 font-label-md text-label-md text-on-surface" style="font-size:12px;">Carol Singh</span>
+              <span class="rev-check hidden material-symbols-outlined text-secondary" style="font-size:16px;">check</span>
+            </button>
+          </div>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mt-3" style="font-size:10px;" id="selected-reviewer-label">No reviewer selected</p>
+        </div>
+        <div class="flex-shrink-0 px-4 py-3 border-t border-outline-variant">
+          <button onclick="sendForReview()"
+                  class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-secondary text-white hover:bg-secondary-container rounded-xl transition-colors font-label-md text-label-md">
+            <span class="material-symbols-outlined" style="font-size:16px;">send</span>
+            Send for Review
+          </button>
+        </div>
+      </div>
+
+      <!-- ══ OVERLAY: EMPTY STATE ══ -->
+      <div id="state-empty" class="hidden absolute inset-0 z-20 flex items-center justify-center"
+           style="background:#f8f9ff;">
+        <div class="text-center" style="max-width:360px;">
+          <div class="w-16 h-16 rounded-2xl bg-white border border-outline-variant mx-auto mb-6 flex items-center justify-center"
+               style="box-shadow:0 1px 4px rgba(4,22,39,.08);">
+            <span class="material-symbols-outlined text-outline-variant" style="font-size:32px;">description</span>
+          </div>
+          <h2 class="font-headline-sm text-headline-sm text-on-surface mb-1">
+            No document for&nbsp;<code class="font-label-md text-label-md text-secondary" id="empty-version" style="font-size:16px;">v0.9.0</code>
+          </h2>
+          <p class="text-body-md text-on-surface-variant mb-8" id="empty-msg">"chore: update config" · 2 days ago</p>
+          <div id="empty-admin-zone">
+            <div class="bg-white border border-outline-variant rounded-xl p-4 mb-4 text-left" style="box-shadow:0 1px 4px rgba(4,22,39,.06);">
+              <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em] mb-3">Generate groups:</p>
+              <div class="space-y-2.5">
+                <label class="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked class="w-4 h-4 rounded accent-secondary">
+                  <span class="font-label-md text-label-md text-on-surface">Chassis_Mgmt</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked class="w-4 h-4 rounded accent-secondary">
+                  <span class="font-label-md text-label-md text-on-surface">Powertrain</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" class="w-4 h-4 rounded accent-secondary">
+                  <span class="font-label-md text-label-md text-on-surface">HAL Drivers</span>
+                </label>
+              </div>
+            </div>
+            <button onclick="startGeneration()"
+                    class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-secondary hover:bg-secondary-container text-white rounded-xl font-label-md text-label-md transition-colors">
+              <span class="material-symbols-outlined" style="font-size:16px;">play_arrow</span>
+              Generate SWE.3 Document
+            </button>
+          </div>
+          <div id="empty-dev-zone" style="display:none;">
+            <div class="bg-white border border-outline-variant rounded-xl p-4 text-body-sm text-on-surface-variant" style="box-shadow:0 1px 4px rgba(4,22,39,.06);">
+              This version hasn't been documented yet.<br>Contact your Admin to generate the document.
+            </div>
+            <p class="text-body-sm text-outline mt-4">← Select a version with a document above</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ OVERLAY: GENERATION PROGRESS ══ -->
+      <div id="state-generating" class="hidden absolute inset-0 z-20 overflow-y-auto"
+           style="background:#f8f9ff;">
+        <div class="max-w-2xl mx-auto px-6 py-8">
+          <div class="bg-white border border-outline-variant rounded-xl overflow-hidden"
+               style="box-shadow:0 1px 4px rgba(4,22,39,.06);">
+            <div class="px-6 pt-6 pb-5 border-b border-outline-variant">
+              <div class="flex items-center gap-3 mb-5">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style="background:#e5eeff;">
+                  <span class="material-symbols-outlined text-secondary spin-slow" style="font-size:20px;">autorenew</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="font-headline-sm text-headline-sm text-on-surface">Generating document</p>
+                  <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5" style="font-family:'JetBrains Mono';" id="gen-version-label">v1.2.0 · Chassis_Mgmt</p>
+                </div>
+                <span class="font-label-sm text-label-sm text-on-surface-variant" style="font-family:'JetBrains Mono';" id="gen-time-label">Started 14:02:33</span>
+              </div>
+              <div class="space-y-1.5">
+                <div class="flex justify-between">
+                  <span class="font-label-sm text-label-sm text-on-surface-variant" id="gen-phase-label">Phase 1 of 4: Parsing C++ source</span>
+                  <span class="font-label-sm text-label-sm text-on-surface-variant" id="gen-pct">0%</span>
+                </div>
+                <div class="h-1.5 bg-surface-container rounded-full overflow-hidden">
+                  <div class="h-full bg-secondary rounded-full bar-pulse transition-all duration-700 ease-out" id="gen-bar" style="width:0%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="px-4 py-3 overflow-y-auto" id="gen-log"
+                 style="background:#041627;min-height:220px;max-height:320px;font-family:'JetBrains Mono';font-size:11px;line-height:1.7;">
+            </div>
+            <div class="px-6 py-3 border-t border-outline-variant flex items-center justify-between">
+              <span class="text-body-sm text-on-surface-variant" id="gen-status">Running…</span>
+              <button onclick="cancelGeneration()" id="gen-cancel-btn"
+                      class="flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant hover:bg-surface-container rounded-lg transition-colors font-label-sm text-label-sm text-on-surface-variant">
+                <span class="material-symbols-outlined" style="font-size:13px;">cancel</span>Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /canvas area -->
+  </div><!-- /content area -->
+</div><!-- /app-main -->
+
+<!-- ══════════════ SCRIPTS ══════════════ -->
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let canvasState    = 'list';  // 'list' | 'doc' | 'empty' | 'generating'
+let activeVersion  = '';
+let genLogIndex    = 0;
+let selectedReviewer = null;
+let listFilter     = '';
+let currentRole    = 'admin';
+const ROLES = {
+  admin:     { name: 'Engineering Lead', initials: 'EL', assignee: null },
+  developer: { name: 'Bob Kumar',        initials: 'BK', assignee: 'Bob Kumar' },
+};
+
+// ── All documents (for list view) ────────────────────────────────────────────
+const allDocs = [
+  { process: 'SYS.1', name: 'System Requirements Spec',   subtitle: 'Customer Requirements', assignee: 'Alice Chen',  initials: 'AC', ac: '#e0f2ff', atc: '#0058be', status: 'approved', version: 'v1.2.0', due: 'Jun 15' },
+  { process: 'SYS.2', name: 'System Test Spec',           subtitle: 'System Verification',   assignee: 'Bob Kumar',   initials: 'BK', ac: '#f3e8ff', atc: '#7c3aed', status: 'review',   version: 'v1.2.0', due: 'Jun 28' },
+  { process: 'SWE.1', name: 'SW Requirements Spec',       subtitle: 'Software Requirements', assignee: 'Carol Singh', initials: 'CS', ac: '#fff7ed', atc: '#c2410c', status: 'approved', version: 'v1.2.0', due: 'Jun 10' },
+  { process: 'SWE.2', name: 'Software Architecture Spec', subtitle: 'Architecture Design',   assignee: 'Bob Kumar',   initials: 'BK', ac: '#f3e8ff', atc: '#7c3aed', status: 'review',   version: 'v1.2.0', due: 'Jun 30' },
+  { process: 'SWE.3', name: 'Brake Controller',           subtitle: 'Detailed Design',       assignee: 'Bob Kumar',   initials: 'BK', ac: '#f3e8ff', atc: '#7c3aed', status: 'approved', version: 'v1.2.0', due: 'Jun 20' },
+  { process: 'SWE.3', name: 'ABS Unit',                   subtitle: 'Detailed Design',       assignee: 'Alice Chen',  initials: 'AC', ac: '#e0f2ff', atc: '#0058be', status: 'approved', version: 'v1.2.0', due: 'Jun 18' },
+  { process: 'SWE.3', name: 'Stability Control',          subtitle: 'Detailed Design',       assignee: 'Carol Singh', initials: 'CS', ac: '#fff7ed', atc: '#c2410c', status: 'review',   version: 'v1.2.0', due: 'Jun 25' },
+  { process: 'SWE.3', name: 'Throttle Controller',        subtitle: 'Detailed Design',       assignee: 'Carol Singh', initials: 'CS', ac: '#fff7ed', atc: '#c2410c', status: 'review',   version: 'v1.2.0', due: 'Jun 27' },
+  { process: 'SWE.3', name: 'Fuel Injector',              subtitle: 'Detailed Design',       assignee: null,           initials: null, ac: null,       atc: null,       status: 'unchanged',    version: 'v1.2.0', due: 'Jul 05' },
+  { process: 'SWE.3', name: 'Lighting Ctrl',              subtitle: 'Detailed Design',       assignee: null,           initials: null, ac: null,       atc: null,       status: 'unchanged',    version: 'v1.2.0', due: 'Jul 08' },
+  { process: 'SWE.3', name: 'HVAC Ctrl',                  subtitle: 'Detailed Design',       assignee: 'Alice Chen',  initials: 'AC', ac: '#e0f2ff', atc: '#0058be', status: 'review',   version: 'v1.2.0', due: 'Jun 29' },
+  { process: 'SWE.3', name: 'GPIO Driver',                subtitle: 'Detailed Design',       assignee: 'Bob Kumar',   initials: 'BK', ac: '#f3e8ff', atc: '#7c3aed', status: 'approved', version: 'v1.2.0', due: 'Jun 12' },
+  { process: 'SWE.3', name: 'CAN Driver',                 subtitle: 'Detailed Design',       assignee: null,           initials: null, ac: null,       atc: null,       status: 'unchanged',    version: 'v1.2.0', due: 'Jul 10' },
+  { process: 'SWE.3', name: 'SPI Driver',                 subtitle: 'Detailed Design',       assignee: null,           initials: null, ac: null,       atc: null,       status: 'unchanged',    version: 'v1.2.0', due: 'Jul 12' },
+  { process: 'SWE.3', name: 'PWM Driver',                 subtitle: 'Detailed Design',       assignee: 'Carol Singh', initials: 'CS', ac: '#fff7ed', atc: '#c2410c', status: 'review',   version: 'v1.2.0', due: 'Jul 01' },
+];
+
+function pillClass(p) {
+  return { 'SWE.3': 'pill-swe3', 'SWE.2': 'pill-swe2', 'SWE.1': 'pill-swe1', 'SYS.1': 'pill-sys1', 'SYS.2': 'pill-sys2' }[p] || '';
+}
+
+function statusBadge(s) {
+  const map = { approved: ['badge-approved','check_circle','Approved'], review: ['badge-review','rate_review','In Review'], unchanged: ['badge-unchanged','horizontal_rule','Unchanged'] };
+  const [cls, icon, label] = map[s] || map.unchanged;
+  return `<span class="badge ${cls}"><span class="material-symbols-outlined" style="font-size:10px;">${icon}</span>${label}</span>`;
+}
+
+// ── List view filter state ────────────────────────────────────────────────────
+let listStatusFilter   = new Set();
+let listAssigneeFilter = '';
+let selectedDocIds     = new Set();
+
+function setListFilter(btn, filter) {
+  listFilter = filter;
+  document.querySelectorAll('.proc-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === filter));
+  renderDocList();
+  renderTree();
+}
+
+let docSearchQuery = '';
+function filterDocSearch(q) {
+  docSearchQuery = q.trim().toLowerCase();
+  renderDocList();
+  filterTree(docSearchQuery);
+}
+
+function toggleListStatus(val) {
+  if (val === undefined) {
+    const dd = document.getElementById('list-status-dd');
+    const ch = document.getElementById('list-status-chevron');
+    const open = dd.classList.toggle('hidden');
+    ch.style.transform = open ? '' : 'rotate(180deg)';
+    return;
+  }
+  if (listStatusFilter.has(val)) listStatusFilter.delete(val);
+  else listStatusFilter.add(val);
+  syncListStatusUI();
+  renderDocList();
+}
+function clearListStatus() {
+  listStatusFilter.clear();
+  syncListStatusUI();
+  document.getElementById('list-status-dd').classList.add('hidden');
+  document.getElementById('list-status-chevron').style.transform = '';
+  renderDocList();
+}
+function syncListStatusUI() {
+  const count = listStatusFilter.size;
+  const labelEl = document.getElementById('list-status-label');
+  const btnEl   = document.getElementById('list-status-btn');
+  if (count === 0) {
+    labelEl.textContent    = 'Status';
+    btnEl.style.color      = '#44474c';
+    btnEl.style.borderColor = '';
+  } else if (count === 1) {
+    const labels = { approved: 'Approved', review: 'In Review', unchanged: 'Unchanged' };
+    labelEl.textContent    = labels[[...listStatusFilter][0]];
+    btnEl.style.color      = '#0058be';
+    btnEl.style.borderColor = '#0058be';
+  } else {
+    labelEl.textContent    = `${count} statuses`;
+    btnEl.style.color      = '#0058be';
+    btnEl.style.borderColor = '#0058be';
+  }
+  ['approved', 'review', 'unchanged'].forEach(v => {
+    const el = document.getElementById(`ls-check-${v}`);
+    if (el) el.style.display = listStatusFilter.has(v) ? '' : 'none';
+  });
+}
+
+function toggleListAssignee() {
+  const dd = document.getElementById('list-assignee-dd');
+  const ch = document.getElementById('list-assignee-chevron');
+  const open = dd.classList.toggle('hidden');
+  ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+function setListAssignee(val, displayLabel) {
+  listAssigneeFilter = val;
+  document.getElementById('list-assignee-label').textContent = displayLabel || val || 'Assignee';
+  document.getElementById('list-assignee-btn').style.color = val ? '#0058be' : '#44474c';
+  document.getElementById('list-assignee-btn').style.borderColor = val ? '#0058be' : '';
+  document.querySelectorAll('.list-assignee-opt').forEach(b => {
+    const isMyOpt = b.id === 'my-assign-opt';
+    const isActive = isMyOpt
+      ? (val === ROLES.developer.assignee && currentRole === 'developer')
+      : b.textContent.trim() === (val || 'All assignees');
+    b.style.background = isActive ? '#eff4ff' : '';
+  });
+  if (currentRole === 'developer') {
+    const showAllBtn = document.getElementById('dev-show-all-btn');
+    if (showAllBtn) showAllBtn.textContent = val ? 'Show all' : 'My Docs';
+  }
+  document.getElementById('list-assignee-dd').classList.add('hidden');
+  document.getElementById('list-assignee-chevron').style.transform = '';
+  renderDocList();
+  renderTree();
+}
+
+// ── Selection ─────────────────────────────────────────────────────────────────
+function toggleDocRow(name, checked) {
+  if (checked) selectedDocIds.add(name); else selectedDocIds.delete(name);
+  const row = document.querySelector(`tr[data-doc="${CSS.escape(name)}"]`);
+  if (row) row.classList.toggle('row-selected', checked);
+  updateListBatchBar();
+  syncListSelectAll();
+}
+function toggleSelectAllDocs(cb) {
+  document.querySelectorAll('.list-row-check').forEach(el => {
+    el.checked = cb.checked;
+    if (cb.checked) selectedDocIds.add(el.dataset.doc); else selectedDocIds.delete(el.dataset.doc);
+  });
+  document.querySelectorAll('.doc-row').forEach(r => r.classList.toggle('row-selected', cb.checked));
+  updateListBatchBar();
+}
+function syncListSelectAll() {
+  const checks = Array.from(document.querySelectorAll('.list-row-check'));
+  const allC = checks.length > 0 && checks.every(c => c.checked);
+  const someC = checks.some(c => c.checked);
+  const cb = document.getElementById('list-select-all');
+  if (cb) { cb.checked = allC; cb.indeterminate = someC && !allC; }
+}
+function clearListSelection() {
+  selectedDocIds.clear();
+  document.querySelectorAll('.list-row-check').forEach(c => { c.checked = false; });
+  document.querySelectorAll('.doc-row').forEach(r => r.classList.remove('row-selected'));
+  const cb = document.getElementById('list-select-all');
+  if (cb) { cb.checked = false; cb.indeterminate = false; }
+  updateListBatchBar();
+}
+function updateListBatchBar() {
+  const bar = document.getElementById('list-batch-bar');
+  const n = selectedDocIds.size;
+  if (n > 0) {
+    bar.classList.remove('hidden');
+    document.getElementById('list-batch-count').textContent = `${n} document${n > 1 ? 's' : ''} selected`;
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+
+// ── Batch actions ─────────────────────────────────────────────────────────────
+function listBatchDownload() {
+  const n = selectedDocIds.size;
+  clearListSelection();
+  alert(`Downloading ${n} document${n > 1 ? 's' : ''}…`);
+}
+function listBatchAssign() {
+  clearListSelection();
+  alert('Assign dialog would open here.');
+}
+function listBatchApprove() {
+  selectedDocIds.forEach(name => {
+    const d = allDocs.find(x => x.name === name);
+    if (d) d.status = 'approved';
+  });
+  clearListSelection();
+  renderDocList();
+}
+
+function renderDocList() {
+  const docs = allDocs.filter(d => {
+    if (listFilter         && d.process  !== listFilter)        return false;
+    if (listStatusFilter.size && !listStatusFilter.has(d.status)) return false;
+    if (listAssigneeFilter && d.assignee !== listAssigneeFilter) return false;
+    if (docSearchQuery && !d.name.toLowerCase().includes(docSearchQuery) && !d.process.toLowerCase().includes(docSearchQuery)) return false;
+    return true;
+  });
+  const n = docs.length;
+  document.getElementById('list-count-label').textContent = `${n} document${n !== 1 ? 's' : ''}`;
+  document.getElementById('list-footer-label').textContent = `Showing ${n} document${n !== 1 ? 's' : ''}`;
+
+  const empty  = document.getElementById('list-empty-state');
+  const footer = document.getElementById('list-footer');
+  if (!n) {
+    document.getElementById('doc-list-body').innerHTML = '';
+    empty.classList.remove('hidden'); empty.classList.add('flex');
+    footer.classList.add('hidden');
+    return;
+  }
+  empty.classList.add('hidden'); empty.classList.remove('flex');
+  footer.classList.remove('hidden');
+
+  document.getElementById('doc-list-body').innerHTML = docs.map(d => {
+    const isSel = selectedDocIds.has(d.name);
+    const assigneeHtml = d.assignee
+      ? `<div class="flex items-center gap-2">
+           <div class="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style="background:${d.ac};">
+             <span class="font-bold" style="font-size:9px;font-family:Inter;color:${d.atc};">${d.initials}</span>
+           </div>
+           <span class="font-label-sm text-label-sm text-on-surface truncate" style="max-width:100px;">${d.assignee}</span>
+         </div>`
+      : `<span class="text-outline" style="font-size:12px;">—</span>`;
+    const esc = d.name.replace(/'/g, "\\'");
+    return `
+      <tr class="doc-row border-b border-outline-variant last:border-0${isSel ? ' row-selected' : ''}" data-doc="${d.name}" onclick="selectDoc('${d.process}','${esc}')">
+        <td class="px-4 py-3.5 text-center" onclick="event.stopPropagation()">
+          <input type="checkbox" class="doc-checkbox list-row-check" data-doc="${d.name}" ${isSel ? 'checked' : ''} onchange="toggleDocRow('${esc}',this.checked)">
+        </td>
+        <td class="px-4 py-3.5">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-surface-container-low border border-outline-variant flex items-center justify-center flex-shrink-0">
+              <span class="material-symbols-outlined text-on-surface-variant" style="font-size:15px;">article</span>
+            </div>
+            <div>
+              <p class="font-label-md text-label-md text-on-surface hover:text-secondary transition-colors cursor-pointer" style="font-size:13px;">${d.name}</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">${d.subtitle}</p>
+            </div>
+          </div>
+        </td>
+        <td class="px-4 py-3.5"><span class="proc-pill ${pillClass(d.process)}">${d.process}</span></td>
+        <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;color:#44474c;">${d.version}</td>
+        <td class="px-4 py-3.5">${assigneeHtml}</td>
+        <td class="px-4 py-3.5">${statusBadge(d.status)}</td>
+        <td class="px-4 py-3.5" style="font-family:'JetBrains Mono';font-size:11px;color:#74777d;">${d.due}</td>
+        <td class="px-4 py-3.5" onclick="event.stopPropagation()">
+          <div class="flex items-center gap-1">
+            <button onclick="selectDoc('${d.process}','${esc}')" title="View" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-secondary">
+              <span class="material-symbols-outlined" style="font-size:15px;">open_in_new</span>
+            </button>
+            <button title="Download DOCX" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant">
+              <span class="material-symbols-outlined" style="font-size:15px;">download</span>
+            </button>
+            ${d.status !== 'unchanged'
+              ? `<a href="compare.html" title="Compare vs reference" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:15px;">compare_arrows</span></a>`
+              : `<span title="No changes from reference" class="p-1.5 flex items-center cursor-not-allowed" style="color:#c4c6cd;"><span class="material-symbols-outlined" style="font-size:15px;">compare_arrows</span></span>`}
+            ${currentRole === 'admin'
+              ? `<button onclick="openRowAssign('${esc}')" title="Assign reviewer" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant"><span class="material-symbols-outlined" style="font-size:15px;">person_add</span></button>`
+              : (d.assignee === ROLES.developer.assignee
+                  ? `<span class="p-1.5 flex items-center text-on-tertiary-container" title="Assigned to me"><span class="material-symbols-outlined" style="font-size:15px;">how_to_reg</span></span>`
+                  : `<button onclick="assignToMe('${esc}')" title="Assign to me" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-secondary"><span class="material-symbols-outlined" style="font-size:15px;">person_add</span></button>`)}
+            <button title="More" class="p-1.5 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant">
+              <span class="material-symbols-outlined" style="font-size:15px;">more_vert</span>
+            </button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+
+  syncListSelectAll();
+}
+
+// ── Version / commit data (mirrored from project-detail.html) ────────────────
+const COMMITS = [
+  { sha: 'abc1234', msg: 'feat: add brake system FMEA table',         author: 'Manoj S.',   time: '2h ago',   current: false, status: 'in_review', version: null,     pageState: 'in_review', newCommitsSince: 0 },
+  { sha: 'f7e3b12', msg: 'fix: correct signal naming in CAN matrix',  author: 'Priya R.',   time: '5h ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+  { sha: 'd9a0c55', msg: 'docs: update SWE.3 traceability links',     author: 'Manoj S.',   time: '1d ago',   current: true,  status: 'in_review', version: 'v1.2.0', pageState: 'in_review', newCommitsSince: 2 },
+  { sha: 'b2c841f', msg: 'refactor: split EngineControl component',   author: 'Arjun M.',   time: '2d ago',   current: false, status: 'approved',  version: 'v1.1.0', pageState: 'stale',     newCommitsSince: 3 },
+  { sha: '3ef70a9', msg: 'feat: add ADAS perception group',            author: 'Priya R.',   time: '3d ago',   current: false, status: 'approved',  version: 'v1.0.0', pageState: 'complete',  newCommitsSince: 0 },
+  { sha: '91c3d17', msg: 'fix: missing include path for diagnostics',  author: 'Manoj S.',   time: '4d ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+  { sha: '07fa8b2', msg: 'chore: update Clang config to 17',          author: 'Arjun M.',   time: '5d ago',   current: false, status: 'never',     version: null,     pageState: 'never',     newCommitsSince: 0 },
+];
+
+const VERSIONS = [
+  { tag: 'v1.2.0', sha: 'd9a0c55', desc: 'SWE.3 review draft — all groups',          date: '2026-06-15', status: 'in_review', docs: 45 },
+  { tag: 'v1.1.0', sha: 'b2c841f', desc: 'Engine + Brake subsystems complete',        date: '2026-06-10', status: 'approved',  docs: 40 },
+  { tag: 'v1.0.0', sha: '3ef70a9', desc: 'Initial ADAS SWE.3 baseline',               date: '2026-06-01', status: 'approved',  docs: 35 },
+];
+
+// ── Commit picker (mirrored from project-detail.html) ────────────────────────
+function toggleCommitPicker() {
+  const picker  = document.getElementById('commit-picker');
+  const chevron = document.getElementById('chip-chevron');
+  const isHidden = picker.classList.contains('hidden');
+  picker.classList.toggle('hidden', !isHidden);
+  chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+  if (isHidden) { renderPickerCommits(''); renderPickerVersions(); switchPickerTab('versions'); }
+}
+
+function switchPickerTab(tab) {
+  const isCommits = tab === 'commits';
+  document.getElementById('cp-panel-commits').style.display  = isCommits ? '' : 'none';
+  document.getElementById('cp-panel-versions').style.display = isCommits ? 'none' : '';
+  const tabC = document.getElementById('cp-tab-commits');
+  const tabV = document.getElementById('cp-tab-versions');
+  tabC.classList.toggle('border-secondary',        isCommits);
+  tabC.classList.toggle('text-secondary',          isCommits);
+  tabC.classList.toggle('border-transparent',      !isCommits);
+  tabC.classList.toggle('text-on-surface-variant', !isCommits);
+  tabV.classList.toggle('border-secondary',        !isCommits);
+  tabV.classList.toggle('text-secondary',          !isCommits);
+  tabV.classList.toggle('border-transparent',      isCommits);
+  tabV.classList.toggle('text-on-surface-variant', isCommits);
+}
+
+function filterPickerCommits(val) { renderPickerCommits(val); }
+
+function commitStatusBadge(status, version) {
+  if (version) {
+    return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:9px;font-weight:600;color:#00a572;background:#f0fdf9;border:1px solid #86efac;padding:0px 6px;border-radius:99px;">
+      <span class="material-symbols-outlined" style="font-size:10px;color:#00a572;">sell</span>${version}</span>`;
+  }
+  return '';
+}
+
+function renderPickerCommits(filter) {
+  filter = (filter || '').toLowerCase();
+  const filtered = COMMITS.filter(c => !filter ||
+    c.sha.includes(filter) || c.msg.toLowerCase().includes(filter) || c.author.toLowerCase().includes(filter));
+  const list = document.getElementById('cp-commits-list');
+  if (!filtered.length) {
+    list.innerHTML = `<div style="padding:24px 16px;text-align:center;font-size:12px;color:#74777d;">No commits match</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map((c, i) => {
+    const isLast    = i === filtered.length - 1;
+    const dotColor  = c.version ? '#00a572' : c.current ? '#0058be' : '#c4c6cd';
+    const dotBorder = c.current ? '2px solid #0058be' : c.version ? '2px solid #00a572' : '2px solid #c4c6cd';
+    const dotFill   = (c.current || c.version) ? dotColor : 'white';
+    const currentBadge = c.current
+      ? `<span style="font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#e5eeff;color:#0058be;border:1px solid #bfcfff;padding:0px 5px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;">current</span>`
+      : '';
+    return `
+    <button onclick="selectCommit('${c.sha}')" style="width:100%;display:flex;gap:0;padding:0 12px;text-align:left;background:${c.current ? '#f5f8ff' : 'transparent'};border:none;cursor:pointer;" onmouseover="if(!${c.current})this.style.background='#f8f9fa'" onmouseout="if(!${c.current})this.style.background='${c.current ? '#f5f8ff' : 'transparent'}'">
+      <div style="display:flex;flex-direction:column;align-items:center;width:18px;flex-shrink:0;padding-top:12px;">
+        <div style="width:9px;height:9px;border-radius:50%;background:${dotFill};border:${dotBorder};flex-shrink:0;"></div>
+        ${!isLast ? `<div style="width:2px;flex:1;min-height:10px;background:#e2e3e8;margin-top:3px;"></div>` : ''}
+      </div>
+      <div style="flex:1;min-width:0;padding:10px 0 10px 8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+            <span style="font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:#44474c;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${c.sha.slice(0,7)}</span>
+            ${currentBadge}
+            ${commitStatusBadge(c.status, c.version)}
+          </div>
+          ${c.current ? '<span class="material-symbols-outlined" style="font-size:14px;color:#0058be;flex-shrink:0;">check</span>' : ''}
+        </div>
+        <div style="font-size:11px;color:#0b1c30;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;">${c.msg}</div>
+        <div style="font-size:10px;color:#74777d;margin-top:1px;">${c.author} · ${c.time}</div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function renderPickerVersions() {
+  const list = document.getElementById('cp-versions-list');
+  const accentColor = s => s === 'approved' ? '#00a572' : s === 'in_review' ? '#f59e0b' : '#c4c6cd';
+  const pill = s => {
+    if (s === 'approved')  return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#f0fdf9;color:#00a572;border:1px solid #86efac;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#00a572;display:inline-block;"></span>Approved</span>`;
+    if (s === 'in_review') return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono';font-size:8px;font-weight:700;background:#fff8e6;color:#b45309;border:1px solid #f59e0b;padding:0px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;"><span style="width:4px;height:4px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>In Review</span>`;
+    return '';
+  };
+  const activeSha = (COMMITS.find(x => x.current) || {}).sha;
+  list.innerHTML = VERSIONS.map(v => {
+    const isActive = v.sha === activeSha;
+    return `
+    <button onclick="selectVersion('${v.tag}')" style="width:100%;display:flex;border:none;cursor:pointer;border-bottom:1px solid #e2e3e8;text-align:left;background:${isActive ? '#f5f8ff' : 'transparent'};" onmouseover="if(!${isActive})this.style.background='#f8f9fa'" onmouseout="if(!${isActive})this.style.background='${isActive ? '#f5f8ff' : 'transparent'}'">
+      <div style="width:3px;flex-shrink:0;background:${accentColor(v.status)};"></div>
+      <div style="flex:1;min-width:0;padding:11px 12px 10px 10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+            <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#0b1c30;">${v.tag}</span>
+            ${pill(v.status)}
+          </div>
+          ${isActive ? '<span class="material-symbols-outlined" style="font-size:15px;color:#0058be;flex-shrink:0;">check</span>' : ''}
+        </div>
+        <div style="font-size:11px;color:#44474c;margin-bottom:4px;line-height:1.4;">${v.desc}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-family:'JetBrains Mono';font-size:10px;color:#74777d;background:#f3f4f6;padding:1px 5px;border-radius:4px;">${v.sha.slice(0,7)}</span>
+          <span style="font-size:10px;color:#74777d;">${v.date}</span>
+          <span style="font-size:10px;color:#74777d;">${v.docs} docs</span>
+        </div>
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function updateChip() {
+  const c = COMMITS.find(x => x.current);
+  if (!c) return;
+  const refEl  = document.getElementById('chip-ref');
+  const iconEl = document.getElementById('chip-icon-sym');
+  if (c.version) {
+    refEl.textContent  = c.version;
+    iconEl.textContent = 'sell';
+    iconEl.style.color = '#00a572';
+  } else {
+    refEl.textContent  = `main @ ${c.sha.slice(0,7)}`;
+    iconEl.textContent = 'alt_route';
+    iconEl.style.color = '';
+  }
+}
+
+function selectCommit(sha) {
+  document.getElementById('commit-picker').classList.add('hidden');
+  document.getElementById('chip-chevron').style.transform = '';
+  const c = COMMITS.find(x => x.sha === sha);
+  if (!c) return;
+  COMMITS.forEach(x => x.current = (x.sha === sha));
+  updateChip();
+  activeVersion = c.version || '';
+  const hc = document.getElementById('doc-header-commit');
+  if (hc) hc.textContent = c.sha.slice(0, 7);
+
+  // Map commit → project status
+  const ps = !c.version ? 'not-run'
+           : c.status === 'in_review' ? 'in-review'
+           : 'complete';
+  projectStatus = ps;
+  const cfg = PROJECT_STATUS_CFG[ps];
+  const chip = document.getElementById('proj-status-chip');
+  chip.style.background = cfg.bg; chip.style.color = cfg.color; chip.style.borderColor = cfg.border;
+  const chipDot = document.getElementById('proj-chip-dot');
+  chipDot.style.background = cfg.dot;
+  chipDot.classList.toggle('s-dot-pulse', cfg.pulse);
+  document.getElementById('proj-chip-label').textContent = cfg.label;
+
+  // Banners
+  document.getElementById('stale-banner').style.display       = (ps === 'stale') ? '' : 'none';
+  document.getElementById('review-summary-bar').style.display = (ps === 'in-review') ? '' : 'none';
+
+  // Canvas
+  if (!c.version) {
+    canvasState = 'not-run';
+    document.getElementById('view-not-run').style.display    = '';
+    document.getElementById('view-list').style.display       = 'none';
+    document.getElementById('view-doc').style.display        = 'none';
+    document.getElementById('doc-tree-panel').style.display  = 'none';
+    document.getElementById('state-empty').classList.add('hidden');
+    document.getElementById('state-generating').classList.add('hidden');
+    document.getElementById('outline-panel').style.display   = 'none';
+    document.getElementById('breadcrumb-doc-sep').style.display = 'none';
+    document.getElementById('breadcrumb-doc').style.display     = 'none';
+    document.getElementById('not-run-version').textContent   = `commit ${c.sha.slice(0,7)}`;
+    document.getElementById('cta-download-label').textContent = 'Run Analysis';
+    document.getElementById('cta-download').onclick = () => window.location.href = 'project-detail.html';
+  } else {
+    document.getElementById('cta-download').onclick = null;
+    showListState();
+  }
+}
+
+function selectVersion(tag) {
+  const v = VERSIONS.find(x => x.tag === tag);
+  if (v) selectCommit(v.sha);
+}
+
+// ── Project switcher ─────────────────────────────────────────────────────────
+function toggleSbProject() {
+  const dd = document.getElementById('sb-project-dropdown');
+  const ch = document.getElementById('sb-project-chevron');
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open);
+  ch.style.transform = open ? '' : 'rotate(180deg)';
+}
+function switchSbProject(name) {
+  document.getElementById('sb-project-name').textContent = name;
+  document.querySelectorAll('.sb-proj-opt').forEach(opt => {
+    const active = opt.dataset.proj === name;
+    opt.style.background = active ? '#eff4ff' : '';
+    opt.querySelector('.sb-proj-check').style.opacity = active ? '1' : '0';
+  });
+  closeSbProject();
+}
+function closeSbProject() {
+  document.getElementById('sb-project-dropdown').classList.add('hidden');
+  document.getElementById('sb-project-chevron').style.transform = '';
+}
+
+// ── Project status ────────────────────────────────────────────────────────────
+let projectStatus = 'complete';
+
+const PROJECT_STATUS_CFG = {
+  'not-run':   { label:'Not Run',   dot:'#c4c6cd', bg:'#f3f4f6', color:'#44474c', border:'#c4c6cd', pulse:false },
+  'running':   { label:'Running',   dot:'#0058be', bg:'#e5eeff', color:'#0058be', border:'#93c5fd', pulse:true  },
+  'in-review': { label:'In Review', dot:'#b45309', bg:'#fffbeb', color:'#92400e', border:'#fcd34d', pulse:false },
+  'complete':  { label:'Complete',  dot:'#00a572', bg:'#f0fdf9', color:'#00a572', border:'#86efac', pulse:false },
+  'stale':     { label:'Stale',     dot:'#c2410c', bg:'#fff7ed', color:'#c2410c', border:'#fdba74', pulse:false },
+};
+
+function applyProjectStatus(status) {
+  projectStatus = status;
+  const cfg = PROJECT_STATUS_CFG[status];
+
+  // Update subbar chip
+  const chip = document.getElementById('proj-status-chip');
+  const chipDot = document.getElementById('proj-chip-dot');
+  chip.style.background   = cfg.bg;
+  chip.style.color        = cfg.color;
+  chip.style.borderColor  = cfg.border;
+  chipDot.style.background = cfg.dot;
+  chipDot.classList.toggle('s-dot-pulse', cfg.pulse);
+  document.getElementById('proj-chip-label').textContent = cfg.label;
+
+  // Show/hide banners
+  document.getElementById('stale-banner').style.display        = (status === 'stale')     ? '' : 'none';
+  document.getElementById('review-summary-bar').style.display  = (status === 'in-review') ? '' : 'none';
+
+  // Switch canvas based on status
+  if (status === 'not-run') {
+    canvasState = 'not-run';
+    document.getElementById('view-not-run').style.display = '';
+    document.getElementById('view-list').style.display    = 'none';
+    document.getElementById('view-doc').style.display     = 'none';
+    document.getElementById('doc-tree-panel').style.display = 'none';
+    document.getElementById('state-empty').classList.add('hidden');
+    document.getElementById('state-generating').classList.add('hidden');
+    document.getElementById('outline-panel').style.display = 'none';
+    document.getElementById('breadcrumb-doc-sep').style.display = 'none';
+    document.getElementById('breadcrumb-doc').style.display     = 'none';
+    document.getElementById('not-run-version').textContent = activeVersion;
+    document.getElementById('cta-download-label').textContent = 'Run Analysis';
+    document.getElementById('cta-download').onclick = () => window.location.href = 'project-detail.html';
+  } else if (status === 'running') {
+    document.getElementById('view-not-run').style.display = 'none';
+    document.getElementById('view-doc').style.display     = 'none';
+    document.getElementById('doc-tree-panel').style.display = 'none';
+    startGeneration();
+  } else {
+    if (canvasState === 'not-run' || canvasState === 'running' || canvasState === 'generating') {
+      showListState();
+    }
+    document.getElementById('view-not-run').style.display = 'none';
+    document.getElementById('cta-download').onclick = null;
+  }
+}
+
+// ── Canvas state management ───────────────────────────────────────────────────
+function showListState() {
+  canvasState = 'list';
+  activeProcess = null; activeDoc = null;
+  document.getElementById('view-list').style.display    = '';
+  document.getElementById('view-not-run').style.display = 'none';
+  document.getElementById('view-doc').style.display     = 'none';
+  document.getElementById('doc-tree-panel').style.display = '';
+  document.getElementById('state-empty').classList.add('hidden');
+  document.getElementById('state-generating').classList.add('hidden');
+  document.getElementById('outline-panel').style.display = 'none';
+  document.getElementById('breadcrumb-doc-sep').style.display = 'none';
+  document.getElementById('breadcrumb-doc').style.display     = 'none';
+  document.getElementById('cta-download-label').textContent   = 'Download All';
+  document.getElementById('list-version-label').textContent   = activeVersion;
+  renderDocList();
+  renderTree();
+}
+
+function showDocState(v) {
+  canvasState = 'doc';
+  document.getElementById('view-list').style.display    = 'none';
+  document.getElementById('view-not-run').style.display = 'none';
+  document.getElementById('view-doc').style.display     = '';
+  document.getElementById('doc-tree-panel').style.display = '';
+  document.getElementById('state-empty').classList.add('hidden');
+  document.getElementById('state-generating').classList.add('hidden');
+  document.getElementById('outline-panel').style.display = '';
+  document.getElementById('cta-download-label').textContent = 'Download DOCX';
+
+  const crumb = activeDoc ? `${activeProcess} — ${activeDoc}` : `${activeProcess} — ${docTree.find(d => d.process === activeProcess)?.label}`;
+  document.getElementById('breadcrumb-doc-sep').style.display = '';
+  document.getElementById('breadcrumb-doc').style.display     = '';
+  document.getElementById('breadcrumb-doc').textContent       = crumb;
+
+  const isInReview = v.docStatus === 'in_review';
+  document.getElementById('outline-nav').style.display    = isInReview ? 'none' : '';
+  document.getElementById('review-tracker').style.display = isInReview ? 'block' : 'none';
+  document.getElementById('panel-title').textContent      = isInReview ? 'Review Status' : 'On this page';
+  document.getElementById('outline-panel').style.width    = isInReview ? '176px' : '';
+  document.getElementById('compare-wrap-sub').style.display = isInReview ? '' : 'none';
+}
+
+function showEmptyState(v) {
+  canvasState = 'empty';
+  document.getElementById('view-list').style.display    = 'none';
+  document.getElementById('view-not-run').style.display = 'none';
+  document.getElementById('view-doc').style.display     = 'none';
+  document.getElementById('doc-tree-panel').style.display = 'none';
+  document.getElementById('state-empty').classList.remove('hidden');
+  document.getElementById('state-generating').classList.add('hidden');
+  document.getElementById('outline-panel').style.display = 'none';
+  document.getElementById('empty-version').textContent = v.tag;
+  document.getElementById('empty-msg').textContent = `${v.branch} @ ${v.commit} · ${v.date}`;
+  document.getElementById('breadcrumb-doc-sep').style.display = 'none';
+  document.getElementById('breadcrumb-doc').style.display     = 'none';
+  document.getElementById('cta-download-label').textContent   = 'Download All';
+}
+
+function currentVersionObj() {
+  const c = COMMITS.find(x => x.current);
+  if (!c || !c.version) return null;
+  const vv = VERSIONS.find(x => x.tag === c.version);
+  if (!vv) return null;
+  return { tag: vv.tag, commit: c.sha.slice(0, 7), branch: 'main', date: vv.date,
+           docStatus: c.status === 'in_review' ? 'in_review' : c.status === 'approved' ? 'complete' : null };
+}
+
+// ── Generation simulation ─────────────────────────────────────────────────────
+const GEN_LINES = [
+  { phase: 1, pct:  5,  txt: 'Phase 1: Parsing C++ source…',               color: '#8192a7' },
+  { phase: 1, pct: 15,  txt: 'Phase 1: Layer1/Chassis_Mgmt (18 files)…',   color: '#8192a7' },
+  { phase: 1, pct: 20,  txt: 'Phase 1: Layer1/Powertrain (11 files)…',     color: '#8192a7' },
+  { phase: 1, pct: 24,  txt: 'Phase 1: 847 functions · 42 globals found',   color: '#00a572' },
+  { phase: 1, pct: 25,  txt: 'Phase 1: Complete ✓',                         color: '#00a572' },
+  { phase: 2, pct: 30,  txt: 'Phase 2: Deriving model…',                    color: '#8192a7' },
+  { phase: 2, pct: 40,  txt: 'Phase 2: LLM enrichment — 12/47 units',       color: '#8192a7' },
+  { phase: 2, pct: 50,  txt: 'Phase 2: LLM enrichment — 47/47 ✓',          color: '#00a572' },
+  { phase: 3, pct: 55,  txt: 'Phase 3: Running views…',                     color: '#8192a7' },
+  { phase: 3, pct: 65,  txt: 'Phase 3: Interface tables generated',          color: '#8192a7' },
+  { phase: 3, pct: 75,  txt: 'Phase 3: Flowcharts — 12/12 ✓',              color: '#00a572' },
+  { phase: 4, pct: 80,  txt: 'Phase 4: Exporting DOCX…',                    color: '#8192a7' },
+  { phase: 4, pct: 93,  txt: 'Phase 4: Sections 1–4 complete',               color: '#8192a7' },
+  { phase: 4, pct: 98,  txt: 'Phase 4: software_detailed_design_Chassis_Mgmt.docx written ✓', color: '#00a572' },
+  { phase: 4, pct: 100, txt: 'Complete. Document ready for review.',         color: '#6ffbbe' },
+];
+
+let genInterval = null;
+
+function startGeneration() {
+  const v = currentVersionObj();
+  canvasState = 'generating';
+  document.getElementById('state-empty').classList.add('hidden');
+  document.getElementById('state-generating').classList.remove('hidden');
+  const now = new Date();
+  document.getElementById('gen-time-label').textContent    = `Started ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+  const c = COMMITS.find(x => x.current);
+  document.getElementById('gen-version-label').textContent = `${v ? v.tag : (c ? c.sha.slice(0,7) : 'HEAD')} · Chassis_Mgmt`;
+  document.getElementById('gen-log').innerHTML = '';
+  document.getElementById('gen-bar').style.width = '0%';
+  document.getElementById('gen-pct').textContent = '0%';
+  document.getElementById('gen-status').textContent = 'Running…';
+  document.getElementById('gen-cancel-btn').style.display = '';
+  document.getElementById('gen-bar').classList.add('bar-pulse');
+  genLogIndex = 0;
+  if (genInterval) clearInterval(genInterval);
+  genInterval = setInterval(tickGeneration, 220);
+}
+
+function tickGeneration() {
+  if (genLogIndex >= GEN_LINES.length) { clearInterval(genInterval); genInterval = null; return; }
+  const entry = GEN_LINES[genLogIndex++];
+  const log   = document.getElementById('gen-log');
+  const ts    = new Date().toTimeString().slice(0,8);
+  const line  = document.createElement('div');
+  line.className = 'log-line';
+  line.style.cssText = `color:${entry.color};`;
+  line.innerHTML = `<span style="color:#44474c;margin-right:8px;">[${ts}]</span>${entry.txt}`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+  document.getElementById('gen-bar').style.width = entry.pct + '%';
+  document.getElementById('gen-pct').textContent  = entry.pct + '%';
+  document.getElementById('gen-phase-label').textContent = `Phase ${entry.phase} of 4`;
+  if (entry.pct === 100) {
+    document.getElementById('gen-bar').classList.remove('bar-pulse');
+    document.getElementById('gen-status').textContent = 'Generation complete.';
+    document.getElementById('gen-cancel-btn').style.display = 'none';
+    const cur = COMMITS.find(x => x.current);
+    if (cur && !cur.version) { cur.version = VERSIONS[0].tag; cur.status = 'in_review'; }
+    setTimeout(() => {
+      document.getElementById('state-generating').classList.add('hidden');
+      canvasState = 'doc';
+      showDocState(currentVersionObj());
+      openAssignPanel();
+    }, 1200);
+  }
+}
+
+function cancelGeneration() {
+  if (genInterval) { clearInterval(genInterval); genInterval = null; }
+  document.getElementById('state-generating').classList.add('hidden');
+  const v = currentVersionObj();
+  if (!v) showEmptyState({ tag: '', commit: '', branch: 'main', date: '' });
+}
+
+// ── Assign panel ─────────────────────────────────────────────────────────────
+function openAssignPanel() {
+  document.getElementById('assign-panel').classList.add('open');
+  const v = currentVersionObj();
+  document.getElementById('assign-panel-version').textContent = v ? `${v.tag} · ${v.commit}` : '';
+  selectedReviewer = null;
+  document.querySelectorAll('.rev-opt').forEach(b => {
+    b.classList.remove('border-secondary','bg-surface-container-low');
+    b.querySelector('.rev-check').classList.add('hidden');
+  });
+  document.getElementById('selected-reviewer-label').textContent = 'No reviewer selected';
+}
+function closeAssignPanel() { document.getElementById('assign-panel').classList.remove('open'); }
+function selectReviewer(name) {
+  selectedReviewer = name;
+  document.querySelectorAll('.rev-opt').forEach(b => {
+    const active = b.dataset.rev === name;
+    b.classList.toggle('border-secondary', active);
+    b.classList.toggle('bg-surface-container-low', active);
+    b.querySelector('.rev-check').classList.toggle('hidden', !active);
+  });
+  document.getElementById('selected-reviewer-label').textContent = `Selected: ${name}`;
+}
+function sendForReview() {
+  if (!selectedReviewer) { alert('Select a reviewer first.'); return; }
+  const cur = COMMITS.find(x => x.current);
+  if (cur) cur.status = 'in_review';
+  closeAssignPanel();
+  showDocState(currentVersionObj());
+}
+function markComplete() {
+  const cur = COMMITS.find(x => x.current);
+  if (cur) cur.status = 'approved';
+  document.getElementById('review-tracker').style.display = 'none';
+  document.getElementById('outline-nav').style.display    = '';
+  document.getElementById('panel-title').textContent      = 'On this page';
+  document.getElementById('outline-panel').style.width    = '';
+}
+
+
+// ── Role management ───────────────────────────────────────────────────────────
+function applyRole(role) {
+  currentRole = role;
+  const r = ROLES[role];
+  document.getElementById('user-initials').textContent = r.initials;
+  document.getElementById('user-name').textContent = r.name;
+  document.getElementById('user-role-label').textContent = role === 'admin' ? 'Admin' : 'Developer';
+  document.getElementById('role-btn-admin').className = role === 'admin'
+    ? 'px-2.5 py-1 transition-colors bg-secondary text-white'
+    : 'px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container';
+  document.getElementById('role-btn-dev').className = role === 'developer'
+    ? 'px-2.5 py-1 transition-colors bg-secondary text-white'
+    : 'px-2.5 py-1 transition-colors text-on-surface-variant hover:bg-surface-container';
+  document.getElementById('batch-assign-btn').style.display  = role === 'admin' ? '' : 'none';
+  document.getElementById('batch-approve-btn').style.display = role === 'admin' ? '' : 'none';
+  document.getElementById('review-reassign-btn').style.display  = role === 'admin' ? '' : 'none';
+  document.getElementById('review-assign-me-btn').style.display = role === 'developer' ? '' : 'none';
+  document.getElementById('my-assign-opt').style.display     = role === 'developer' ? '' : 'none';
+  document.getElementById('my-assign-divider').style.display = role === 'developer' ? '' : 'none';
+  document.getElementById('dev-show-all-wrap').style.display = role === 'developer' ? '' : 'none';
+
+  if (role === 'developer') {
+    listAssigneeFilter = r.assignee;
+    listStatusFilter   = '';
+    document.getElementById('list-assignee-label').textContent = 'My Assigned';
+    document.getElementById('list-assignee-btn').style.color = '#0058be';
+    document.getElementById('list-assignee-btn').style.borderColor = '#0058be';
+    document.getElementById('dev-show-all-btn').textContent = 'Show all';
+    document.querySelectorAll('.list-assignee-opt').forEach(b => {
+      b.style.background = b.id === 'my-assign-opt' ? '#eff4ff' : '';
+    });
+    document.getElementById('list-status-label').textContent = 'Status';
+    document.getElementById('list-status-btn').style.color = '';
+    document.getElementById('list-status-btn').style.borderColor = '';
+  } else {
+    listAssigneeFilter = '';
+    document.getElementById('list-assignee-label').textContent = 'Assignee';
+    document.getElementById('list-assignee-btn').style.color = '#44474c';
+    document.getElementById('list-assignee-btn').style.borderColor = '';
+    document.querySelectorAll('.list-assignee-opt').forEach(b => {
+      b.style.background = b.textContent.trim() === 'All assignees' ? '#eff4ff' : '';
+    });
+  }
+  renderDocList();
+  renderTree();
+}
+
+function toggleDevShowAll() {
+  if (listAssigneeFilter) {
+    listAssigneeFilter = '';
+    document.getElementById('list-assignee-label').textContent = 'Assignee';
+    document.getElementById('list-assignee-btn').style.color = '#44474c';
+    document.getElementById('list-assignee-btn').style.borderColor = '';
+    document.getElementById('dev-show-all-btn').textContent = 'My Docs';
+    document.querySelectorAll('.list-assignee-opt').forEach(b => {
+      b.style.background = b.textContent.trim() === 'All assignees' ? '#eff4ff' : '';
+    });
+  } else {
+    listAssigneeFilter = ROLES.developer.assignee;
+    document.getElementById('list-assignee-label').textContent = 'My Assigned';
+    document.getElementById('list-assignee-btn').style.color = '#0058be';
+    document.getElementById('list-assignee-btn').style.borderColor = '#0058be';
+    document.getElementById('dev-show-all-btn').textContent = 'Show all';
+    document.querySelectorAll('.list-assignee-opt').forEach(b => {
+      b.style.background = b.id === 'my-assign-opt' ? '#eff4ff' : '';
+    });
+  }
+  renderDocList();
+  renderTree();
+}
+
+function assignToMe(name) {
+  const d = allDocs.find(x => x.name === name);
+  if (!d) return;
+  d.assignee = ROLES.developer.assignee;
+  d.initials  = ROLES.developer.initials;
+  d.ac = '#f3e8ff'; d.atc = '#7c3aed';
+  renderDocList();
+  renderTree();
+}
+
+function assignToMeDoc() {
+  if (activeDoc) {
+    const d = allDocs.find(x => x.name === activeDoc);
+    if (d) { d.assignee = ROLES.developer.assignee; d.initials = ROLES.developer.initials; d.ac = '#f3e8ff'; d.atc = '#7c3aed'; }
+  }
+  const btn = document.getElementById('review-assign-me-btn');
+  btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:12px;">how_to_reg</span> Assigned';
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+}
+
+function openRowAssign(name) {
+  const d = allDocs.find(x => x.name === name);
+  if (!d) return;
+  selectDoc(d.process, name);
+  setTimeout(openAssignPanel, 60);
+}
+
+// ── Sidebar toggle ────────────────────────────────────────────────────────────
+function toggleSidebar() {
+  const expanded = document.body.classList.toggle('nav-expanded');
+  document.getElementById('sidebar-toggle-icon').textContent = expanded ? 'chevron_left' : 'chevron_right';
+}
+
+// ── Document tree ─────────────────────────────────────────────────────────────
+const docTree = [
+  { process: 'SYS.1', label: 'System Requirements Spec',   multi: false },
+  { process: 'SYS.2', label: 'System Test Spec',           multi: false },
+  { process: 'SWE.1', label: 'SW Requirements Spec',       multi: false },
+  { process: 'SWE.2', label: 'Software Architecture Spec', multi: false },
+  { process: 'SWE.3', label: 'Detailed Design', multi: true,
+    layers: [
+      { layer: 'APP_LAYER', groups: [
+        { group: 'Chassis_Mgmt', docs: ['Brake Controller', 'ABS Unit', 'Stability Control'] },
+        { group: 'Powertrain',   docs: ['Throttle Controller', 'Fuel Injector'] },
+        { group: 'Body',         docs: ['Lighting Ctrl', 'HVAC Ctrl'] },
+      ]},
+      { layer: 'HAL_LAYER', groups: [
+        { group: 'Drivers', docs: ['GPIO Driver', 'CAN Driver', 'SPI Driver', 'PWM Driver'] },
+      ]},
+    ]
+  },
+];
+
+let activeProcess    = null;
+let activeDoc        = null;
+let swe3Expanded     = true;
+const expandedLayers = new Set(['APP_LAYER']);
+const expandedGroups = new Set(['Chassis_Mgmt']);
+
+function selectDoc(process, doc) {
+  activeProcess = process;
+  activeDoc     = doc || '';
+  const entry   = docTree.find(d => d.process === process);
+  const title   = doc || `${process} — ${entry.label}`;
+  document.getElementById('doc-title').textContent          = title;
+  document.getElementById('doc-header-process').textContent = process;
+  const v = currentVersionObj();
+  if (v && v.docStatus) showDocState(v);
+  else if (v) showEmptyState(v);
+  renderTree();
+}
+
+let treeQuery = '';
+function filterTree(q) {
+  treeQuery = q.trim().toLowerCase();
+  renderTree();
+}
+
+function renderTree() {
+  const el = document.getElementById('component-tree');
+  el.innerHTML = '';
+  const q = treeQuery;
+  const filterByMe = currentRole === 'developer' && listAssigneeFilter === ROLES.developer.assignee;
+
+  docTree.forEach(({ process, label, multi, layers }) => {
+    if (listFilter && process !== listFilter) return;
+    if (multi) {
+      // Collect matching docs across all layers when searching
+      const matchingDocs = {};
+      if (q) {
+        layers.forEach(({ layer, groups }) => {
+          groups.forEach(({ docs }) => {
+            docs.forEach(doc => {
+              if (doc.toLowerCase().includes(q) || process.toLowerCase().includes(q) || label.toLowerCase().includes(q)) {
+                if (!matchingDocs[layer]) matchingDocs[layer] = [];
+                matchingDocs[layer].push(doc);
+              }
+            });
+          });
+        });
+        if (Object.keys(matchingDocs).length === 0) return;
+      }
+
+      const forceExpand = q && Object.keys(matchingDocs).length > 0;
+      const expanded = forceExpand || swe3Expanded;
+
+      const hRow = document.createElement('div');
+      hRow.className = 'flex items-center gap-1.5 px-3 py-2 cursor-pointer hover:bg-surface-container-low transition-colors select-none';
+      hRow.innerHTML = `
+        <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" style="font-size:14px;transform:rotate(${expanded?90:0}deg)">chevron_right</span>
+        <span class="font-label-md text-label-md text-on-surface" style="font-size:11px;font-weight:600;">${process}</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:10px;">${label}</span>`;
+      hRow.onclick = () => { swe3Expanded = !swe3Expanded; renderTree(); };
+      el.appendChild(hRow);
+
+      if (!expanded) return;
+
+      layers.forEach(({ layer, groups }) => {
+        let docsToShow = q
+          ? (matchingDocs[layer] || [])
+          : groups.flatMap(({ docs }) => docs);
+        if (q && docsToShow.length === 0) return;
+        if (filterByMe) {
+          docsToShow = docsToShow.filter(doc => {
+            const entry = allDocs.find(x => x.name === doc);
+            return entry && entry.assignee === ROLES.developer.assignee;
+          });
+          if (docsToShow.length === 0) return;
+        }
+
+        const layerExp = q ? true : expandedLayers.has(layer);
+        const lRow = document.createElement('div');
+        lRow.className = 'flex items-center gap-1 cursor-pointer hover:bg-surface-container-low transition-colors select-none';
+        lRow.style.cssText = 'padding: 4px 12px 4px 20px;';
+        lRow.innerHTML = `
+          <span class="material-symbols-outlined text-on-surface-variant transition-transform duration-150" style="font-size:13px;transform:rotate(${layerExp?90:0}deg)">chevron_right</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-[0.08em]" style="font-size:10px;">${layer}</span>`;
+        lRow.onclick = () => { layerExp ? expandedLayers.delete(layer) : expandedLayers.add(layer); renderTree(); };
+        el.appendChild(lRow);
+
+        if (!layerExp) return;
+
+        docsToShow.forEach(doc => {
+          const active = activeProcess === process && activeDoc === doc;
+          const dRow = document.createElement('div');
+          dRow.className = `tree-component ${active ? 'active' : ''}`;
+          dRow.style.paddingLeft = '32px';
+          dRow.innerHTML = `<span class="comp-dot"></span>${doc}`;
+          dRow.onclick = () => selectDoc(process, doc);
+          el.appendChild(dRow);
+        });
+      });
+    } else {
+      // Single-doc process row
+      if (q && !process.toLowerCase().includes(q) && !label.toLowerCase().includes(q)) return;
+      if (filterByMe) {
+        const entry = allDocs.find(x => x.process === process);
+        if (!entry || entry.assignee !== ROLES.developer.assignee) return;
+      }
+      const active = activeProcess === process;
+      const sRow = document.createElement('div');
+      sRow.className = `flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors select-none rounded-lg mx-1 ${active ? 'bg-surface-container-low' : 'hover:bg-surface-container-low'}`;
+      sRow.innerHTML = `
+        <span class="font-label-md text-label-md ${active ? 'text-secondary' : 'text-on-surface'}" style="font-size:11px;font-weight:600;white-space:nowrap;">${process}</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant truncate" style="font-size:10px;">${label}</span>`;
+      sRow.onclick = () => selectDoc(process, null);
+      el.appendChild(sRow);
+    }
+  });
+}
+
+// ── Scroll spy ────────────────────────────────────────────────────────────────
+const sections     = ['s-intro', 's-interfaces', 's-static', 's-dynamic', 's-cfg', 's-state'];
+const outlineLinks = document.querySelectorAll('.outline-link');
+const canvasEl     = document.getElementById('canvas');
+
+function setActiveOutline(id) {
+  outlineLinks.forEach(l => l.classList.toggle('active', l.dataset.target === id));
+}
+canvasEl.addEventListener('scroll', () => {
+  let cur = sections[0];
+  sections.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.getBoundingClientRect().top - canvasEl.getBoundingClientRect().top < 120) cur = id;
+  });
+  setActiveOutline(cur);
+}, { passive: true });
+outlineLinks.forEach(link => {
+  link.addEventListener('click', e => {
+    e.preventDefault();
+    const t = document.getElementById(link.dataset.target);
+    if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+
+// ── Outside click ─────────────────────────────────────────────────────────────
+document.addEventListener('click', e => {
+  const cpWrap = document.getElementById('commit-chip-wrap');
+  if (cpWrap && !cpWrap.contains(e.target)) {
+    document.getElementById('commit-picker').classList.add('hidden');
+    document.getElementById('chip-chevron').style.transform = '';
+  }
+  if (!document.getElementById('sb-project-wrap').contains(e.target)) closeSbProject();
+  const statusWrap = document.getElementById('list-status-wrap');
+  if (statusWrap && !statusWrap.contains(e.target)) {
+    document.getElementById('list-status-dd').classList.add('hidden');
+    document.getElementById('list-status-chevron').style.transform = '';
+  }
+  const assigneeWrap = document.getElementById('list-assignee-wrap');
+  if (assigneeWrap && !assigneeWrap.contains(e.target)) {
+    document.getElementById('list-assignee-dd').classList.add('hidden');
+    document.getElementById('list-assignee-chevron').style.transform = '';
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+selectCommit((COMMITS.find(x => x.current) || COMMITS[0]).sha);
+setActiveOutline('s-intro');
+</script>
+</body>
+</html>
