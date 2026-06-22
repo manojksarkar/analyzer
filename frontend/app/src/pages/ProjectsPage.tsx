@@ -106,11 +106,13 @@ function RolePill({ role }: { role: 'admin' | 'developer' }) {
 
 /* ─── Standard badge ────────────────────────────────────────────────── */
 function StandardBadge({ standard }: { standard: string }) {
+  const isAspiceL3 = standard === 'ASPICE L3'
   return (
     <span
       style={{
         fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 700,
-        background: '#e5eeff', color: '#0058be',
+        background: isAspiceL3 ? '#e5f7f0' : '#e5eeff',
+        color: isAspiceL3 ? '#00a572' : '#0058be',
         padding: '2px 7px', borderRadius: 3, textTransform: 'uppercase',
         whiteSpace: 'nowrap',
       }}

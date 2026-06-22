@@ -68,6 +68,20 @@ export const PROJECTS: Project[] = [
     userRole: 'admin',
     pageState: 'never',
   },
+  {
+    id: 'powertrain-ctrl',
+    name: 'Powertrain Control Module',
+    icon: 'warning',
+    repoPath: '/repos/powertrain-ctrl',
+    standard: 'ASPICE L3',
+    latestVersion: null,
+    inReviewCount: 0,
+    progress: 0,
+    lastRun: null,
+    team: [],
+    userRole: 'developer',
+    pageState: 'never',
+  },
 ]
 
 export const VERSIONS: Version[] = [

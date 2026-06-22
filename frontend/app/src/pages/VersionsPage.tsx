@@ -6,7 +6,7 @@ import type { VersionStatus } from '../types'
 
 type Filter = 'All' | 'In Review' | 'Complete'
 
-const STATUS_BAR: Record<VersionStatus, string> = {
+const ACCENT_COLOR: Record<VersionStatus, string> = {
   complete:  '#00a572',
   in_review: '#f59e0b',
   approved:  '#0058be',
@@ -20,76 +20,119 @@ export function VersionsPage() {
   const { data: versions, isLoading: versionsLoading } = useVersions(projectId ?? '')
   const { data: commits, isLoading: commitsLoading } = useCommits(projectId ?? '')
 
-  const filtered = versions?.filter((v) => {
-    if (filter === 'In Review') return v.status === 'in_review'
-    if (filter === 'Complete')  return v.status === 'complete'
-    return true
-  }) ?? []
+  const allVersions  = versions ?? []
+  const inReview     = allVersions.filter((v) => v.status === 'in_review')
+  const complete     = allVersions.filter((v) => v.status === 'complete')
+
+  const filtered = filter === 'In Review' ? inReview
+                 : filter === 'Complete'  ? complete
+                 : allVersions
 
   const untaggedCommits = commits?.filter((c) => !c.versionTag) ?? []
 
+  const filterDefs: { label: Filter; count: number }[] = [
+    { label: 'All',       count: allVersions.length },
+    { label: 'In Review', count: inReview.length },
+    { label: 'Complete',  count: complete.length },
+  ]
+
   return (
     <div className="p-6">
-      {/* Filter tabs */}
-      <div className="flex items-center gap-1 mb-5" role="tablist" aria-label="Filter versions">
-        {(['All', 'In Review', 'Complete'] as Filter[]).map((f) => (
-          <button
-            key={f}
-            role="tab"
-            aria-selected={filter === f}
-            onClick={() => setFilter(f)}
-            className={`px-3 h-8 rounded-lg text-xs font-semibold transition-colors ${
-              filter === f ? 'bg-secondary text-white shadow-sm' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
+      {/* Filter buttons with count badges */}
+      <div className="flex items-center gap-2 mb-5" role="tablist" aria-label="Filter versions">
+        {filterDefs.map(({ label, count }) => {
+          const active = filter === label
+          return (
+            <button
+              key={label}
+              role="tab"
+              aria-selected={active}
+              onClick={() => setFilter(label)}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-full text-xs font-semibold transition-colors"
+              style={{
+                background: active ? '#e5eeff' : '#f3f4f6',
+                color: active ? '#0058be' : '#44474c',
+                border: active ? '1px solid #0058be' : '1px solid transparent',
+              }}
+            >
+              {label}
+              <span
+                className="flex items-center justify-center min-w-[18px] h-[18px] rounded-full px-1 text-[10px] font-bold"
+                style={{
+                  background: active ? '#0058be' : '#c4c6cd',
+                  color: active ? '#fff' : '#44474c',
+                }}
+              >
+                {count}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
-      {/* Tagged versions */}
-      <div className="space-y-3 mb-8">
+      {/* Tagged versions — flat ver-row layout */}
+      <div className="bg-white border border-outline-variant rounded-xl overflow-hidden mb-8">
         {versionsLoading
-          ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
-          : filtered.map((v) => (
-              <article key={v.tag} className="bg-white border border-outline-variant rounded-xl p-5 flex gap-4">
+          ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 border-b border-outline-variant" />)
+          : filtered.length === 0 ? (
+              <div className="flex items-center justify-center h-20 text-sm text-on-surface-variant">
+                No versions match this filter.
+              </div>
+            )
+          : filtered.map((v, idx, arr) => (
+              <article
+                key={v.tag}
+                className="flex"
+                style={{ borderBottom: idx < arr.length - 1 ? '1px solid #c4c6cd' : 'none' }}
+              >
+                {/* 4px accent bar */}
                 <div
-                  className="w-1 self-stretch rounded-full flex-shrink-0"
-                  style={{ background: STATUS_BAR[v.status] }}
+                  className="w-1 flex-shrink-0"
+                  style={{ background: ACCENT_COLOR[v.status] }}
                   aria-hidden
                 />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-1.5">
+
+                <div className="flex-1 flex items-center gap-4 px-5 py-4 min-w-0">
+                  {/* Tag + status pill */}
+                  <div className="flex items-center gap-2.5 flex-shrink-0">
                     <span className="material-symbols-outlined sym-fill text-on-tertiary-container" style={{ fontSize: 16 }} aria-hidden>sell</span>
                     <span className="font-mono text-sm font-bold text-on-surface">{v.tag}</span>
                     {v.status === 'in_review' && <Badge variant="warning">In Review</Badge>}
-                    {v.status === 'complete'  && <Badge variant="success">Complete</Badge>}
                   </div>
-                  <p className="text-sm text-on-surface-variant mb-3 leading-relaxed">{v.description}</p>
-                  <div className="flex items-center gap-4">
-                    <span className="font-mono text-[10px] bg-surface-container px-2 py-0.5 rounded border border-outline-variant text-on-surface-variant">
+
+                  {/* Description */}
+                  <p className="flex-1 text-sm text-on-surface-variant truncate hidden md:block">{v.description}</p>
+
+                  {/* Meta */}
+                  <div className="flex items-center gap-4 flex-shrink-0">
+                    <span
+                      className="font-mono text-[10px] px-1.5 py-0.5 rounded"
+                      style={{ background: '#f3f4f6', color: '#44474c', borderRadius: 4 }}
+                    >
                       {v.shortSha}
                     </span>
-                    <span className="text-xs text-on-surface-variant">{v.docsCount} docs</span>
-                    <span className="text-xs text-on-surface-variant">{v.date}</span>
+                    <span className="text-xs text-on-surface-variant whitespace-nowrap">{v.docsCount} docs</span>
+                    <span className="text-xs text-on-surface-variant whitespace-nowrap">{v.date}</span>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => navigate(`/projects/${projectId}/documents`)}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }} aria-hidden>description</span>
-                    Docs
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => navigate(`/projects/${projectId}/compare`)}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: 14 }} aria-hidden>compare_arrows</span>
-                    Compare
-                  </Button>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/projects/${projectId}/documents`)}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }} aria-hidden>description</span>
+                      View
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => navigate(`/projects/${projectId}/compare`)}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }} aria-hidden>compare_arrows</span>
+                      Compare
+                    </Button>
+                  </div>
                 </div>
               </article>
             ))}
@@ -113,7 +156,10 @@ export function VersionsPage() {
                   </div>
                   <div className="flex-1 pb-5">
                     <div className="flex items-center gap-3 mb-1">
-                      <span className="font-mono text-[10px] bg-surface-container border border-outline-variant px-2 py-0.5 rounded text-on-surface-variant">
+                      <span
+                        className="font-mono text-[10px] px-2 py-0.5"
+                        style={{ background: '#f3f4f6', color: '#44474c', borderRadius: 4 }}
+                      >
                         {commit.shortSha}
                       </span>
                       <span className="text-xs text-on-surface-variant">{commit.relativeTime}</span>

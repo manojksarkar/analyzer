@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth'
+import { useUIStore } from '../../store/ui'
 import { Dropdown, DropdownTrigger, DropdownContent } from '../ui'
 
 interface BreadcrumbItem {
@@ -13,6 +14,7 @@ interface TopbarProps {
 
 export function Topbar({ breadcrumbs }: TopbarProps) {
   const { user, signOut } = useAuthStore()
+  const { roleView, setRoleView } = useUIStore()
 
   return (
     <header className="h-14 flex-shrink-0 flex items-center justify-between px-4 bg-white border-b border-outline-variant z-30">
@@ -34,7 +36,7 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
               {crumb.to ? (
                 <Link
                   to={crumb.to}
-                  className="text-on-surface-variant hover:text-on-surface transition-colors"
+                  className="text-on-surface-variant hover:text-on-surface transition-colors whitespace-nowrap"
                   style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 500 }}
                 >
                   {crumb.label}
@@ -99,6 +101,39 @@ export function Topbar({ breadcrumbs }: TopbarProps) {
             ]}
           />
         </Dropdown>
+
+        <div className="w-px h-5 bg-outline-variant mx-1" aria-hidden />
+
+        {/* Role view toggle */}
+        <div
+          className="flex items-center rounded-full border border-outline-variant overflow-hidden"
+          style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 600 }}
+          role="group"
+          aria-label="View as role"
+        >
+          <button
+            onClick={() => setRoleView('admin')}
+            className="px-2.5 py-1 transition-colors"
+            style={{
+              background: roleView === 'admin' ? '#0058be' : 'transparent',
+              color: roleView === 'admin' ? '#fff' : '#44474c',
+            }}
+            aria-pressed={roleView === 'admin'}
+          >
+            Admin
+          </button>
+          <button
+            onClick={() => setRoleView('developer')}
+            className="px-2.5 py-1 transition-colors hover:bg-surface-container"
+            style={{
+              background: roleView === 'developer' ? '#0058be' : 'transparent',
+              color: roleView === 'developer' ? '#fff' : '#44474c',
+            }}
+            aria-pressed={roleView === 'developer'}
+          >
+            Dev
+          </button>
+        </div>
       </div>
     </header>
   )

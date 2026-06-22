@@ -9,7 +9,7 @@ const PROCESSES = ['All', 'SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3', 'SWE.4', 
 const STATUS_CONFIG: Record<DocStatus, { label: string; variant: 'warning' | 'success' | 'primary' | 'default' }> = {
   in_review: { label: 'In Review', variant: 'warning' },
   approved:  { label: 'Approved',  variant: 'success' },
-  complete:  { label: 'Complete',  variant: 'primary' },
+  complete:  { label: 'Complete',  variant: 'success' },
   draft:     { label: 'Draft',     variant: 'default' },
 }
 
@@ -35,23 +35,28 @@ export function DocumentsPage() {
 
   return (
     <div className="p-6">
-      {/* Process filter tabs */}
-      <div className="flex items-center gap-1 mb-5 flex-wrap" role="tablist" aria-label="Filter by process">
-        {PROCESSES.map((p) => (
-          <button
-            key={p}
-            role="tab"
-            aria-selected={activeProcess === p}
-            onClick={() => setActiveProcess(p)}
-            className={`px-3 h-8 rounded-lg text-xs font-semibold transition-colors ${
-              activeProcess === p
-                ? 'bg-secondary text-white shadow-sm'
-                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
-            }`}
-          >
-            {p}
-          </button>
-        ))}
+      {/* Process filter tabs — underline style */}
+      <div className="flex items-center border-b border-outline-variant mb-5 -mt-1" role="tablist" aria-label="Filter by process">
+        {PROCESSES.map((p) => {
+          const active = activeProcess === p
+          return (
+            <button
+              key={p}
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveProcess(p)}
+              className="relative px-3 h-10 text-xs font-semibold transition-colors whitespace-nowrap"
+              style={{
+                color: active ? '#0058be' : '#44474c',
+                borderBottom: active ? '2px solid #0058be' : '2px solid transparent',
+                marginBottom: -1,
+                background: 'none',
+              }}
+            >
+              {p}
+            </button>
+          )
+        })}
       </div>
 
       {/* Batch action bar */}
