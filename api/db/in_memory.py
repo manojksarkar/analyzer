@@ -32,7 +32,7 @@ from ..repositories.interfaces import (
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-_HASHED_PW = "$2b$12$zZWc10E.kcV.S399YZjhR.xyvBC3.Ju4/QQ6zlYC4vXszh7cnsJMi"  # "secret"
+_HASHED_PW = "$2b$12$fF8gBrCFb2LekRWV1WQSf.OaQwXqfBktl6yqy0D1.FiS6T44RwcDC"  # bcrypt(sha256("secret"))
 UTC = timezone.utc
 _NOW = datetime(2026, 6, 22, 12, 0, 0, tzinfo=UTC)
 
