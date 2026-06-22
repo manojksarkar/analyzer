@@ -1,4 +1,4 @@
-﻿# C++ Codebase Analyzer — Complete Project Context
+# C++ Codebase Analyzer — Complete Project Context
 
 > Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete; M3.1 (precise flowchart reuse) + M3.2 (function-summary reuse) + M3.3 (full Phase-2 enrichment reuse — behaviour-names/descriptions/globals restricted to the impact set; file/component summary gating; PNG reuse; + documents-capture bug fix) done**. The LLM-on payoff is now real (behaviour-names were the hidden 417s cost — config has descriptions+behaviourNames on). Re-test LLM-on **with a real diff** (baseline at an earlier commit than the target). **M3.4 end-of-run report done** (`src/incremental/report.py`: logged to `logs/run_<date>.log` + saved to `versions/<id>/report.txt`; inputs + change classification + reuse accounting %). Remaining M3: version-scoped reads (`?versionId=`), git_ops/git_service consolidation. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
 > Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
@@ -13,16 +13,8 @@
 > Previous update: 2026-06-11 (feat/auto-clang-includes branch: `--selected-component` flag added — repeatable, accumulates a list; all components must be in the same layer; output to `output/<C1_C2>/`; new `get_component_layer_name` in `core.config`; `group_planner` has a fifth dispatch shape; `run_views` and `docx_exporter` both handle the new flag; see §5).
 > Previous update: 2026-06-09 (feat/auto-clang-includes branch: Phase 1 parsing scoped to selected layer — `--selected-group` passes itself to `parser.py` which derives the layer via `get_group_layer_name`; new `--selected-layer` flag parses one layer and generates DOCX for all its groups; both flags together are an error; `clang_include_paths.json` also scoped to the selected layer; new `get_group_layer_name` / `get_layer_flat_groups` helpers in `core.config`; see §4e, §5, §7).
 > Previous update: 2026-06-09 (feat/from-main branch: `module` → `component` rename throughout source + model + config; `modulesGroups` → `layers` two-level config schema; same-layer model filtering in Phase 3 + Phase 4; `SampleCppProject` restructured with Layer1 + Layer2/Platform; `model/modules.json` → `model/components.json`; new `get_flat_groups` / `get_layer_components` helpers in `core.config`; `--trace-prompts` + `--filter-mode` CLI flags; `model/clang_include_paths.json` written by `run.py` before any phase; see §5, §6, §7, §9, §10, §11, §12, §15).
-> Updated: 2026-06-19 (feat/product-ui-redesign: dashboard-no-project.html wizard refined — review step shows full detail (expandable defines list with count badge, lib paths per layer as green chips, full arch tree with components+files, full team list with avatars); "Load Project" empty-state card replaced with "Request Access" card + modal showing only inaccessible projects with per-project request state; left step rail restored after horizontal-stepper revert; see §21 dashboard-no-project.html).
-> Updated: 2026-06-19 (feat/product-ui-redesign: sidebar/nav updated across all 6 v2 pages — context-progressive sidebar implemented; see §21).
-> Updated: 2026-06-19 (feat/product-ui-redesign: all 8 v2 pages now complete — dashboard-no-project.html added: full-page 5-step new-project wizard with left step rail, form area, action bar, init overlay (v1 onboarding style); signin.html redirects to dashboard-no-project instead of dashboard-admin; dashboard-admin.html cleaned up: wizard/load modals removed, empty state removed, always shows loaded content, NEW PROJECT button links to dashboard-no-project.html; see §21).
-> Updated: 2026-06-19 (feat/product-ui-redesign: dashboard-admin.html redesigned — KPI strip/Versions/Team panels removed; projects table now has Team avatar column (active rows: overlapping initials, stale rows: dashed Add pill); three action cards added below table: Review Queue (flex:3), Stale Analysis + Recent Runs (flex:2 right column); see §21 dashboard-admin.html).
-> Updated: 2026-06-20 (feat/product-ui-redesign: project-detail.html redesigned — role-differentiated UX (Admin/Developer); topbar replaced with hexagon breadcrumb + Admin/Dev toggle pills; subbar added with project-switcher pill + commit chip + admin CTAs; page header H1 removed; left column = docs table + team card (team hidden for developer); right sidebar = review-queue card (admin only) + last-actions card (flex:1 fills height); Last Actions feed replaces History panel; overdue doc highlighting; `setRole()` syncs topbar pills; see §21 project-detail.html).
-> Updated: 2026-06-22 (feat/product-ui-redesign: project-detail.html — commit picker rows show per-commit state badge pills; "current" text badge removed (tick icon marks selection); default selection is now latest tagged version `d9a0c55`/`v1.2.0`; `#unassigned-pool-card` added (developer only — lists unowned docs with Claim button, `claimDoc()` self-assigns); subbar CTAs redesigned — single contextual primary (RUN/RE-RUN/Cancel) + `[⋮]` overflow menu replacing old Versions link; menu varies by state + role; see §21 project-detail.html).
-> Previous update: 2026-06-22 (feat/product-ui-redesign: compare.html review workflow overhauled — role-based Admin/Dev views; section controls (Accept/Decline/Edit) shared for both roles, shown only when `isReviewMode`; all 4 `ctrl-c-*` IDs now toggled together (was only 2); `ctrl-c-interfaces` + `ctrl-c-dynamic` HTML defaults fixed to `display:none`; `#current-commit-badge` now dynamically updated by `applyReviewState()` from commit `docStatus` (was hardcoded "In Review"); `#review-bar` moved from top to sticky bottom footer; `renderSplitReviewBar()` added — empty state renders "In Review · X/N docs resolved + [Approve All/Submit All]", split canvas renders section dots + count + [Approve Document/Submit Review]; `completeDocReview()` added; inline `reviewHeader` removed from `renderEmptyCards()`; `renderChipCommits()` matches documents.html layout and adds docStatus pill (In Review/Approved/Complete) after version tag; see §21 compare.html).
-> Previous update: 2026-06-21 (feat/product-ui-redesign: version chip unified across all pages — smart chip shows `sell` icon (green `#00a572`) + version tag when on a tagged commit, `alt_route` + `branch @ sha` for raw commits; `updateDocChip()` added to `documents.html`; `applyChipSelection()` updated in `compare.html`; both files got fully rewritten `renderVersionList()` (left accent bar, status pill, desc, sha chip, docs count) and commit list renderers (timeline dot, short sha chip, version tag pill, current badge); `project-detail.html` gained a full 5-state system — `never` / `running` / `in_review` / `complete` / `stale` — driven by `pageState` field on each COMMIT entry; subbar status badge (`#sb-status-badge`), stale banner (amber, new-commit count, Re-run CTA), `currentState` module variable, `updateStatusBadge(state)`, and a fully rewritten `setState()` added; `renderPickerVersions()` drops Approved pill — only In Review pill shown; stale banner only shown for the most recent completed version; see §21 project-detail.html, §21 documents.html, §21 compare.html).
-> Previous update: 2026-06-20 (feat/product-ui-redesign: dashboard-admin.html → projects.html; dashboard-no-project.html → projects-empty.html; Review Queue + Recent Runs removed from projects page and moved to project-detail.html; projects.html now purely a projects table with per-row role badge (ADMIN/DEV) and role-aware ⋮ dropdown; project-detail.html bottom row expanded to 3 cards: Team + Review Queue + History (Versions|Commits|Runs tab); step 3 lib path visibility improved; see §21).
-> Current active branch: `feat/product-ui-redesign` (v2 UI work). Last pipeline branch: `feat/auto-clang-includes`.
+> Current active branch: `feat/product-ui-redesign` (React frontend implementation — HTML designs in `frontend/designs/`; last pipeline branch: `version4`).
+> Previous active branch: `version4` (integration base off `main`: main code + version3 backend + production-redesign docs).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
@@ -2425,91 +2417,119 @@ the failed step.
 
 ---
 
-## 21. Frontend Designs — `frontend/designs/`
+## 21. Companion: the FastAPI backend (`backend/`)
 
-Branch: `feat/product-ui-redesign`. HTML design mockups live in `frontend/designs/` — these are the reference files for React implementation.
+> **Integration status (version4):** the `backend/` layer and the
+> `docs/production-redesign/` design docs were brought onto this branch from
+> `version3`, on top of the newer `main` code line. The backend was written
+> against the **older `modulesGroups` / `module` schema** and the
+> `model/modules.json` filename. This `main`-based code line instead uses the
+> **`layers` config + `component` terminology + `model/components.json`** (see
+> §4d, §6) and adds CLI flags (`--selected-layer`, `--selected-component`,
+> `--data-dictionary`, `--macros`, `--include-path`, `--project-name`).
+> **Adapting the backend to that schema and flag set is an open follow-up**
+> before it runs correctly against this analyzer. The description below is the
+> backend *as built on version3*.
 
-### Design system
+Starting in version3, the analyzer pipeline is also reachable over HTTP
+through a small FastAPI service that the external UI talks to. This
+section is intentionally short — it orients you to the layer; the
+authoritative reference is **[backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md)**
+(~930 lines covering all endpoints, request/response shapes, design
+decisions, and the development history).
 
-- Tailwind CSS + Material Symbols Outlined icons (Google Fonts)
-- Fonts: Inter (body/headlines), JetBrains Mono (labels/code)
-- Color tokens: navy `#041627`, blue `#0058be`, green `#00a572`
+### What the backend is, and isn't
 
-### Page inventory
+- **What it is**: a thin async wrapper around `run.py`. It spawns the
+  analyzer as a subprocess (`_spawn_run_py`), tails its stdout+stderr
+  to per-job log files, parses `[N/M] === Phase X: ... ===` markers
+  for progress, and exposes the model artifacts that the analyzer
+  already produces (functions, components, flowcharts, the exported
+  DOCX).
+- **What it isn't**: a re-implementation of the pipeline. The backend
+  never imports analyzer internals — it only reads JSON the analyzer
+  writes and shells out to `python run.py`. The pipeline contract
+  documented in §3, §10–§14 is the single source of truth.
 
-| # | File | Sidebar | Subbar | What it covers |
-|---|------|---------|--------|----------------|
-| 1 | `signin.html` | none | no | Two-panel auth: branding left, SSO + email/password form right |
-| 2 | `projects.html` | 220px | yes | All-projects table; ADMIN/DEV badges, row kebab menu (Settings / Archive / Delete) |
-| 3 | `projects-empty.html` | 220px | yes | Empty state + 5-step onboarding wizard; Request Project Access modal |
-| 4 | `project-detail.html` | 220px | yes | Project overview: KPI cards, generation progress, documents table, team list, review queue, function-visibility slide-over, Run Analysis modal, Admin/Developer role switcher |
-| 5 | `documents.html` | 56px collapsed | yes | Document list: process filter tabs, status/assignee filters, batch actions, edit-section modal, assign-reviewers slide panel |
-| 6 | `compare.html` | 56px collapsed | yes | Split diff: reference left / current right; per-section Accept/Decline/Edit; review footer with progress dots |
-| 7 | `versions.html` | 56px collapsed | yes | Tagged version cards (In Review / Approved); untagged commits timeline; filter tabs |
-| 8 | `team.html` | 220px | yes | Team table: role dropdowns, pending invites, Invite Member modal, permission legend |
+### Process model
 
-### Shell rules
+- FastAPI on `:8000`, CORS pinned to `http://localhost:5173` (the Vite
+  dev server the UI runs on).
+- Jobs live in an in-memory `_jobs: dict[str, JobState]` — **no
+  persistence by design**. Restarting the backend forgets in-flight
+  jobs, but already-exported DOCX files on disk remain downloadable
+  via `GET /jobs/{jobId}/download` (the endpoint resolves by reading
+  `output/*.docx` directly).
+- Each spawned subprocess writes to
+  `logs/job_<job_id>.out.log` (interleaved stdout+stderr). The
+  `GET /jobs/{jobId}/preplogs` endpoint tails this file rather than
+  buffering in process memory.
+- Process tree kill uses `taskkill /F /T` on Windows and `killpg(SIGKILL)`
+  on POSIX so cancelling a job actually stops the whole subprocess tree
+  (parser/model_deriver/run_views/docx_exporter can spawn children).
 
-**Sidebar** — context-progressive:
-- `signin.html` and `projects.html` have **no sidebar** — full-width layout, logo in top bar left side.
-- All project-scoped pages show a **project sidebar** (220px expanded / 56px collapsed; toggle in header):
-  - `← All Projects` back link → `projects.html`
-  - Project name label (10px uppercase, e.g. `VCU Engine Firmware`)
-  - **Overview** → `project-detail.html`
-  - **Documents** → `documents.html`
-  - **Compare** → `compare.html`
-  - **Versions** → `versions.html`
-  - **Team** → `team.html`
-  - **Settings** (at bottom, below `border-t`)
-- Sidebar logo header is an `<a href="projects.html">` link.
-- `documents.html`, `compare.html`, and `versions.html` default to **collapsed (56px)** to give content more space.
+### Progress: canonical 4-phase mapping
 
-**Top bar** — `[⬡ PRODUCT NAME]` left; notifications · help · user avatar right. No project selector here.
+The pipeline has variable plan counts (build-only vs build+views vs
+views-only, multi-group runs) and inside-plan phase counts (some plans
+have 2 phases, others 4). To give the UI a stable progress bar:
 
-**Subbar** (all project-scoped pages):
-`
-[ 📁 VCU Engine Firmware ▾ ]  ·  [ v1.2.0 ▾ ]  ·  ⑂ main @ d9a0c55  ·  Jun 15    [CTA]
-`
-- Project switcher → version/commit picker (Versions / Commits tabs) → read-only commit chip → page CTA
-- CTAs: project-detail `[▶ RUN ANALYSIS]`, documents `[↓ Download All]`, compare `[✓ Accept All] [✗ Reject All]`, team `[+ Invite]`, versions — none
+- A **canonical 4-phase** taxonomy is exposed regardless of the
+  actual plan shape: Parse C++ source → Derive model → Generate
+  views → Export to DOCX.
+- `_PHASE_NAME_TO_NUMBER` maps phase labels (case-folded) to
+  `phaseNumber` 1..4.
+- `_CANONICAL_TOTAL = 4` is always returned as `totalPhase` (even when
+  the actual plan has only 2 phases — `totalPhase` is canonical, not
+  literal).
+- `_expected_phase_markers(selected_group, from_phase)` predicts the
+  total number of `=== Phase ... ===` markers the run will emit, used
+  to compute `overallProgress` monotonically. This was the fix for the
+  "75% → 25% → 100%" regression: previously `overallProgress` was
+  computed from "markers seen / markers in current plan", which jumped
+  backwards across plan boundaries.
+- The `phase` field strips a leading `Phase N: ` prefix
+  (`_PHASE_LABEL_PREFIX_RE`) — the UI wants the bare phase name.
 
-**Breadcrumbs** — always start with `[⬡]` home icon (→ projects.html), never "Dashboard":
-- Overview:   `[⬡] / VCU Engine Firmware / Overview`
-- Documents:  `[⬡] / VCU Engine Firmware / Documents`
-- Compare:    `[⬡] / VCU Engine Firmware / Documents / Compare`
-- Versions:   `[⬡] / VCU Engine Firmware / Versions`
-- Team:       `[⬡] / VCU Engine Firmware / Team`
+### Config editing: surgical JSONC splice
 
-### Navigation flow
+`POST /api/v1/config` updates only the `modulesGroups` key inside
+`config/config.json` while preserving every comment and every other
+key in the file. The implementation (`_find_modules_groups_key_pos`)
+is a small JSONC-aware state machine that tracks strings, line
+comments, block comments, and brace nesting depth — a regex or a
+`json.loads` + `json.dumps` round-trip would either miss commented
+duplicates or strip every `//` and `/* */` comment from the file.
+Earlier attempts to do this with `json.loads` deleted ~80% of the
+config; the surgical splice is the only safe path. Backup files are
+**not** written (the user explicitly opted out — git is the backup).
 
-`
-signin.html
-  └─ projects.html  (global, no sidebar/subbar)
-       └─ click project row
-          project-detail.html  (sidebar 220px, subbar)
-            ├─ Documents → documents.html  (sidebar 56px, subbar)
-            │    └─ Compare button → compare.html  (sidebar 56px, subbar)
-            ├─ Versions → versions.html  (sidebar 56px, subbar)
-            └─ Team → team.html  (sidebar 220px, subbar)
-`
+> **Schema note (version4):** on this `main`-based code line the config key
+> is **`layers`** (two-level), not `modulesGroups`, and the model file is
+> `model/components.json`, not `modules.json`. The splice target and the
+> component/module-keyed read paths must be updated when the backend is
+> adapted (see the Integration status note above).
 
-### projects.html (P1 — built)
+### Multi-repository CRUD
 
-Renamed from `dashboard-admin.html` (2026-06-20). Pure projects table — no cards, no KPIs. Role is per-project, not global, so one page serves all users.
+`backend/repository_config.json` is a list of `{name, path}` entries
+(see `backend/models.py:Repository`). Endpoints that previously took
+just a path now accept `?name=<repo>` query parameters; the backend
+resolves the name to a directory via `_resolve_repository_path` and
+auto-migrates legacy single-repo `{path: "..."}` files to
+`[{name: "default", path: "..."}]` on first read.
 
-#### Projects table
+### Where to read more
 
-Columns: **Name** (logo + role badge) | **Standard** (badge) | **Latest** (version chip) | **In Review** (count) | **Progress** (bar + %) | **Last Run** | **Team** (avatar stack) | **⋮** (role-aware dropdown)
-
-- Rows are clickable → `project-detail.html`
-- **Role badge** inline with project name: `ADMIN` (blue `#e5eeff/#0058be`) or `DEV` (gray `#f3f4f6/#44474c`), 9px JetBrains Mono pill
-- **Active rows** (3): VCU (ADMIN), ADAS (DEV), EPS (DEV) — overlapping 26px avatar circles in Team column
-- **Stale rows** (2): Brake-by-Wire (ADMIN, 47d ago), Powertrain (DEV, never run) — `background:#fffcf5`, amber warning icon, dashed "+ Add" pill in Team column
-- **⋮ dropdown** (`toggleRowMenu(event, id)`, closes on outside click):
-  - ADMIN rows: Settings → `project-detail.html` | Archive | separator | Delete (red)
-  - DEV rows: View Project → `project-detail.html`
-
-Avatar colors: MS `#e0f2fe/#0369a1` · SC `#dbeafe/#1e40af` · AF `#fce7f3/#be185d` · PR `#fef9c3/#92400e` · MW `#f3e8ff/#7c3aed` · AM `#fef9c3/#92400e` · ZP `#fff7ed/#c2410c`
+The full endpoint catalog (17 endpoints), request/response examples,
+and the lessons-learned section (12 entries: venv mismatches, the
+config splice 80% bug, progress monotonicity, hiddenFns evolution,
+PNG slicing, ELK feedbackEdges, lossy-rewrite reversal, Windows
+shell=True quirks, etc.) is in
+[backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md). API examples
+with curl payloads are in [backend/API_DOC.md](backend/API_DOC.md). A
+sample response fixture lives at
+[backend/fixtures/get_components_FTL.json](backend/fixtures/get_components_FTL.json).
 
 ---
 
@@ -2936,6 +2956,61 @@ hash / edge / reuse-index access goes through.
 `082ec8b` backend doc corrections · `a74a560` **git_service** · `4651fe9` + `d1ee2bd` + `98b2ce1` doc 04
 (incremental approach → slim edges + pointer index) · `8ea45a2` doc 05 (UI API spec). Branch is pushed to
 `origin/version4`.
+
+---
+
+## 24. Frontend — `frontend/designs/`
+
+Branch: `feat/product-ui-redesign`. HTML design mockups in `frontend/designs/` are the reference specs for the React frontend implementation. Full UI context in `frontend/UI_CONTEXT.md`.
+
+### Design system
+
+- Tailwind CSS + Material Symbols Outlined (Google Fonts)
+- Fonts: Inter (body/headlines), JetBrains Mono (labels/code)
+- Color tokens: navy `#041627`, blue `#0058be`, green `#00a572`
+
+### Page inventory
+
+| # | File | Sidebar | Subbar | What it covers |
+|---|------|---------|--------|----------------|
+| 1 | `signin.html` | none | no | Two-panel auth: branding left, SSO + email/password form right |
+| 2 | `projects.html` | 220px | yes | All-projects table; ADMIN/DEV badges, row kebab menu (Settings / Archive / Delete) |
+| 3 | `projects-empty.html` | 220px | yes | Empty state + 5-step onboarding wizard; Request Project Access modal |
+| 4 | `project-detail.html` | 220px | yes | Project overview: KPI cards, generation progress, documents table, team list, review queue, function-visibility slide-over, Run Analysis modal, Admin/Developer role switcher |
+| 5 | `documents.html` | 56px collapsed | yes | Document list: process filter tabs, status/assignee filters, batch actions, edit-section modal, assign-reviewers slide panel |
+| 6 | `compare.html` | 56px collapsed | yes | Split diff: reference left / current right; per-section Accept/Decline/Edit; review footer with progress dots |
+| 7 | `versions.html` | 56px collapsed | yes | Tagged version cards (In Review / Approved); untagged commits timeline; filter tabs |
+| 8 | `team.html` | 220px | yes | Team table: role dropdowns, pending invites, Invite Member modal, permission legend |
+
+### Shell rules
+
+**Sidebar** — context-progressive:
+- `signin.html` and `projects.html` have **no sidebar** — full-width, logo top-left.
+- All project-scoped pages (4–8): **project sidebar** (220px expanded / 56px collapsed):
+  - `← All Projects` → `projects.html`
+  - Project name label (10px uppercase)
+  - Overview → `project-detail.html` · Documents → `documents.html` · Compare → `compare.html` · Versions → `versions.html` · Team → `team.html`
+  - Settings at bottom (below `border-t`)
+- `documents.html`, `compare.html`, `versions.html` default to **collapsed (56px)**.
+
+**Subbar** (all project-scoped pages):
+```
+[ 📁 VCU Engine Firmware ▾ ]  ·  [ v1.2.0 ▾ ]  ·  ⑂ main @ d9a0c55  ·  Jun 15    [CTA]
+```
+- CTAs: project-detail `[▶ RUN ANALYSIS]`, documents `[↓ Download All]`, compare `[✓ Accept All] [✗ Reject All]`, team `[+ Invite]`, versions — none
+
+**Breadcrumbs** — always start with `[⬡]` home (→ `projects.html`):
+`Overview` · `Documents` · `Documents / Compare` · `Versions` · `Team`
+
+### Navigation flow
+
+```
+signin.html → projects.html (no sidebar)
+  └─ click row → project-detail.html (220px sidebar)
+       ├─ Documents → documents.html (56px) → Compare → compare.html (56px)
+       ├─ Versions  → versions.html (56px)
+       └─ Team      → team.html (220px)
+```
 
 ---
 
