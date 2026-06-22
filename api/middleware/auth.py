@@ -21,6 +21,8 @@ if not hasattr(_bcrypt, "__about__"):
         __version__ = getattr(_bcrypt, "__version__", "4.0.0")
     _bcrypt.__about__ = _About()
 
+import hashlib
+import base64
 from passlib.context import CryptContext
 
 from ..db.session import get_db
@@ -43,14 +45,24 @@ UTC = timezone.utc
 
 # ---------------------------------------------------------------------------
 # Password helpers
+#
+# bcrypt has a hard 72-byte limit. We SHA-256 the password first and
+# base64-encode it (44 ASCII chars) so any length password is safe.
+# Both helpers apply the same transform so verification stays consistent.
 # ---------------------------------------------------------------------------
 
+def _prepare(plain: str) -> str:
+    """SHA-256 + base64 keeps bcrypt input well under 72 bytes."""
+    digest = hashlib.sha256(plain.encode()).digest()
+    return base64.b64encode(digest).decode()
+
+
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return pwd_context.verify(_prepare(plain), hashed)
 
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    return pwd_context.hash(_prepare(plain))
 
 
 # ---------------------------------------------------------------------------
