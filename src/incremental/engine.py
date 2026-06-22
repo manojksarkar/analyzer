@@ -26,6 +26,8 @@ import json
 import os
 import subprocess
 import sys
+import time
+from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 _SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -38,8 +40,26 @@ from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, Re
 from incremental.baseline import select_baseline
 from incremental.impact import classify, impact_set
 from incremental.fingerprint import recipe_fingerprint, compute_fingerprints
+from incremental.report import build_report, emit_report
 from incremental.generate import (_resolved_config, _manifest, scope_to_args,
                                   generate_full, _now_iso)
+
+
+def _entity_kind(key: str) -> str:
+    """Classify an entity key by shape (for the report)."""
+    if "@" in key and "|" not in key:
+        return "macro"
+    if key.count("|") >= 3:
+        return "function"
+    if key.count("|") == 2:
+        return "global"
+    return "type"
+
+
+def _scope_label(scope: Dict[str, Any]) -> str:
+    stype = (scope or {}).get("type", "project")
+    names = (scope or {}).get("names") or []
+    return stype if (stype == "project" or not names) else f"{stype}:{','.join(names)}"
 
 # Output fields carried forward from a baseline function entry for reused fids.
 _CARRY_FIELDS = ("description", "behaviourInputName", "behaviourOutputName", "comment", "phases")
@@ -131,6 +151,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          force: bool = False) -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor)."""
+    _t0 = time.perf_counter()
     scope = scope or {"type": "project"}
     project_root = _paths().project_root
     ws = Workspace(project_id, workspaces_root)
@@ -259,6 +280,29 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     manifest["documents"] = documents
     manifest["carriedForward"] = n_carried
     vstore.write_manifest(version_id, manifest)
+
+    # End-of-run report (M3.4): inputs + change classification + reuse accounting.
+    cls = plan["classify"]
+    classification = {b: dict(Counter(_entity_kind(k) for k in cls[b]))
+                      for b in ("changed", "new", "deleted", "unchanged")}
+    all_files = {(f.get("location") or {}).get("file") for f in target_functions.values()} - {None}
+    fn_total, fn_regen = len(target_functions), len(plan["impact"])
+    gl_total, gl_regen = len(target_globals), len(impacted_globals)
+    stats = {
+        "versionId": version_id, "decision": "incremental", "status": "complete",
+        "projectId": project_id, "branch": branch, "commit": target,
+        "scope": _scope_label(scope), "baselineVersionId": base_vid,
+        "baselineCommit": decision["chosenBaseCommit"], "changedFiles": decision.get("changedFiles"),
+        "dataDictId": data_dict_id, "recipeFingerprint": recipe_fp,
+        "llmModel": llm.get("defaultModel"), "elapsedSeconds": time.perf_counter() - _t0,
+        "classification": classification,
+        "functions": {"total": fn_total, "regenerated": fn_regen, "reused": fn_total - fn_regen},
+        "globals": {"total": gl_total, "regenerated": gl_regen, "reused": gl_total - gl_regen},
+        "files": {"total": len(all_files), "regenerated": len(impacted_files),
+                  "carried": len(all_files) - len(impacted_files)},
+        "documents": documents, "warnings": decision["warnings"],
+    }
+    emit_report(build_report(stats), version_dir=vdir)
     return manifest
 
 

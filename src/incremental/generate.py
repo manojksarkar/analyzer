@@ -28,6 +28,7 @@ import datetime as _dt
 import os
 import subprocess
 import sys
+import time
 from typing import Any, Dict, List, Optional
 
 # Allow `python src/incremental/generate.py ...` and `python -m incremental.generate`
@@ -93,6 +94,7 @@ def generate_full(
     where they land — the backend points them at the per-job log so progress
     markers are visible to the existing job-status machinery.
     """
+    _t0 = time.perf_counter()
     scope = scope or {"type": "project"}
     project_root = _paths().project_root
 
@@ -166,6 +168,26 @@ def generate_full(
                          regenerated=len(fps), reused=0, status="complete", warnings=[])
     manifest["documents"] = documents
     vstore.write_manifest(version_id, manifest)
+
+    # End-of-run report (M3.4): a full generation regenerates everything (it becomes
+    # the baseline future incrementals diff against).
+    globals_ = json.load(open(os.path.join(model_dir, "globalVariables.json"), encoding="utf-8")) \
+        if os.path.isfile(os.path.join(model_dir, "globalVariables.json")) else {}
+    files_total = len({(f.get("location") or {}).get("file") for f in functions.values()} - {None})
+    stype = (scope or {}).get("type", "project")
+    names = (scope or {}).get("names") or []
+    from incremental.report import build_report, emit_report
+    emit_report(build_report({
+        "versionId": version_id, "decision": "full", "status": "complete",
+        "projectId": project_id, "branch": branch, "commit": actual_commit,
+        "scope": stype if (stype == "project" or not names) else f"{stype}:{','.join(names)}",
+        "dataDictId": data_dict_id, "recipeFingerprint": recipe_fp,
+        "llmModel": llm.get("defaultModel"), "elapsedSeconds": time.perf_counter() - _t0,
+        "functions": {"total": len(functions), "regenerated": len(functions), "reused": 0},
+        "globals": {"total": len(globals_), "regenerated": len(globals_), "reused": 0},
+        "files": {"total": files_total, "regenerated": files_total, "carried": 0},
+        "documents": documents, "warnings": [],
+    }), version_dir=vstore.version_dir(version_id))
     return manifest
 
 
