@@ -116,7 +116,27 @@ def _strip_trailing_commas(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def load_config(project_root: str) -> Dict[str, Any]:
-    """Load config from config/config.json, then config.local.json overrides."""
+    """Load config from config/config.json, then config.local.json overrides.
+
+    If the ``ANALYZER_CONFIG`` environment variable points to a file, that file
+    is loaded **instead**, as the complete self-contained per-run config — no
+    ``config.local.json`` merge. This is how a per-project / per-version config
+    (carrying the project's ``layers``) is injected into the analyzer and every
+    phase subprocess, which inherit the env var. ``config.local.json`` is
+    intentionally skipped so the injected config is fully reproducible (a dev's
+    local overrides do not bleed into a per-project run). See ``run.py --config``.
+    A set-but-missing path fails loud rather than silently falling back.
+    """
+    override = os.environ.get("ANALYZER_CONFIG", "").strip()
+    if override:
+        if not os.path.isfile(override):
+            raise FileNotFoundError(
+                f"ANALYZER_CONFIG points to a missing file: {override}"
+            )
+        with open(override, "r", encoding="utf-8") as f:
+            stripped = _strip_trailing_commas(_strip_json_comments(f.read()))
+        return json.loads(stripped)
+
     config: Dict[str, Any] = {}
     config_dir = os.path.join(project_root, "config")
     for name in ("config.json", "config.local.json"):

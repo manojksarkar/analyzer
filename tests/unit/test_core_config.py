@@ -1,4 +1,5 @@
 """Unit tests for src/core/config.py — load_llm_config and format_llm_config_banner."""
+import json
 import os
 import sys
 import pytest
@@ -8,7 +9,7 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
-from core.config import load_llm_config, LlmConfigError, format_llm_config_banner
+from core.config import load_config, load_llm_config, LlmConfigError, format_llm_config_banner
 
 
 def _cfg(**overrides):
@@ -66,6 +67,42 @@ class TestLoadLlmConfig:
     def test_missing_llm_block_raises(self):
         with pytest.raises(LlmConfigError, match="'llm' block"):
             load_llm_config({"other": "stuff"})
+
+
+class TestLoadConfigAnalyzerConfigOverride:
+    """`ANALYZER_CONFIG` env var injects a per-project/per-version config (M1.1)."""
+
+    def test_no_override_reads_default_config(self, monkeypatch):
+        monkeypatch.delenv("ANALYZER_CONFIG", raising=False)
+        cfg = load_config(PROJECT_ROOT)
+        assert "__injected__" not in cfg  # the marker only exists in an override
+
+    def test_override_is_honored(self, monkeypatch, tmp_path):
+        ovr = tmp_path / "override.json"
+        ovr.write_text(json.dumps({"__injected__": True,
+                                   "layers": {"ZLayer": {"path": "ZL", "groups": {}}}}))
+        monkeypatch.setenv("ANALYZER_CONFIG", str(ovr))
+        cfg = load_config(PROJECT_ROOT)
+        assert cfg.get("__injected__") is True
+        assert list(cfg["layers"].keys()) == ["ZLayer"]
+
+    def test_override_supports_jsonc(self, monkeypatch, tmp_path):
+        ovr = tmp_path / "override.jsonc"
+        ovr.write_text('{\n  // a comment\n  "__injected__": true,\n}\n')  # comment + trailing comma
+        monkeypatch.setenv("ANALYZER_CONFIG", str(ovr))
+        assert load_config(PROJECT_ROOT).get("__injected__") is True
+
+    def test_override_does_not_merge_config_local(self, monkeypatch, tmp_path):
+        # An injected config is used as-is; config.local.json must not bleed in.
+        ovr = tmp_path / "override.json"
+        ovr.write_text(json.dumps({"only": "this"}))
+        monkeypatch.setenv("ANALYZER_CONFIG", str(ovr))
+        assert load_config(PROJECT_ROOT) == {"only": "this"}
+
+    def test_missing_override_file_fails_loud(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ANALYZER_CONFIG", str(tmp_path / "nope.json"))
+        with pytest.raises(FileNotFoundError, match="ANALYZER_CONFIG"):
+            load_config(PROJECT_ROOT)
 
 
 class TestFormatLlmConfigBanner:

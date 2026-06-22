@@ -16,6 +16,8 @@ from core.config import (
     clang_config as _clang_config,
     default_clang_macro_defs,
 )
+from incremental.hashing import hash_cursor, hash_macro_text
+from incremental.edges import build_edges
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -284,6 +286,18 @@ index = cindex.Index.create()
 functions = {}
 globals_data = {}
 data_dictionary = {}
+# Incremental (M1.2): entityKey -> token-sha256, for all four entity kinds.
+# Function/global keys are filled in build_metadata (need the model key); type and
+# macro keys are filled directly in their passes. Written to model/hashes.json.
+entity_hashes = {}
+# Incremental (M1.2b): slim type/macro usage index, written to model/edges.json.
+# Collected by func_key (internal) during visit_usage; remapped to model fids in main().
+type_users = defaultdict(set)      # type qn        -> set(func_key) that reference it
+function_tokens = {}               # func_key       -> set(identifier token spellings) for macro matching
+_type_keys = set()                 # project type qns that have a hash (filter target)
+_macro_keys = set()                # macro keys "name@relFile" (filled in _scan_defines)
+_func_key_to_fid = {}              # internal func_key -> model fid (filled in build_metadata)
+_visited_usage_keys = set()        # dedup for visit_usage across header includes
 call_graph = defaultdict(list)  # caller -> [callees]
 reverse_call_graph = defaultdict(list)  # callee -> [callers]
 component_functions = defaultdict(list)
@@ -502,6 +516,10 @@ def visit_type_definitions(cursor):
             if cmt:
                 struct_entry["comment"] = cmt
             data_dictionary[qn] = struct_entry
+            # Incremental (M1.2): type hash keyed by qn; a definition wins over a forward decl.
+            if cursor.is_definition() or qn not in entity_hashes:
+                entity_hashes[qn] = hash_cursor(cursor, comment=struct_entry.get("comment", ""))
+            _type_keys.add(qn)  # M1.2b: known project type (edges.json filter target)
             # Also add typedef entry when this struct participates in a 'typedef struct { ... } Name;' pattern.
             if cursor.kind == cindex.CursorKind.STRUCT_DECL and cursor.spelling:
                 _maybe_add_typedef_for_struct(name, qn, loc, rel_file)
@@ -535,6 +553,10 @@ def visit_type_definitions(cursor):
         if cmt:
             enum_dict["comment"] = cmt
         data_dictionary[qn] = enum_dict
+        # Incremental (M1.2): enum hash keyed by qn; a definition wins over a forward decl.
+        if cursor.is_definition() or qn not in entity_hashes:
+            entity_hashes[qn] = hash_cursor(cursor, comment=enum_dict.get("comment", ""))
+        _type_keys.add(qn)  # M1.2b
 
     elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
         if cursor.spelling:
@@ -557,6 +579,10 @@ def visit_type_definitions(cursor):
             if cmt:
                 typedef_dict["comment"] = cmt
             data_dictionary[key] = typedef_dict
+            # Incremental (M1.2): typedef hash keyed by qn; don't clobber a struct/enum
+            # definition's hash that already owns this qn (e.g. typedef of a named enum).
+            entity_hashes.setdefault(qn, hash_cursor(cursor, comment=typedef_dict.get("comment", "")))
+            _type_keys.add(qn)  # M1.2b
 
     for child in cursor.get_children():
         visit_type_definitions(child)
@@ -736,6 +762,8 @@ def visit_definitions(cursor):
             "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
             "description": _preceding_comment(cursor),
         }
+        # Incremental (M1.2): token hash of the body + doc comment, for output reuse.
+        entry["_sourceHash"] = hash_cursor(cursor, comment=entry["description"])
         if cursor.is_definition():
             functions[fk] = entry
             if fk not in function_to_component:
@@ -781,6 +809,7 @@ def visit_definitions(cursor):
                 "endLine": end_line,
                 "syntheticFromVarDecl": True,
                 "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
+                "_sourceHash": hash_cursor(cursor),
             }
             component_functions[component_name].append(fk)
             function_to_component[fk] = component_name
@@ -794,6 +823,7 @@ def visit_definitions(cursor):
                 "componentName": get_component_name(cursor.location.file.name),
                 "type": cursor.type.spelling if cursor.type else "",
                 "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
+                "_sourceHash": hash_cursor(cursor),
             }
             if value_str:
                 globals_data[var_id]["value"] = value_str
@@ -944,6 +974,79 @@ def visit_calls(cursor, current_key=None):
         visit_calls(child, current_key)
 
 
+def _project_type_qn(t):
+    """Given a clang Type, return the qualified name of the underlying *project*
+    type declaration (struct/class/enum/typedef), stripping pointer/reference/array
+    layers; or None if it isn't a named project type. Used to build typeUsers."""
+    if t is None:
+        return None
+    try:
+        for _ in range(10):  # peel pointer/ref/array layers to reach the named type
+            k = t.kind
+            if k == cindex.TypeKind.POINTER:
+                t = t.get_pointee()
+            elif k in (cindex.TypeKind.LVALUEREFERENCE, cindex.TypeKind.RVALUEREFERENCE):
+                t = t.get_pointee()
+            elif k in (cindex.TypeKind.CONSTANTARRAY, cindex.TypeKind.INCOMPLETEARRAY,
+                       cindex.TypeKind.VARIABLEARRAY, cindex.TypeKind.DEPENDENTSIZEDARRAY):
+                t = t.get_array_element_type()
+            else:
+                break
+        decl = t.get_declaration()
+        if decl and decl.kind in (cindex.CursorKind.STRUCT_DECL, cindex.CursorKind.CLASS_DECL,
+                                  cindex.CursorKind.ENUM_DECL, cindex.CursorKind.TYPEDEF_DECL):
+            if decl.location.file and is_project_file(decl.location.file.name):
+                return get_qualified_name(decl)
+    except Exception:
+        return None
+    return None
+
+
+def _record_type_use(t, func_key):
+    qn = _project_type_qn(t)
+    if qn:
+        type_users[qn].add(func_key)
+
+
+def visit_usage(cursor, current_key=None):
+    """Collect per-function TYPE usage (AST) + identifier tokens (for MACRO usage).
+    Mirrors visit_calls: threads current_key for the enclosing function so usage is
+    attributed to it. Macro matching is done later (in main) once #defines are known."""
+    k = cursor.kind
+    if k in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD):
+        if cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
+            fkey = get_function_key(cursor)
+            if fkey in _visited_usage_keys:
+                for child in cursor.get_children():
+                    visit_usage(child, current_key)
+                return
+            _visited_usage_keys.add(fkey)
+            current_key = fkey
+            # Signature types (return + parameters).
+            _record_type_use(cursor.result_type, current_key)
+            try:
+                for arg in cursor.get_arguments():
+                    _record_type_use(arg.type, current_key)
+            except Exception:
+                pass
+            # Identifier tokens over the function extent, for later macro-name matching.
+            try:
+                function_tokens[fkey] = {
+                    t.spelling for t in cursor.get_tokens()
+                    if t.kind == cindex.TokenKind.IDENTIFIER
+                }
+            except Exception:
+                function_tokens[fkey] = set()
+    elif current_key:
+        if k == cindex.CursorKind.TYPE_REF:
+            _record_type_use(cursor.type, current_key)
+        elif k == cindex.CursorKind.VAR_DECL:
+            _record_type_use(cursor.type, current_key)
+
+    for child in cursor.get_children():
+        visit_usage(child, current_key)
+
+
 def parse_file(path):
     try:
         tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
@@ -951,6 +1054,7 @@ def parse_file(path):
             print(d)
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
+        visit_usage(tu.cursor)  # incremental (M1.2b): type/macro usage on the same TU
     except cindex.TranslationUnitLoadError as e:
         print(f"Failed: {path}: {e}")
 
@@ -988,6 +1092,8 @@ def build_metadata():
             rel_file = file_path.replace("\\", "/")
         fid = make_function_key(f["componentName"], rel_file, f["qualifiedName"], f["parameters"])
         func_key_to_fid[func_key] = fid
+        _func_key_to_fid[func_key] = fid  # incremental (M1.2b): for edges.json remap
+        entity_hashes[fid] = f.get("_sourceHash", "")  # incremental (M1.2)
         functions_dict[fid] = {
             "qualifiedName": f["qualifiedName"],
             "location": {
@@ -1019,6 +1125,7 @@ def build_metadata():
             rel_file = file_path.replace("\\", "/")
         vid = make_global_key(rel_file, g["qualifiedName"])
         var_id_to_vid[var_id] = vid
+        entity_hashes[vid] = g.get("_sourceHash", "")  # incremental (M1.2)
         g_entry = {
             "qualifiedName": g["qualifiedName"],
             "location": {"file": rel_file, "line": int(var_id.rsplit(":", 1)[1])},
@@ -1143,6 +1250,11 @@ def _scan_defines():
                 "text": full,
                 "location": {"file": rel_file, "line": line_no},
             }
+            # Incremental (M1.2): macro hash keyed by the line-stable `name@relFile`
+            # (matches edges.json macroUsers; avoids false "changed" when a macro
+            # shifts lines). Last definition of a name in a file wins.
+            entity_hashes[f"{name}@{rel_file}"] = hash_macro_text(full)
+            _macro_keys.add(f"{name}@{rel_file}")  # M1.2b: known macro (edges.json)
 
 
 def _merge_external_data_dictionary(path: str) -> None:
@@ -1280,7 +1392,7 @@ def main():
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
     }
-    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY
+    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES, EDGES
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -1293,6 +1405,16 @@ def main():
     if _data_dict_path:
         _merge_external_data_dictionary(_data_dict_path)
     write_model_file(DATA_DICTIONARY, data_dictionary)
+
+    # Incremental (M1.2): entity hash snapshot for change detection.
+    # Functions/globals were keyed in build_metadata; types/macros above.
+    write_model_file(HASHES, entity_hashes)
+
+    # Incremental (M1.2b): slim type/macro usage index -> model/edges.json.
+    # Reverse maps {typeKey/macroKey -> [model fids that use it]}. Calls/globals are
+    # NOT here (they live in functions.json); M2's impact BFS reads those from there.
+    edges = build_edges(type_users, function_tokens, _type_keys, _macro_keys, _func_key_to_fid)
+    write_model_file(EDGES, edges)
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
@@ -1307,6 +1429,8 @@ def main():
     plural = lambda k: "classes" if k == "class" else k + "s"
     parts = [f"{v} {plural(k)}" for k, v in sorted(kinds.items())]
     print(f"  model/dataDictionary.json ({n_types} types: {', '.join(parts)})")
+    print(f"  model/hashes.json ({len(entity_hashes)} entities)")
+    print(f"  model/edges.json ({len(edges['typeUsers'])} types used, {len(edges['macroUsers'])} macros used)")
 
 
 if __name__ == "__main__":

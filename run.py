@@ -5,10 +5,18 @@ Options:
   --clean              Delete output/ and model/ before running
   --selected-group <name>
                        Export only the named modulesGroup
+  --config <path>      Use this config file instead of config/config.json
+                       (a per-project/per-version config carrying the project's
+                       `layers`). Exported as ANALYZER_CONFIG so every phase
+                       subprocess honors it. config.local.json is NOT merged on
+                       top — the injected config is used as-is.
   --use-model          Skip Phase 1/2 and reuse existing model/ files
   --skip-model         Alias of --use-model
   --no-llm-summarize   Skip LLM phase/hierarchy summarization (faster, lower quality)
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
+  --to-phase N         Stop after phase N (1-4). Lets the incremental engine run
+                       parse+derive only (--to-phase 2), compute impact, then
+                       resume views+export (--from-phase 3).
   --data-dictionary <path>
                        CSV file to merge into model/dataDictionary.json (overrides
                        auto-parsed entries). See config/data_dictionary.csv for format.
@@ -72,6 +80,23 @@ if _trace_prompts_flag:
     os.environ.setdefault("LLM_TRACE_PROMPTS", "1")
 _log_path = configure_logging(project_root=SCRIPT_DIR, quiet=_quiet_flag, verbose=_verbose_flag)
 
+# --config <path>: inject a per-project/per-version config (carries the project's
+# `layers`). Resolve + validate and export ANALYZER_CONFIG *before* importing
+# utils, which loads config at import time — so this process AND every phase
+# subprocess (env inherited) honor the override. core.config.load_config reads
+# ANALYZER_CONFIG. The flag is also consumed in the main argv loop below.
+if "--config" in sys.argv:
+    _ci = sys.argv.index("--config")
+    _cv = sys.argv[_ci + 1] if _ci + 1 < len(sys.argv) else None
+    if not _cv:
+        sys.stderr.write("--config requires a file path\n")
+        sys.exit(1)
+    _cfg_abs = _cv if os.path.isabs(_cv) else os.path.join(SCRIPT_DIR, _cv)
+    if not os.path.isfile(_cfg_abs):
+        sys.stderr.write(f"--config file not found: {_cfg_abs}\n")
+        sys.exit(1)
+    os.environ["ANALYZER_CONFIG"] = _cfg_abs
+
 from utils import log, load_config
 from core import PhaseRunner, plan_runs
 from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, COMPONENTS
@@ -84,6 +109,7 @@ clean_all               = False
 use_model               = False
 no_llm_summarize        = False
 from_phase              = 1
+to_phase                = None   # stop after this phase (1-4); None = run through phase 4
 selected_group_arg      = None
 selected_layer_arg      = None
 selected_components_arg = []
@@ -103,6 +129,12 @@ while i < len(sys.argv):
         clean_all = True
     elif a in ("--quiet", "--verbose", "--trace-prompts"):
         pass  # consumed at top of file (configure_logging / env vars)
+    elif a == "--config":
+        # Value already resolved + applied to ANALYZER_CONFIG above; just consume it.
+        i += 1
+        if i >= len(sys.argv):
+            log("--config requires a file path", component="run", err=True)
+            sys.exit(1)
     elif a in ("--use-model", "--skip-model"):
         use_model = True
     elif a == "--no-llm-summarize":
@@ -172,6 +204,18 @@ while i < len(sys.argv):
         except ValueError:
             log(f"--from-phase must be 1, 2, 3, or 4 (got: {sys.argv[i]})", component="run", err=True)
             sys.exit(1)
+    elif a == "--to-phase":
+        i += 1
+        if i >= len(sys.argv):
+            log("--to-phase requires an integer argument (1-4)", component="run", err=True)
+            sys.exit(1)
+        try:
+            to_phase = int(sys.argv[i])
+            if to_phase < 1 or to_phase > 4:
+                raise ValueError
+        except ValueError:
+            log(f"--to-phase must be 1, 2, 3, or 4 (got: {sys.argv[i]})", component="run", err=True)
+            sys.exit(1)
     else:
         raw_args.append(a)
     i += 1
@@ -234,6 +278,8 @@ if use_model:
 # ---------------------------------------------------------------------------
 # Plan and run
 # ---------------------------------------------------------------------------
+if os.environ.get("ANALYZER_CONFIG"):
+    log(f"Using injected config (--config): {os.environ['ANALYZER_CONFIG']}", component="run")
 cfg = load_config(SCRIPT_DIR)
 if not (cfg.get("llm") or {}).get("summarize", True):
     no_llm_summarize = True
@@ -369,6 +415,23 @@ try:
 except ValueError as e:
     log(str(e), component="run", err=True)
     sys.exit(2)
+
+# --to-phase N: stop after global phase N. Drop phases mapped above N from every
+# plan (and any plan left empty). Lets the incremental engine Phase-split (run
+# parse+derive, compute impact, then resume views+export). Additive: when
+# to_phase is None, plans are untouched.
+if to_phase is not None:
+    from core.group_planner import RunPlan as _RunPlan
+    _SCRIPT_PHASE = {"parser.py": 1, "model_deriver.py": 2, "run_views.py": 3, "docx_exporter.py": 4}
+    _filtered = []
+    for _plan in plans:
+        _kept = [ph for ph in _plan.phases
+                 if _SCRIPT_PHASE.get(os.path.basename(ph.script), 99) <= to_phase]
+        if _kept and _plan.runner_from_phase <= len(_kept):
+            _filtered.append(_RunPlan(label=_plan.label, phases=_kept,
+                                      runner_from_phase=_plan.runner_from_phase))
+    plans = _filtered
+    log(f"--to-phase {to_phase}: running {len(plans)} plan(s) up to phase {to_phase}.", component="run")
 
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0

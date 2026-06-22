@@ -1,6 +1,8 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
+> Updated: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete; M3.1 (precise flowchart reuse) + M3.2 (function-summary reuse) + M3.3 (full Phase-2 enrichment reuse — behaviour-names/descriptions/globals restricted to the impact set; file/component summary gating; PNG reuse; + documents-capture bug fix) done**. The LLM-on payoff is now real (behaviour-names were the hidden 417s cost — config has descriptions+behaviourNames on). Re-test LLM-on **with a real diff** (baseline at an earlier commit than the target). **M3.4 end-of-run report done** (`src/incremental/report.py`: logged to `logs/run_<date>.log` + saved to `versions/<id>/report.txt`; inputs + change classification + reuse accounting %). Remaining M3: version-scoped reads (`?versionId=`), git_ops/git_service consolidation. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
+> Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
 > Previous update: 2026-06-16 (`--project-name <name>` CLI flag — overrides the project name written into `model/metadata.json` as `projectName`; default remains `os.path.basename(project_path)`; parsed in `parser.py` and forwarded via `group_planner._build_model_phases`; propagates automatically to `model_deriver` (reads `projectName` from metadata), flowchart engine, and LLM prompts; `ui/app.py` derives display name from path directly and is unaffected; see §5).
 > Previous update: 2026-06-15 (fix: DOCX component display names — `component_name` (normalized identifier, spaces→`-`) was being used as visible text in section headings and the Component/Unit table; introduced `component_display = component_name.replace("-", " ")` in the `export_docx` loop and passed it to `_add_component_unit_table` and `_build_component_container_mermaid`; all key lookups and filenames keep using `component_name`; see §12).
@@ -11,7 +13,7 @@
 > Previous update: 2026-06-11 (feat/auto-clang-includes branch: `--selected-component` flag added — repeatable, accumulates a list; all components must be in the same layer; output to `output/<C1_C2>/`; new `get_component_layer_name` in `core.config`; `group_planner` has a fifth dispatch shape; `run_views` and `docx_exporter` both handle the new flag; see §5).
 > Previous update: 2026-06-09 (feat/auto-clang-includes branch: Phase 1 parsing scoped to selected layer — `--selected-group` passes itself to `parser.py` which derives the layer via `get_group_layer_name`; new `--selected-layer` flag parses one layer and generates DOCX for all its groups; both flags together are an error; `clang_include_paths.json` also scoped to the selected layer; new `get_group_layer_name` / `get_layer_flat_groups` helpers in `core.config`; see §4e, §5, §7).
 > Previous update: 2026-06-09 (feat/from-main branch: `module` → `component` rename throughout source + model + config; `modulesGroups` → `layers` two-level config schema; same-layer model filtering in Phase 3 + Phase 4; `SampleCppProject` restructured with Layer1 + Layer2/Platform; `model/modules.json` → `model/components.json`; new `get_flat_groups` / `get_layer_components` helpers in `core.config`; `--trace-prompts` + `--filter-mode` CLI flags; `model/clang_include_paths.json` written by `run.py` before any phase; see §5, §6, §7, §9, §10, §11, §12, §15).
-> Current active branch: `feat/auto-clang-includes`.
+> Current active branch: `version4` (integration base off `main`: main code + version3 backend + production-redesign docs).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
@@ -22,6 +24,8 @@
 > - §4d covers the feat/from-main changes (component rename, layers config, same-layer filtering, SampleCppProject restructure).
 > - §4e covers the feat/auto-clang-includes changes (layer-scoped Phase 1 parsing, `--selected-layer` flag).
 > - §4f covers component-level DOCX export (`--selected-component`, `--component-per-docx`) and space normalization in identifiers.
+> - §21 orients you to the FastAPI backend (`backend/`; detail in backend/PROJECT_CONTEXT.md).
+> - §22 orients you to the Production Redesign (POC→production design; docs in docs/production-redesign/).
 > - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
@@ -530,6 +534,7 @@ python run.py [options] <project_path>
 | Flag | Effect |
 |---|---|
 | `--clean` | Delete `model/` and `output/` before starting |
+| `--config <path>` | Use this config file instead of `config/config.json` — a per-project/per-version config (carries the project's `layers`). Resolved+validated, then exported as `ANALYZER_CONFIG` **before** the import-time config load in `utils`, so every phase subprocess (env inherited) honors it. `config.local.json` is **not** merged on top (used as-is, for reproducibility); a set-but-missing path fails loud. Foundation for incremental per-project runs (§23, M1.1). |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
@@ -756,7 +761,9 @@ in `src/utils.py` or one of the phase scripts.
 ### `core.config` — [src/core/config.py](src/core/config.py)
 
 - `_strip_json_comments` / `_strip_trailing_commas` — JSONC parser.
-- `load_config(project_root)` — merges `config/config.json` + `config.local.json`.
+- `load_config(project_root)` — merges `config/config.json` + `config.local.json`. **If `ANALYZER_CONFIG`
+  env points to a file, that file is loaded instead, as-is (JSONC), with no local merge** — the per-project
+  config-injection seam (§23, M1.1); set-but-missing fails loud.
 - `load_llm_config(cfg)` — env-var overlay + normalised `llm` block (see §6).
 - `app_config(*, refresh=False)` — process-cached merged dict.
 - Typed accessors: `llm_config()`, `views_config()`, `exporter_config()`,
@@ -2406,3 +2413,549 @@ If anything in steps 5–16 fails with a non-zero exit code, the runner logs
 `<phase> failed with exit code N; resume with: --from-phase <idx>`. The user
 can fix the underlying issue and rerun with that flag, skipping straight to
 the failed step.
+
+---
+
+## 21. Companion: the FastAPI backend (`backend/`)
+
+> **Integration status (version4):** the `backend/` layer and the
+> `docs/production-redesign/` design docs were brought onto this branch from
+> `version3`, on top of the newer `main` code line. The backend was written
+> against the **older `modulesGroups` / `module` schema** and the
+> `model/modules.json` filename. This `main`-based code line instead uses the
+> **`layers` config + `component` terminology + `model/components.json`** (see
+> §4d, §6) and adds CLI flags (`--selected-layer`, `--selected-component`,
+> `--data-dictionary`, `--macros`, `--include-path`, `--project-name`).
+> **Adapting the backend to that schema and flag set is an open follow-up**
+> before it runs correctly against this analyzer. The description below is the
+> backend *as built on version3*.
+
+Starting in version3, the analyzer pipeline is also reachable over HTTP
+through a small FastAPI service that the external UI talks to. This
+section is intentionally short — it orients you to the layer; the
+authoritative reference is **[backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md)**
+(~930 lines covering all endpoints, request/response shapes, design
+decisions, and the development history).
+
+### What the backend is, and isn't
+
+- **What it is**: a thin async wrapper around `run.py`. It spawns the
+  analyzer as a subprocess (`_spawn_run_py`), tails its stdout+stderr
+  to per-job log files, parses `[N/M] === Phase X: ... ===` markers
+  for progress, and exposes the model artifacts that the analyzer
+  already produces (functions, components, flowcharts, the exported
+  DOCX).
+- **What it isn't**: a re-implementation of the pipeline. The backend
+  never imports analyzer internals — it only reads JSON the analyzer
+  writes and shells out to `python run.py`. The pipeline contract
+  documented in §3, §10–§14 is the single source of truth.
+
+### Process model
+
+- FastAPI on `:8000`, CORS pinned to `http://localhost:5173` (the Vite
+  dev server the UI runs on).
+- Jobs live in an in-memory `_jobs: dict[str, JobState]` — **no
+  persistence by design**. Restarting the backend forgets in-flight
+  jobs, but already-exported DOCX files on disk remain downloadable
+  via `GET /jobs/{jobId}/download` (the endpoint resolves by reading
+  `output/*.docx` directly).
+- Each spawned subprocess writes to
+  `logs/job_<job_id>.out.log` (interleaved stdout+stderr). The
+  `GET /jobs/{jobId}/preplogs` endpoint tails this file rather than
+  buffering in process memory.
+- Process tree kill uses `taskkill /F /T` on Windows and `killpg(SIGKILL)`
+  on POSIX so cancelling a job actually stops the whole subprocess tree
+  (parser/model_deriver/run_views/docx_exporter can spawn children).
+
+### Progress: canonical 4-phase mapping
+
+The pipeline has variable plan counts (build-only vs build+views vs
+views-only, multi-group runs) and inside-plan phase counts (some plans
+have 2 phases, others 4). To give the UI a stable progress bar:
+
+- A **canonical 4-phase** taxonomy is exposed regardless of the
+  actual plan shape: Parse C++ source → Derive model → Generate
+  views → Export to DOCX.
+- `_PHASE_NAME_TO_NUMBER` maps phase labels (case-folded) to
+  `phaseNumber` 1..4.
+- `_CANONICAL_TOTAL = 4` is always returned as `totalPhase` (even when
+  the actual plan has only 2 phases — `totalPhase` is canonical, not
+  literal).
+- `_expected_phase_markers(selected_group, from_phase)` predicts the
+  total number of `=== Phase ... ===` markers the run will emit, used
+  to compute `overallProgress` monotonically. This was the fix for the
+  "75% → 25% → 100%" regression: previously `overallProgress` was
+  computed from "markers seen / markers in current plan", which jumped
+  backwards across plan boundaries.
+- The `phase` field strips a leading `Phase N: ` prefix
+  (`_PHASE_LABEL_PREFIX_RE`) — the UI wants the bare phase name.
+
+### Config editing: surgical JSONC splice
+
+`POST /api/v1/config` updates only the `modulesGroups` key inside
+`config/config.json` while preserving every comment and every other
+key in the file. The implementation (`_find_modules_groups_key_pos`)
+is a small JSONC-aware state machine that tracks strings, line
+comments, block comments, and brace nesting depth — a regex or a
+`json.loads` + `json.dumps` round-trip would either miss commented
+duplicates or strip every `//` and `/* */` comment from the file.
+Earlier attempts to do this with `json.loads` deleted ~80% of the
+config; the surgical splice is the only safe path. Backup files are
+**not** written (the user explicitly opted out — git is the backup).
+
+> **Schema note (version4):** on this `main`-based code line the config key
+> is **`layers`** (two-level), not `modulesGroups`, and the model file is
+> `model/components.json`, not `modules.json`. The splice target and the
+> component/module-keyed read paths must be updated when the backend is
+> adapted (see the Integration status note above).
+
+### Multi-repository CRUD
+
+`backend/repository_config.json` is a list of `{name, path}` entries
+(see `backend/models.py:Repository`). Endpoints that previously took
+just a path now accept `?name=<repo>` query parameters; the backend
+resolves the name to a directory via `_resolve_repository_path` and
+auto-migrates legacy single-repo `{path: "..."}` files to
+`[{name: "default", path: "..."}]` on first read.
+
+### Where to read more
+
+The full endpoint catalog (17 endpoints), request/response examples,
+and the lessons-learned section (12 entries: venv mismatches, the
+config splice 80% bug, progress monotonicity, hiddenFns evolution,
+PNG slicing, ELK feedbackEdges, lossy-rewrite reversal, Windows
+shell=True quirks, etc.) is in
+[backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md). API examples
+with curl payloads are in [backend/API_DOC.md](backend/API_DOC.md). A
+sample response fixture lives at
+[backend/fixtures/get_components_FTL.json](backend/fixtures/get_components_FTL.json).
+
+---
+
+## 22. Production Redesign (POC → Production) — design decisions
+
+> This section captures the forward-looking **production platform** design work done in the
+> 2026-06 design sessions. Everything in §1–§21 is the **POC**; this is the plan to productionize it.
+> **Full detail lives in three design docs under `docs/production-redesign/` (brought onto `version4`).
+> Read those for depth — this section is the orientation + the decisions, so a fresh session can
+> pick up without re-deriving them.** Where this section references analyzer specifics it uses this
+> code line's `layers`/`component` terminology (§4d).
+
+### 22.1 Design documents (read these for full detail)
+
+- **`docs/production-redesign/01-technology-selection-study.md`** (v1.2) — overall production stack + deployment.
+- **`docs/production-redesign/02-database-design-study.md`** — DB selection (PostgreSQL), POC-grounded, with storage estimation.
+- **`docs/production-redesign/03-incremental-changes-design.md`** (**v1.2** — §12 records the chosen path: **Approach 2**, git-diff narrowed parse) — the incremental / delta regeneration feature.
+
+### 22.2 The vision
+
+A **multi-tenant, on-premise production platform**: users register a C++ project (a path or, going
+forward, a **git/Bitbucket URL → clone**), the platform runs the analyzer and produces the ASPICE
+SWE.3 document, browsable/downloadable in a UI. Must be **scalable, reliable, durable, consistent**.
+
+### 22.3 Hard constraints (these drive every decision)
+
+- **On-prem only** — C++ firmware IP must not leave the corporate network → **no cloud services**.
+- **Open-source only (OSI-approved)** → rules out *source-available* licenses: **SSPL** (MongoDB),
+  **CSL** (CockroachDB, since 2024), **BSL** (ArangoDB/Memgraph), and **MinIO/Redis** post-relicense.
+- **Firmware-scale** — up to ~50k functions/project (~20k typical), ~40 tenants/project
+  (tenants **share** the codebase, so they do *not* multiply data), 10+ branches/project.
+- **Rewrite the analyzer to read/write the DB directly** (no more `model/`+`output/` JSON files) —
+  this also removes the local-disk phase handoff, which is what enables **distributed workers**.
+
+### 22.4 Selected stack (key decisions)
+
+- **Database: PostgreSQL 16+** (single-primary + HA via **CloudNativePG/CNPG**) with **pgvector**.
+  The **system of record** (replaces the JSON files).
+  - *Why Postgres:* one engine covers **relational + JSONB (document) + recursive CTEs
+    (graph/impact analysis) + pgvector (similarity)**; ACID; OSI open-source; on-prem; won't rug-pull;
+    modest structured scale **fits one node**.
+  - **NOT a distributed DB** (Citus/Cockroach/Yugabyte) — structured data fits one node; we scale the
+    **stateless worker tier**, not the DB.
+- **Job queue:** Postgres-as-queue (`SELECT … FOR UPDATE SKIP LOCKED`) — **not** RabbitMQ/Kafka/Redis
+  (extra stateful system for throughput we don't need; long, few jobs).
+- **Graph / impact analysis:** Postgres **recursive CTE / materialized closure table** (not a graph DB;
+  **Apache AGE** is the in-Postgres graduation path, then NebulaGraph).
+- **Object storage: DEFERRED to a future phase.** History worth knowing: chose MinIO → discovered
+  **MinIO Community Edition was archived ("no longer maintained") in Feb 2026** → switched to
+  **SeaweedFS** (Apache-2.0) → then **deferred object storage entirely for now**. v1: keep **latest
+  document per branch** in the DB; **flowchart images generated on demand, not stored**; **Mermaid
+  scripts kept in the DB** (text).
+- **Deployment:** containers on **Kubernetes**, **3-node cluster** (quorum = 2, survives **1** node
+  failure; 5 nodes survive 2). **Stateless tier** (API + workers) vs **stateful quorum-bound data
+  core** (Postgres + etcd [+ object store later]). **Local SSD (NVMe-ready)** via TopoLVM/OpenEBS
+  LocalPV; redundancy = **app-level replication** (CNPG), not a storage layer. No existing
+  CSI/distributed storage. Worker VMs are **not** quorum members → scale them freely.
+- **LLM:** internal **corporate gateway** (OpenAI-compatible, off-cluster) → **no GPU nodes** in-cluster.
+- **Auth:** **in-app auth + RBAC on PostgreSQL** (simple roles now); **Keycloak + corporate SSO** is the
+  graduation path. Tenant isolation via `tenant_id` + optional Postgres **Row-Level Security (RLS)**.
+
+### 22.5 Rejected DB options (for the record)
+
+- **MongoDB** — SSPL (not OSI); weak graph/relational; on-prem vector is Atlas-only.
+- **CockroachDB** — CSL (not OSI since 2024); distributed-scale we don't need.
+- **Citus / YugabyteDB** — solve a write-scale problem we don't have; AGPL (Citus); less-mature pgvector.
+- **MySQL / MariaDB** — weaker JSONB; immature vector ecosystem vs pgvector.
+- **SQLite** — single-writer; no multi-tenant concurrency.
+- **Neo4j / dedicated graph DB** — GPLv3 Community has no open-source clustering; our graph need is
+  bounded transitive closure that Postgres handles.
+- **Qdrant / Milvus as the primary store** — augment, not replace; pgvector covers current scale
+  (kept as a graduation path).
+
+### 22.6 Incremental (delta) regeneration feature — design summary
+
+Goal: **hours → minutes** for small changes (skip the rate-limited LLM work for unchanged functions).
+"Incremental build for documents" (the make/ccache/Bazel principle).
+
+- **Change detection — two layers:**
+  - **`git diff --name-only`** for *which files* changed (fast, reliable — **not** its scattered hunk
+    output).
+  - **Entity hashing** for *which entities* changed: hash **four entity types — functions, globals,
+    macros, types**. **Token-based** (libclang; ignores whitespace/indentation/CRLF, **includes
+    comments**), **full SHA-256** (32 bytes, never truncated), one **uniform** hash per entity's source
+    extent, **keyed by identity including the defining file/location** (so same-named macros/types in
+    different files are distinct).
+  - **One hash per entity** now; **per-artifact hashing is deferred**.
+  - Classification: unchanged / changed / new / deleted; **move/rename = delete(old key) + add(new key)**.
+  - *Why hash globals/macros/types separately:* changing a global/macro/type does **not** change a
+    *using* function's tokens (a function still just writes `MAX` after `#define MAX` changes value), so
+    those entities must be hashed on their own; impact analysis then refreshes the functions that use them.
+- **Impact analysis (dependency-graph propagation):** changes flow **UP to callers/users**. Axes:
+  **call graph (transitive callers), type usage, globals, macros, containment (file/component/project
+  summaries), diagrams (call-edge changes), cross-group**. Hard cases: **indirect calls / virtual
+  dispatch → over-approximate** (treat as edges to all overrides / any address-taken function);
+  **move/rename → key change**. Algorithm: reverse-reachability BFS / recursive CTE / closure table over
+  the stored edges.
+- **Selective regeneration:** re-run the LLM only for the impact set; **reuse** stored outputs for the
+  rest. **Reassemble** the document from pieces (re-run Phase 3 views + Phase 4 export; **not** in-place
+  patching).
+- **Chosen approach & baseline (updated — see `docs/production-redesign/03` §12, v1.2):** v1 uses
+  **Approach 2** — **git-diff narrowed parse** (parse only changed files; reuse the baseline version's
+  stored model + outputs for the rest) + **stored-graph impact** + **selective regen**. The product model
+  is **a document version per code version, branch-agnostic** — each generation stores its own document +
+  metadata; reuse is **content-addressed across all generated versions**. The diff baseline is the
+  **nearest generated ancestor** (via `git merge-base`), with **Approach 1's full parse as the fallback**
+  for first-generation / no-ancestor / diverged history.
+- **Versioning:** a document version per generation; **full Git-style cross-version dedup is deferred**.
+- **Tech additions (no new DB or system):** the **`git` CLI** in the worker image + **repo credentials**
+  (SSH deploy key or HTTP access token, from a deployment-appropriate secrets store — K8s Secrets / Vault
+  / env injection; the project owner supplies it at registration, stored encrypted). Operator-side recipe
+  changes (LLM model/prompts/config) → a manual full-regen, separate from the user's code-diff path.
+
+### 22.7 Storage estimation (DB structured data only; excludes images/docs)
+
+- **~250 MB / branch** (20k functions + 3k entities), dominated by **embeddings (~120 MB) + Mermaid
+  (~60 MB)**.
+- **~2.5 GB / project** (×10 branches; v1 stores per-branch, no cross-branch dedup).
+- Platform: ~25 GB (10 projects) → **~500 GB logical / ~1.5 TB physical at 200 projects** → a
+  **single primary + replicas** comfortably suffices.
+- Cross-branch dedup (deferred) would shrink ~2.5 GB → **~0.5 GB + small deltas**.
+
+### 22.8 Explicitly deferred to later phases
+
+- **Object storage** (images, documents at scale).
+- **Per-artifact hashing** (finer-grained reuse — e.g. a comment-only change reusing the flowchart).
+- **Image-render cache** (skip re-rendering unchanged flowcharts — tied to object storage).
+- **Full version history** (Git-style dedup across versions/branches).
+- **Non-Functional Requirements section** for the DB study.
+
+### 22.9 What's next
+
+- **Incremental implementation (in progress on `version4`)** — Approach 2 over the current JSON-file
+  pipeline first, to migrate to Postgres later. Workstreams: git ingestion + project onboarding, per-project /
+  per-version storage, entity hashing + dependency-edge persistence, the detect→impact→regenerate→reassemble
+  engine wired into Phases 1–4, and the supporting APIs (onboard / projects / branches / commits / generate).
+- **Detailed database schema design** — tables for entities, dependency edges, `{key → hash}` records,
+  per-version baselines, RBAC, and the job queue (owned by the DB engineer).
+- (Optional) the NFR section for the DB study; the object-storage study (future phase).
+
+### 22.10 Cross-cutting lessons from this session
+
+- **MinIO Community Edition is dead** (archived Feb 2026); **SeaweedFS** (Apache-2.0) is the maintained
+  alternative *if/when* object storage is needed.
+- **Watch licensing rug-pulls:** SSPL / CSL / BSL / RSAL are *source-available, not OSI*. PostgreSQL
+  (PostgreSQL License) is the low-risk anchor; **Valkey** is the OSI-clean Redis fork.
+- **Hashing for change detection** must be **token-based** (to ignore formatting/CRLF) and **full
+  SHA-256** (collisions effectively impossible). A *token change is always a line change*, so git diff
+  never *under*-detects — it only over-detects on formatting, which is the safe direction.
+- **The whole incremental design biases to over-regenerate, never to stale** — every ambiguous case
+  (indirect/virtual calls, formatting noise, non-ancestor commits) regenerates *more*, with a manual
+  full-regen escape hatch.
+
+---
+
+## 23. version4 — Incremental Changes feature (this session, 2026-06-18)
+
+> `version4` is the **active working branch**. This section is the orientation + **decisions + status**
+> for the **incremental document regeneration** feature. Authoritative design lives in
+> **[docs/production-redesign/04-incremental-changes-implementation.md](docs/production-redesign/04-incremental-changes-implementation.md)**
+> (approach, v2.1) and **[docs/production-redesign/05-incremental-api-spec.md](docs/production-redesign/05-incremental-api-spec.md)**
+> (UI HTTP API). Read those for depth; this is the map.
+
+### 23.1 What `version4` is
+- Created off `origin/main` (`f3946bd`). `main` is the live code line: **`layers`/`component` schema** (§4d —
+  `modulesGroups`→`layers`, `module`→`component`, `modules.json`→`components.json`), plus
+  `--data-dictionary`/`--macros`/`--include-path`/`--selected-layer`/`--selected-component` CLI, a Streamlit
+  `ui/`, and the `SampleCppProject` fixture.
+- Brought over from `version3`: `backend/` and `docs/production-redesign/01..03`. This `PROJECT_CONTEXT.md`
+  = main's §1–§20 + §21 (backend) + §22 (production redesign) + this §23.
+
+### 23.2 Done this session
+1. **Backend adapted to layers/component** ([backend/main.py](backend/main.py), [backend/models.py](backend/models.py)):
+   config source `modulesGroups`→`get_flat_groups(layers)`; component-keyed `fn_id`s + `functions_<group>.json`
+   naming (`safe_filename` spaces→`-`); `_resolve_group_name` vs group names; `POST /config` splice generalized
+   to the `layers` key; `UpdateConfigRequest.layers`. Verified (25 routes import + functional probe).
+2. **Backend docs corrected** to layers/component ([backend/API_DOC.md](backend/API_DOC.md),
+   [backend/PROJECT_CONTEXT.md](backend/PROJECT_CONTEXT.md)); `backend/repository_config.json` → `SampleCppProject`.
+3. **`backend/git_service.py`** (M0 #1 — **DONE**): `clone_repo` (HTTPS user/token; token reset out of
+   `.git/config`, never logged), `fetch`, `checkout`, `current_commit`, `list_branches`, `list_commits`, and the
+   baseline primitives `is_ancestor` / `nearest_ancestor` / `merge_base` / `changed_files`. `shell=False`
+   deliberately (credential/URL safety). Verified against the repo + a local clone.
+4. **Design docs**: `04` (incremental approach, **v2.1**), `05` (UI API spec).
+
+### 23.3 Incremental — key decisions (do NOT re-derive these)
+- **Approach 2** (doc 03 §12): git-diff **narrowed parse** + stored-graph impact + selective regen; **full
+  parse is the fallback** (first version / no ancestor / `mode:"full"`).
+- **Version = one generation run** (`versionId`); records branch/commit/scope/dataDictId/baselineVersionId/
+  counts. **All versions kept.** Same commit generated twice (different scope/data-dict) = two versions.
+- **Baseline = auto nearest-ancestor** (`git merge-base --is-ancestor` over prior versions' commits; nearest by
+  `rev-list --count`); **optional user override** (`baseVersionId`) with ancestor/nearest **warnings**; none →
+  full gen. **Correctness is base-independent** — the base only affects *parse speed* (reuse is content-addressed).
+- **`edges.json` is SLIM** — only **type/macro usage**. Calls/globals come from `functions.json`
+  (`calledByIds`/`callsIds`, `reads`/`writesGlobalIds`); the **recursive/transitive closure is computed by
+  reverse-BFS**, not stored. (Don't re-store the call graph — it already exists in `functions.json`.)
+- **Reuse = `cache/index.json`**, a `{fingerprint → (versionId, entityKey)}` **POINTER index** — **NOT** a
+  duplicate blob store. Output content lives **once** in each version's `model/output`; reuse = look up the
+  fingerprint → copy from the pointed-to version. Plus **carry-forward** from the baseline version.
+- **`fingerprint`** = `sha256(source_hash + sorted(dependency source-hashes) + recipeFingerprint)`;
+  `recipeFingerprint` = LLM model + prompt version + cacheVersion (gives operator-change invalidation).
+- **Data dictionary** is per-version, replaceable; **uploaded by onboarding's separate API**; `generate` only
+  references a `dataDictId`. A data-dict-only change → cheap reassembly (interface-table ranges), **no LLM**.
+- **Onboarding is OUT of scope** (other engineer): registration, git credentials, the initial clone, the
+  project's `layers`, the data-dict upload. Incremental **consumes** `projectId` + `repo/` + `layers` +
+  data dict + `branch`+`commit`.
+- **version-id assignment**: sequential per project (`v1, v2, …`), assigned at generation start. **Collision-
+  free** because generations are **serialized per project** (single shared clone → one `git checkout` at a
+  time; a 2nd concurrent `generate` → `409`). Global key = `(projectId, versionId)`. `projectId` uniqueness is
+  onboarding's responsibility.
+- **Engine flow** (doc 04 §5 — validated 8 steps): copy baseline → new version; `git diff` changed files;
+  partial-parse + merge; classify changed/new/deleted; **impact BFS** (all axes; over-approx virtual/fn-ptr;
+  move/rename); selective regen (index-check before LLM); reassemble (Phase 3 + 4); record version.
+  **Impact analysis is the #1 correctness trap** — must regenerate dependents that live in *unchanged* files,
+  else the document goes stale.
+- **Regenerated dependents are cached too** (doc 04 §5 steps 6+8): every entity in
+  `{changed ∪ new ∪ impacted}` that is LLM-regenerated gets a **new `cache/index.json` pointer entry** (→ the
+  new version), so a future version / revert / cross-branch-identical run reuses it. Because the fingerprint
+  includes `sorted(dependency source-hashes)`, an impacted dependent correctly **misses** on this version
+  (its dep changed) and **hits** later when that dep state recurs. *Carried-forward* (unchanged & unimpacted)
+  entities get **no** new entry — their fingerprint already points at the version that first produced them.
+- **Storage interface (D9 — doc 04 §3):** all incremental-store access goes through a thin interface
+  (`src/incremental/stores.py`: `VersionStore`, `ReuseIndex`, `HashStore`, `EdgeStore`) — **JSON-file impl now,
+  Postgres impl later behind the same methods**. The §5 engine + the APIs call *only* the interface (no
+  scattered `open()`/`json.load`), so the §10 Postgres swap is one implementation, not a refactor. **Scope =
+  the incremental *metadata* stores only** (versions/hashes/edges/reuse-index/jobs); the analyzer's per-version
+  `model/`+`output/` stay file-based until the DB-native pipeline rewrite (§22.3). Git auth is **D8** (POC
+  plaintext: token injected into the URL then `origin` reset credential-free; `backend/git_service.py`).
+
+### 23.4 Storage (per project) — examples in doc 04 §4
+```
+workspaces/<projectId>/
+  project.json                 [onboarding]  name, layers, repo ref, current dataDictId
+  repo/                        [onboarding]  single clone; incremental does `checkout <commit>`
+  datadict/<dataDictId>.csv    [onboarding / separate API]
+  cache/index.json             [INCREMENTAL]  {fingerprint -> {versionId, entityKey}}  (pointer index)
+  versions/index.json          [INCREMENTAL]
+  versions/<versionId>/        manifest.json, hashes.json (full entity->source-hash snapshot),
+                               edges.json (SLIM: type/macro only), config.json, model/ output/ documents/
+```
+
+### 23.5 Implementation plan + status
+- **P0 `git_service` — ✅ done.**
+- **P1 onboarding stub fixture — ✅ done.** [backend/seed_workspace.py](backend/seed_workspace.py) seeds
+  `workspaces/<projectId>/` with the **onboarding-owned** parts only (doc 04 §4): `project.json` (name, the
+  project's `layers`, repo ref, `currentDataDictId`), `repo/` (a real **full** clone via
+  `git_service.clone_repo`, public/no-creds), and `datadict/dd-001.csv` (seeded from
+  `config/data_dictionary.csv`). Leaves `cache/`+`versions/` to the incremental engine. Default fixture =
+  `projectId=samplecpp`, repo `github.com/vishal9359/SampleCppProject` (branches `main` + `feature1/2/3`,
+  topology purpose-built for nearest/far/divergent-ancestor tests — see the repo's `README.md`). `workspaces/`
+  is gitignored (data); the seed script is tracked. Re-seed with `python backend/seed_workspace.py --force`.
+- **M1 — version-producing FULL gen + substrate** — *in progress.*
+  - **M1.1 `--config`/`ANALYZER_CONFIG` — ✅ done.** `run.py --config <path>` resolves+validates the path and
+    exports `ANALYZER_CONFIG` **before** importing `utils` (which loads config at import time), so this process
+    and every phase subprocess (env inherited) honor it. `core/config.py load_config()` reads `ANALYZER_CONFIG`
+    first: if set it loads that file **as-is** (JSONC) — **no `config.local.json` merge**, for reproducibility —
+    and **fails loud** (`FileNotFoundError`) on a set-but-missing path; unset → existing `config.json`+local
+    behavior. Tests: `tests/unit/test_core_config.py::TestLoadConfigAnalyzerConfigOverride` (5).
+  - **M1.2a entity hashing — ✅ done.** New `src/incremental/hashing.py` (token-based full SHA-256;
+    formatting-insensitive, comment-inclusive — folds in the preceding doc comment; visibility macros expand
+    away and are intentionally excluded since the hash governs *output reuse*, and visibility is caught by the
+    changed-file re-parse). `parser.py` stores `_sourceHash` on function/global entries (internal — does **not**
+    leak into `functions.json`) and writes `model/hashes.json` `{entityKey→token-sha256}` for all four kinds:
+    functions (model key), globals (model key), types (qn), macros (`name@relFile`, line-stable). `model_io`
+    gains `HASHES`/`EDGES` (not in `ALL_MODEL_NAMES`). Verified on `SampleCppProject`: 353 entities, all 64-hex,
+    **deterministic** across re-parse, and a one-function edit changed **exactly 1** hash while a whitespace-only
+    reformat of a sibling changed **none**. Tests: `tests/unit/test_incremental_hashing.py` (12).
+  - **M1.2b slim usage index — ✅ done.** `parser.py` adds a `visit_usage` pass (3rd walk on the same TU, no
+    extra parse) that threads the enclosing function like `visit_calls`: **type usage** via AST
+    (`_project_type_qn` resolves return/param/`TYPE_REF`/`VAR_DECL` types through pointer/ref/array layers to a
+    project type's qn) and **macro usage** via per-function identifier-token capture. New pure
+    `src/incremental/edges.py::build_edges` (no libclang — unit-tested) inverts to
+    `model/edges.json` `{typeUsers, macroUsers}` keyed by model fid, **filtered to types/macros that have a hash**
+    so every key cross-references `hashes.json`; keys+values sorted for byte-stable output. Macro keys
+    `name@relFile`, type keys qn — identical to `hashes.json`. Calls/globals are deliberately **not** here
+    (functions.json has them). Verified on `SampleCppProject`: 14 types / 1 macro used, **0** key/fid mismatches
+    vs `hashes.json`, `Point`/`Status`/`Mode` resolve to the right functions, deterministic. Tests:
+    `tests/unit/test_incremental_edges.py` (8). *Known limits (M2/M3): typedef→underlying transitive type edges
+    and synthetic-from-VAR_DECL functions are not tracked; macro detection over-approximates (token-name match).*
+  - **M1.3a substrate — ✅ done.** **D9 store interface** `src/incremental/stores.py`
+    (`Workspace`/`VersionStore`/`HashStore`/`EdgeStore`/`ReuseIndex`, JSON-file impl, atomic writes) +
+    **fingerprints** `src/incremental/fingerprint.py` (`recipe_fingerprint`,
+    `compute_fingerprints` = `sha256(source_hash + sorted(dep source_hashes) + recipeFingerprint)` over
+    functions+globals; deps = callees/globals from functions.json + types/macros forward-inverted from edges) +
+    the **version-producing full-gen orchestrator** `src/incremental/generate.py` (CLI:
+    `python src/incremental/generate.py --project-id … --branch … --commit … --scope group:G --no-llm`): checkout
+    → resolved config (global + project layers) → run `run.py --config` → capture `model/output/documents` +
+    `hashes.json`/`edges.json` into `versions/<vN>/` → seed `cache/index.json` → write manifest + index. Verified
+    e2e on `samplecpp` (scope group:Support, LLM off): `versions/v2` complete, 127 entities fingerprinted, docx
+    captured, reuse index seeded; failed attempts recorded (status=failed) and still consume a versionId. Tests:
+    `tests/unit/test_incremental_stores.py` (13) + `test_incremental_fingerprint.py` (7).
+  - **M1.3b backend HTTP — ✅ done.** [backend/main.py](backend/main.py) gains `POST /api/v1/projects/{id}/generate`
+    (FULL path only — spawns `src/incremental/generate.py` as a job via `_spawn_generate`; pre-allocates the
+    versionId, serializes per project with **409**, returns `{versionId, jobId, decision:"full", …}`),
+    `GET …/versions`, `GET …/versions/{id}` (+ per-doc `downloadUrl`), `…/versions/{id}/download`
+    (`.docx`, or `.zip` for multi-doc). generate.py: `--version-id` (pre-allocatable) + early **running** manifest
+    (so the version is queryable immediately) + analyzer stdout/stderr **inherited** (so run.py phase markers land
+    in the per-job log → existing `/jobs/{id}/status` tracks progress). Verified via TestClient on `samplecpp`:
+    versions list/detail/download (real 47 KB docx) + validation (404/400/409). *POST happy-path not exercised
+    live (TestClient blocks on the watcher; orchestrator is e2e-tested via the identical CLI path) — test live on a
+    running server. `mode:"auto"`/baseline (incremental) is M2.*
+- **M2 — incremental engine — ✅ done** (M2.1–M2.4 below; incremental generation works e2e + via the API).
+  - **M2.1 baseline selection + preview — ✅ done.** `src/incremental/git_ops.py` (engine-local git wrapper —
+    checkout/current_commit/is_ancestor/merge_base/rev_list_count/changed_files/nearest_ancestor; decoupled from
+    `backend/git_service.py`, consolidation deferred to M3) + `src/incremental/baseline.py::select_baseline`
+    (auto nearest-ancestor among *complete* versions → none = full; optional `baseVersionId` override with
+    **divergent** [not-ancestor] / **not-nearest** warnings; base only narrows the parse, never staleness) +
+    backend `GET …/generate/preview?commit=&baseVersionId=` (read-only, no checkout). `generate.py` now uses
+    `git_ops`. Verified: tmp-repo unit tests (`test_incremental_git_ops.py` 12 + `test_incremental_baseline.py` 11)
+    + TestClient preview on `samplecpp` (main→incremental/v2/nearest/0-changed, feature1→full, override-v2→divergent
+    +warning, unknown→404).
+  - **M2.2 classify + impact BFS — ✅ done.** `src/incremental/impact.py` (pure): `classify(baseline_hashes,
+    target_hashes)` → {changed/new/deleted/unchanged}; `impact_set(changed_keys, functions, edges,
+    extra_seed_functions=)` → set of function fids to regenerate = changed/new functions + **everything
+    transitively depending on any changed entity** (reverse-BFS: callers via `calledByIds`, global users via
+    inverted reads/writes, type/macro users via `edges.json`; visited-set handles cycles; `extra_seed_functions`
+    injects deleted entities' baseline callers). The #1 staleness trap — covered. Tests:
+    `tests/unit/test_incremental_impact.py` (12).
+  - **PARSE-STRATEGY DECISION (D10):** the M2 engine uses a **FULL parse** of the checked-out commit (correct
+    call graph by construction), and the incremental win comes from **selective LLM regeneration** (classify →
+    impact BFS → reuse). **Narrowed/partial parse (doc 03 D2 "Approach 2") is DEFERRED** to a later optimization
+    (doc 04 §10's parse cache): correct narrowed parse needs cross-file call/reverse-edge reconciliation that is
+    complex and easy to get subtly wrong → staleness, whereas the *primary* benefit (skip the rate-limited LLM for
+    unchanged+unimpacted entities = hours→minutes) is parse-strategy-independent and a full parse is **never
+    stale** (D7). Parse time becomes the bottleneck to optimize only after LLM time is removed.
+  - **M2.3 incremental engine — ✅ done.** `src/incremental/engine.py::generate_incremental`: baseline-pick →
+    checkout → full parse (`run.py`) → `plan_incremental` (classify vs baseline `hashes.json` + impact BFS +
+    deleted-caller seeding) → **carry forward** baseline outputs (description/behaviour names) for the reuse set
+    (`carry_forward_descriptions`) → reassemble (`run.py --from-phase 4 --use-model`) → capture version + seed
+    reuse index + manifest (decision/regenerated/reused/baselineVersionId/carriedForward). Falls back to
+    `generate_full` when no baseline. Pure helpers `plan_incremental`/`carry_forward_descriptions` unit-tested
+    (`test_incremental_engine.py` 8). **Verified e2e on `samplecpp`**: baseline v1@C3 (125 entities) → incremental
+    v2@main-HEAD = decision=incremental, baseline=v1, **3 new** (multiply/clampPositive/coreReset) + impact **6**
+    (incl. a deleted function's transitive callers App::main/calculate via MultiplyOperation::apply), **109
+    reused/carried-forward**, 14.4s vs 31.7s full. (The `Cross::Dispatch::multiply` "deleted" is a pre-existing
+    parser name-resolution fuzziness → safe over-regeneration, never stale.) *Descriptions reuse via the version3
+    EntityCache on LLM-on runs; flowchart-level reuse (restrict the engine to the impact set) is M2.4.*
+  - **M2.4a mode:auto dispatch — ✅ done.** `POST /api/v1/projects/{id}/generate` now resolves the target +
+    runs `select_baseline` and **dispatches**: `mode:"auto"` (default) → incremental (spawn `engine.py`) when a
+    baseline ancestor exists, else full (`generate.py`); `mode:"full"` forces full. Response carries the real
+    `decision` + `baselineVersionId`/`baselineCommit` + `warnings`; `baseVersionId` override forwarded. `commit not
+    in repo` → 409. Verified via TestClient (auto@main→incremental/engine.py/baseline=v2, full→generate.py,
+    auto@feature1[no ancestor]→full, 400/409).
+  - **M2.4b flowchart-level reuse — ✅ done (file-level).** `views/flowcharts.py::_apply_incremental_plan`
+    (gated on `model/incremental_plan.json`; absent → unchanged full behaviour) **carries forward** the baseline
+    version's `output/<scope>/flowcharts/*.json` then **restricts** the flowchart engine's functions file to the
+    impacted source files (engine overwrites only those). `engine.py` computes `impactedFiles` BEFORE the run
+    from the **baseline model + `git diff`** (over-approx, safe — no Phase-split) and writes/cleans the plan.
+    The `src/flowchart/` engine is unchanged. Verified e2e on `samplecpp` (carried 3 / restricted 16 in 9 files;
+    output complete, plan not leaked into the version). *(Superseded by M3.1: the impacted-file seeding is now
+    precise/function-level, not file+git-diff.)*
+- **M3 — hardening** — *in progress.*
+  - **M3.1 precise function-level flowchart reuse — ✅ done.** Added **`run.py --to-phase N`** (stop after a phase;
+    additive filter over `plan_runs`' output by script→phase, gated — `None` = unchanged). `generate_incremental`
+    now **Phase-splits**: `--to-phase 2` (parse+derive) → compute the **precise** impact from the fresh target
+    model (`plan_incremental`) → carry forward descriptions + write the impacted-files plan → `--from-phase 3
+    --use-model` (views+export; flowcharts restricted to impacted files, rest carried). One impact computation
+    drives both description + flowchart reuse. Verified e2e on `samplecpp`: impacted files 9→**4**, restricted
+    16→**14** (exactly the 6 impacted functions' source files); v2 complete, output correct, no plan leak.
+  - **M3.2 hierarchy-summary reuse — ✅ done (the real payoff fix).** Diagnosis: descriptions/behaviourNames are
+    **off by default**, so M2.3's description carry-forward was a no-op; the dominant default LLM costs are
+    **flowchart labeling** (fixed by M3.1) and **hierarchy summarization** (Phase 2) — and the `PkbCache` keys on
+    the *whole* `functions.json` hash, so any change re-summarized **everything** (this is why an 8-line diff took
+    full time). Fix: the engine now Phase-splits at **Phase 1** (`--to-phase 1` → impact → carry forward baseline
+    `description`+`phases` for the reuse set → `--from-phase 2`). The summarizer only summarizes functions with no
+    `description` (`project_scanner._summarize_functions`), so carrying it forward makes it **skip the reuse set**
+    — function-level summarization (the big cost) is restricted to the impact set with **no `model_deriver`/
+    summarizer change**. Verified e2e (C1→C3, scope Support): regenerated 9 / reused 104, flowcharts restricted to
+    5 files, output correct. *File/module/project summaries still re-run (~minor, not function-gated) — a later
+    refinement.*
+  - **M3.3 full Phase-2 enrichment reuse + 4 fixes — ✅ done.** An LLM-on test (744s for an 8-line diff) exposed
+    that M3.2 only covered function summaries, while the user's config has `descriptions:True`+`behaviourNames:True`
+    and the dominant cost was **behaviour-names (417s) re-run for all 113 functions**, plus globals (46s),
+    file/component summaries (117s), and PNG re-render (92s) — none reused; and the captured `documents` list had
+    **stale/duplicate docx** from prior runs. Fixes:
+    (1) **documents** — `engine`/`generate` clean `output/` before each run so a version captures only its own docs.
+    (2) **`model_deriver` incremental mode** — reads `incremental_plan.json` (`impactFids`/`impactedGlobals`) and
+    restricts behaviour-names + descriptions + global enrichment to the impact set (the engine carries forward the
+    reuse set's `description`/behaviour-names/`phases` into `functions.json` and global descriptions into
+    `globalVariables.json` before Phase 2). (3) **file/component summary gating** — `_run_hierarchy_summarizer`
+    pre-populates `knowledge.file_summaries`/`component_summaries` from the baseline for unchanged files/components,
+    and `project_scanner._summarize_files`/`_summarize_components` skip those already present. (4) **flowchart PNG
+    reuse** — `views/flowcharts.py` carries forward baseline PNGs and re-renders only impacted units. Verified e2e
+    (LLM-off flow): "enriching 9 functions + 3 globals; reusing the rest", documents=[just the scope's doc], PNGs
+    carried. `tests/unit/test_incremental_engine.py` +2 (carry_forward_globals).
+  - **M3.4 end-of-run report — ✅ done.** `src/incremental/report.py` (`build_report` pure + `emit_report`): both
+    `generate_incremental` and `generate_full` print a summary at the end — **logged** (to `logs/run_<date>.log` via
+    `get_logger`) **and saved** to `versions/<id>/report.txt`. Sections: inputs (project/branch/commit/scope/
+    **baseline + changed-file count**/dataDict/LLM recipe/status/**wall-clock**), **change classification** (changed/
+    new/deleted/unchanged, broken down by kind), and **reuse accounting** (functions/globals/flowcharts:
+    regenerated vs reused + %; summaries note). Tests: `tests/unit/test_incremental_report.py` (6). Example on
+    C1→C3: `Functions regenerated 9/113 -> reused 104 (92%)`, `Globals 3/12 -> reused 9 (75%)`, `Flowcharts 5/18
+    files -> carried 13 (72%)`.
+  - **M3.5 flowchart impact-scoping fix — ✅ done (big speedup).** An LLM-on real-diff (C1→C3) took 1021s with the
+    **flowchart engine alone = 497s**, even though only 3 functions changed. Cause: flowcharts were regenerated
+    for the **full impact set** (changed + transitive callers), pulling in `App/Main.cpp`'s *large* functions
+    because they call the changed `Math`. But **a function's flowchart is its own CFG + call-site labels — it does
+    NOT change when a callee's *body* changes**. Fix: the plan now carries a separate **`flowchartFiles`** = files
+    of only the *directly* changed/new/deleted functions (descriptions/summaries keep the full-impact
+    `impactedFiles`, since those genuinely depend on callees, and are cheap); `views/flowcharts.py` restricts on
+    `flowchartFiles`. (Also confirmed: the flowchart `PkbCache` caches the PKB *index* keyed by the whole
+    functions.json hash — **not** LLM labels; there is no label cache — so unifying caches wouldn't help; reuse is
+    handled by version-level carry-forward.) Verified e2e: C1→C3 flowcharts dropped from **12 functions / 5 files**
+    to **3 functions / 1 file** (App no longer re-labeled); report shows `Flowcharts carried 15/18 (83%)`.
+  - *Remaining:* **version-scoped reads** (`?versionId=` on `components`/`functions`/`flowcharts`); move/rename
+    polish; consolidate `git_ops`/`git_service`; unit-diagram reuse. (Recipe-fingerprint invalidation is
+    automatic; multi-doc zip shipped in M1.3b.)
+- **Next concrete step:** **M3.2 — version-scoped reads**: `?versionId=` on the browse endpoints
+  (`/components`, `/functions/{fn_id}`, `/flowcharts/{fn_id}`) so the UI reads a specific version's
+  `model/`+`output/` (removes the single-shared-`model/` limitation; doc 05 §8). Then the remaining M3 items.
+  (M3.1 done — precise flowchart reuse + `run.py --to-phase`.)
+- **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
+  to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
+
+### 23.6 Analyzer changes M1/M2 will make
+`run.py` (`--config`/`ANALYZER_CONFIG`, `--incremental`); `core/config.py` (honor `ANALYZER_CONFIG`);
+`parser.py` (partial-parse; entity hashing; slim type/macro index); `model_deriver.py` (incremental mode;
+extend `EntityCache`); `views/flowcharts.py` (restrict the engine's functions file to the impact set; the
+`src/flowchart/` engine itself is unchanged); new `src/incremental/` — incl. `stores.py` (D9 interface:
+`VersionStore`/`ReuseIndex`/`HashStore`/`EdgeStore`, JSON-file impl now, Postgres later) that all version /
+hash / edge / reuse-index access goes through.
+
+### 23.7 Key `version4` commits (this session)
+`a2edee1` bring-over backend+docs · `3498153` PROJECT_CONTEXT merge · `1cf4eb5` backend→layers/component ·
+`082ec8b` backend doc corrections · `a74a560` **git_service** · `4651fe9` + `d1ee2bd` + `98b2ce1` doc 04
+(incremental approach → slim edges + pointer index) · `8ea45a2` doc 05 (UI API spec). Branch is pushed to
+`origin/version4`.
+
+---
+
+_End of file._

@@ -40,6 +40,13 @@ DATA_DICTIONARY = "dataDictionary"
 KNOWLEDGE_BASE = "knowledge_base"
 SUMMARIES = "summaries"
 
+# Incremental (version4) — produced by Phase 1 for change detection / impact.
+# Not part of ALL_MODEL_NAMES: not required by Phases 3/4, only by the
+# incremental engine. HASHES = {entityKey -> token-sha256};
+# EDGES = {typeUsers, macroUsers} (slim — calls/globals come from functions.json).
+HASHES = "hashes"
+EDGES = "edges"
+
 ALL_MODEL_NAMES = (
     METADATA,
     FUNCTIONS,
