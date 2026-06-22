@@ -2299,7 +2299,28 @@ on this machine — it's a known loss.
 
 ---
 
-## 19. Dependencies
+## 19. API Server (`api/`)
+
+> Full context lives in **[`api/PROJECT_CONTEXT.md`](api/PROJECT_CONTEXT.md)** — read that file for anything API-related. This section is a brief pointer only.
+
+The `api/` directory is a standalone FastAPI REST server added on branch
+`feat/api-server`. It exposes all platform functionality over HTTP and ships
+with an in-memory database seeded with realistic dummy data.
+
+Key facts:
+- **Start:** `uvicorn api.main:app --reload --port 8000` (after `pip install -r api/requirements.txt`)
+- **Docs:** http://localhost:8000/docs (Swagger UI)
+- **Auth:** `POST /api/v1/auth/signin` → Bearer token → `Authorization: Bearer <token>` on every request
+- **Seed credentials:** any of the five seed users (e.g. `alice@aspice.dev`) with password `secret`
+- **Swap the DB:** change one line in `api/db/session.py` — implement the 12 ABCs in `api/repositories/interfaces.py` first
+- **51 endpoints** across auth, projects, commits/versions, analysis jobs, documents, team, compare, functions, notifications
+
+See [`api/PROJECT_CONTEXT.md`](api/PROJECT_CONTEXT.md) for architecture decisions, known issues, seed data, SSE streaming, error envelope, and the full route list.
+
+---
+
+## 20. Dependencies
+
 
 ```
 libclang (LLVM 17)        — C++ AST parsing (clang.cindex)
@@ -2314,7 +2335,7 @@ binary and falls back to system `mmdc`.
 
 ---
 
-## 20. End-to-end code flow — single command, full pipeline
+## 21. End-to-end code flow — single command, full pipeline
 
 For the literal-minded: this is what happens when you run
 
