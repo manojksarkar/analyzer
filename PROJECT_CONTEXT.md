@@ -2312,10 +2312,11 @@ Key facts:
 - **Docs:** http://localhost:8000/docs (Swagger UI)
 - **Auth:** `POST /api/v1/auth/signin` → Bearer token → `Authorization: Bearer <token>` on every request
 - **Seed credentials:** any of the five seed users (e.g. `alice@aspice.dev`) with password `secret`
-- **Swap the DB:** change one line in `api/db/session.py` — implement the 12 ABCs in `api/repositories/interfaces.py` first
+- **Swap the DB:** set `API_DB_BACKEND=json` env var (or change one line in `api/db/session.py`) — two built-in adapters: `InMemoryDatabase` (default) and `JsonDatabase`
+- **JSON DB:** `API_DB_BACKEND=json` persists state to `api/db/data/*.json` and automatically loads `model/functions.json` from the pipeline output on startup
 - **51 endpoints** across auth, projects, commits/versions, analysis jobs, documents, team, compare, functions, notifications
 
-See [`api/PROJECT_CONTEXT.md`](api/PROJECT_CONTEXT.md) for architecture decisions, known issues, seed data, SSE streaming, error envelope, and the full route list.
+See [`api/PROJECT_CONTEXT.md`](api/PROJECT_CONTEXT.md) for architecture decisions, known issues, seed data, SSE streaming, error envelope, the full route list, and JSON DB adapter details (§11).
 
 ---
 

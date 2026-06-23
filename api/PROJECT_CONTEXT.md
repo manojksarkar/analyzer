@@ -252,3 +252,93 @@ All under `/api/v1`. Full reference: `api/README.md`.
 | Functions | `/projects/:id/functions` | 2 |
 | Notifications | `/notifications` | 3 |
 | Meta | `/health`, `/` | 2 |
+
+---
+
+## 11. JSON Database adapter (`api/db/json_db.py`)
+
+Added on branch `feat/api-server`. A second concrete storage adapter that
+uses JSON files instead of in-memory dicts, making the API state **persistent
+across restarts** and **integrated with the document-generation pipeline**.
+
+### Motivation
+
+The `InMemoryDatabase` resets on every server restart.  The `JsonDatabase`:
+
+1. **Persists all mutations** to `api/db/data/*.json` (write-through on every
+   create/update/delete — one file per aggregate).
+2. **Loads pipeline output automatically** — if `model/functions.json` exists
+   (written by Phase 2 of the document-generation pipeline), its contents
+   replace the seeded function data so the API always reflects the latest
+   analysis run without any manual migration step.
+
+### Directory layout
+
+```
+api/db/data/                ← created automatically on first startup
+  users.json
+  projects.json
+  members.json
+  access_requests.json
+  versions.json
+  commits.json
+  jobs.json
+  documents.json
+  sections.json
+  assignments.json
+  functions.json            ← overwritten by pipeline output if model/ exists
+  notifications.json
+  compare_results.json
+  compare_diffs.json
+
+model/                      ← pipeline output (read-only from API perspective)
+  functions.json            ← loaded on JsonDatabase init if present
+  metadata.json             ← used to derive project name
+```
+
+### How to switch backends
+
+**Environment variable (recommended):**
+```bash
+API_DB_BACKEND=json  uvicorn api.main:app --reload --port 8000
+API_DB_BACKEND=memory uvicorn api.main:app --reload --port 8000  # default
+```
+
+**Code change (one line in `api/db/session.py`):**
+```python
+from .json_db import JsonDatabase
+_db = JsonDatabase()          # was: InMemoryDatabase()
+```
+
+### First-run behaviour
+
+1. If `api/db/data/` files are **absent** → seed from same dummy data as
+   `InMemoryDatabase` and write files to disk.
+2. If files **exist** → load as-is (mutations from previous runs are preserved).
+3. If `model/functions.json` **exists** → replace the functions store with
+   pipeline output (regardless of whether it was seeded or loaded from disk).
+
+### Pipeline integration detail
+
+`_load_pipeline_functions(model_dir)` in `json_db.py` reads
+`model/functions.json` (written by Phase 1 + 2) and maps each entry to the
+`Function` domain model.  The mapping handles the analyzer's key format
+(`Layer::Component::FunctionName`) and field names (`componentName`, `layer`,
+`isVisible`, `description`, etc.).  The result is keyed under `job1` (the
+default seeded job ID) so the existing `/jobs/{job_id}/functions` endpoint
+returns the real pipeline data with no route changes.
+
+### Serialisation
+
+All `datetime` and `date` objects are serialised to ISO 8601 strings via a
+custom `_default` encoder passed to `json.dump`.  `_parse_dt` / `_parse_date`
+handle both string inputs (from disk) and native Python objects (from the seed
+path), so the adapter works correctly on both first-run seeding and subsequent
+disk reloads.
+
+### Write-through safety
+
+Every mutating repository method calls `_save()` before returning.  `_save()`
+uses an atomic rename (`path.with_suffix('.json.tmp') → path.replace(tmp)`) so
+a crash mid-write never leaves a corrupt file — the old data survives until the
+new write completes.
