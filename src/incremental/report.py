@@ -38,7 +38,7 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
     else:
         L.append(_line("Baseline", "(none - full generation; becomes the baseline for future runs)"))
     L.append(_line("Data dict", stats.get("dataDictId")))
-    L.append(_line("LLM recipe", f"{stats.get('llmModel')}  (fp {str(stats.get('recipeFingerprint'))[:10]})"))
+    L.append(_line("LLM model", stats.get("llmModel")))
     L.append(_line("Status", stats.get("status")))
     if stats.get("elapsedSeconds") is not None:
         L.append(_line("Wall clock", f"{stats['elapsedSeconds']:.1f}s"))

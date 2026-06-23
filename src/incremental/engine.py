@@ -39,7 +39,7 @@ from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
 from incremental.baseline import select_baseline
 from incremental.impact import classify, impact_set
-from incremental.fingerprint import recipe_fingerprint, compute_fingerprints
+from incremental.fingerprint import compute_fingerprints
 from incremental.report import build_report, emit_report
 from incremental.generate import (_resolved_config, _manifest, scope_to_args,
                                   generate_full, _now_iso)
@@ -179,7 +179,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     vstore.write_config(version_id, cfg)
     vcfg_path = os.path.join(vdir, "config.json")
     vstore.write_manifest(version_id, _manifest(
-        version_id, branch, target, scope, data_dict_id, recipe_fp="",
+        version_id, branch, target, scope, data_dict_id,
         decision="incremental", regenerated=0, reused=0, status="running", warnings=decision["warnings"]))
 
     dd_path = ws.datadict_path(data_dict_id) if data_dict_id and os.path.isfile(
@@ -191,7 +191,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     def _fail(stage: str, rc: int):
         vstore.write_manifest(version_id, _manifest(
-            version_id, branch, target, scope, data_dict_id, recipe_fp="",
+            version_id, branch, target, scope, data_dict_id,
             decision="incremental", regenerated=0, reused=0, status="failed",
             warnings=decision["warnings"] + [f"{stage} exited {rc}"]))
         raise RuntimeError(f"{stage} failed (exit {rc})")
@@ -287,12 +287,13 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     hstore.write(version_id, target_hashes)
     estore.write(version_id, target_edges)
     llm = cfg.get("llm") or {}
-    recipe_fp = recipe_fingerprint(llm.get("defaultModel", ""), cache_version=llm.get("cacheVersion", 1))
-    for entity_key, fp in compute_fingerprints(target_hashes, target_functions, target_edges, recipe_fp).items():
+    # Content-only reuse key (recipe intentionally not folded in — approved outputs are
+    # reused regardless of which model/prompt produced them).
+    for entity_key, fp in compute_fingerprints(target_hashes, target_functions, target_edges).items():
         ridx.put(fp, version_id, entity_key)  # first version that produced a fp keeps it
     ridx.save()
 
-    manifest = _manifest(version_id, branch, target, scope, data_dict_id, recipe_fp=recipe_fp,
+    manifest = _manifest(version_id, branch, target, scope, data_dict_id,
                          decision="incremental", regenerated=len(plan["impact"]),
                          reused=len(plan["reused"]), status="complete", warnings=decision["warnings"])
     manifest["baselineVersionId"] = base_vid
@@ -313,7 +314,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         "projectId": project_id, "branch": branch, "commit": target,
         "scope": _scope_label(scope), "baselineVersionId": base_vid,
         "baselineCommit": decision["chosenBaseCommit"], "changedFiles": decision.get("changedFiles"),
-        "dataDictId": data_dict_id, "recipeFingerprint": recipe_fp,
+        "dataDictId": data_dict_id,
         "llmModel": llm.get("defaultModel"), "elapsedSeconds": time.perf_counter() - _t0,
         "classification": classification,
         "functions": {"total": fn_total, "regenerated": fn_regen, "reused": fn_total - fn_regen},

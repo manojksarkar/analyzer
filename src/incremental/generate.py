@@ -41,7 +41,7 @@ from core.paths import paths as _paths
 from core.config import load_config
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
-from incremental.fingerprint import recipe_fingerprint, compute_fingerprints
+from incremental.fingerprint import compute_fingerprints
 from incremental.edges import build_edges  # noqa: F401  (kept for symmetry / future use)
 
 
@@ -118,7 +118,7 @@ def generate_full(
     vstore.write_config(version_id, cfg)
     vcfg_path = os.path.join(vdir, "config.json")
     vstore.write_manifest(version_id, _manifest(
-        version_id, branch, actual_commit, scope, data_dict_id, recipe_fp="",
+        version_id, branch, actual_commit, scope, data_dict_id,
         decision="full", regenerated=0, reused=0, status="running", warnings=[]))
 
     # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited).
@@ -137,7 +137,7 @@ def generate_full(
     proc = subprocess.run(cmd, cwd=project_root, shell=(os.name == "nt"))
     if proc.returncode != 0:
         vstore.write_manifest(version_id, _manifest(
-            version_id, branch, actual_commit, scope, data_dict_id, recipe_fp="",
+            version_id, branch, actual_commit, scope, data_dict_id,
             decision="full", regenerated=0, reused=0, status="failed",
             warnings=[f"analyzer exited {proc.returncode}"]))
         raise RuntimeError(f"analyzer run failed (exit {proc.returncode})")
@@ -153,18 +153,17 @@ def generate_full(
     hstore.write(version_id, hashes)
     estore.write(version_id, edges)
 
-    # 5. fingerprints -> seed reuse index
+    # 5. fingerprints -> seed reuse index (content-only key; recipe is intentionally
+    #    not folded in — an approved doc is reused regardless of model/prompt).
     llm = cfg.get("llm") or {}
-    recipe_fp = recipe_fingerprint(llm.get("defaultModel", ""),
-                                   cache_version=llm.get("cacheVersion", 1))
-    fps = compute_fingerprints(hashes, functions, edges, recipe_fp)
+    fps = compute_fingerprints(hashes, functions, edges)
     for entity_key, fp in fps.items():
         ridx.put(fp, version_id, entity_key)  # first version that produced a fp keeps it
     ridx.save()
 
     # 6. manifest + index
     manifest = _manifest(version_id, branch, actual_commit, scope, data_dict_id,
-                         recipe_fp=recipe_fp, decision="full",
+                         decision="full",
                          regenerated=len(fps), reused=0, status="complete", warnings=[])
     manifest["documents"] = documents
     vstore.write_manifest(version_id, manifest)
@@ -181,7 +180,7 @@ def generate_full(
         "versionId": version_id, "decision": "full", "status": "complete",
         "projectId": project_id, "branch": branch, "commit": actual_commit,
         "scope": stype if (stype == "project" or not names) else f"{stype}:{','.join(names)}",
-        "dataDictId": data_dict_id, "recipeFingerprint": recipe_fp,
+        "dataDictId": data_dict_id,
         "llmModel": llm.get("defaultModel"), "elapsedSeconds": time.perf_counter() - _t0,
         "functions": {"total": len(functions), "regenerated": len(functions), "reused": 0},
         "globals": {"total": len(globals_), "regenerated": len(globals_), "reused": 0},
@@ -192,12 +191,12 @@ def generate_full(
     return manifest
 
 
-def _manifest(version_id, branch, commit, scope, data_dict_id, *, recipe_fp,
+def _manifest(version_id, branch, commit, scope, data_dict_id, *,
               decision, regenerated, reused, status, warnings) -> Dict[str, Any]:
     return {
         "versionId": version_id, "branch": branch, "commit": commit,
         "scope": scope, "dataDictId": data_dict_id, "baselineVersionId": None,
-        "recipeFingerprint": recipe_fp, "decision": decision,
+        "decision": decision,
         "regenerated": regenerated, "reused": reused,
         "status": status, "warnings": warnings, "createdAt": _now_iso(),
     }

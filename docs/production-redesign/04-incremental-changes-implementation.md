@@ -55,7 +55,7 @@ uses `clone_repo`/`list_branches`/`list_commits`; incremental uses `checkout`/`c
 
 | # | Decision |
 |---|---|
-| D1 | **A "version" = one generation run** (`versionId`). It records `{branch, commit, scope, dataDictId, baselineVersionId, recipeFingerprint, counts, createdAt}`. The **commit** is stored and used to find the **ancestor** for future versions. **All versions kept.** |
+| D1 | **A "version" = one generation run** (`versionId`). It records `{branch, commit, scope, dataDictId, baselineVersionId, counts, createdAt}`. The **commit** is stored and used to find the **ancestor** for future versions. **All versions kept.** |
 | D2 | **Approach 2** — stored-graph impact + selective regen, with **full parse as the fallback** (first version, no ancestor, or `mode:"full"`). *Parse strategy refined by **D10** below: full parse now, narrowed parse = §11 / M4.* |
 | D3 | **Reuse is content-addressed across *all* versions** via a fingerprint **pointer index** (`cache/index.json`) — the output content is **never duplicated**; the index points at the version where it already lives. The baseline **only narrows the parse**; it never limits reuse. |
 | D4 | **Baseline = auto nearest-ancestor (default).** The user may **override** with an explicit `baseVersionId`; the system **warns** if it is not an ancestor / not the nearest, but still runs it (correct, slower). See §6. |
@@ -89,7 +89,7 @@ workspaces/
       index.json                 # [{versionId, branch, commit, scope, dataDictId, baselineVersionId,
                                  #   decision, regenerated, reused, status, createdAt}]
       <versionId>/
-        manifest.json            # the full version record (incl. recipeFingerprint, counts, warnings)
+        manifest.json            # the full version record (incl. counts, warnings)
         hashes.json              # {entity_key -> token-sha256}   ← FULL snapshot of all entities at this commit
         edges.json               # SLIM: type-usage + macro-usage only (axes functions.json lacks).
                                  #   calls/globals read from model/functions.json; recursive closure via BFS
@@ -137,7 +137,7 @@ version** into the new version. The content is therefore never duplicated or reg
 {
   "versionId": "v4", "branch": "main", "commit": "C4_sha",
   "scope": { "type": "project" }, "dataDictId": "dd-001",
-  "baselineVersionId": "v3", "recipeFingerprint": "a1b2…",
+  "baselineVersionId": "v3",
   "decision": "incremental", "regenerated": 12, "reused": 988,
   "status": "complete", "warnings": [], "createdAt": "2026-06-18T10:00:00Z"
 }
@@ -173,9 +173,11 @@ reproducible.
 Where the hashes come from:
 - `source_hash(entity)` = token-based **full SHA-256** of the entity's own source (the 4 entity
   types: function / global / macro / type, keyed by identity incl. defining file/location).
-- `fingerprint(entity)` = `sha256(source_hash + sorted(dependency_source_hashes) + recipeFingerprint)`
-  — the **reuse-index key** for that entity's output. `recipeFingerprint = sha256(llm.model + promptVersion
-  + cacheVersion + engineVersion)` → an operator recipe change invalidates the cache automatically.
+- `fingerprint(entity)` = `sha256(source_hash + sorted(dependency_source_hashes))`
+  — the **content-only reuse-index key** for that entity's output. It deliberately does **not** fold in the
+  LLM recipe (model/prompt/engine): an already-generated, approved document is reused regardless of which
+  model produced it. **(Decision: recipe-fingerprint invalidation dropped — we do not re-run the LLM just
+  because the model or prompt changed.)**
 
 ---
 
@@ -370,9 +372,11 @@ NOT part of this feature.**
   `generate/preview`, partial-parse + merge, classify, **impact BFS** (all axes), selective regen with
   the reuse index, reassemble; `mode:"auto"`. *Delivers hours → minutes.*
 - **M3 — Hardening.** Move/rename re-resolution, deletions, over-approximation polish, version-scoped
-  reads (`components`/`functions`/`flowcharts` take `?versionId=`), recipe-fingerprint invalidation,
+  reads (`components`/`functions`/`flowcharts` take `?versionId=`),
   multi-doc zip download. *(M3.1–M3.6 done — incl. function-level flowchart reuse; remaining:
-  version-scoped reads, git layer consolidation, unit-diagram reuse.)*
+  version-scoped reads, git layer consolidation, unit-diagram reuse.)* **Recipe-fingerprint invalidation:
+  dropped by decision** — an approved document is reused regardless of LLM model/prompt changes, so the
+  reuse fingerprint is content-only (no recipe component).
 - **M4 — Narrowed (incremental) parse** (see §11; only worth doing once Phase-1 parse time is the
   measured bottleneck). Per-TU include-closure tracking → affected-TU set from the git diff → parse
   only affected TUs, reuse the baseline model for the rest, recompute all reverse/aggregate edges,
@@ -463,9 +467,12 @@ These change the preprocessed input or AST for TUs the git diff alone can't iden
 full parse (or a conservative widening):
 
 1. **Compiler flags / `-D` defines / include paths / C++ std changed** → preprocessed input changes
-   for *every* TU. **Fold these into the recipe fingerprint** so the change is detected.
+   for *every* TU. Detect via a small **parse fingerprint** = `sha256(clang flags + -D defines +
+   include paths + C++ std + libclang version)` stored per version; if it differs from the baseline's,
+   full-reparse. *(This is a M4-local parse-inputs hash — distinct from, and unrelated to, the dropped
+   recipe fingerprint; it covers only what changes the AST, never the LLM model/prompt.)*
 2. **Toolchain (clang / libclang) version changed** → the AST or token stream can differ for
-   unchanged source. **Add the libclang version to the fingerprint** and full-reparse on change.
+   unchanged source. Covered by the parse fingerprint above (libclang version is one of its inputs).
 3. **A header file is ADDED or DELETED** → it may *shadow* an existing `#include` and silently change
    an otherwise-untouched TU's closure. Conservative rule: reparse every TU whose closure references
    that basename / relative path, else full-reparse. (Header **modifications** are fine — handled by
@@ -490,8 +497,9 @@ common case: a small diff touches a handful of TUs, not the whole tree.
 ### 11.7 New / changed artifacts
 - `model/tu_includes.json` **(new)** — per-TU include closure, captured on every parse, stored per
   version (the thing the next run intersects with the git diff).
-- **Recipe fingerprint extended** with compiler flags + libclang version (so a toolchain/flag change
-  forces a full reparse, per §11.4).
+- **Parse fingerprint (new)** = `sha256(clang flags + -D + include paths + std + libclang version)`,
+  stored per version; a mismatch forces a full reparse (§11.4). Distinct from the reuse fingerprint
+  (content-only) and unrelated to the dropped recipe fingerprint.
 - `parser.py` gains: emit the closure map, and an **"affected files only"** parse mode.
 - `src/incremental/` gains the **parse-merge + reverse-recompute** logic and the affected-TU
   computation; the `--verify-parse` self-check.

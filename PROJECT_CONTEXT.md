@@ -2750,8 +2750,9 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
 - **Reuse = `cache/index.json`**, a `{fingerprint → (versionId, entityKey)}` **POINTER index** — **NOT** a
   duplicate blob store. Output content lives **once** in each version's `model/output`; reuse = look up the
   fingerprint → copy from the pointed-to version. Plus **carry-forward** from the baseline version.
-- **`fingerprint`** = `sha256(source_hash + sorted(dependency source-hashes) + recipeFingerprint)`;
-  `recipeFingerprint` = LLM model + prompt version + cacheVersion (gives operator-change invalidation).
+- **`fingerprint`** = `sha256(source_hash + sorted(dependency source-hashes))` — **content-only**; the LLM
+  recipe is intentionally NOT folded in (recipe-fingerprint invalidation **dropped by decision** — an approved
+  document is reused regardless of model/prompt changes).
 - **Data dictionary** is per-version, replaceable; **uploaded by onboarding's separate API**; `generate` only
   references a `dataDictId`. A data-dict-only change → cheap reassembly (interface-table ranges), **no LLM**.
 - **Onboarding is OUT of scope** (other engineer): registration, git credentials, the initial clone, the
@@ -2832,9 +2833,10 @@ workspaces/<projectId>/
     and synthetic-from-VAR_DECL functions are not tracked; macro detection over-approximates (token-name match).*
   - **M1.3a substrate — ✅ done.** **D9 store interface** `src/incremental/stores.py`
     (`Workspace`/`VersionStore`/`HashStore`/`EdgeStore`/`ReuseIndex`, JSON-file impl, atomic writes) +
-    **fingerprints** `src/incremental/fingerprint.py` (`recipe_fingerprint`,
-    `compute_fingerprints` = `sha256(source_hash + sorted(dep source_hashes) + recipeFingerprint)` over
-    functions+globals; deps = callees/globals from functions.json + types/macros forward-inverted from edges) +
+    **fingerprints** `src/incremental/fingerprint.py` (`compute_fingerprints` =
+    `sha256(source_hash + sorted(dep source_hashes))` — **content-only**, no recipe component (recipe-fingerprint
+    invalidation dropped by decision) — over functions+globals; deps = callees/globals from functions.json +
+    types/macros forward-inverted from edges) +
     the **version-producing full-gen orchestrator** `src/incremental/generate.py` (CLI:
     `python src/incremental/generate.py --project-id … --branch … --commit … --scope group:G --no-llm`): checkout
     → resolved config (global + project layers) → run `run.py --config` → capture `model/output/documents` +
@@ -2990,7 +2992,9 @@ workspaces/<projectId>/
     self-check → M4.6 corner-case hardening. **M4 only worth building once Phase-1 parse is the *measured* bottleneck.**
   - *Remaining:* **version-scoped reads** (`?versionId=` on `components`/`functions`/`flowcharts`); move/rename
     polish; consolidate `git_ops`/`git_service`; unit-diagram reuse; **M4.1+ narrowed parse** (deferred — see doc 04 §11).
-    (Recipe-fingerprint invalidation is automatic; multi-doc zip shipped in M1.3b.)
+    (Recipe-fingerprint invalidation **dropped by decision** — fingerprint is content-only; multi-doc zip shipped in M1.3b.)
+    Also still open (found in the §23 audit): **cross-version reuse-index lookup** (D3 / §5 step 6 — index is seeded but
+    never read) and **branch/commit listing endpoints** (doc 05 G1/G2, missing in backend).
 - **Next concrete step:** **M3.2 — version-scoped reads**: `?versionId=` on the browse endpoints
   (`/components`, `/functions/{fn_id}`, `/flowcharts/{fn_id}`) so the UI reads a specific version's
   `model/`+`output/` (removes the single-shared-`model/` limitation; doc 05 §8). Then the remaining M3 items.
