@@ -48,6 +48,39 @@ def _carry_forward_flowcharts(base_fc, out_dir):
     return carried
 
 
+def _prune_orphan_flowcharts(out_dir, valid_stems):
+    """Move/rename cleanup (M3.x): drop carried flowchart artifacts for source-file stems
+    no longer present in the current model (a deleted or RENAMED file), so the version's
+    output carries no stale units. JSON files are `<stem>.json`; PNGs `<stem>_<func>.png`.
+    Skips pruning when `valid_stems` is empty (avoids nuking everything on a load glitch)."""
+    valid = set(valid_stems)
+    if not valid:
+        return 0
+    try:
+        names = os.listdir(out_dir)
+    except OSError:
+        return 0
+    orphan = {fn[:-5] for fn in names
+              if fn.endswith(".json") and fn != "_summary.json" and fn[:-5] not in valid}
+    if not orphan:
+        return 0
+    removed = 0
+    for fn in names:
+        if fn == "_summary.json":
+            continue
+        is_orphan = ((fn.endswith(".json") and fn[:-5] in orphan)
+                     or (fn.endswith(".png") and any(fn.startswith(s + "_") for s in orphan)))
+        if is_orphan:
+            try:
+                os.unlink(os.path.join(out_dir, fn))
+                removed += 1
+            except OSError:
+                pass
+    log(f"incremental: pruned {removed} orphan flowchart artifact(s) for {len(orphan)} "
+        f"removed/renamed unit(s): {sorted(orphan)}", "flowcharts")
+    return removed
+
+
 def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
     """Incremental flowchart reuse. If model/incremental_plan.json exists:
 
@@ -95,6 +128,9 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
             if stem and qn:
                 scope_units.setdefault(stem, set()).add(qn)
 
+        # Move/rename cleanup: drop carried artifacts for files no longer in the model.
+        _prune_orphan_flowcharts(out_dir, set(scope_units))
+
         # Engine regenerates ONLY the directly changed/new functions in this scope.
         sel = [fid for fid in fids if fid in funcs]
         restricted = {fid: funcs[fid] for fid in sel}
@@ -120,6 +156,8 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
     # FILE-LEVEL fallback (plan predates flowchartFids).
     if base_fc:
         _carry_forward_flowcharts(base_fc, out_dir)
+        _prune_orphan_flowcharts(  # move/rename cleanup
+            out_dir, {_stem(fid) for fid in funcs if _stem(fid)})
     impacted = set(plan.get("flowchartFiles") or plan.get("impactedFiles") or [])
     impacted_units = {os.path.splitext(os.path.basename(f))[0] for f in impacted}
     restricted = {fid: info for fid, info in funcs.items()

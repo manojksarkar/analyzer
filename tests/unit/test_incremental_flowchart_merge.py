@@ -14,7 +14,7 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
-from views.flowcharts import _merge_incremental_flowcharts
+from views.flowcharts import _merge_incremental_flowcharts, _prune_orphan_flowcharts
 
 
 def _entry(name, body):
@@ -98,3 +98,43 @@ class TestSplice:
         assert names == ["add", "subtract"]                          # nothing dropped
         by = {e["name"]: e["flowchart"] for e in merged}
         assert "NEW" in by["subtract"]                               # still replaced
+
+
+class TestPruneOrphanFlowcharts:
+    """Move/rename cleanup: carried artifacts for files no longer in the model are dropped."""
+
+    def _seed(self, d, units):
+        for u in units:
+            (d / f"{u}.json").write_text("[]", encoding="utf-8")
+            (d / f"{u}_someFunc.png").write_bytes(b"png")
+
+    def test_drops_orphan_unit_json_and_png(self, tmp_path):
+        d = tmp_path / "out"; d.mkdir()
+        self._seed(d, ["Kept", "Renamed"])  # Renamed no longer in the model
+        removed = _prune_orphan_flowcharts(str(d), {"Kept"})
+        files = set(os.listdir(str(d)))
+        assert removed == 2  # Renamed.json + Renamed_someFunc.png
+        assert "Kept.json" in files and "Kept_someFunc.png" in files
+        assert "Renamed.json" not in files and "Renamed_someFunc.png" not in files
+
+    def test_no_orphans_keeps_everything(self, tmp_path):
+        d = tmp_path / "out"; d.mkdir()
+        self._seed(d, ["A", "B"])
+        assert _prune_orphan_flowcharts(str(d), {"A", "B"}) == 0
+        assert len(os.listdir(str(d))) == 4
+
+    def test_empty_valid_stems_is_a_noop(self, tmp_path):
+        # guard: a load glitch (no valid stems) must NOT nuke the carried output
+        d = tmp_path / "out"; d.mkdir()
+        self._seed(d, ["A"])
+        assert _prune_orphan_flowcharts(str(d), set()) == 0
+        assert len(os.listdir(str(d))) == 2
+
+    def test_prefix_collision_not_pruned(self, tmp_path):
+        # 'Foo' orphan must not drop 'Foobar' artifacts (separator guards the prefix)
+        d = tmp_path / "out"; d.mkdir()
+        self._seed(d, ["Foo", "Foobar"])
+        _prune_orphan_flowcharts(str(d), {"Foobar"})
+        files = set(os.listdir(str(d)))
+        assert "Foobar.json" in files and "Foobar_someFunc.png" in files
+        assert "Foo.json" not in files
