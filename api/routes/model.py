@@ -552,3 +552,121 @@ def refresh_model_cache(
         "available": model_reader.is_available(),
         "files": model_reader.file_stats(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Document preparation from model metadata
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel as _BaseModel
+
+
+class PrepareDocumentRequest(_BaseModel):
+    group: str = ""
+    layer: str = ""
+    version_tag: str = "v1.0.0"
+    project_name: str = ""
+    doc_name: str = ""
+    doc_process: str = "SWE.3"
+
+
+@router.post("/model/prepare-document")
+def prepare_document_from_model(
+    body: PrepareDocumentRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Prepare a structured document JSON from model/ directory metadata.
+
+    This endpoint generates the full document tree equivalent to what
+    ``src/docx_exporter.py`` produces, but as JSON for UI rendering.
+    It does **not** require a pre-existing Document DB record — it builds
+    the document entirely from the pipeline's model files.
+
+    Source priority
+    ---------------
+    1. ``output/interface_tables.json`` + ``output/flowcharts/`` (Phase 3) —
+       used when available; provides interface IDs, source/dest, flowcharts.
+    2. ``model/functions.json`` + ``model/units.json`` (Phase 1-2 only) —
+       used as fallback when Phase 3 hasn't run yet.
+
+    The ``meta.source`` field reports which path was taken:
+    ``"pipeline"`` (Phase 3 output used) or ``"model"`` (Phase 1-2 only).
+
+    Request body
+    ------------
+    group
+        Group name (e.g. ``"Sample"``, ``"Platform"``).  Leave empty to
+        include all components.
+    layer
+        Layer name (e.g. ``"Layer1"``).  Used for the cover page.
+    version_tag
+        Version string for the cover page (default ``"v1.0.0"``).
+    project_name
+        Override the project name.  Defaults to ``metadata.json → projectName``.
+    doc_name
+        Document name on the cover page.
+    doc_process
+        Process identifier (default ``"SWE.3"``).
+
+    Response
+    --------
+    ``{ "document": { cover, toc, sections, meta } }``
+
+    The shape is identical to
+    ``GET /projects/{id}/documents/{doc_id}?structured=true`` and to
+    ``GET /projects/{id}/documents/{doc_id}/prepare``.
+    """
+    if not model_reader.is_available():
+        raise bad_request(
+            "MODEL_NOT_AVAILABLE",
+            "Pipeline model not available — run the pipeline first (Phase 1 minimum).",
+        )
+
+    from ..services.document_preparer import prepare_from_model
+    doc_tree = prepare_from_model(
+        group=body.group,
+        layer=body.layer,
+        version_tag=body.version_tag,
+        project_name=body.project_name,
+        doc_name=body.doc_name,
+        doc_process=body.doc_process,
+    )
+    return {"document": doc_tree}
+
+
+@router.get("/model/prepare-document")
+def prepare_document_from_model_get(
+    group: Optional[str] = Query("", description="Group name (e.g. 'Sample'). Empty = all components."),
+    layer: Optional[str] = Query("", description="Layer name (e.g. 'Layer1')."),
+    version_tag: Optional[str] = Query("v1.0.0", description="Version string for cover page."),
+    project_name: Optional[str] = Query("", description="Override project name."),
+    doc_name: Optional[str] = Query("", description="Document name for cover page."),
+    doc_process: Optional[str] = Query("SWE.3", description="Process identifier."),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Prepare a structured document JSON from model/ directory metadata (GET variant).
+
+    Identical to ``POST /model/prepare-document`` but accepts parameters as
+    query strings — convenient for quick inspection via the browser or curl.
+
+    See ``POST /model/prepare-document`` for full documentation.
+    """
+    if not model_reader.is_available():
+        raise bad_request(
+            "MODEL_NOT_AVAILABLE",
+            "Pipeline model not available — run the pipeline first (Phase 1 minimum).",
+        )
+
+    from ..services.document_preparer import prepare_from_model
+    doc_tree = prepare_from_model(
+        group=group or "",
+        layer=layer or "",
+        version_tag=version_tag or "v1.0.0",
+        project_name=project_name or "",
+        doc_name=doc_name or "",
+        doc_process=doc_process or "SWE.3",
+    )
+    return {"document": doc_tree}
+

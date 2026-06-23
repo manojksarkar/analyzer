@@ -142,6 +142,62 @@ def list_documents(
     }
 
 
+@router.get("/projects/{project_id}/documents/{doc_id}/prepare")
+def prepare_document(
+    project_id: str,
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """
+    Prepare the document from model/ directory metadata.
+
+    Returns the same JSON structure as ``?structured=true`` but sources all
+    content directly from the pipeline model files (``model/*.json`` and
+    ``output/interface_tables.json`` when available).  This is the primary
+    way to generate a live document preview equivalent to the DOCX output.
+
+    Source priority
+    ---------------
+    1. ``output/interface_tables.json`` + ``output/flowcharts/`` (Phase 3 output) —
+       richest data, includes interface IDs, source/destination, flowchart Mermaid.
+    2. ``model/functions.json`` + ``model/units.json`` (Phase 1-2 output only) —
+       available earlier in the pipeline, no flowcharts or interface IDs yet.
+
+    The ``meta.source`` field in the response indicates which path was taken
+    (``"pipeline"`` or ``"model"``).  ``meta.pipeline_data_available`` is True
+    when Phase 3 output was used.
+    """
+    if not db.projects.get(project_id):
+        raise not_found("Project", project_id)
+    require_project_member(project_id, current_user, db)
+    doc = db.documents.get(doc_id)
+    if not doc or doc.project_id != project_id:
+        raise not_found("Document", doc_id)
+
+    from ..services.document_preparer import prepare_document as _prepare
+    doc_tree = _prepare(doc, db, project_id)
+
+    # Attach flat document metadata
+    doc_tree["id"] = doc.id
+    doc_tree["name"] = doc.name
+    doc_tree["subtitle"] = doc.subtitle
+    doc_tree["process"] = doc.process
+    doc_tree["layer"] = doc.layer
+    doc_tree["group"] = doc.group
+    doc_tree["status"] = doc.status
+    doc_tree["version_id"] = doc.version_id
+    doc_tree["due_date"] = doc.due_date.isoformat() if doc.due_date else None
+    doc_tree["assignees"] = _assignee_views(doc_id, db)
+    doc_tree["created_at"] = doc.created_at.isoformat()
+    doc_tree["updated_at"] = doc.updated_at.isoformat()
+    stored_sections = db.documents.list_sections(doc_id)
+    resolved = sum(1 for s in stored_sections if s.review_state in ("accepted", "declined", "edited"))
+    doc_tree["review_progress"] = {"resolved": resolved, "total": len(stored_sections)}
+
+    return {"document": doc_tree}
+
+
 @router.get("/projects/{project_id}/documents/{doc_id}")
 def get_document(
     project_id: str,
