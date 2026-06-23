@@ -1,6 +1,7 @@
 # API Server — Project Context
 
-> Updated: 2026-06-22 (feat/api-server branch — initial implementation)
+> Updated: 2026-06-23 (feat/api-server branch — model directory data access via ModelReader)
+> Previous update: 2026-06-22 (feat/api-server branch — initial implementation)
 > Active branch: `feat/api-server`
 
 ---
@@ -26,11 +27,14 @@ api/
 │   └── interfaces.py       ← 12 abstract ABCs — the DB contract every adapter must fulfill
 ├── db/
 │   ├── in_memory.py        ← Concrete in-memory adapter + seed data
+│   ├── json_db.py          ← JSON-file adapter (persists to api/db/data/; loads model/ via ModelReader)
 │   └── session.py          ← ONE LINE to swap backend: replace `InMemoryDatabase()`
 ├── middleware/
 │   └── auth.py             ← JWT (HS256), RBAC helpers, bcrypt compatibility shims
 ├── services/
-│   └── errors.py           ← Consistent HTTP error envelope helpers
+│   ├── errors.py           ← Consistent HTTP error envelope helpers
+│   ├── model_reader.py     ← ModelReader: single access point for all model/ JSON files
+│   └── document_renderer.py ← Builds structured document tree from pipeline output
 └── routes/
     ├── auth.py             ← POST /auth/signin|refresh|signout, GET/PATCH /auth/me
     ├── projects.py         ← CRUD projects, access requests
@@ -40,7 +44,8 @@ api/
     ├── team.py             ← Member invite, role management
     ├── compare.py          ← Diff between commits / versions
     ├── functions.py        ← Function visibility management
-    └── notifications.py    ← User notifications
+    ├── notifications.py    ← User notifications
+    └── model.py            ← GET /model/* — pipeline model data access
 ```
 
 ---
@@ -151,6 +156,15 @@ Steps to add a real DB:
 2. Replace `InMemoryDatabase()` with your adapter in `session.py`.
 3. Nothing else changes — routes and services only see the interfaces.
 
+### ModelReader — single access point for model/ files
+
+`api/services/model_reader.py` is the **only** place that reads files from
+the pipeline's `model/` directory. Both `JsonDatabase` (on startup) and
+`document_renderer` (on each `?structured=true` request) import from it.
+The `/api/v1/model` route group exposes its data directly to API clients.
+
+See §13 for full detail.
+
 ### RBAC is server-side
 
 `require_project_admin` / `require_project_member` in `middleware/auth.py`
@@ -222,6 +236,13 @@ All errors return:
 Error helpers live in `api/services/errors.py`:
 `not_found`, `forbidden`, `conflict`, `bad_request`.
 
+`bad_request` accepts either one argument (message only, code defaults to
+`VALIDATION_ERROR`) or two arguments (explicit code string + message):
+```python
+bad_request("Human-readable message")
+bad_request("MODEL_NOT_AVAILABLE", "Pipeline model not available.")
+```
+
 ---
 
 ## 9. SSE — live job progress
@@ -236,7 +257,7 @@ Event types: `phase_update`, `activity_update`, `log_line`,
 
 ---
 
-## 10. Route summary (51 endpoints)
+## 10. Route summary (63 endpoints)
 
 All under `/api/v1`. Full reference: `api/README.md`.
 
@@ -251,6 +272,7 @@ All under `/api/v1`. Full reference: `api/README.md`.
 | Compare | `/projects/:id/compare` | 3 |
 | Functions | `/projects/:id/functions` | 2 |
 | Notifications | `/notifications` | 3 |
+| **Model** | `/model` | **12** |
 | Meta | `/health`, `/` | 2 |
 
 ---
@@ -267,10 +289,10 @@ The `InMemoryDatabase` resets on every server restart.  The `JsonDatabase`:
 
 1. **Persists all mutations** to `api/db/data/*.json` (write-through on every
    create/update/delete — one file per aggregate).
-2. **Loads pipeline output automatically** — if `model/functions.json` exists
-   (written by Phase 2 of the document-generation pipeline), its contents
-   replace the seeded function data so the API always reflects the latest
-   analysis run without any manual migration step.
+2. **Loads pipeline output automatically** — on startup it calls
+   `ModelReader.load_pipeline_functions()` which reads `model/functions.json`
+   (written by Phase 2) and replaces the seeded function data so the API
+   always reflects the latest analysis run with no manual migration step.
 
 ### Directory layout
 
@@ -292,15 +314,16 @@ api/db/data/                ← created automatically on first startup
   compare_diffs.json
 
 model/                      ← pipeline output (read-only from API perspective)
-  functions.json            ← loaded on JsonDatabase init if present
+  functions.json            ← loaded on JsonDatabase init via ModelReader
   metadata.json             ← used to derive project name
+  (+ other files — see §13)
 ```
 
 ### How to switch backends
 
 **Environment variable (recommended):**
 ```bash
-API_DB_BACKEND=json  uvicorn api.main:app --reload --port 8000
+API_DB_BACKEND=json   uvicorn api.main:app --reload --port 8000
 API_DB_BACKEND=memory uvicorn api.main:app --reload --port 8000  # default
 ```
 
@@ -316,17 +339,18 @@ _db = JsonDatabase()          # was: InMemoryDatabase()
    `InMemoryDatabase` and write files to disk.
 2. If files **exist** → load as-is (mutations from previous runs are preserved).
 3. If `model/functions.json` **exists** → replace the functions store with
-   pipeline output (regardless of whether it was seeded or loaded from disk).
+   pipeline output (via `ModelReader.load_pipeline_functions()`), regardless
+   of whether the store was seeded or loaded from disk.
 
 ### Pipeline integration detail
 
-`_load_pipeline_functions(model_dir)` in `json_db.py` reads
-`model/functions.json` (written by Phase 1 + 2) and maps each entry to the
-`Function` domain model.  The mapping handles the analyzer's key format
-(`Layer::Component::FunctionName`) and field names (`componentName`, `layer`,
-`isVisible`, `description`, etc.).  The result is keyed under `job1` (the
-default seeded job ID) so the existing `/jobs/{job_id}/functions` endpoint
-returns the real pipeline data with no route changes.
+`ModelReader.load_pipeline_functions()` reads `model/functions.json` (written
+by Phase 1 + 2) and maps each entry to the `Function` domain model. The
+mapping handles the analyzer's key format (`Layer::Component::FunctionName`)
+and field names (`componentName`, `layer`, `isVisible`, `description`, etc.).
+The result is keyed under `job1` (the default seeded job ID) so the existing
+`/jobs/{job_id}/functions` endpoint returns real pipeline data with no route
+changes.
 
 ### Serialisation
 
@@ -361,6 +385,20 @@ unit-header tables, flowchart Mermaid strings, and behaviour-diagram data.
 The new response gives the UI everything it needs to render a faithful
 preview of the DOCX without executing the pipeline again.
 
+### Implementation — `api/services/document_renderer.py`
+
+`build_document_structure(doc, db, project_id)` is called by the route when
+`?structured=true`. It:
+
+1. Resolves project/version metadata from the DB.
+2. Loads pipeline artefacts from `output/` (interface tables, flowcharts,
+   behaviour PNGs) via local helpers.
+3. Loads model files (`units`, `functions`, `globalVariables`,
+   `dataDictionary`, `metadata`) through a `ModelReader` instance —
+   **not** via scattered `_load_model_file()` calls (those were removed in
+   the model-reader refactor; see §13).
+4. Builds the hierarchical section tree or falls back to stored sections.
+
 ### Response shape (`?structured=true`)
 
 ```json
@@ -383,8 +421,8 @@ preview of the DOCX without executing the pipeline again.
     },
 
     "toc": [
-      {"id": "s1",      "number": "1",     "title": "1 Introduction",   "level": 1},
-      {"id": "s1_1",    "number": "1.1",   "title": "1.1 Purpose",      "level": 2},
+      {"id": "s1",   "number": "1",   "title": "1 Introduction", "level": 1},
+      {"id": "s1_1", "number": "1.1", "title": "1.1 Purpose",    "level": 2},
       ...
     ],
 
@@ -531,9 +569,9 @@ preview of the DOCX without executing the pipeline again.
 | Interface rows | `output/interface_tables.json` |
 | Flowchart Mermaid | `output/flowcharts/*.json` |
 | Behaviour data | `output/behaviour_diagrams/_behaviour_pngs.json` |
-| Unit header | `model/units.json` + `model/dataDictionary.json` + `model/globalVariables.json` |
-| Function I/O labels | `model/functions.json` (behaviourInputName / behaviourOutputName) |
-| Hidden functions | `model/functions.json` (`hidden: true`) |
+| Unit header | `ModelReader.units` + `.data_dictionary` + `.global_variables` |
+| Function I/O labels | `ModelReader.functions` (`behaviourInputName` / `behaviourOutputName`) |
+| Hidden functions | `ModelReader.functions` (`hidden: true`) |
 
 ### Fallback (pipeline not run)
 
@@ -543,3 +581,99 @@ When `output/interface_tables.json` doesn't exist, `source` is
 Markdown tables in `interfaces` sections are parsed into a
 `markdown_table` structured table. The legacy flat response is
 always available without `?structured=true`.
+
+---
+
+## 13. Model directory data access (`api/services/model_reader.py`)
+
+Added on branch `feat/api-server`. `ModelReader` is the **single access point**
+for every JSON file the pipeline writes into `model/` after a document-generation
+run. Before this, `JsonDatabase` and `document_renderer` each had their own
+scattered file-reading code; now both import from `model_reader`.
+
+### Files read
+
+| Property | File | Written by |
+|---|---|---|
+| `.metadata` | `model/metadata.json` | Phase 1 (`parser.py`) |
+| `.functions` | `model/functions.json` | Phase 1 + Phase 2 (`model_deriver.py`) |
+| `.units` | `model/units.json` | Phase 2 |
+| `.components` | `model/components.json` | Phase 2 |
+| `.global_variables` | `model/globalVariables.json` | Phase 1 |
+| `.data_dictionary` | `model/dataDictionary.json` | Phase 1 |
+| `.summaries` | `model/summaries.json` | Phase 2 (LLM, optional) |
+| `.knowledge_base` | `model/knowledge_base.json` | Phase 2 (flowchart engine) |
+| `.clang_include_paths` | `model/clang_include_paths.json` | `run.py` pre-Phase 1 |
+
+All properties return `{}` (empty dict) when the file doesn't exist, so the
+server is always usable even before the pipeline has run.
+
+### Lazy loading and caching
+
+Files are loaded from disk on first property access and cached in memory.
+Subsequent accesses return the cached dict with no I/O. Call `.refresh()` or
+`POST /api/v1/model/refresh` to clear the cache so the next access reloads
+from disk — useful to pick up new pipeline output without restarting the server.
+
+### Module-level singleton
+
+```python
+from api.services.model_reader import model_reader
+
+reader.is_available()          # True if metadata.json exists
+reader.project_name()          # "SampleCppProject"
+reader.list_component_names()  # ["Core", "Lib", "Util"]
+reader.list_layer_names()      # ["Layer1", "Layer2"]
+reader.get_function("Layer1::Core::CoreInit")
+reader.list_units(component="Core")
+reader.list_global_variables(visibility="public")
+reader.list_data_dictionary_entries(kind="enum")
+reader.get_summary("Layer1", "Core", unit="core")
+reader.load_pipeline_functions()   # → {job_id: [Function, …]} for JsonDatabase
+reader.refresh()               # clear cache
+```
+
+### Query helpers
+
+| Method | Filters |
+|---|---|
+| `list_functions()` | `component=`, `layer=`, `visible_only=`, `include_hidden=` |
+| `list_units()` | `component=`, `layer=` |
+| `list_global_variables()` | `component=`, `layer=`, `visibility=` |
+| `list_data_dictionary_entries()` | `kind=` (`"typedef"` \| `"enum"` \| `"define"`) |
+| `get_function(key)` | by qualified name or `id` field |
+| `get_unit(key)` | by `Component\|unit_name` key |
+| `get_component(name)` | by component name |
+| `get_summary(layer, component, unit=)` | hierarchy path |
+
+### Route group — `api/routes/model.py`
+
+12 new authenticated endpoints under `/api/v1/model`:
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/model` | Status: available, project name, file list with sizes + mtimes |
+| GET | `/model/metadata` | Raw `metadata.json` content |
+| GET | `/model/components` | Component list (`?layer=` filter) |
+| GET | `/model/components/{name}` | Single component + unit summaries + function count |
+| GET | `/model/units` | Unit list (`?component=` `?layer=` filters) |
+| GET | `/model/units/{key}` | Single unit + resolved global variable details |
+| GET | `/model/functions` | Function list with pagination (`?component=` `?layer=` `?visible_only=` `?include_hidden=` `?page=` `?per_page=`) |
+| GET | `/model/functions/{key}` | Single function + resolved callee names |
+| GET | `/model/globals` | Global variables (`?component=` `?layer=` `?visibility=`) |
+| GET | `/model/dictionary` | Data dictionary entries (`?kind=` filter) |
+| GET | `/model/summaries` | LLM summaries (`?layer=` `?component=` filters) |
+| POST | `/model/refresh` | Clear model cache (admin only; requires `?project_id=`) |
+
+**URL-safety note:** Unit keys use `~` as separator in URLs (the pipeline uses
+`|` which is not URL-safe). The route decodes `~` back to `|` before calling
+`ModelReader`. Example: `GET /model/units/Core~core`.
+
+### Consumers
+
+- **`JsonDatabase.__init__`** — calls `ModelReader.load_pipeline_functions()` to
+  overlay `model/functions.json` onto the seed/persisted functions store.
+- **`document_renderer.build_document_structure()`** — uses `ModelReader` properties
+  (`.units`, `.functions`, `.global_variables`, `.data_dictionary`, `.metadata`)
+  instead of the former scattered `_load_model_file()` calls.
+- **`/api/v1/model/*` routes** — expose model data directly to API clients.
