@@ -146,6 +146,11 @@ def list_documents(
 def get_document(
     project_id: str,
     doc_id: str,
+    structured: bool = Query(False, description=(
+        "Return full structured document tree that mirrors the DOCX output "
+        "(cover, TOC, hierarchical sections with tables and flowcharts). "
+        "When False returns the legacy flat sections view."
+    )),
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
@@ -155,6 +160,29 @@ def get_document(
     doc = db.documents.get(doc_id)
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
+
+    if structured:
+        from ..services.document_renderer import build_document_structure
+        doc_tree = build_document_structure(doc, db, project_id)
+        # Attach flat metadata that the list view also carries
+        doc_tree["id"] = doc.id
+        doc_tree["name"] = doc.name
+        doc_tree["subtitle"] = doc.subtitle
+        doc_tree["process"] = doc.process
+        doc_tree["layer"] = doc.layer
+        doc_tree["group"] = doc.group
+        doc_tree["status"] = doc.status
+        doc_tree["version_id"] = doc.version_id
+        doc_tree["due_date"] = doc.due_date.isoformat() if doc.due_date else None
+        doc_tree["assignees"] = _assignee_views(doc_id, db)
+        doc_tree["created_at"] = doc.created_at.isoformat()
+        doc_tree["updated_at"] = doc.updated_at.isoformat()
+        stored_sections = db.documents.list_sections(doc_id)
+        resolved = sum(1 for s in stored_sections if s.review_state in ("accepted", "declined", "edited"))
+        doc_tree["review_progress"] = {"resolved": resolved, "total": len(stored_sections)}
+        return {"document": doc_tree}
+
+    # Legacy flat view (default, backward-compatible)
     sections = db.documents.list_sections(doc_id)
     return {"document": _doc_dict(doc, _assignee_views(doc_id, db), sections)}
 
