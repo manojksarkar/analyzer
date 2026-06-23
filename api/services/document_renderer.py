@@ -335,6 +335,10 @@ def build_document_structure(
     output_dir = root / "output"
     model_dir = root / "model"
 
+    # Use ModelReader for all model/ file access
+    from .model_reader import ModelReader
+    reader = ModelReader(model_dir=model_dir)
+
     # Metadata
     project = db.projects.get(project_id)
     project_name = project.name if project else doc.project_id
@@ -349,11 +353,13 @@ def build_document_structure(
 
     behaviour_rows = _load_behaviour_pngs(output_dir, group)
     flowcharts_map = _load_flowcharts(output_dir, group)
-    metadata = _load_model_file(model_dir, "metadata")
-    units_data = _load_model_file(model_dir, "units")
-    functions_data = _load_model_file(model_dir, "functions")
-    global_variables_data = _load_model_file(model_dir, "globalVariables")
-    data_dictionary = _load_model_file(model_dir, "dataDictionary")
+
+    # Model files via ModelReader
+    metadata = reader.metadata
+    units_data = reader.units
+    functions_data = reader.functions
+    global_variables_data = reader.global_variables
+    data_dictionary = reader.data_dictionary
 
     if pipeline_available:
         return _build_from_pipeline(

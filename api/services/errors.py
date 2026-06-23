@@ -25,8 +25,21 @@ def conflict(code: str, msg: str) -> HTTPException:
     )
 
 
-def bad_request(msg: str) -> HTTPException:
+def bad_request(code_or_msg: str, msg: str = "") -> HTTPException:
+    """
+    Return a 400 Bad Request error.
+
+    Can be called as:
+        bad_request("Human-readable message")
+        bad_request("ERROR_CODE", "Human-readable message")
+    """
+    if msg:
+        code = code_or_msg
+        message = msg
+    else:
+        code = "VALIDATION_ERROR"
+        message = code_or_msg
     return HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail={"code": "VALIDATION_ERROR", "message": msg, "status": 400},
+        detail={"code": code, "message": message, "status": 400},
     )

@@ -1157,8 +1157,11 @@ class JsonDatabase:
         self.notifications: INotificationRepository       = _JsonNotifRepo(notif_store, data / "notifications.json")
 
         # ------------------------------------------------------------------
-        # Overlay pipeline output (model/functions.json) if it exists
+        # Overlay pipeline output (model/functions.json) if it exists.
+        # Use ModelReader so all model-file access goes through one place.
         # ------------------------------------------------------------------
-        pipeline_fns = _load_pipeline_functions(model)
+        from ..services.model_reader import ModelReader
+        _reader = ModelReader(model_dir=model)
+        pipeline_fns = _reader.load_pipeline_functions()
         if pipeline_fns is not None:
             self._fn_repo.load_from_pipeline(pipeline_fns)

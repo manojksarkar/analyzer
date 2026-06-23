@@ -7,9 +7,11 @@ from .team import router as team_router
 from .compare import router as compare_router
 from .functions import router as functions_router
 from .notifications import router as notifications_router
+from .model import router as model_router
 
 __all__ = [
     "auth_router", "projects_router", "commits_versions_router",
     "jobs_router", "documents_router", "team_router",
     "compare_router", "functions_router", "notifications_router",
+    "model_router",
 ]
