@@ -18,6 +18,7 @@ from core.config import (
 )
 from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
+from incremental.parse_includes import build_closure, to_repo_relative
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -290,6 +291,9 @@ data_dictionary = {}
 # Function/global keys are filled in build_metadata (need the model key); type and
 # macro keys are filled directly in their passes. Written to model/hashes.json.
 entity_hashes = {}
+# Incremental (M4.0): per-TU include closure {tuRelPath -> [in-repo included rel paths]},
+# captured during the first parse pass; written to model/tu_includes.json.
+tu_includes = {}
 # Incremental (M1.2b): slim type/macro usage index, written to model/edges.json.
 # Collected by func_key (internal) during visit_usage; remapped to model fids in main().
 type_users = defaultdict(set)      # type qn        -> set(func_key) that reference it
@@ -1047,11 +1051,29 @@ def visit_usage(cursor, current_key=None):
         visit_usage(child, current_key)
 
 
+def _capture_tu_includes(tu, path):
+    """M4.0: record this TU's in-repo transitive include closure (doc 04 §11.2).
+    Best-effort — must never break parsing if libclang has no inclusion info."""
+    try:
+        inc_paths = []
+        for fi in tu.get_includes():
+            inc = getattr(fi, "include", None)
+            name = getattr(inc, "name", None)
+            if name:
+                inc_paths.append(name)
+        src_rel = to_repo_relative(path, MODULE_BASE_PATH)
+        if src_rel is not None:
+            tu_includes[src_rel] = build_closure(path, inc_paths, MODULE_BASE_PATH)
+    except Exception as e:  # pragma: no cover - defensive
+        print(f"include-closure capture failed for {path}: {e}")
+
+
 def parse_file(path):
     try:
         tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         for d in tu.diagnostics:
             print(d)
+        _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
         visit_usage(tu.cursor)  # incremental (M1.2b): type/macro usage on the same TU
@@ -1392,7 +1414,7 @@ def main():
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
     }
-    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES, EDGES
+    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES, EDGES, TU_INCLUDES
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -1416,6 +1438,10 @@ def main():
     edges = build_edges(type_users, function_tokens, _type_keys, _macro_keys, _func_key_to_fid)
     write_model_file(EDGES, edges)
 
+    # Incremental (M4.0): per-TU include closure -> model/tu_includes.json. The
+    # narrowed-parse engine (M4) intersects this with the git diff to find affected TUs.
+    write_model_file(TU_INCLUDES, {k: tu_includes[k] for k in sorted(tu_includes)})
+
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
     n_types = len(data_dictionary)
@@ -1431,6 +1457,8 @@ def main():
     print(f"  model/dataDictionary.json ({n_types} types: {', '.join(parts)})")
     print(f"  model/hashes.json ({len(entity_hashes)} entities)")
     print(f"  model/edges.json ({len(edges['typeUsers'])} types used, {len(edges['macroUsers'])} macros used)")
+    _n_inc = sum(len(v) for v in tu_includes.values())
+    print(f"  model/tu_includes.json ({len(tu_includes)} TUs, {_n_inc} in-repo include edges)")
 
 
 if __name__ == "__main__":

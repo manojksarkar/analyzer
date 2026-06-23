@@ -46,6 +46,10 @@ SUMMARIES = "summaries"
 # EDGES = {typeUsers, macroUsers} (slim — calls/globals come from functions.json).
 HASHES = "hashes"
 EDGES = "edges"
+# TU_INCLUDES = {tuRelPath -> [in-repo, repo-relative included files]} — the per-TU
+# transitive include closure (M4.0). Captured every parse; the narrowed-parse engine
+# (M4) intersects it with the git diff to find affected TUs. Not in ALL_MODEL_NAMES.
+TU_INCLUDES = "tu_includes"
 
 ALL_MODEL_NAMES = (
     METADATA,
