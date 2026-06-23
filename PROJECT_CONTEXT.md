@@ -2988,7 +2988,7 @@ hash / edge / reuse-index access goes through.
 
 Branch: `feat/frontend-app`. HTML design mockups in `frontend/designs/` are the reference specs; the working React app lives in `frontend/app/` (Vite + React + TS + Tailwind v4) and ports each design 1:1. Full UI context in `frontend/UI_CONTEXT.md`.
 
-**Engineering docs for the React app (team-facing, in `frontend/app/`):** `README.md` (stack, quickstart, structure, doc index), `ARCHITECTURE.md` (layering, dependency direction, data flow, the mock↔backend seam, design-token system, target `features/` structure), `CONTRIBUTING.md` (the 6 design principles, styling rules = tokens-not-hex, component/file/commit/PR conventions, Definition of Done, tooling status). These define how the team writes frontend code; `UI_CONTEXT.md` covers the *what & why* (product/design), these cover the *how* (engineering).
+**Team-facing doc:** `frontend/app/README.md` — stack, run commands, folder structure, and the core conventions (tokens-not-hex, read data through `hooks/`, thin pages, commit style). `UI_CONTEXT.md` covers the product/design *what & why*; the README covers the engineering *how*.
 
 ### Design system
 
