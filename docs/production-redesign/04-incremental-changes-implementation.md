@@ -373,8 +373,9 @@ NOT part of this feature.**
   the reuse index, reassemble; `mode:"auto"`. *Delivers hours → minutes.*
 - **M3 — Hardening.** Move/rename re-resolution, deletions, over-approximation polish, version-scoped
   reads (`components`/`functions`/`flowcharts` take `?versionId=`),
-  multi-doc zip download. *(M3.1–M3.6 done — incl. function-level flowchart reuse; remaining:
-  version-scoped reads, git layer consolidation, unit-diagram reuse.)* **Recipe-fingerprint invalidation:
+  multi-doc zip download. *(M3.1–M3.6 + M3.8 branch/commit endpoints + M3.9 version-scoped reads done;
+  remaining: cross-version reuse-index lookup (D3), git layer consolidation, unit-diagram reuse, move/rename
+  orphan cleanup.)* **Recipe-fingerprint invalidation:
   dropped by decision** — an approved document is reused regardless of LLM model/prompt changes, so the
   reuse fingerprint is content-only (no recipe component).
 - **M4 — Narrowed (incremental) parse** (see §11; only worth doing once Phase-1 parse time is the
