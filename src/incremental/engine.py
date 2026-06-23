@@ -122,6 +122,47 @@ def carry_forward_globals(reused_keys: Iterable[str],
     return n
 
 
+def carry_forward_from_index(impact_keys: Iterable[str],
+                             target_fps: Dict[str, str],
+                             target_entities: Dict[str, dict],
+                             index,
+                             current_version_id: str,
+                             src_loader,
+                             fields: Iterable[str]) -> Dict[str, str]:
+    """Cross-version reuse (M3.7, doc 04 §5 step 6). For each IMPACT-set entity whose
+    CONTENT fingerprint already exists in the reuse index (produced by a *prior* version
+    — a revert, or code identical to another branch), copy its stored output `fields`
+    from that version into `target_entities` instead of regenerating them. Returns
+    {entityKey -> sourceVersionId} for the entities reused.
+
+    The reuse index is content-addressed across ALL versions (D3), so this catches reuse
+    the baseline carry-forward (parent->child only) cannot. `index.get(fp)` returns
+    {"versionId", "entityKey"} or None (a ReuseIndex or a plain dict both work);
+    `src_loader(version_id)` returns that version's {entityKey: entity} mapping (the
+    caller should cache it). Pure given index + src_loader."""
+    fields = tuple(fields)
+    reused: Dict[str, str] = {}
+    for key in impact_keys:
+        fp = target_fps.get(key)
+        if not fp:
+            continue
+        hit = index.get(fp)
+        if not hit or hit.get("versionId") == current_version_id:
+            continue
+        src = (src_loader(hit["versionId"]) or {}).get(hit.get("entityKey"))
+        tgt = target_entities.get(key)
+        if not isinstance(src, dict) or not isinstance(tgt, dict):
+            continue
+        copied = False
+        for f in fields:
+            if f in src:
+                tgt[f] = src[f]
+                copied = True
+        if copied:
+            reused[key] = hit["versionId"]
+    return reused
+
+
 def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   data_dict_path: Optional[str], repo_dir: str, project_root: str,
                   extra_args: Optional[List[str]] = None) -> int:
@@ -232,6 +273,36 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Carry forward baseline outputs for the reuse set so Phase 2 skips them.
     n_carried = carry_forward_descriptions(plan["reused"], target_functions, base_functions)
     n_carried_g = carry_forward_globals(reused_globals, target_globals, base_globals)
+
+    # M3.7 — cross-version reuse (D3 / §5 step 6): for IMPACT-set entities whose content
+    # fingerprint was already produced by a *prior* version (a revert, or code identical
+    # to another branch), copy that version's stored output instead of regenerating it.
+    # The reuse index is content-addressed across ALL versions, so this catches reuse the
+    # baseline carry-forward (parent->child only) can't. Fingerprints are content-only, so
+    # the same dict is reused to seed the index at the end (descriptions don't affect it).
+    target_fps = compute_fingerprints(target_hashes, target_functions, target_edges)
+    _func_cache: Dict[str, dict] = {}
+    _glob_cache: Dict[str, dict] = {}
+
+    def _src_funcs(vid: str) -> dict:
+        if vid not in _func_cache:
+            _func_cache[vid] = _read(os.path.join(vstore.version_dir(vid), "model"), "functions.json")
+        return _func_cache[vid]
+
+    def _src_globs(vid: str) -> dict:
+        if vid not in _glob_cache:
+            _glob_cache[vid] = _read(os.path.join(vstore.version_dir(vid), "model"), "globalVariables.json")
+        return _glob_cache[vid]
+
+    index_reused = carry_forward_from_index(plan["impact"], target_fps, target_functions,
+                                            ridx, version_id, _src_funcs, _CARRY_FIELDS)
+    index_reused_g = carry_forward_from_index(impacted_globals, target_fps, target_globals,
+                                              ridx, version_id, _src_globs, ("description",))
+    # Entities satisfied from the index drop out of the LLM regen sets (Phase 2 skips them
+    # because they now carry a description + behaviour names).
+    regen_impact = [k for k in plan["impact"] if k not in index_reused]
+    regen_globals = {k for k in impacted_globals if k not in index_reused_g}
+
     with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as fh:
         json.dump(target_functions, fh, indent=2)
     with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as fh:
@@ -261,8 +332,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # splices them into the baseline file JSONs, instead of regenerating every function
     # in a changed file. (flowchartFiles is kept for older readers / file-level fallback.)
     with open(os.path.join(model_dir, "incremental_plan.json"), "w", encoding="utf-8") as fh:
-        json.dump({"impactFids": sorted(plan["impact"]),
-                   "impactedGlobals": sorted(impacted_globals),
+        json.dump({"impactFids": sorted(regen_impact),
+                   "impactedGlobals": sorted(regen_globals),
                    "impactedFiles": impacted_files,
                    "flowchartFiles": flowchart_files,
                    "flowchartFids": sorted(direct_fns),
@@ -288,18 +359,21 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     estore.write(version_id, target_edges)
     llm = cfg.get("llm") or {}
     # Content-only reuse key (recipe intentionally not folded in — approved outputs are
-    # reused regardless of which model/prompt produced them).
-    for entity_key, fp in compute_fingerprints(target_hashes, target_functions, target_edges).items():
+    # reused regardless of which model/prompt produced them). Reuse the fingerprints
+    # computed for the M3.7 lookup (descriptions added since don't affect the content key).
+    for entity_key, fp in target_fps.items():
         ridx.put(fp, version_id, entity_key)  # first version that produced a fp keeps it
     ridx.save()
 
     manifest = _manifest(version_id, branch, target, scope, data_dict_id,
-                         decision="incremental", regenerated=len(plan["impact"]),
-                         reused=len(plan["reused"]), status="complete", warnings=decision["warnings"])
+                         decision="incremental", regenerated=len(regen_impact),
+                         reused=len(plan["reused"]) + len(index_reused),
+                         status="complete", warnings=decision["warnings"])
     manifest["baselineVersionId"] = base_vid
     manifest["baselineCommit"] = decision["chosenBaseCommit"]
     manifest["documents"] = documents
     manifest["carriedForward"] = n_carried
+    manifest["crossVersionReused"] = len(index_reused) + len(index_reused_g)
     vstore.write_manifest(version_id, manifest)
 
     # End-of-run report (M3.4): inputs + change classification + reuse accounting.
@@ -307,8 +381,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     classification = {b: dict(Counter(_entity_kind(k) for k in cls[b]))
                       for b in ("changed", "new", "deleted", "unchanged")}
     all_files = {(f.get("location") or {}).get("file") for f in target_functions.values()} - {None}
-    fn_total, fn_regen = len(target_functions), len(plan["impact"])
-    gl_total, gl_regen = len(target_globals), len(impacted_globals)
+    fn_total, fn_regen = len(target_functions), len(regen_impact)
+    gl_total, gl_regen = len(target_globals), len(regen_globals)
     stats = {
         "versionId": version_id, "decision": "incremental", "status": "complete",
         "projectId": project_id, "branch": branch, "commit": target,
@@ -319,6 +393,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         "classification": classification,
         "functions": {"total": fn_total, "regenerated": fn_regen, "reused": fn_total - fn_regen},
         "globals": {"total": gl_total, "regenerated": gl_regen, "reused": gl_total - gl_regen},
+        # M3.7 — how many of the reused entities came from the cross-version index
+        # (reverts / cross-branch), vs the baseline carry-forward.
+        "crossVersion": {"functions": len(index_reused), "globals": len(index_reused_g)},
         # Flowcharts now reuse at FUNCTION granularity (M3.6): only the directly changed/
         # new functions are re-labelled; the rest are spliced from the baseline.
         "flowcharts": {"total": fn_total, "regenerated": len(direct_fns),

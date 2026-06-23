@@ -69,6 +69,13 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
              f"-> carried {fc.get('carried', 0)} ({_pct(fc.get('carried', 0), fc.get('total', 0))})")
     if decision == "incremental":
         L.append(f"    Summaries : {sm.get('regenerated', 0)} impacted file(s) re-summarized; the rest reused")
+        # M3.7 — entities reused from the cross-version index (reverts / cross-branch),
+        # i.e. copied from a non-baseline version instead of regenerated.
+        xv = stats.get("crossVersion") or {}
+        xv_fn, xv_gl = xv.get("functions", 0), xv.get("globals", 0)
+        if xv_fn or xv_gl:
+            L.append(f"    X-version : {xv_fn} function(s) + {xv_gl} global(s) reused from a prior "
+                     f"version via the content index (revert / cross-branch)")
 
     L.append(_THIN)
     docs = stats.get("documents") or []
