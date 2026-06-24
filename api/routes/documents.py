@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from ..db.session import get_db
@@ -273,17 +273,51 @@ def download_document(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """
+    Download the most recently generated DOCX for this document.
+
+    Looks for ``output/software_detailed_design_<group>.docx`` on disk.
+    If found, streams it as an attachment.  If the pipeline hasn't run yet,
+    returns 409 ``PIPELINE_NOT_RUN``.
+
+    Unlike ``/export``, this does **not** re-run the exporter — it serves
+    whatever is already on disk.  Use ``/export`` to force a fresh build.
+    """
     if not db.projects.get(project_id):
         raise not_found("Project", project_id)
     require_project_member(project_id, current_user, db)
     doc = db.documents.get(doc_id)
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
-    # Return a 1-byte placeholder so the endpoint is exercisable
+
+    from ..services.docx_builder import list_docx_outputs
+    candidates = list_docx_outputs(group=doc.group or "")
+    if not candidates:
+        # No output on disk — fall back to generating now
+        from ..services.docx_builder import build_docx
+        ok, path, error = build_docx(group=doc.group or "")
+        if not ok:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "PIPELINE_NOT_RUN",
+                    "message": (
+                        "No DOCX found on disk and generation also failed — "
+                        "run the pipeline first.  Detail: " + (error or "")
+                    ),
+                    "status": 409,
+                },
+            )
+        candidates = [path]
+
+    # Serve the most recently modified file
+    docx_path = max(candidates, key=lambda p: p.stat().st_mtime)
+    docx_bytes = docx_path.read_bytes()
+    filename = f"{doc.name}.docx"
     return Response(
-        content=b"PK\x03\x04",   # DOCX/ZIP magic bytes
+        content=docx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{doc.name}.docx"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -479,14 +513,43 @@ def export_document(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
+    """
+    Generate and stream the DOCX for this document.
+
+    Invokes ``src/docx_exporter.export_docx`` in a subprocess using the
+    pipeline model artifacts already on disk (``model/`` + ``output/``).
+    The generated file is streamed back as an attachment.
+
+    Requires the pipeline to have run at least through Phase 3 (``output/
+    interface_tables.json`` must exist).  If pipeline output is not available,
+    returns 409 with ``PIPELINE_NOT_RUN``.
+    """
     if not db.projects.get(project_id):
         raise not_found("Project", project_id)
     require_project_member(project_id, current_user, db)
     doc = db.documents.get(doc_id)
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
+
+    from ..services.docx_builder import build_docx
+    ok, path, error = build_docx(group=doc.group or "")
+
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PIPELINE_NOT_RUN",
+                "message": (
+                    "DOCX generation failed — the pipeline must be run first "
+                    f"(Phase 1–3 minimum).  Detail: {error}"
+                ),
+                "status": 409,
+            },
+        )
+
+    docx_bytes = path.read_bytes()
     return Response(
-        content=b"PK\x03\x04",
+        content=docx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{doc.name}.docx"'},
     )
