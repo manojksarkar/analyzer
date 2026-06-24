@@ -327,6 +327,14 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         if bf:
             flowchart_files.add((bf.get("location") or {}).get("file"))
     flowchart_files = sorted(flowchart_files - {None})
+    # M3.7b — flowchart cross-version reuse: a DIRECTLY-changed function that was reused
+    # from the index (a revert / cross-branch-identical fn) has the SAME content -> the
+    # SAME flowchart as its source version, so don't regenerate it. The view splices its
+    # flowchart in from the source version instead (and falls back to regenerating if that
+    # version has no flowchart for it). The rest of direct_fns regenerate as before (M3.6).
+    xver_flowcharts = {fid: vstore.version_dir(index_reused[fid])
+                       for fid in direct_fns if fid in index_reused}
+    flowchart_fids_regen = sorted(direct_fns - set(xver_flowcharts))
     # flowchartFids (for FUNCTION-LEVEL flowchart reuse, M3.6) = the directly changed/
     # new function fids themselves. The flowcharts view regenerates ONLY these and
     # splices them into the baseline file JSONs, instead of regenerating every function
@@ -336,7 +344,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                    "impactedGlobals": sorted(regen_globals),
                    "impactedFiles": impacted_files,
                    "flowchartFiles": flowchart_files,
-                   "flowchartFids": sorted(direct_fns),
+                   "flowchartFids": flowchart_fids_regen,
+                   "crossVersionFlowcharts": xver_flowcharts,
                    "baselineVersionDir": vstore.version_dir(base_vid)}, fh, indent=2)
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
@@ -394,12 +403,15 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         "functions": {"total": fn_total, "regenerated": fn_regen, "reused": fn_total - fn_regen},
         "globals": {"total": gl_total, "regenerated": gl_regen, "reused": gl_total - gl_regen},
         # M3.7 — how many of the reused entities came from the cross-version index
-        # (reverts / cross-branch), vs the baseline carry-forward.
-        "crossVersion": {"functions": len(index_reused), "globals": len(index_reused_g)},
-        # Flowcharts now reuse at FUNCTION granularity (M3.6): only the directly changed/
-        # new functions are re-labelled; the rest are spliced from the baseline.
-        "flowcharts": {"total": fn_total, "regenerated": len(direct_fns),
-                       "carried": fn_total - len(direct_fns)},
+        # (reverts / cross-branch), vs the baseline carry-forward. flowcharts = directly
+        # changed fns whose flowchart was spliced from a prior version (M3.7b).
+        "crossVersion": {"functions": len(index_reused), "globals": len(index_reused_g),
+                         "flowcharts": len(xver_flowcharts)},
+        # Flowcharts reuse at FUNCTION granularity (M3.6): only directly changed/new
+        # functions are re-labelled; the rest are spliced from the baseline. M3.7b further
+        # excludes directly-changed fns whose flowchart is reused cross-version (reverts).
+        "flowcharts": {"total": fn_total, "regenerated": len(flowchart_fids_regen),
+                       "carried": fn_total - len(flowchart_fids_regen)},
         # files = file-level SUMMARIES (a caller's file-summary depends on its callees),
         # so it tracks the full impact set's files, not the directly-changed ones.
         "files": {"total": len(all_files), "regenerated": len(impacted_files),

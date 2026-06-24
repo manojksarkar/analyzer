@@ -81,6 +81,25 @@ def _prune_orphan_flowcharts(out_dir, valid_stems):
     return removed
 
 
+def _source_unit_flowchart(version_dir, unit):
+    """M3.7b: return (flowcharts_dir, {name: entry}) for `unit`'s flowchart JSON anywhere
+    under a version's output (handles scoped output/<scope>/flowcharts/), or (None, {})."""
+    out_root = os.path.join(version_dir, "output")
+    if not os.path.isdir(out_root):
+        return None, {}
+    for r, _d, _f in os.walk(out_root):
+        if os.path.basename(r) == "flowcharts":
+            p = os.path.join(r, unit + ".json")
+            if os.path.isfile(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as fh:
+                        arr = json.load(fh)
+                    return r, {e.get("name"): e for e in arr if isinstance(e, dict) and e.get("name")}
+                except (OSError, json.JSONDecodeError):
+                    return r, {}
+    return None, {}
+
+
 def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
     """Incremental flowchart reuse. If model/incremental_plan.json exists:
 
@@ -131,8 +150,32 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
         # Move/rename cleanup: drop carried artifacts for files no longer in the model.
         _prune_orphan_flowcharts(out_dir, set(scope_units))
 
-        # Engine regenerates ONLY the directly changed/new functions in this scope.
+        # Engine regenerates the directly changed/new functions in this scope.
         sel = [fid for fid in fids if fid in funcs]
+
+        # M3.7b — cross-version flowchart reuse: a directly-changed fn reused from the
+        # index (a revert) has the SAME content -> SAME flowchart as its source version.
+        # Splice its flowchart entry + PNG from there instead of regenerating. If the
+        # source version has no flowchart for it, fall back to regenerating it (add to sel).
+        xver_plan = plan.get("crossVersionFlowcharts") or {}
+        xver_by_unit = {}
+        for fid, src_dir in xver_plan.items():
+            info = funcs.get(fid)
+            stem = _stem(fid)
+            qn = info.get("qualifiedName") if info else None
+            if not info or not stem or not qn:
+                continue
+            src_fc_dir, src_entries = _source_unit_flowchart(src_dir, stem)
+            entry = src_entries.get(qn)
+            if entry is None:
+                sel.append(fid)                       # source has no flowchart -> regenerate
+                continue
+            xver_by_unit.setdefault(stem, {})[qn] = entry
+            png = f"{stem}_{safe_filename(qn)}.png"   # copy source PNG (so it isn't rendered)
+            srcpng = os.path.join(src_fc_dir, png) if src_fc_dir else ""
+            if srcpng and os.path.isfile(srcpng):
+                shutil.copyfile(srcpng, os.path.join(out_dir, png))
+
         restricted = {fid: funcs[fid] for fid in sel}
         fresh_pairs = {(_stem(fid), funcs[fid].get("qualifiedName")) for fid in sel}
 
@@ -141,17 +184,19 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
         # entry but still needs its deleted function spliced OUT.
         plan_files = plan.get("flowchartFiles") or []
         changed_units = {os.path.splitext(os.path.basename(f))[0] for f in plan_files} & set(scope_units)
-        # also cover changed/new fids whose file somehow isn't in flowchartFiles
+        # also cover changed/new fids whose file somehow isn't in flowchartFiles + xver units
         changed_units |= {p[0] for p in fresh_pairs if p[0]}
+        changed_units |= set(xver_by_unit)
         current_by_unit = {u: scope_units.get(u, set()) for u in changed_units}
 
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(restricted, f, indent=2)
-        log(f"incremental: flowcharts (function-level) restricted to {len(restricted)} "
-            f"changed function(s); {len(changed_units)} file JSON(s) to rebuild", "flowcharts")
+        log(f"incremental: flowcharts (function-level) restricted to {len(restricted)} changed "
+            f"function(s); {len(xver_by_unit)} unit(s) get cross-version splices; "
+            f"{len(changed_units)} file JSON(s) to rebuild", "flowcharts")
         return out_path, {"mode": "function", "base_fc": base_fc,
                           "changed_units": changed_units, "current_by_unit": current_by_unit,
-                          "fresh_pairs": fresh_pairs}
+                          "fresh_pairs": fresh_pairs, "xver_by_unit": xver_by_unit}
 
     # FILE-LEVEL fallback (plan predates flowchartFids).
     if base_fc:
@@ -170,10 +215,12 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
 
 
 def _merge_incremental_flowcharts(inc, out_dir):
-    """FUNCTION-LEVEL splice (M3.6): the engine wrote fresh JSONs containing ONLY the
-    changed functions of each changed file. Rebuild each changed file's JSON from the
-    baseline (all functions) with the changed entries replaced, deleted entries dropped
-    and new entries appended. Join key = entry 'name' (== functions.json qualifiedName)."""
+    """FUNCTION-LEVEL splice (M3.6 + M3.7b): rebuild each changed file's JSON from THREE
+    sources, per current function (join key = entry 'name' == functions.json qualifiedName):
+      * FRESH   — the engine's per-function output (directly changed/new functions);
+      * X-VER   — a flowchart spliced from a prior version (M3.7b, a reused revert);
+      * BASELINE — everything else (unchanged functions), in baseline file order.
+    Deleted functions (not in the current set) are dropped; new ones appended."""
     base_fc = inc.get("base_fc")
 
     def _by_name(path):
@@ -189,21 +236,23 @@ def _merge_incremental_flowcharts(inc, out_dir):
         out_json = os.path.join(out_dir, unit + ".json")
         fresh = _by_name(out_json)                                   # engine output: changed only
         baseline = _by_name(os.path.join(base_fc, unit + ".json")) if base_fc else {}
+        xver = inc.get("xver_by_unit", {}).get(unit) or {}          # cross-version entries (M3.7b)
         current = inc.get("current_by_unit", {}).get(unit) or set()
 
         merged, emitted = [], set()
         for name, entry in baseline.items():       # baseline order: replace changed, drop deleted
             if current and name not in current:
                 continue
-            merged.append(fresh.get(name, entry))
+            merged.append(fresh.get(name) or xver.get(name) or entry)  # fresh > x-ver > baseline
             emitted.add(name)
-        for name, entry in fresh.items():          # new functions not in the baseline
-            if name in emitted:
-                continue
-            if current and name not in current:    # a deleted fn still present in carried 'fresh'
-                continue
-            merged.append(entry)
-            emitted.add(name)
+        for src in (fresh, xver):                  # functions new to the baseline
+            for name, entry in src.items():
+                if name in emitted:
+                    continue
+                if current and name not in current:  # a deleted fn still present in carried 'fresh'
+                    continue
+                merged.append(entry)
+                emitted.add(name)
 
         with open(out_json, "w", encoding="utf-8") as f:
             json.dump(merged, f, indent=2, ensure_ascii=False)

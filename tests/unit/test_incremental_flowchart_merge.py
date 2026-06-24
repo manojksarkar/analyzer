@@ -100,6 +100,43 @@ class TestSplice:
         assert "NEW" in by["subtract"]                               # still replaced
 
 
+class TestCrossVersionSplice:
+    """M3.7b: a reverted (index-reused) function's flowchart comes from a prior version
+    (X-VER), winning over the now-wrong baseline entry; fresh still wins over X-VER."""
+
+    def test_three_source_priority(self, tmp_path):
+        base_fc = tmp_path / "baseline"; out = tmp_path / "out"
+        base_fc.mkdir(); out.mkdir()
+        # baseline = target's parent: subtract holds the (revert-stale) changed flowchart
+        _write(str(base_fc / "U.json"),
+               [_entry("add", "a"), _entry("subtract", "BASE-sub"), _entry("multiply", "BASE-mul")])
+        # engine fresh output for U: only 'multiply' was regenerated
+        _write(str(out / "U.json"), [_entry("multiply", "FRESH-mul")])
+        inc = {"base_fc": str(base_fc), "changed_units": {"U"},
+               "current_by_unit": {"U": {"add", "subtract", "multiply"}},
+               "xver_by_unit": {"U": {"subtract": _entry("subtract", "XVER-sub")}}}
+        _merge_incremental_flowcharts(inc, str(out))
+        merged = _read(str(out / "U.json"))
+        by = {e["name"]: e["flowchart"] for e in merged}
+        assert [e["name"] for e in merged] == ["add", "subtract", "multiply"]
+        assert "a" in by["add"]                 # unchanged -> baseline
+        assert "XVER-sub" in by["subtract"]     # reverted -> cross-version (NOT BASE-sub)
+        assert "FRESH-mul" in by["multiply"]    # changed -> fresh
+
+    def test_xver_new_function_appended(self, tmp_path):
+        base_fc = tmp_path / "baseline"; out = tmp_path / "out"
+        base_fc.mkdir(); out.mkdir()
+        _write(str(base_fc / "U.json"), [_entry("add", "a")])
+        _write(str(out / "U.json"), [])  # engine regenerated nothing
+        inc = {"base_fc": str(base_fc), "changed_units": {"U"},
+               "current_by_unit": {"U": {"add", "brandNew"}},
+               "xver_by_unit": {"U": {"brandNew": _entry("brandNew", "XVER-new")}}}
+        _merge_incremental_flowcharts(inc, str(out))
+        merged = _read(str(out / "U.json"))
+        assert [e["name"] for e in merged] == ["add", "brandNew"]
+        assert "XVER-new" in {e["name"]: e["flowchart"] for e in merged}["brandNew"]
+
+
 class TestPruneOrphanFlowcharts:
     """Move/rename cleanup: carried artifacts for files no longer in the model are dropped."""
 
