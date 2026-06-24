@@ -223,6 +223,8 @@ These are the difference between a **correct** and a **stale** document:
 | **3. REMOVE deleted** | a changed file may have *removed* a function → it must be deleted from v7's model/outputs/edges (and its callers impacted). |
 | **5. Move/rename** | a moved entity's key changes → delete(old)+add(new); callers in unchanged files have a dangling edge → impact them **and** re-resolve their edges (re-parse the impacted caller's file). |
 | **5. All axes** | not just calls — a changed **global / macro / type** impacts its **users**, usually in unchanged files. (Calls/globals from `functions.json`; types/macros from `edges.json`.) |
+| **5. Virtual dispatch** | a virtual call `base->m()` is resolved by libclang to the *static* method (or, when the base is pure-virtual, an arbitrary override by name), so the sibling overrides get **no caller** → changing an override wouldn't impact the dispatcher (stale) and the model falsely shows the override as never-called. **Fixed (`src/incremental/virtual_dispatch.py`):** override→base relations (`clang_getOverriddenCursors`, queried on the canonical decl via the C API — the Python binding lacks the wrapper) are unioned into virtual *families*; every caller of any member is linked to **all** members. So changing any override impacts all dispatchers, and `calledByIds` is accurate. Over-approximates by design (D7). |
+| **5. Function pointers** | a call through a function pointer / `std::function` / callback (`fn(a,b)`) has no statically-known target, so `callsIds` is empty for the dispatcher — a change to the callee isn't propagated. **Known limitation (not fixed):** the target is genuinely unknowable statically, and a dispatcher's description/labels are typically *generic* ("calls the callback"), so the staleness risk is low. A conservative fix (link every address-taken function to every indirect-calling function) would over-regenerate broadly; use `mode:"full"` for a codebase that relies heavily on fn-ptr dispatch and needs guaranteed freshness. |
 | **6. Index-check before LLM** | for each impact-set entity, look up `cache/index.json` by fingerprint first — a **revert** or **cross-branch identical code** is a hit → **copy** the existing output from the version it points at, no LLM. |
 | **7. Reassemble** | "updating entities" is not a document — Phase 3 + Phase 4 must run over v7's model to produce `documents/`. (No LLM here; cheap.) |
 
@@ -375,8 +377,9 @@ NOT part of this feature.**
   reads (`components`/`functions`/`flowcharts` take `?versionId=`),
   multi-doc zip download. *(M3.1–M3.6 + M3.7 cross-version reuse-index lookup (D3 / §5 step 6) +
   M3.8 branch/commit endpoints + M3.9 version-scoped reads + move/rename orphan cleanup + git layer consolidation
-  + M3.7b flowchart cross-version reuse done; remaining: unit-diagram reuse (no LLM — low value),
-  virtual/indirect-call over-approximation audit.)* **Recipe-fingerprint invalidation:
+  + M3.7b flowchart cross-version reuse + virtual-dispatch over-approximation done (see §5 checklist;
+  function-pointer dispatch is a documented limitation); remaining: unit-diagram reuse (no LLM — low value).)*
+  **Recipe-fingerprint invalidation:
   dropped by decision** — an approved document is reused regardless of LLM model/prompt changes, so the
   reuse fingerprint is content-only (no recipe component).
 - **M4 — Narrowed (incremental) parse** (see §11; only worth doing once Phase-1 parse time is the

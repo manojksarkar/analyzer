@@ -1,5 +1,6 @@
 """Parse C++ source -> model/."""
 import csv
+import ctypes
 import os
 import re
 import sys
@@ -19,6 +20,7 @@ from core.config import (
 from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
+from incremental.virtual_dispatch import spread_virtual_families
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -284,6 +286,43 @@ def get_component_name(file_path: str) -> str:
     return _FILE_COMPONENT_MAP.get(rel, "unknown")
 
 index = cindex.Index.create()
+
+
+def _make_overridden_lookup():
+    """This libclang Python binding lacks Cursor.get_overridden_cursors, but the C API
+    (clang_getOverriddenCursors) is present — bind it via ctypes. Returns a function
+    cursor -> [base method cursors] (queried on the canonical/in-class declaration, since
+    out-of-line definitions report no overrides), or None if the C API is unavailable.
+    Used for the D7 virtual-dispatch over-approximation."""
+    try:
+        lib = cindex.conf.lib
+        f_ov = lib.clang_getOverriddenCursors
+        f_ov.argtypes = [cindex.Cursor, ctypes.POINTER(ctypes.POINTER(cindex.Cursor)),
+                         ctypes.POINTER(ctypes.c_uint)]
+        f_ov.restype = None
+        f_disp = lib.clang_disposeOverriddenCursors
+        f_disp.argtypes = [ctypes.POINTER(cindex.Cursor)]
+        f_disp.restype = None
+    except Exception:
+        return None
+
+    def _overridden(cur):
+        c = cur.canonical
+        arr = ctypes.POINTER(cindex.Cursor)()
+        num = ctypes.c_uint()
+        f_ov(c, ctypes.byref(arr), ctypes.byref(num))
+        out = []
+        for i in range(int(num.value)):
+            oc = arr[i]
+            oc._tu = c._tu  # keep the TU alive for the borrowed cursor
+            out.append(oc)
+        f_disp(arr)
+        return out
+
+    return _overridden
+
+
+_clang_overridden = _make_overridden_lookup()
 functions = {}
 globals_data = {}
 data_dictionary = {}
@@ -304,6 +343,9 @@ _func_key_to_fid = {}              # internal func_key -> model fid (filled in b
 _visited_usage_keys = set()        # dedup for visit_usage across header includes
 call_graph = defaultdict(list)  # caller -> [callees]
 reverse_call_graph = defaultdict(list)  # callee -> [callers]
+# (override_funcKey, base_funcKey) pairs from get_overridden_cursors — drives the D7
+# virtual-dispatch over-approximation (spread_virtual_families) in build_metadata.
+_override_pairs = []
 component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
@@ -737,6 +779,17 @@ def visit_definitions(cursor):
 
         # Mark as visited
         _visited_function_keys.add(func_key)
+        # Record virtual override -> base relations for the D7 virtual-dispatch
+        # over-approximation (build_metadata spreads caller edges across the family).
+        # Queried via the C API on the canonical decl (out-of-line defs report none).
+        if cursor.kind == cindex.CursorKind.CXX_METHOD and _clang_overridden is not None:
+            try:
+                for _base in _clang_overridden(cursor):
+                    _bkey = get_function_key(_base)
+                    if _bkey:
+                        _override_pairs.append((func_key, _bkey))
+            except Exception:
+                pass
         func_id = f"{cursor.location.file.name}:{cursor.location.line}"
         component_name = get_component_name(cursor.location.file.name)
         params = []
@@ -1100,6 +1153,15 @@ def parse_global_access(path):
 
 def build_metadata():
     base_path = os.path.abspath(MODULE_BASE_PATH)
+    # D7 virtual-dispatch over-approximation: link callers of any virtual-family member
+    # to ALL members, so a call that may dynamically dispatch to any override impacts the
+    # whole family (never stale) and calledByIds is accurate. Must run before the
+    # call_graph -> calledByIds/callsIds mapping below.
+    _n_edges, _n_fams = spread_virtual_families(call_graph, reverse_call_graph,
+                                                _override_pairs, set(functions))
+    if _n_edges:
+        print(f"  virtual-dispatch: linked {_n_edges} caller->override edge(s) across "
+              f"{_n_fams} family(ies)")
     functions_dict = {}
     global_variables_dict = {}
 
