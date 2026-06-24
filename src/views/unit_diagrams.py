@@ -1,10 +1,70 @@
 """Unit diagram view: one Mermaid flowchart per unit (boxes for units, edges = interfaceIds)."""
+import json
 import os
+import shutil
 import subprocess
 import sys
 
 from .registry import register
-from utils import KEY_SEP, mmdc_path, safe_filename, os_type
+from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
+
+
+def _affected_units(impact_fids, functions_data, fid_to_unit):
+    """M3.10: the set of unit_keys whose diagram may have changed = units of the impacted
+    functions PLUS their 1-hop cross-unit neighbours (callees + callers). A unit diagram
+    shows the edges incident to the unit, so any change to a function in the unit OR to a
+    function it calls / is called by can alter it. Over-approximates (D7: never stale)."""
+    affected_fids = set(impact_fids)
+    for fid in impact_fids:
+        f = functions_data.get(fid) or {}
+        affected_fids.update(f.get("callsIds") or [])
+        affected_fids.update(f.get("calledByIds") or [])
+    return {fid_to_unit[fid] for fid in affected_fids if fid in fid_to_unit}
+
+
+def _apply_incremental_unit_plan(model_dir, out_dir, functions_data, fid_to_unit, cpp_units):
+    """Incremental unit-diagram reuse (M3.10). If model/incremental_plan.json exists, carry
+    forward the baseline version's unit diagrams (.mmd + .png), drop orphans (renamed/
+    deleted units), and return the SET of unit_keys to regenerate. None -> no plan (caller
+    does a full wipe + regenerate)."""
+    plan_path = os.path.join(os.path.abspath(model_dir), "incremental_plan.json")
+    if not os.path.isfile(plan_path):
+        return None
+    try:
+        with open(plan_path, "r", encoding="utf-8") as f:
+            plan = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    # 1. carry forward the baseline version's unit diagrams (engine cleaned output/).
+    base_ver_dir = plan.get("baselineVersionDir")
+    if base_ver_dir:
+        project_root = os.path.dirname(os.path.abspath(model_dir))
+        rel = os.path.relpath(out_dir, os.path.join(project_root, "output"))
+        base_ud = os.path.join(base_ver_dir, "output", rel)
+        if os.path.isdir(base_ud):
+            carried = 0
+            for fn in os.listdir(base_ud):
+                if fn.endswith(".mmd") or fn.endswith(".png"):
+                    shutil.copyfile(os.path.join(base_ud, fn), os.path.join(out_dir, fn))
+                    carried += 1
+            log(f"incremental: carried forward {carried} baseline unit-diagram file(s)", "unitDiagrams")
+
+    # 2. move/rename cleanup: drop carried diagrams for units no longer in the model.
+    valid = {safe_filename(uk) for uk in cpp_units}
+    if valid:
+        for fn in os.listdir(out_dir):
+            if (fn.endswith(".mmd") or fn.endswith(".png")) and fn.rsplit(".", 1)[0] not in valid:
+                try:
+                    os.unlink(os.path.join(out_dir, fn))
+                except OSError:
+                    pass
+
+    # 3. regenerate only the affected units.
+    affected = _affected_units(set(plan.get("impactFids") or []), functions_data, fid_to_unit)
+    log(f"incremental: unit diagrams restricted to {len(affected & set(cpp_units))} affected "
+        f"unit(s) of {len(cpp_units)}", "unitDiagrams")
+    return affected
 
 
 def _fid_to_unit(units_data):
@@ -184,12 +244,6 @@ def run(model, output_dir, model_dir, config):
     }
 
     out_dir = os.path.join(output_dir, "unit_diagrams")
-    if os.path.isdir(out_dir):
-        for f in os.listdir(out_dir):
-            try:
-                os.unlink(os.path.join(out_dir, f))
-            except OSError:
-                pass
     os.makedirs(out_dir, exist_ok=True)
 
     render_png = True
@@ -206,12 +260,26 @@ def run(model, output_dir, model_dir, config):
     cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
     if allowed_components:
         cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0].lower() in allowed_components]
+
+    # Incremental (M3.10): carry forward baseline diagrams + render only AFFECTED units.
+    # No plan -> full: wipe and regenerate every unit (original behaviour).
+    affected = _apply_incremental_unit_plan(model_dir, out_dir, functions_data, fid_to_unit, cpp_units)
+    if affected is None:
+        for f in os.listdir(out_dir):
+            try:
+                os.unlink(os.path.join(out_dir, f))
+            except OSError:
+                pass
+        units_to_render = sorted(cpp_units)
+    else:
+        units_to_render = sorted(uk for uk in cpp_units if uk in affected)
+
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
-    total = len(cpp_units)
+    total = len(units_to_render)
     progress = ProgressReporter("unitDiagrams", total=total, logger=get_logger("unitDiagrams"))
     progress.start()
-    for i, unit_key in enumerate(sorted(cpp_units), 1):
+    for i, unit_key in enumerate(units_to_render, 1):
         progress.step(label=unit_key)
         unit_info = units_data[unit_key]
         mermaid = _build_unit_diagram(
@@ -239,4 +307,5 @@ def run(model, output_dir, model_dir, config):
                     subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 pass
-    progress.done(summary=f"output/unit_diagrams/ ({total} units)")
+    _suffix = " regenerated (rest carried)" if affected is not None else ""
+    progress.done(summary=f"output/unit_diagrams/ ({total} units{_suffix})")

@@ -56,12 +56,12 @@ class TestVersionStore:
         vs.create_dir("v1")
         man = {"versionId": "v1", "branch": "main", "commit": "abc", "scope": {"type": "project"},
                "decision": "full", "regenerated": 5, "reused": 0, "status": "complete",
-               "createdAt": "t", "recipeFingerprint": "rfp"}
+               "createdAt": "t", "warnings": ["w1"]}
         vs.write_manifest("v1", man)
-        assert vs.get("v1")["recipeFingerprint"] == "rfp"     # full manifest kept
+        assert vs.get("v1")["warnings"] == ["w1"]              # full manifest kept
         rows = vs.list()
         assert len(rows) == 1 and rows[0]["versionId"] == "v1"
-        assert "recipeFingerprint" not in rows[0]              # index row is compact
+        assert "warnings" not in rows[0]                       # index row is compact
 
     def test_index_newest_first_and_upsert(self, tmp_path):
         vs = VersionStore(_make_ws(tmp_path))

@@ -19,9 +19,10 @@
 > the project's `layers` config, the data-dictionary upload). This spec **assumes a project already
 > exists** and you have its `projectId`. Onboarding endpoints are **not** specified here.
 >
-> **Implementation status:** the backend git operations (`backend/git_service.py`) are **implemented**
-> (clone, fetch, checkout, branch/commit listing, ancestry, diff). The HTTP endpoints below are the
-> **contract**; the backend wiring is in progress (milestones M1/M2). Build the UI against this spec.
+> **Implementation status:** ✅ **all endpoints below (G1, G2, 1–15) are implemented** in
+> [backend/main.py](../../backend/main.py); the git operations live in `backend/git_service.py` +
+> `src/incremental/git_ops.py` (clone, fetch, checkout, branch/commit listing, ancestry, diff). The
+> spec remains the **contract** the UI is built against.
 
 ---
 

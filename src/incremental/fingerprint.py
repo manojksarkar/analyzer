@@ -4,14 +4,17 @@ Distinct from the per-entity *source_hash* (model/hashes.json, M1.2a):
 
   source_hash(entity)  = token hash of the entity's OWN source (change detection)
   fingerprint(entity)  = sha256( source_hash
-                               + sorted(dependency source_hashes)
-                               + recipeFingerprint )           (OUTPUT reuse key)
+                               + sorted(dependency source_hashes) )   (OUTPUT reuse key)
 
 A function's LLM description/flowchart depends on its callees' code + the globals,
-types and macros it uses + the LLM recipe — so the reuse key folds all of those in.
-A dependency change (even in an unchanged file) changes the fingerprint, so a stale
-output is never reused; a revert / cross-branch-identical entity reproduces the same
-fingerprint and is reused.
+types and macros it uses — so the reuse key folds all of those in. A dependency change
+(even in an unchanged file) changes the fingerprint, so a stale output is never reused;
+a revert / cross-branch-identical entity reproduces the same fingerprint and is reused.
+
+The fingerprint is **content-only** — it deliberately does NOT fold in the LLM recipe
+(model/prompt/engine version). An already-generated, approved document is reused
+regardless of which model produced it; we do not re-run the LLM just because the model
+or prompt changed (decision: recipe-fingerprint invalidation dropped).
 
 Pure (operates on plain dicts) so it is unit-testable; the engine supplies the
 parsed model (functions.json / hashes.json / edges.json).
@@ -21,21 +24,21 @@ from __future__ import annotations
 import hashlib
 from typing import Dict, List, Set
 
-# Bump these (or llm.cacheVersion) to invalidate all reuse after a recipe change.
-PROMPT_VERSION = "1"
-ENGINE_VERSION = "1"
-
 _SEP = "\x1f"
 
 
-def recipe_fingerprint(llm_model: str, *, cache_version: int = 1,
-                       prompt_version: str = PROMPT_VERSION,
-                       engine_version: str = ENGINE_VERSION) -> str:
-    """sha256(model + promptVersion + cacheVersion + engineVersion). An operator
-    recipe change (model/prompt/cacheVersion/engine) invalidates the cache."""
-    blob = _SEP.join([str(llm_model or ""), str(prompt_version),
-                      str(cache_version), str(engine_version)])
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+def parse_fingerprint(clang_args: List[str], std: str = "", toolchain: str = "") -> str:
+    """A hash of everything that determines a TU's AST *other than the source itself*:
+    the clang args (include paths `-I` and defines `-D`, **order preserved** — include
+    order matters), the C++ std, and a toolchain marker (libclang version/path).
+
+    Distinct from both other fingerprints: it gates the **narrowed parse** (M4) — if it
+    differs from the baseline version's, the baseline model was parsed with different
+    flags/toolchain, so a narrowed parse against it is unsafe and the engine must do a
+    full re-parse (doc 04 §11.4). It does NOT include the LLM recipe.
+    """
+    parts = [str(std), str(toolchain), *(str(a) for a in (clang_args or []))]
+    return hashlib.sha256(_SEP.join(parts).encode("utf-8")).hexdigest()
 
 
 def _invert_users(users: Dict[str, List[str]]) -> Dict[str, Set[str]]:
@@ -47,21 +50,20 @@ def _invert_users(users: Dict[str, List[str]]) -> Dict[str, Set[str]]:
     return fwd
 
 
-def _fingerprint(source_hash: str, dep_hashes: List[str], recipe_fp: str) -> str:
-    blob = _SEP.join([source_hash, *sorted(dep_hashes), recipe_fp])
+def _fingerprint(source_hash: str, dep_hashes: List[str]) -> str:
+    blob = _SEP.join([source_hash, *sorted(dep_hashes)])
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def compute_fingerprints(hashes: Dict[str, str],
                          functions: Dict[str, dict],
-                         edges: Dict[str, Dict[str, List[str]]],
-                         recipe_fp: str) -> Dict[str, str]:
+                         edges: Dict[str, Dict[str, List[str]]]) -> Dict[str, str]:
     """Return {entityKey -> fingerprint} for every entity with a reusable output
     (functions + globals).
 
     Function deps = callees (callsIds) + globals (reads/writesGlobalIds) + types &
     macros it uses (forward-inverted from edges). Globals currently fold in only
-    their own source_hash + recipe (no deps) — refine later if needed.
+    their own source_hash (no deps) — refine later if needed.
     """
     fid_to_types = _invert_users((edges or {}).get("typeUsers", {}))
     fid_to_macros = _invert_users((edges or {}).get("macroUsers", {}))
@@ -80,13 +82,13 @@ def compute_fingerprints(hashes: Dict[str, str],
         dep_keys.update(fid_to_types.get(fid, set()))
         dep_keys.update(fid_to_macros.get(fid, set()))
         dep_hashes = [hashes[k] for k in dep_keys if k in hashes]
-        out[fid] = _fingerprint(sh, dep_hashes, recipe_fp)
+        out[fid] = _fingerprint(sh, dep_hashes)
 
     # Globals: model keys with exactly 2 pipes that aren't already functions.
     for key, sh in hashes.items():
         if key in out or key in functions:
             continue
         if key.count("|") == 2:  # component|unit|qualifiedName  (global)
-            out[key] = _fingerprint(sh, [], recipe_fp)
+            out[key] = _fingerprint(sh, [])
 
     return out

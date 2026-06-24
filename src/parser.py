@@ -1,5 +1,6 @@
 """Parse C++ source -> model/."""
 import csv
+import ctypes
 import os
 import re
 import sys
@@ -18,6 +19,8 @@ from core.config import (
 )
 from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
+from incremental.parse_includes import build_closure, to_repo_relative
+from incremental.virtual_dispatch import spread_virtual_families
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -34,10 +37,14 @@ _macros_path: str | None = None
 _selected_group: str | None = None
 _selected_layer: str | None = None
 _project_name_override: str | None = None
+_only_files_path: str | None = None  # narrowed parse (M4.3): parse only the listed TUs
 _i = 2
 while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
         _data_dict_path = sys.argv[_i + 1]
+        _i += 2
+    elif sys.argv[_i] == "--only-files" and _i + 1 < len(sys.argv):
+        _only_files_path = sys.argv[_i + 1]
         _i += 2
     elif sys.argv[_i] == "--macros" and _i + 1 < len(sys.argv):
         _macros_path = sys.argv[_i + 1]
@@ -283,6 +290,43 @@ def get_component_name(file_path: str) -> str:
     return _FILE_COMPONENT_MAP.get(rel, "unknown")
 
 index = cindex.Index.create()
+
+
+def _make_overridden_lookup():
+    """This libclang Python binding lacks Cursor.get_overridden_cursors, but the C API
+    (clang_getOverriddenCursors) is present — bind it via ctypes. Returns a function
+    cursor -> [base method cursors] (queried on the canonical/in-class declaration, since
+    out-of-line definitions report no overrides), or None if the C API is unavailable.
+    Used for the D7 virtual-dispatch over-approximation."""
+    try:
+        lib = cindex.conf.lib
+        f_ov = lib.clang_getOverriddenCursors
+        f_ov.argtypes = [cindex.Cursor, ctypes.POINTER(ctypes.POINTER(cindex.Cursor)),
+                         ctypes.POINTER(ctypes.c_uint)]
+        f_ov.restype = None
+        f_disp = lib.clang_disposeOverriddenCursors
+        f_disp.argtypes = [ctypes.POINTER(cindex.Cursor)]
+        f_disp.restype = None
+    except Exception:
+        return None
+
+    def _overridden(cur):
+        c = cur.canonical
+        arr = ctypes.POINTER(cindex.Cursor)()
+        num = ctypes.c_uint()
+        f_ov(c, ctypes.byref(arr), ctypes.byref(num))
+        out = []
+        for i in range(int(num.value)):
+            oc = arr[i]
+            oc._tu = c._tu  # keep the TU alive for the borrowed cursor
+            out.append(oc)
+        f_disp(arr)
+        return out
+
+    return _overridden
+
+
+_clang_overridden = _make_overridden_lookup()
 functions = {}
 globals_data = {}
 data_dictionary = {}
@@ -290,6 +334,9 @@ data_dictionary = {}
 # Function/global keys are filled in build_metadata (need the model key); type and
 # macro keys are filled directly in their passes. Written to model/hashes.json.
 entity_hashes = {}
+# Incremental (M4.0): per-TU include closure {tuRelPath -> [in-repo included rel paths]},
+# captured during the first parse pass; written to model/tu_includes.json.
+tu_includes = {}
 # Incremental (M1.2b): slim type/macro usage index, written to model/edges.json.
 # Collected by func_key (internal) during visit_usage; remapped to model fids in main().
 type_users = defaultdict(set)      # type qn        -> set(func_key) that reference it
@@ -300,6 +347,21 @@ _func_key_to_fid = {}              # internal func_key -> model fid (filled in b
 _visited_usage_keys = set()        # dedup for visit_usage across header includes
 call_graph = defaultdict(list)  # caller -> [callees]
 reverse_call_graph = defaultdict(list)  # callee -> [callers]
+# (override_funcKey, base_funcKey) pairs from get_overridden_cursors — drives the D7
+# virtual-dispatch over-approximation (spread_virtual_families) in build_metadata.
+_override_pairs = []
+# (override_fid, base_fid|base_funcKey) pairs (fid-level), built in build_metadata and
+# written to model/override_pairs.json so a narrowed parse (M4.6) can re-spread virtual
+# families across affected + UN-parsed files using the baseline's pairs.
+_override_pairs_fid = []
+# Incremental (M4.3): entityKey -> repo-relative defining file, for every hashed entity
+# (function/global/type/macro). Written to model/entity_files.json; the narrowed-parse
+# merge uses it to resolve each entity's file. Populated alongside entity_hashes.
+entity_files = {}
+# Incremental (M4.4): the BASELINE version's {mangled-func-key -> fid} map, loaded only in
+# a narrowed (--only-files) parse so calls to functions defined in UN-parsed files still
+# resolve to a call edge. Empty for a full parse (so behaviour is unchanged).
+_baseline_func_keys = {}
 component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
@@ -520,6 +582,7 @@ def visit_type_definitions(cursor):
             if cursor.is_definition() or qn not in entity_hashes:
                 entity_hashes[qn] = hash_cursor(cursor, comment=struct_entry.get("comment", ""))
             _type_keys.add(qn)  # M1.2b: known project type (edges.json filter target)
+            entity_files[qn] = rel_file  # M4.3: defining file for the narrowed-parse merge
             # Also add typedef entry when this struct participates in a 'typedef struct { ... } Name;' pattern.
             if cursor.kind == cindex.CursorKind.STRUCT_DECL and cursor.spelling:
                 _maybe_add_typedef_for_struct(name, qn, loc, rel_file)
@@ -557,6 +620,7 @@ def visit_type_definitions(cursor):
         if cursor.is_definition() or qn not in entity_hashes:
             entity_hashes[qn] = hash_cursor(cursor, comment=enum_dict.get("comment", ""))
         _type_keys.add(qn)  # M1.2b
+        entity_files[qn] = rel_file  # M4.3
 
     elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
         if cursor.spelling:
@@ -583,6 +647,7 @@ def visit_type_definitions(cursor):
             # definition's hash that already owns this qn (e.g. typedef of a named enum).
             entity_hashes.setdefault(qn, hash_cursor(cursor, comment=typedef_dict.get("comment", "")))
             _type_keys.add(qn)  # M1.2b
+            entity_files[qn] = rel_file  # M4.3
 
     for child in cursor.get_children():
         visit_type_definitions(child)
@@ -733,6 +798,17 @@ def visit_definitions(cursor):
 
         # Mark as visited
         _visited_function_keys.add(func_key)
+        # Record virtual override -> base relations for the D7 virtual-dispatch
+        # over-approximation (build_metadata spreads caller edges across the family).
+        # Queried via the C API on the canonical decl (out-of-line defs report none).
+        if cursor.kind == cindex.CursorKind.CXX_METHOD and _clang_overridden is not None:
+            try:
+                for _base in _clang_overridden(cursor):
+                    _bkey = get_function_key(_base)
+                    if _bkey:
+                        _override_pairs.append((func_key, _bkey))
+            except Exception:
+                pass
         func_id = f"{cursor.location.file.name}:{cursor.location.line}"
         component_name = get_component_name(cursor.location.file.name)
         params = []
@@ -956,14 +1032,17 @@ def visit_calls(cursor, current_key=None):
         called_key = None
         if cursor.referenced:
             called_key = get_function_key(cursor.referenced)
-            if called_key not in functions:
+            # M4.4 narrowed parse: a callee defined in an UN-parsed file isn't in `functions`;
+            # accept it if the baseline knows it (so cross-TU call edges survive). For a full
+            # parse `_baseline_func_keys` is empty, so this is unchanged.
+            if called_key not in functions and called_key not in _baseline_func_keys:
                 called_key = None
         if not called_key:
             for k in functions:
                 if functions[k]["functionName"] == cursor.spelling:
                     called_key = k
                     break
-        if called_key and called_key in functions:
+        if called_key and (called_key in functions or called_key in _baseline_func_keys):
             # Use list to preserve insertion order, but avoid duplicates
             if called_key not in call_graph[current_key]:
                 call_graph[current_key].append(called_key)
@@ -1047,11 +1126,29 @@ def visit_usage(cursor, current_key=None):
         visit_usage(child, current_key)
 
 
+def _capture_tu_includes(tu, path):
+    """M4.0: record this TU's in-repo transitive include closure (doc 04 §11.2).
+    Best-effort — must never break parsing if libclang has no inclusion info."""
+    try:
+        inc_paths = []
+        for fi in tu.get_includes():
+            inc = getattr(fi, "include", None)
+            name = getattr(inc, "name", None)
+            if name:
+                inc_paths.append(name)
+        src_rel = to_repo_relative(path, MODULE_BASE_PATH)
+        if src_rel is not None:
+            tu_includes[src_rel] = build_closure(path, inc_paths, MODULE_BASE_PATH)
+    except Exception as e:  # pragma: no cover - defensive
+        print(f"include-closure capture failed for {path}: {e}")
+
+
 def parse_file(path):
     try:
         tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         for d in tu.diagnostics:
             print(d)
+        _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
         visit_usage(tu.cursor)  # incremental (M1.2b): type/macro usage on the same TU
@@ -1078,6 +1175,15 @@ def parse_global_access(path):
 
 def build_metadata():
     base_path = os.path.abspath(MODULE_BASE_PATH)
+    # D7 virtual-dispatch over-approximation: link callers of any virtual-family member
+    # to ALL members, so a call that may dynamically dispatch to any override impacts the
+    # whole family (never stale) and calledByIds is accurate. Must run before the
+    # call_graph -> calledByIds/callsIds mapping below.
+    _n_edges, _n_fams = spread_virtual_families(call_graph, reverse_call_graph,
+                                                _override_pairs, set(functions))
+    if _n_edges:
+        print(f"  virtual-dispatch: linked {_n_edges} caller->override edge(s) across "
+              f"{_n_fams} family(ies)")
     functions_dict = {}
     global_variables_dict = {}
 
@@ -1094,6 +1200,7 @@ def build_metadata():
         func_key_to_fid[func_key] = fid
         _func_key_to_fid[func_key] = fid  # incremental (M1.2b): for edges.json remap
         entity_hashes[fid] = f.get("_sourceHash", "")  # incremental (M1.2)
+        entity_files[fid] = rel_file  # M4.3: defining file for the narrowed-parse merge
         functions_dict[fid] = {
             "qualifiedName": f["qualifiedName"],
             "location": {
@@ -1126,6 +1233,7 @@ def build_metadata():
         vid = make_global_key(rel_file, g["qualifiedName"])
         var_id_to_vid[var_id] = vid
         entity_hashes[vid] = g.get("_sourceHash", "")  # incremental (M1.2)
+        entity_files[vid] = rel_file  # M4.3: defining file for the narrowed-parse merge
         g_entry = {
             "qualifiedName": g["qualifiedName"],
             "location": {"file": rel_file, "line": int(var_id.rsplit(":", 1)[1])},
@@ -1135,6 +1243,21 @@ def build_metadata():
             g_entry["value"] = g["value"]
         g_entry["visibility"] = g.get("visibility", "default")
         global_variables_dict[vid] = g_entry
+
+    # M4.4 narrowed parse: cross-TU callees live in files we did NOT re-parse, so they
+    # aren't in func_key_to_fid yet — add the baseline's mapping so their edges resolve to
+    # the right fid. (No-op for a full parse: _baseline_func_keys is empty.)
+    for _bk, _bfid in _baseline_func_keys.items():
+        func_key_to_fid.setdefault(_bk, _bfid)
+        _func_key_to_fid.setdefault(_bk, _bfid)
+
+    # M4.6: fid-level override->base pairs for the narrowed-parse virtual re-spread. base is
+    # its fid when defined, else its (stable) mangled key as a grouping token.
+    _override_pairs_fid.clear()
+    for _ov_fk, _base_fk in _override_pairs:
+        _ov_fid = func_key_to_fid.get(_ov_fk)
+        if _ov_fid:
+            _override_pairs_fid.append([_ov_fid, func_key_to_fid.get(_base_fk, _base_fk)])
 
     # Add precise caller/callee ids, global read/write ids and direction (In/Out) from global read/write analysis
     for func_key, f in functions.items():
@@ -1191,6 +1314,20 @@ def _collect_source_files():
                 if is_project_file(path):
                     files.append(path)
     return files
+
+
+def _restrict_to_only_files(source_files):
+    """Narrowed parse (M4.3): keep only the TUs listed in --only-files (repo-relative,
+    one per line). Matched against the collected absolute paths (case-insensitive)."""
+    try:
+        with open(_only_files_path, "r", encoding="utf-8") as fh:
+            wanted = {
+                os.path.normcase(os.path.abspath(os.path.join(MODULE_BASE_PATH, ln.strip())))
+                for ln in fh if ln.strip()
+            }
+    except OSError:
+        return source_files
+    return [p for p in source_files if os.path.normcase(os.path.abspath(p)) in wanted]
 
 
 def _collect_define_files():
@@ -1255,6 +1392,7 @@ def _scan_defines():
             # shifts lines). Last definition of a name in a file wins.
             entity_hashes[f"{name}@{rel_file}"] = hash_macro_text(full)
             _macro_keys.add(f"{name}@{rel_file}")  # M1.2b: known macro (edges.json)
+            entity_files[f"{name}@{rel_file}"] = rel_file  # M4.3
 
 
 def _merge_external_data_dictionary(path: str) -> None:
@@ -1358,6 +1496,21 @@ def main():
     from core.logging_setup import get_logger
     plog = get_logger("parser")
     source_files = _collect_source_files()
+    if _only_files_path:
+        # Narrowed parse (M4.3): restrict to the listed TUs (repo-relative, one per line).
+        source_files = _restrict_to_only_files(source_files)
+        plog.info(f"narrowed parse: {len(source_files)} affected TU(s) (--only-files)")
+        # M4.4: load the baseline's func-key map so cross-TU calls (to functions defined in
+        # files we did NOT re-parse) still produce call edges.
+        _bfk = os.environ.get("ANALYZER_BASELINE_FUNCKEYS")
+        if _bfk and os.path.isfile(_bfk):
+            try:
+                with open(_bfk, "r", encoding="utf-8") as _f:
+                    _baseline_func_keys.update(json.load(_f))
+                plog.info(f"narrowed parse: loaded {len(_baseline_func_keys)} baseline func-keys "
+                          f"for cross-TU call resolution")
+            except (OSError, ValueError):
+                pass
     total = len(source_files)
 
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
@@ -1392,7 +1545,16 @@ def main():
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
     }
-    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES, EDGES
+    # M4.6: a parse fingerprint over the clang args/std + libclang lib — the narrowed-parse
+    # gate compares it to the baseline's and forces a full re-parse on any flag/toolchain change.
+    from incremental.fingerprint import parse_fingerprint
+    try:
+        _toolchain = cindex.conf.get_filename() or ""
+    except Exception:
+        _toolchain = ""
+    meta_header["parseFingerprint"] = parse_fingerprint(CLANG_ARGS, std="", toolchain=str(_toolchain))
+    from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
+                               HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS)
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -1416,6 +1578,22 @@ def main():
     edges = build_edges(type_users, function_tokens, _type_keys, _macro_keys, _func_key_to_fid)
     write_model_file(EDGES, edges)
 
+    # Incremental (M4.0): per-TU include closure -> model/tu_includes.json. The
+    # narrowed-parse engine (M4) intersects this with the git diff to find affected TUs.
+    write_model_file(TU_INCLUDES, {k: tu_includes[k] for k in sorted(tu_includes)})
+
+    # Incremental (M4.3): per-entity defining file -> model/entity_files.json. Lets the
+    # narrowed-parse merge resolve each entity's file (types/hashes have no inline location).
+    write_model_file(ENTITY_FILES, {k: entity_files[k] for k in sorted(entity_files)})
+
+    # Incremental (M4.4): {mangled-func-key -> fid} -> model/func_keys.json. A future
+    # narrowed parse loads the baseline's map to resolve calls into UN-parsed files.
+    write_model_file(FUNC_KEYS, {k: _func_key_to_fid[k] for k in sorted(_func_key_to_fid)})
+
+    # Incremental (M4.6): fid-level override->base pairs -> model/override_pairs.json, for
+    # the narrowed-parse virtual-dispatch re-spread across affected + un-parsed files.
+    write_model_file(OVERRIDE_PAIRS, sorted(_override_pairs_fid))
+
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
     n_types = len(data_dictionary)
@@ -1431,6 +1609,8 @@ def main():
     print(f"  model/dataDictionary.json ({n_types} types: {', '.join(parts)})")
     print(f"  model/hashes.json ({len(entity_hashes)} entities)")
     print(f"  model/edges.json ({len(edges['typeUsers'])} types used, {len(edges['macroUsers'])} macros used)")
+    _n_inc = sum(len(v) for v in tu_includes.values())
+    print(f"  model/tu_includes.json ({len(tu_includes)} TUs, {_n_inc} in-repo include edges)")
 
 
 if __name__ == "__main__":
