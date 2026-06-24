@@ -183,6 +183,86 @@ def delete_project(
     db.projects.delete(project_id)
 
 
+@router.post("/{project_id}/archive")
+def archive_project(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """Set project status to 'archived'.  Admin only."""
+    project = db.projects.get(project_id)
+    if not project:
+        raise not_found("Project", project_id)
+    require_project_admin(project_id, current_user, db)
+    if project.status == "archived":
+        return {"project": _project_view(project, db, current_user.id)}
+    project.status = "archived"
+    project.updated_at = datetime.now(UTC)
+    db.projects.update(project)
+    return {"project": _project_view(project, db, current_user.id)}
+
+
+@router.post("/{project_id}/unarchive")
+def unarchive_project(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """Restore an archived project to 'not_run'.  Admin only."""
+    project = db.projects.get(project_id)
+    if not project:
+        raise not_found("Project", project_id)
+    require_project_admin(project_id, current_user, db)
+    project.status = "not_run"
+    project.updated_at = datetime.now(UTC)
+    db.projects.update(project)
+    return {"project": _project_view(project, db, current_user.id)}
+
+
+class UpdateSettingsRequest(BaseModel):
+    repo_url: Optional[str] = None
+    repo_provider: Optional[str] = None
+    default_branch: Optional[str] = None
+    build_config: Optional[dict[str, Any]] = None
+    architecture_layers: Optional[list[dict[str, Any]]] = None
+    compliance_standard: Optional[str] = None
+
+
+@router.patch("/{project_id}/settings")
+def update_project_settings(
+    project_id: str,
+    body: UpdateSettingsRequest,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """
+    Update repository, build, and architecture configuration.  Admin only.
+
+    Separate from PATCH /{project_id} which handles the display-level fields
+    (name, client, status).  This endpoint handles the technical config that
+    affects how analysis jobs are run.
+    """
+    project = db.projects.get(project_id)
+    if not project:
+        raise not_found("Project", project_id)
+    require_project_admin(project_id, current_user, db)
+    if body.repo_url is not None:
+        project.repo_url = body.repo_url
+    if body.repo_provider is not None:
+        project.repo_provider = body.repo_provider
+    if body.default_branch is not None:
+        project.default_branch = body.default_branch
+    if body.build_config is not None:
+        project.build_config = body.build_config
+    if body.architecture_layers is not None:
+        project.architecture_layers = body.architecture_layers
+    if body.compliance_standard is not None:
+        project.compliance_standard = body.compliance_standard
+    project.updated_at = datetime.now(UTC)
+    db.projects.update(project)
+    return {"project": _project_view(project, db, current_user.id)}
+
+
 # ---------------------------------------------------------------------------
 # Access requests
 # ---------------------------------------------------------------------------

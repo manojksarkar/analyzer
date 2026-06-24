@@ -22,7 +22,7 @@ from .routes import (
     auth_router, projects_router, commits_versions_router,
     jobs_router, documents_router, team_router,
     compare_router, functions_router, notifications_router,
-    model_router,
+    model_router, users_router,
 )
 
 # ---------------------------------------------------------------------------
@@ -79,6 +79,7 @@ app.include_router(compare_router,           prefix=PREFIX)
 app.include_router(functions_router,         prefix=PREFIX)
 app.include_router(notifications_router,     prefix=PREFIX)
 app.include_router(model_router,             prefix=PREFIX)
+app.include_router(users_router,             prefix=PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

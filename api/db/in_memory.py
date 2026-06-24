@@ -359,6 +359,14 @@ class _InMemUserRepo(IUserRepository):
     def list_by_ids(self, ids):
         return [copy.deepcopy(self._store[i]) for i in ids if i in self._store]
 
+    def list_all(self):
+        return [copy.deepcopy(u) for u in self._store.values()]
+
+    def delete(self, user_id):
+        user = self._store.pop(user_id, None)
+        if user:
+            self._by_email.pop(user.email, None)
+
 
 class _InMemProjectRepo(IProjectRepository):
     def __init__(self, store: dict[str, Project], members: dict[str, ProjectMember]):
@@ -371,6 +379,9 @@ class _InMemProjectRepo(IProjectRepository):
             if m.user_id == user_id and m.status == "active"
         }
         return [copy.deepcopy(p) for p in self._store.values() if p.id in project_ids]
+
+    def list_all(self):
+        return [copy.deepcopy(p) for p in self._store.values()]
 
     def get(self, project_id):
         return copy.deepcopy(self._store.get(project_id))

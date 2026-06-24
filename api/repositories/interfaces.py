@@ -34,10 +34,19 @@ class IUserRepository(ABC):
     @abstractmethod
     def list_by_ids(self, ids: list[str]) -> list[User]: ...
 
+    @abstractmethod
+    def list_all(self) -> list[User]: ...
+
+    @abstractmethod
+    def delete(self, user_id: str) -> None: ...
+
 
 class IProjectRepository(ABC):
     @abstractmethod
     def list_for_user(self, user_id: str) -> list[Project]: ...
+
+    @abstractmethod
+    def list_all(self) -> list[Project]: ...
 
     @abstractmethod
     def get(self, project_id: str) -> Optional[Project]: ...

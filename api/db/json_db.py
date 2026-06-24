@@ -629,6 +629,13 @@ class _JsonUserRepo(IUserRepository):
     def list_by_ids(self, ids):
         return [copy.deepcopy(self._obj(self._store[i])) for i in ids if i in self._store]
 
+    def list_all(self):
+        return [copy.deepcopy(self._obj(d)) for d in self._store.values()]
+
+    def delete(self, user_id):
+        self._store.pop(user_id, None)
+        self._save()
+
 
 class _JsonProjectRepo(IProjectRepository):
     def __init__(self, store: dict[str, dict], members_store: dict[str, dict], path: Path):
@@ -645,6 +652,9 @@ class _JsonProjectRepo(IProjectRepository):
             if d["user_id"] == user_id and d["status"] == "active"
         }
         return [copy.deepcopy(_project_from_dict(d)) for d in self._store.values() if d["id"] in project_ids]
+
+    def list_all(self):
+        return [copy.deepcopy(_project_from_dict(d)) for d in self._store.values()]
 
     def get(self, project_id):
         d = self._store.get(project_id)
