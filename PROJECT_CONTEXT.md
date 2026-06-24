@@ -3081,14 +3081,27 @@ workspaces/<projectId>/
     - **M4.2 parse fingerprint — ✅ done.** `fingerprint.parse_fingerprint(clang_args, std, toolchain)` (order-
       preserving over `-I`/`-D`) — a mismatch vs the baseline version's value forces a full re-parse (flags/
       toolchain changed). +4 unit tests.
-    - *Next:* **M4.3** partial-parse (`parser.py --only-files`) + `src/incremental/parse_merge.py` (merge baseline ⊕
-      fresh by file, then recompute calledByIds/typeUsers/macroUsers/transitive-globals) → **M4.4** engine wiring →
-      **M4.5** `--verify-parse` self-check (assemble vs full, byte-identical) → **M4.6** corner-case hardening + perf.
+    - **M4.3 partial-parse + merge — ✅ done (the core).** `parser.py --only-files <listfile>` parses only the
+      affected TUs → a *forward-only* partial model; verified (1 TU → 3 fns). Parser also emits
+      **`model/entity_files.json`** `{entityKey → defining file}` (covers all hashed entities — types/hashes have no
+      inline location; full parse: 353/353). `src/incremental/parse_merge.py::merge_model(baseline, fresh, drop_files)`
+      (pure): drop baseline entities whose file ∈ drop, overlay fresh, merge edges/dataDictionary/tu_includes by file,
+      then **recompute calledByIds** (filter callsIds to merged fns → re-run virtual spread → invert). Verified on REAL
+      data: full-parse a baseline, re-parse 1 TU as a partial, `merge_model(...)` == the full parse
+      (functions/hashes/globals/edges all match). +7 merge unit tests. **Deferred to M4.6:** `override_pairs` emission
+      for cross-affected virtual re-spread (merge no-ops gracefully without it); calledByIds **list order** byte-identity
+      (semantically equal now; M4.5 self-check will align it).
+    - *Next:* **M4.4** engine wiring (decide full vs narrowed: parse-fp match + `full_reparse_reason`; run
+      `--only-files`; merge with baseline model; write `model/`; behind an opt-in flag) → **M4.5** `--verify-parse`
+      self-check (assemble vs full, byte-identical) → **M4.6** override_pairs/virtual re-spread + corner cases + perf.
   - *Remaining (after M4):* **M5** Postgres migration, **M6** object storage/dedup — deferred to the production phase.
     (Recipe-fingerprint invalidation **dropped by decision** — fingerprint is content-only; multi-doc zip shipped in M1.3b.)
-- **Next concrete step:** **M4.3 — partial-parse + merge + reverse-recompute** (the core; build behind the opt-in
-  flag, validate with the `--verify-parse` self-check that the assembled model is byte-identical to a full parse).
-  Also still owed: the user's **LLM-on timing validation** of M3.5–M3.7b on a real diff.
+- **Next concrete step:** **M4.4 — engine wiring** (in `engine.py`: decide full-vs-narrowed via parse-fp match +
+  `affected.full_reparse_reason`; on narrowed, compute `affected_tus` from the git diff ∩ the baseline's
+  `tu_includes`, run `parser --only-files`, `parse_merge.merge_model(baseline, fresh, drop)`, write `model/`, then
+  Phase 2+ as today; behind an opt-in flag, full parse stays default) → **M4.5** `--verify-parse` self-check →
+  **M4.6** override_pairs/virtual re-spread + corner cases + perf. Also still owed: the user's **LLM-on timing
+  validation** of M3.5–M3.7b on a real diff.
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 

@@ -37,10 +37,14 @@ _macros_path: str | None = None
 _selected_group: str | None = None
 _selected_layer: str | None = None
 _project_name_override: str | None = None
+_only_files_path: str | None = None  # narrowed parse (M4.3): parse only the listed TUs
 _i = 2
 while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
         _data_dict_path = sys.argv[_i + 1]
+        _i += 2
+    elif sys.argv[_i] == "--only-files" and _i + 1 < len(sys.argv):
+        _only_files_path = sys.argv[_i + 1]
         _i += 2
     elif sys.argv[_i] == "--macros" and _i + 1 < len(sys.argv):
         _macros_path = sys.argv[_i + 1]
@@ -346,6 +350,10 @@ reverse_call_graph = defaultdict(list)  # callee -> [callers]
 # (override_funcKey, base_funcKey) pairs from get_overridden_cursors — drives the D7
 # virtual-dispatch over-approximation (spread_virtual_families) in build_metadata.
 _override_pairs = []
+# Incremental (M4.3): entityKey -> repo-relative defining file, for every hashed entity
+# (function/global/type/macro). Written to model/entity_files.json; the narrowed-parse
+# merge uses it to resolve each entity's file. Populated alongside entity_hashes.
+entity_files = {}
 component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
@@ -566,6 +574,7 @@ def visit_type_definitions(cursor):
             if cursor.is_definition() or qn not in entity_hashes:
                 entity_hashes[qn] = hash_cursor(cursor, comment=struct_entry.get("comment", ""))
             _type_keys.add(qn)  # M1.2b: known project type (edges.json filter target)
+            entity_files[qn] = rel_file  # M4.3: defining file for the narrowed-parse merge
             # Also add typedef entry when this struct participates in a 'typedef struct { ... } Name;' pattern.
             if cursor.kind == cindex.CursorKind.STRUCT_DECL and cursor.spelling:
                 _maybe_add_typedef_for_struct(name, qn, loc, rel_file)
@@ -603,6 +612,7 @@ def visit_type_definitions(cursor):
         if cursor.is_definition() or qn not in entity_hashes:
             entity_hashes[qn] = hash_cursor(cursor, comment=enum_dict.get("comment", ""))
         _type_keys.add(qn)  # M1.2b
+        entity_files[qn] = rel_file  # M4.3
 
     elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
         if cursor.spelling:
@@ -629,6 +639,7 @@ def visit_type_definitions(cursor):
             # definition's hash that already owns this qn (e.g. typedef of a named enum).
             entity_hashes.setdefault(qn, hash_cursor(cursor, comment=typedef_dict.get("comment", "")))
             _type_keys.add(qn)  # M1.2b
+            entity_files[qn] = rel_file  # M4.3
 
     for child in cursor.get_children():
         visit_type_definitions(child)
@@ -1178,6 +1189,7 @@ def build_metadata():
         func_key_to_fid[func_key] = fid
         _func_key_to_fid[func_key] = fid  # incremental (M1.2b): for edges.json remap
         entity_hashes[fid] = f.get("_sourceHash", "")  # incremental (M1.2)
+        entity_files[fid] = rel_file  # M4.3: defining file for the narrowed-parse merge
         functions_dict[fid] = {
             "qualifiedName": f["qualifiedName"],
             "location": {
@@ -1210,6 +1222,7 @@ def build_metadata():
         vid = make_global_key(rel_file, g["qualifiedName"])
         var_id_to_vid[var_id] = vid
         entity_hashes[vid] = g.get("_sourceHash", "")  # incremental (M1.2)
+        entity_files[vid] = rel_file  # M4.3: defining file for the narrowed-parse merge
         g_entry = {
             "qualifiedName": g["qualifiedName"],
             "location": {"file": rel_file, "line": int(var_id.rsplit(":", 1)[1])},
@@ -1277,6 +1290,20 @@ def _collect_source_files():
     return files
 
 
+def _restrict_to_only_files(source_files):
+    """Narrowed parse (M4.3): keep only the TUs listed in --only-files (repo-relative,
+    one per line). Matched against the collected absolute paths (case-insensitive)."""
+    try:
+        with open(_only_files_path, "r", encoding="utf-8") as fh:
+            wanted = {
+                os.path.normcase(os.path.abspath(os.path.join(MODULE_BASE_PATH, ln.strip())))
+                for ln in fh if ln.strip()
+            }
+    except OSError:
+        return source_files
+    return [p for p in source_files if os.path.normcase(os.path.abspath(p)) in wanted]
+
+
 def _collect_define_files():
     """Files to scan for #define (includes headers)."""
     exts = (".cpp", ".cc", ".cxx", ".h", ".hpp")
@@ -1339,6 +1366,7 @@ def _scan_defines():
             # shifts lines). Last definition of a name in a file wins.
             entity_hashes[f"{name}@{rel_file}"] = hash_macro_text(full)
             _macro_keys.add(f"{name}@{rel_file}")  # M1.2b: known macro (edges.json)
+            entity_files[f"{name}@{rel_file}"] = rel_file  # M4.3
 
 
 def _merge_external_data_dictionary(path: str) -> None:
@@ -1442,6 +1470,10 @@ def main():
     from core.logging_setup import get_logger
     plog = get_logger("parser")
     source_files = _collect_source_files()
+    if _only_files_path:
+        # Narrowed parse (M4.3): restrict to the listed TUs (repo-relative, one per line).
+        source_files = _restrict_to_only_files(source_files)
+        plog.info(f"narrowed parse: {len(source_files)} affected TU(s) (--only-files)")
     total = len(source_files)
 
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
@@ -1476,7 +1508,7 @@ def main():
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
     }
-    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES, EDGES, TU_INCLUDES
+    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES, EDGES, TU_INCLUDES, ENTITY_FILES
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -1503,6 +1535,10 @@ def main():
     # Incremental (M4.0): per-TU include closure -> model/tu_includes.json. The
     # narrowed-parse engine (M4) intersects this with the git diff to find affected TUs.
     write_model_file(TU_INCLUDES, {k: tu_includes[k] for k in sorted(tu_includes)})
+
+    # Incremental (M4.3): per-entity defining file -> model/entity_files.json. Lets the
+    # narrowed-parse merge resolve each entity's file (types/hashes have no inline location).
+    write_model_file(ENTITY_FILES, {k: entity_files[k] for k in sorted(entity_files)})
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
