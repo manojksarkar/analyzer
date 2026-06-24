@@ -1,0 +1,14 @@
+%%{init: {'flowchart': {'ranksep': '0.5', 'nodesep': '0.35'}}}%%
+flowchart BT
+  N1["Dispatch"]
+  N2["Dispatch
+Header"]
+  N3["Hub"]
+  N4["Hub
+Header"]
+  N1 --> N2
+  N3 --> N4
+  classDef cppNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff
+  class N1,N3 cppNode
+  classDef hNode fill:#1e293b,stroke:#334155,color:#ffffff
+  class N2,N4 hNode

@@ -1,0 +1,15 @@
+%%{init: {'flowchart': {'splines': 'ortho'}}}%%
+flowchart LR
+  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px
+  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px
+
+  subgraph internal_mod["Access"]
+    direction TB
+    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px
+
+    Access_AccessVisibility["   AccessVisibility   <br/>    <br/>    "]
+
+
+    class Access_AccessVisibility mainUnit
+  end
+

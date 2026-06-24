@@ -1,0 +1,52 @@
+{
+  "unitNames": {
+    "Diag|MultilineOvlyinit": "MultilineOvlyinit",
+    "Diag|PreprocIfFunction": "PreprocIfFunction",
+    "Diag|PreprocIfFunctionThen": "PreprocIfFunctionThen",
+    "Diag|VoidAsVar": "VoidAsVar",
+    "Diag|VoidIsVoid": "VoidIsVoid"
+  },
+  "Diag|MultilineOvlyinit": {
+    "name": "MultilineOvlyinit",
+    "entries": []
+  },
+  "Diag|PreprocIfFunction": {
+    "name": "PreprocIfFunction",
+    "entries": []
+  },
+  "Diag|PreprocIfFunctionThen": {
+    "name": "PreprocIfFunctionThen",
+    "entries": []
+  },
+  "Diag|VoidAsVar": {
+    "name": "VoidAsVar",
+    "entries": [
+      {
+        "interfaceId": "IF_LAYER1_DIAG_VOIDASVAR_01",
+        "globalId": "Diag|VoidAsVar|voidArg",
+        "type": "Global Variable",
+        "interfaceName": "voidArg",
+        "name": "voidArg",
+        "qualifiedName": "voidArg",
+        "unitKey": "Diag|VoidAsVar",
+        "unitName": "VoidAsVar",
+        "location": {
+          "file": "Layer1/Diag/VoidAsVar",
+          "line": 10
+        },
+        "variableType": "int",
+        "range": "-0x80000000-0x7FFFFFFF",
+        "direction": "In/Out",
+        "reason": "",
+        "sourceDest": "Diag/VoidAsVar",
+        "callerUnits": [],
+        "calleesUnits": [],
+        "value": "1"
+      }
+    ]
+  },
+  "Diag|VoidIsVoid": {
+    "name": "VoidIsVoid",
+    "entries": []
+  }
+}

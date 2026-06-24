@@ -1,0 +1,54 @@
+{
+  "unitNames": {
+    "Access|AccessVisibility": "AccessVisibility"
+  },
+  "Access|AccessVisibility": {
+    "name": "AccessVisibility",
+    "entries": [
+      {
+        "interfaceId": "IF_LAYER1_ACCESS_ACCESSVISIBILITY_01",
+        "globalId": "Access|AccessVisibility|g_selectedDbType",
+        "type": "Global Variable",
+        "interfaceName": "g_selectedDbType",
+        "name": "g_selectedDbType",
+        "qualifiedName": "g_selectedDbType",
+        "unitKey": "Access|AccessVisibility",
+        "unitName": "AccessVisibility",
+        "location": {
+          "file": "Layer1/Access/AccessVisibility",
+          "line": 3
+        },
+        "variableType": "DB_TYPE",
+        "range": "0-2",
+        "direction": "In/Out",
+        "reason": "",
+        "sourceDest": "Access/AccessVisibility",
+        "callerUnits": [],
+        "calleesUnits": [],
+        "value": "DB_MAIN"
+      },
+      {
+        "interfaceId": "IF_LAYER1_ACCESS_ACCESSVISIBILITY_02",
+        "globalId": "Access|AccessVisibility|g_dbVersion",
+        "type": "Global Variable",
+        "interfaceName": "g_dbVersion",
+        "name": "g_dbVersion",
+        "qualifiedName": "g_dbVersion",
+        "unitKey": "Access|AccessVisibility",
+        "unitName": "AccessVisibility",
+        "location": {
+          "file": "Layer1/Access/AccessVisibility",
+          "line": 4
+        },
+        "variableType": "int",
+        "range": "-0x80000000-0x7FFFFFFF",
+        "direction": "In/Out",
+        "reason": "",
+        "sourceDest": "Access/AccessVisibility",
+        "callerUnits": [],
+        "calleesUnits": [],
+        "value": "7"
+      }
+    ]
+  }
+}

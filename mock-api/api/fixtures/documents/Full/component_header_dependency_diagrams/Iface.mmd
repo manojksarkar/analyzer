@@ -1,0 +1,22 @@
+%%{init: {'flowchart': {'ranksep': '0.5', 'nodesep': '0.35'}}}%%
+flowchart BT
+  N1["Flowcharts"]
+  N2["Flowcharts
+Header"]
+  N3["PointRect"]
+  N4["PointRect
+Header"]
+  N5["ReadWrite"]
+  N6["ReadWrite
+Header"]
+  N7["Types"]
+  N8["Types
+Header"]
+  N1 --> N2
+  N3 --> N4
+  N5 --> N6
+  N7 --> N8
+  classDef cppNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff
+  class N1,N3,N5,N7 cppNode
+  classDef hNode fill:#1e293b,stroke:#334155,color:#ffffff
+  class N2,N4,N6,N8 hNode

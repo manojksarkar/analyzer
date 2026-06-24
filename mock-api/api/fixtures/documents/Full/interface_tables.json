@@ -1,0 +1,703 @@
+{
+  "unitNames": {
+    "Iface|ReadWrite": "ReadWrite",
+    "Iface|Flowcharts": "Flowcharts",
+    "Cross|Hub": "Hub",
+    "Cross|Dispatch": "Dispatch",
+    "Iface|PointRect": "PointRect",
+    "Iface|Types": "Types"
+  },
+  "Iface|ReadWrite": {
+    "name": "ReadWrite",
+    "entries": [
+      {
+        "interfaceId": "IF_LAYER1_FULL_READWRITE_01",
+        "functionId": "Iface|ReadWrite|readGlobal|",
+        "type": "Function",
+        "interfaceName": "readGlobal",
+        "name": "readGlobal",
+        "qualifiedName": "readGlobal",
+        "unitKey": "Iface|ReadWrite",
+        "unitName": "ReadWrite",
+        "location": {
+          "file": "Layer1/Direction/ReadWrite",
+          "line": 8,
+          "endLine": 10
+        },
+        "parameters": [],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_READWRITE_02",
+        "functionId": "Iface|ReadWrite|readWriteGlobal|int",
+        "type": "Function",
+        "interfaceName": "readWriteGlobal",
+        "name": "readWriteGlobal",
+        "qualifiedName": "readWriteGlobal",
+        "unitKey": "Iface|ReadWrite",
+        "unitName": "ReadWrite",
+        "location": {
+          "file": "Layer1/Direction/ReadWrite",
+          "line": 16,
+          "endLine": 19
+        },
+        "parameters": [
+          {
+            "name": "delta",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          }
+        ],
+        "direction": "In",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_READWRITE_03",
+        "functionId": "Iface|ReadWrite|directionAdd|int,int",
+        "type": "Function",
+        "interfaceName": "directionAdd",
+        "name": "directionAdd",
+        "qualifiedName": "directionAdd",
+        "unitKey": "Iface|ReadWrite",
+        "unitName": "ReadWrite",
+        "location": {
+          "file": "Layer1/Direction/ReadWrite",
+          "line": 25,
+          "endLine": 27
+        },
+        "parameters": [
+          {
+            "name": "a",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          },
+          {
+            "name": "b",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main; Math/Utils",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": [
+          "Math|Utils"
+        ]
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_READWRITE_04",
+        "globalId": "Iface|ReadWrite|g_readOnly",
+        "type": "Global Variable",
+        "interfaceName": "g_readOnly",
+        "name": "g_readOnly",
+        "qualifiedName": "g_readOnly",
+        "unitKey": "Iface|ReadWrite",
+        "unitName": "ReadWrite",
+        "location": {
+          "file": "Layer1/Direction/ReadWrite",
+          "line": 4
+        },
+        "variableType": "int",
+        "range": "-0x80000000-0x7FFFFFFF",
+        "direction": "In/Out",
+        "reason": "",
+        "sourceDest": "Iface/ReadWrite",
+        "callerUnits": [],
+        "calleesUnits": [],
+        "value": "42;    // read-only: never written"
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_READWRITE_05",
+        "globalId": "Iface|ReadWrite|g_readWrite",
+        "type": "Global Variable",
+        "interfaceName": "g_readWrite",
+        "name": "g_readWrite",
+        "qualifiedName": "g_readWrite",
+        "unitKey": "Iface|ReadWrite",
+        "unitName": "ReadWrite",
+        "location": {
+          "file": "Layer1/Direction/ReadWrite",
+          "line": 6
+        },
+        "variableType": "int",
+        "range": "-0x80000000-0x7FFFFFFF",
+        "direction": "In/Out",
+        "reason": "",
+        "sourceDest": "Iface/ReadWrite",
+        "callerUnits": [],
+        "calleesUnits": [],
+        "value": "0; // both read and written"
+      }
+    ]
+  },
+  "Iface|Flowcharts": {
+    "name": "Flowcharts",
+    "entries": [
+      {
+        "interfaceId": "IF_LAYER1_FULL_FLOWCHARTS_01",
+        "functionId": "Iface|Flowcharts|runFlowTests|",
+        "type": "Function",
+        "interfaceName": "runFlowTests",
+        "name": "runFlowTests",
+        "qualifiedName": "runFlowTests",
+        "unitKey": "Iface|Flowcharts",
+        "unitName": "Flowcharts",
+        "location": {
+          "file": "Layer1/Flow/Flowcharts",
+          "line": 215,
+          "endLine": 237
+        },
+        "parameters": [],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": [
+          "Iface|Flowcharts"
+        ]
+      }
+    ]
+  },
+  "Cross|Hub": {
+    "name": "Hub",
+    "entries": [
+      {
+        "interfaceId": "IF_LAYER1_FULL_HUB_01",
+        "functionId": "Cross|Hub|hubCompute|int,int",
+        "type": "Function",
+        "interfaceName": "hubCompute",
+        "name": "hubCompute",
+        "qualifiedName": "hubCompute",
+        "unitKey": "Cross|Hub",
+        "unitName": "Hub",
+        "location": {
+          "file": "Layer1/Hub/Hub",
+          "line": 15,
+          "endLine": 52
+        },
+        "parameters": [
+          {
+            "name": "a",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          },
+          {
+            "name": "b",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main; Lib/Lib, Math/Utils, Outer/Helper, Sample-Core/Core, Util/Util",
+        "callerUnits": [
+          "App|Main",
+          "Cross|Dispatch"
+        ],
+        "calleesUnits": [
+          "Cross|Hub",
+          "Iface|PointRect",
+          "Iface|Types",
+          "Lib|Lib",
+          "Math|Utils",
+          "Outer|Helper",
+          "Sample-Core|Core",
+          "Util|Util"
+        ]
+      }
+    ]
+  },
+  "Cross|Dispatch": {
+    "name": "Dispatch",
+    "entries": [
+      {
+        "interfaceId": "IF_LAYER1_FULL_DISPATCH_01",
+        "functionId": "Cross|Dispatch|multiply|int,int",
+        "type": "Function",
+        "interfaceName": "multiply",
+        "name": "multiply",
+        "qualifiedName": "multiply",
+        "unitKey": "Cross|Dispatch",
+        "unitName": "Dispatch",
+        "location": {
+          "file": "Layer1/Poly/Dispatch",
+          "line": 15,
+          "endLine": 19
+        },
+        "parameters": [
+          {
+            "name": "a",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          },
+          {
+            "name": "b",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main",
+          "Cross|Dispatch"
+        ],
+        "calleesUnits": [
+          "Cross|Dispatch",
+          "Cross|Hub"
+        ]
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_DISPATCH_02",
+        "functionId": "Cross|Dispatch|applyWithCallback|int (*)(int, int),int,int",
+        "type": "Function",
+        "interfaceName": "applyWithCallback",
+        "name": "applyWithCallback",
+        "qualifiedName": "applyWithCallback",
+        "unitKey": "Cross|Dispatch",
+        "unitName": "Dispatch",
+        "location": {
+          "file": "Layer1/Poly/Dispatch",
+          "line": 26,
+          "endLine": 28
+        },
+        "parameters": [
+          {
+            "name": "fn",
+            "type": "int (*)(int, int)",
+            "range": "NA"
+          },
+          {
+            "name": "a",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          },
+          {
+            "name": "b",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_DISPATCH_03",
+        "functionId": "Cross|Dispatch|applyWithOperation|Operation *,int,int",
+        "type": "Function",
+        "interfaceName": "applyWithOperation",
+        "name": "applyWithOperation",
+        "qualifiedName": "applyWithOperation",
+        "unitKey": "Cross|Dispatch",
+        "unitName": "Dispatch",
+        "location": {
+          "file": "Layer1/Poly/Dispatch",
+          "line": 38,
+          "endLine": 41
+        },
+        "parameters": [
+          {
+            "name": "op",
+            "type": "Operation *",
+            "range": "NA"
+          },
+          {
+            "name": "a",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          },
+          {
+            "name": "b",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": [
+          "Cross|Dispatch"
+        ]
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_DISPATCH_04",
+        "globalId": "Cross|Dispatch|g_polymorphismFactor",
+        "type": "Global Variable",
+        "interfaceName": "g_polymorphismFactor",
+        "name": "g_polymorphismFactor",
+        "qualifiedName": "g_polymorphismFactor",
+        "unitKey": "Cross|Dispatch",
+        "unitName": "Dispatch",
+        "location": {
+          "file": "Layer1/Poly/Dispatch",
+          "line": 5
+        },
+        "variableType": "int",
+        "range": "-0x80000000-0x7FFFFFFF",
+        "direction": "In/Out",
+        "reason": "",
+        "sourceDest": "Cross/Dispatch",
+        "callerUnits": [],
+        "calleesUnits": [],
+        "value": "1"
+      }
+    ]
+  },
+  "Iface|PointRect": {
+    "name": "PointRect",
+    "entries": [
+      {
+        "interfaceId": "IF_LAYER1_FULL_POINTRECT_01",
+        "functionId": "Iface|PointRect|pointSumWithAdd|int,int",
+        "type": "Function",
+        "interfaceName": "pointSumWithAdd",
+        "name": "pointSumWithAdd",
+        "qualifiedName": "pointSumWithAdd",
+        "unitKey": "Iface|PointRect",
+        "unitName": "PointRect",
+        "location": {
+          "file": "Layer1/Types/PointRect",
+          "line": 9,
+          "endLine": 11
+        },
+        "parameters": [
+          {
+            "name": "a",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          },
+          {
+            "name": "b",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main; Math/Utils",
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub"
+        ],
+        "calleesUnits": [
+          "Math|Utils"
+        ]
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_POINTRECT_02",
+        "functionId": "Iface|PointRect|pointSum|Point",
+        "type": "Function",
+        "interfaceName": "pointSum",
+        "name": "pointSum",
+        "qualifiedName": "pointSum",
+        "unitKey": "Iface|PointRect",
+        "unitName": "PointRect",
+        "location": {
+          "file": "Layer1/Types/PointRect",
+          "line": 13,
+          "endLine": 15
+        },
+        "parameters": [
+          {
+            "name": "p",
+            "type": "Point",
+            "range": "NA"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_POINTRECT_03",
+        "functionId": "Iface|PointRect|rectArea|const Rect *",
+        "type": "Function",
+        "interfaceName": "rectArea",
+        "name": "rectArea",
+        "qualifiedName": "rectArea",
+        "unitKey": "Iface|PointRect",
+        "unitName": "PointRect",
+        "location": {
+          "file": "Layer1/Types/PointRect",
+          "line": 17,
+          "endLine": 22
+        },
+        "parameters": [
+          {
+            "name": "r",
+            "type": "const Rect *",
+            "range": "NA"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_POINTRECT_04",
+        "functionId": "Iface|PointRect|scalePoint|Point &,int",
+        "type": "Function",
+        "interfaceName": "scalePoint",
+        "name": "scalePoint",
+        "qualifiedName": "scalePoint",
+        "unitKey": "Iface|PointRect",
+        "unitName": "PointRect",
+        "location": {
+          "file": "Layer1/Types/PointRect",
+          "line": 24,
+          "endLine": 27
+        },
+        "parameters": [
+          {
+            "name": "p",
+            "type": "Point &",
+            "range": "NA"
+          },
+          {
+            "name": "factor",
+            "type": "int",
+            "range": "-0x80000000-0x7FFFFFFF"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_POINTRECT_05",
+        "functionId": "Iface|PointRect|getDataAsInt|Data",
+        "type": "Function",
+        "interfaceName": "getDataAsInt",
+        "name": "getDataAsInt",
+        "qualifiedName": "getDataAsInt",
+        "unitKey": "Iface|PointRect",
+        "unitName": "PointRect",
+        "location": {
+          "file": "Layer1/Types/PointRect",
+          "line": 29,
+          "endLine": 31
+        },
+        "parameters": [
+          {
+            "name": "d",
+            "type": "Data",
+            "range": "NA"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_POINTRECT_06",
+        "functionId": "Iface|PointRect|getPointX|const Point &",
+        "type": "Function",
+        "interfaceName": "getPointX",
+        "name": "getPointX",
+        "qualifiedName": "getPointX",
+        "unitKey": "Iface|PointRect",
+        "unitName": "PointRect",
+        "location": {
+          "file": "Layer1/Types/PointRect",
+          "line": 36,
+          "endLine": 38
+        },
+        "parameters": [
+          {
+            "name": "p",
+            "type": "const Point &",
+            "range": "NA"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      }
+    ]
+  },
+  "Iface|Types": {
+    "name": "Types",
+    "entries": [
+      {
+        "interfaceId": "IF_LAYER1_FULL_TYPES_01",
+        "functionId": "Iface|Types|checkStatus|Status",
+        "type": "Function",
+        "interfaceName": "checkStatus",
+        "name": "checkStatus",
+        "qualifiedName": "checkStatus",
+        "unitKey": "Iface|Types",
+        "unitName": "Types",
+        "location": {
+          "file": "Layer1/Types/Types",
+          "line": 8,
+          "endLine": 10
+        },
+        "parameters": [
+          {
+            "name": "s",
+            "type": "Status",
+            "range": "-1-1"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "-",
+        "callerUnits": [
+          "Cross|Hub"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_TYPES_02",
+        "functionId": "Iface|Types|nextColor|Color",
+        "type": "Function",
+        "interfaceName": "nextColor",
+        "name": "nextColor",
+        "qualifiedName": "nextColor",
+        "unitKey": "Iface|Types",
+        "unitName": "Types",
+        "location": {
+          "file": "Layer1/Types/Types",
+          "line": 12,
+          "endLine": 16
+        },
+        "parameters": [
+          {
+            "name": "c",
+            "type": "Color",
+            "range": "0-2"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_TYPES_03",
+        "functionId": "Iface|Types|setMode|Mode_t",
+        "type": "Function",
+        "interfaceName": "setMode",
+        "name": "setMode",
+        "qualifiedName": "setMode",
+        "unitKey": "Iface|Types",
+        "unitName": "Types",
+        "location": {
+          "file": "Layer1/Types/Types",
+          "line": 18,
+          "endLine": 20
+        },
+        "parameters": [
+          {
+            "name": "m",
+            "type": "Mode_t",
+            "range": "0-2"
+          }
+        ],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_TYPES_04",
+        "functionId": "Iface|Types|getDefaultStatus|",
+        "type": "Function",
+        "interfaceName": "getDefaultStatus",
+        "name": "getDefaultStatus",
+        "qualifiedName": "getDefaultStatus",
+        "unitKey": "Iface|Types",
+        "unitName": "Types",
+        "location": {
+          "file": "Layer1/Types/Types",
+          "line": 22,
+          "endLine": 24
+        },
+        "parameters": [],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main"
+        ],
+        "calleesUnits": []
+      },
+      {
+        "interfaceId": "IF_LAYER1_FULL_TYPES_05",
+        "functionId": "Iface|Types|getDefaultColor|",
+        "type": "Function",
+        "interfaceName": "getDefaultColor",
+        "name": "getDefaultColor",
+        "qualifiedName": "getDefaultColor",
+        "unitKey": "Iface|Types",
+        "unitName": "Types",
+        "location": {
+          "file": "Layer1/Types/Types",
+          "line": 26,
+          "endLine": 28
+        },
+        "parameters": [],
+        "direction": "Out",
+        "reason": "",
+        "sourceDest": "App/Main",
+        "callerUnits": [
+          "App|Main",
+          "Cross|Hub"
+        ],
+        "calleesUnits": []
+      }
+    ]
+  }
+}
