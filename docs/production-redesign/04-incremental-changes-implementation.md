@@ -487,12 +487,15 @@ full parse (or a conservative widening):
 5. **PCH (precompiled header) in use** → treat the PCH as included by all TUs (it is) → a PCH change
    forces a full reparse via the closure.
 
-### 11.5 Safety net — assemble-vs-full self-check
-Ship M4 behind a **`--verify-parse`** mode (and run it every Nth generation / in CI): do a full parse
-and **diff the assembled model against it** — entity sets, per-entity hashes, and forward + reverse
-edge sets must match exactly. Any mismatch is a *missed corner case surfaced loudly*, instead of a
-quietly-wrong document discovered weeks later. Only graduate narrowed-parse to the default once the
-self-check has been clean across a representative range of diffs.
+### 11.5 Safety net — assemble-vs-full self-check ✅ (M4.5 done)
+`engine.py --verify-parse` (with `--narrowed-parse`): runs the narrowed parse, then a full parse, and
+`parse_merge.diff_models` diffs the two (entity sets, per-entity hashes, fields, forward+reverse edges —
+edge lists compared as SETS, since order is cosmetic). Mismatches are logged loudly + recorded as a
+manifest warning, and the run **uses the full parse as the source of truth** (so a verify run is always
+safe). Graduate narrowed-parse to the default only once `--verify-parse` is clean across a range of diffs.
+It already paid off: it caught `typedef int UNIT;` defined in 5 files (bare-name key → parse-order-dependent
+winner), fixed by resolving a shared entity's file from the BASELINE in `merge_model`. (Remaining for M4.6:
+exact list-ORDER byte-identity vs set-equal; the §11.4 parse-fingerprint gate + header-add/delete triggers.)
 
 ### 11.6 Inherent limit
 Changing a **widely-included core header** legitimately invalidates a large fraction of TUs —

@@ -128,9 +128,12 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
     in those files are replaced by `fresh`. Returns the merged model dict.
     """
     drop = {(f or "").replace("\\", "/").strip("/") for f in drop_files}
-    # The authoritative key->file resolver: baseline ⊕ fresh (fresh wins for re-parsed files).
-    entity_files = dict(baseline.get("entity_files") or {})
-    entity_files.update(fresh.get("entity_files") or {})
+    # The authoritative key->file resolver. BASELINE wins for shared keys: an entity keeps
+    # its baseline (canonical) file, so an entity DEFINED IN MULTIPLE FILES (e.g. a `typedef
+    # int UNIT;` repeated across TUs) stays with the baseline's stable winner instead of
+    # flipping to whichever affected TU re-parsed it — which would diverge from a full parse.
+    entity_files = dict(fresh.get("entity_files") or {})
+    entity_files.update(baseline.get("entity_files") or {})
 
     functions = _merge_keyed(baseline.get("functions"), fresh.get("functions"), entity_files, drop)
     globals_ = _merge_keyed(baseline.get("globalVariables"), fresh.get("globalVariables"), entity_files, drop)
@@ -161,3 +164,54 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
         "entity_files": merged_entity_files,
         "override_pairs": override_pairs,
     }
+
+
+# Function fields that are unordered edge sets — order is cosmetic (it doesn't affect
+# classify / impact / reuse), so the self-check compares them as sets.
+_EDGE_FIELDS = ("callsIds", "calledByIds", "readsGlobalIds", "writesGlobalIds")
+
+
+def diff_models(narrowed: Dict[str, Any], full: Dict[str, Any], *, limit: int = 50) -> List[str]:
+    """The M4.5 `--verify-parse` self-check: compare a narrowed parser-level model against
+    a full-parse one and return human-readable mismatch lines (empty list = identical).
+    Edge lists are compared as SETS (order is cosmetic). Pure — unit-testable."""
+    out: List[str] = []
+
+    def add(msg: str) -> None:
+        if len(out) < limit:
+            out.append(msg)
+
+    # 1. entity key sets per keyed artifact
+    for name in ("functions", "globalVariables", "hashes", "dataDictionary", "entity_files"):
+        a, b = narrowed.get(name) or {}, full.get(name) or {}
+        for k in sorted(set(b) - set(a)):
+            add(f"{name}: MISSING {k}")
+        for k in sorted(set(a) - set(b)):
+            add(f"{name}: EXTRA {k}")
+
+    # 2. per-function fields (edge lists as sets, everything else exact)
+    af, bf = narrowed.get("functions") or {}, full.get("functions") or {}
+    for k in sorted(set(af) & set(bf)):
+        a, b = af[k], bf[k]
+        for fld in sorted(set(a) | set(b)):
+            av, bv = a.get(fld), b.get(fld)
+            if fld in _EDGE_FIELDS:
+                if sorted(av or []) != sorted(bv or []):
+                    add(f"functions[{k}].{fld}: {sorted(av or [])} != {sorted(bv or [])}")
+            elif av != bv:
+                add(f"functions[{k}].{fld}: {av!r} != {bv!r}")
+
+    # 3. hash values
+    ah, bh = narrowed.get("hashes") or {}, full.get("hashes") or {}
+    for k in sorted(set(ah) & set(bh)):
+        if ah[k] != bh[k]:
+            add(f"hashes[{k}]: {ah[k]} != {bh[k]}")
+
+    # 4. edges (typeUsers / macroUsers), values as sets
+    ae, be = narrowed.get("edges") or {}, full.get("edges") or {}
+    for axis in ("typeUsers", "macroUsers"):
+        aa, bb = ae.get(axis) or {}, be.get(axis) or {}
+        for key in sorted(set(aa) | set(bb)):
+            if sorted(aa.get(key) or []) != sorted(bb.get(key) or []):
+                add(f"edges.{axis}[{key}]: {sorted(aa.get(key) or [])} != {sorted(bb.get(key) or [])}")
+    return out

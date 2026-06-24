@@ -41,7 +41,7 @@ from incremental.baseline import select_baseline
 from incremental.impact import classify, impact_set
 from incremental.fingerprint import compute_fingerprints
 from incremental.affected import affected_tus, full_reparse_reason
-from incremental.parse_merge import merge_model
+from incremental.parse_merge import merge_model, diff_models
 from incremental.report import build_report, emit_report
 from incremental.generate import (_resolved_config, _manifest, scope_to_args,
                                   generate_full, _now_iso, snapshot_parse_model)
@@ -272,13 +272,17 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          no_llm: bool = False,
                          version_id: Optional[str] = None,
                          force: bool = False,
-                         narrowed_parse: bool = False) -> Dict[str, Any]:
+                         narrowed_parse: bool = False,
+                         verify_parse: bool = False) -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
 
     `narrowed_parse` (M4.4, opt-in) re-parses only the affected TUs and merges them into
     the baseline's parser-level snapshot instead of re-parsing the whole project; it falls
-    back to a full parse whenever that isn't provably safe. Default off (full parse)."""
+    back to a full parse whenever that isn't provably safe. Default off (full parse).
+    `verify_parse` (M4.5) additionally runs a FULL parse, diffs it against the narrowed
+    result, logs any mismatch, and then USES the full parse (source of truth) — the gate to
+    trust narrowed parse before making it the default."""
     _t0 = time.perf_counter()
     scope = scope or {"type": "project"}
     project_root = _paths().project_root
@@ -336,7 +340,28 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             vcfg_path, scope, no_llm, dd_path, ws, project_root, model_dir,
             target=target, base_commit=decision["chosenBaseCommit"],
             base_parse_dir=os.path.join(vstore.version_dir(base_vid), "parse"))
-    if not used_narrowed:
+    if used_narrowed and verify_parse:
+        # M4.5 self-check: shadow-validate the narrowed model against a FULL parse, then use
+        # the full parse as the source of truth (a verify run is slow but always safe).
+        from core.logging_setup import get_logger as _get_logger
+        _vlog = _get_logger("incremental")
+        narrowed_model = _load_parse_dir(model_dir)
+        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
+                           extra_args=["--to-phase", "1"])
+        if rc != 0:
+            _fail("parse", rc)
+        mism = diff_models(narrowed_model, _load_parse_dir(model_dir))
+        if mism:
+            _vlog.error(f"--verify-parse: narrowed parse DIFFERS from a full parse "
+                        f"({len(mism)} mismatch(es)) — narrowed parse is NOT safe for this diff:")
+            for m in mism[:20]:
+                _vlog.error(f"      {m}")
+            decision["warnings"].append(
+                f"--verify-parse: narrowed != full ({len(mism)} mismatch(es)) — see log")
+        else:
+            _vlog.info("--verify-parse: narrowed parse is byte-identical (set-equal) to a full parse ✓")
+        # model/ now holds the FULL parse -> trusted regardless of the narrowed result.
+    elif not used_narrowed:
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
                            extra_args=["--to-phase", "1"])
         if rc != 0:
@@ -541,11 +566,14 @@ def main() -> None:
     ap.add_argument("--narrowed-parse", action="store_true",
                     help="M4.4 (opt-in): re-parse only affected TUs + merge into the baseline "
                          "skeleton, instead of a full re-parse. Falls back to full when unsafe.")
+    ap.add_argument("--verify-parse", action="store_true",
+                    help="M4.5: with --narrowed-parse, also run a full parse and diff it against "
+                         "the narrowed result (logs mismatches; uses the full parse). Slow; for validation.")
     args = ap.parse_args()
     m = generate_incremental(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
                              base_version_id=args.base_version_id, data_dict_id=args.data_dict_id,
                              no_llm=args.no_llm, version_id=args.version_id, force=args.force,
-                             narrowed_parse=args.narrowed_parse)
+                             narrowed_parse=args.narrowed_parse, verify_parse=args.verify_parse)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, baseline={m.get('baselineVersionId')}, "
           f"regenerated={m['regenerated']}, reused={m['reused']}, "

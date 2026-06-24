@@ -3105,9 +3105,19 @@ workspaces/<projectId>/
       `visit_calls` resolves cross-TU edges. **Verified: narrowed model == full-parse model** on C1→C3
       (functions/globals/hashes/dataDictionary/edges/entity_files all match, 0 callsIds/calledByIds diffs). Full
       parse path unchanged (`_baseline_func_keys` empty → no-ops). All these are no-ops unless `--narrowed-parse`.
-    - *Next:* **M4.5** formalize the `--verify-parse` self-check (run narrowed+full, diff, across a diff matrix; +
-      exact list-order byte-identity) → **M4.6** override_pairs/virtual re-spread, parse-fingerprint gate
-      (flag/toolchain change), header add/delete corner cases, Windows path-case in the merge drop, perf measurement.
+    - **M4.5 `--verify-parse` self-check — ✅ done.** `parse_merge.diff_models(narrowed, full)` (pure, edge lists
+      compared as SETS since order is cosmetic) + `engine.py --verify-parse`: runs the narrowed parse, then a FULL
+      parse, diffs the two models, logs every mismatch loudly + records a manifest warning, and **uses the full
+      parse as the source of truth** (a verify run is slow but always safe). This is the gate to make narrowed the
+      default. **It immediately earned its keep:** on C1→C3 it flagged `hashes[UNIT]` — `typedef int UNIT;` is
+      defined in **5 files**, all keyed by the bare name, so the parse-order-dependent winner differed between
+      narrowed (an affected TU) and full (the baseline's stable winner). **Fix:** `merge_model` resolves a shared
+      entity's file from the BASELINE (its canonical, stable location), so a multiply-defined entity sticks with the
+      baseline winner — matching a full parse. Re-verified: **narrowed == full (set-equal), 0 mismatches.** +5 diff
+      unit tests.
+    - *Next:* **M4.6** — override_pairs/virtual re-spread in the merge, the parse-fingerprint gate (flag/toolchain
+      change forces full), header add/delete + Windows path-case corner cases, exact list-ORDER byte-identity (vs
+      set-equal today), and perf measurement on a large repo (where the O(diff) win actually shows).
       **M4.4 KEY FINDING — narrowed parse must merge against a PARSER-LEVEL snapshot, not the baseline's FINAL
       model.** Reason: the baseline final model has LLM descriptions; if the merge keeps those for unaffected files,
       the impacted *dependents* (unaffected files that call a changed fn) would carry a description → Phase 2 skips
@@ -3125,12 +3135,11 @@ workspaces/<projectId>/
       Default = full parse (zero risk); flip only after the M4.5 self-check is byte-identical across a diff matrix.
   - *Remaining (after M4):* **M5** Postgres migration, **M6** object storage/dedup — deferred to the production phase.
     (Recipe-fingerprint invalidation **dropped by decision** — fingerprint is content-only; multi-doc zip shipped in M1.3b.)
-- **Next concrete step:** **M4.5 — formalize the `--verify-parse` self-check** (an engine flag that runs BOTH a
-  narrowed and a full parse, diffs the two models, and fails loudly on any mismatch — the gate to flip narrowed
-  parse from opt-in to default; also align exact list ORDER for byte-identity, currently equal as sets). Then
-  **M4.6** (override_pairs/virtual re-spread in the merge, parse-fingerprint gate, header add/delete + Windows
-  path-case corner cases, perf measurement on a large repo). Also still owed: the user's **LLM-on timing
-  validation** of M3.5–M3.7b on a real diff.
+- **Next concrete step:** **M4.6 — narrowed-parse hardening** (the last M4 milestone): override_pairs/virtual
+  re-spread in the merge; the parse-fingerprint gate (flag/toolchain change → force full); header add/delete +
+  Windows path-case corner cases; exact list-ORDER byte-identity (set-equal today); perf measurement on a large
+  repo. After M4.6 + a clean `--verify-parse` across a diff matrix, flip narrowed parse from opt-in to default.
+  Also still owed: the user's **LLM-on timing validation** of M3.5–M3.7b on a real diff.
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 

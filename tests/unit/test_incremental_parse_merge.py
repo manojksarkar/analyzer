@@ -9,7 +9,7 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
-from incremental.parse_merge import merge_model
+from incremental.parse_merge import merge_model, diff_models
 
 
 def _fn(file, callsIds=None, h="h"):
@@ -102,3 +102,34 @@ class TestMergeModel:
         fresh = _model({}, tu_includes={"A.cpp": ["X.h", "Z.h"]})
         m = merge_model(baseline, fresh, drop_files={"A.cpp"})
         assert m["tu_includes"] == {"A.cpp": ["X.h", "Z.h"], "B.cpp": ["Y.h"]}
+
+
+class TestDiffModels:
+    """M4.5 --verify-parse self-check: diff a narrowed model against a full one."""
+
+    def test_identical_models_no_diff(self):
+        m = _model({"A|U|f|": _fn("A.cpp", ["B|U|g|"])},
+                   hashes={"A|U|f|": "h"}, edges={"typeUsers": {"T": ["A|U|f|"]}, "macroUsers": {}})
+        assert diff_models(m, m) == []
+
+    def test_edge_order_is_not_a_diff(self):
+        a = _model({"A|U|f|": _fn("A.cpp", ["x", "y"])})
+        b = _model({"A|U|f|": _fn("A.cpp", ["y", "x"])})   # same set, different order
+        assert diff_models(a, b) == []
+
+    def test_missing_function_reported(self):
+        a = _model({"A|U|f|": _fn("A.cpp")})
+        b = _model({"A|U|f|": _fn("A.cpp"), "A|U|g|": _fn("A.cpp")})
+        d = diff_models(a, b)
+        assert any("MISSING A|U|g|" in s for s in d)
+
+    def test_callsids_difference_reported(self):
+        a = _model({"A|U|f|": _fn("A.cpp", ["x"])})
+        b = _model({"A|U|f|": _fn("A.cpp", ["x", "y"])})   # y missing in narrowed
+        d = diff_models(a, b)
+        assert any("callsIds" in s for s in d)
+
+    def test_hash_difference_reported(self):
+        a = _model({"A|U|f|": _fn("A.cpp")}, hashes={"A|U|f|": "h1"})
+        b = _model({"A|U|f|": _fn("A.cpp")}, hashes={"A|U|f|": "h2"})
+        assert any("hashes[A|U|f|]" in s for s in diff_models(a, b))
