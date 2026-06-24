@@ -22,6 +22,7 @@ Stubbed routes return HTTP 501 with a clear message so the UI surfaces
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import os
 import re
@@ -130,6 +131,67 @@ _jobs: Dict[str, Dict] = {}
 
 
 # ---------------------------------------------------------------------------
+# Read roots — where the browse endpoints look for model/ + output/ (M3.9)
+# ---------------------------------------------------------------------------
+# By default the read endpoints serve the analyzer's shared model/ + output/.
+# A version-scoped request (?projectId=&versionId=) points them at that version's
+# immutable snapshot (workspaces/<proj>/versions/<vid>/) for the duration of the
+# request, via a contextvar the read helpers consult through _roots().
+
+
+class _ReadRoots:
+    """The model/ + output/ dirs (+ resolved config) a read request serves from."""
+
+    def __init__(self, model_dir: str, output_dir: str, config_path: Optional[str] = None):
+        self.model_dir = model_dir
+        self.output_dir = output_dir
+        self.config_path = config_path  # a version's resolved config.json, else None
+
+    def model_file(self, name: str) -> str:
+        return os.path.join(self.model_dir, name)
+
+    def load_config(self) -> dict:
+        # A version stores its already-resolved config.json (config + layers); use it
+        # verbatim. Default (no version) -> the shared merged config.
+        if self.config_path and os.path.isfile(self.config_path):
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (OSError, json.JSONDecodeError):
+                pass
+        return load_config(_REPO_ROOT)
+
+
+_SHARED_ROOTS = _ReadRoots(os.path.join(_REPO_ROOT, "model"), os.path.join(_REPO_ROOT, "output"))
+_roots_ctx: contextvars.ContextVar = contextvars.ContextVar("read_roots", default=_SHARED_ROOTS)
+
+
+def _roots() -> _ReadRoots:
+    return _roots_ctx.get()
+
+
+def _enter_version_scope(project_id: Optional[str], version_id: Optional[str]):
+    """If both ids are given, point the read helpers at that version's snapshot for
+    this request and return a reset token; else no-op (None). 404 on unknown version.
+    Set at the top of an endpoint and reset in `finally` — the contextvar is per-task
+    so concurrent requests never see each other's scope."""
+    if not (project_id and version_id):
+        return None
+    _, vstore = _open_workspace(project_id)
+    if not vstore.exists(version_id):
+        raise HTTPException(status_code=404, detail=f"unknown version {version_id!r}")
+    vdir = vstore.version_dir(version_id)
+    roots = _ReadRoots(os.path.join(vdir, "model"), os.path.join(vdir, "output"),
+                       os.path.join(vdir, "config.json"))
+    return _roots_ctx.set(roots)
+
+
+def _exit_version_scope(token) -> None:
+    if token is not None:
+        _roots_ctx.reset(token)
+
+
+# ---------------------------------------------------------------------------
 # Real-data helpers (used by APIs 1-3)
 # ---------------------------------------------------------------------------
 
@@ -141,7 +203,7 @@ def _project_base_path() -> Optional[str]:
     yet (model/metadata.json missing), the tree endpoints return empty
     children instead of guessing a path.
     """
-    p = os.path.join(_REPO_ROOT, "model", "metadata.json")
+    p = _roots().model_file("metadata.json")
     if not os.path.isfile(p):
         return None
     try:
@@ -161,14 +223,14 @@ def _load_groups() -> Dict[str, Dict[str, object]]:
     as a UI "module" and each component as a folder under it. `paths` may be a
     string or a list — `_normalize_dirs` handles both. Returns {} when absent.
     """
-    cfg = load_config(_REPO_ROOT)
+    cfg = _roots().load_config()
     groups = get_flat_groups(cfg)
     return groups if isinstance(groups, dict) else {}
 
 
 def _load_functions() -> Dict[str, dict]:
     """Load model/functions.json — {} when missing or malformed."""
-    p = os.path.join(_REPO_ROOT, "model", "functions.json")
+    p = _roots().model_file("functions.json")
     if not os.path.isfile(p):
         return {}
     try:
@@ -390,9 +452,7 @@ def _module_file_for_fn(fn_id: str) -> Optional[str]:
         if isinstance(inner, dict) and any(
             (comp or "").replace(" ", "-") == inner_prefix for comp in inner
         ):
-            return os.path.join(
-                _REPO_ROOT, "model", f"functions_{_safe_filename(group_key)}.json"
-            )
+            return _roots().model_file(f"functions_{_safe_filename(group_key)}.json")
     return None
 
 
@@ -452,7 +512,7 @@ def _persist_description(fn_id: str, description: str, functions_data: dict) -> 
     qname = (functions_data.get(fn_id) or {}).get("qualifiedName") or ""
     if not qname:
         return
-    kb_path = os.path.join(_REPO_ROOT, "model", "knowledge_base.json")
+    kb_path = _roots().model_file("knowledge_base.json")
     if not os.path.isfile(kb_path):
         return
     try:
@@ -475,28 +535,45 @@ def _find_flowchart_entry(fn_id: str) -> Optional[dict]:
     `fn_id` and return the whole {functionKey, name, flowchart} dict, or
     None when no match exists (flowcharts not yet rendered, function
     filtered out). Skips `_summary.json` and any file starting with `_`."""
-    flowcharts_dir = os.path.join(_REPO_ROOT, "output", "flowcharts")
-    if not os.path.isdir(flowcharts_dir):
+    out_root = _roots().output_dir
+    if not os.path.isdir(out_root):
         return None
-    try:
-        names = os.listdir(flowcharts_dir)
-    except OSError:
+    # Flowcharts live under output/flowcharts (project scope) OR output/<scope>/flowcharts
+    # (a scoped run — e.g. group:Support). Collect every flowcharts/ dir under the root.
+    fc_dirs = [r for r, _d, _f in os.walk(out_root) if os.path.basename(r) == "flowcharts"]
+    if not fc_dirs:
         return None
-    for name in names:
-        if not name.endswith(".json") or name.startswith("_"):
-            continue
-        path = os.path.join(flowcharts_dir, name)
+    # The real flowchart engine keys entries by `functionKey` (the composite fn_id) —
+    # match that exactly. The POC fake generator emits only {name, flowchart} where
+    # name is the (qualified or simple) function name, so fall back to matching the
+    # qualifiedName segment of fn_id (`comp|unit|qualifiedName|params`).
+    qn = fn_id.split("|")[2] if fn_id.count("|") >= 2 else fn_id
+    name_candidates = {qn, qn.split("::")[-1]}
+    fallback: Optional[dict] = None
+    for flowcharts_dir in fc_dirs:
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                arr = json.load(f)
-        except (json.JSONDecodeError, OSError):
+            names = os.listdir(flowcharts_dir)
+        except OSError:
             continue
-        if not isinstance(arr, list):
-            continue
-        for entry in arr:
-            if isinstance(entry, dict) and entry.get("functionKey") == fn_id:
-                return entry
-    return None
+        for name in names:
+            if not name.endswith(".json") or name.startswith("_"):
+                continue
+            path = os.path.join(flowcharts_dir, name)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    arr = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not isinstance(arr, list):
+                continue
+            for entry in arr:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("functionKey") == fn_id:
+                    return entry  # exact composite-key match (real engine)
+                if fallback is None and entry.get("name") in name_candidates:
+                    fallback = entry  # name match (fake-generator format)
+    return fallback
 
 
 def _find_flowchart_for_fn(fn_id: str) -> str:
@@ -1167,60 +1244,71 @@ async def delete_repository(name: str):
 
 
 @app.get("/api/v1/components", response_model=List[ComponentSummary])
-async def list_components() -> List[ComponentSummary]:
+async def list_components(projectId: Optional[str] = None,
+                          versionId: Optional[str] = None) -> List[ComponentSummary]:
     """API 2 — single hardcoded "FTL" wrapping every entry in
     config.json layers (groups). moduleCount tracks that dict live so the UI
-    badge updates as soon as a new group is added (no restart needed)."""
-    groups = _load_groups()
-    return [
-        ComponentSummary(
+    badge updates as soon as a new group is added (no restart needed).
+    `?projectId=&versionId=` serves a specific generated version's snapshot (M3.9)."""
+    token = _enter_version_scope(projectId, versionId)
+    try:
+        groups = _load_groups()
+        return [
+            ComponentSummary(
+                id=_COMPONENT_ID,
+                code=_COMPONENT_CODE,
+                name=_COMPONENT_NAME,
+                desc=_COMPONENT_DESC,
+                moduleCount=len(groups),
+            )
+        ]
+    finally:
+        _exit_version_scope(token)
+
+
+@app.get("/api/v1/components/{component_id}", response_model=Component)
+async def get_component(component_id: str, projectId: Optional[str] = None,
+                        versionId: Optional[str] = None) -> Component:
+    """API 3 — full module breakdown for one component, including the
+    directory/file/function tree built from metadata.json::basePath joined
+    against model/functions.json. Case-insensitive component_id lookup.
+    Unknown component_id → 404. `?projectId=&versionId=` serves a version (M3.9)."""
+    if component_id.upper() != _COMPONENT_ID.upper():
+        raise HTTPException(status_code=404, detail=f"component {component_id!r} not found")
+
+    token = _enter_version_scope(projectId, versionId)
+    try:
+        groups = _load_groups()
+        base_path = _project_base_path()
+        functions_data = _load_functions()
+        by_file = _functions_by_file(functions_data)
+
+        modules: List[Module] = []
+        for module_key, inner in groups.items():
+            inner_dict = inner if isinstance(inner, dict) else {}
+            all_dirs = _collect_module_dirs(inner_dict)
+            files_count = _count_source_files(base_path or "", all_dirs)
+            tree = _build_module_tree(module_key, inner_dict, base_path, by_file)
+            modules.append(
+                Module(
+                    id=module_key,
+                    name=module_key,
+                    path=module_key,
+                    files=files_count,
+                    tree=tree,
+                    loc="0",  # placeholder; loc is typed str across both model shapes
+                )
+            )
+
+        return Component(
             id=_COMPONENT_ID,
             code=_COMPONENT_CODE,
             name=_COMPONENT_NAME,
             desc=_COMPONENT_DESC,
-            moduleCount=len(groups),
+            modules=modules,
         )
-    ]
-
-
-@app.get("/api/v1/components/{component_id}", response_model=Component)
-async def get_component(component_id: str) -> Component:
-    """API 3 — full module breakdown for one component, including the
-    directory/file/function tree built from metadata.json::basePath joined
-    against model/functions.json. Case-insensitive component_id lookup.
-    Unknown component_id → 404."""
-    if component_id.upper() != _COMPONENT_ID.upper():
-        raise HTTPException(status_code=404, detail=f"component {component_id!r} not found")
-
-    groups = _load_groups()
-    base_path = _project_base_path()
-    functions_data = _load_functions()
-    by_file = _functions_by_file(functions_data)
-
-    modules: List[Module] = []
-    for module_key, inner in groups.items():
-        inner_dict = inner if isinstance(inner, dict) else {}
-        all_dirs = _collect_module_dirs(inner_dict)
-        files_count = _count_source_files(base_path or "", all_dirs)
-        tree = _build_module_tree(module_key, inner_dict, base_path, by_file)
-        modules.append(
-            Module(
-                id=module_key,
-                name=module_key,
-                path=module_key,
-                files=files_count,
-                tree=tree,
-                loc="0",  # placeholder; loc is typed str across both model shapes
-            )
-        )
-
-    return Component(
-        id=_COMPONENT_ID,
-        code=_COMPONENT_CODE,
-        name=_COMPONENT_NAME,
-        desc=_COMPONENT_DESC,
-        modules=modules,
-    )
+    finally:
+        _exit_version_scope(token)
 
 
 # ---------------------------------------------------------------------------
@@ -1229,37 +1317,44 @@ async def get_component(component_id: str) -> Component:
 
 
 @app.get("/api/v1/components/{component_id}/modules", response_model=List[ModuleSummary])
-async def list_modules(component_id: str) -> List[ModuleSummary]:
+async def list_modules(component_id: str, projectId: Optional[str] = None,
+                       versionId: Optional[str] = None) -> List[ModuleSummary]:
     """API 4 — list modules for a component, no tree.
 
     Same data the modules array of API 3 carries, but lighter: no
     file/function tree built, so the response is fast even for very large
     projects. Case-insensitive component_id; unknown id → 404.
+    `?projectId=&versionId=` serves a specific generated version (M3.9).
     """
     if component_id.upper() != _COMPONENT_ID.upper():
         raise HTTPException(status_code=404, detail=f"component {component_id!r} not found")
 
-    groups = _load_groups()
-    base_path = _project_base_path()
-    summaries: List[ModuleSummary] = []
-    for module_key, inner in groups.items():
-        inner_dict = inner if isinstance(inner, dict) else {}
-        all_dirs = _collect_module_dirs(inner_dict)
-        files_count = _count_source_files(base_path or "", all_dirs)
-        summaries.append(
-            ModuleSummary(
-                id=module_key,
-                name=module_key,
-                path=module_key,
-                files=files_count,
-                loc="0",
+    token = _enter_version_scope(projectId, versionId)
+    try:
+        groups = _load_groups()
+        base_path = _project_base_path()
+        summaries: List[ModuleSummary] = []
+        for module_key, inner in groups.items():
+            inner_dict = inner if isinstance(inner, dict) else {}
+            all_dirs = _collect_module_dirs(inner_dict)
+            files_count = _count_source_files(base_path or "", all_dirs)
+            summaries.append(
+                ModuleSummary(
+                    id=module_key,
+                    name=module_key,
+                    path=module_key,
+                    files=files_count,
+                    loc="0",
+                )
             )
-        )
-    return summaries
+        return summaries
+    finally:
+        _exit_version_scope(token)
 
 
 @app.get("/api/v1/functions/{fn_id}", response_model=FunctionDetailWithHidden)
-async def get_function(fn_id: str) -> FunctionDetailWithHidden:
+async def get_function(fn_id: str, projectId: Optional[str] = None,
+                       versionId: Optional[str] = None) -> FunctionDetailWithHidden:
     """API 5 — full function detail.
 
     Reads the function record from model/functions.json (the composite
@@ -1268,50 +1363,56 @@ async def get_function(fn_id: str) -> FunctionDetailWithHidden:
     output/flowcharts/*.json by matching functionKey == fn_id. Hidden
     flag is sourced from the in-memory _db["hidden_functions"] store —
     that flag is session-only by design (no JSON persistence).
+    `?projectId=&versionId=` serves a specific generated version (M3.9).
     """
-    functions_data = _load_functions()
-    fn_info = functions_data.get(fn_id)
-    if not isinstance(fn_info, dict):
-        raise HTTPException(status_code=404, detail=f"function {fn_id!r} not found")
+    token = _enter_version_scope(projectId, versionId)
+    try:
+        functions_data = _load_functions()
+        fn_info = functions_data.get(fn_id)
+        if not isinstance(fn_info, dict):
+            raise HTTPException(status_code=404, detail=f"function {fn_id!r} not found")
 
-    # Descriptions are canonical in functions_<group>.json (per-module file)
-    # — fall back to the master functions.json value only when no per-module
-    # file exists yet (pipeline hasn't run for this group).
-    desc_override = _read_description_override(fn_id)
-    description = desc_override if desc_override is not None else _description_of(fn_info)
+        # Descriptions are canonical in functions_<group>.json (per-module file)
+        # — fall back to the master functions.json value only when no per-module
+        # file exists yet (pipeline hasn't run for this group).
+        desc_override = _read_description_override(fn_id)
+        description = desc_override if desc_override is not None else _description_of(fn_info)
 
-    callers: List[FunctionCaller] = []
-    for caller_id in (fn_info.get("calledByIds") or []):
-        caller_info = functions_data.get(caller_id) or {}
-        caller_name = caller_info.get("qualifiedName") or caller_id
-        callers.append(FunctionCaller(id=str(caller_id), name=str(caller_name), loc="0"))
+        callers: List[FunctionCaller] = []
+        for caller_id in (fn_info.get("calledByIds") or []):
+            caller_info = functions_data.get(caller_id) or {}
+            caller_name = caller_info.get("qualifiedName") or caller_id
+            callers.append(FunctionCaller(id=str(caller_id), name=str(caller_name), loc="0"))
 
-    callees: List[FunctionCaller] = []
-    for callee_id in (fn_info.get("callsIds") or []):
-        callee_info = functions_data.get(callee_id) or {}
-        callee_name = callee_info.get("qualifiedName") or callee_id
-        callees.append(FunctionCaller(id=str(callee_id), name=str(callee_name), loc="0"))
+        callees: List[FunctionCaller] = []
+        for callee_id in (fn_info.get("callsIds") or []):
+            callee_info = functions_data.get(callee_id) or {}
+            callee_name = callee_info.get("qualifiedName") or callee_id
+            callees.append(FunctionCaller(id=str(callee_id), name=str(callee_name), loc="0"))
 
-    flowchart_text = _find_flowchart_for_fn(fn_id)
-    hidden = fn_id in _db["hidden_functions"]
+        flowchart_text = _find_flowchart_for_fn(fn_id)
+        hidden = fn_id in _db["hidden_functions"]
 
-    loc_block = fn_info.get("location") or {}
-    return FunctionDetailWithHidden(
-        id=fn_id,
-        name=str(fn_info.get("qualifiedName") or fn_id),
-        file=str(loc_block.get("file") or ""),
-        line=str(loc_block.get("line") or ""),
-        ret=str(fn_info.get("returnType") or ""),
-        description=description,
-        callers=callers,
-        callees=callees,
-        flowchart=flowchart_text,
-        hidden=hidden,
-    )
+        loc_block = fn_info.get("location") or {}
+        return FunctionDetailWithHidden(
+            id=fn_id,
+            name=str(fn_info.get("qualifiedName") or fn_id),
+            file=str(loc_block.get("file") or ""),
+            line=str(loc_block.get("line") or ""),
+            ret=str(fn_info.get("returnType") or ""),
+            description=description,
+            callers=callers,
+            callees=callees,
+            flowchart=flowchart_text,
+            hidden=hidden,
+        )
+    finally:
+        _exit_version_scope(token)
 
 
 @app.patch("/api/v1/functions/{fn_id}", response_model=PatchFunctionResult)
-async def patch_function(fn_id: str, body: PatchFunctionBody) -> PatchFunctionResult:
+async def patch_function(fn_id: str, body: PatchFunctionBody, projectId: Optional[str] = None,
+                         versionId: Optional[str] = None) -> PatchFunctionResult:
     """API 6 — persist edited description / toggle hidden flag.
 
     Description writes go to model/functions.json AND model/knowledge_base.json
@@ -1321,44 +1422,55 @@ async def patch_function(fn_id: str, body: PatchFunctionBody) -> PatchFunctionRe
     "saved at HH:MM" feedback.
 
     fn_id is validated against functions.json before any write; unknown
-    ids return 404 without touching disk.
+    ids return 404 without touching disk. `?projectId=&versionId=` edits that
+    version's snapshot (M3.9); without it, the shared model/.
     """
-    functions_data = _load_functions()
-    if fn_id not in functions_data:
-        raise HTTPException(status_code=404, detail=f"function {fn_id!r} not found")
+    token = _enter_version_scope(projectId, versionId)
+    try:
+        functions_data = _load_functions()
+        if fn_id not in functions_data:
+            raise HTTPException(status_code=404, detail=f"function {fn_id!r} not found")
 
-    if body.description is not None:
-        _persist_description(fn_id, body.description, functions_data)
+        if body.description is not None:
+            _persist_description(fn_id, body.description, functions_data)
 
-    if body.hidden is not None:
-        if body.hidden:
-            _db["hidden_functions"][fn_id] = True
-        else:
-            _db["hidden_functions"].pop(fn_id, None)
+        if body.hidden is not None:
+            if body.hidden:
+                _db["hidden_functions"][fn_id] = True
+            else:
+                _db["hidden_functions"].pop(fn_id, None)
 
-    return PatchFunctionResult(
-        fnId=fn_id,
-        savedAt=datetime.now().strftime("%H:%M"),
-    )
+        return PatchFunctionResult(
+            fnId=fn_id,
+            savedAt=datetime.now().strftime("%H:%M"),
+        )
+    finally:
+        _exit_version_scope(token)
 
 
 @app.get("/api/v1/flowcharts/{fn_id}", response_model=Flowchart)
-async def get_flowchart(fn_id: str) -> Flowchart:
+async def get_flowchart(fn_id: str, projectId: Optional[str] = None,
+                        versionId: Optional[str] = None) -> Flowchart:
     """API 7 — return the Mermaid script for one function.
 
     Reads output/flowcharts/*.json (skipping `_summary.json` and any file
     starting with `_`) and matches on functionKey. Returns 404 when the
     flowchart hasn't been rendered yet for this fn_id — clients should
     surface "flowchart not generated, run the pipeline first."
+    `?projectId=&versionId=` serves a specific generated version (M3.9).
     """
-    entry = _find_flowchart_entry(fn_id)
-    if not entry:
-        raise HTTPException(status_code=404, detail=f"flowchart for {fn_id!r} not found")
-    return Flowchart(
-        id=fn_id,
-        name=str(entry.get("name") or fn_id),
-        code=str(entry.get("flowchart") or ""),
-    )
+    token = _enter_version_scope(projectId, versionId)
+    try:
+        entry = _find_flowchart_entry(fn_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail=f"flowchart for {fn_id!r} not found")
+        return Flowchart(
+            id=fn_id,
+            name=str(entry.get("name") or fn_id),
+            code=str(entry.get("flowchart") or ""),
+        )
+    finally:
+        _exit_version_scope(token)
 
 
 @app.post("/api/v1/jobs/prepare", response_model=JobStartResult)
@@ -2395,6 +2507,31 @@ def _spawn_generate(script_rel: str, extra_args: List[str], output_file_path: st
     proc = subprocess.Popen(cmd, **popen_kwargs)
     proc._spawn_output_fh = out_fh  # type: ignore[attr-defined]
     return proc
+
+
+@app.get("/api/v1/projects/{project_id}/branches")
+async def list_project_branches(project_id: str):
+    """List the project's branches, newest commit first (doc 05 G1). Backed by the
+    project's local clone via git_service."""
+    ws, _ = _open_workspace(project_id)
+    import git_service
+    try:
+        return git_service.list_branches(ws.repo_dir)
+    except git_service.GitError as exc:
+        raise HTTPException(status_code=500, detail=f"git error: {exc}")
+
+
+@app.get("/api/v1/projects/{project_id}/branches/{branch:path}/commits")
+async def list_project_commits(project_id: str, branch: str, limit: int = 50, offset: int = 0):
+    """List commits of a branch, newest first, paged (doc 05 G2). `branch` is a path
+    param so slashes in branch names (e.g. feature/x) are preserved."""
+    ws, _ = _open_workspace(project_id)
+    import git_service
+    try:
+        return git_service.list_commits(ws.repo_dir, branch, limit=limit, offset=offset)
+    except git_service.GitError as exc:
+        # unknown branch (or empty ref) -> 404 per the doc-05 contract.
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @app.post("/api/v1/projects/{project_id}/generate")

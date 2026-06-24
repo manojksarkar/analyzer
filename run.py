@@ -119,6 +119,7 @@ data_dictionary_arg     = None
 macros_arg              = None
 project_name_arg        = None
 output_name_arg         = None
+only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
 include_path_args       = []   # list of (layer_name, abs_dir) tuples
 raw_args                = []
 
@@ -174,6 +175,12 @@ while i < len(sys.argv):
             log("--macros requires a file path", component="run", err=True)
             sys.exit(1)
         macros_arg = sys.argv[i]
+    elif a == "--only-files":
+        i += 1
+        if i >= len(sys.argv):
+            log("--only-files requires a file path", component="run", err=True)
+            sys.exit(1)
+        only_files_arg = sys.argv[i]
     elif a == "--project-name":
         i += 1
         if i >= len(sys.argv):
@@ -411,6 +418,7 @@ try:
         macros_path=macros_path,
         project_name=project_name_arg,
         output_name=output_name_arg,
+        only_files=only_files_arg,
     )
 except ValueError as e:
     log(str(e), component="run", err=True)

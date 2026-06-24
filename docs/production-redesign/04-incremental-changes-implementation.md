@@ -5,8 +5,8 @@
 | **Document** | Incremental Changes (Delta Regeneration) — Implementation Approach |
 | **Project** | C++ Codebase Analyzer — Production Platform (POC → Production) |
 | **Status** | Draft for Review |
-| **Version** | 2.2 |
-| **Date** | 2026-06-19 |
+| **Version** | 2.3 |
+| **Date** | 2026-06-23 |
 | **Branch** | `version4` (off `main`: `layers`/`component` schema) |
 | **Builds on** | `03-incremental-changes-design.md` §12 (v1.2 — **Approach 2** chosen) |
 | **Scope note** | **Onboarding is a SEPARATE workstream (other engineer).** This doc covers **incremental generation only** and *consumes* what onboarding produces (see §2). |
@@ -55,8 +55,8 @@ uses `clone_repo`/`list_branches`/`list_commits`; incremental uses `checkout`/`c
 
 | # | Decision |
 |---|---|
-| D1 | **A "version" = one generation run** (`versionId`). It records `{branch, commit, scope, dataDictId, baselineVersionId, recipeFingerprint, counts, createdAt}`. The **commit** is stored and used to find the **ancestor** for future versions. **All versions kept.** |
-| D2 | **Approach 2** — git-diff narrowed parse + stored-graph impact + selective regen, with **full parse as the fallback** (first version, no ancestor, or `mode:"full"`). |
+| D1 | **A "version" = one generation run** (`versionId`). It records `{branch, commit, scope, dataDictId, baselineVersionId, counts, createdAt}`. The **commit** is stored and used to find the **ancestor** for future versions. **All versions kept.** |
+| D2 | **Approach 2** — stored-graph impact + selective regen, with **full parse as the fallback** (first version, no ancestor, or `mode:"full"`). *Parse strategy refined by **D10** below: full parse now, narrowed parse = §11 / M4.* |
 | D3 | **Reuse is content-addressed across *all* versions** via a fingerprint **pointer index** (`cache/index.json`) — the output content is **never duplicated**; the index points at the version where it already lives. The baseline **only narrows the parse**; it never limits reuse. |
 | D4 | **Baseline = auto nearest-ancestor (default).** The user may **override** with an explicit `baseVersionId`; the system **warns** if it is not an ancestor / not the nearest, but still runs it (correct, slower). See §6. |
 | D5 | **Scope is a request parameter** — whole project (all layers) / a layer / a group / a component → maps to `--selected-layer` / `--selected-group` / `--selected-component`. |
@@ -64,6 +64,7 @@ uses `clone_repo`/`list_branches`/`list_commits`; incremental uses `checkout`/`c
 | D7 | **Bias to over-regenerate, never stale** — every ambiguous case (indirect/virtual calls, move/rename, non-ancestor base) regenerates *more*. |
 | D8 | **Auth (POC) = plaintext credentials.** For HTTPS, `username:token` is injected into the clone/fetch URL, then the clone's `origin` is reset to the credential-free URL so the token is **not** persisted in `.git/config`; the token is never logged. Production graduation: a deployment-appropriate secrets store (K8s Secrets / Vault / env injection). Implemented in `backend/git_service.py`. |
 | D9 | **All incremental-store access goes through a thin interface** (`src/incremental/stores.py`: `VersionStore`, `ReuseIndex`, `HashStore`, `EdgeStore`) — a **JSON-file** implementation now, a **Postgres** implementation later behind the *same* methods. The §5 engine and the APIs call only the interface — no scattered `open()` / `json.load`. This makes the §10 "Postgres seam" a **swap of one implementation**, not a refactor. **Scope: the incremental *metadata* stores only** (versions / hashes / edges / reuse-index / jobs); the analyzer's per-version `model/`+`output/` artifacts stay file-based until the DB-native pipeline rewrite (`03`/§22.3). |
+| D10 | **Parse strategy = FULL parse now; narrowed (incremental) parse = M4 (designed in §11, deferred).** Every incremental generation runs a full libclang parse (Phase 1), so the call graph is **correct by construction** and impact analysis can never go stale. The hours→minutes win comes from **selective LLM regeneration**, *not* from narrowing the parse — the parse is cheap next to the LLM. Narrowed parse (parse only the TUs whose preprocessed input changed, reuse the baseline model for the rest) is fully specced in **§11** and scheduled as **M4**; implement it once Phase-1 parse time is the **measured** bottleneck on a large codebase. |
 
 ---
 
@@ -88,7 +89,7 @@ workspaces/
       index.json                 # [{versionId, branch, commit, scope, dataDictId, baselineVersionId,
                                  #   decision, regenerated, reused, status, createdAt}]
       <versionId>/
-        manifest.json            # the full version record (incl. recipeFingerprint, counts, warnings)
+        manifest.json            # the full version record (incl. counts, warnings)
         hashes.json              # {entity_key -> token-sha256}   ← FULL snapshot of all entities at this commit
         edges.json               # SLIM: type-usage + macro-usage only (axes functions.json lacks).
                                  #   calls/globals read from model/functions.json; recursive closure via BFS
@@ -136,7 +137,7 @@ version** into the new version. The content is therefore never duplicated or reg
 {
   "versionId": "v4", "branch": "main", "commit": "C4_sha",
   "scope": { "type": "project" }, "dataDictId": "dd-001",
-  "baselineVersionId": "v3", "recipeFingerprint": "a1b2…",
+  "baselineVersionId": "v3",
   "decision": "incremental", "regenerated": 12, "reused": 988,
   "status": "complete", "warnings": [], "createdAt": "2026-06-18T10:00:00Z"
 }
@@ -172,9 +173,11 @@ reproducible.
 Where the hashes come from:
 - `source_hash(entity)` = token-based **full SHA-256** of the entity's own source (the 4 entity
   types: function / global / macro / type, keyed by identity incl. defining file/location).
-- `fingerprint(entity)` = `sha256(source_hash + sorted(dependency_source_hashes) + recipeFingerprint)`
-  — the **reuse-index key** for that entity's output. `recipeFingerprint = sha256(llm.model + promptVersion
-  + cacheVersion + engineVersion)` → an operator recipe change invalidates the cache automatically.
+- `fingerprint(entity)` = `sha256(source_hash + sorted(dependency_source_hashes))`
+  — the **content-only reuse-index key** for that entity's output. It deliberately does **not** fold in the
+  LLM recipe (model/prompt/engine): an already-generated, approved document is reused regardless of which
+  model produced it. **(Decision: recipe-fingerprint invalidation dropped — we do not re-run the LLM just
+  because the model or prompt changed.)**
 
 ---
 
@@ -220,6 +223,8 @@ These are the difference between a **correct** and a **stale** document:
 | **3. REMOVE deleted** | a changed file may have *removed* a function → it must be deleted from v7's model/outputs/edges (and its callers impacted). |
 | **5. Move/rename** | a moved entity's key changes → delete(old)+add(new); callers in unchanged files have a dangling edge → impact them **and** re-resolve their edges (re-parse the impacted caller's file). |
 | **5. All axes** | not just calls — a changed **global / macro / type** impacts its **users**, usually in unchanged files. (Calls/globals from `functions.json`; types/macros from `edges.json`.) |
+| **5. Virtual dispatch** | a virtual call `base->m()` is resolved by libclang to the *static* method (or, when the base is pure-virtual, an arbitrary override by name), so the sibling overrides get **no caller** → changing an override wouldn't impact the dispatcher (stale) and the model falsely shows the override as never-called. **Fixed (`src/incremental/virtual_dispatch.py`):** override→base relations (`clang_getOverriddenCursors`, queried on the canonical decl via the C API — the Python binding lacks the wrapper) are unioned into virtual *families*; every caller of any member is linked to **all** members. So changing any override impacts all dispatchers, and `calledByIds` is accurate. Over-approximates by design (D7). |
+| **5. Function pointers** | a call through a function pointer / `std::function` / callback (`fn(a,b)`) has no statically-known target, so `callsIds` is empty for the dispatcher — a change to the callee isn't propagated. **Known limitation (not fixed):** the target is genuinely unknowable statically, and a dispatcher's description/labels are typically *generic* ("calls the callback"), so the staleness risk is low. A conservative fix (link every address-taken function to every indirect-calling function) would over-regenerate broadly; use `mode:"full"` for a codebase that relies heavily on fn-ptr dispatch and needs guaranteed freshness. |
 | **6. Index-check before LLM** | for each impact-set entity, look up `cache/index.json` by fingerprint first — a **revert** or **cross-branch identical code** is a hit → **copy** the existing output from the version it points at, no LLM. |
 | **7. Reassemble** | "updating entities" is not a document — Phase 3 + Phase 4 must run over v7's model to produce `documents/`. (No LLM here; cheap.) |
 
@@ -369,17 +374,31 @@ NOT part of this feature.**
   `generate/preview`, partial-parse + merge, classify, **impact BFS** (all axes), selective regen with
   the reuse index, reassemble; `mode:"auto"`. *Delivers hours → minutes.*
 - **M3 — Hardening.** Move/rename re-resolution, deletions, over-approximation polish, version-scoped
-  reads (`components`/`functions`/`flowcharts` take `?versionId=`), recipe-fingerprint invalidation,
-  multi-doc zip download.
+  reads (`components`/`functions`/`flowcharts` take `?versionId=`),
+  multi-doc zip download. *(M3.1–M3.6 + M3.7 cross-version reuse-index lookup (D3 / §5 step 6) +
+  M3.8 branch/commit endpoints + M3.9 version-scoped reads + move/rename orphan cleanup + git layer consolidation
+  + M3.7b flowchart cross-version reuse + virtual-dispatch over-approximation (see §5 checklist; function-pointer
+  dispatch is a documented limitation) + M3.10 unit-diagram reuse done — **M3 complete, all doc-05 APIs implemented**.)*
+  **Recipe-fingerprint invalidation:
+  dropped by decision** — an approved document is reused regardless of LLM model/prompt changes, so the
+  reuse fingerprint is content-only (no recipe component).
+- **M4 — Narrowed (incremental) parse — ✅ done, opt-in (see §11).** Per-TU include-closure tracking →
+  affected-TU set from the git diff → parse only affected TUs → merge into the baseline's parser-level
+  skeleton → recompute reverse/aggregate edges, behind the assemble-vs-full **`--verify-parse`** self-check.
+  Turns Phase-1 cost from *O(codebase)* into *O(diff)*. M4.0–M4.6 complete; validated byte-equal (set-level)
+  to a full parse on C1→C3. Default stays full parse until `--verify-parse` is clean across a diff matrix on
+  a large repo (the perf win only shows there).
 
 ---
 
 ## 10. Deferred (and the Postgres seam)
 
-- **Content-addressed PARSE cache** — the parsing analogue of the reuse index: key each
-  translation unit by the hash of its source + included headers; reuse the parsed entities/edges when
-  unchanged. Would **eliminate baseline selection entirely** and reuse parsing across all branches.
-  More complex (TU/include tracking) → **future, only if parse time becomes the measured bottleneck**.
+- **Narrowed (incremental) parse — M4 ✅ implemented (opt-in), see §11.** Parse only the TUs whose
+  preprocessed input changed, reuse the baseline model for the rest. Turns Phase-1 cost from *O(codebase)*
+  into *O(diff)*. M4.0–M4.6 done + the `--verify-parse` self-check; default stays full parse until the
+  self-check is clean across a diff matrix on a large repo (the perf win only shows there). A further
+  generalization — a **content-addressed** parse cache that keys each TU by `hash(source + included
+  headers)` and reuses across *all* branches (eliminating baseline selection) — remains a follow-on to M4.
 - **Per-artifact hashing**, **image-render cache**, **cross-version dedup** — deferred (see `03` §22.8).
 - **Postgres migration:** every JSON store → a table — `versions`, `entity_hashes`,
   `type_macro_usage`, `entity_outputs` (stored once per version), `reuse_index` (fingerprint →
@@ -389,6 +408,124 @@ NOT part of this feature.**
   methods — the §5 engine and the APIs are untouched.** (The analyzer's per-version `model/`+`output/`
   artifacts are *not* part of this seam — they stay file-based until the separate DB-native pipeline
   rewrite, `03`/§22.3.)
+
+---
+
+## 11. Narrowed (incremental) parse — **M4 (implemented; opt-in)**
+
+A full libclang parse (D10) is correct but, on a huge codebase, Phase-1 parse time becomes the floor
+once LLM work is reduced. M4 **parses only the translation units (TUs) whose preprocessed input changed
+and reuses the baseline version's model for the rest** — `O(codebase)` → `O(diff)` parsing.
+
+> **STATUS — M4.0–M4.6 implemented (opt-in via `engine.py --narrowed-parse`; full parse is the default).**
+> M4.0 include closures · M4.1 affected-TU set · M4.2 parse fingerprint · M4.3 partial-parse + `parse_merge`
+> · M4.4 engine wiring + parser-level snapshots + cross-TU call resolution · M4.5 `--verify-parse` self-check
+> · M4.6 virtual re-spread + parse-fingerprint gate + Windows path-case. **Validated byte-equal (set-level)
+> to a full parse on C1→C3 via `--verify-parse`.** Flip to default once `--verify-parse` is clean across a
+> representative diff matrix on a real (large) repo. Remaining polish: exact list-ORDER byte-identity
+> (set-equal today) and a perf measurement (the win only shows on a large codebase, not SampleCppProject).
+
+### 11.1 The correctness invariant
+> **The incrementally-assembled model must be byte-identical to what a full parse would produce.**
+
+If that holds, classify / impact / reuse are automatically correct. Everything below exists to
+guarantee it. It rests on one property of the compiler:
+
+> **A TU's AST is a pure, deterministic function of its preprocessed input + compiler flags.**
+> Preprocessed input = the `.cpp` + every transitively `#include`d file (macros expanded) + `-D`
+> defines + include paths.
+
+**Corollary (the reuse licence):** if a TU's preprocessed input and flags are unchanged, *every
+entity defined in it* — signature, location, `callsIds`, reads/writes-globals, type/macro usages,
+source hash — is identical to the full-parse result, so the baseline entity may be reused verbatim.
+
+### 11.2 The design
+1. **Record per-TU include closures.** On any parse (full or narrowed) write
+   `model/tu_includes.json = {tuPath: [resolved included files]}` (libclang exposes this via
+   `TranslationUnit.get_includes()`). Normalize all paths to **repo-relative, case-folded** (Windows).
+2. **Affected-TU set** — a *sound over-approximation* — from `git diff baseline..target`:
+   `affected = { tu : ( includes(tu) ∪ {tu} ) ∩ changedFiles ≠ ∅ }`.
+3. **Parse only the affected TUs** → fresh *local* data (entities, hashes, forward edges, type/macro
+   usages) + their fresh include closures.
+4. **Merge into a copy of the baseline model:** remove every entity defined in an affected/deleted
+   file, add the fresh entities, keep the rest. Dedup header-defined entities (inline / template) by
+   the stable key `Component|File|name|params` — the header is unchanged, so all reparsing TUs agree.
+5. **Recompute ALL reverse / aggregate maps from the merged forward edges** — *recompute, never
+   incrementally patch:* `calledByIds` ← invert `callsIds`; `typeUsers` / `macroUsers` ← invert each
+   function's usage list; `writesGlobalIdsTransitive` ← closure over the reassembled call graph. This
+   is O(edges), in-memory, and **cannot drift** (it is derived, not maintained).
+6. **Refresh the closure map**: reuse unaffected entries, replace affected → store for the next run.
+
+This dispatches both classic hazards by construction:
+- **Cross-file reverse edges** → step 5 (recompute from forward edges; a removed call simply isn't
+  re-derived, an added one is — no add/remove/delete bookkeeping to get wrong).
+- **Header / macro / template fan-out** → step 2: all three propagate **only** through `#include`, so
+  any TU that could see the change has the changed file in its closure and is reparsed.
+
+### 11.3 Corner cases — handled incrementally (safe)
+| Case | Why it stays byte-identical to a full parse |
+|---|---|
+| Function body change | Its TU is affected → reparsed; reverse edges recomputed |
+| Added / removed call edge | Forward edge is fresh; all reverse maps recomputed from scratch |
+| Header / inline / template change | Every including TU is in the closure → affected |
+| Macro change | A macro lives in a header → the closure catches it |
+| Deleted function / file | Entities removed; aggregates recomputed → no dangling reverse edges |
+| Signature change | The *declaration* (header) must change too → callers affected → reparsed |
+| Non-`.h` includes (`.inc`, generated headers) | Closure records **every** included file, any extension |
+| File-local (`static`) functions | Only same-TU callers exist, and that TU is affected |
+
+### 11.4 MUST full-reparse — the "never-stale" triggers
+These change the preprocessed input or AST for TUs the git diff alone can't identify, so they force a
+full parse. **Implemented** in `engine._try_narrowed_parse` + `affected.full_reparse_reason`:
+
+1. **Compiler flags / `-D` / include paths / C++ std / toolchain changed** → preprocessed input changes
+   for *every* TU. ✅ **Wired (M4.6):** the parser writes `metadata.parseFingerprint = parse_fingerprint(
+   CLANG_ARGS, std, libclang lib)`; the narrowed parse compares the partial's value to the baseline's and
+   falls back to a full parse on any difference. *(A parse-inputs hash — unrelated to the dropped recipe
+   fingerprint; covers only what changes the AST.)* The libclang version is folded in via the lib path.
+2. **A header file is ADDED or DELETED** → it may *shadow* an existing `#include` and silently change an
+   otherwise-untouched TU's closure. ✅ **Wired (M4.1):** `full_reparse_reason` forces a full parse when the
+   diff adds/deletes a header. (Header **modifications** are fine — the closure catches them.)
+3. **`tu_includes.json` (or the baseline `parse/` snapshot) missing** → no trustworthy closure map → full
+   parse. ✅ Wired.
+4. **PCH (precompiled header) in use** → treat the PCH as included by all TUs (it is) → a PCH change forces
+   a full reparse via the closure. *(Inherent — a PCH appears in every TU's closure.)*
+
+### 11.5 Safety net — assemble-vs-full self-check ✅ (M4.5 done)
+`engine.py --verify-parse` (with `--narrowed-parse`): runs the narrowed parse, then a full parse, and
+`parse_merge.diff_models` diffs the two (entity sets, per-entity hashes, fields, forward+reverse edges —
+edge lists compared as SETS, since order is cosmetic). Mismatches are logged loudly + recorded as a
+manifest warning, and the run **uses the full parse as the source of truth** (so a verify run is always
+safe). Graduate narrowed-parse to the default only once `--verify-parse` is clean across a range of diffs.
+It already paid off: it caught `typedef int UNIT;` defined in 5 files (bare-name key → parse-order-dependent
+winner), fixed by resolving a shared entity's file from the BASELINE in `merge_model`. (Remaining for M4.6:
+exact list-ORDER byte-identity vs set-equal; the §11.4 parse-fingerprint gate + header-add/delete triggers.)
+
+### 11.6 Inherent limit
+Changing a **widely-included core header** legitimately invalidates a large fraction of TUs —
+incremental can't and *shouldn't* dodge that, because those TUs genuinely changed. The win is the
+common case: a small diff touches a handful of TUs, not the whole tree.
+
+### 11.7 New / changed artifacts (M4.0–M4.6 — all done)
+Each parse writes these (alongside the usual model files); a version snapshots them under
+`versions/<id>/parse/` (the **blank-skeleton** a future narrowed parse merges against, so impacted
+functions arrive blank → regenerated):
+- `model/tu_includes.json` (M4.0) — per-TU include closure; intersected with the git diff → affected TUs.
+- `model/entity_files.json` (M4.3) — `{entityKey → defining file}`; the merge's file resolver (types/
+  hashes have no inline location). The merge resolves a **shared** entity's file from the BASELINE so a
+  multiply-defined entity (e.g. a `typedef` repeated across TUs) keeps the baseline's stable winner (M4.5).
+- `model/func_keys.json` (M4.4) — `{mangled-func-key → fid}`. A narrowed parse loads the **baseline's** map
+  (env `ANALYZER_BASELINE_FUNCKEYS`) so a call to a callee defined in an **un-parsed** file still resolves
+  to an edge — else a re-parsed caller's `callsIds` is incomplete and impact goes stale (cross-TU fix).
+- `model/override_pairs.json` (M4.6) — fid-level virtual override→base pairs; the narrowed merge loads the
+  baseline's + the partial's and **re-spreads** the virtual family (D7) across affected + un-parsed files.
+- `metadata.parseFingerprint` (M4.6) — gates a full reparse on a clang-flag/std/toolchain change (§11.4).
+- Code: `parser.py --only-files`; `affected.py` (affected set + full-reparse triggers); `parse_merge.py`
+  (by-file merge + `calledByIds` recompute + virtual re-spread + `diff_models`); `generate.snapshot_parse_model`;
+  `engine` narrowed decision + `--verify-parse`. **Merge rule (validated byte-equal — set-level — to a full
+  parse via `--verify-parse` on C1→C3):** use fresh for files in `changed ∪ affected ∪ deleted` (case-folded
+  on Windows), baseline elsewhere; recompute reverse edges. *(Remaining polish: exact list-ORDER byte-identity
+  — equal as sets today, which is the correctness bar since order doesn't affect any consumer.)*
 
 ---
 

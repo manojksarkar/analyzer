@@ -46,6 +46,21 @@ SUMMARIES = "summaries"
 # EDGES = {typeUsers, macroUsers} (slim — calls/globals come from functions.json).
 HASHES = "hashes"
 EDGES = "edges"
+# TU_INCLUDES = {tuRelPath -> [in-repo, repo-relative included files]} — the per-TU
+# transitive include closure (M4.0). Captured every parse; the narrowed-parse engine
+# (M4) intersects it with the git diff to find affected TUs. Not in ALL_MODEL_NAMES.
+TU_INCLUDES = "tu_includes"
+# ENTITY_FILES = {entityKey -> repo-relative defining file} for every hashed entity
+# (function/global/type/macro) — lets the narrowed-parse merge (M4.3) resolve each
+# entity's file (types/hashes have no inline location). Not in ALL_MODEL_NAMES.
+ENTITY_FILES = "entity_files"
+# FUNC_KEYS = {mangled-func-key -> model fid} for every function. A narrowed parse loads
+# the baseline's map so calls to functions defined in UN-parsed files still resolve to a
+# call edge (M4.4). Not in ALL_MODEL_NAMES.
+FUNC_KEYS = "func_keys"
+# OVERRIDE_PAIRS = [[override_fid, base_fid|base_key], …] virtual override->base relations,
+# for the narrowed-parse virtual-dispatch re-spread (M4.6). Not in ALL_MODEL_NAMES.
+OVERRIDE_PAIRS = "override_pairs"
 
 ALL_MODEL_NAMES = (
     METADATA,

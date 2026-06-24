@@ -16,7 +16,7 @@ def _incremental_stats():
         "versionId": "v2", "decision": "incremental", "status": "complete",
         "projectId": "samplecpp", "branch": "main", "commit": "3433fd6d6911",
         "scope": "group:Support", "baselineVersionId": "v1", "baselineCommit": "08d2f565cd03",
-        "changedFiles": 3, "dataDictId": "dd-001", "recipeFingerprint": "9f07d52abadef",
+        "changedFiles": 3, "dataDictId": "dd-001",
         "llmModel": "openai/gpt-oss-120b", "elapsedSeconds": 123.4,
         "classification": {"changed": {"function": 3}, "new": {}, "deleted": {},
                            "unchanged": {"function": 110, "global": 12, "type": 14, "macro": 9}},

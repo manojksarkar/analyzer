@@ -22,61 +22,243 @@ from .registry import register
 from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
 
 
+def _baseline_flowchart_dir(plan, model_dir_abs, out_dir):
+    """Locate the baseline version's flowchart dir mirroring this out_dir, or None."""
+    base_ver_dir = plan.get("baselineVersionDir")
+    if not base_ver_dir:
+        return None
+    project_root = os.path.dirname(model_dir_abs)
+    rel = os.path.relpath(out_dir, os.path.join(project_root, "output"))
+    cand = os.path.join(base_ver_dir, "output", rel)
+    return cand if os.path.isdir(cand) else None
+
+
+def _carry_forward_flowcharts(base_fc, out_dir):
+    """Copy every baseline flowchart JSON + PNG into out_dir (engine then overwrites
+    the changed files' JSONs; the merge restores unchanged functions). Returns count."""
+    carried = 0
+    for fn in os.listdir(base_fc):
+        if fn == "_summary.json":
+            continue
+        if fn.endswith(".json") or fn.endswith(".png"):
+            shutil.copyfile(os.path.join(base_fc, fn), os.path.join(out_dir, fn))
+            if fn.endswith(".json"):
+                carried += 1
+    log(f"incremental: carried forward {carried} baseline flowchart file(s) (+PNGs)", "flowcharts")
+    return carried
+
+
+def _prune_orphan_flowcharts(out_dir, valid_stems):
+    """Move/rename cleanup (M3.x): drop carried flowchart artifacts for source-file stems
+    no longer present in the current model (a deleted or RENAMED file), so the version's
+    output carries no stale units. JSON files are `<stem>.json`; PNGs `<stem>_<func>.png`.
+    Skips pruning when `valid_stems` is empty (avoids nuking everything on a load glitch)."""
+    valid = set(valid_stems)
+    if not valid:
+        return 0
+    try:
+        names = os.listdir(out_dir)
+    except OSError:
+        return 0
+    orphan = {fn[:-5] for fn in names
+              if fn.endswith(".json") and fn != "_summary.json" and fn[:-5] not in valid}
+    if not orphan:
+        return 0
+    removed = 0
+    for fn in names:
+        if fn == "_summary.json":
+            continue
+        is_orphan = ((fn.endswith(".json") and fn[:-5] in orphan)
+                     or (fn.endswith(".png") and any(fn.startswith(s + "_") for s in orphan)))
+        if is_orphan:
+            try:
+                os.unlink(os.path.join(out_dir, fn))
+                removed += 1
+            except OSError:
+                pass
+    log(f"incremental: pruned {removed} orphan flowchart artifact(s) for {len(orphan)} "
+        f"removed/renamed unit(s): {sorted(orphan)}", "flowcharts")
+    return removed
+
+
+def _source_unit_flowchart(version_dir, unit):
+    """M3.7b: return (flowcharts_dir, {name: entry}) for `unit`'s flowchart JSON anywhere
+    under a version's output (handles scoped output/<scope>/flowcharts/), or (None, {})."""
+    out_root = os.path.join(version_dir, "output")
+    if not os.path.isdir(out_root):
+        return None, {}
+    for r, _d, _f in os.walk(out_root):
+        if os.path.basename(r) == "flowcharts":
+            p = os.path.join(r, unit + ".json")
+            if os.path.isfile(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as fh:
+                        arr = json.load(fh)
+                    return r, {e.get("name"): e for e in arr if isinstance(e, dict) and e.get("name")}
+                except (OSError, json.JSONDecodeError):
+                    return r, {}
+    return None, {}
+
+
 def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
-    """Incremental flowchart reuse (M2.4b). If model/incremental_plan.json exists,
-    restrict the flowchart engine to functions in the IMPACTED source files and
-    pre-seed out_dir with the baseline version's flowchart JSONs for the rest (the
-    engine then overwrites only the impacted files). Absent plan -> unchanged (full
-    behaviour). Returns (functions_file, impacted_units): impacted_units is the set
-    of source-file stems whose PNGs must be re-rendered (None when no plan)."""
+    """Incremental flowchart reuse. If model/incremental_plan.json exists:
+
+      * FUNCTION-LEVEL (M3.6, plan has `flowchartFids`): restrict the engine to the
+        DIRECTLY changed/new functions only, carry forward ALL baseline flowchart
+        JSONs+PNGs, and (after the engine runs) splice each fresh per-function flowchart
+        into the baseline file JSON — keeping unchanged functions, replacing changed
+        ones, dropping deleted ones. Only the changed functions' PNGs are re-rendered.
+      * FILE-LEVEL (older plan, only `flowchartFiles`): restrict to whole changed files.
+
+    Absent/unreadable plan -> full behaviour. Returns (functions_file, inc): `inc` is
+    None (no plan) or a dict consumed by run() to merge + decide which PNGs to render."""
     plan_path = os.path.join(model_dir_abs, "incremental_plan.json")
     if not os.path.isfile(plan_path):
         return functions_arg_path, None
     try:
         with open(plan_path, "r", encoding="utf-8") as f:
             plan = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return functions_arg_path, None
-    # Flowcharts regenerate only for DIRECTLY changed/new files (flowchartFiles) — a
-    # function's flowchart is its own control flow, not its callees' bodies. Fall back
-    # to impactedFiles for older plans that didn't split the two.
-    impacted = set(plan.get("flowchartFiles") or plan.get("impactedFiles") or [])
-    base_ver_dir = plan.get("baselineVersionDir")
-    # impacted source-file stems (e.g. "Utils" for Layer1/Math/Utils.cpp) — these
-    # units' PNGs are re-rendered; everything else's PNGs are carried forward.
-    impacted_units = {os.path.splitext(os.path.basename(f))[0] for f in impacted}
-
-    # 1. carry forward baseline flowchart JSONs + PNGs (engine overwrites impacted
-    #    JSONs; the PNG render loop re-renders only impacted units).
-    if base_ver_dir:
-        project_root = os.path.dirname(model_dir_abs)
-        rel = os.path.relpath(out_dir, os.path.join(project_root, "output"))
-        base_fc = os.path.join(base_ver_dir, "output", rel)
-        if os.path.isdir(base_fc):
-            carried = 0
-            for fn in os.listdir(base_fc):
-                if fn == "_summary.json":
-                    continue
-                if fn.endswith(".json") or fn.endswith(".png"):
-                    shutil.copyfile(os.path.join(base_fc, fn), os.path.join(out_dir, fn))
-                    if fn.endswith(".json"):
-                        carried += 1
-            log(f"incremental: carried forward {carried} baseline flowchart file(s) (+PNGs)", "flowcharts")
-
-    # 2. restrict the engine input to functions whose source file is impacted
-    try:
         with open(functions_arg_path, "r", encoding="utf-8") as f:
             funcs = json.load(f)
     except (OSError, json.JSONDecodeError):
-        return functions_arg_path, impacted_units
+        return functions_arg_path, None
+
+    base_fc = _baseline_flowchart_dir(plan, model_dir_abs, out_dir)
+
+    def _stem(fid):
+        fpath = ((funcs.get(fid) or {}).get("location") or {}).get("file")
+        return os.path.splitext(os.path.basename(fpath))[0] if fpath else None
+
+    out_path = os.path.join(model_dir_abs, "functions_incremental.json")
+    fids = plan.get("flowchartFids")
+    if fids is not None:
+        # FUNCTION-LEVEL. Reuse needs the baseline JSONs to splice into; if they're
+        # unexpectedly missing, fall back to a full (correct, if slower) regeneration.
+        if not base_fc:
+            log("incremental: baseline flowcharts missing - full flowchart regen", "flowcharts")
+            return functions_arg_path, None
+        _carry_forward_flowcharts(base_fc, out_dir)
+
+        # In-scope source-file stems -> their CURRENT functions (qualifiedName). Used by
+        # the merge to drop deleted entries and keep file order.
+        scope_units = {}
+        for fid, info in funcs.items():
+            stem, qn = _stem(fid), info.get("qualifiedName")
+            if stem and qn:
+                scope_units.setdefault(stem, set()).add(qn)
+
+        # Move/rename cleanup: drop carried artifacts for files no longer in the model.
+        _prune_orphan_flowcharts(out_dir, set(scope_units))
+
+        # Engine regenerates the directly changed/new functions in this scope.
+        sel = [fid for fid in fids if fid in funcs]
+
+        # M3.7b — cross-version flowchart reuse: a directly-changed fn reused from the
+        # index (a revert) has the SAME content -> SAME flowchart as its source version.
+        # Splice its flowchart entry + PNG from there instead of regenerating. If the
+        # source version has no flowchart for it, fall back to regenerating it (add to sel).
+        xver_plan = plan.get("crossVersionFlowcharts") or {}
+        xver_by_unit = {}
+        for fid, src_dir in xver_plan.items():
+            info = funcs.get(fid)
+            stem = _stem(fid)
+            qn = info.get("qualifiedName") if info else None
+            if not info or not stem or not qn:
+                continue
+            src_fc_dir, src_entries = _source_unit_flowchart(src_dir, stem)
+            entry = src_entries.get(qn)
+            if entry is None:
+                sel.append(fid)                       # source has no flowchart -> regenerate
+                continue
+            xver_by_unit.setdefault(stem, {})[qn] = entry
+            png = f"{stem}_{safe_filename(qn)}.png"   # copy source PNG (so it isn't rendered)
+            srcpng = os.path.join(src_fc_dir, png) if src_fc_dir else ""
+            if srcpng and os.path.isfile(srcpng):
+                shutil.copyfile(srcpng, os.path.join(out_dir, png))
+
+        restricted = {fid: funcs[fid] for fid in sel}
+        fresh_pairs = {(_stem(fid), funcs[fid].get("qualifiedName")) for fid in sel}
+
+        # Units whose JSON must be rebuilt = files of changed/new/deleted functions
+        # (flowchartFiles) that exist in this scope. A deletion-only file has no fresh
+        # entry but still needs its deleted function spliced OUT.
+        plan_files = plan.get("flowchartFiles") or []
+        changed_units = {os.path.splitext(os.path.basename(f))[0] for f in plan_files} & set(scope_units)
+        # also cover changed/new fids whose file somehow isn't in flowchartFiles + xver units
+        changed_units |= {p[0] for p in fresh_pairs if p[0]}
+        changed_units |= set(xver_by_unit)
+        current_by_unit = {u: scope_units.get(u, set()) for u in changed_units}
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(restricted, f, indent=2)
+        log(f"incremental: flowcharts (function-level) restricted to {len(restricted)} changed "
+            f"function(s); {len(xver_by_unit)} unit(s) get cross-version splices; "
+            f"{len(changed_units)} file JSON(s) to rebuild", "flowcharts")
+        return out_path, {"mode": "function", "base_fc": base_fc,
+                          "changed_units": changed_units, "current_by_unit": current_by_unit,
+                          "fresh_pairs": fresh_pairs, "xver_by_unit": xver_by_unit}
+
+    # FILE-LEVEL fallback (plan predates flowchartFids).
+    if base_fc:
+        _carry_forward_flowcharts(base_fc, out_dir)
+        _prune_orphan_flowcharts(  # move/rename cleanup
+            out_dir, {_stem(fid) for fid in funcs if _stem(fid)})
+    impacted = set(plan.get("flowchartFiles") or plan.get("impactedFiles") or [])
+    impacted_units = {os.path.splitext(os.path.basename(f))[0] for f in impacted}
     restricted = {fid: info for fid, info in funcs.items()
                   if (info.get("location") or {}).get("file") in impacted}
-    out_path = os.path.join(model_dir_abs, "functions_incremental.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(restricted, f, indent=2)
-    log(f"incremental: flowcharts restricted to {len(restricted)} function(s) "
+    log(f"incremental: flowcharts (file-level) restricted to {len(restricted)} function(s) "
         f"in {len(impacted)} impacted file(s)", "flowcharts")
-    return out_path, impacted_units
+    return out_path, {"mode": "file", "impacted_units": impacted_units}
+
+
+def _merge_incremental_flowcharts(inc, out_dir):
+    """FUNCTION-LEVEL splice (M3.6 + M3.7b): rebuild each changed file's JSON from THREE
+    sources, per current function (join key = entry 'name' == functions.json qualifiedName):
+      * FRESH   — the engine's per-function output (directly changed/new functions);
+      * X-VER   — a flowchart spliced from a prior version (M3.7b, a reused revert);
+      * BASELINE — everything else (unchanged functions), in baseline file order.
+    Deleted functions (not in the current set) are dropped; new ones appended."""
+    base_fc = inc.get("base_fc")
+
+    def _by_name(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                arr = json.load(f)
+            return {e.get("name"): e for e in arr if isinstance(e, dict) and e.get("name")}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    spliced = 0
+    for unit in sorted(inc.get("changed_units") or []):
+        out_json = os.path.join(out_dir, unit + ".json")
+        fresh = _by_name(out_json)                                   # engine output: changed only
+        baseline = _by_name(os.path.join(base_fc, unit + ".json")) if base_fc else {}
+        xver = inc.get("xver_by_unit", {}).get(unit) or {}          # cross-version entries (M3.7b)
+        current = inc.get("current_by_unit", {}).get(unit) or set()
+
+        merged, emitted = [], set()
+        for name, entry in baseline.items():       # baseline order: replace changed, drop deleted
+            if current and name not in current:
+                continue
+            merged.append(fresh.get(name) or xver.get(name) or entry)  # fresh > x-ver > baseline
+            emitted.add(name)
+        for src in (fresh, xver):                  # functions new to the baseline
+            for name, entry in src.items():
+                if name in emitted:
+                    continue
+                if current and name not in current:  # a deleted fn still present in carried 'fresh'
+                    continue
+                merged.append(entry)
+                emitted.add(name)
+
+        with open(out_json, "w", encoding="utf-8") as f:
+            json.dump(merged, f, indent=2, ensure_ascii=False)
+        spliced += 1
+    if spliced:
+        log(f"incremental: spliced fresh flowcharts into {spliced} baseline file JSON(s)", "flowcharts")
 
 
 def _resolve_layer_dirs(config, group_name, layer_paths):
@@ -224,8 +406,9 @@ def run(model, output_dir, model_dir, config):
         except (OSError, json.JSONDecodeError):
             pass
 
-    # Incremental (M2.4b/M3.1/M3.4): restrict to impacted files + carry forward JSONs/PNGs.
-    functions_arg_path, _impacted_units = _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir)
+    # Incremental (M2.4b/M3.1/M3.4/M3.6): restrict the engine to changed functions +
+    # carry forward baseline JSONs/PNGs (function-level splice happens after the engine).
+    functions_arg_path, inc = _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir)
 
     # knowledge_base.json (generated by model_deriver.py) — pass if it exists
     kb_path = os.path.join(model_dir_abs, "knowledge_base.json")
@@ -286,6 +469,11 @@ def run(model, output_dir, model_dir, config):
         log("generator exited with code %s" % r.returncode, component="flowcharts", err=True)
         return
 
+    # Incremental function-level (M3.6): splice the freshly generated per-function
+    # flowcharts into the carried baseline file JSONs before rendering.
+    if inc and inc.get("mode") == "function":
+        _merge_incremental_flowcharts(inc, out_dir)
+
     # Always render flowcharts to PNG
 
     mmdc = mmdc_path(project_root)
@@ -304,13 +492,19 @@ def run(model, output_dir, model_dir, config):
     if os.path.isfile(puppeteer):
         run_cmd_base.extend(["-p", puppeteer])
 
+    # Incremental PNG reuse: file-level carries whole non-impacted units; function-level
+    # carries every function except the directly changed ones (re-rendered below).
+    inc_mode = inc.get("mode") if inc else None
+    file_units = inc.get("impacted_units") if inc_mode == "file" else None
+    fresh_pairs = inc.get("fresh_pairs") if inc_mode == "function" else None
+
     items = []
     for fname in sorted(os.listdir(out_dir)):
         if not fname.endswith(".json"):
             continue
         unit_name = fname[:-5]
-        # Incremental: skip re-rendering PNGs for non-impacted units (carried forward).
-        if _impacted_units is not None and unit_name not in _impacted_units:
+        # File-level: skip re-rendering PNGs for non-impacted units (carried forward).
+        if file_units is not None and unit_name not in file_units:
             continue
         path = os.path.join(out_dir, fname)
         try:
@@ -321,8 +515,12 @@ def run(model, output_dir, model_dir, config):
             for item in arr:
                 func_name = (item.get("name") or "").strip()
                 flowchart = (item.get("flowchart") or "").strip()
-                if func_name and flowchart:
-                    items.append((unit_name, func_name, flowchart))
+                if not (func_name and flowchart):
+                    continue
+                # Function-level: re-render only the directly changed functions' PNGs.
+                if fresh_pairs is not None and (unit_name, func_name) not in fresh_pairs:
+                    continue
+                items.append((unit_name, func_name, flowchart))
         except (json.JSONDecodeError, OSError):
             pass
 

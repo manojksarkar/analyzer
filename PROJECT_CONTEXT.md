@@ -3,6 +3,7 @@
 > Updated: 2026-06-23 (feat/frontend-app: all five inner React pages — `ProjectDetailPage`, `DocumentsPage`, `ComparePage`, `VersionsPage`, `TeamPage` — rebuilt as faithful 1:1 ports of their design HTML (they were previously simplified sketches missing 50–80% of the design DOM: panels, KPI strips, sub-bars, state variants, detail rows); `Document`/`TeamMember` types + `data/mock.ts` extended to the design datasets (15 docs, 9 members incl. pending, `unchanged` doc status); `npm run build` clean (263 modules); commit `98af777`; see §24 React-app implementation table).
 > Updated: 2026-06-22 (feat/frontend-app branch created from `main`; `frontend/app/` (51 files, full React/Vite/TS/Tailwind v4 app) landed here; see §24 for frontend stack detail; branch supersedes `feat/product-ui-redesign`).
 > Previous update: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete; M3.1 (precise flowchart reuse) + M3.2 (function-summary reuse) + M3.3 (full Phase-2 enrichment reuse — behaviour-names/descriptions/globals restricted to the impact set; file/component summary gating; PNG reuse; + documents-capture bug fix) done**. The LLM-on payoff is now real (behaviour-names were the hidden 417s cost — config has descriptions+behaviourNames on). Re-test LLM-on **with a real diff** (baseline at an earlier commit than the target). **M3.4 end-of-run report done** (`src/incremental/report.py`: logged to `logs/run_<date>.log` + saved to `versions/<id>/report.txt`; inputs + change classification + reuse accounting %). Remaining M3: version-scoped reads (`?versionId=`), git_ops/git_service consolidation. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Updated: 2026-06-23 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete; M3.1 (precise flowchart reuse) + M3.2 (function-summary reuse) + M3.3 (full Phase-2 enrichment reuse — behaviour-names/descriptions/globals restricted to the impact set; file/component summary gating; PNG reuse; + documents-capture bug fix) done**. The LLM-on payoff is now real (behaviour-names were the hidden 417s cost — config has descriptions+behaviourNames on). Re-test LLM-on **with a real diff** (baseline at an earlier commit than the target). **M3.4 end-of-run report done** (`src/incremental/report.py`: logged to `logs/run_<date>.log` + saved to `versions/<id>/report.txt`; inputs + change classification + reuse accounting %). **M3.5 flowchart impact-scoping fix done** (flowcharts scoped to directly-changed files, not the full impact set — a flowchart is its own CFG, independent of callee bodies). **M3.6 function-level flowchart granularity done** (per-function splice via `flowchartFids` + `_merge_incremental_flowcharts`: regenerate only the changed function, carry the rest, drop deleted; report counts flowcharts per-function). **M4.0 per-TU include-closure capture done** (`src/incremental/parse_includes.py`; `parser.py` writes `model/tu_includes.json` `{tuRelPath → in-repo included rel paths}` every parse — foundation for **M4 narrowed parse**, fully specced in doc 04 §11 / D10, v2.3). **M3.8 branch/commit endpoints + M3.9 version-scoped reads done** (backend `?projectId=&versionId=` on components/functions/flowcharts via a request-scoped `_ReadRoots`; `GET /projects/{id}/branches` + `/commits`). **M3.7 cross-version reuse-index lookup done** (engine now reads `cache/index.json` → reverts / cross-branch-identical entities are copied from a prior version, not LLM-regenerated; verified 0/113 regenerated re-genning C3). **Move/rename orphan cleanup done** (`_prune_orphan_flowcharts` drops carried flowchart JSON/PNG for deleted/renamed files). **git_ops/git_service consolidation done** (git_ops is the single local-git module; git_service keeps only clone/fetch/auth + re-exports; `GitError` unified). **M3.7b flowchart cross-version reuse done** (a reverted directly-changed fn's flowchart is spliced from its index source version, not regenerated → a re-gen/revert is 0 LLM end-to-end). **Virtual-dispatch over-approximation done** (D7 audit: virtual-family caller-edge spreading via `src/incremental/virtual_dispatch.py` + the `clang_getOverriddenCursors` C API; fn-ptr dispatch is a documented limitation). **M3.10 unit-diagram incremental reuse done** (carry-forward + affected-unit-only regen; no-LLM view). **All doc-05 incremental APIs implemented.** **The incremental feature is functionally complete + hardened for the POC** — only the deferred production track remains (M4 narrowed parse, M5 Postgres, M6 storage/dedup). **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
 > Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
 > Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
@@ -2753,8 +2754,9 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
 - **Reuse = `cache/index.json`**, a `{fingerprint → (versionId, entityKey)}` **POINTER index** — **NOT** a
   duplicate blob store. Output content lives **once** in each version's `model/output`; reuse = look up the
   fingerprint → copy from the pointed-to version. Plus **carry-forward** from the baseline version.
-- **`fingerprint`** = `sha256(source_hash + sorted(dependency source-hashes) + recipeFingerprint)`;
-  `recipeFingerprint` = LLM model + prompt version + cacheVersion (gives operator-change invalidation).
+- **`fingerprint`** = `sha256(source_hash + sorted(dependency source-hashes))` — **content-only**; the LLM
+  recipe is intentionally NOT folded in (recipe-fingerprint invalidation **dropped by decision** — an approved
+  document is reused regardless of model/prompt changes).
 - **Data dictionary** is per-version, replaceable; **uploaded by onboarding's separate API**; `generate` only
   references a `dataDictId`. A data-dict-only change → cheap reassembly (interface-table ranges), **no LLM**.
 - **Onboarding is OUT of scope** (other engineer): registration, git credentials, the initial clone, the
@@ -2835,9 +2837,10 @@ workspaces/<projectId>/
     and synthetic-from-VAR_DECL functions are not tracked; macro detection over-approximates (token-name match).*
   - **M1.3a substrate — ✅ done.** **D9 store interface** `src/incremental/stores.py`
     (`Workspace`/`VersionStore`/`HashStore`/`EdgeStore`/`ReuseIndex`, JSON-file impl, atomic writes) +
-    **fingerprints** `src/incremental/fingerprint.py` (`recipe_fingerprint`,
-    `compute_fingerprints` = `sha256(source_hash + sorted(dep source_hashes) + recipeFingerprint)` over
-    functions+globals; deps = callees/globals from functions.json + types/macros forward-inverted from edges) +
+    **fingerprints** `src/incremental/fingerprint.py` (`compute_fingerprints` =
+    `sha256(source_hash + sorted(dep source_hashes))` — **content-only**, no recipe component (recipe-fingerprint
+    invalidation dropped by decision) — over functions+globals; deps = callees/globals from functions.json +
+    types/macros forward-inverted from edges) +
     the **version-producing full-gen orchestrator** `src/incremental/generate.py` (CLI:
     `python src/incremental/generate.py --project-id … --branch … --commit … --scope group:G --no-llm`): checkout
     → resolved config (global + project layers) → run `run.py --config` → capture `model/output/documents` +
@@ -2897,7 +2900,7 @@ workspaces/<projectId>/
     `decision` + `baselineVersionId`/`baselineCommit` + `warnings`; `baseVersionId` override forwarded. `commit not
     in repo` → 409. Verified via TestClient (auto@main→incremental/engine.py/baseline=v2, full→generate.py,
     auto@feature1[no ancestor]→full, 400/409).
-  - **M2.4b flowchart-level reuse — ✅ done (file-level).** `views/flowcharts.py::_apply_incremental_plan`
+  - **M2.4b flowchart-level reuse — ✅ done (file-level; later narrowed by M3.5 and replaced by M3.6 function-level).** `views/flowcharts.py::_apply_incremental_plan`
     (gated on `model/incremental_plan.json`; absent → unchanged full behaviour) **carries forward** the baseline
     version's `output/<scope>/flowcharts/*.json` then **restricts** the flowchart engine's functions file to the
     impacted source files (engine overwrites only those). `engine.py` computes `impactedFiles` BEFORE the run
@@ -2958,13 +2961,202 @@ workspaces/<projectId>/
     functions.json hash — **not** LLM labels; there is no label cache — so unifying caches wouldn't help; reuse is
     handled by version-level carry-forward.) Verified e2e: C1→C3 flowcharts dropped from **12 functions / 5 files**
     to **3 functions / 1 file** (App no longer re-labeled); report shows `Flowcharts carried 15/18 (83%)`.
-  - *Remaining:* **version-scoped reads** (`?versionId=` on `components`/`functions`/`flowcharts`); move/rename
-    polish; consolidate `git_ops`/`git_service`; unit-diagram reuse. (Recipe-fingerprint invalidation is
-    automatic; multi-doc zip shipped in M1.3b.)
-- **Next concrete step:** **M3.2 — version-scoped reads**: `?versionId=` on the browse endpoints
-  (`/components`, `/functions/{fn_id}`, `/flowcharts/{fn_id}`) so the UI reads a specific version's
-  `model/`+`output/` (removes the single-shared-`model/` limitation; doc 05 §8). Then the remaining M3 items.
-  (M3.1 done — precise flowchart reuse + `run.py --to-phase`.)
+  - **M3.6 function-level flowchart granularity — ✅ done (supersedes M2.4b file-level).** Even after M3.5,
+    flowcharts regenerated at **file** granularity: a changed file re-labeled *all* its functions (e.g. changing
+    `Math::subtract` re-labeled `add`/`computeBoth` too). Now per-**function**: the plan carries **`flowchartFids`**
+    (the directly changed/new fids); `views/flowcharts.py` restricts the engine to *only* those functions, carries
+    forward all baseline flowchart JSONs+PNGs, then **splices** each fresh per-function flowchart into the baseline
+    file JSON via `_merge_incremental_flowcharts` — **join key = entry `name` (== `functions.json` `qualifiedName`,
+    verified exact)**. Merge rule: keep unchanged (baseline), replace changed (fresh), **drop deleted** (not in the
+    target's current set — handles deletion-only files whose deleted entry still sits in the carried JSON), append
+    new; baseline file order preserved. Only changed functions' PNGs re-render (the rest are carried). Unit set for
+    the merge = `flowchartFiles` ∩ in-scope (so deletion-only files are rebuilt); engine restriction =
+    `flowchartFids` ∩ scope. Safe fallback: if baseline flowcharts are missing → full flowchart regen. Report now
+    counts flowcharts at **function** granularity (`flowcharts` stat: regenerated `len(direct_fns)` / total
+    functions), split from file-level **summaries** (`files` stat). Other generation types were already
+    function/entity-level (descriptions/behaviour-names/globals via skip-if-described + `only_fids`/`only_globals`);
+    file/component summaries are per-file/per-component by nature. Verified e2e LLM-off (C1→C3, scope Support):
+    flowchart engine restricted to **1 changed function** (was 3 file-level), `Utils.json` correctly retains all 3
+    (`add`,`subtract`,`computeBoth`) with `subtract` fresh, **1 PNG** re-rendered; +6 merge unit tests (120 pass).
+  - **M4.0 per-TU include-closure capture — ✅ done (foundation for narrowed parse; no behaviour change).**
+    New `src/incremental/parse_includes.py` (pure, libclang-free): `to_repo_relative` + `build_closure` —
+    normalize libclang include paths to **repo-relative, forward-slash, case-preserved**, drop out-of-repo
+    (system/third-party) headers, dedup/sort, exclude the TU's own source. `parser.py::_capture_tu_includes(tu, path)`
+    reads `tu.get_includes()` in the first parse pass (best-effort — never breaks parsing) and `main()` writes
+    **`model/tu_includes.json`** `{tuRelPath → [in-repo included rel paths]}` (new `model_io.TU_INCLUDES`, not in
+    `ALL_MODEL_NAMES`; captured into each version automatically since `capture_artifacts` copytrees `model/`). This is
+    the map the future **M4 narrowed parse** intersects with the `git diff` to find affected TUs — soundly covering
+    header/macro/template fan-out (all propagate only through `#include`). Paths are case-**preserved** so they line up
+    with `functions.json` `location.file` + `git diff`; case-insensitive *matching* is M4.1's job. Verified e2e LLM-off
+    (`SampleCppProject`): 19 TUs / 42 in-repo edges, paths clean (no backslash/drive/`..`/leading `/`), no system
+    headers leaked, `Utils.h` fans out into `Main.cpp`'s closure, form matches `functions.json` (18/19). +8 unit tests.
+    **Full M4 design + corner-case audit + never-stale full-reparse triggers + `--verify-parse` self-check: doc 04 §11
+    (v2.3, D10 + M4 milestone).** M4 plan is M4.0 done → M4.1 affected-TU computation (`affected.py`, pure) → M4.2
+    fingerprint hardening (flags+libclang version) → M4.3 parse-merge + reverse-recompute → M4.4 engine wiring → M4.5
+    self-check → M4.6 corner-case hardening. **M4 only worth building once Phase-1 parse is the *measured* bottleneck.**
+  - **M3.8 branch/commit listing endpoints — ✅ done.** `GET /projects/{id}/branches` (doc 05 G1) +
+    `GET /projects/{id}/branches/{branch:path}/commits?limit=&offset=` (G2) in `backend/main.py`, thin
+    wrappers over the existing `git_service.list_branches`/`list_commits` on the project's clone (the UI's
+    "pick a target commit" path). Verified on `samplecpp` (branches main/feature1/2/3; main 6 commits).
+  - **M3.9 version-scoped reads — ✅ done.** `?projectId=&versionId=` on `/components`, `/components/{id}`,
+    `/components/{id}/modules`, `/functions/{fn_id}` (GET+PATCH), `/flowcharts/{fn_id}` now serve that
+    version's snapshot. Mechanism: a request-scoped **`_ReadRoots`** (contextvar `_roots()`, default = shared
+    `model/`+`output/`); `_enter_version_scope(projectId, versionId)` at the top of each endpoint points the
+    read helpers (`_load_functions`/`_load_groups`/`_project_base_path`/`_module_file_for_fn`/`_persist_description`/
+    `_find_flowchart_entry`) at `versions/<vid>/{model,output}` + that version's `config.json` (reset in `finally`;
+    per-task so concurrent requests don't collide). 404 on unknown version. Also hardened
+    `_find_flowchart_entry`: walks **all** `flowcharts/` dirs under output (handles scoped `output/<scope>/flowcharts/`)
+    and matches `functionKey` (real engine) **or** falls back to `name` == fn_id's qualifiedName (POC fake generator).
+    `/config` (canonical *source* config) + `/project/structure` (working tree) left project-level — orthogonal to
+    versions. Verified e2e (TestClient) + 10 unit tests (`tests/unit/test_backend_version_scope.py`); backend imported
+    lazily there to avoid the `models` name clash with the flowchart tests at collection time.
+  - **M3.7 cross-version reuse-index lookup — ✅ done (the D3 reuse payoff).** The engine now *reads*
+    `cache/index.json` (it only seeded it before). New pure `engine.carry_forward_from_index(impact_keys,
+    target_fps, target_entities, index, current_version_id, src_loader, fields)`: for each IMPACT-set entity
+    whose **content fingerprint** already exists in the index (produced by a *prior* version — a revert, or
+    code identical to another branch), it copies that version's stored output (`description`/behaviour-names
+    for functions; `description` for globals) instead of regenerating. Reused entities drop out of the LLM
+    regen sets (`regen_impact`/`regen_globals` → the plan's `impactFids`/`impactedGlobals`), so Phase 2 skips
+    them. Fingerprints (content-only) are computed once and reused to seed the index at the end. Report adds an
+    **X-version** line + `crossVersion` stat; manifest gets `crossVersionReused`. Verified e2e LLM-off: re-gen
+    of C3 with baseline v1 → **functions regenerated 0/113 (100% reused), 9 reused cross-version from v2**
+    (which already produced C3). +7 unit tests. **Follow-on (M3.7b):** flowchart cross-version reuse — a reused
+    function's *flowchart* still regenerates (flowchartFids unchanged); reusing it needs the splice to pull
+    per-fid from arbitrary versions.
+  - **Move/rename orphan cleanup — ✅ done.** `views/flowcharts.py::_prune_orphan_flowcharts(out_dir, valid_stems)`
+    runs right after the baseline carry-forward (both function- and file-level modes): drops carried flowchart
+    JSON (`<stem>.json`) + PNG (`<stem>_<func>.png`) for source-file stems no longer in the current model (a
+    deleted or **renamed** file), so a version's output carries no stale units. No-op when `valid_stems` is empty
+    (guards against a load glitch nuking the carry-forward); prefix-collision safe (`Foo` won't drop `Foobar`).
+    +4 unit tests; e2e confirms zero spurious pruning on the no-rename C1→C3 diff. **Note: also confirmed unit
+    diagrams use NO LLM (pure structural) — incremental reuse there would only save PNG-render time; deprioritized.**
+  - **git_ops/git_service consolidation — ✅ done (no behavior change).** `src/incremental/git_ops.py` is now the
+    **single** home for every local git primitive (checkout / current_commit / ancestry / diff / `list_branches` /
+    `list_commits` — the last two moved over from git_service). `backend/git_service.py` keeps **only** the
+    credentialed network ops (`clone_repo`, `fetch`, `_auth_url`, `_clean_url`) and **re-exports** the locals from
+    git_ops, so existing `git_service.<fn>` callers and `except git_service.GitError` keep working — `GitError` is
+    now one class (`git_service.GitError is git_ops.GitError`). The duplicated baseline primitives
+    (`is_ancestor`/`merge_base`/`changed_files`/`nearest_ancestor`/`_run`/`_check`) are gone from git_service. Layer
+    direction preserved (backend→src; git_ops has no backend dep). Verified: 20 git_ops+backend tests pass; M3.8
+    endpoints flow through the re-export; identity + unified-GitError checks green.
+  - **M3.7b flowchart cross-version reuse — ✅ done.** A directly-changed function reused from the index (a
+    revert) has the SAME content → SAME flowchart as its source version, so it's no longer regenerated. Engine:
+    `xver_flowcharts = {fid → sourceVersionDir}` (= `direct_fns ∩ index_reused`), excluded from `flowchartFids`,
+    written to the plan as **`crossVersionFlowcharts`**. View (`views/flowcharts.py`): `_source_unit_flowchart`
+    finds the unit's flowchart in the source version's output (walks scoped `output/<scope>/flowcharts/`); the
+    splice gains a **third source** (`fresh > x-ver > baseline`) and copies the source PNG; if the source version
+    has no flowchart for it, falls back to regenerating (adds the fid back to the engine's set). Report X-version
+    line + `crossVersion.flowcharts` count. Verified e2e: re-gen of C3 with baseline v1 → flowcharts **restricted
+    to 0 regenerated, 1 cross-version splice** (subtract from v2), `Utils.json` complete; **so a re-gen/revert is
+    now 0 LLM end-to-end** (descriptions + behaviour + flowcharts all reused). +2 unit tests (three-source priority,
+    x-ver new fn).
+  - **Virtual-dispatch over-approximation (D7 audit) — ✅ done.** Audit found: a virtual call `base->m()`
+    resolves (libclang) to the static method — or, when the base is pure-virtual, an *arbitrary* override by
+    name — so sibling overrides got **no caller** (e.g. `MultiplyOperation::apply` showed `calledByIds: []`):
+    changing an override wouldn't impact the dispatcher (**stale**) and the model was inaccurate. Fix: new pure
+    `src/incremental/virtual_dispatch.py::spread_virtual_families` — unions virtual *families* (override→base via
+    `clang_getOverriddenCursors`, bound through the **C API by ctypes** since this Python binding lacks the wrapper;
+    queried on `cursor.canonical` because out-of-line defs report no overrides) and links every caller of any member
+    to **all** members. `parser.py` collects `_override_pairs` in `visit_definitions` and spreads in `build_metadata`
+    (before calledByIds/callsIds are derived). Verified: `applyWithOperation.callsIds` now lists both overrides,
+    `MultiplyOperation::apply.calledByIds = [applyWithOperation]`. Degrades safely (no spread) if the C API is
+    absent. +6 unit tests. **Function-pointer dispatch = documented limitation** (target unknowable statically;
+    dispatcher descriptions are generic → low staleness risk; use `mode:"full"` if guaranteed freshness needed).
+    Details in doc 04 §5 checklist (Virtual dispatch / Function pointers rows).
+  - **M3.10 unit-diagram incremental reuse — ✅ done.** `views/unit_diagrams.py` now gates on
+    `incremental_plan.json`: carries forward the baseline version's unit diagrams (`.mmd`+`.png`), prunes orphans
+    (renamed/deleted units), and regenerates only **affected units** = units of the impacted functions PLUS their
+    1-hop cross-unit neighbours (`_affected_units` — a unit diagram shows the edges incident to the unit, so any
+    change to a function in it OR a function it calls / is called by can alter it; over-approximates, never stale).
+    No-LLM view, so the win is render time only. Verified e2e: C1→C3 regenerated **1 affected unit of 3**, other 2
+    carried forward; +6 unit tests. (No incremental plan → original full wipe+regenerate.)
+  - **All doc-05 incremental APIs implemented** ✅ — G1 `/branches`, G2 `/branches/{branch}/commits`, #1
+    `/generate/preview`, #2 `/generate`, #3 `/versions`, #4 `/versions/{id}`, #5 `/download`, #6–#10 job
+    status/logs/cancel/export (reused), #11–#13 `/components`·`/functions`·`/flowcharts` (version-scoped, M3.9),
+    #14 `/config`, #15 `/project/structure`.
+  - **M4 narrowed parse — ✅ COMPLETE (M4.0–M4.6)** (for big 10k+-function codebases; full design in doc 04 §11).
+    Avoids the whole-project Phase-1 parse: parse only the affected TUs, reuse the baseline model for the rest, merge
+    + recompute reverse edges. Opt-in (`--narrowed-parse`) + `--verify-parse` self-check; full parse stays the default
+    until the self-check is clean across a diff matrix on a large repo. Validated byte-equal (set-level) on C1→C3.
+    - **M4.1 affected-TU set — ✅ done.** `src/incremental/affected.py` (pure): `affected_tus(changed, tu_includes)`
+      = TUs whose closure ∩ git-diff ≠ ∅ (+ new `.cpp` not yet in the map; case-insensitive match on Windows);
+      `full_reparse_reason(status_pairs, tu_includes)` = the §11.4 must-full-reparse triggers (no closure map; a
+      **header added/deleted** → shadowing risk). `git_ops.changed_files_status` (`git diff --name-status`, renames
+      split into D+A). +9 unit tests.
+    - **M4.2 parse fingerprint — ✅ done.** `fingerprint.parse_fingerprint(clang_args, std, toolchain)` (order-
+      preserving over `-I`/`-D`) — a mismatch vs the baseline version's value forces a full re-parse (flags/
+      toolchain changed). +4 unit tests.
+    - **M4.3 partial-parse + merge — ✅ done (the core).** `parser.py --only-files <listfile>` parses only the
+      affected TUs → a *forward-only* partial model; verified (1 TU → 3 fns). Parser also emits
+      **`model/entity_files.json`** `{entityKey → defining file}` (covers all hashed entities — types/hashes have no
+      inline location; full parse: 353/353). `src/incremental/parse_merge.py::merge_model(baseline, fresh, drop_files)`
+      (pure): drop baseline entities whose file ∈ drop, overlay fresh, merge edges/dataDictionary/tu_includes by file,
+      then **recompute calledByIds** (filter callsIds to merged fns → re-run virtual spread → invert). Verified on REAL
+      data: full-parse a baseline, re-parse 1 TU as a partial, `merge_model(...)` == the full parse
+      (functions/hashes/globals/edges all match). +7 merge unit tests. *(`override_pairs` emission for cross-affected
+      virtual re-spread → done in M4.6; calledByIds **list order** byte-identity remains set-equal, the correctness bar.)*
+    - **M4.4 engine wiring — ✅ done + validated (opt-in).** `generate_incremental(narrowed_parse=…)` /
+      `engine.py --narrowed-parse`: when on AND the baseline has a parser-level snapshot + no full-reparse trigger,
+      it computes `affected_tus`, runs `run.py --to-phase 1 --only-files <list>` (threaded through
+      `group_planner`→`run.py`→`parser.py`), and `parse_merge.merge_model(baseline_parse, partial, drop)` → writes
+      the merged blank skeleton to `model/`; else a full parse. Each version now snapshots its post-Phase-1 skeleton
+      to `versions/<id>/parse/` (`generate_full` phase-split; `snapshot_parse_model`). **Two correctness fixes found
+      via real-data validation:** (1) `drop = changed ∪ affected ∪ deleted` (NOT every file the partial transitively
+      saw — those were only partially parsed; merge keeps fresh ONLY for dropped files); (2) **cross-TU call
+      resolution** — a partial parse can't resolve a call whose callee is defined in an UN-parsed file (the parser
+      links edges only to known function definitions), so the parser now emits `model/func_keys.json`
+      `{mangled→fid}` and a narrowed parse loads the **baseline's** map (via env `ANALYZER_BASELINE_FUNCKEYS`) so
+      `visit_calls` resolves cross-TU edges. **Verified: narrowed model == full-parse model** on C1→C3
+      (functions/globals/hashes/dataDictionary/edges/entity_files all match, 0 callsIds/calledByIds diffs). Full
+      parse path unchanged (`_baseline_func_keys` empty → no-ops). All these are no-ops unless `--narrowed-parse`.
+    - **M4.5 `--verify-parse` self-check — ✅ done.** `parse_merge.diff_models(narrowed, full)` (pure, edge lists
+      compared as SETS since order is cosmetic) + `engine.py --verify-parse`: runs the narrowed parse, then a FULL
+      parse, diffs the two models, logs every mismatch loudly + records a manifest warning, and **uses the full
+      parse as the source of truth** (a verify run is slow but always safe). This is the gate to make narrowed the
+      default. **It immediately earned its keep:** on C1→C3 it flagged `hashes[UNIT]` — `typedef int UNIT;` is
+      defined in **5 files**, all keyed by the bare name, so the parse-order-dependent winner differed between
+      narrowed (an affected TU) and full (the baseline's stable winner). **Fix:** `merge_model` resolves a shared
+      entity's file from the BASELINE (its canonical, stable location), so a multiply-defined entity sticks with the
+      baseline winner — matching a full parse. Re-verified: **narrowed == full (set-equal), 0 mismatches.** +5 diff
+      unit tests.
+    - **M4.6 narrowed-parse hardening — ✅ done.** (1) **Virtual re-spread:** the parser emits fid-level
+      `model/override_pairs.json` (from `get_overridden_cursors`); a narrowed parse loads the baseline's + the
+      partial's and `merge_model._recompute_call_edges` re-runs `spread_virtual_families` (D7) so a re-parsed
+      dispatcher links to ALL overrides incl. those in un-parsed files. (2) **Parse-fingerprint gate:** the parser
+      writes `metadata.parseFingerprint = parse_fingerprint(CLANG_ARGS, std, libclang lib)`; `_try_narrowed_parse`
+      compares the partial's value to the baseline's and falls back to a full parse on any clang-flag/std/toolchain
+      change. (3) **Windows path-case:** `parse_merge._norm` case-folds repo paths on `nt` so git-diff paths and
+      `entity_files` line up in the drop set. (Header add/delete was already covered by M4.1 `full_reparse_reason`.)
+      Re-validated on C1→C3 after all three: **`--verify-parse` → narrowed == full (set-equal), 0 mismatches.**
+      *Remaining polish (non-blocking): exact list-ORDER byte-identity (set-equal is the correctness bar — order
+      doesn't affect any consumer) and a perf measurement on a large repo (the O(diff) win doesn't show on SampleCpp).*
+    - **M4 COMPLETE (M4.0–M4.6).** Narrowed parse is opt-in (`--narrowed-parse`), validated byte-equal (set-level)
+      to a full parse via `--verify-parse`. Flip to default once the self-check is clean across a diff matrix on a
+      real (large) repo.
+      **M4.4 KEY FINDING — narrowed parse must merge against a PARSER-LEVEL snapshot, not the baseline's FINAL
+      model.** Reason: the baseline final model has LLM descriptions; if the merge keeps those for unaffected files,
+      the impacted *dependents* (unaffected files that call a changed fn) would carry a description → Phase 2 skips
+      them → **stale**. So the merge must produce a parser-level model (source-comment descriptions, no LLM fields),
+      identical to a full-parse Phase-1 output, so the engine's EXISTING classify→impact→carry_forward→Phase-2 flow
+      runs unchanged. **M4.4 steps:** (1) `src/core/group_planner.py` + `run.py`: thread a new `--only-files <list>`
+      through to `parser.py` (Phase-1 parses only those TUs); (2) a `_snapshot_parse_model(model_dir, version_dir)`
+      helper that copies the 8 parser artifacts (functions/globalVariables/dataDictionary/hashes/edges/tu_includes/
+      entity_files/metadata) to `versions/<id>/parse/` — captured after Phase 1 in BOTH paths (phase-split
+      `generate_full` into `--to-phase 1` → snapshot → `--from-phase 2`); (3) `engine.generate_incremental(narrowed_parse=…)`:
+      if opt-in AND baseline has `parse/` + `tu_includes.json` AND `affected.full_reparse_reason(...)` is None →
+      compute `affected_tus` from the diff ∩ baseline `tu_includes`, run `--only-files`, `parse_merge.merge_model(
+      baseline_parse, partial, drop_files=affected ∪ deleted ∪ fresh-entity-files)`, write merged → `model/`,
+      snapshot it to `versions/<id>/parse/`; else full parse (today's path). Then the existing flow is untouched.
+      Default = full parse (zero risk); flip only after the M4.5 self-check is byte-identical across a diff matrix.
+  - *Remaining (after M4):* **M5** Postgres migration, **M6** object storage/dedup — deferred to the production phase.
+    (Recipe-fingerprint invalidation **dropped by decision** — fingerprint is content-only; multi-doc zip shipped in M1.3b.)
+- **Next concrete step:** **M4 is complete (M4.0–M4.6).** The incremental-changes feature — engine, stores,
+  cross-version reuse (D3), narrowed parse + `--verify-parse` — is implemented. Remaining are *validation /
+  graduation*, not new milestones: (1) run `--verify-parse` across a representative diff matrix on a real (large)
+  repo, then flip narrowed parse from opt-in to the default; (2) a perf measurement on that repo (the O(diff) win
+  doesn't show on SampleCpp); (3) the user's **LLM-on timing validation** of M3.5–M3.7b on a real diff. Optional
+  polish: exact list-ORDER byte-identity (set-equal is the correctness bar today). After that: **M5** Postgres,
+  **M6** object storage/dedup (production phase).
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 
