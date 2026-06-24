@@ -377,8 +377,8 @@ NOT part of this feature.**
   reads (`components`/`functions`/`flowcharts` take `?versionId=`),
   multi-doc zip download. *(M3.1–M3.6 + M3.7 cross-version reuse-index lookup (D3 / §5 step 6) +
   M3.8 branch/commit endpoints + M3.9 version-scoped reads + move/rename orphan cleanup + git layer consolidation
-  + M3.7b flowchart cross-version reuse + virtual-dispatch over-approximation done (see §5 checklist;
-  function-pointer dispatch is a documented limitation); remaining: unit-diagram reuse (no LLM — low value).)*
+  + M3.7b flowchart cross-version reuse + virtual-dispatch over-approximation (see §5 checklist; function-pointer
+  dispatch is a documented limitation) + M3.10 unit-diagram reuse done — **M3 complete, all doc-05 APIs implemented**.)*
   **Recipe-fingerprint invalidation:
   dropped by decision** — an approved document is reused regardless of LLM model/prompt changes, so the
   reuse fingerprint is content-only (no recipe component).
