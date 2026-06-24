@@ -354,6 +354,10 @@ _override_pairs = []
 # (function/global/type/macro). Written to model/entity_files.json; the narrowed-parse
 # merge uses it to resolve each entity's file. Populated alongside entity_hashes.
 entity_files = {}
+# Incremental (M4.4): the BASELINE version's {mangled-func-key -> fid} map, loaded only in
+# a narrowed (--only-files) parse so calls to functions defined in UN-parsed files still
+# resolve to a call edge. Empty for a full parse (so behaviour is unchanged).
+_baseline_func_keys = {}
 component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
@@ -1024,14 +1028,17 @@ def visit_calls(cursor, current_key=None):
         called_key = None
         if cursor.referenced:
             called_key = get_function_key(cursor.referenced)
-            if called_key not in functions:
+            # M4.4 narrowed parse: a callee defined in an UN-parsed file isn't in `functions`;
+            # accept it if the baseline knows it (so cross-TU call edges survive). For a full
+            # parse `_baseline_func_keys` is empty, so this is unchanged.
+            if called_key not in functions and called_key not in _baseline_func_keys:
                 called_key = None
         if not called_key:
             for k in functions:
                 if functions[k]["functionName"] == cursor.spelling:
                     called_key = k
                     break
-        if called_key and called_key in functions:
+        if called_key and (called_key in functions or called_key in _baseline_func_keys):
             # Use list to preserve insertion order, but avoid duplicates
             if called_key not in call_graph[current_key]:
                 call_graph[current_key].append(called_key)
@@ -1232,6 +1239,13 @@ def build_metadata():
             g_entry["value"] = g["value"]
         g_entry["visibility"] = g.get("visibility", "default")
         global_variables_dict[vid] = g_entry
+
+    # M4.4 narrowed parse: cross-TU callees live in files we did NOT re-parse, so they
+    # aren't in func_key_to_fid yet — add the baseline's mapping so their edges resolve to
+    # the right fid. (No-op for a full parse: _baseline_func_keys is empty.)
+    for _bk, _bfid in _baseline_func_keys.items():
+        func_key_to_fid.setdefault(_bk, _bfid)
+        _func_key_to_fid.setdefault(_bk, _bfid)
 
     # Add precise caller/callee ids, global read/write ids and direction (In/Out) from global read/write analysis
     for func_key, f in functions.items():
@@ -1474,6 +1488,17 @@ def main():
         # Narrowed parse (M4.3): restrict to the listed TUs (repo-relative, one per line).
         source_files = _restrict_to_only_files(source_files)
         plog.info(f"narrowed parse: {len(source_files)} affected TU(s) (--only-files)")
+        # M4.4: load the baseline's func-key map so cross-TU calls (to functions defined in
+        # files we did NOT re-parse) still produce call edges.
+        _bfk = os.environ.get("ANALYZER_BASELINE_FUNCKEYS")
+        if _bfk and os.path.isfile(_bfk):
+            try:
+                with open(_bfk, "r", encoding="utf-8") as _f:
+                    _baseline_func_keys.update(json.load(_f))
+                plog.info(f"narrowed parse: loaded {len(_baseline_func_keys)} baseline func-keys "
+                          f"for cross-TU call resolution")
+            except (OSError, ValueError):
+                pass
     total = len(source_files)
 
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
@@ -1508,7 +1533,7 @@ def main():
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
     }
-    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES, EDGES, TU_INCLUDES, ENTITY_FILES
+    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -1539,6 +1564,10 @@ def main():
     # Incremental (M4.3): per-entity defining file -> model/entity_files.json. Lets the
     # narrowed-parse merge resolve each entity's file (types/hashes have no inline location).
     write_model_file(ENTITY_FILES, {k: entity_files[k] for k in sorted(entity_files)})
+
+    # Incremental (M4.4): {mangled-func-key -> fid} -> model/func_keys.json. A future
+    # narrowed parse loads the baseline's map to resolve calls into UN-parsed files.
+    write_model_file(FUNC_KEYS, {k: _func_key_to_fid[k] for k in sorted(_func_key_to_fid)})
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])

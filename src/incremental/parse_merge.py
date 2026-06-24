@@ -38,10 +38,14 @@ def _file_of(key: str, entity_files: Dict[str, str]) -> str:
 
 def _merge_keyed(baseline: Dict[str, Any], fresh: Dict[str, Any],
                  entity_files: Dict[str, str], drop: Set[str]) -> Dict[str, Any]:
-    """Generic by-file merge for a {key -> entry} artifact: keep baseline entries whose
-    file is NOT dropped, then overlay all fresh entries."""
+    """Generic by-file merge for a {key -> entry} artifact: for a DROPPED file use the
+    fresh entry, for every other file keep the baseline entry. Fresh entries for non-dropped
+    files are DISCARDED — a partial parse sees (incomplete) entities for everything its
+    affected TUs transitively #include, and only the dropped files were fully re-parsed."""
     out = {k: v for k, v in (baseline or {}).items() if _file_of(k, entity_files) not in drop}
-    out.update(fresh or {})
+    for k, v in (fresh or {}).items():
+        if _file_of(k, entity_files) in drop:
+            out[k] = v
     return out
 
 
@@ -62,7 +66,9 @@ def _merge_edges(baseline_edges: Dict[str, Dict[str, List[str]]],
         for key, fids in ((fresh_edges or {}).get(axis, {}) or {}).items():
             bucket = merged.setdefault(key, [])
             for f in fids:
-                if f in valid_fids and f not in bucket:
+                # only fresh users in a dropped (fully re-parsed) file — a partial parse's
+                # view of a non-dropped file's usages is incomplete.
+                if f in valid_fids and _file_of(f, entity_files) in drop and f not in bucket:
                     bucket.append(f)
         out[axis] = {k: v for k, v in merged.items() if v}
     return out
@@ -79,7 +85,8 @@ def _merge_override_pairs(baseline_pairs: Iterable, fresh_pairs: Iterable,
         if ov and _file_of(ov, entity_files) not in drop and tuple(pair) not in seen:
             out.append(list(pair)); seen.add(tuple(pair))
     for pair in list(fresh_pairs or []):
-        if pair and tuple(pair) not in seen:
+        ov = pair[0] if pair else None
+        if ov and _file_of(ov, entity_files) in drop and tuple(pair) not in seen:
             out.append(list(pair)); seen.add(tuple(pair))
     return out
 
@@ -137,7 +144,9 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
     # tu_includes is keyed by TU path (a file): re-parsed TUs from fresh, the rest baseline.
     tu_includes = {tu: inc for tu, inc in (baseline.get("tu_includes") or {}).items()
                    if (tu or "").replace("\\", "/").strip("/") not in drop}
-    tu_includes.update(fresh.get("tu_includes") or {})
+    for tu, inc in (fresh.get("tu_includes") or {}).items():
+        if (tu or "").replace("\\", "/").strip("/") in drop:
+            tu_includes[tu] = inc
 
     _recompute_call_edges(functions, override_pairs)
 

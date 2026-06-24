@@ -54,6 +54,10 @@ TU_INCLUDES = "tu_includes"
 # (function/global/type/macro) — lets the narrowed-parse merge (M4.3) resolve each
 # entity's file (types/hashes have no inline location). Not in ALL_MODEL_NAMES.
 ENTITY_FILES = "entity_files"
+# FUNC_KEYS = {mangled-func-key -> model fid} for every function. A narrowed parse loads
+# the baseline's map so calls to functions defined in UN-parsed files still resolve to a
+# call edge (M4.4). Not in ALL_MODEL_NAMES.
+FUNC_KEYS = "func_keys"
 
 ALL_MODEL_NAMES = (
     METADATA,

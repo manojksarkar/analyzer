@@ -499,15 +499,24 @@ Changing a **widely-included core header** legitimately invalidates a large frac
 incremental can't and *shouldn't* dodge that, because those TUs genuinely changed. The win is the
 common case: a small diff touches a handful of TUs, not the whole tree.
 
-### 11.7 New / changed artifacts
-- `model/tu_includes.json` **(new)** — per-TU include closure, captured on every parse, stored per
-  version (the thing the next run intersects with the git diff).
-- **Parse fingerprint (new)** = `sha256(clang flags + -D + include paths + std + libclang version)`,
-  stored per version; a mismatch forces a full reparse (§11.4). Distinct from the reuse fingerprint
-  (content-only) and unrelated to the dropped recipe fingerprint.
-- `parser.py` gains: emit the closure map, and an **"affected files only"** parse mode.
-- `src/incremental/` gains the **parse-merge + reverse-recompute** logic and the affected-TU
-  computation; the `--verify-parse` self-check.
+### 11.7 New / changed artifacts (M4.0–M4.4 done; M4.5/M4.6 remain)
+- `model/tu_includes.json` (M4.0) — per-TU include closure, captured every parse, stored per version
+  (intersected with the git diff to find affected TUs).
+- `model/entity_files.json` (M4.3) — `{entityKey → defining file}` for every hashed entity; the merge's
+  file resolver (types/hashes have no inline location).
+- `model/func_keys.json` (M4.4) — `{mangled-func-key → fid}` for every function. A narrowed parse loads
+  the **baseline's** map (via env `ANALYZER_BASELINE_FUNCKEYS`) so a call whose callee is defined in an
+  **un-parsed** file still resolves to a call edge — without it, a re-parsed caller's `callsIds` is
+  incomplete and impact analysis goes stale. (The crucial cross-TU-resolution fix.)
+- `versions/<id>/parse/` (M4.4) — the post-Phase-1 **blank-skeleton** snapshot (the 9 parser artifacts);
+  the baseline a future narrowed parse merges against (so impacted functions arrive blank → regenerated).
+- `parser.py`: `--only-files <list>` (affected-only parse) + emits the maps above; `src/incremental/`:
+  `affected.py` (affected-TU set + triggers), `parse_merge.py` (by-file merge + `calledByIds` recompute),
+  `generate.snapshot_parse_model`, the `engine` narrowed decision. **Merge rule (validated byte-equal to a
+  full parse on C1→C3):** use fresh for files in `changed ∪ affected ∪ deleted`, baseline elsewhere.
+- **Parse fingerprint** = `sha256(clang flags + -D + include paths + std + libclang version)` — gates a
+  full reparse on flag/toolchain change (**M4.6**, not yet wired). Distinct from the content-only reuse
+  fingerprint. The `--verify-parse` self-check is **M4.5**.
 
 ---
 

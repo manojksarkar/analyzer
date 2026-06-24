@@ -40,9 +40,11 @@ from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, Re
 from incremental.baseline import select_baseline
 from incremental.impact import classify, impact_set
 from incremental.fingerprint import compute_fingerprints
+from incremental.affected import affected_tus, full_reparse_reason
+from incremental.parse_merge import merge_model
 from incremental.report import build_report, emit_report
 from incremental.generate import (_resolved_config, _manifest, scope_to_args,
-                                  generate_full, _now_iso)
+                                  generate_full, _now_iso, snapshot_parse_model)
 
 
 def _entity_kind(key: str) -> str:
@@ -182,6 +184,86 @@ def _read(model_dir: str, name: str) -> dict:
     return json.load(open(p, encoding="utf-8")) if os.path.isfile(p) else {}
 
 
+# Parser-level artifacts captured per version under versions/<id>/parse/ (the blank
+# skeleton a narrowed parse merges against). Keys match parse_merge / snapshot.
+_PARSE_ARTIFACTS = ("functions", "globalVariables", "dataDictionary", "hashes",
+                    "edges", "tu_includes", "entity_files", "metadata")
+
+
+def _load_parse_dir(d: str) -> Dict[str, Any]:
+    return {n: _read(d, f"{n}.json") for n in _PARSE_ARTIFACTS}
+
+
+def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any]) -> None:
+    for n in _PARSE_ARTIFACTS:
+        if n in merged:
+            with open(os.path.join(model_dir, f"{n}.json"), "w", encoding="utf-8") as fh:
+                json.dump(merged[n], fh, indent=2)
+
+
+def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, ws, project_root, model_dir,
+                        *, target, base_commit, base_parse_dir) -> bool:
+    """Narrowed parse (M4.4, doc 04 §11): re-parse ONLY the affected TUs and merge them
+    into the baseline's parser-level snapshot, so the resulting model/ is the SAME blank
+    skeleton a full parse would produce (impacted functions arrive blank -> Phase 2
+    regenerates them). Returns True if model/ now holds the merged skeleton; False to fall
+    back to a full parse (always the safe choice)."""
+    from core.logging_setup import get_logger
+    log = get_logger("incremental")
+    if not os.path.isfile(os.path.join(base_parse_dir, "tu_includes.json")) \
+            or not os.path.isfile(os.path.join(base_parse_dir, "entity_files.json")):
+        log.info("narrowed parse unavailable: baseline has no parser-level snapshot — full parse")
+        return False
+    tu_includes = _read(base_parse_dir, "tu_includes.json")
+    status = git_ops.changed_files_status(ws.repo_dir, base_commit, target)
+    reason = full_reparse_reason(status, tu_includes)
+    if reason:
+        log.info(f"narrowed parse skipped ({reason}) — full parse")
+        return False
+
+    changed = [p for _s, p in status]
+    affected = affected_tus(changed, tu_includes)
+    deleted = {p for s, p in status if s == "D"}
+    base_model = _load_parse_dir(base_parse_dir)
+    if not affected:                       # no TU changed -> merged skeleton == baseline
+        _write_parse_artifacts(model_dir, base_model)
+        log.info("narrowed parse: 0 affected TU(s) — reused the baseline skeleton")
+        return True
+
+    listfile = os.path.join(model_dir, ".affected_tus.txt")
+    os.makedirs(model_dir, exist_ok=True)
+    with open(listfile, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(sorted(affected)) + "\n")
+    # M4.4: hand the partial parse the baseline's func-key map (via env, inherited by the
+    # run.py -> parser.py subprocess) so calls into UN-parsed files still resolve to edges.
+    bfk = os.path.join(base_parse_dir, "func_keys.json")
+    prev_bfk = os.environ.get("ANALYZER_BASELINE_FUNCKEYS")
+    if os.path.isfile(bfk):
+        os.environ["ANALYZER_BASELINE_FUNCKEYS"] = bfk
+    try:
+        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
+                           extra_args=["--to-phase", "1", "--only-files", listfile])
+    finally:
+        if prev_bfk is None:
+            os.environ.pop("ANALYZER_BASELINE_FUNCKEYS", None)
+        else:
+            os.environ["ANALYZER_BASELINE_FUNCKEYS"] = prev_bfk
+    if rc != 0:
+        log.info(f"narrowed parse: partial parse failed (exit {rc}) — full parse")
+        return False
+
+    partial = _load_parse_dir(model_dir)
+    # Drop (use fresh for) the files that were actually re-parsed: the affected TUs + any
+    # CHANGED header (refreshed via the including TUs) + deletions. NOT every file the
+    # partial transitively saw — those were only partially parsed, so keep their baseline.
+    drop = set(affected) | set(changed) | deleted
+    merged = merge_model(base_model, partial, drop)
+    _write_parse_artifacts(model_dir, merged)
+    log.info(f"narrowed parse: re-parsed {len(affected)} affected TU(s), merged into the baseline "
+             f"skeleton — {len(merged.get('functions') or {})} functions total")
+    return True
+
+
 def generate_incremental(project_id: str, branch: str, commit: str,
                          scope: Optional[Dict[str, Any]] = None, *,
                          workspaces_root: Optional[str] = None,
@@ -189,9 +271,14 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          data_dict_id: Optional[str] = None,
                          no_llm: bool = False,
                          version_id: Optional[str] = None,
-                         force: bool = False) -> Dict[str, Any]:
+                         force: bool = False,
+                         narrowed_parse: bool = False) -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
-    no usable baseline (first version / no ancestor)."""
+    no usable baseline (first version / no ancestor).
+
+    `narrowed_parse` (M4.4, opt-in) re-parses only the affected TUs and merges them into
+    the baseline's parser-level snapshot instead of re-parsing the whole project; it falls
+    back to a full parse whenever that isn't provably safe. Default off (full parse)."""
     _t0 = time.perf_counter()
     scope = scope or {"type": "project"}
     project_root = _paths().project_root
@@ -237,15 +324,26 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             warnings=decision["warnings"] + [f"{stage} exited {rc}"]))
         raise RuntimeError(f"{stage} failed (exit {rc})")
 
-    # PHASE-SPLIT (M3.2) — run PARSE only (Phase 1). This gives the fresh hashes +
-    # call graph + edges to compute the precise impact, AND lets us carry forward
-    # the baseline's summaries BEFORE Phase 2 runs — the hierarchy summarizer only
-    # summarizes functions with no `description`, so carrying it forward makes it
-    # skip the reuse set (the dominant LLM cost) with no model_deriver change.
-    rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
-                       extra_args=["--to-phase", "1"])
-    if rc != 0:
-        _fail("parse", rc)
+    # PHASE-SPLIT (M3.2) — produce the blank-skeleton model in model/ (Phase 1). This gives
+    # the fresh hashes + call graph + edges to compute the precise impact, AND lets us carry
+    # forward the baseline's summaries BEFORE Phase 2 (the summarizer only fills functions
+    # with no `description`). M4.4: when narrowed parse is on AND provably safe, re-parse only
+    # the affected TUs and MERGE into the baseline's parser-level snapshot (same skeleton,
+    # far less parsing); otherwise a FULL parse. Either way model/ ends up identical.
+    used_narrowed = False
+    if narrowed_parse:
+        used_narrowed = _try_narrowed_parse(
+            vcfg_path, scope, no_llm, dd_path, ws, project_root, model_dir,
+            target=target, base_commit=decision["chosenBaseCommit"],
+            base_parse_dir=os.path.join(vstore.version_dir(base_vid), "parse"))
+    if not used_narrowed:
+        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
+                           extra_args=["--to-phase", "1"])
+        if rc != 0:
+            _fail("parse", rc)
+
+    # Snapshot THIS version's blank skeleton for future narrowed parses (M4.4).
+    snapshot_parse_model(model_dir, vdir)
 
     base_model_dir = os.path.join(vstore.version_dir(base_vid), "model")
     target_hashes = _read(model_dir, "hashes.json")
@@ -440,10 +538,14 @@ def main() -> None:
     ap.add_argument("--version-id", default=None)
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--narrowed-parse", action="store_true",
+                    help="M4.4 (opt-in): re-parse only affected TUs + merge into the baseline "
+                         "skeleton, instead of a full re-parse. Falls back to full when unsafe.")
     args = ap.parse_args()
     m = generate_incremental(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
                              base_version_id=args.base_version_id, data_dict_id=args.data_dict_id,
-                             no_llm=args.no_llm, version_id=args.version_id, force=args.force)
+                             no_llm=args.no_llm, version_id=args.version_id, force=args.force,
+                             narrowed_parse=args.narrowed_parse)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, baseline={m.get('baselineVersionId')}, "
           f"regenerated={m['regenerated']}, reused={m['reused']}, "

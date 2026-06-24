@@ -3091,8 +3091,23 @@ workspaces/<projectId>/
       (functions/hashes/globals/edges all match). +7 merge unit tests. **Deferred to M4.6:** `override_pairs` emission
       for cross-affected virtual re-spread (merge no-ops gracefully without it); calledByIds **list order** byte-identity
       (semantically equal now; M4.5 self-check will align it).
-    - *Next:* **M4.4** engine wiring — **design finalized** (see below) → **M4.5** `--verify-parse` self-check →
-      **M4.6** override_pairs/virtual re-spread + parse-fingerprint gate + corner cases + perf.
+    - **M4.4 engine wiring — ✅ done + validated (opt-in).** `generate_incremental(narrowed_parse=…)` /
+      `engine.py --narrowed-parse`: when on AND the baseline has a parser-level snapshot + no full-reparse trigger,
+      it computes `affected_tus`, runs `run.py --to-phase 1 --only-files <list>` (threaded through
+      `group_planner`→`run.py`→`parser.py`), and `parse_merge.merge_model(baseline_parse, partial, drop)` → writes
+      the merged blank skeleton to `model/`; else a full parse. Each version now snapshots its post-Phase-1 skeleton
+      to `versions/<id>/parse/` (`generate_full` phase-split; `snapshot_parse_model`). **Two correctness fixes found
+      via real-data validation:** (1) `drop = changed ∪ affected ∪ deleted` (NOT every file the partial transitively
+      saw — those were only partially parsed; merge keeps fresh ONLY for dropped files); (2) **cross-TU call
+      resolution** — a partial parse can't resolve a call whose callee is defined in an UN-parsed file (the parser
+      links edges only to known function definitions), so the parser now emits `model/func_keys.json`
+      `{mangled→fid}` and a narrowed parse loads the **baseline's** map (via env `ANALYZER_BASELINE_FUNCKEYS`) so
+      `visit_calls` resolves cross-TU edges. **Verified: narrowed model == full-parse model** on C1→C3
+      (functions/globals/hashes/dataDictionary/edges/entity_files all match, 0 callsIds/calledByIds diffs). Full
+      parse path unchanged (`_baseline_func_keys` empty → no-ops). All these are no-ops unless `--narrowed-parse`.
+    - *Next:* **M4.5** formalize the `--verify-parse` self-check (run narrowed+full, diff, across a diff matrix; +
+      exact list-order byte-identity) → **M4.6** override_pairs/virtual re-spread, parse-fingerprint gate
+      (flag/toolchain change), header add/delete corner cases, Windows path-case in the merge drop, perf measurement.
       **M4.4 KEY FINDING — narrowed parse must merge against a PARSER-LEVEL snapshot, not the baseline's FINAL
       model.** Reason: the baseline final model has LLM descriptions; if the merge keeps those for unaffected files,
       the impacted *dependents* (unaffected files that call a changed fn) would carry a description → Phase 2 skips
@@ -3110,11 +3125,11 @@ workspaces/<projectId>/
       Default = full parse (zero risk); flip only after the M4.5 self-check is byte-identical across a diff matrix.
   - *Remaining (after M4):* **M5** Postgres migration, **M6** object storage/dedup — deferred to the production phase.
     (Recipe-fingerprint invalidation **dropped by decision** — fingerprint is content-only; multi-doc zip shipped in M1.3b.)
-- **Next concrete step:** **M4.4 — engine wiring** (in `engine.py`: decide full-vs-narrowed via parse-fp match +
-  `affected.full_reparse_reason`; on narrowed, compute `affected_tus` from the git diff ∩ the baseline's
-  `tu_includes`, run `parser --only-files`, `parse_merge.merge_model(baseline, fresh, drop)`, write `model/`, then
-  Phase 2+ as today; behind an opt-in flag, full parse stays default) → **M4.5** `--verify-parse` self-check →
-  **M4.6** override_pairs/virtual re-spread + corner cases + perf. Also still owed: the user's **LLM-on timing
+- **Next concrete step:** **M4.5 — formalize the `--verify-parse` self-check** (an engine flag that runs BOTH a
+  narrowed and a full parse, diffs the two models, and fails loudly on any mismatch — the gate to flip narrowed
+  parse from opt-in to default; also align exact list ORDER for byte-identity, currently equal as sets). Then
+  **M4.6** (override_pairs/virtual re-spread in the merge, parse-fingerprint gate, header add/delete + Windows
+  path-case corner cases, perf measurement on a large repo). Also still owed: the user's **LLM-on timing
   validation** of M3.5–M3.7b on a real diff.
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.

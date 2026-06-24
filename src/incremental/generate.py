@@ -26,6 +26,7 @@ import argparse
 import copy
 import datetime as _dt
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -47,6 +48,26 @@ from incremental.edges import build_edges  # noqa: F401  (kept for symmetry / fu
 
 def _now_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# The post-Phase-1 (blank-skeleton) parser artifacts. Snapshotted per version so a future
+# narrowed parse (M4) can merge against the baseline's skeleton, not its finished model.
+_PARSE_SNAPSHOT_FILES = ("functions.json", "globalVariables.json", "dataDictionary.json",
+                         "hashes.json", "edges.json", "tu_includes.json",
+                         "entity_files.json", "func_keys.json", "metadata.json")
+
+
+def snapshot_parse_model(model_dir: str, version_dir: str) -> None:
+    """Capture the post-Phase-1 model (blank skeleton — no LLM descriptions yet) into
+    `versions/<id>/parse/`. MUST run right after Phase 1, before Phase 2 fills
+    descriptions into model/. This is the baseline a narrowed parse (M4) merges against
+    so impacted functions arrive blank and get regenerated (doc 04 §11)."""
+    dst = os.path.join(version_dir, "parse")
+    os.makedirs(dst, exist_ok=True)
+    for fn in _PARSE_SNAPSHOT_FILES:
+        src = os.path.join(model_dir, fn)
+        if os.path.isfile(src):
+            shutil.copyfile(src, os.path.join(dst, fn))
 
 
 def scope_to_args(scope: Dict[str, Any]) -> List[str]:
@@ -124,26 +145,37 @@ def generate_full(
     # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited).
     # Clean output/ first so the version captures only its own documents.
     _rmtree_force(os.path.join(project_root, "output"))
-    cmd = [sys.executable, "run.py", "--config", vcfg_path]
-    cmd += scope_to_args(scope)
+    base_cmd = [sys.executable, "run.py", "--config", vcfg_path]
+    base_cmd += scope_to_args(scope)
     if no_llm:
-        cmd += ["--no-llm-summarize"]
+        base_cmd += ["--no-llm-summarize"]
     if data_dict_id:
         dd = ws.datadict_path(data_dict_id)
         if os.path.isfile(dd):
-            cmd += ["--data-dictionary", dd]
-    cmd += [ws.repo_dir]
+            base_cmd += ["--data-dictionary", dd]
 
-    proc = subprocess.run(cmd, cwd=project_root, shell=(os.name == "nt"))
-    if proc.returncode != 0:
+    model_dir = os.path.join(project_root, "model")
+
+    def _fail_full(rc):
         vstore.write_manifest(version_id, _manifest(
             version_id, branch, actual_commit, scope, data_dict_id,
             decision="full", regenerated=0, reused=0, status="failed",
-            warnings=[f"analyzer exited {proc.returncode}"]))
-        raise RuntimeError(f"analyzer run failed (exit {proc.returncode})")
+            warnings=[f"analyzer exited {rc}"]))
+        raise RuntimeError(f"analyzer run failed (exit {rc})")
+
+    # Phase-split (M4.4): Phase 1 (parse) -> snapshot the blank-skeleton model into the
+    # version (the baseline a future narrowed parse merges against) -> Phase 2+.
+    rc = subprocess.run(base_cmd + ["--to-phase", "1", ws.repo_dir],
+                        cwd=project_root, shell=(os.name == "nt")).returncode
+    if rc != 0:
+        _fail_full(rc)
+    snapshot_parse_model(model_dir, vdir)
+    rc = subprocess.run(base_cmd + ["--from-phase", "2", ws.repo_dir],
+                        cwd=project_root, shell=(os.name == "nt")).returncode
+    if rc != 0:
+        _fail_full(rc)
 
     # 4. capture artifacts (model/output/documents) + hashes/edges snapshots
-    model_dir = os.path.join(project_root, "model")
     output_dir = os.path.join(project_root, "output")
     documents = vstore.capture_artifacts(version_id, model_dir=model_dir, output_dir=output_dir)
     import json
