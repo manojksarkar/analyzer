@@ -33,7 +33,7 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 
 ## Design files
 
-8 HTML mockups live in `frontend/designs/`. Read these before implementing any page in React.
+8 HTML mockups live in `docs/ui-mockups/`. Read these before implementing any page in React.
 
 | File | Sidebar | Subbar | What it shows |
 |---|---|---|---|
@@ -112,7 +112,7 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 
 ## Pages — implementation order
 
-All pages are designed as HTML mockups in `frontend/designs/`. Build in React in this order:
+All pages are designed as HTML mockups in `docs/ui-mockups/`. Build in React in this order:
 
 1. **Shared shell** — sidebar (220px / 56px collapsed), top bar, subbar, design tokens (`signin.html`, `projects.html`)
 2. **Sign-in** — `signin.html`
