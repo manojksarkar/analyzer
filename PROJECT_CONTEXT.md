@@ -3070,15 +3070,25 @@ workspaces/<projectId>/
     `/generate/preview`, #2 `/generate`, #3 `/versions`, #4 `/versions/{id}`, #5 `/download`, #6–#10 job
     status/logs/cancel/export (reused), #11–#13 `/components`·`/functions`·`/flowcharts` (version-scoped, M3.9),
     #14 `/config`, #15 `/project/structure`.
-  - *Remaining:* **M4.1+ narrowed parse** (deferred — doc 04 §11; build when Phase-1 parse is the measured
-    bottleneck), **M5** Postgres migration, **M6** object storage/dedup — all deferred to the production phase.
+  - **M4 narrowed parse — 🚧 IN PROGRESS** (for big 10k+-function codebases; full design in doc 04 §11). Avoids the
+    whole-project Phase-1 parse: parse only the affected TUs, reuse the baseline model for the rest, merge +
+    recompute reverse edges. Behind an opt-in flag + `--verify-parse` self-check; full parse stays the default.
+    - **M4.1 affected-TU set — ✅ done.** `src/incremental/affected.py` (pure): `affected_tus(changed, tu_includes)`
+      = TUs whose closure ∩ git-diff ≠ ∅ (+ new `.cpp` not yet in the map; case-insensitive match on Windows);
+      `full_reparse_reason(status_pairs, tu_includes)` = the §11.4 must-full-reparse triggers (no closure map; a
+      **header added/deleted** → shadowing risk). `git_ops.changed_files_status` (`git diff --name-status`, renames
+      split into D+A). +9 unit tests.
+    - **M4.2 parse fingerprint — ✅ done.** `fingerprint.parse_fingerprint(clang_args, std, toolchain)` (order-
+      preserving over `-I`/`-D`) — a mismatch vs the baseline version's value forces a full re-parse (flags/
+      toolchain changed). +4 unit tests.
+    - *Next:* **M4.3** partial-parse (`parser.py --only-files`) + `src/incremental/parse_merge.py` (merge baseline ⊕
+      fresh by file, then recompute calledByIds/typeUsers/macroUsers/transitive-globals) → **M4.4** engine wiring →
+      **M4.5** `--verify-parse` self-check (assemble vs full, byte-identical) → **M4.6** corner-case hardening + perf.
+  - *Remaining (after M4):* **M5** Postgres migration, **M6** object storage/dedup — deferred to the production phase.
     (Recipe-fingerprint invalidation **dropped by decision** — fingerprint is content-only; multi-doc zip shipped in M1.3b.)
-- **Next concrete step:** the incremental feature is **functionally complete + hardened** (engine + same-version
-  reuse + cross-version reuse for all artifacts + version-scoped reads + branch/commit endpoints + unit-diagram reuse
-  + orphan cleanup + one git layer + virtual-dispatch over-approximation + all doc-05 APIs). Nothing non-deferred
-  remains. Next work is the **production track**: **M4 narrowed parse** (doc 04 §11; only once Phase-1 parse is the
-  measured bottleneck), then **M5** Postgres, **M6** object storage/dedup. Also still owed: the user's **LLM-on
-  timing validation** of M3.5–M3.7b on a real diff.
+- **Next concrete step:** **M4.3 — partial-parse + merge + reverse-recompute** (the core; build behind the opt-in
+  flag, validate with the `--verify-parse` self-check that the assembled model is byte-identical to a full parse).
+  Also still owed: the user's **LLM-on timing validation** of M3.5–M3.7b on a real diff.
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 

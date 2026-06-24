@@ -79,6 +79,26 @@ def changed_files(repo_dir: str, base: str, target: str) -> List[str]:
     return [ln for ln in out.splitlines() if ln.strip()]
 
 
+def changed_files_status(repo_dir: str, base: str, target: str) -> List[tuple]:
+    """`git diff <base>..<target> --name-status` -> [(status, path)] where status is a
+    single letter: A(dded) / M(odified) / D(eleted) / R(enamed) / C(opied) / T(ype). The
+    narrowed parse (M4) needs add/delete to detect header-shadowing and dropped TUs."""
+    out = _check(_run(["-C", repo_dir, "diff", f"{base}..{target}", "--name-status"]), "diff --name-status")
+    pairs: List[tuple] = []
+    for ln in out.splitlines():
+        if not ln.strip():
+            continue
+        cols = ln.split("\t")
+        status = cols[0][:1] if cols[0] else ""
+        # Renames/copies are "Rxx\told\tnew" — record the NEW path (and the old as deleted).
+        if status in ("R", "C") and len(cols) >= 3:
+            pairs.append(("D", cols[1]))
+            pairs.append(("A", cols[2]))
+        elif len(cols) >= 2:
+            pairs.append((status, cols[1]))
+    return pairs
+
+
 def nearest_ancestor(repo_dir: str, candidate_commits: List[str], target: str) -> Optional[str]:
     """Among `candidate_commits`, keep ancestors of `target` and return the nearest
     (smallest base..target distance). None when no candidate is an ancestor."""

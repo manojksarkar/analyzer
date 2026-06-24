@@ -27,6 +27,20 @@ from typing import Dict, List, Set
 _SEP = "\x1f"
 
 
+def parse_fingerprint(clang_args: List[str], std: str = "", toolchain: str = "") -> str:
+    """A hash of everything that determines a TU's AST *other than the source itself*:
+    the clang args (include paths `-I` and defines `-D`, **order preserved** — include
+    order matters), the C++ std, and a toolchain marker (libclang version/path).
+
+    Distinct from both other fingerprints: it gates the **narrowed parse** (M4) — if it
+    differs from the baseline version's, the baseline model was parsed with different
+    flags/toolchain, so a narrowed parse against it is unsafe and the engine must do a
+    full re-parse (doc 04 §11.4). It does NOT include the LLM recipe.
+    """
+    parts = [str(std), str(toolchain), *(str(a) for a in (clang_args or []))]
+    return hashlib.sha256(_SEP.join(parts).encode("utf-8")).hexdigest()
+
+
 def _invert_users(users: Dict[str, List[str]]) -> Dict[str, Set[str]]:
     """{key -> [fids]}  ->  {fid -> {keys}} (forward deps of each function)."""
     fwd: Dict[str, Set[str]] = {}
