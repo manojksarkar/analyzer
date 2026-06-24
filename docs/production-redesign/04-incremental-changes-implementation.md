@@ -393,12 +393,12 @@ NOT part of this feature.**
 
 ## 10. Deferred (and the Postgres seam)
 
-- **Narrowed (incremental) parse — M4, fully specced in §11.** Parse only the TUs whose preprocessed
-  input changed, reuse the baseline model for the rest. Turns Phase-1 cost from *O(codebase)* into
-  *O(diff)*. Deferred until parse time is the **measured** bottleneck; design + corner-case audit +
-  never-stale triggers live in §11. A further generalization — a **content-addressed** parse cache that
-  keys each TU by `hash(source + included headers)` and reuses across *all* branches (eliminating
-  baseline selection) — is a follow-on to M4.
+- **Narrowed (incremental) parse — M4 ✅ implemented (opt-in), see §11.** Parse only the TUs whose
+  preprocessed input changed, reuse the baseline model for the rest. Turns Phase-1 cost from *O(codebase)*
+  into *O(diff)*. M4.0–M4.6 done + the `--verify-parse` self-check; default stays full parse until the
+  self-check is clean across a diff matrix on a large repo (the perf win only shows there). A further
+  generalization — a **content-addressed** parse cache that keys each TU by `hash(source + included
+  headers)` and reuses across *all* branches (eliminating baseline selection) — remains a follow-on to M4.
 - **Per-artifact hashing**, **image-render cache**, **cross-version dedup** — deferred (see `03` §22.8).
 - **Postgres migration:** every JSON store → a table — `versions`, `entity_hashes`,
   `type_macro_usage`, `entity_outputs` (stored once per version), `reuse_index` (fingerprint →
