@@ -1,16 +1,22 @@
-"""Local git primitives for the incremental engine (M2) — no auth, no network.
+"""Canonical local git primitives — no auth, no network (M2; consolidated in M3).
 
-Operates on an already-cloned repo (onboarding owns clone/fetch/credentials via
-backend/git_service.py). Kept in src/ so the engine has no dependency on backend/.
-(git_service.py has overlapping ancestry/diff helpers; consolidation is an M3
-cleanup — both are thin `shell=False` wrappers over the system git.)
+Operates on an already-cloned repo. Kept in src/ so the engine has **no dependency on
+backend/**. This is the single home for every local git read/checkout op (ancestry,
+diff, branch/commit listing, …); `backend/git_service.py` keeps only the credentialed
+network ops (clone/fetch) and re-exports these. Both are thin `shell=False` wrappers
+over the system git (shell=False is deliberate — credential/URL safety).
 """
 from __future__ import annotations
 
 import os
 import shutil
 import subprocess
-from typing import List, Optional
+from typing import Dict, List, Optional
+
+# Field/record separators for `git log`/`for-each-ref` parsing — control chars that
+# cannot appear in a ref name or commit subject, so splitting is unambiguous.
+_FS = "\x1f"  # between fields
+_RS = "\x1e"  # between records
 
 
 class GitError(RuntimeError):
@@ -85,3 +91,45 @@ def nearest_ancestor(repo_dir: str, candidate_commits: List[str], target: str) -
         if best_distance is None or distance < best_distance:
             best, best_distance = c, distance
     return best
+
+
+def list_branches(repo_dir: str) -> List[Dict[str, str]]:
+    """List remote-tracking branches as `[{name, lastCommit, lastCommitDate}]`,
+    sorted by most-recent commit first. Skips `origin/HEAD`."""
+    fmt = f"%(refname:short){_FS}%(objectname){_FS}%(committerdate:iso-strict)"
+    out = _check(_run(["-C", repo_dir, "for-each-ref", f"--format={fmt}",
+                       "--sort=-committerdate", "refs/remotes/origin"]), "for-each-ref")
+    branches: List[Dict[str, str]] = []
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        short, sha, date = (line.split(_FS) + ["", "", ""])[:3]
+        # `refs/remotes/origin/HEAD` collapses to "origin" in refname:short — skip that
+        # symref; real branches are "origin/<name>".
+        if "/" not in short or short.endswith("/HEAD"):
+            continue
+        name = short.split("/", 1)[1]  # strip the leading "origin/"
+        branches.append({"name": name, "lastCommit": sha, "lastCommitDate": date})
+    return branches
+
+
+def list_commits(repo_dir: str, branch: str, limit: int = 50, offset: int = 0) -> Dict:
+    """Return `{branch, total, commits:[{sha, shortSha, author, date, message}]}`
+    for `origin/<branch>`, newest first, paged by limit/offset."""
+    ref = f"origin/{branch}"
+    total_proc = _run(["-C", repo_dir, "rev-list", "--count", ref])
+    if total_proc.returncode != 0:
+        raise GitError(f"unknown branch {branch!r}: {total_proc.stderr.strip()}")
+    total = int(total_proc.stdout.strip() or "0")
+    fmt = f"%H{_FS}%h{_FS}%an{_FS}%aI{_FS}%s{_RS}"
+    out = _check(_run(["-C", repo_dir, "log", ref, f"--format={fmt}",
+                       "-n", str(int(limit)), "--skip", str(int(offset))]), "log")
+    commits: List[Dict[str, str]] = []
+    for rec in out.split(_RS):
+        rec = rec.strip("\n")
+        if not rec.strip():
+            continue
+        sha, short, author, date, message = (rec.split(_FS) + [""] * 5)[:5]
+        commits.append({"sha": sha, "shortSha": short, "author": author,
+                        "date": date, "message": message})
+    return {"branch": branch, "total": total, "commits": commits}

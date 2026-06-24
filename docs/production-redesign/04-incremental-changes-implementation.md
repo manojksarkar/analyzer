@@ -374,8 +374,8 @@ NOT part of this feature.**
 - **M3 — Hardening.** Move/rename re-resolution, deletions, over-approximation polish, version-scoped
   reads (`components`/`functions`/`flowcharts` take `?versionId=`),
   multi-doc zip download. *(M3.1–M3.6 + M3.7 cross-version reuse-index lookup (D3 / §5 step 6) +
-  M3.8 branch/commit endpoints + M3.9 version-scoped reads + move/rename orphan cleanup done; remaining:
-  git layer consolidation, unit-diagram reuse (no LLM — low value), flowchart cross-version reuse (M3.7b — reused
+  M3.8 branch/commit endpoints + M3.9 version-scoped reads + move/rename orphan cleanup + git layer consolidation
+  done; remaining: unit-diagram reuse (no LLM — low value), flowchart cross-version reuse (M3.7b — reused
   functions' flowcharts still regenerate).)* **Recipe-fingerprint invalidation:
   dropped by decision** — an approved document is reused regardless of LLM model/prompt changes, so the
   reuse fingerprint is content-only (no recipe component).
