@@ -3091,9 +3091,23 @@ workspaces/<projectId>/
       (functions/hashes/globals/edges all match). +7 merge unit tests. **Deferred to M4.6:** `override_pairs` emission
       for cross-affected virtual re-spread (merge no-ops gracefully without it); calledByIds **list order** byte-identity
       (semantically equal now; M4.5 self-check will align it).
-    - *Next:* **M4.4** engine wiring (decide full vs narrowed: parse-fp match + `full_reparse_reason`; run
-      `--only-files`; merge with baseline model; write `model/`; behind an opt-in flag) → **M4.5** `--verify-parse`
-      self-check (assemble vs full, byte-identical) → **M4.6** override_pairs/virtual re-spread + corner cases + perf.
+    - *Next:* **M4.4** engine wiring — **design finalized** (see below) → **M4.5** `--verify-parse` self-check →
+      **M4.6** override_pairs/virtual re-spread + parse-fingerprint gate + corner cases + perf.
+      **M4.4 KEY FINDING — narrowed parse must merge against a PARSER-LEVEL snapshot, not the baseline's FINAL
+      model.** Reason: the baseline final model has LLM descriptions; if the merge keeps those for unaffected files,
+      the impacted *dependents* (unaffected files that call a changed fn) would carry a description → Phase 2 skips
+      them → **stale**. So the merge must produce a parser-level model (source-comment descriptions, no LLM fields),
+      identical to a full-parse Phase-1 output, so the engine's EXISTING classify→impact→carry_forward→Phase-2 flow
+      runs unchanged. **M4.4 steps:** (1) `src/core/group_planner.py` + `run.py`: thread a new `--only-files <list>`
+      through to `parser.py` (Phase-1 parses only those TUs); (2) a `_snapshot_parse_model(model_dir, version_dir)`
+      helper that copies the 8 parser artifacts (functions/globalVariables/dataDictionary/hashes/edges/tu_includes/
+      entity_files/metadata) to `versions/<id>/parse/` — captured after Phase 1 in BOTH paths (phase-split
+      `generate_full` into `--to-phase 1` → snapshot → `--from-phase 2`); (3) `engine.generate_incremental(narrowed_parse=…)`:
+      if opt-in AND baseline has `parse/` + `tu_includes.json` AND `affected.full_reparse_reason(...)` is None →
+      compute `affected_tus` from the diff ∩ baseline `tu_includes`, run `--only-files`, `parse_merge.merge_model(
+      baseline_parse, partial, drop_files=affected ∪ deleted ∪ fresh-entity-files)`, write merged → `model/`,
+      snapshot it to `versions/<id>/parse/`; else full parse (today's path). Then the existing flow is untouched.
+      Default = full parse (zero risk); flip only after the M4.5 self-check is byte-identical across a diff matrix.
   - *Remaining (after M4):* **M5** Postgres migration, **M6** object storage/dedup — deferred to the production phase.
     (Recipe-fingerprint invalidation **dropped by decision** — fingerprint is content-only; multi-doc zip shipped in M1.3b.)
 - **Next concrete step:** **M4.4 — engine wiring** (in `engine.py`: decide full-vs-narrowed via parse-fp match +
