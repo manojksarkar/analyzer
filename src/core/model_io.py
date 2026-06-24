@@ -58,6 +58,9 @@ ENTITY_FILES = "entity_files"
 # the baseline's map so calls to functions defined in UN-parsed files still resolve to a
 # call edge (M4.4). Not in ALL_MODEL_NAMES.
 FUNC_KEYS = "func_keys"
+# OVERRIDE_PAIRS = [[override_fid, base_fid|base_key], …] virtual override->base relations,
+# for the narrowed-parse virtual-dispatch re-spread (M4.6). Not in ALL_MODEL_NAMES.
+OVERRIDE_PAIRS = "override_pairs"
 
 ALL_MODEL_NAMES = (
     METADATA,

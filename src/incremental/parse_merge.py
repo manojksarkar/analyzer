@@ -20,20 +20,26 @@ Pure (plain dicts) so it is unit-testable; the engine supplies the two models + 
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Iterable, List, Set
 
 from incremental.virtual_dispatch import spread_virtual_families
 
 
+def _norm(p: str) -> str:
+    """Normalize a repo-relative path for set membership: forward slashes, and case-folded
+    on case-insensitive filesystems (Windows) so git-diff paths and entity_files line up."""
+    p = (p or "").replace("\\", "/").strip("/")
+    return p.lower() if os.name == "nt" else p
+
+
 def _file_of(key: str, entity_files: Dict[str, str]) -> str:
-    """Resolve an entity's defining file. entity_files covers every hashed entity; macros
-    also carry the file in their key (`name@relFile`) as a fallback."""
+    """Resolve an entity's defining file (normalized for matching). entity_files covers
+    every hashed entity; macros also carry the file in their key (`name@relFile`)."""
     f = entity_files.get(key)
-    if f:
-        return f
-    if "@" in key:
-        return key.split("@", 1)[1]
-    return ""
+    if not f and "@" in key:
+        f = key.split("@", 1)[1]
+    return _norm(f)
 
 
 def _merge_keyed(baseline: Dict[str, Any], fresh: Dict[str, Any],
@@ -127,7 +133,7 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
     `drop_files` = the files the partial parse covered (+ deleted files); baseline entities
     in those files are replaced by `fresh`. Returns the merged model dict.
     """
-    drop = {(f or "").replace("\\", "/").strip("/") for f in drop_files}
+    drop = {_norm(f) for f in drop_files}
     # The authoritative key->file resolver. BASELINE wins for shared keys: an entity keeps
     # its baseline (canonical) file, so an entity DEFINED IN MULTIPLE FILES (e.g. a `typedef
     # int UNIT;` repeated across TUs) stays with the baseline's stable winner instead of
@@ -146,9 +152,9 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
 
     # tu_includes is keyed by TU path (a file): re-parsed TUs from fresh, the rest baseline.
     tu_includes = {tu: inc for tu, inc in (baseline.get("tu_includes") or {}).items()
-                   if (tu or "").replace("\\", "/").strip("/") not in drop}
+                   if _norm(tu) not in drop}
     for tu, inc in (fresh.get("tu_includes") or {}).items():
-        if (tu or "").replace("\\", "/").strip("/") in drop:
+        if _norm(tu) in drop:
             tu_includes[tu] = inc
 
     _recompute_call_edges(functions, override_pairs)

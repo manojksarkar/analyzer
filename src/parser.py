@@ -350,6 +350,10 @@ reverse_call_graph = defaultdict(list)  # callee -> [callers]
 # (override_funcKey, base_funcKey) pairs from get_overridden_cursors — drives the D7
 # virtual-dispatch over-approximation (spread_virtual_families) in build_metadata.
 _override_pairs = []
+# (override_fid, base_fid|base_funcKey) pairs (fid-level), built in build_metadata and
+# written to model/override_pairs.json so a narrowed parse (M4.6) can re-spread virtual
+# families across affected + UN-parsed files using the baseline's pairs.
+_override_pairs_fid = []
 # Incremental (M4.3): entityKey -> repo-relative defining file, for every hashed entity
 # (function/global/type/macro). Written to model/entity_files.json; the narrowed-parse
 # merge uses it to resolve each entity's file. Populated alongside entity_hashes.
@@ -1247,6 +1251,14 @@ def build_metadata():
         func_key_to_fid.setdefault(_bk, _bfid)
         _func_key_to_fid.setdefault(_bk, _bfid)
 
+    # M4.6: fid-level override->base pairs for the narrowed-parse virtual re-spread. base is
+    # its fid when defined, else its (stable) mangled key as a grouping token.
+    _override_pairs_fid.clear()
+    for _ov_fk, _base_fk in _override_pairs:
+        _ov_fid = func_key_to_fid.get(_ov_fk)
+        if _ov_fid:
+            _override_pairs_fid.append([_ov_fid, func_key_to_fid.get(_base_fk, _base_fk)])
+
     # Add precise caller/callee ids, global read/write ids and direction (In/Out) from global read/write analysis
     for func_key, f in functions.items():
         fid = func_key_to_fid.get(func_key)
@@ -1533,7 +1545,16 @@ def main():
         "generatedAt": metadata["generatedAt"],
         "version": metadata["version"],
     }
-    from core.model_io import write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY, HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS
+    # M4.6: a parse fingerprint over the clang args/std + libclang lib — the narrowed-parse
+    # gate compares it to the baseline's and forces a full re-parse on any flag/toolchain change.
+    from incremental.fingerprint import parse_fingerprint
+    try:
+        _toolchain = cindex.conf.get_filename() or ""
+    except Exception:
+        _toolchain = ""
+    meta_header["parseFingerprint"] = parse_fingerprint(CLANG_ARGS, std="", toolchain=str(_toolchain))
+    from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
+                               HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS)
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -1568,6 +1589,10 @@ def main():
     # Incremental (M4.4): {mangled-func-key -> fid} -> model/func_keys.json. A future
     # narrowed parse loads the baseline's map to resolve calls into UN-parsed files.
     write_model_file(FUNC_KEYS, {k: _func_key_to_fid[k] for k in sorted(_func_key_to_fid)})
+
+    # Incremental (M4.6): fid-level override->base pairs -> model/override_pairs.json, for
+    # the narrowed-parse virtual-dispatch re-spread across affected + un-parsed files.
+    write_model_file(OVERRIDE_PAIRS, sorted(_override_pairs_fid))
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])

@@ -187,7 +187,7 @@ def _read(model_dir: str, name: str) -> dict:
 # Parser-level artifacts captured per version under versions/<id>/parse/ (the blank
 # skeleton a narrowed parse merges against). Keys match parse_merge / snapshot.
 _PARSE_ARTIFACTS = ("functions", "globalVariables", "dataDictionary", "hashes",
-                    "edges", "tu_includes", "entity_files", "metadata")
+                    "edges", "tu_includes", "entity_files", "override_pairs", "metadata")
 
 
 def _load_parse_dir(d: str) -> Dict[str, Any]:
@@ -253,6 +253,14 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, ws, project_root, mod
         return False
 
     partial = _load_parse_dir(model_dir)
+    # M4.6 parse-fingerprint gate: if the clang flags / std / libclang toolchain changed
+    # since the baseline was parsed, the baseline skeleton was built differently and a merge
+    # would be unsound — discard the partial and fall back to a full parse.
+    base_fp = (base_model.get("metadata") or {}).get("parseFingerprint")
+    part_fp = (partial.get("metadata") or {}).get("parseFingerprint")
+    if base_fp and part_fp and base_fp != part_fp:
+        log.info("narrowed parse: parse fingerprint changed (clang flags / std / toolchain) — full parse")
+        return False
     # Drop (use fresh for) the files that were actually re-parsed: the affected TUs + any
     # CHANGED header (refreshed via the including TUs) + deletions. NOT every file the
     # partial transitively saw — those were only partially parsed, so keep their baseline.

@@ -3070,9 +3070,10 @@ workspaces/<projectId>/
     `/generate/preview`, #2 `/generate`, #3 `/versions`, #4 `/versions/{id}`, #5 `/download`, #6–#10 job
     status/logs/cancel/export (reused), #11–#13 `/components`·`/functions`·`/flowcharts` (version-scoped, M3.9),
     #14 `/config`, #15 `/project/structure`.
-  - **M4 narrowed parse — 🚧 IN PROGRESS** (for big 10k+-function codebases; full design in doc 04 §11). Avoids the
-    whole-project Phase-1 parse: parse only the affected TUs, reuse the baseline model for the rest, merge +
-    recompute reverse edges. Behind an opt-in flag + `--verify-parse` self-check; full parse stays the default.
+  - **M4 narrowed parse — ✅ COMPLETE (M4.0–M4.6)** (for big 10k+-function codebases; full design in doc 04 §11).
+    Avoids the whole-project Phase-1 parse: parse only the affected TUs, reuse the baseline model for the rest, merge
+    + recompute reverse edges. Opt-in (`--narrowed-parse`) + `--verify-parse` self-check; full parse stays the default
+    until the self-check is clean across a diff matrix on a large repo. Validated byte-equal (set-level) on C1→C3.
     - **M4.1 affected-TU set — ✅ done.** `src/incremental/affected.py` (pure): `affected_tus(changed, tu_includes)`
       = TUs whose closure ∩ git-diff ≠ ∅ (+ new `.cpp` not yet in the map; case-insensitive match on Windows);
       `full_reparse_reason(status_pairs, tu_includes)` = the §11.4 must-full-reparse triggers (no closure map; a
@@ -3088,9 +3089,8 @@ workspaces/<projectId>/
       (pure): drop baseline entities whose file ∈ drop, overlay fresh, merge edges/dataDictionary/tu_includes by file,
       then **recompute calledByIds** (filter callsIds to merged fns → re-run virtual spread → invert). Verified on REAL
       data: full-parse a baseline, re-parse 1 TU as a partial, `merge_model(...)` == the full parse
-      (functions/hashes/globals/edges all match). +7 merge unit tests. **Deferred to M4.6:** `override_pairs` emission
-      for cross-affected virtual re-spread (merge no-ops gracefully without it); calledByIds **list order** byte-identity
-      (semantically equal now; M4.5 self-check will align it).
+      (functions/hashes/globals/edges all match). +7 merge unit tests. *(`override_pairs` emission for cross-affected
+      virtual re-spread → done in M4.6; calledByIds **list order** byte-identity remains set-equal, the correctness bar.)*
     - **M4.4 engine wiring — ✅ done + validated (opt-in).** `generate_incremental(narrowed_parse=…)` /
       `engine.py --narrowed-parse`: when on AND the baseline has a parser-level snapshot + no full-reparse trigger,
       it computes `affected_tus`, runs `run.py --to-phase 1 --only-files <list>` (threaded through
@@ -3115,9 +3115,20 @@ workspaces/<projectId>/
       entity's file from the BASELINE (its canonical, stable location), so a multiply-defined entity sticks with the
       baseline winner — matching a full parse. Re-verified: **narrowed == full (set-equal), 0 mismatches.** +5 diff
       unit tests.
-    - *Next:* **M4.6** — override_pairs/virtual re-spread in the merge, the parse-fingerprint gate (flag/toolchain
-      change forces full), header add/delete + Windows path-case corner cases, exact list-ORDER byte-identity (vs
-      set-equal today), and perf measurement on a large repo (where the O(diff) win actually shows).
+    - **M4.6 narrowed-parse hardening — ✅ done.** (1) **Virtual re-spread:** the parser emits fid-level
+      `model/override_pairs.json` (from `get_overridden_cursors`); a narrowed parse loads the baseline's + the
+      partial's and `merge_model._recompute_call_edges` re-runs `spread_virtual_families` (D7) so a re-parsed
+      dispatcher links to ALL overrides incl. those in un-parsed files. (2) **Parse-fingerprint gate:** the parser
+      writes `metadata.parseFingerprint = parse_fingerprint(CLANG_ARGS, std, libclang lib)`; `_try_narrowed_parse`
+      compares the partial's value to the baseline's and falls back to a full parse on any clang-flag/std/toolchain
+      change. (3) **Windows path-case:** `parse_merge._norm` case-folds repo paths on `nt` so git-diff paths and
+      `entity_files` line up in the drop set. (Header add/delete was already covered by M4.1 `full_reparse_reason`.)
+      Re-validated on C1→C3 after all three: **`--verify-parse` → narrowed == full (set-equal), 0 mismatches.**
+      *Remaining polish (non-blocking): exact list-ORDER byte-identity (set-equal is the correctness bar — order
+      doesn't affect any consumer) and a perf measurement on a large repo (the O(diff) win doesn't show on SampleCpp).*
+    - **M4 COMPLETE (M4.0–M4.6).** Narrowed parse is opt-in (`--narrowed-parse`), validated byte-equal (set-level)
+      to a full parse via `--verify-parse`. Flip to default once the self-check is clean across a diff matrix on a
+      real (large) repo.
       **M4.4 KEY FINDING — narrowed parse must merge against a PARSER-LEVEL snapshot, not the baseline's FINAL
       model.** Reason: the baseline final model has LLM descriptions; if the merge keeps those for unaffected files,
       the impacted *dependents* (unaffected files that call a changed fn) would carry a description → Phase 2 skips
@@ -3135,11 +3146,13 @@ workspaces/<projectId>/
       Default = full parse (zero risk); flip only after the M4.5 self-check is byte-identical across a diff matrix.
   - *Remaining (after M4):* **M5** Postgres migration, **M6** object storage/dedup — deferred to the production phase.
     (Recipe-fingerprint invalidation **dropped by decision** — fingerprint is content-only; multi-doc zip shipped in M1.3b.)
-- **Next concrete step:** **M4.6 — narrowed-parse hardening** (the last M4 milestone): override_pairs/virtual
-  re-spread in the merge; the parse-fingerprint gate (flag/toolchain change → force full); header add/delete +
-  Windows path-case corner cases; exact list-ORDER byte-identity (set-equal today); perf measurement on a large
-  repo. After M4.6 + a clean `--verify-parse` across a diff matrix, flip narrowed parse from opt-in to default.
-  Also still owed: the user's **LLM-on timing validation** of M3.5–M3.7b on a real diff.
+- **Next concrete step:** **M4 is complete (M4.0–M4.6).** The incremental-changes feature — engine, stores,
+  cross-version reuse (D3), narrowed parse + `--verify-parse` — is implemented. Remaining are *validation /
+  graduation*, not new milestones: (1) run `--verify-parse` across a representative diff matrix on a real (large)
+  repo, then flip narrowed parse from opt-in to the default; (2) a perf measurement on that repo (the O(diff) win
+  doesn't show on SampleCpp); (3) the user's **LLM-on timing validation** of M3.5–M3.7b on a real diff. Optional
+  polish: exact list-ORDER byte-identity (set-equal is the correctness bar today). After that: **M5** Postgres,
+  **M6** object storage/dedup (production phase).
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 

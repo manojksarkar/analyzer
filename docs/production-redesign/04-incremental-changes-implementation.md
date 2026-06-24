@@ -382,11 +382,12 @@ NOT part of this feature.**
   **Recipe-fingerprint invalidation:
   dropped by decision** — an approved document is reused regardless of LLM model/prompt changes, so the
   reuse fingerprint is content-only (no recipe component).
-- **M4 — Narrowed (incremental) parse** (see §11; only worth doing once Phase-1 parse time is the
-  measured bottleneck). Per-TU include-closure tracking → affected-TU set from the git diff → parse
-  only affected TUs, reuse the baseline model for the rest, recompute all reverse/aggregate edges,
-  behind an assemble-vs-full **self-check**. Turns Phase-1 cost from *O(codebase)* into *O(diff)*.
-  *Delivered behind `--verify-parse` until proven byte-identical to full parse.*
+- **M4 — Narrowed (incremental) parse — ✅ done, opt-in (see §11).** Per-TU include-closure tracking →
+  affected-TU set from the git diff → parse only affected TUs → merge into the baseline's parser-level
+  skeleton → recompute reverse/aggregate edges, behind the assemble-vs-full **`--verify-parse`** self-check.
+  Turns Phase-1 cost from *O(codebase)* into *O(diff)*. M4.0–M4.6 complete; validated byte-equal (set-level)
+  to a full parse on C1→C3. Default stays full parse until `--verify-parse` is clean across a diff matrix on
+  a large repo (the perf win only shows there).
 
 ---
 
@@ -410,13 +411,19 @@ NOT part of this feature.**
 
 ---
 
-## 11. Narrowed (incremental) parse — design (planned, **M4**)
+## 11. Narrowed (incremental) parse — **M4 (implemented; opt-in)**
 
-Today every incremental run does a **full** libclang parse (D10): correct, but on a huge codebase
-Phase-1 parse time becomes the floor once LLM work is reduced. This section specs the optimization —
-**parse only the translation units (TUs) whose preprocessed input changed, reuse the baseline
-version's model for the rest** — to the depth needed to implement it *without ever silently staling a
-document*.
+A full libclang parse (D10) is correct but, on a huge codebase, Phase-1 parse time becomes the floor
+once LLM work is reduced. M4 **parses only the translation units (TUs) whose preprocessed input changed
+and reuses the baseline version's model for the rest** — `O(codebase)` → `O(diff)` parsing.
+
+> **STATUS — M4.0–M4.6 implemented (opt-in via `engine.py --narrowed-parse`; full parse is the default).**
+> M4.0 include closures · M4.1 affected-TU set · M4.2 parse fingerprint · M4.3 partial-parse + `parse_merge`
+> · M4.4 engine wiring + parser-level snapshots + cross-TU call resolution · M4.5 `--verify-parse` self-check
+> · M4.6 virtual re-spread + parse-fingerprint gate + Windows path-case. **Validated byte-equal (set-level)
+> to a full parse on C1→C3 via `--verify-parse`.** Flip to default once `--verify-parse` is clean across a
+> representative diff matrix on a real (large) repo. Remaining polish: exact list-ORDER byte-identity
+> (set-equal today) and a perf measurement (the win only shows on a large codebase, not SampleCppProject).
 
 ### 11.1 The correctness invariant
 > **The incrementally-assembled model must be byte-identical to what a full parse would produce.**
@@ -469,23 +476,20 @@ This dispatches both classic hazards by construction:
 
 ### 11.4 MUST full-reparse — the "never-stale" triggers
 These change the preprocessed input or AST for TUs the git diff alone can't identify, so they force a
-full parse (or a conservative widening):
+full parse. **Implemented** in `engine._try_narrowed_parse` + `affected.full_reparse_reason`:
 
-1. **Compiler flags / `-D` defines / include paths / C++ std changed** → preprocessed input changes
-   for *every* TU. Detect via a small **parse fingerprint** = `sha256(clang flags + -D defines +
-   include paths + C++ std + libclang version)` stored per version; if it differs from the baseline's,
-   full-reparse. *(This is a M4-local parse-inputs hash — distinct from, and unrelated to, the dropped
-   recipe fingerprint; it covers only what changes the AST, never the LLM model/prompt.)*
-2. **Toolchain (clang / libclang) version changed** → the AST or token stream can differ for
-   unchanged source. Covered by the parse fingerprint above (libclang version is one of its inputs).
-3. **A header file is ADDED or DELETED** → it may *shadow* an existing `#include` and silently change
-   an otherwise-untouched TU's closure. Conservative rule: reparse every TU whose closure references
-   that basename / relative path, else full-reparse. (Header **modifications** are fine — handled by
-   the closure.)
-4. **`tu_includes.json` missing / schema mismatch / first incremental run** → no trustworthy closure
-   map → full parse.
-5. **PCH (precompiled header) in use** → treat the PCH as included by all TUs (it is) → a PCH change
-   forces a full reparse via the closure.
+1. **Compiler flags / `-D` / include paths / C++ std / toolchain changed** → preprocessed input changes
+   for *every* TU. ✅ **Wired (M4.6):** the parser writes `metadata.parseFingerprint = parse_fingerprint(
+   CLANG_ARGS, std, libclang lib)`; the narrowed parse compares the partial's value to the baseline's and
+   falls back to a full parse on any difference. *(A parse-inputs hash — unrelated to the dropped recipe
+   fingerprint; covers only what changes the AST.)* The libclang version is folded in via the lib path.
+2. **A header file is ADDED or DELETED** → it may *shadow* an existing `#include` and silently change an
+   otherwise-untouched TU's closure. ✅ **Wired (M4.1):** `full_reparse_reason` forces a full parse when the
+   diff adds/deletes a header. (Header **modifications** are fine — the closure catches them.)
+3. **`tu_includes.json` (or the baseline `parse/` snapshot) missing** → no trustworthy closure map → full
+   parse. ✅ Wired.
+4. **PCH (precompiled header) in use** → treat the PCH as included by all TUs (it is) → a PCH change forces
+   a full reparse via the closure. *(Inherent — a PCH appears in every TU's closure.)*
 
 ### 11.5 Safety net — assemble-vs-full self-check ✅ (M4.5 done)
 `engine.py --verify-parse` (with `--narrowed-parse`): runs the narrowed parse, then a full parse, and
@@ -502,24 +506,26 @@ Changing a **widely-included core header** legitimately invalidates a large frac
 incremental can't and *shouldn't* dodge that, because those TUs genuinely changed. The win is the
 common case: a small diff touches a handful of TUs, not the whole tree.
 
-### 11.7 New / changed artifacts (M4.0–M4.4 done; M4.5/M4.6 remain)
-- `model/tu_includes.json` (M4.0) — per-TU include closure, captured every parse, stored per version
-  (intersected with the git diff to find affected TUs).
-- `model/entity_files.json` (M4.3) — `{entityKey → defining file}` for every hashed entity; the merge's
-  file resolver (types/hashes have no inline location).
-- `model/func_keys.json` (M4.4) — `{mangled-func-key → fid}` for every function. A narrowed parse loads
-  the **baseline's** map (via env `ANALYZER_BASELINE_FUNCKEYS`) so a call whose callee is defined in an
-  **un-parsed** file still resolves to a call edge — without it, a re-parsed caller's `callsIds` is
-  incomplete and impact analysis goes stale. (The crucial cross-TU-resolution fix.)
-- `versions/<id>/parse/` (M4.4) — the post-Phase-1 **blank-skeleton** snapshot (the 9 parser artifacts);
-  the baseline a future narrowed parse merges against (so impacted functions arrive blank → regenerated).
-- `parser.py`: `--only-files <list>` (affected-only parse) + emits the maps above; `src/incremental/`:
-  `affected.py` (affected-TU set + triggers), `parse_merge.py` (by-file merge + `calledByIds` recompute),
-  `generate.snapshot_parse_model`, the `engine` narrowed decision. **Merge rule (validated byte-equal to a
-  full parse on C1→C3):** use fresh for files in `changed ∪ affected ∪ deleted`, baseline elsewhere.
-- **Parse fingerprint** = `sha256(clang flags + -D + include paths + std + libclang version)` — gates a
-  full reparse on flag/toolchain change (**M4.6**, not yet wired). Distinct from the content-only reuse
-  fingerprint. The `--verify-parse` self-check is **M4.5**.
+### 11.7 New / changed artifacts (M4.0–M4.6 — all done)
+Each parse writes these (alongside the usual model files); a version snapshots them under
+`versions/<id>/parse/` (the **blank-skeleton** a future narrowed parse merges against, so impacted
+functions arrive blank → regenerated):
+- `model/tu_includes.json` (M4.0) — per-TU include closure; intersected with the git diff → affected TUs.
+- `model/entity_files.json` (M4.3) — `{entityKey → defining file}`; the merge's file resolver (types/
+  hashes have no inline location). The merge resolves a **shared** entity's file from the BASELINE so a
+  multiply-defined entity (e.g. a `typedef` repeated across TUs) keeps the baseline's stable winner (M4.5).
+- `model/func_keys.json` (M4.4) — `{mangled-func-key → fid}`. A narrowed parse loads the **baseline's** map
+  (env `ANALYZER_BASELINE_FUNCKEYS`) so a call to a callee defined in an **un-parsed** file still resolves
+  to an edge — else a re-parsed caller's `callsIds` is incomplete and impact goes stale (cross-TU fix).
+- `model/override_pairs.json` (M4.6) — fid-level virtual override→base pairs; the narrowed merge loads the
+  baseline's + the partial's and **re-spreads** the virtual family (D7) across affected + un-parsed files.
+- `metadata.parseFingerprint` (M4.6) — gates a full reparse on a clang-flag/std/toolchain change (§11.4).
+- Code: `parser.py --only-files`; `affected.py` (affected set + full-reparse triggers); `parse_merge.py`
+  (by-file merge + `calledByIds` recompute + virtual re-spread + `diff_models`); `generate.snapshot_parse_model`;
+  `engine` narrowed decision + `--verify-parse`. **Merge rule (validated byte-equal — set-level — to a full
+  parse via `--verify-parse` on C1→C3):** use fresh for files in `changed ∪ affected ∪ deleted` (case-folded
+  on Windows), baseline elsewhere; recompute reverse edges. *(Remaining polish: exact list-ORDER byte-identity
+  — equal as sets today, which is the correctness bar since order doesn't affect any consumer.)*
 
 ---
 
