@@ -130,11 +130,35 @@ export interface DocumentDetail extends Document {
 
 /* ── Rich render payload (GET …/documents/{id}/render) — the DOCX-like view ── */
 
-export type RichSectionType = 'richtext' | 'table' | 'diagram'
+export type RichSectionType = 'richtext' | 'table' | 'diagram' | 'flowchart_table' | 'behavior_table'
 
 export interface RichTable {
   headers: string[]
   rows: string[][]
+}
+
+export interface FlowchartEntry {
+  imageUrl: string | null
+  mermaid: string | null
+  label: string
+}
+
+export interface FlowchartTableData {
+  description: string
+  flowcharts: FlowchartEntry[]
+  risk: string
+  capacity: string
+  inputName: string
+  outputName: string
+}
+
+export interface BehaviorTableData {
+  descriptionList: string[]
+  risk: string
+  capacity: string
+  inputName: string
+  outputName: string
+  diagramUrl: string | null
 }
 
 /** One node of the rendered document tree (sections nest via `children`). */
@@ -151,6 +175,8 @@ export interface RichSection {
   /** Mermaid source for the diagram, when the upstream `.mmd` exists. */
   mermaid: string | null
   children: RichSection[]
+  flowchartTable?: FlowchartTableData | null
+  behaviorTable?: BehaviorTableData | null
 }
 
 export interface DocCover {

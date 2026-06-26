@@ -244,11 +244,13 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     job.current_activity = _ACTIVITY[1]
     db.jobs.update(job)
 
+    arch_layers = project.architecture_layers or []
+
     # 3. Run pipeline
     if job.pause_after_phase1:
-        _run_with_pause(db, job_id, checkout_dir, config_path)
+        _run_with_pause(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
     else:
-        _run_full(db, job_id, checkout_dir, config_path)
+        _run_full(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
 
 
 # ---------------------------------------------------------------------------
@@ -322,15 +324,21 @@ def _write_project_config(project: Any, workspace_dir: Path) -> Path:
 def _convert_layers(arch_layers: list) -> dict:
     """Convert API architecture_layers list to config.json layers dict.
 
-    API shape:   [{"name": "L1", "groups": ["G1", "G2"]}]
-                 or {"name": "L1", "groups": [{"name": "G1", "components": ["C1"]}]}
-    Config shape: {"L1": {"path": "L1", "groups": {"G1": {"C1": "C1"}, ...}}}
+    API shape (from NewProjectPage):
+      [{"name": "L1", "path": "Layer1", "lib_paths": [...],
+        "groups": [{"name": "G1", "components": [{"name": "C1", "files": [...]}]}]}]
+    Config shape:
+      {"L1": {"path": "Layer1", "groups": {"G1": {"C1": "Sample/C1"}}}}
+
+    Component paths are derived from the files list: the common ancestor directory
+    of all selected files, stripped of the layer path prefix.
     """
     result: dict = {}
     for layer in arch_layers:
         if not isinstance(layer, dict):
             continue
         lname = str(layer.get("name") or "").strip()
+        lpath = str(layer.get("path") or lname).strip()
         if not lname:
             continue
         groups: dict = {}
@@ -341,16 +349,47 @@ def _convert_layers(arch_layers: list) -> dict:
                 gname = str(g.get("name") or "").strip()
                 comps = {}
                 for c in (g.get("components") or []):
-                    cname = c if isinstance(c, str) else (c.get("name", "") if isinstance(c, dict) else "")
-                    cname = str(cname).strip()
-                    if cname:
-                        comps[cname] = cname
+                    if isinstance(c, str):
+                        cname = c.strip()
+                        if cname:
+                            comps[cname] = cname
+                    elif isinstance(c, dict):
+                        cname = str(c.get("name") or "").strip()
+                        files = [str(f) for f in (c.get("files") or []) if f]
+                        if cname:
+                            comp_path = _derive_component_path(files, lpath) or cname
+                            comps[cname] = comp_path
             else:
                 continue
             if gname:
                 groups[gname] = comps
-        result[lname] = {"path": lname, "groups": groups}
+        result[lname] = {"path": lpath, "groups": groups}
     return result
+
+
+def _derive_component_path(files: list, layer_path: str) -> str:
+    """Return the component directory path relative to layer_path.
+
+    Finds the common ancestor directory of all file paths, then strips the
+    layer_path prefix so the result is relative to the layer root.
+    """
+    import posixpath
+    dirs = [posixpath.dirname(f.replace("\\", "/")) for f in files if f]
+    dirs = [d for d in dirs if d]
+    if not dirs:
+        return ""
+    common = dirs[0]
+    for d in dirs[1:]:
+        while common and not (d == common or d.startswith(common + "/")):
+            common = posixpath.dirname(common)
+    if not common:
+        return ""
+    layer_norm = layer_path.rstrip("/").replace("\\", "/")
+    if common == layer_norm:
+        return ""
+    if layer_norm and common.startswith(layer_norm + "/"):
+        return common[len(layer_norm) + 1:]
+    return common
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +404,7 @@ def _build_cmd(
     from_phase: int = 1,
     to_phase: Optional[int] = None,
     use_model: bool = False,
+    arch_layers: list = (),
 ) -> list[str]:
     cmd = [sys.executable, str(get_settings().repo_root / "run.py")]
     cmd += ["--config", str(config_path)]
@@ -378,6 +418,17 @@ def _build_cmd(
         cmd += ["--selected-layer", job.layer_filter]
     if getattr(job, "version_tag", None):
         cmd += ["--project-name", job.version_tag]
+    # Extra include paths from architecture_layers.lib_paths (--include-path <layer> <abs_dir>)
+    for layer in arch_layers:
+        if not isinstance(layer, dict):
+            continue
+        lname = str(layer.get("name") or "").strip()
+        if not lname:
+            continue
+        for lp in (layer.get("lib_paths") or []):
+            lp = str(lp).strip()
+            if lp:
+                cmd += ["--include-path", lname, str(checkout_dir / lp)]
     cmd.append(str(checkout_dir))
     return cmd
 
@@ -386,18 +437,20 @@ def _build_cmd(
 # Run strategies
 # ---------------------------------------------------------------------------
 
-def _run_full(db: Any, job_id: str, checkout_dir: Path, config_path: Path) -> None:
+def _run_full(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
+              arch_layers: list = ()) -> None:
     job = db.jobs.get(job_id)
-    cmd = _build_cmd(job, checkout_dir, config_path)
+    cmd = _build_cmd(job, checkout_dir, config_path, arch_layers=arch_layers)
     ok = _execute_subprocess(db, job_id, cmd, phase_start=1)
     if ok:
         _complete(db, job_id)
 
 
-def _run_with_pause(db: Any, job_id: str, checkout_dir: Path, config_path: Path) -> None:
+def _run_with_pause(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
+                    arch_layers: list = ()) -> None:
     job = db.jobs.get(job_id)
     # Phase 1+2 only
-    cmd = _build_cmd(job, checkout_dir, config_path, to_phase=2)
+    cmd = _build_cmd(job, checkout_dir, config_path, to_phase=2, arch_layers=arch_layers)
     ok = _execute_subprocess(db, job_id, cmd, phase_start=1, phase_end=2)
     if not ok or _is_cancelled(db, job_id):
         return
@@ -431,7 +484,8 @@ def _run_with_pause(db: Any, job_id: str, checkout_dir: Path, config_path: Path)
     _append_log(job_id, "Resuming from Phase 3…")
 
     job = db.jobs.get(job_id)
-    cmd = _build_cmd(job, checkout_dir, config_path, from_phase=3, use_model=True)
+    cmd = _build_cmd(job, checkout_dir, config_path, from_phase=3, use_model=True,
+                     arch_layers=arch_layers)
     ok = _execute_subprocess(db, job_id, cmd, phase_start=3)
     if ok:
         _complete(db, job_id)
@@ -634,6 +688,7 @@ def _complete(db: Any, job_id: str) -> None:
 
     version = _make_version(db, project, job, now)
     docs = _make_documents(db, project, version, now)
+    _make_sections(db, docs, now)
     version.docs_count = len(docs)
     db.versions.update(version)
 
@@ -659,6 +714,80 @@ def _complete(db: Any, job_id: str) -> None:
         db.projects.update(project)
 
     _append_log(job_id, f"Complete. Version {version.tag}, {len(docs)} document(s).")
+
+
+def _make_sections(db: Any, docs: list, now: datetime) -> None:
+    """Seed DocumentSection records for every document created by _make_documents."""
+    from ..models.domain import DocumentSection
+
+    output_dir = get_settings().repo_root / "output"
+
+    for doc in docs:
+        existing = db.documents.list_sections(doc.id)
+        if existing:
+            continue  # already has sections (e.g. re-export of an existing doc)
+
+        if doc.process in ("SYS.2", "SWE.1"):
+            sections = [
+                DocumentSection(
+                    id=f"sec{uuid.uuid4().hex[:8]}", document_id=doc.id,
+                    section_key="intro", title="1. Introduction", order=1,
+                    content=f"This document captures the {doc.subtitle} for {doc.name}.",
+                    review_state=None, reviewed_by=None, reviewed_at=None,
+                ),
+            ]
+        else:
+            # SWE.2 / SWE.3 — read unit count from interface_tables.json
+            n_units, n_comps = 0, 1
+            group_dir = output_dir / doc.group if doc.group else None
+            if group_dir and group_dir.is_dir():
+                itf_path = group_dir / "interface_tables.json"
+                if itf_path.exists():
+                    try:
+                        itf = json.loads(itf_path.read_text(encoding="utf-8"))
+                        unit_names = itf.get("unitNames", {}) or {}
+                        n_units = len(unit_names)
+                        comps: dict = {}
+                        for uk in unit_names:
+                            comps.setdefault(uk.split("|", 1)[0], []).append(uk)
+                        n_comps = max(len(comps), 1)
+                    except Exception:
+                        pass
+
+            sections = [
+                DocumentSection(
+                    id=f"sec{uuid.uuid4().hex[:8]}", document_id=doc.id,
+                    section_key="intro", title="1. Introduction", order=1,
+                    content=(
+                        f"This {doc.subtitle} describes the '{doc.name}' software component, "
+                        f"covering {n_units} unit(s) across {n_comps} component(s). "
+                        f"Interfaces, static structure and control-flow are derived from "
+                        f"the Clang AST analysis."
+                    ),
+                    review_state=None, reviewed_by=None, reviewed_at=None,
+                ),
+                DocumentSection(
+                    id=f"sec{uuid.uuid4().hex[:8]}", document_id=doc.id,
+                    section_key="interfaces", title="2. Interfaces", order=2,
+                    content="Interface table derived from the pipeline analysis.",
+                    review_state=None, reviewed_by=None, reviewed_at=None,
+                ),
+                DocumentSection(
+                    id=f"sec{uuid.uuid4().hex[:8]}", document_id=doc.id,
+                    section_key="static_design", title="3. Static Design", order=3,
+                    content="Component structure and include-dependency graph derived from Clang AST.",
+                    review_state=None, reviewed_by=None, reviewed_at=None,
+                ),
+                DocumentSection(
+                    id=f"sec{uuid.uuid4().hex[:8]}", document_id=doc.id,
+                    section_key="dynamic_design", title="4. Dynamic Design", order=4,
+                    content="Control-flow graphs (CFGs) for each function, derived from the Clang AST.",
+                    review_state=None, reviewed_by=None, reviewed_at=None,
+                ),
+            ]
+
+        for sec in sections:
+            db.documents.update_section(sec)
 
 
 def _make_version(db: Any, project: Any, job: Any, now: datetime) -> Version:
@@ -831,5 +960,7 @@ def _do_reexport(db: Any, job_id: str) -> None:
             _mark_failed(db, job_id, f"Config generation failed: {exc}")
             return
 
-    cmd = _build_cmd(job, checkout_dir, config_path, from_phase=4, use_model=True)
+    arch_layers = project.architecture_layers or []
+    cmd = _build_cmd(job, checkout_dir, config_path, from_phase=4, use_model=True,
+                     arch_layers=arch_layers)
     _execute_subprocess(db, job_id, cmd, phase_start=4, phase_end=4)

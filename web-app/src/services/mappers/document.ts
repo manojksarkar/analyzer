@@ -1,6 +1,7 @@
 import type {
   Document, DocStats, DocStatus, DocumentDetail, SectionReviewState,
   RichDocument, RichSection, RichSectionType, TocEntry, DocCover, DocMeta,
+  FlowchartTableData, BehaviorTableData,
 } from '../../types'
 import { formatShortDate, avatarPalette } from '../../lib/format'
 import { API_BASE_URL } from '../../lib/http'
@@ -31,7 +32,7 @@ export function mapDocument(d: ApiDocument, versionTagById?: Record<string, stri
   return {
     id: d.id,
     name: d.name,
-    process: d.process,
+    process: d.process === 'SWE.2' ? 'SWE.3' : d.process,
     status: d.status as DocStatus,
     version: versionTagById?.[d.version_id] ?? d.version_id,
     updatedAt: formatShortDate(d.updated_at) ?? '',
@@ -70,11 +71,37 @@ export function mapDocumentDetail(
 
 /* ── Rich render payload ── */
 
+interface ApiFlowchart {
+  image_url?: string | null
+  mermaid?: string | null
+  label: string
+}
+
+interface ApiFlowchartTable {
+  description: string
+  flowcharts: ApiFlowchart[]
+  risk: string
+  capacity: string
+  input_name: string
+  output_name: string
+}
+
+interface ApiBehaviorTable {
+  description_list: string[]
+  risk: string
+  capacity: string
+  input_name: string
+  output_name: string
+  diagram_url?: string | null
+}
+
 interface ApiRichSection {
   id: string; number: string; title: string; level: number; type: string
   content: string | null; table: { headers: string[]; rows: string[][] } | null
   image_url?: string | null; mermaid?: string | null
   children: ApiRichSection[]
+  flowchart_table?: ApiFlowchartTable | null
+  behavior_table?: ApiBehaviorTable | null
 }
 export interface ApiRichDocument {
   cover: {
@@ -91,6 +118,36 @@ export interface ApiRichDocument {
 }
 
 function mapRichSection(s: ApiRichSection): RichSection {
+  let flowchartTable: FlowchartTableData | null = null
+  if (s.flowchart_table) {
+    const ft = s.flowchart_table
+    flowchartTable = {
+      description: ft.description,
+      flowcharts: (ft.flowcharts ?? []).map((fc) => ({
+        imageUrl: fc.image_url ? `${API_BASE_URL}/${fc.image_url}` : null,
+        mermaid: fc.mermaid ?? null,
+        label: fc.label ?? '',
+      })),
+      risk: ft.risk,
+      capacity: ft.capacity,
+      inputName: ft.input_name,
+      outputName: ft.output_name,
+    }
+  }
+
+  let behaviorTable: BehaviorTableData | null = null
+  if (s.behavior_table) {
+    const bt = s.behavior_table
+    behaviorTable = {
+      descriptionList: bt.description_list ?? [],
+      risk: bt.risk,
+      capacity: bt.capacity,
+      inputName: bt.input_name,
+      outputName: bt.output_name,
+      diagramUrl: bt.diagram_url ? `${API_BASE_URL}/${bt.diagram_url}` : null,
+    }
+  }
+
   return {
     id: s.id,
     number: s.number,
@@ -104,6 +161,8 @@ function mapRichSection(s: ApiRichSection): RichSection {
     imageUrl: s.image_url ? `${API_BASE_URL}/${s.image_url}` : null,
     mermaid: s.mermaid ?? null,
     children: (s.children ?? []).map(mapRichSection),
+    flowchartTable,
+    behaviorTable,
   }
 }
 

@@ -10,7 +10,7 @@ import { DocTreePanel } from '../components/shell/DocTreePanel'
 import { groupDocsByProcess, buildAssigneeOptions } from '../lib/docTree'
 import { Card, Icon, Skeleton, Text } from '../components/ui'
 import { cn } from '../lib/cn'
-import type { DocSection, SectionReviewState, RichSection, RichTable, DocMeta, TeamMember } from '../types'
+import type { DocSection, SectionReviewState, RichSection, RichTable, DocMeta, TeamMember, FlowchartTableData, BehaviorTableData } from '../types'
 
 /* review_state → outline/tracker icon */
 const SECTION_STATE: Record<SectionReviewState, { icon: string; cls: string }> = {
@@ -333,18 +333,115 @@ function DiagramView({ section }: { section: RichSection }) {
   )
 }
 
-/* ── One rich section (richtext | table | diagram) + nested children ── */
+/* ── Flowchart table (5-row layout mirroring docx_exporter flowchart table) ── */
+function FlowchartTableView({ data }: { data: FlowchartTableData }) {
+  return (
+    <div className="overflow-hidden border border-outline-variant rounded-lg">
+      <table className="w-full text-left text-body">
+        <tbody>
+          <tr className="border-b border-outline-variant/60">
+            <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container align-top w-40">Requirements</td>
+            <td className="px-4 py-3">
+              {data.description && <p className="text-body text-on-surface mb-3">{data.description}</p>}
+              {data.flowcharts.map((fc, i) => (
+                <div key={i} className={i > 0 ? 'mt-4' : ''}>
+                  {fc.label && <p className="font-mono text-caption text-on-surface-variant mb-1">{fc.label}</p>}
+                  {fc.imageUrl ? (
+                    <img src={fc.imageUrl} alt={fc.label} loading="lazy" className="block max-h-[400px] object-contain" />
+                  ) : fc.mermaid ? (
+                    <pre className="bg-surface-container-low border border-outline-variant rounded p-2 font-mono text-label overflow-x-auto whitespace-pre">{fc.mermaid}</pre>
+                  ) : null}
+                </div>
+              ))}
+            </td>
+          </tr>
+          <tr className="border-b border-outline-variant/60">
+            <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container">Risk</td>
+            <td className="px-4 py-3">{data.risk}</td>
+          </tr>
+          <tr className="border-b border-outline-variant/60">
+            <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container">Capacity(Density)</td>
+            <td className="px-4 py-3">{data.capacity}</td>
+          </tr>
+          <tr className="border-b border-outline-variant/60">
+            <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container">Input Name</td>
+            <td className="px-4 py-3">{data.inputName}</td>
+          </tr>
+          <tr>
+            <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container">Output Name</td>
+            <td className="px-4 py-3">{data.outputName}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* ── Behavior table (5-row layout + optional PNG diagram below) ── */
+function BehaviorTableView({ data }: { data: BehaviorTableData }) {
+  return (
+    <div className="space-y-3">
+      <div className="overflow-hidden border border-outline-variant rounded-lg">
+        <table className="w-full text-left text-body">
+          <tbody>
+            <tr className="border-b border-outline-variant/60">
+              <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container align-top w-40">Requirements</td>
+              <td className="px-4 py-3">
+                {data.descriptionList.length > 0 ? (
+                  <div>
+                    <p className="font-semibold text-on-surface mb-1">Behavior Description</p>
+                    {data.descriptionList.map((item, i) => (
+                      <p key={i} className="text-on-surface">• {item}</p>
+                    ))}
+                  </div>
+                ) : <span className="text-on-surface-variant">-</span>}
+              </td>
+            </tr>
+            <tr className="border-b border-outline-variant/60">
+              <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container">Risk</td>
+              <td className="px-4 py-3">{data.risk}</td>
+            </tr>
+            <tr className="border-b border-outline-variant/60">
+              <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container">Capacity</td>
+              <td className="px-4 py-3">{data.capacity}</td>
+            </tr>
+            <tr className="border-b border-outline-variant/60">
+              <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container">Input Name</td>
+              <td className="px-4 py-3">{data.inputName}</td>
+            </tr>
+            <tr>
+              <td className="px-4 py-3 font-semibold text-on-surface-variant bg-surface-container">Output Name</td>
+              <td className="px-4 py-3">{data.outputName}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {data.diagramUrl && (
+        <figure className="bg-surface-container-low border border-outline-variant rounded-lg overflow-hidden">
+          <img src={data.diagramUrl} alt="Behaviour diagram" loading="lazy" className="block w-full max-h-[440px] object-contain bg-white" />
+        </figure>
+      )}
+    </div>
+  )
+}
+
+/* ── One rich section (richtext | table | diagram | flowchart_table | behavior_table) + nested children ── */
 function RichSectionView({ section, depth = 0 }: { section: RichSection; depth?: number }) {
+  const headingSize = depth === 0 ? 'text-[20px]' : depth === 1 ? 'text-[17px]' : 'text-[15px]'
   return (
     <section id={`sec-${section.id}`} className="scroll-mt-6">
       <div className="flex items-baseline gap-2 mb-4">
-        <span className="font-mono text-caption text-outline flex-shrink-0">{section.number}</span>
-        <h2 className={cn('font-semibold text-on-surface', depth === 0 ? 'text-[20px]' : 'text-[16px]')}>{section.title}</h2>
+        {section.number && <span className="font-mono text-caption text-outline flex-shrink-0">{section.number}</span>}
+        <h2 className={cn('font-semibold text-on-surface', headingSize)}>{section.title}</h2>
       </div>
       {section.type === 'table' && section.table ? (
         <TableView table={section.table} />
       ) : section.type === 'diagram' ? (
         <DiagramView section={section} />
+      ) : section.type === 'flowchart_table' && section.flowchartTable ? (
+        <FlowchartTableView data={section.flowchartTable} />
+      ) : section.type === 'behavior_table' && section.behaviorTable ? (
+        <BehaviorTableView data={section.behaviorTable} />
       ) : section.content ? (
         <p className="text-[15px] text-on-surface leading-relaxed whitespace-pre-line">{section.content}</p>
       ) : null}
