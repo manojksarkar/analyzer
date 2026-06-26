@@ -96,6 +96,17 @@ def _resolved_config(project: Dict[str, Any], project_root: str) -> Dict[str, An
     return cfg
 
 
+def apply_no_llm(cfg: Dict[str, Any]) -> None:
+    """Make `--no-llm` a TRUE kill switch (M-D): disable every LLM-backed enrichment in the
+    resolved config — Phase 2 function descriptions + behaviour names, the DOCX struct/unit
+    summaries (gated on llm.descriptions), and (via flowcharts.py) the flowchart node labels.
+    Hierarchy summaries are already off via --no-llm-summarize. For deterministic, LLM-free
+    runs (timing tests); the output keeps structure but loses LLM prose / labels."""
+    llm = cfg.setdefault("llm", {})
+    llm["descriptions"] = False
+    llm["behaviourNames"] = False
+
+
 def generate_full(
     project_id: str,
     branch: str,
@@ -137,6 +148,8 @@ def generate_full(
     #    version is queryable immediately (status flips to complete/failed below).
     vdir = vstore.create_dir(version_id, force=force)
     cfg = _resolved_config(project, project_root)
+    if no_llm:
+        apply_no_llm(cfg)
     vstore.write_config(version_id, cfg)
     vcfg_path = os.path.join(vdir, "config.json")
     vstore.write_manifest(version_id, _manifest(

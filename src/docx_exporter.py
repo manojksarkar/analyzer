@@ -976,7 +976,7 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         try:
             from llm_enrichment import llm_provider_reachable, get_unit_description
 
-            if llm_provider_reachable(config):
+            if config.get("llm", {}).get("descriptions", True) and llm_provider_reachable(config):
                 description_text = get_unit_description(
                     unit_name_display,
                     fn_items,

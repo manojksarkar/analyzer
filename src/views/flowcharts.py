@@ -440,6 +440,10 @@ def run(model, output_dir, model_dir, config):
     ]
     if os.path.isfile(kb_path):
         cmd.extend(["--knowledge-json", kb_path])
+    # M-D: when the analyzer disables LLM (--no-llm sets llm.descriptions=False), tell the
+    # flowchart engine to skip the LLM too (fallback node labels) for an LLM-free pipeline.
+    if not llm_cfg.get("descriptions", True):
+        cmd.append("--no-llm")
     # Many projects have hundreds of -I/-D clang args. Passing them all on the
     # command line blows the Windows cmd.exe 8192-char limit (WinError 206).
     # Write them to a response file and pass `@file` — flowchart_engine.py
