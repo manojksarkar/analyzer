@@ -478,7 +478,10 @@ Current draft labels (improve if they are generic or code-like): Input="{draft_i
 Reply with exactly two lines in this format (no other text):
 Input Name: <short phrase>
 Output Name: <short phrase>"""
-    raw = _call_llm(prompt, config, kind="behaviour_names")
+    # M-C: cache behaviour names content-addressed (the prompt fully determines the output),
+    # so impacted functions reuse them across runs / versions instead of re-calling the LLM.
+    raw = _cached_desc(config, "behaviour|" + prompt,
+                       lambda: _call_llm(prompt, config, kind="behaviour_names"))
     if not raw:
         return {}
     result = {}
@@ -988,6 +991,23 @@ def enrich_functions_rich(
         _log.warning("LLM provider not reachable for rich enrichment.")
         return {}
 
+    # M-C: descriptions already present (carried forward by the engine / source comments)
+    # are skipped. Compute the work set FIRST and bail out BEFORE building the O(model)
+    # RepoMap + context infrastructure when nothing needs a description (0-change or
+    # fully-cached run) — that infra build was ~20s on every Phase 2, even for 0 changes.
+    func_by_id = dict(functions_data)
+    calls_map = {key: set(f.get("callsIds", [])) for key, f in functions_data.items()}
+    processed, order, all_keys = set(), [], set(func_by_id)
+    while len(processed) < len(all_keys):
+        ready = [k for k in all_keys - processed if calls_map.get(k, set()).issubset(processed)] \
+            or list(all_keys - processed)
+        for key in ready:
+            order.append(key)
+            processed.add(key)
+    order = [k for k in order if not func_by_id.get(k, {}).get("description")]
+    if not order:
+        return {}
+
     from llm_core.token_counter import get_counter
     from llm_core.budget import ContextBudget, resolve_max_tokens
     from llm_core.context_builder import ContextBuilder
@@ -1019,26 +1039,7 @@ def enrich_functions_rich(
     two_pass = bool(enrichment_cfg.get("twoPassDescriptions", True))
     self_review_enabled = bool(enrichment_cfg.get("selfReview", False))
 
-    # Build topological order (callees before callers)
-    func_by_id = {}
-    calls_map = {}
-    for key, f in functions_data.items():
-        func_by_id[key] = f
-        calls_map[key] = set(f.get("callsIds", []))
-
-    processed = set()
-    order = []
-    all_keys = set(func_by_id.keys())
-    while len(processed) < len(all_keys):
-        ready = [k for k in all_keys - processed if calls_map.get(k, set()).issubset(processed)]
-        if not ready:
-            ready = list(all_keys - processed)
-        for key in ready:
-            order.append(key)
-            processed.add(key)
-
-    # Skip functions that already have a source comment
-    order = [k for k in order if not func_by_id.get(k, {}).get("description")]
+    # (func_by_id / calls_map / order were computed above, before the infra build.)
 
     # ── Pass 1: initial descriptions (bottom-up) ──
     result = {}

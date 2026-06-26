@@ -57,3 +57,35 @@ def test_unnamed_struct_short_circuits(tmp_path, monkeypatch):
     _fresh_cache(tmp_path, monkeypatch)
     monkeypatch.setattr(le, "_call_llm", lambda *a, **k: pytest.fail("should not call LLM"))
     assert le.get_struct_description("", [], _CFG) == "Structure (unnamed, no fields)."
+
+
+def test_behaviour_names_cached(tmp_path, monkeypatch):
+    """M-C: behaviour names reuse the cache instead of re-calling the LLM each run."""
+    _fresh_cache(tmp_path, monkeypatch)
+    calls = {"n": 0}
+
+    def fake_call(prompt, config, *, system="", kind="default"):
+        calls["n"] += 1
+        return "Input Name: the input\nOutput Name: the output"
+
+    monkeypatch.setattr(le, "_call_llm", fake_call)
+    args = ("int f(){return 1;}", [], [], [], "int", "1", "", "")
+    r1 = le.get_behaviour_names(*args, _CFG)
+    r2 = le.get_behaviour_names(*args, _CFG)
+    assert r1 == r2 == {"behaviourInputName": "the input", "behaviourOutputName": "the output"}
+    assert calls["n"] == 1                                  # cached -> one LLM call
+
+
+def test_rich_enrichment_early_exit(monkeypatch):
+    """M-C: when nothing needs a description, return BEFORE building the O(model) infra
+    (and without any LLM call)."""
+    monkeypatch.setattr(le, "llm_provider_reachable", lambda config: True)
+    monkeypatch.setattr(le, "get_rich_description",
+                        lambda *a, **k: pytest.fail("should not enrich anything"))
+    funcs = {  # every function already has a description -> work set is empty
+        "A|U|f|": {"qualifiedName": "f", "description": "Already described.",
+                   "callsIds": [], "location": {}},
+        "A|U|g|": {"qualifiedName": "g", "description": "Also described.",
+                   "callsIds": ["A|U|f|"], "location": {}},
+    }
+    assert le.enrich_functions_rich(funcs, "/tmp", _CFG, knowledge=None) == {}
