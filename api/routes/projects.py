@@ -12,6 +12,10 @@ from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User, Project, ProjectMember, AccessRequest
 from ..services.errors import not_found, forbidden, conflict
+from ..schemas import (
+    ProjectResponse, ProjectListResponse, ProjectSearchResponse,
+    AccessRequestResponse, AccessRequestListResponse,
+)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 UTC = timezone.utc
@@ -28,6 +32,7 @@ class CreateProjectRequest(BaseModel):
     repo_url: str
     repo_provider: str = "github"
     default_branch: str = "main"
+    access_token: Optional[str] = None
     build_config: dict[str, Any] = {}
     architecture_layers: list[dict[str, Any]] = []
     team: list[dict[str, str]] = []
@@ -66,6 +71,11 @@ def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
         "team_count": len(db.members.list_members(project.id)),
         "my_role": member.role if member else None,
         "repo_url": project.repo_url,
+        "default_branch": project.default_branch,
+        # Surface the captured build config so the overview can show it even
+        # before analysis runs — minus the access token (never exposed).
+        "build_config": {k: v for k, v in (project.build_config or {}).items()
+                         if k != "repo_access_token"},
         "architecture_layers": project.architecture_layers,
         "created_at": project.created_at.isoformat(),
         "updated_at": project.updated_at.isoformat(),
@@ -76,7 +86,7 @@ def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.get("")
+@router.get("", responses={200: {"model": ProjectListResponse}})
 def list_projects(
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
@@ -85,7 +95,7 @@ def list_projects(
     return {"projects": [_project_view(p, db, current_user.id) for p in projects]}
 
 
-@router.get("/search")
+@router.get("/search", responses={200: {"model": ProjectSearchResponse}})
 def search_projects(
     q: str = Query(""),
     current_user: User = Depends(get_current_user),
@@ -95,13 +105,18 @@ def search_projects(
     return {"projects": [{"id": p.id, "name": p.name, "client": p.client} for p in results]}
 
 
-@router.post("")
+@router.post("", responses={200: {"model": ProjectResponse}})
 def create_project(
     body: CreateProjectRequest,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
     now = datetime.now(UTC)
+    # Stash the repo access token inside build_config; _project_view never echoes
+    # build_config, so the token is not exposed in any API response.
+    build_config = dict(body.build_config)
+    if body.access_token:
+        build_config["repo_access_token"] = body.access_token
     project = Project(
         id=f"p{uuid.uuid4().hex[:8]}",
         org_id="org1",
@@ -109,7 +124,7 @@ def create_project(
         compliance_standard=body.compliance_standard,
         repo_url=body.repo_url, repo_provider=body.repo_provider,
         default_branch=body.default_branch,
-        build_config=body.build_config,
+        build_config=build_config,
         architecture_layers=body.architecture_layers,
         status="not_run",
         created_by=current_user.id,
@@ -135,7 +150,7 @@ def create_project(
     return {"project": _project_view(project, db, current_user.id)}
 
 
-@router.get("/{project_id}")
+@router.get("/{project_id}", responses={200: {"model": ProjectResponse}})
 def get_project(
     project_id: str,
     current_user: User = Depends(get_current_user),
@@ -148,7 +163,7 @@ def get_project(
     return {"project": _project_view(project, db, current_user.id)}
 
 
-@router.patch("/{project_id}")
+@router.patch("/{project_id}", responses={200: {"model": ProjectResponse}})
 def update_project(
     project_id: str,
     body: UpdateProjectRequest,
@@ -187,7 +202,8 @@ def delete_project(
 # Access requests
 # ---------------------------------------------------------------------------
 
-@router.post("/{project_id}/access-requests", status_code=201)
+@router.post("/{project_id}/access-requests", status_code=201,
+             responses={201: {"model": AccessRequestResponse}})
 def request_access(
     project_id: str,
     current_user: User = Depends(get_current_user),
@@ -207,7 +223,8 @@ def request_access(
     return {"request": {"id": req.id, "status": req.status}}
 
 
-@router.get("/{project_id}/access-requests")
+@router.get("/{project_id}/access-requests",
+            responses={200: {"model": AccessRequestListResponse}})
 def list_access_requests(
     project_id: str,
     current_user: User = Depends(get_current_user),
@@ -221,7 +238,8 @@ def list_access_requests(
     ]}
 
 
-@router.patch("/{project_id}/access-requests/{req_id}")
+@router.patch("/{project_id}/access-requests/{req_id}",
+              responses={200: {"model": AccessRequestResponse}})
 def resolve_access_request(
     project_id: str,
     req_id: str,

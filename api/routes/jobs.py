@@ -15,6 +15,11 @@ from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User, AnalysisJob, AnalysisPhase
 from ..services.errors import not_found, conflict
+from ..services import pipeline_runner
+from ..schemas import (
+    StartJobResponse, JobResponse, CurrentJobResponse,
+    FunctionListResponse, ReexportResponse,
+)
 
 router = APIRouter(tags=["jobs"])
 UTC = timezone.utc
@@ -58,6 +63,7 @@ def _job_dict(job: AnalysisJob) -> dict:
         "commit_sha": job.commit_sha,
         "branch": job.branch,
         "version_id": job.version_id,
+        "version_tag": job.version_tag,
         "started_at": job.started_at.isoformat(),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "error_message": job.error_message,
@@ -68,14 +74,16 @@ def _job_dict(job: AnalysisJob) -> dict:
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.post("/projects/{project_id}/jobs", status_code=202)
+@router.post("/projects/{project_id}/jobs", status_code=202,
+             responses={202: {"model": StartJobResponse}})
 def start_job(
     project_id: str,
     body: StartJobRequest,
     current_user: User = Depends(get_current_user),
     db: InMemoryDatabase = Depends(get_db),
 ):
-    if not db.projects.get(project_id):
+    project = db.projects.get(project_id)
+    if not project:
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
     # Prevent duplicate active jobs
@@ -87,6 +95,9 @@ def start_job(
     if body.version_tag:
         ver = db.versions.get_by_tag(project_id, body.version_tag)
         version_id = ver.id if ver else None
+    # The branch comes from the chosen commit (falls back to the project default).
+    commit = db.commits.get(project_id, body.commit_sha)
+    branch = commit.branch if commit else (project.default_branch or "main")
     now = datetime.now(UTC)
     job = AnalysisJob(
         id=f"job{uuid.uuid4().hex[:8]}",
@@ -108,12 +119,15 @@ def start_job(
             AnalysisPhase(4, "Export DOCX",  "pending", None),
         ],
         started_at=now, completed_at=None, error_message=None,
+        branch=branch, version_tag=(body.version_tag or None),
     )
     db.jobs.create(job)
+    pipeline_runner.start(db, job.id)
     return {"job_id": job.id, "status": job.status}
 
 
-@router.get("/projects/{project_id}/jobs/current")
+@router.get("/projects/{project_id}/jobs/current",
+            responses={200: {"model": CurrentJobResponse}})
 def get_current_job(
     project_id: str,
     current_user: User = Depends(get_current_user),
@@ -128,7 +142,8 @@ def get_current_job(
     return {"job": _job_dict(job)}
 
 
-@router.get("/projects/{project_id}/jobs/{job_id}")
+@router.get("/projects/{project_id}/jobs/{job_id}",
+            responses={200: {"model": JobResponse}})
 def get_job(
     project_id: str,
     job_id: str,
@@ -144,7 +159,8 @@ def get_job(
     return {"job": _job_dict(job)}
 
 
-@router.post("/projects/{project_id}/jobs/{job_id}/cancel")
+@router.post("/projects/{project_id}/jobs/{job_id}/cancel",
+             responses={200: {"model": JobResponse}})
 def cancel_job(
     project_id: str,
     job_id: str,
@@ -158,10 +174,12 @@ def cancel_job(
     job.status = "cancelled"
     job.completed_at = datetime.now(UTC)
     db.jobs.update(job)
+    pipeline_runner.cancel_subprocess(job_id)
     return {"job": _job_dict(job)}
 
 
-@router.post("/projects/{project_id}/jobs/{job_id}/resume")
+@router.post("/projects/{project_id}/jobs/{job_id}/resume",
+             responses={200: {"model": JobResponse}})
 def resume_job(
     project_id: str,
     job_id: str,
@@ -177,6 +195,7 @@ def resume_job(
                                          "message": "Job is not paused.", "status": 400})
     job.status = "running"
     db.jobs.update(job)
+    pipeline_runner.signal_resume(job_id)
     return {"job": _job_dict(job)}
 
 
@@ -200,7 +219,7 @@ async def job_events(
         if not job:
             yield {"event": "error", "data": json.dumps({"message": "Job not found"})}
             return
-        tick = 0
+        log_cursor = 0
         while True:
             if await request.is_disconnected():
                 break
@@ -223,14 +242,17 @@ async def job_events(
                     "elapsed_seconds": job.elapsed_seconds,
                 }),
             }
-            yield {
-                "event": "log_line",
-                "data": json.dumps({
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "text": f"[tick {tick}] {job.current_activity} — {job.activity_detail}",
-                    "color": "green",
-                }),
-            }
+            # Drain real log lines from the pipeline runner
+            new_lines, log_cursor = pipeline_runner.get_log_lines(job_id, log_cursor)
+            for text in new_lines:
+                yield {
+                    "event": "log_line",
+                    "data": json.dumps({
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "text": text,
+                        "color": "green",
+                    }),
+                }
             if job.status in ("complete", "failed", "cancelled"):
                 event = "job_complete" if job.status == "complete" else "job_failed"
                 yield {
@@ -241,8 +263,7 @@ async def job_events(
                     }),
                 }
                 break
-            tick += 1
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
 
     return EventSourceResponse(generator())
 
@@ -251,7 +272,8 @@ async def job_events(
 # Functions (visibility) — nested under jobs
 # ---------------------------------------------------------------------------
 
-@router.get("/projects/{project_id}/jobs/{job_id}/functions")
+@router.get("/projects/{project_id}/jobs/{job_id}/functions",
+            responses={200: {"model": FunctionListResponse}})
 def list_functions(
     project_id: str,
     job_id: str,
@@ -279,7 +301,8 @@ def list_functions(
     }
 
 
-@router.post("/projects/{project_id}/jobs/{job_id}/reexport")
+@router.post("/projects/{project_id}/jobs/{job_id}/reexport",
+             responses={200: {"model": ReexportResponse}})
 def reexport(
     project_id: str,
     job_id: str,
@@ -290,4 +313,5 @@ def reexport(
     job = db.jobs.get(job_id)
     if not job or job.project_id != project_id:
         raise not_found("AnalysisJob", job_id)
+    pipeline_runner.reexport(db, job_id)
     return {"message": "Re-export queued.", "job_id": job_id}

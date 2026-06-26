@@ -49,12 +49,10 @@ with the in-memory state after each call returns.
 Initialisation
 --------------
 1. If ``api/db/data/`` files exist they are loaded as-is (persistent mode).
-2. If they are absent the adapter seeds itself from the same dummy data used
-   by ``InMemoryDatabase`` and writes the files to disk so subsequent
-   restarts are persistent.
-3. If ``model/functions.json`` exists the seeded/loaded functions store is
-   **replaced** with the pipeline output so the API always reflects the
-   latest analysis run.
+2. If they are absent the collection starts empty; API calls that create
+   resources will populate it and write the file to disk on first mutation.
+3. If ``model/functions.json`` exists the functions store is **replaced**
+   with the pipeline output so the API always reflects the latest analysis run.
 """
 
 from __future__ import annotations
@@ -81,6 +79,35 @@ from ..repositories.interfaces import (
 )
 
 UTC = timezone.utc
+
+# ---------------------------------------------------------------------------
+# Bootstrap — minimal user written to disk when users.json does not exist.
+# Allows first login without any pre-existing data.
+# Password: "secret"  (bcrypt hash below matches bcrypt(sha256("secret")))
+# ---------------------------------------------------------------------------
+
+_BOOTSTRAP_HASHED_PW = "$2b$12$fF8gBrCFb2LekRWV1WQSf.OaQwXqfBktl6yqy0D1.FiS6T44RwcDC"
+
+_BOOTSTRAP_USERS: dict = {
+    "u1": {
+        "id": "u1",
+        "email": "admin@aspice.dev",
+        "name": "Admin User",
+        "initials": "AU",
+        "avatar_url": None,
+        "hashed_password": _BOOTSTRAP_HASHED_PW,
+        "created_at": "2026-01-01T00:00:00+00:00",
+    },
+    "u2": {
+        "id": "u2",
+        "email": "developer@aspice.dev",
+        "name": "Developer User",
+        "initials": "DU",
+        "avatar_url": None,
+        "hashed_password": _BOOTSTRAP_HASHED_PW,
+        "created_at": "2026-01-01T00:00:00+00:00",
+    },
+}
 
 # ---------------------------------------------------------------------------
 # Path helpers
@@ -540,58 +567,6 @@ def _load_pipeline_functions(
 
 
 # ---------------------------------------------------------------------------
-# Default seed data (mirrors InMemoryDatabase seed data)
-# Used only when data/ files do not already exist.
-# ---------------------------------------------------------------------------
-
-def _default_seed() -> dict[str, Any]:
-    """Return the same seed data as InMemoryDatabase, serialised to plain dicts."""
-    # We import the in-memory seed functions to avoid duplicating them.
-    from .in_memory import (
-        _seed_users, _seed_projects, _seed_members, _seed_versions,
-        _seed_commits, _seed_jobs, _seed_documents, _seed_sections,
-        _seed_assignments, _seed_functions, _seed_notifications, _seed_compare,
-    )
-    cmp_results, cmp_diffs = _seed_compare()
-    sections_raw = _seed_sections()
-    assign_raw = _seed_assignments()
-    fn_raw = _seed_functions()
-    notif_raw = _seed_notifications()
-
-    return {
-        "users":    {k: _user_to_dict(v) for k, v in _seed_users().items()},
-        "projects": {k: _project_to_dict(v) for k, v in _seed_projects().items()},
-        "members":  {k: _member_to_dict(v) for k, v in _seed_members().items()},
-        "access_requests": {},
-        "versions": {k: _version_to_dict(v) for k, v in _seed_versions().items()},
-        "commits":  {k: _commit_to_dict(v) for k, v in _seed_commits().items()},
-        "jobs":     {k: _job_to_dict(v) for k, v in _seed_jobs().items()},
-        "documents": {k: _doc_to_dict(v) for k, v in _seed_documents().items()},
-        "sections": {
-            doc_id: [_section_to_dict(s) for s in secs]
-            for doc_id, secs in sections_raw.items()
-        },
-        "assignments": {
-            doc_id: [_assignment_to_dict(a) for a in assigns]
-            for doc_id, assigns in assign_raw.items()
-        },
-        "functions": {
-            job_id: [_function_to_dict(f) for f in fns]
-            for job_id, fns in fn_raw.items()
-        },
-        "notifications": {
-            uid: [_notif_to_dict(n) for n in ns]
-            for uid, ns in notif_raw.items()
-        },
-        "compare_results": {k: _compare_result_to_dict(v) for k, v in cmp_results.items()},
-        "compare_diffs": {
-            cid: [_diff_to_dict(d) for d in diffs]
-            for cid, diffs in cmp_diffs.items()
-        },
-    }
-
-
-# ---------------------------------------------------------------------------
 # Concrete JSON-backed repository implementations
 # ---------------------------------------------------------------------------
 
@@ -628,6 +603,15 @@ class _JsonUserRepo(IUserRepository):
 
     def list_by_ids(self, ids):
         return [copy.deepcopy(self._obj(self._store[i])) for i in ids if i in self._store]
+
+    def search(self, query: str, limit: int = 10) -> list[User]:
+        q = query.strip().lower()
+        matches = [
+            self._obj(d) for d in self._store.values()
+            if not q or q in d["name"].lower() or q in d["email"].lower()
+        ]
+        matches.sort(key=lambda u: u.name)
+        return [copy.deepcopy(u) for u in matches[:limit]]
 
 
 class _JsonProjectRepo(IProjectRepository):
@@ -975,17 +959,12 @@ class _JsonFunctionRepo(IFunctionRepository):
         self._save()
 
     def load_from_pipeline(self, pipeline_functions: dict[str, list[Function]]) -> None:
-        """
-        Replace the current functions store with data read from model/functions.json.
-        Called during initialisation when the pipeline output is available.
-        """
-        self._store = {
-            job_id: [_function_to_dict(f) for f in fns]
-            for job_id, fns in pipeline_functions.items()
-        }
-        self._by_id = {
-            d["id"]: d for fns in self._store.values() for d in fns
-        }
+        """Add/replace functions for the given job_ids (additive — preserves other jobs)."""
+        for job_id, fns in pipeline_functions.items():
+            dicts = [_function_to_dict(f) for f in fns]
+            self._store[job_id] = dicts
+            for d in dicts:
+                self._by_id[d["id"]] = d
         self._save()
 
 
@@ -1122,7 +1101,22 @@ class JsonDatabase:
                 return seed[seed_key]
             return existing
 
-        seed = _default_seed()
+        seed = {
+            "users": _BOOTSTRAP_USERS,
+            "projects": {},
+            "members": {},
+            "access_requests": {},
+            "versions": {},
+            "commits": {},
+            "jobs": {},
+            "documents": {},
+            "sections": {},
+            "assignments": {},
+            "functions": {},
+            "notifications": {},
+            "compare_results": {},
+            "compare_diffs": {},
+        }
 
         users_store     = _load_or_seed("users.json",           "users",           seed)
         projects_store  = _load_or_seed("projects.json",        "projects",        seed)

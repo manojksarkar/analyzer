@@ -34,6 +34,9 @@ class IUserRepository(ABC):
     @abstractmethod
     def list_by_ids(self, ids: list[str]) -> list[User]: ...
 
+    @abstractmethod
+    def search(self, query: str, limit: int = 10) -> list[User]: ...
+
 
 class IProjectRepository(ABC):
     @abstractmethod

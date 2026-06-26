@@ -143,6 +143,7 @@ class AnalysisJob:
     completed_at: Optional[datetime]
     error_message: Optional[str]
     branch: str = "main"
+    version_tag: Optional[str] = None
 
 
 @dataclass
