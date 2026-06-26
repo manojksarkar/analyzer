@@ -578,37 +578,14 @@ def _parse_component_static_diagram_cfg(views_cfg: dict) -> Tuple[bool, bool, fl
 
 
 def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bool:
-    """Write .mmd and invoke mmdc; return True if png exists."""
-    from utils import mmdc_path
-
-    os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
-    mmd_path = os.path.splitext(png_path)[0] + ".mmd"
-    try:
-        with open(mmd_path, "w", encoding="utf-8") as f:
-            f.write(mermaid)
-    except OSError:
-        return False
-    puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
-    mmdc = mmdc_path(project_root)
-    cmd = [mmdc, "-i", mmd_path, "-o", png_path, "--scale", "2"]
-    if os.path.isfile(puppeteer):
-        cmd.extend(["-p", puppeteer])
-    try:
-        if os_type == "Windows":
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False, shell=True)
-        else:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
-        if r.returncode == 0 and os.path.isfile(png_path):
-            return True
-        err = (r.stderr or r.stdout or f"exit {r.returncode}").strip()
-        print(f"[docx_exporter] warning: mmdc failed for {os.path.basename(png_path)}: {err[:120]}")
-        return False
-    except FileNotFoundError:
-        print(f"[docx_exporter] warning: mmdc not found — {mmdc}")
-        return False
-    except subprocess.TimeoutExpired:
-        print(f"[docx_exporter] warning: mmdc timed out for {os.path.basename(png_path)}")
-        return False
+    """Render a component-level Mermaid diagram to PNG via the content-addressed cache
+    (M-A) — identical diagrams across components/versions are rendered by mmdc only once.
+    Returns True iff png exists afterward."""
+    from utils import render_mermaid_cached
+    ok = render_mermaid_cached(project_root, mermaid, png_path, scale=2, timeout=90)
+    if not ok:
+        print(f"[docx_exporter] warning: mmdc render failed for {os.path.basename(png_path)}")
+    return ok
 
 def _add_flowchart_table(doc, func_name: str, description: str, input_name: str,
                          output_name: str, flowcharts: list, font_small):

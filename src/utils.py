@@ -72,6 +72,80 @@ def mmdc_path(project_root: str) -> str:
     return "mmdc"
 
 
+# Content-addressed Mermaid->PNG cache (M-A). mmdc is the slow primitive (~5-8s/call);
+# identical diagrams (same text + render opts) are rendered once and reused across
+# units / components / versions. Lives at <project_root>/.mmdc_cache; content-addressed,
+# so it is safe across projects and persists across version runs.
+_MMDC_CACHE_DIR = ".mmdc_cache"
+
+
+def mermaid_cache_key(mermaid: str, *, scale=None, puppeteer: bool = True) -> str:
+    import hashlib
+    src = f"{mermaid or ''}|scale={scale}|pup={int(bool(puppeteer))}"
+    return hashlib.sha256(src.encode("utf-8")).hexdigest()
+
+
+def _run_mmdc(project_root: str, mermaid: str, png_path: str, *,
+              scale=None, puppeteer: bool = True, timeout: int = 90) -> bool:
+    """Invoke mmdc on `mermaid` -> png_path (writes a temp .mmd it cleans up). Returns
+    True iff png_path exists afterward. The single place that shells out to mmdc."""
+    import subprocess
+    import tempfile
+    mmdc = mmdc_path(project_root)
+    out_dir = os.path.dirname(png_path) or "."
+    os.makedirs(out_dir, exist_ok=True)
+    fd, mmd_path = tempfile.mkstemp(suffix=".mmd", dir=out_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(mermaid or "")
+        cmd = [mmdc, "-i", mmd_path, "-o", png_path]
+        if scale is not None:
+            cmd += ["--scale", str(scale)]
+        pup = os.path.join(project_root, "config", "puppeteer-config.json")
+        if puppeteer and os.path.isfile(pup):
+            cmd += ["-p", pup]
+        try:
+            if os_type == "Windows":
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False, shell=True)
+            else:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return False
+        return r.returncode == 0 and os.path.isfile(png_path)
+    finally:
+        try:
+            os.remove(mmd_path)
+        except OSError:
+            pass
+
+
+def render_mermaid_cached(project_root: str, mermaid: str, png_path: str, *,
+                          scale=None, puppeteer: bool = True, timeout: int = 90) -> bool:
+    """Render `mermaid` to png_path, reusing a content-addressed PNG cache so an identical
+    diagram is only ever rendered once. Returns True iff png_path exists afterward. Any
+    cache error degrades gracefully to a direct render (never breaks a build)."""
+    import shutil
+    cache_dir = os.path.join(project_root, _MMDC_CACHE_DIR)
+    cache_png = os.path.join(cache_dir, mermaid_cache_key(mermaid, scale=scale, puppeteer=puppeteer) + ".png")
+    os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
+    if os.path.isfile(cache_png):                     # hit -> copy out, no mmdc
+        try:
+            shutil.copyfile(cache_png, png_path)
+            return True
+        except OSError:
+            pass                                       # fall through to a real render
+    ok = _run_mmdc(project_root, mermaid, png_path, scale=scale, puppeteer=puppeteer, timeout=timeout)
+    if ok:                                             # populate the cache (best-effort, atomic)
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+            tmp = cache_png + ".tmp"
+            shutil.copyfile(png_path, tmp)
+            os.replace(tmp, cache_png)
+        except OSError:
+            pass
+    return ok
+
+
 def safe_filename(s: str) -> str:
     """Filesystem-safe name: spaces -> -, unsafe chars -> _.
     Includes , & ; to avoid Windows cmd parsing issues when paths are passed to mmdc.

@@ -19,7 +19,7 @@ import shutil
 import subprocess
 import sys
 from .registry import register
-from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
+from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type, render_mermaid_cached
 
 
 def _baseline_flowchart_dir(plan, model_dir_abs, out_dir):
@@ -534,29 +534,14 @@ def run(model, output_dir, model_dir, config):
         progress.step(label=f"{unit_name}/{func_name}")
         png_name = f"{unit_name}_{safe_filename(func_name)}.png"
         png_path = os.path.abspath(os.path.join(out_dir, png_name))
-        mmd_path = os.path.join(out_dir, f".tmp_{unit_name}_{safe_filename(func_name)}.mmd")
         try:
-            with open(mmd_path, "w", encoding="utf-8") as tf:
-                tf.write(flowchart)
-            run_cmd = run_cmd_base + ["-i", os.path.abspath(mmd_path), "-o", png_path]
-            if os_type == "Windows":
-                r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False, shell=True)
-            else:
-                r = subprocess.run(run_cmd, cwd=project_root, capture_output=True, text=True, timeout=180, check=False)
-            if r.returncode != 0:
+            # M-A: content-addressed cache -> identical flowcharts (e.g. carried across a
+            # revert / shared between versions) skip mmdc entirely.
+            if not render_mermaid_cached(project_root, flowchart, png_path, timeout=180):
                 failed += 1
-                log("mmdc failed for %s/%s: %s" % (unit_name, func_name, (r.stderr or r.stdout or "exit " + str(r.returncode))[:200]), component="flowcharts", err=True)
-        except (subprocess.TimeoutExpired, OSError) as e:
-            failed += 1
-            log("mmdc error for %s/%s: %s" % (unit_name, func_name, e), component="flowcharts", err=True)
+                log("mmdc failed for %s/%s" % (unit_name, func_name), component="flowcharts", err=True)
         except Exception as e:
             failed += 1
             log("flowchart error for %s/%s: %s" % (unit_name, func_name, e), component="flowcharts", err=True)
-        finally:
-            try:
-                if os.path.isfile(mmd_path):
-                    os.unlink(mmd_path)
-            except OSError:
-                pass
     progress.done(summary=("%d PNGs rendered%s" % (total, (" (%d failed)" % failed) if failed else "")) if total else None)
 
