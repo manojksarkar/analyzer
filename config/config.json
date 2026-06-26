@@ -84,11 +84,11 @@
     "abbreviationsPath": "config/abbreviations.txt",
     "cacheVersion": 1,
     "enrichment": {
-      "twoPassDescriptions": true,
+      "twoPassDescriptions": false,
       "selfReview": false,
       "ensemble": false,
       "cfgSimplification": false,
-      "variableEnrichment": true
+      "variableEnrichment": false
     },
     "maxContextTokens": 127488,
     "customHeaders": {

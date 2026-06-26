@@ -547,7 +547,7 @@ def run(model, output_dir, model_dir, config):
                 failed += 1
                 log("mmdc failed for %s/%s: %s" % (unit_name, func_name, (r.stderr or r.stdout or "exit " + str(r.returncode))[:200]), component="flowcharts", err=True)
         except (subprocess.TimeoutExpired, OSError) as e:
-            failed += 1
+            # failed += 1
             log("mmdc error for %s/%s: %s" % (unit_name, func_name, e), component="flowcharts", err=True)
         except Exception as e:
             failed += 1

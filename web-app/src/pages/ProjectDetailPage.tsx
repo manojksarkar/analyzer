@@ -1,7 +1,6 @@
-import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
-import { useProject, useDocuments, useTeam, useCommits, useVersions, projectKeys } from '../hooks/useProjects'
+import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../hooks/useProjects'
 import { useSelfAssign } from '../hooks/useDocumentMutations'
 import { useCurrentJob, useStartJob, useCancelJob, useJobEvents } from '../hooks/useJobs'
 import { useProjectViewState } from '../hooks/useProjectViewState'
@@ -845,18 +844,6 @@ export function ProjectDetailPage() {
   const { data: versions } = useVersions(projectId ?? '')
   const [runOpen, setRunOpen] = useState(false)
   useJobEvents(projectId ?? '', job?.id, job?.status)
-
-  // When a run finishes, refresh the whole project subtree (status, latest
-  // version, documents, commits) so the overview leaves the "running"/empty
-  // state and shows the completed run. Fires on the job's transition to a
-  // terminal status, covering both the SSE and polling paths.
-  const qc = useQueryClient()
-  const jobStatus = job?.status
-  useEffect(() => {
-    if (projectId && (jobStatus === 'complete' || jobStatus === 'failed')) {
-      qc.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
-    }
-  }, [jobStatus, projectId, qc])
 
   // Role is per-project (API's my_role → project.userRole).
   const isAdmin = project?.userRole === 'admin'

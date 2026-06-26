@@ -1,4 +1,6 @@
-import { useProject, useVersions, useCommits } from './useProjects'
+import { useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useProject, useVersions, useCommits, projectKeys } from './useProjects'
 import { useCurrentJob } from './useJobs'
 import { useUIStore } from '../store/ui'
 import type { PageState, Version, Commit } from '../types'
@@ -46,6 +48,18 @@ export function useProjectViewState(projectId: string): {
     else if (selCommit) base = selCommit.pageState
   }
   const pageState: PageState = jobActive ? 'running' : base
+
+  // When a job transitions to a terminal state, refresh project + versions +
+  // documents so every page leaves the "running" / empty state automatically.
+  const qc = useQueryClient()
+  const jobStatus = job?.status
+  useEffect(() => {
+    if (!projectId || (jobStatus !== 'complete' && jobStatus !== 'failed')) return
+    qc.invalidateQueries({ queryKey: projectKeys.detail(projectId) })
+    qc.invalidateQueries({ queryKey: projectKeys.versions(projectId) })
+    qc.invalidateQueries({ queryKey: projectKeys.commits(projectId) })
+    qc.invalidateQueries({ queryKey: ['projects', projectId, 'documents'] })
+  }, [jobStatus, projectId, qc])
 
   return { pageState, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit, selectedSha }
 }

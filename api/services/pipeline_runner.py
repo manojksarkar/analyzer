@@ -246,11 +246,26 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
 
     arch_layers = project.architecture_layers or []
 
-    # 3. Run pipeline
+    # 3. Detect incremental baseline — use if reference_version_id is set and its
+    # model snapshot (written by _capture_version_snapshot on the prior run) exists.
+    ref_vid = getattr(job, "reference_version_id", None) or ""
+    baseline_version_dir = _get_baseline_version_dir(job.project_id, ref_vid) if ref_vid else None
+    if baseline_version_dir:
+        _append_log(job_id, f"Incremental mode: baseline version {ref_vid}")
+
+    # 4. Run pipeline (full or incremental, with or without pause)
     if job.pause_after_phase1:
-        _run_with_pause(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
+        if baseline_version_dir:
+            _run_incremental_with_pause(db, job_id, checkout_dir, config_path,
+                                        baseline_version_dir, arch_layers=arch_layers)
+        else:
+            _run_with_pause(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
     else:
-        _run_full(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
+        if baseline_version_dir:
+            _run_incremental(db, job_id, checkout_dir, config_path,
+                             baseline_version_dir, arch_layers=arch_layers)
+        else:
+            _run_full(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +449,120 @@ def _build_cmd(
 
 
 # ---------------------------------------------------------------------------
+# Incremental helpers
+# ---------------------------------------------------------------------------
+
+def _get_baseline_version_dir(project_id: str, reference_version_id: str) -> Optional[Path]:
+    """Return the baseline version directory if its model snapshot is usable, else None.
+
+    A snapshot is usable when model/hashes.json exists — that file is the entity-hash
+    index produced by Phase 1 and needed for impact classification.
+    """
+    if not reference_version_id:
+        return None
+    root = get_settings().repo_root
+    vdir = root / "workspaces" / project_id / "versions" / reference_version_id
+    if (vdir / "model" / "hashes.json").is_file():
+        return vdir
+    return None
+
+
+def _compute_incremental_plan(job_id: str, model_dir: Path, baseline_version_dir: Path) -> None:
+    """Compute and write model/incremental_plan.json from the baseline version snapshot.
+
+    Called between Phase 1 (which produced the fresh hashes/functions/edges) and Phase 2.
+    Imports the incremental engine helpers from src/, classifies changed entities via
+    the entity-hash diff, carries forward baseline LLM outputs (descriptions, behaviour
+    names) for the reuse set so Phase 2 skips LLM for them, and writes the plan file
+    that Phases 2–3 read to restrict enrichment and flowchart regeneration.
+    """
+    import json as _json
+    import sys as _sys
+
+    src_dir = str(get_settings().repo_root / "src")
+    if src_dir not in _sys.path:
+        _sys.path.insert(0, src_dir)
+
+    from incremental.engine import (  # type: ignore[import]
+        plan_incremental,
+        carry_forward_descriptions,
+        carry_forward_globals,
+    )
+
+    base_model_dir = baseline_version_dir / "model"
+
+    def _read(d: Path, name: str) -> dict:
+        p = d / name
+        return _json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+
+    target_hashes    = _read(model_dir,      "hashes.json")
+    target_functions = _read(model_dir,      "functions.json")
+    target_edges     = _read(model_dir,      "edges.json")
+    target_globals   = _read(model_dir,      "globalVariables.json")
+    base_hashes      = _read(base_model_dir, "hashes.json")
+    base_functions   = _read(base_model_dir, "functions.json")
+    base_globals     = _read(base_model_dir, "globalVariables.json")
+
+    if not base_hashes:
+        _append_log(job_id, "Baseline hashes empty — incremental plan skipped (full enrichment).")
+        return
+
+    plan = plan_incremental(base_hashes, target_hashes, target_functions,
+                            target_edges, base_functions)
+
+    # Impacted globals = changed/new globals + globals read/written by impacted functions.
+    cls = plan["classify"]
+    impacted_globals: Set[str] = {k for k in (cls["changed"] | cls["new"]) if k.count("|") == 2}
+    for fid in plan["impact"]:
+        f = target_functions.get(fid) or {}
+        impacted_globals.update(f.get("readsGlobalIds") or [])
+        impacted_globals.update(f.get("writesGlobalIds") or [])
+    impacted_globals &= set(target_globals)
+    reused_globals = set(target_globals) - impacted_globals
+
+    # Carry baseline LLM outputs into the reuse set so Phase 2 skips them.
+    n_fn = carry_forward_descriptions(plan["reused"], target_functions, base_functions)
+    carry_forward_globals(reused_globals, target_globals, base_globals)
+
+    # Persist the mutated function/global data (carry-forwards baked in).
+    (model_dir / "functions.json").write_text(
+        _json.dumps(target_functions, indent=2), encoding="utf-8")
+    (model_dir / "globalVariables.json").write_text(
+        _json.dumps(target_globals, indent=2), encoding="utf-8")
+
+    # Flowchart scoping: file-level = files of the full impact set; function-level = direct fids.
+    impacted_files = sorted({
+        (target_functions.get(fid) or {}).get("location", {}).get("file")
+        for fid in plan["impact"]
+    } - {None})
+    direct_fns = {k for k in (cls["changed"] | cls["new"]) if k in target_functions}
+    flowchart_files: Set[str] = {
+        (target_functions.get(fid) or {}).get("location", {}).get("file")
+        for fid in direct_fns
+    }
+    for fid in cls["deleted"]:
+        bf = base_functions.get(fid)
+        if bf:
+            flowchart_files.add((bf.get("location") or {}).get("file"))
+
+    inc_plan = {
+        "impactFids":             sorted(plan["impact"]),
+        "impactedGlobals":        sorted(impacted_globals),
+        "impactedFiles":          impacted_files,
+        "flowchartFiles":         sorted(flowchart_files - {None}),
+        "flowchartFids":          sorted(direct_fns),
+        "crossVersionFlowcharts": {},
+        "baselineVersionDir":     str(baseline_version_dir),
+    }
+    (model_dir / "incremental_plan.json").write_text(
+        _json.dumps(inc_plan, indent=2), encoding="utf-8")
+
+    _append_log(job_id,
+                f"Incremental plan: {len(plan['reused'])} functions reused "
+                f"({n_fn} descriptions carried), {len(plan['impact'])} to regenerate.")
+
+
+# ---------------------------------------------------------------------------
 # Run strategies
 # ---------------------------------------------------------------------------
 
@@ -451,7 +580,7 @@ def _run_with_pause(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
     job = db.jobs.get(job_id)
     # Phase 1+2 only
     cmd = _build_cmd(job, checkout_dir, config_path, to_phase=2, arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd, phase_start=1, phase_end=2)
+    ok = _execute_subprocess(db, job_id, cmd, phase_start=1)
     if not ok or _is_cancelled(db, job_id):
         return
 
@@ -491,6 +620,100 @@ def _run_with_pause(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
         _complete(db, job_id)
 
 
+def _run_incremental(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
+                     baseline_version_dir: Path, arch_layers: list = ()) -> None:
+    """Incremental run: Phase 1 → compute impact plan → Phase 2–4.
+
+    Phase 1 produces fresh hashes/edges.  The in-process plan computation diffs them
+    against the baseline, carries forward LLM outputs for unchanged entities, and writes
+    model/incremental_plan.json.  Phases 2–4 then read the plan to restrict LLM
+    enrichment (Phase 2) and flowchart generation (Phase 3).
+    """
+    job = db.jobs.get(job_id)
+    model_dir = get_settings().repo_root / "model"
+
+    # Phase 1 only (parse → hashes.json, functions.json, edges.json, …)
+    cmd1 = _build_cmd(job, checkout_dir, config_path, to_phase=1, arch_layers=arch_layers)
+    ok = _execute_subprocess(db, job_id, cmd1, phase_start=1)
+    if not ok or _is_cancelled(db, job_id):
+        return
+
+    # Impact classification + carry-forward → incremental_plan.json
+    _append_log(job_id, "Computing incremental plan from baseline snapshot…")
+    try:
+        _compute_incremental_plan(job_id, model_dir, baseline_version_dir)
+    except Exception as exc:
+        _append_log(job_id, f"Incremental plan error ({exc}) — Phase 2+ runs with full enrichment.")
+
+    # Phase 2–4 (model_deriver reads plan to restrict LLM; flowcharts view reads plan for reuse)
+    job = db.jobs.get(job_id)
+    cmd2 = _build_cmd(job, checkout_dir, config_path, from_phase=2, arch_layers=arch_layers)
+    ok = _execute_subprocess(db, job_id, cmd2, phase_start=2)
+    if ok:
+        _complete(db, job_id)
+
+
+def _run_incremental_with_pause(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
+                                 baseline_version_dir: Path, arch_layers: list = ()) -> None:
+    """Incremental run with a pause after Phase 2 for function-visibility review."""
+    job = db.jobs.get(job_id)
+    model_dir = get_settings().repo_root / "model"
+
+    # Phase 1 only
+    cmd1 = _build_cmd(job, checkout_dir, config_path, to_phase=1, arch_layers=arch_layers)
+    ok = _execute_subprocess(db, job_id, cmd1, phase_start=1)
+    if not ok or _is_cancelled(db, job_id):
+        return
+
+    # Impact classification + carry-forward → incremental_plan.json
+    _append_log(job_id, "Computing incremental plan from baseline snapshot…")
+    try:
+        _compute_incremental_plan(job_id, model_dir, baseline_version_dir)
+    except Exception as exc:
+        _append_log(job_id, f"Incremental plan error ({exc}) — Phase 2 runs with full enrichment.")
+
+    # Phase 2 only (model derivation; LLM enrichment gated by the plan)
+    job = db.jobs.get(job_id)
+    cmd2 = _build_cmd(job, checkout_dir, config_path, from_phase=2, to_phase=2, arch_layers=arch_layers)
+    ok = _execute_subprocess(db, job_id, cmd2, phase_start=2)
+    if not ok or _is_cancelled(db, job_id):
+        return
+
+    # Pause — user reviews function visibility
+    job = db.jobs.get(job_id)
+    job.status = "paused"
+    job.current_activity = "Paused after Phase 2 — review functions, then resume."
+    db.jobs.update(job)
+    _append_log(job_id, "Paused. Resume to run Phases 3–4.")
+
+    ev = None
+    with _LOCK:
+        ev = _job_resume_events.get(job_id)
+    while ev and not ev.is_set():
+        ev.wait(timeout=2.0)
+        if _is_cancelled(db, job_id):
+            return
+
+    if _is_cancelled(db, job_id):
+        return
+
+    # Phase 3–4 (incremental_plan.json still present → flowchart reuse active)
+    job = db.jobs.get(job_id)
+    if not job or job.status == "cancelled":
+        return
+    job.status = "running"
+    job.current_activity = _ACTIVITY[3]
+    db.jobs.update(job)
+    _append_log(job_id, "Resuming from Phase 3…")
+
+    job = db.jobs.get(job_id)
+    cmd3 = _build_cmd(job, checkout_dir, config_path, from_phase=3, use_model=True,
+                      arch_layers=arch_layers)
+    ok = _execute_subprocess(db, job_id, cmd3, phase_start=3)
+    if ok:
+        _complete(db, job_id)
+
+
 # ---------------------------------------------------------------------------
 # Subprocess execution + output tailing
 # ---------------------------------------------------------------------------
@@ -500,7 +723,6 @@ def _execute_subprocess(
     job_id: str,
     cmd: list[str],
     phase_start: int = 1,
-    phase_end: int = 4,
 ) -> bool:
     """Run cmd, tail its output, update job progress. Returns True on success."""
     cfg = get_settings()
@@ -531,6 +753,18 @@ def _execute_subprocess(
     line_count = 0
     _timeout = get_settings().subprocess_timeout or None
     _timed_out = False
+
+    # Mark the first phase of this subprocess as "running" immediately.
+    # Without this, phase_start stays "pending" until the *next* phase fires
+    # _transition_phase — meaning phase 1 (and phase 3 on a resume) would
+    # skip "running" entirely and jump from "pending" to "done".
+    job = db.jobs.get(job_id)
+    if job:
+        for p in job.phases:
+            if p.number == phase_start:
+                p.status = "running"
+        job.phase = phase_start
+        db.jobs.update(job)
 
     try:
         for raw_line in proc.stdout:
@@ -576,6 +810,7 @@ def _execute_subprocess(
             proc.wait()
 
     if _timed_out:
+        _append_log(job_id,f"Job failed after timing out {_timeout}s")
         _mark_failed(db, job_id, f"Subprocess timed out after {_timeout}s.")
         return False
 
@@ -588,6 +823,7 @@ def _execute_subprocess(
 
     if rc != 0:
         tail = "\n".join(recent_lines[-20:])
+        _append_log(job_id,f"Job failed with code{rc}")
         _mark_failed(db, job_id, f"run.py exited with code {rc}.\n{tail}")
         return False
 
@@ -833,16 +1069,39 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
     add("SYS.2", "System Requirements", "SyRS", "", "Global")
     add("SWE.1", "Software Requirements", "SRS", "", "Global")
 
-    # Real output/ dirs — add one SWE.2 per group directory found
+    # Collect allowed groups from the project's architecture_layers so we don't
+    # pick up stale output dirs from previous pipeline runs for other projects.
+    allowed_groups: set[str] = set()
+    for _layer in (project.architecture_layers or []):
+        if not isinstance(_layer, dict):
+            continue
+        for _g in (_layer.get("groups") or []):
+            _gn = _g if isinstance(_g, str) else (str(_g.get("name") or "") if isinstance(_g, dict) else "")
+            if _gn:
+                allowed_groups.add(_gn)
+
+    # The pipeline normalises group names to filesystem-safe dir names (spaces → hyphens).
+    # Build a matching set so we can compare against actual output/ subdirectory names.
+    allowed_dirs: set[str] = {g.replace(" ", "-") for g in allowed_groups}
+
+    # Real output/ dirs — add one SWE.2 per group directory found that is also
+    # declared in the project configuration (guards against stale dirs from prior runs).
     output_dir = get_settings().repo_root / "output"
     groups_found: list[str] = []
     if output_dir.is_dir():
-        groups_found = [d.name for d in sorted(output_dir.iterdir()) if d.is_dir()]
+        all_dirs = [d.name for d in sorted(output_dir.iterdir()) if d.is_dir()]
+        groups_found = [d for d in all_dirs if not allowed_dirs or d in allowed_dirs]
         for gname in groups_found:
             add("SWE.2", gname, "Component Design", "", gname)
 
+    # groups_found contains actual output dir names (e.g. "My-Sample").
+    # When a group already has a real pipeline output dir, it produces one
+    # consolidated document covering all its units — so skip per-unit SWE.3
+    # docs for that group to avoid duplicating what is already inside it.
+    groups_found_dirs: set[str] = set(groups_found)
+
     # Walk architecture_layers: add SWE.2 only when no output dirs found (fallback),
-    # but always add SWE.3 unit design docs for every component.
+    # and add SWE.3 unit design docs only for groups that have no output coverage.
     unit_count = 0
     for layer in (project.architecture_layers or []):
         if not isinstance(layer, dict):
@@ -854,6 +1113,11 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
                 continue
             if not groups_found:
                 add("SWE.2", gname, "Component Design", lname, gname)
+            # Skip unit-level docs when the group's output dir was produced by the
+            # pipeline — those units are already sections inside the group document.
+            gname_dir = gname.replace(" ", "-")
+            if gname_dir in groups_found_dirs:
+                continue
             comps = [] if isinstance(g, str) else (g.get("components", []) or [])
             for c in comps:
                 cname = c if isinstance(c, str) else (c.get("name", "") if isinstance(c, dict) else "")
@@ -963,4 +1227,4 @@ def _do_reexport(db: Any, job_id: str) -> None:
     arch_layers = project.architecture_layers or []
     cmd = _build_cmd(job, checkout_dir, config_path, from_phase=4, use_model=True,
                      arch_layers=arch_layers)
-    _execute_subprocess(db, job_id, cmd, phase_start=4, phase_end=4)
+    _execute_subprocess(db, job_id, cmd, phase_start=4)
