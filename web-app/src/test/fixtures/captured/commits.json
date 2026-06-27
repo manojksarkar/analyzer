@@ -1,0 +1,59 @@
+{
+  "commits": [
+    {
+      "sha": "abc1234",
+      "message": "feat: add brake system FMEA table",
+      "author": "Manoj S.",
+      "committed_at": "2026-06-21T12:00:00+00:00",
+      "branch": "main",
+      "doc_status": "never",
+      "version": null,
+      "is_current": false
+    },
+    {
+      "sha": "b2e8d45",
+      "message": "feat: powertrain refactor",
+      "author": "Alice Müller",
+      "committed_at": "2026-06-15T12:00:00+00:00",
+      "branch": "main",
+      "doc_status": "in_review",
+      "version": "v1.2.0",
+      "is_current": true
+    },
+    {
+      "sha": "c1d2e3f",
+      "message": "fix: brake override logic",
+      "author": "Bob Kumar",
+      "committed_at": "2026-06-13T12:00:00+00:00",
+      "branch": "main",
+      "doc_status": "never",
+      "version": null,
+      "is_current": false
+    },
+    {
+      "sha": "e4f5g6h",
+      "message": "feat: brake system FMEA table",
+      "author": "Alice Müller",
+      "committed_at": "2026-05-08T12:00:00+00:00",
+      "branch": "main",
+      "doc_status": "approved",
+      "version": "v1.1.0",
+      "is_current": false
+    },
+    {
+      "sha": "a1b2c3d",
+      "message": "chore: initial commit",
+      "author": "Alice Müller",
+      "committed_at": "2026-03-24T12:00:00+00:00",
+      "branch": "main",
+      "doc_status": "approved",
+      "version": "v1.0.0",
+      "is_current": false
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "per_page": 20,
+    "total": 5
+  }
+}

@@ -1,19 +1,27 @@
+import { z } from 'zod'
 import type { AnalysisJob, JobPhase, JobFunctions } from '../../types'
 import { shortSha } from '../../lib/format'
 
-export interface ApiJobPhase { number: number; name: string; status: string; duration_seconds: number | null }
-export interface ApiJob {
-  id: string; status: string; phase: number; phase_pct: number
-  current_activity: string; activity_detail: string
-  elapsed_seconds: number; eta_seconds: number | null; phases: ApiJobPhase[]
-  commit_sha: string; branch: string; version_id: string | null; version_tag?: string | null
-  started_at: string | null; completed_at: string | null; error_message: string | null
-}
+export const ApiJobPhaseSchema = z.object({
+  number: z.number(), name: z.string(), status: z.string(), duration_seconds: z.number().nullable(),
+})
+export type ApiJobPhase = z.infer<typeof ApiJobPhaseSchema>
 
-export interface ApiFunction {
-  id: string; name: string; file_path: string; layer: string; group: string
-  is_visible: boolean; is_new: boolean; description: string
-}
+export const ApiJobSchema = z.object({
+  id: z.string(), status: z.string(), phase: z.number(), phase_pct: z.number(),
+  current_activity: z.string(), activity_detail: z.string(),
+  elapsed_seconds: z.number(), eta_seconds: z.number().nullable(), phases: z.array(ApiJobPhaseSchema),
+  commit_sha: z.string(), branch: z.string(), version_id: z.string().nullable(),
+  version_tag: z.string().nullable().optional(),
+  started_at: z.string().nullable(), completed_at: z.string().nullable(), error_message: z.string().nullable(),
+})
+export type ApiJob = z.infer<typeof ApiJobSchema>
+
+export const ApiFunctionSchema = z.object({
+  id: z.string(), name: z.string(), file_path: z.string(), layer: z.string(), group: z.string(),
+  is_visible: z.boolean(), is_new: z.boolean(), description: z.string(),
+})
+export type ApiFunction = z.infer<typeof ApiFunctionSchema>
 
 const mapJobPhase = (p: ApiJobPhase): JobPhase => ({
   number: p.number, name: p.name, status: p.status as JobPhase['status'],

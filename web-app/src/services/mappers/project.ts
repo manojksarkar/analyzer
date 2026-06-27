@@ -1,16 +1,19 @@
+import { z } from 'zod'
 import type {
   Project, TeamMember, PageState, UserRole,
   ArchLayer, ArchGroup, ArchComponent, ProjectBuildConfig,
 } from '../../types'
 import { formatDate, avatarPalette } from '../../lib/format'
 
-export interface ApiProject {
-  id: string; name: string; client: string; compliance_standard: string
-  status: string; last_run_at: string | null; current_version: string | null
-  doc_counts: Record<string, number>; team_count: number; my_role: string | null
-  repo_url: string; default_branch?: string; build_config?: Record<string, unknown>
-  architecture_layers: unknown[]; created_at: string; updated_at: string
-}
+export const ApiProjectSchema = z.object({
+  id: z.string(), name: z.string(), client: z.string(), compliance_standard: z.string(),
+  status: z.string(), last_run_at: z.string().nullable(), current_version: z.string().nullable(),
+  doc_counts: z.record(z.string(), z.number()), team_count: z.number(), my_role: z.string().nullable(),
+  repo_url: z.string(), default_branch: z.string().optional(),
+  build_config: z.record(z.string(), z.unknown()).optional(),
+  architecture_layers: z.array(z.unknown()), created_at: z.string(), updated_at: z.string(),
+})
+export type ApiProject = z.infer<typeof ApiProjectSchema>
 
 const STANDARD_LABELS: Record<string, string> = {
   ISO_26262: 'ISO 26262',
