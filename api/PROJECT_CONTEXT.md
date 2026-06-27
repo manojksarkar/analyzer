@@ -1,6 +1,6 @@
 # API Server — Project Context
 
-> Updated: 2026-06-25  
+> Updated: 2026-06-27  
 > Active branch: `feat/web-app-api`
 
 ---
@@ -206,6 +206,22 @@ are called at the top of every protected route handler.
 ---
 
 ## 8. Known issues / previous fixes
+
+### Compare page rendered raw JSON instead of document content
+
+`compute_document_sections_diff` in `api/services/compare_engine.py` was
+calling `json.dumps(unit_data, indent=2)` on raw `interface_tables.json` unit
+values and passing the resulting JSON string as `current_content` /
+`baseline_content`.  The frontend's `SectionBody` component in `ComparePage.tsx`
+only understands plain text and GitHub-style pipe tables (parsed by
+`parseSectionBody` in `web-app/src/lib/markdown.ts`), so it displayed the raw
+JSON as unreadable text.
+
+Fixed by adding `_itf_unit_to_markdown(data)` which converts the `entries` list
+of a unit dict into a proper markdown pipe table (8 columns: Interface ID, Name,
+Information, Data Type, Data Range, Direction, Source/Dest, Type — matching the
+same column order used by `doc_render.py`).  Pipe characters inside cell values
+are escaped to `/`; newlines are collapsed to a space.  Commit `d8bd70b`.
 
 ### bcrypt 4.x `__about__` AttributeError
 
