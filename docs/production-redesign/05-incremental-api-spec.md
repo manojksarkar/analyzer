@@ -302,6 +302,13 @@ several documents (e.g. one per component).
 
 A `generate` call returns a `jobId`. Poll these until the job completes, then download.
 
+> **Survives a backend restart.** Job metadata is persisted to `logs/jobs/<jobId>.json`, so
+> `/jobs/{jobId}/status` and `/jobs/{jobId}/prepare/logs` keep working after a `uvicorn`
+> restart (they reload the job and reconcile its final state from the version manifest —
+> which the generation subprocess writes). A job that was mid-run when the backend died is
+> reported `complete` with an `interrupted (...)` error if its process is gone, or kept
+> `running` if the (orphaned) subprocess is still alive.
+
 ### 6. GET `/jobs/{jobId}/status`
 ```json
 {
