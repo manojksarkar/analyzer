@@ -1581,23 +1581,25 @@ async def start_prepare(
 
 @app.get("/api/v1/jobs/{job_id}/prepare/logs", response_model=List[PrepLog])
 async def get_prepare_logs(job_id: str) -> List[PrepLog]:
-    """API 9 — return up to the most recent 40 log lines emitted by this
-    prepare job's run.py subprocess.
+    """API 9 — return up to the most recent log lines emitted by this job's run.py
+    subprocess. Serves both **prepare** and **generate** jobs (both write a per-job
+    output file); use the export endpoints for export jobs.
 
-    Reads the rolling daily log file at the byte offset recorded when the
-    job started, so each job's response contains only that job's slice
-    even when several jobs share `logs/run_<UTC-date>.log`.
+    Reads the per-job output file (true isolation), falling back to the rolling daily
+    log slice at the byte offset recorded when the job started, so each job's response
+    contains only that job's slice even when several jobs share `logs/run_<UTC-date>.log`.
 
     Errors:
       404 — unknown job_id
-      400 — job_id exists but isn't a prepare job (use the export endpoint)
+      400 — job_id exists but has no tailable logs (e.g. an export job)
     """
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
-    if job.get("type") != "prepare":
+    if job.get("type") not in ("prepare", "generate"):
         raise HTTPException(
-            status_code=400, detail=f"job {job_id!r} is not a prepare job"
+            status_code=400,
+            detail=f"job {job_id!r} has no tailable logs (type={job.get('type')!r})",
         )
     # Prefer the per-job output file (true isolation, captures import-time
     # crashes). Fall back to the rolling daily log slice only if the

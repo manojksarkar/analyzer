@@ -322,7 +322,9 @@ A `generate` call returns a `jobId`. Poll these until the job completes, then do
 **Errors:** 404 (unknown job).
 
 ### 7. GET `/jobs/{jobId}/prepare/logs`
-Up to the most recent ~200 log lines from the run.
+Up to the most recent log lines from the run. Works for **both `generate` and `prepare`
+jobs** (the `jobId` returned by `POST /generate` is valid here). **400** if the job has no
+tailable logs (e.g. an export job — use #9/#10 for those); **404** for an unknown job.
 ```json
 [ { "id": "0", "t": "10:00:01", "level": "info", "msg": "[1/4] === Phase 1: Parse C++ source ===" } ]
 ```
