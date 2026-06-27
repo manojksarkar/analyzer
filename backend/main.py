@@ -2509,6 +2509,46 @@ def _spawn_generate(script_rel: str, extra_args: List[str], output_file_path: st
     return proc
 
 
+@app.get("/api/v1/projects")
+async def list_projects():
+    """List registered projects (doc 05 G0). Each is a workspaces/<projectId>/ dir with
+    a project.json. The UI calls this FIRST to discover projectId before any other
+    /projects/{projectId}/... call. Returns [] when no projects are onboarded."""
+    from incremental.stores import default_workspaces_root, Workspace, VersionStore
+    root = default_workspaces_root()
+    out: List[dict] = []
+    if not os.path.isdir(root):
+        return out
+    for pid in sorted(os.listdir(root)):
+        if pid.startswith("."):
+            continue
+        if not os.path.isdir(os.path.join(root, pid)):
+            continue
+        try:
+            ws = Workspace(pid)
+        except Exception:
+            continue
+        proj = ws.project() or {}
+        # Only list onboarded projects: a project.json or a cloned repo must be present.
+        if not proj and not os.path.isdir(ws.repo_dir):
+            continue
+        repo = proj.get("repo") or {}
+        try:
+            versions = VersionStore(ws).list()
+        except Exception:
+            versions = []
+        out.append({
+            "projectId": proj.get("projectId") or pid,
+            "name": proj.get("name") or pid,
+            "repoUrl": repo.get("url", ""),
+            "defaultBranch": repo.get("defaultBranch", ""),
+            "currentDataDictId": proj.get("currentDataDictId"),
+            "versionCount": len(versions),
+            "latestVersionId": versions[0].get("versionId") if versions else None,
+        })
+    return out
+
+
 @app.get("/api/v1/projects/{project_id}/branches")
 async def list_project_branches(project_id: str):
     """List the project's branches, newest commit first (doc 05 G1). Backed by the
