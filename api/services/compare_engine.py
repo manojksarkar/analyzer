@@ -48,6 +48,51 @@ def _itf_fingerprint(data: dict) -> str:
     return json.dumps(data, sort_keys=True)
 
 
+_ITF_HEADERS = [
+    "Interface ID", "Interface Name", "Information",
+    "Data Type", "Data Range", "Direction", "Source/Dest", "Type",
+]
+
+
+def _itf_unit_to_markdown(data: dict) -> str:
+    """Convert a unit's interface table dict to a GitHub-style markdown table."""
+    entries = (data or {}).get("entries") or []
+    if not entries:
+        return ""
+
+    rows: list[list[str]] = []
+    for e in entries:
+        itype = str(e.get("type") or "-")
+        if "variableType" in e:
+            data_type = str(e.get("variableType") or "-")
+            data_range = str(e.get("range") or "NA")
+        else:
+            params = e.get("parameters") or []
+            data_type = "; ".join(str(p.get("type", "")) for p in params) if params else "VOID"
+            data_range = "; ".join(str(p.get("range", "")) for p in params) if params else "NA"
+        rows.append([
+            str(e.get("interfaceId") or ""),
+            str(e.get("interfaceName") or e.get("name") or ""),
+            str(e.get("description") or "-"),
+            data_type,
+            data_range,
+            str(e.get("direction") or "-"),
+            str(e.get("sourceDest") or "-"),
+            itype,
+        ])
+
+    if not rows:
+        return ""
+
+    def _cell(s: str) -> str:
+        return s.replace("|", "/").replace("\n", " ").strip()
+
+    header = "| " + " | ".join(_ITF_HEADERS) + " |"
+    sep = "| " + " | ".join(["---"] * len(_ITF_HEADERS)) + " |"
+    data_lines = ["| " + " | ".join(_cell(c) for c in row) + " |" for row in rows]
+    return "\n".join([header, sep] + data_lines)
+
+
 def _diff_itf_sections(c_itf: dict, b_itf: dict) -> list[str]:
     """Return unit-key section keys that differ between two interface_tables dicts."""
     skip = {"unitNames"}
@@ -250,8 +295,8 @@ def compute_document_sections_diff(
             "key": k,
             "title": title,
             "diff_type": diff_type,
-            "current_content": json.dumps(cv, indent=2) if cv else "",
-            "baseline_content": json.dumps(bv, indent=2) if bv else "",
+            "current_content": _itf_unit_to_markdown(cv),
+            "baseline_content": _itf_unit_to_markdown(bv),
         })
 
     return {"document_name": doc.name, "sections": sections}
