@@ -102,7 +102,9 @@ class TestRunPyCli:
         assert "--from-phase must be 1, 2, 3, or 4" in output
 
     def test_unknown_group_exits_2_and_lists_valid_groups(self):
-        result = _run_cli("--selected-group", "DoesNotExist", SAMPLE_PROJECT)
+        # run.py validates the project path exists (exit 1) BEFORE resolving the
+        # group (exit 2), so point at a real dir to reach the group check.
+        result = _run_cli("--selected-group", "DoesNotExist", PROJECT_ROOT)
         output = _output(result)
 
         assert result.returncode == 2

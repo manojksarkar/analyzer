@@ -231,7 +231,8 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     # 2. Write per-project config
     workspace_dir = root / "workspaces" / job.project_id
     try:
-        config_path = _write_project_config(project, workspace_dir)
+        config_path = _write_project_config(project, workspace_dir,
+                                            no_llm=bool(getattr(job, "no_llm", False)))
     except Exception as exc:
         _mark_failed(db, job_id, f"Config generation failed: {exc}")
         return
@@ -246,12 +247,26 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
 
     arch_layers = project.architecture_layers or []
 
-    # 3. Detect incremental baseline — use if reference_version_id is set and its
-    # model snapshot (written by _capture_version_snapshot on the prior run) exists.
-    ref_vid = getattr(job, "reference_version_id", None) or ""
+    # 3. Resolve the incremental baseline. mode == "full" forces full; otherwise auto-pick
+    # the nearest-ancestor completed version (an explicit reference_version_id still wins) —
+    # mirrors the standalone /generate decision. Degrades to full safely.
+    res = _resolve_baseline(db, job, checkout_dir)
+    ref_vid = res["refVid"]
     baseline_version_dir = _get_baseline_version_dir(job.project_id, ref_vid) if ref_vid else None
-    if baseline_version_dir:
-        _append_log(job_id, f"Incremental mode: baseline version {ref_vid}")
+    decision = res["decision"] if baseline_version_dir else "full"
+    if not baseline_version_dir:
+        ref_vid = ""
+    job = db.jobs.get(job_id)
+    if job:
+        job.reference_version_id = ref_vid or None
+        job.decision = decision
+        job.baseline_commit = res["baselineCommit"] if baseline_version_dir else None
+        db.jobs.update(job)
+    for w in res["warnings"]:
+        _append_log(job_id, f"baseline: {w}")
+    _append_log(job_id,
+                f"Incremental mode ({decision}) — baseline version {ref_vid}."
+                if baseline_version_dir else f"Full generation ({decision}).")
 
     # 4. Run pipeline (full or incremental, with or without pause)
     if job.pause_after_phase1:
@@ -308,7 +323,7 @@ def _checkout(project: Any, commit_sha: str, checkout_dir: Path, job_id: str) ->
 # Config generation
 # ---------------------------------------------------------------------------
 
-def _write_project_config(project: Any, workspace_dir: Path) -> Path:
+def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> Path:
     """Write a per-project config.json by merging the base config with project settings."""
     base_path = get_settings().repo_root / "config" / "config.json"
     try:
@@ -328,6 +343,13 @@ def _write_project_config(project: Any, workspace_dir: Path) -> Path:
     layers = _convert_layers(project.architecture_layers or [])
     if layers:
         cfg["layers"] = layers
+
+    # noLlm — disable per-entity LLM (descriptions + behaviour names), mirroring
+    # apply_no_llm. Phase summarization is disabled via --no-llm-summarize in _build_cmd.
+    if no_llm:
+        cfg.setdefault("llm", {})
+        cfg["llm"]["descriptions"] = False
+        cfg["llm"]["behaviourNames"] = False
 
     workspace_dir.mkdir(parents=True, exist_ok=True)
     out_path = workspace_dir / "config.json"
@@ -429,8 +451,25 @@ def _build_cmd(
         cmd += ["--from-phase", str(from_phase)]
     if to_phase is not None:
         cmd += ["--to-phase", str(to_phase)]
-    if job.layer_filter:
+    # Scope -> run.py selection flags (mutually exclusive with --selected-layer). A
+    # first-class scope wins over layer_filter; project scope selects nothing (full).
+    scope = getattr(job, "scope", None)
+    stype = (scope.get("type") if isinstance(scope, dict) else None) or "project"
+    names = (scope.get("names") if isinstance(scope, dict) else None) or []
+    if stype == "group" and names:
+        cmd += ["--selected-group", str(names[0])]
+    elif stype == "component" and names:
+        cmd += ["--selected-component", str(names[0])]
+    elif job.layer_filter:
         cmd += ["--selected-layer", job.layer_filter]
+    if getattr(job, "no_llm", False):
+        cmd.append("--no-llm-summarize")     # descriptions/behaviourNames disabled via config
+    ddid = getattr(job, "data_dict_id", None)
+    if ddid:
+        dd_path = (get_settings().repo_root / "workspaces" / job.project_id
+                   / "datadict" / f"{ddid}.csv")
+        if dd_path.is_file():
+            cmd += ["--data-dictionary", str(dd_path)]
     if getattr(job, "version_tag", None):
         cmd += ["--project-name", job.version_tag]
     # Extra include paths from architecture_layers.lib_paths (--include-path <layer> <abs_dir>)
@@ -467,7 +506,107 @@ def _get_baseline_version_dir(project_id: str, reference_version_id: str) -> Opt
     return None
 
 
-def _compute_incremental_plan(job_id: str, model_dir: Path, baseline_version_dir: Path) -> None:
+def _baseline_candidates(db: Any, project_id: str) -> list:
+    """His DB versions, shaped for select_baseline and filtered to those with a usable
+    captured snapshot (model/hashes.json) — the same gate as _get_baseline_version_dir."""
+    root = get_settings().repo_root
+    out: list = []
+    try:
+        versions = db.versions.list_for_project(project_id)
+    except Exception:
+        return out
+    for v in versions:
+        vdir = root / "workspaces" / project_id / "versions" / v.id
+        if (vdir / "model" / "hashes.json").is_file():
+            out.append({"versionId": v.id, "commit": getattr(v, "commit_sha", ""),
+                        "branch": getattr(v, "branch", ""), "status": "complete"})
+    return out
+
+
+def _resolve_baseline(db: Any, job: Any, checkout_dir: Path) -> dict:
+    """Decide the incremental baseline for this job, mirroring /generate's select_baseline.
+
+      mode == "full"        -> always full (no baseline).
+      reference_version_id  -> explicit override (still validated by select_baseline).
+      otherwise (mode auto) -> nearest-ancestor completed version, or full when none.
+
+    Runs in the worker (the repo is checked out by then). Returns
+    {refVid, decision, baselineCommit, warnings}. Never raises — falls back to full."""
+    mode = getattr(job, "mode", "auto") or "auto"
+    explicit = getattr(job, "reference_version_id", None) or None
+    if mode == "full":
+        return {"refVid": "", "decision": "full", "baselineCommit": None, "warnings": []}
+
+    import sys as _sys
+    src_dir = str(get_settings().repo_root / "src")
+    if src_dir not in _sys.path:
+        _sys.path.insert(0, src_dir)
+    try:
+        from incremental import git_ops                      # type: ignore[import]
+        from incremental.baseline import select_baseline     # type: ignore[import]
+
+        target = git_ops.resolve(str(checkout_dir), job.commit_sha)
+        if not target:
+            return {"refVid": (explicit or ""),
+                    "decision": ("incremental" if explicit else "full"),
+                    "baselineCommit": None,
+                    "warnings": ["target commit could not be resolved; baseline auto-select skipped"]}
+        base = select_baseline(str(checkout_dir), _baseline_candidates(db, job.project_id),
+                               target, explicit)
+        decision = base.get("decision", "full")
+        chosen = base.get("chosenBaseVersionId") if decision == "incremental" else None
+        return {"refVid": (chosen or ""), "decision": decision,
+                "baselineCommit": base.get("chosenBaseCommit"),
+                "warnings": list(base.get("warnings") or [])}
+    except Exception as exc:
+        return {"refVid": (explicit or ""),
+                "decision": ("incremental" if explicit else "full"),
+                "baselineCommit": None,
+                "warnings": [f"baseline auto-select failed ({exc})"]}
+
+
+def _find_project_repo(project_id: str) -> Optional[Path]:
+    """Newest existing per-commit checkout (a git repo) for the project, for read-only git
+    queries (baseline preview). None when the project has never been generated."""
+    base = get_settings().repo_root / "workspaces" / project_id
+    if not base.is_dir():
+        return None
+    repos = [d for d in base.iterdir() if d.is_dir() and (d / ".git").is_dir()]
+    return max(repos, key=lambda d: d.stat().st_mtime) if repos else None
+
+
+def preview_baseline(db: Any, project_id: str, commit: str,
+                     base_version_id: Optional[str] = None) -> dict:
+    """Read-only baseline decision for `commit` (what an auto-mode job WOULD pick), using an
+    existing project checkout for git ancestry. No checkout/clone, changes nothing — mirrors
+    the standalone /generate/preview. Returns the select_baseline result, or a full-decision
+    stub with a warning when no local history is available yet."""
+    def _stub(warning: str) -> dict:
+        return {"targetCommit": commit, "decision": "full",
+                "chosenBaseVersionId": None, "chosenBaseCommit": None,
+                "chosenIsAncestor": False, "chosenIsNearest": False,
+                "changedFiles": None, "warnings": [warning]}
+
+    import sys as _sys
+    src_dir = str(get_settings().repo_root / "src")
+    if src_dir not in _sys.path:
+        _sys.path.insert(0, src_dir)
+    try:
+        from incremental import git_ops                      # type: ignore[import]
+        from incremental.baseline import select_baseline     # type: ignore[import]
+    except Exception as exc:
+        return _stub(f"incremental engine unavailable ({exc})")
+
+    repo = _find_project_repo(project_id)
+    if not repo:
+        return _stub("no local checkout yet — run one generation to enable incremental previews")
+    target = git_ops.resolve(str(repo), commit)
+    if not target:
+        return _stub(f"commit {commit!r} not found in the local checkout")
+    return select_baseline(str(repo), _baseline_candidates(db, project_id), target, base_version_id)
+
+
+def _compute_incremental_plan(job_id: str, model_dir: Path, baseline_version_dir: Path) -> Optional[dict]:
     """Compute and write model/incremental_plan.json from the baseline version snapshot.
 
     Called between Phase 1 (which produced the fresh hashes/functions/edges) and Phase 2.
@@ -524,6 +663,47 @@ def _compute_incremental_plan(job_id: str, model_dir: Path, baseline_version_dir
     n_fn = carry_forward_descriptions(plan["reused"], target_functions, base_functions)
     carry_forward_globals(reused_globals, target_globals, base_globals)
 
+    # M3.7 cross-version reuse (content-addressed across ALL prior versions): for any
+    # IMPACT-set entity whose content fingerprint was already produced by a PRIOR version
+    # (a revert, or code identical to another branch), copy that version's stored LLM
+    # output instead of regenerating it. Catches reuse the parent->child baseline carry-
+    # forward can't. The index is seeded after every run by _seed_reuse_index().
+    index_reused: dict = {}
+    index_reused_g: dict = {}
+    _vstore = None
+    try:
+        from incremental.engine import (  # type: ignore[import]
+            carry_forward_from_index, _CARRY_FIELDS)
+        from incremental.fingerprint import compute_fingerprints  # type: ignore[import]
+        from incremental.stores import Workspace, VersionStore, ReuseIndex  # type: ignore[import]
+
+        _project_id = baseline_version_dir.parent.parent.name   # workspaces/<pid>/versions/<vid>
+        _ws = Workspace(_project_id, workspaces_root=str(get_settings().repo_root / "workspaces"))
+        _vstore = VersionStore(_ws)
+        _ridx = ReuseIndex(_ws)
+        _target_fps = compute_fingerprints(target_hashes, target_functions, target_edges)
+        _fn_cache: dict = {}
+        _gl_cache: dict = {}
+
+        def _src_funcs(vid: str) -> dict:
+            if vid not in _fn_cache:
+                _fn_cache[vid] = _read(Path(_vstore.version_dir(vid)) / "model", "functions.json")
+            return _fn_cache[vid]
+
+        def _src_globs(vid: str) -> dict:
+            if vid not in _gl_cache:
+                _gl_cache[vid] = _read(Path(_vstore.version_dir(vid)) / "model", "globalVariables.json")
+            return _gl_cache[vid]
+
+        # current_version_id="" — the version being produced isn't in the index yet, so
+        # there is no risk of a self-match here.
+        index_reused = carry_forward_from_index(plan["impact"], _target_fps, target_functions,
+                                                _ridx, "", _src_funcs, _CARRY_FIELDS)
+        index_reused_g = carry_forward_from_index(impacted_globals, _target_fps, target_globals,
+                                                  _ridx, "", _src_globs, ("description",))
+    except Exception as exc:
+        _append_log(job_id, f"Cross-version index reuse skipped ({exc}).")
+
     # Persist the mutated function/global data (carry-forwards baked in).
     (model_dir / "functions.json").write_text(
         _json.dumps(target_functions, indent=2), encoding="utf-8")
@@ -545,21 +725,43 @@ def _compute_incremental_plan(job_id: str, model_dir: Path, baseline_version_dir
         if bf:
             flowchart_files.add((bf.get("location") or {}).get("file"))
 
+    # A directly-changed fn reused from the index (revert / cross-branch-identical) has the
+    # SAME flowchart as its source version, so the view splices it in instead of regenerating.
+    xver_flowcharts = ({fid: str(_vstore.version_dir(index_reused[fid]))
+                        for fid in direct_fns if fid in index_reused}
+                       if _vstore else {})
+    # Index-satisfied entities drop out of the regen sets (Phase 2 skips them — they now
+    # carry descriptions/behaviour) and out of flowchart regen (spliced via crossVersionFlowcharts).
     inc_plan = {
-        "impactFids":             sorted(plan["impact"]),
-        "impactedGlobals":        sorted(impacted_globals),
+        "impactFids":             sorted(set(plan["impact"]) - set(index_reused)),
+        "impactedGlobals":        sorted(impacted_globals - set(index_reused_g)),
         "impactedFiles":          impacted_files,
         "flowchartFiles":         sorted(flowchart_files - {None}),
-        "flowchartFids":          sorted(direct_fns),
-        "crossVersionFlowcharts": {},
+        "flowchartFids":          sorted(direct_fns - set(xver_flowcharts)),
+        "crossVersionFlowcharts": xver_flowcharts,
         "baselineVersionDir":     str(baseline_version_dir),
     }
     (model_dir / "incremental_plan.json").write_text(
         _json.dumps(inc_plan, indent=2), encoding="utf-8")
 
     _append_log(job_id,
-                f"Incremental plan: {len(plan['reused'])} functions reused "
-                f"({n_fn} descriptions carried), {len(plan['impact'])} to regenerate.")
+                f"Incremental plan: {len(plan['reused'])} reused + {len(index_reused)} via "
+                f"cross-version index, {len(inc_plan['impactFids'])} to regenerate "
+                f"({n_fn} descriptions carried).")
+    return {"reused": len(plan["reused"]) + len(index_reused),
+            "regenerated": len(inc_plan["impactFids"])}
+
+
+def _store_incremental_counts(db: Any, job_id: str, counts: Optional[dict]) -> None:
+    """Persist the incremental accounting (regenerated/reused) onto the job so _make_version
+    can surface it on the resulting Version."""
+    if not counts:
+        return
+    job = db.jobs.get(job_id)
+    if job:
+        job.regenerated = counts.get("regenerated")
+        job.reused = counts.get("reused")
+        db.jobs.update(job)
 
 
 # ---------------------------------------------------------------------------
@@ -641,7 +843,7 @@ def _run_incremental(db: Any, job_id: str, checkout_dir: Path, config_path: Path
     # Impact classification + carry-forward → incremental_plan.json
     _append_log(job_id, "Computing incremental plan from baseline snapshot…")
     try:
-        _compute_incremental_plan(job_id, model_dir, baseline_version_dir)
+        _store_incremental_counts(db, job_id, _compute_incremental_plan(job_id, model_dir, baseline_version_dir))
     except Exception as exc:
         _append_log(job_id, f"Incremental plan error ({exc}) — Phase 2+ runs with full enrichment.")
 
@@ -668,7 +870,7 @@ def _run_incremental_with_pause(db: Any, job_id: str, checkout_dir: Path, config
     # Impact classification + carry-forward → incremental_plan.json
     _append_log(job_id, "Computing incremental plan from baseline snapshot…")
     try:
-        _compute_incremental_plan(job_id, model_dir, baseline_version_dir)
+        _store_incremental_counts(db, job_id, _compute_incremental_plan(job_id, model_dir, baseline_version_dir))
     except Exception as exc:
         _append_log(job_id, f"Incremental plan error ({exc}) — Phase 2 runs with full enrichment.")
 
@@ -910,6 +1112,36 @@ def _capture_version_snapshot(project_id: str, version_id: str) -> None:
         pass  # snapshot is best-effort; failures must not break the job
 
 
+def _seed_reuse_index(project_id: str, version_id: str) -> None:
+    """Seed the content-addressed reuse index from a just-captured version's model, so a
+    later incremental run can reuse THIS version's LLM outputs across branches/reverts
+    (M3.7). Best-effort; covers full + incremental (called from _complete for every run)."""
+    import sys as _sys
+    src_dir = str(get_settings().repo_root / "src")
+    if src_dir not in _sys.path:
+        _sys.path.insert(0, src_dir)
+    try:
+        from incremental.fingerprint import compute_fingerprints  # type: ignore[import]
+        from incremental.stores import Workspace, VersionStore, ReuseIndex  # type: ignore[import]
+
+        ws = Workspace(project_id, workspaces_root=str(get_settings().repo_root / "workspaces"))
+        vmodel = Path(VersionStore(ws).version_dir(version_id)) / "model"
+
+        def _r(name: str) -> dict:
+            p = vmodel / name
+            return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+
+        fps = compute_fingerprints(_r("hashes.json"), _r("functions.json"), _r("edges.json"))
+        if not fps:
+            return
+        ridx = ReuseIndex(ws)
+        for entity_key, fp in fps.items():
+            ridx.put(fp, version_id, entity_key)   # first version to produce a fp keeps it
+        ridx.save()
+    except Exception:
+        pass  # best-effort — reuse-index seeding must never break a completed job
+
+
 # ---------------------------------------------------------------------------
 # Completion — register Version + Documents
 # ---------------------------------------------------------------------------
@@ -930,6 +1162,7 @@ def _complete(db: Any, job_id: str) -> None:
 
     _load_and_register_functions(db, job, version.id)
     _capture_version_snapshot(job.project_id, version.id)
+    _seed_reuse_index(job.project_id, version.id)
 
     job.status = "complete"
     job.phase = 4
@@ -1045,6 +1278,10 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime) -> Version:
         docs_count=0,
         created_by=(project.created_by if project else "system"),
         created_at=now,
+        baseline_version_id=getattr(job, "reference_version_id", None),
+        decision=getattr(job, "decision", None),
+        regenerated=getattr(job, "regenerated", None),
+        reused=getattr(job, "reused", None),
     )
     db.versions.create(version)
     return version
