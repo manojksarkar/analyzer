@@ -2,6 +2,10 @@
 
 > Updated: 2026-06-27  
 > Active branch: `feat/web-app-api`
+>
+> **Contract safety-net:** the web-app's `npm run test:api` suite validates this server's
+> live responses against the zod schemas the UI expects (~46 endpoints). Run it against
+> this API to catch contract drift — see `web-app/TESTING.md`.
 
 ---
 

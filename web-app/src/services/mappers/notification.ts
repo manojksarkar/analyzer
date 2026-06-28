@@ -1,10 +1,12 @@
+import { z } from 'zod'
 import type { AppNotification } from '../../types'
 import { relativeTime } from '../../lib/format'
 
-export interface ApiNotification {
-  id: string; project_id: string; type: string; message: string
-  read_at: string | null; created_at: string
-}
+export const ApiNotificationSchema = z.object({
+  id: z.string(), project_id: z.string(), type: z.string(), message: z.string(),
+  read_at: z.string().nullable(), created_at: z.string(),
+})
+export type ApiNotification = z.infer<typeof ApiNotificationSchema>
 
 export function mapNotification(n: ApiNotification): AppNotification {
   return {
