@@ -191,6 +191,41 @@ The thread:
 `JOB_MAX_CONCURRENCY` is enforced by a `threading.BoundedSemaphore` — threads
 that exceed the limit block until a slot frees.
 
+### Incremental generation (version4 engine)
+
+The job pipeline drives the version4 **incremental-changes** engine
+(`src/incremental/`) for fast re-generation. Everything below is layered into
+`pipeline_runner` / `routes/jobs.py` **additively** — existing full-generation
+behaviour, SSE, cancel, and pause/resume are unchanged.
+
+- **Baseline decision (`StartJobRequest.mode`).** `mode:"auto"` (default) auto-picks the
+  nearest-ancestor completed version (one with a captured snapshot) as the incremental
+  baseline via `incremental.baseline.select_baseline`, computed in the worker after
+  checkout; an explicit `reference_version_id` still wins. `mode:"full"` forces a full
+  run. A project's first generation has no ancestor, so it resolves to full.
+- **`GET /projects/:id/baseline-preview?commit=`** previews that decision read-only (no
+  checkout/clone) before starting a job.
+- **Selective regen.** Between Phase 1 and Phase 2, `_compute_incremental_plan` classifies
+  changed/impacted entities (`plan_incremental`), carries forward baseline LLM outputs for
+  the reuse set, and writes `model/incremental_plan.json` (read by Phase 2/3 to restrict
+  LLM enrichment + flowchart regeneration).
+- **Cross-version reuse index.** `workspaces/<id>/cache/index.json` (content-addressed
+  across ALL versions) lets a revert / cross-branch-identical entity reuse a prior
+  version's output instead of regenerating; seeded after every run (`_seed_reuse_index`).
+- **Narrowed parse (`narrowed_parse`, opt-in).** Re-parses only the affected TUs and merges
+  into the baseline parser snapshot instead of a full Phase-1 parse; safe full-parse
+  fallback on any uncertainty (no snapshot, header add/delete, fingerprint change, failure).
+- **Other `StartJobRequest` fields:** `scope` (project/group/component -> run.py
+  `--selected-group`/`--selected-component`, exclusive with `layer_filter`), `no_llm`
+  (disable LLM via config + `--no-llm-summarize`), `data_dict_id` (-> `--data-dictionary`).
+- **Version accounting.** `VersionView` carries `decision` / `baseline_version_id` /
+  `regenerated` / `reused`.
+
+> **One server.** The old standalone incremental server (`backend/main.py`) was retired in
+> favour of this `api/` server (its endpoints are functionally covered here). The
+> `backend/seed_workspace.py` + `backend/git_service.py` CLI tooling remains for
+> seeding/onboarding test workspaces.
+
 ### Per-project workspace isolation
 
 Each project gets its own directory under `workspaces/<project_id>/`:
@@ -319,3 +354,4 @@ never leaves a corrupt file.
 | M2 | ✅ | Real functions diff, doc_render on live output, assets, download/export, export-all ZIP |
 | M3 | ✅ | Real compare — section-level diff via compare_engine over version snapshots |
 | M4 | ✅ | Persistence, central config (settings.py), gitignore, docs, API smoke tests |
+| M5 | ✅ | version4 incremental engine integrated (auto-baseline + mode, scope/no_llm/data_dict, cross-version reuse index, narrowed parse, baseline-preview, version accounting); standalone `backend/` server retired (one server) |

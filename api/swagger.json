@@ -682,6 +682,44 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/baseline-preview": {
+      "get": {
+        "tags": ["jobs"],
+        "summary": "Preview the incremental baseline decision for a commit (read-only)",
+        "description": "Mirrors what an auto-mode job would pick, without any checkout/clone. Returns the auto/chosen baseline, ancestor/nearest flags, changed-file count, decision, and warnings (a full-decision stub when no local checkout exists yet).",
+        "operationId": "baselinePreview",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "name": "commit", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Target commit SHA to preview" },
+          { "name": "base_version_id", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Optional explicit baseline override" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Baseline decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "targetCommit": { "type": "string" },
+                    "decision": { "type": "string", "enum": ["incremental", "full"] },
+                    "chosenBaseVersionId": { "type": "string", "nullable": true },
+                    "chosenBaseCommit": { "type": "string", "nullable": true },
+                    "chosenIsAncestor": { "type": "boolean" },
+                    "chosenIsNearest": { "type": "boolean" },
+                    "changedFiles": { "type": "integer", "nullable": true },
+                    "warnings": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/jobs": {
       "post": {
         "tags": ["jobs"],
@@ -2114,7 +2152,11 @@
           "status": { "type": "string", "enum": ["draft", "in_review", "approved"] },
           "docs_count": { "type": "integer" },
           "created_by": { "type": "string" },
-          "created_at": { "type": "string", "format": "date-time" }
+          "created_at": { "type": "string", "format": "date-time" },
+          "baseline_version_id": { "type": "string", "nullable": true, "description": "Incremental baseline used (null for a full generation)" },
+          "decision": { "type": "string", "nullable": true, "enum": ["incremental", "full", null], "description": "How this version was generated" },
+          "regenerated": { "type": "integer", "nullable": true, "description": "Functions regenerated this run" },
+          "reused": { "type": "integer", "nullable": true, "description": "Functions reused (baseline + cross-version index)" }
         }
       },
       "CommitView": {
@@ -2136,9 +2178,14 @@
         "properties": {
           "commit_sha": { "type": "string" },
           "version_tag": { "type": "string", "nullable": true },
-          "reference_version_id": { "type": "string", "nullable": true },
+          "reference_version_id": { "type": "string", "nullable": true, "description": "Explicit incremental baseline; wins over auto-select under mode=auto" },
           "pause_after_phase1": { "type": "boolean", "default": false },
-          "layer_filter": { "type": "string", "nullable": true }
+          "layer_filter": { "type": "string", "nullable": true },
+          "mode": { "type": "string", "enum": ["auto", "full"], "default": "auto", "description": "auto = pick nearest-ancestor completed version as the incremental baseline; full = force a full generation" },
+          "scope": { "type": "object", "nullable": true, "description": "{\"type\": \"project|group|component\", \"names\": [...]} - maps to run.py --selected-group / --selected-component (exclusive with layer_filter)" },
+          "no_llm": { "type": "boolean", "default": false, "description": "Disable LLM descriptions/behaviour/summaries" },
+          "data_dict_id": { "type": "string", "nullable": true, "description": "Resolved to workspaces/<projectId>/datadict/<id>.csv" },
+          "narrowed_parse": { "type": "boolean", "default": false, "description": "M4.4 opt-in: re-parse only affected TUs and merge into the baseline parser snapshot (large repos)" }
         }
       },
       "AnalysisPhaseView": {
