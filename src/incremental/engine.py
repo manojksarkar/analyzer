@@ -44,7 +44,7 @@ from incremental.affected import affected_tus, full_reparse_reason
 from incremental.parse_merge import merge_model, diff_models
 from incremental.report import build_report, emit_report
 from incremental.generate import (_resolved_config, _manifest, scope_to_args,
-                                  generate_full, _now_iso, snapshot_parse_model)
+                                  generate_full, _now_iso, snapshot_parse_model, apply_no_llm)
 
 
 def _entity_kind(key: str) -> str:
@@ -316,6 +316,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     git_ops.checkout(ws.repo_dir, target)
     vdir = vstore.create_dir(version_id, force=force)
     cfg = _resolved_config(project, project_root)
+    if no_llm:
+        apply_no_llm(cfg)
     vstore.write_config(version_id, cfg)
     vcfg_path = os.path.join(vdir, "config.json")
     vstore.write_manifest(version_id, _manifest(

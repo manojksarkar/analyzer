@@ -3152,13 +3152,33 @@ workspaces/<projectId>/
       Default = full parse (zero risk); flip only after the M4.5 self-check is byte-identical across a diff matrix.
   - *Remaining (after M4):* **M5** Postgres migration, **M6** object storage/dedup — deferred to the production phase.
     (Recipe-fingerprint invalidation **dropped by decision** — fingerprint is content-only; multi-doc zip shipped in M1.3b.)
-- **Next concrete step:** **M4 is complete (M4.0–M4.6).** The incremental-changes feature — engine, stores,
-  cross-version reuse (D3), narrowed parse + `--verify-parse` — is implemented. Remaining are *validation /
-  graduation*, not new milestones: (1) run `--verify-parse` across a representative diff matrix on a real (large)
-  repo, then flip narrowed parse from opt-in to the default; (2) a perf measurement on that repo (the O(diff) win
-  doesn't show on SampleCpp); (3) the user's **LLM-on timing validation** of M3.5–M3.7b on a real diff. Optional
-  polish: exact list-ORDER byte-identity (set-equal is the correctness bar today). After that: **M5** Postgres,
-  **M6** object storage/dedup (production phase).
+  - **PERF M-A…M-D — ✅ DONE (Phase 3/4 + Phase 2 caching; full design in doc 04 §12).** LLM-on profiling showed a
+    ~85s fixed floor that did NOT scale with change size (a 0-change incremental still cost ~88s): the floor lived
+    in Phase 4 (DOCX) + Phase 2 (derive), neither incremental. Narrowed parse only touches Phase 1 (~10%). All caches
+    content-addressed, persist across version runs.
+    - **M-A content-addressed Mermaid→PNG cache.** `utils.render_mermaid_cached()` (key `sha256(mermaid+scale+puppeteer)`
+      at `<root>/.mmdc_cache/`); routes docx component diagrams (Phase 4, the ~46s win) + the Phase-3 flowchart/unit
+      renders through it. `mmdc` runs once per unique diagram; graceful fallback on any cache error. +3 tests.
+    - **M-B export-time description cache.** `get_struct_description`/`get_unit_description` cached via `EntityCache`
+      (`.flowchart_cache/aux_descriptions`, honours `cacheVersion`). With M-A, an unchanged component's Phase 4 =
+      0 renders + 0 LLM calls — no baseline-`.docx` editing (re-assembly is cheap). +3 tests.
+    - **M-C Phase-2 derive scoping.** (1) behaviour-name LLM calls (~23s, scoped but uncached) now cached (keyed by
+      prompt); (2) `enrich_functions_rich` computes the work set FIRST and returns BEFORE building the O(model) RepoMap
+      infra (~20s) when nothing needs a description. +2 tests.
+    - **M-D true `--no-llm`.** `generate.apply_no_llm(cfg)` sets `llm.descriptions=False`+`behaviourNames=False`; DOCX
+      unit summary gated on descriptions; `flowcharts.py` passes `--no-llm` → flowchart engine `_NullLlmClient` (empty
+      response → fallback labels). Fully LLM-free deterministic run; verified e2e on a no-gateway host (0 LLM calls,
+      full gen in ~14s). +2 tests. *(Keeps `--no-llm-summarize` as the granular knob.)*
+    - **Net:** a re-run / unchanged-component / fully-cached incremental drops Phase 2 + Phase 4 from ~93s toward
+      near-0; the first run of a NEW diff still pays the real cost for CHANGED entities only (correct). Caches at
+      `<project_root>/.mmdc_cache` + `.flowchart_cache/aux_descriptions`.
+- **Next concrete step:** **M4 + PERF M-A…M-D complete.** The incremental feature (engine, stores, cross-version
+  reuse, narrowed parse + `--verify-parse`, and Phase 2/3/4 caching) is implemented. Remaining are *validation /
+  graduation*, not new milestones: (1) **LLM-on timing validation on the office machine** — confirm Phase 2 + Phase 4
+  collapse on a re-run (the M-A…M-D payoff) and that `--no-llm` gives 0 LLM calls; (2) run `--verify-parse` across a
+  diff matrix on a real (large) repo, then flip narrowed parse opt-in → default; (3) a perf measurement on that repo.
+  Optional: scope the RepoMap build to the impact neighbourhood (cut the ~20s even for a few changed); exact list-ORDER
+  byte-identity (set-equal is the correctness bar today). After that: **M5** Postgres, **M6** object storage/dedup.
 - **Testing convention:** `_probe_*.py` (run once, delete) + end-to-end on `SampleCppProject`; run **LLM off**
   to validate the logic (hashing / diff / impact / reuse counts), LLM on only for the time-savings payoff.
 

@@ -983,6 +983,107 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
         pass
 
 
+# ---------------------------------------------------------------------------
+# Job persistence: the in-memory _jobs dict is lost on a uvicorn restart, which
+# 404'd /status and /prepare/logs for an in-flight generation. We persist each
+# job's metadata to logs/jobs/<id>.json (the per-job log file + the version
+# manifest already survive on disk) and lazy-reload it on query, reconciling the
+# terminal state from the version manifest (which the generation subprocess writes).
+# ---------------------------------------------------------------------------
+_JOBS_DIR = os.path.join(_REPO_ROOT, "logs", "jobs")
+
+_PERSIST_JOB_KEYS = (
+    "type", "pid", "log_file", "log_offset", "log_end_offset", "output_file",
+    "output_docx_path", "selected_group", "command_line", "total_phase_markers",
+    "started_at", "complete", "cancelled", "error", "return_code",
+    "project_id", "version_id", "project_path",
+)
+
+
+def _persist_job(job_id: str) -> None:
+    """Write a job's serializable metadata to logs/jobs/<id>.json (best-effort, atomic).
+    The process handle + transient progress object are intentionally not persisted."""
+    job = _jobs.get(job_id)
+    if not job:
+        return
+    rec = {k: job.get(k) for k in _PERSIST_JOB_KEYS}
+    rec["jobId"] = job_id
+    try:
+        os.makedirs(_JOBS_DIR, exist_ok=True)
+        path = os.path.join(_JOBS_DIR, f"{job_id}.json")
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(rec, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass  # persistence is best-effort; never break a running job
+
+
+def _pid_alive(pid) -> bool:
+    try:
+        import psutil
+        return bool(pid) and psutil.pid_exists(int(pid))
+    except Exception:
+        return False
+
+
+def _reconcile_reloaded_job(rec: Dict) -> None:
+    """A job reloaded from disk after a restart has no tracked process. Derive its
+    terminal state from the version manifest (authoritative — the generation subprocess
+    updates it), else mark it interrupted if its process is gone and the version never
+    reached a terminal status."""
+    if rec.get("complete"):
+        return
+    status, warnings = None, []
+    proj, vid = rec.get("project_id"), rec.get("version_id")
+    if proj and vid:
+        try:
+            from incremental.stores import Workspace, VersionStore
+            m = VersionStore(Workspace(proj)).get(vid) or {}
+            status, warnings = m.get("status"), (m.get("warnings") or [])
+        except Exception:
+            status = None
+    if status == "complete":
+        rec["complete"], rec["return_code"] = True, 0
+    elif status == "failed":
+        rec["complete"], rec["return_code"] = True, 1
+        rec["error"] = rec.get("error") or ("; ".join(warnings) if warnings else "generation failed")
+    elif not _pid_alive(rec.get("pid")):
+        # process gone and the version never finished -> the restart/crash interrupted it.
+        rec["complete"] = True
+        rec["error"] = rec.get("error") or "interrupted (backend restarted during the run)"
+    # else: the original subprocess is still alive (orphaned) -> leave running; /status
+    #       keeps reading live progress from the per-job output file.
+
+
+def _get_job(job_id: str) -> Optional[Dict]:
+    """Look up a job in memory; if absent (e.g. after a backend restart), reload it from
+    logs/jobs/<id>.json, reconcile its terminal state, and cache it. None if no such job
+    was ever created. Endpoints use this instead of _jobs.get so they survive a restart."""
+    job = _jobs.get(job_id)
+    if job is not None:
+        return job
+    rec = _load_persisted_job(job_id)
+    if rec is None:
+        return None
+    _reconcile_reloaded_job(rec)
+    _jobs[job_id] = rec
+    return rec
+
+
+def _load_persisted_job(job_id: str) -> Optional[Dict]:
+    path = os.path.join(_JOBS_DIR, f"{job_id}.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            rec = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    rec["process"] = None      # the subprocess is no longer tracked after a restart
+    return rec
+
+
 def _finalize_job(job_id: str, rc: Optional[int], error: Optional[str] = None) -> None:
     """Centralised completion bookkeeping — called by both the watcher
     (process exited on its own) and the cancel endpoint (process killed).
@@ -1039,6 +1140,8 @@ def _finalize_job(job_id: str, rc: Optional[int], error: Optional[str] = None) -
             except OSError:
                 pass
 
+    _persist_job(job_id)   # record the terminal state so /status survives a restart
+
 
 async def _watch_subprocess_job(job_id: str) -> None:
     """Background task: poll until the spawned subprocess exits, then hand
@@ -1048,6 +1151,7 @@ async def _watch_subprocess_job(job_id: str) -> None:
     job = _jobs.get(job_id)
     if not job:
         return
+    _persist_job(job_id)   # record the running job so /status survives a restart
     proc: Optional[subprocess.Popen] = job.get("process")
     if proc is None:
         return
@@ -1581,23 +1685,25 @@ async def start_prepare(
 
 @app.get("/api/v1/jobs/{job_id}/prepare/logs", response_model=List[PrepLog])
 async def get_prepare_logs(job_id: str) -> List[PrepLog]:
-    """API 9 — return up to the most recent 40 log lines emitted by this
-    prepare job's run.py subprocess.
+    """API 9 — return up to the most recent log lines emitted by this job's run.py
+    subprocess. Serves both **prepare** and **generate** jobs (both write a per-job
+    output file); use the export endpoints for export jobs.
 
-    Reads the rolling daily log file at the byte offset recorded when the
-    job started, so each job's response contains only that job's slice
-    even when several jobs share `logs/run_<UTC-date>.log`.
+    Reads the per-job output file (true isolation), falling back to the rolling daily
+    log slice at the byte offset recorded when the job started, so each job's response
+    contains only that job's slice even when several jobs share `logs/run_<UTC-date>.log`.
 
     Errors:
       404 — unknown job_id
-      400 — job_id exists but isn't a prepare job (use the export endpoint)
+      400 — job_id exists but has no tailable logs (e.g. an export job)
     """
-    job = _jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
-    if job.get("type") != "prepare":
+    if job.get("type") not in ("prepare", "generate"):
         raise HTTPException(
-            status_code=400, detail=f"job {job_id!r} is not a prepare job"
+            status_code=400,
+            detail=f"job {job_id!r} has no tailable logs (type={job.get('type')!r})",
         )
     # Prefer the per-job output file (true isolation, captures import-time
     # crashes). Fall back to the rolling daily log slice only if the
@@ -1633,7 +1739,7 @@ async def get_job_status(job_id: str):
     Still-running export jobs also include the redundant top-level
     `stage` field for UIs that only consume that label. 404 on unknown id.
     """
-    job = _jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
 
@@ -1704,7 +1810,7 @@ async def cancel_job(job_id: str):
     `{"status": "cancelled"}` shape — there's nothing useful for the
     UI to do with a "too late" signal.
     """
-    job = _jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
 
@@ -1748,7 +1854,7 @@ async def get_export_status(job_id: str):
     Errors:
       404 — unknown job_id
     """
-    job = _jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
     prog = job.get("progress")
@@ -1822,7 +1928,7 @@ async def download_export(job_id: str):
       404 — unknown job_id or the docx file is missing on disk
       409 — job hasn't completed yet, or completed with an error
     """
-    job = _jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
     if not job.get("complete"):
@@ -2507,6 +2613,46 @@ def _spawn_generate(script_rel: str, extra_args: List[str], output_file_path: st
     proc = subprocess.Popen(cmd, **popen_kwargs)
     proc._spawn_output_fh = out_fh  # type: ignore[attr-defined]
     return proc
+
+
+@app.get("/api/v1/projects")
+async def list_projects():
+    """List registered projects (doc 05 G0). Each is a workspaces/<projectId>/ dir with
+    a project.json. The UI calls this FIRST to discover projectId before any other
+    /projects/{projectId}/... call. Returns [] when no projects are onboarded."""
+    from incremental.stores import default_workspaces_root, Workspace, VersionStore
+    root = default_workspaces_root()
+    out: List[dict] = []
+    if not os.path.isdir(root):
+        return out
+    for pid in sorted(os.listdir(root)):
+        if pid.startswith("."):
+            continue
+        if not os.path.isdir(os.path.join(root, pid)):
+            continue
+        try:
+            ws = Workspace(pid)
+        except Exception:
+            continue
+        proj = ws.project() or {}
+        # Only list onboarded projects: a project.json or a cloned repo must be present.
+        if not proj and not os.path.isdir(ws.repo_dir):
+            continue
+        repo = proj.get("repo") or {}
+        try:
+            versions = VersionStore(ws).list()
+        except Exception:
+            versions = []
+        out.append({
+            "projectId": proj.get("projectId") or pid,
+            "name": proj.get("name") or pid,
+            "repoUrl": repo.get("url", ""),
+            "defaultBranch": repo.get("defaultBranch", ""),
+            "currentDataDictId": proj.get("currentDataDictId"),
+            "versionCount": len(versions),
+            "latestVersionId": versions[0].get("versionId") if versions else None,
+        })
+    return out
 
 
 @app.get("/api/v1/projects/{project_id}/branches")

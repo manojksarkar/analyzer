@@ -578,37 +578,14 @@ def _parse_component_static_diagram_cfg(views_cfg: dict) -> Tuple[bool, bool, fl
 
 
 def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bool:
-    """Write .mmd and invoke mmdc; return True if png exists."""
-    from utils import mmdc_path
-
-    os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
-    mmd_path = os.path.splitext(png_path)[0] + ".mmd"
-    try:
-        with open(mmd_path, "w", encoding="utf-8") as f:
-            f.write(mermaid)
-    except OSError:
-        return False
-    puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
-    mmdc = mmdc_path(project_root)
-    cmd = [mmdc, "-i", mmd_path, "-o", png_path, "--scale", "2"]
-    if os.path.isfile(puppeteer):
-        cmd.extend(["-p", puppeteer])
-    try:
-        if os_type == "Windows":
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False, shell=True)
-        else:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, check=False)
-        if r.returncode == 0 and os.path.isfile(png_path):
-            return True
-        err = (r.stderr or r.stdout or f"exit {r.returncode}").strip()
-        print(f"[docx_exporter] warning: mmdc failed for {os.path.basename(png_path)}: {err[:120]}")
-        return False
-    except FileNotFoundError:
-        print(f"[docx_exporter] warning: mmdc not found — {mmdc}")
-        return False
-    except subprocess.TimeoutExpired:
-        print(f"[docx_exporter] warning: mmdc timed out for {os.path.basename(png_path)}")
-        return False
+    """Render a component-level Mermaid diagram to PNG via the content-addressed cache
+    (M-A) — identical diagrams across components/versions are rendered by mmdc only once.
+    Returns True iff png exists afterward."""
+    from utils import render_mermaid_cached
+    ok = render_mermaid_cached(project_root, mermaid, png_path, scale=2, timeout=90)
+    if not ok:
+        print(f"[docx_exporter] warning: mmdc render failed for {os.path.basename(png_path)}")
+    return ok
 
 def _add_flowchart_table(doc, func_name: str, description: str, input_name: str,
                          output_name: str, flowcharts: list, font_small):
@@ -847,6 +824,76 @@ def _load_flowcharts(flowcharts_dir: str) -> dict:
     return result
 
 
+def _resolve_flowchart_pngs(flowcharts_dir: str, base_stem: str) -> List[Tuple[str, str]]:
+    """Return per-image [(png_path, part_label)] for a flowchart base stem.
+
+    Sliced parts produced by views/flowcharts.py ({stem}_part_K_of_N.png) take precedence
+    over the single {stem}.png. The single file is returned when no slices exist. Empty
+    list when neither is present.
+    """
+    if not flowcharts_dir or not base_stem:
+        return []
+    part_re = re.compile(
+        r"^" + re.escape(base_stem) + r"_part_(\d+)_of_(\d+)\.png$",
+        re.IGNORECASE,
+    )
+    try:
+        names = os.listdir(flowcharts_dir)
+    except OSError:
+        return []
+    parts: List[Tuple[int, int, str]] = []
+    for name in names:
+        m = part_re.match(name)
+        if m:
+            parts.append((int(m.group(1)), int(m.group(2)), os.path.join(flowcharts_dir, name)))
+    if parts:
+        parts.sort(key=lambda t: t[0])
+        return [(p[2], f"Part {p[0]} of {p[1]}") for p in parts]
+    single = os.path.join(flowcharts_dir, f"{base_stem}.png")
+    if os.path.isfile(single):
+        return [(single, "")]
+    return []
+
+
+def _append_flowchart_entries(flowcharts_list: list, flowcharts_dir: str,
+                              base_stems, mermaid: str, label: str) -> None:
+    """Append (png_path, mermaid, label) tuples for a function's flowchart.
+
+    Tries each base stem in order; the first that resolves to >=1 PNG wins. A multi-slice
+    result emits one tuple per slice (the first carries the full label + 'Part K of N' and
+    the mermaid fallback; the rest carry only 'continued - Part K of N'). When no PNG
+    resolves, appends one (None, mermaid, label) so the mermaid-text fallback still runs.
+    """
+    entries: List[Tuple[str, str]] = []
+    if flowcharts_dir:
+        for stem in base_stems:
+            entries = _resolve_flowchart_pngs(flowcharts_dir, stem)
+            if entries:
+                break
+    if not entries:
+        # DIAGNOSTIC (zero behaviour change): this flowchart is about to fall back to
+        # mermaid text. Log exactly what the resolver saw so the cause is pinpointed.
+        try:
+            if flowcharts_dir and os.path.isdir(flowcharts_dir):
+                _parts_present = sorted(n for n in os.listdir(flowcharts_dir) if "_part_" in n)
+            else:
+                _parts_present = "<flowcharts_dir missing>"
+            print(f"[docx_exporter] flowchart->mermaid fallback: label={label!r} "
+                  f"flowcharts_dir={flowcharts_dir!r} base_stems={list(base_stems)} "
+                  f"part_files_present={_parts_present}")
+        except Exception:
+            pass
+        flowcharts_list.append((None, mermaid, label))
+        return
+    for k, (png_path, part_label) in enumerate(entries):
+        if part_label:
+            combined = f"{label} - {part_label}" if k == 0 else f"(continued - {part_label})"
+        else:
+            combined = label
+        mm = mermaid if k == 0 else ""
+        flowcharts_list.append((png_path, mm, combined))
+
+
 def _add_unit_header_table(doc, unit_header_rows: List[Dict[str, str]], font_small) -> None:
     """Add 2-column table under unit header: global variables/typedef/enum/define | information."""
     if not unit_header_rows:
@@ -999,7 +1046,7 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         try:
             from llm_enrichment import llm_provider_reachable, get_unit_description
 
-            if llm_provider_reachable(config):
+            if config.get("llm", {}).get("descriptions", True) and llm_provider_reachable(config):
                 description_text = get_unit_description(
                     unit_name_display,
                     fn_items,
@@ -1419,18 +1466,21 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 # Build flowcharts list: own flowchart + private callee flowcharts
                 flowcharts_list = []
                 if flowchart:
-                    png_path = os.path.join(flowcharts_dir, f"{unit_prefix}_{safe_filename(func_name)}.png")
-                    if not os.path.isfile(png_path):
-                        png_path = os.path.join(flowcharts_dir, f"{unit_name_flowchart}_{safe_filename(func_name)}.png")
-                    if not os.path.isfile(png_path):
-                        png_path = None
                     iface_params = ", ".join(
                         f"{p.get('type', '')} {p.get('name', '')}".strip()
                         for p in (iface.get("parameters") or [])
                     )
                     iface_return = iface.get("returnType", "") or ""
                     iface_signature = f"{iface_return} {func_name}({iface_params})".strip()
-                    flowcharts_list.append((png_path, flowchart, iface_signature))
+                    # Slice-aware: prefer {stem}_part_K_of_N.png (a tall flowchart split by
+                    # views/flowcharts.py), else the single {stem}.png, else mermaid text.
+                    base_stems = [
+                        f"{unit_prefix}_{safe_filename(func_name)}",
+                        f"{unit_name_flowchart}_{safe_filename(func_name)}",
+                    ]
+                    _append_flowchart_entries(
+                        flowcharts_list, flowcharts_dir, base_stems, flowchart, iface_signature
+                    )
 
                 if flowcharts_enabled:
                     callee_fids = (functions_data.get(iface.get("functionId")) or {}).get("callsIds") or []
@@ -1457,18 +1507,19 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         if callee_fid in rendered_private_fids:
                             continue
                         rendered_private_fids.add(callee_fid)
-                        callee_png = os.path.join(flowcharts_dir, f"{callee_unit_prefix}_{safe_filename(callee_func_name)}.png")
-                        if not os.path.isfile(callee_png):
-                            callee_png = os.path.join(flowcharts_dir, f"{callee_unit_name}_{safe_filename(callee_func_name)}.png")
-                        if not os.path.isfile(callee_png):
-                            callee_png = None
                         callee_params = ", ".join(
                             f"{p.get('type', '')} {p.get('name', '')}".strip()
                             for p in (callee.get("params") or callee.get("parameters") or [])
                         )
                         callee_return = callee.get("returnType", "")
                         callee_signature = f"{callee_return} {callee_func_name}({callee_params})".strip()
-                        flowcharts_list.append((callee_png, callee_flowchart, callee_signature))
+                        callee_stems = [
+                            f"{callee_unit_prefix}_{safe_filename(callee_func_name)}",
+                            f"{callee_unit_name}_{safe_filename(callee_func_name)}",
+                        ]
+                        _append_flowchart_entries(
+                            flowcharts_list, flowcharts_dir, callee_stems, callee_flowchart, callee_signature
+                        )
 
                 if flowcharts_list:
                     input_label = (functions_data.get(iface.get("functionId")) or {}).get("behaviourInputName") or \

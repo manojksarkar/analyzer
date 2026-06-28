@@ -529,4 +529,44 @@ functions arrive blank → regenerated):
 
 ---
 
+## 12. Phase 3/4 + Phase 2 performance — render/description caching & true `--no-llm` (M-A…M-D, done)
+
+Profiling LLM-on incremental runs (SampleCppProject, group:Support) showed a **~85s fixed floor
+that did not scale with the change size** — even a 0-change incremental cost ~88s. Narrowed parse
+(M4) only touches Phase 1 (~10% of the time); the floor lived in Phase 4 (DOCX) and Phase 2 (derive),
+neither of which was incremental. M-A…M-D close that gap. Caches are **content-addressed** (so they're
+correct regardless of run/branch/version) and persist across version runs.
+
+- **M-A — content-addressed Mermaid→PNG cache.** `mmdc` is the slow Phase-3/4 primitive (~5–8s/render);
+  Phase 4 re-rendered every component's container + header-dependency diagram on **every** run, uncached.
+  `utils.render_mermaid_cached()` keys each PNG by `sha256(mermaid + scale + puppeteer)` at
+  `<project_root>/.mmdc_cache/`; hit → copy out (no mmdc), miss → render + store (atomic); any cache error
+  degrades to a direct render. All three render sites route through it (docx component diagrams + the
+  Phase-3 flowchart/unit renders, which adds cross-version reuse on top of their per-version restriction).
+- **M-B — export-time description cache.** The DOCX export re-generated struct + unit summaries via the
+  LLM on every run (`get_struct_description` / `get_unit_description`). Both are pure functions of their
+  inputs → cached via the existing `EntityCache` (`<project_root>/.flowchart_cache/aux_descriptions`,
+  honours `llm.cacheVersion`). With M-A, an **unchanged component's Phase 4 = 0 renders + 0 LLM calls**.
+  *(No baseline-`.docx` editing — the doc is re-assembled from cached inputs; assembly is cheap, rendering
+  was the cost.)*
+- **M-C — Phase-2 derive/KB scoping.** Two fixed costs: (1) ~23s of LLM **behaviour-name** calls for the
+  impact set — scoped but **not cached** → now cached content-addressed (keyed by the prompt). (2) ~20s
+  building the rich-enrichment infrastructure (RepoMap over the whole knowledge base) on **every** Phase 2,
+  even with nothing to enrich → `enrich_functions_rich` now computes the work set first and **returns before
+  building that O(model) infra** when it is empty.
+- **M-D — true `--no-llm`.** Previously `--no-llm` only skipped hierarchy summaries (`--no-llm-summarize`).
+  Now `generate.apply_no_llm(cfg)` also sets `llm.descriptions=False` + `behaviourNames=False` (engine +
+  full paths); the DOCX unit summary is gated on `descriptions`; `flowcharts.py` passes `--no-llm` to the
+  flowchart engine, which swaps in a `_NullLlmClient` (empty responses → the generator's existing fallback
+  labels). Result: a fully **LLM-free, deterministic** run (verified e2e on a host with no gateway: a full
+  generation completes with 0 LLM calls). For timing tests / offline runs; output keeps structure, loses prose.
+
+**Net:** a re-run / unchanged-component / fully-cached incremental drops Phase 2 + Phase 4 from ~93s toward
+near-zero; the first run of a *new* diff still pays the real LLM/render cost **for the changed entities only**
+(correct). The win is largest on big repos, where the per-change work is a small fraction of the whole.
+**Next (optional):** scope the RepoMap build to the impact-set neighbourhood (cut the ~20s even when a few
+functions changed); a perf measurement on a large repo.
+
+---
+
 _End of document._
