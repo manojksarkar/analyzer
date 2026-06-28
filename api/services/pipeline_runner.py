@@ -764,6 +764,99 @@ def _store_incremental_counts(db: Any, job_id: str, counts: Optional[dict]) -> N
         db.jobs.update(job)
 
 
+def _try_narrowed_parse_pipeline(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
+                                 baseline_version_dir: Path, model_dir: Path,
+                                 arch_layers: list = ()) -> bool:
+    """M4.4 narrowed parse: re-parse ONLY the affected TUs (run.py --only-files) and merge
+    them into the baseline's parser-level snapshot (versions/<base>/model/), so model/ ends
+    up the same blank skeleton a full parse would produce. Returns True if model/ now holds
+    the merged skeleton; False to fall back to a full Phase-1 parse (always the safe choice).
+    Reuses the engine's pure merge helpers — the merge is verified byte-equal to a full parse."""
+    import sys as _sys
+    src_dir = str(get_settings().repo_root / "src")
+    if src_dir not in _sys.path:
+        _sys.path.insert(0, src_dir)
+    try:
+        from incremental import git_ops                                         # type: ignore[import]
+        from incremental.affected import affected_tus, full_reparse_reason      # type: ignore[import]
+        from incremental.parse_merge import merge_model                         # type: ignore[import]
+        from incremental.engine import _load_parse_dir, _write_parse_artifacts  # type: ignore[import]
+    except Exception as exc:
+        _append_log(job_id, f"narrowed parse unavailable ({exc}) — full parse")
+        return False
+
+    base_parse = baseline_version_dir / "model"
+    if not (base_parse / "tu_includes.json").is_file() or not (base_parse / "entity_files.json").is_file():
+        _append_log(job_id, "narrowed parse unavailable: baseline has no parser snapshot — full parse")
+        return False
+
+    job = db.jobs.get(job_id)
+    base_commit = getattr(job, "baseline_commit", None)
+    if not base_commit:
+        _append_log(job_id, "narrowed parse: baseline commit unknown — full parse")
+        return False
+
+    try:
+        tu_includes = json.loads((base_parse / "tu_includes.json").read_text(encoding="utf-8"))
+        status = git_ops.changed_files_status(str(checkout_dir), base_commit, job.commit_sha)
+    except Exception as exc:
+        _append_log(job_id, f"narrowed parse: diff failed ({exc}) — full parse")
+        return False
+
+    reason = full_reparse_reason(status, tu_includes)
+    if reason:
+        _append_log(job_id, f"narrowed parse skipped ({reason}) — full parse")
+        return False
+
+    changed = [p for _s, p in status]
+    affected = affected_tus(changed, tu_includes)
+    deleted = {p for s, p in status if s == "D"}
+    base_model = _load_parse_dir(str(base_parse))
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    if not affected:                       # nothing to re-parse -> merged skeleton == baseline
+        _write_parse_artifacts(str(model_dir), base_model)
+        _append_log(job_id, "narrowed parse: 0 affected TU(s) — reused the baseline skeleton")
+        return True
+
+    listfile = model_dir / ".affected_tus.txt"
+    listfile.write_text("\n".join(sorted(affected)) + "\n", encoding="utf-8")
+    # Hand the partial parse the baseline's func-key map so calls into UN-parsed files still
+    # resolve to edges (inherited by the run.py -> parser.py subprocess via env).
+    bfk = base_parse / "func_keys.json"
+    prev_bfk = os.environ.get("ANALYZER_BASELINE_FUNCKEYS")
+    if bfk.is_file():
+        os.environ["ANALYZER_BASELINE_FUNCKEYS"] = str(bfk)
+    try:
+        cmd = _build_cmd(job, checkout_dir, config_path, to_phase=1, arch_layers=arch_layers)
+        cmd += ["--only-files", str(listfile)]
+        ok = _execute_subprocess(db, job_id, cmd, phase_start=1)
+    finally:
+        if prev_bfk is None:
+            os.environ.pop("ANALYZER_BASELINE_FUNCKEYS", None)
+        else:
+            os.environ["ANALYZER_BASELINE_FUNCKEYS"] = prev_bfk
+    if not ok:
+        _append_log(job_id, "narrowed parse: partial parse failed — full parse")
+        return False
+
+    partial = _load_parse_dir(str(model_dir))
+    # Parse-fingerprint gate: if clang flags / std / toolchain changed since the baseline was
+    # parsed, the baseline skeleton was built differently and a merge would be unsound.
+    base_fp = (base_model.get("metadata") or {}).get("parseFingerprint")
+    part_fp = (partial.get("metadata") or {}).get("parseFingerprint")
+    if base_fp and part_fp and base_fp != part_fp:
+        _append_log(job_id, "narrowed parse: parse fingerprint changed (clang flags / std / toolchain) — full parse")
+        return False
+
+    drop = set(affected) | set(changed) | deleted
+    merged = merge_model(base_model, partial, drop)
+    _write_parse_artifacts(str(model_dir), merged)
+    _append_log(job_id, f"narrowed parse: re-parsed {len(affected)} affected TU(s), merged into the "
+                        f"baseline skeleton ({len(merged.get('functions') or {})} functions total)")
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Run strategies
 # ---------------------------------------------------------------------------
@@ -835,10 +928,17 @@ def _run_incremental(db: Any, job_id: str, checkout_dir: Path, config_path: Path
     model_dir = get_settings().repo_root / "model"
 
     # Phase 1 only (parse → hashes.json, functions.json, edges.json, …)
-    cmd1 = _build_cmd(job, checkout_dir, config_path, to_phase=1, arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd1, phase_start=1)
-    if not ok or _is_cancelled(db, job_id):
-        return
+    used_narrowed = False
+    if getattr(job, "narrowed_parse", False):
+        used_narrowed = _try_narrowed_parse_pipeline(
+            db, job_id, checkout_dir, config_path, baseline_version_dir, model_dir, arch_layers)
+        if _is_cancelled(db, job_id):
+            return
+    if not used_narrowed:
+        cmd1 = _build_cmd(job, checkout_dir, config_path, to_phase=1, arch_layers=arch_layers)
+        ok = _execute_subprocess(db, job_id, cmd1, phase_start=1)
+        if not ok or _is_cancelled(db, job_id):
+            return
 
     # Impact classification + carry-forward → incremental_plan.json
     _append_log(job_id, "Computing incremental plan from baseline snapshot…")
@@ -862,10 +962,17 @@ def _run_incremental_with_pause(db: Any, job_id: str, checkout_dir: Path, config
     model_dir = get_settings().repo_root / "model"
 
     # Phase 1 only
-    cmd1 = _build_cmd(job, checkout_dir, config_path, to_phase=1, arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd1, phase_start=1)
-    if not ok or _is_cancelled(db, job_id):
-        return
+    used_narrowed = False
+    if getattr(job, "narrowed_parse", False):
+        used_narrowed = _try_narrowed_parse_pipeline(
+            db, job_id, checkout_dir, config_path, baseline_version_dir, model_dir, arch_layers)
+        if _is_cancelled(db, job_id):
+            return
+    if not used_narrowed:
+        cmd1 = _build_cmd(job, checkout_dir, config_path, to_phase=1, arch_layers=arch_layers)
+        ok = _execute_subprocess(db, job_id, cmd1, phase_start=1)
+        if not ok or _is_cancelled(db, job_id):
+            return
 
     # Impact classification + carry-forward → incremental_plan.json
     _append_log(job_id, "Computing incremental plan from baseline snapshot…")

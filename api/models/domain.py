@@ -154,6 +154,7 @@ class AnalysisJob:
     scope: Optional[dict] = None        # {"type": "project|group|component", "names": [...]}
     no_llm: bool = False
     data_dict_id: Optional[str] = None
+    narrowed_parse: bool = False        # M4.4 opt-in: parse only affected TUs (large repos)
     regenerated: Optional[int] = None   # incremental accounting, set by the worker
     reused: Optional[int] = None
 
