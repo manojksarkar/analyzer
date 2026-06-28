@@ -14,9 +14,13 @@ Quick test (after server is running):
          -H "Content-Type: application/json" \
          -d '{"email": "alice@aspice.dev", "password": "secret"}'
 """
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 
 from .routes import (
     auth_router, projects_router, commits_versions_router,
@@ -36,9 +40,37 @@ app = FastAPI(
         "ISO 26262 documentation from C++ source code repositories."
     ),
     version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None,      # custom self-hosted routes below (CDN-free, offline-friendly)
+    redoc_url=None,
 )
+
+# ---------------------------------------------------------------------------
+# Self-hosted API docs — Swagger UI / ReDoc assets are served from api/static/
+# instead of a public CDN, so /docs and /redoc work on networks (e.g. office
+# firewalls) that block cdn.jsdelivr.net. Assets are vendored in the repo.
+# ---------------------------------------------------------------------------
+
+_STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - Swagger UI",
+        swagger_js_url="/static/swagger-ui-bundle.js",
+        swagger_css_url="/static/swagger-ui.css",
+    )
+
+
+@app.get("/redoc", include_in_schema=False)
+async def custom_redoc_html():
+    return get_redoc_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - ReDoc",
+        redoc_js_url="/static/redoc.standalone.js",
+    )
 
 # ---------------------------------------------------------------------------
 # CORS (permissive for local dev — tighten for production)
