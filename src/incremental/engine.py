@@ -37,14 +37,15 @@ if _SRC not in sys.path:
 from core.paths import paths as _paths
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
-from incremental.clone import ensure_commit_checkout, resolve_project_repo
+from incremental.clone import ensure_commit_checkout
+from incremental.project_db import get_project, list_versions, resolve_project_repo
 from incremental.baseline import select_baseline
 from incremental.impact import classify, impact_set
 from incremental.fingerprint import compute_fingerprints
 from incremental.affected import affected_tus, full_reparse_reason
 from incremental.parse_merge import merge_model, diff_models
 from incremental.report import build_report, emit_report
-from incremental.generate import (_resolved_config, _manifest, scope_to_args, resolve_run_config,
+from incremental.generate import (_manifest, scope_to_args, resolve_run_config,
                                   generate_full, _now_iso, snapshot_parse_model, apply_no_llm)
 
 
@@ -312,7 +313,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     if not target:
         raise ValueError(f"commit {commit!r} not found in repo")
 
-    decision = select_baseline(repo_dir, vstore.list(), target, base_version_id)
+    decision = select_baseline(repo_dir, list_versions(project_id), target, base_version_id)
     if decision["decision"] == "full":
         return generate_full(project_id, branch, commit, scope,
                              workspaces_root=workspaces_root, data_dict_id=data_dict_id,
@@ -320,7 +321,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                              repo_url=repo_url, repo_token=repo_token, config_path=config_path)
 
     base_vid = decision["chosenBaseVersionId"]
-    project = ws.project()
+    project = get_project(project_id)        # api/db/data/projects.json (no project.json)
     hstore, estore, ridx = HashStore(vstore), EdgeStore(vstore), ReuseIndex(ws)
     version_id = target[:16]              # the commit IS the version id (== dir name)
     data_dict_id = data_dict_id or project.get("currentDataDictId")
@@ -331,7 +332,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     if not config_path:
         _proj_cfg = os.path.join(ws.root, "config.json")
         config_path = _proj_cfg if os.path.isfile(_proj_cfg) else None
-    cfg = resolve_run_config(config_path, project, project_root, no_llm=no_llm)
+    cfg = resolve_run_config(config_path, no_llm=no_llm)
     if config_path and not no_llm:
         vcfg_path = config_path
     else:

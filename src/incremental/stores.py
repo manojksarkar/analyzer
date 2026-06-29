@@ -88,24 +88,17 @@ class Workspace:
     def cache_dir(self) -> str:
         return os.path.join(self.root, "cache")
 
-    def project(self) -> Dict[str, Any]:
-        return _read_json(os.path.join(self.root, "project.json"), {})
-
     def datadict_path(self, data_dict_id: str) -> str:
         return os.path.join(self.root, "datadict", f"{data_dict_id}.csv")
 
 
 class VersionStore:
-    """Version lifecycle: allocate ids, create version dirs (capturing model/output/
-    documents), write manifests, and maintain versions/index.json."""
+    """Version lifecycle: create per-commit version dirs (capturing model/output/documents)
+    and write per-version manifests. The version REGISTRY is api/db/data/versions.json (the
+    API's DB) — read via incremental.project_db; this store no longer keeps its own."""
 
     def __init__(self, workspace: Workspace):
         self.ws = workspace
-        self._index_path = os.path.join(self.ws.root, "versions.json")
-
-    # --- registry ---------------------------------------------------------
-    def list(self) -> List[Dict[str, Any]]:
-        return _read_json(self._index_path, [])
 
     def get(self, version_id: str) -> Optional[Dict[str, Any]]:
         return _read_json(os.path.join(self.version_dir(version_id), "manifest.json"), None)
@@ -148,18 +141,9 @@ class VersionStore:
         _write_json(os.path.join(self.version_dir(version_id), "config.json"), config)
 
     def write_manifest(self, version_id: str, manifest: Dict[str, Any]) -> None:
+        # Per-version record in the commit dir (the filesystem source of truth). The API's
+        # _complete projects this into api/db/data/versions.json for the DB/UI.
         _write_json(os.path.join(self.version_dir(version_id), "manifest.json"), manifest)
-        self._upsert_index(manifest)
-
-    def _upsert_index(self, manifest: Dict[str, Any]) -> None:
-        # One compact row per version in versions/index.json (newest first).
-        row_keys = ("versionId", "branch", "commit", "scope", "dataDictId",
-                    "baselineVersionId", "decision", "regenerated", "reused",
-                    "status", "createdAt")
-        row = {k: manifest.get(k) for k in row_keys}
-        index = [r for r in self.list() if r.get("versionId") != manifest.get("versionId")]
-        index.insert(0, row)
-        _write_json(self._index_path, index)
 
 
 class HashStore:

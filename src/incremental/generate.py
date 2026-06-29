@@ -42,7 +42,8 @@ from core.paths import paths as _paths
 from core.config import load_config
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
-from incremental.clone import ensure_commit_checkout, resolve_project_repo
+from incremental.clone import ensure_commit_checkout
+from incremental.project_db import get_project, resolve_project_repo
 from incremental.fingerprint import compute_fingerprints
 from incremental.edges import build_edges  # noqa: F401  (kept for symmetry / future use)
 
@@ -90,25 +91,19 @@ def scope_to_args(scope: Dict[str, Any]) -> List[str]:
     raise ValueError(f"unknown scope type {stype!r}")
 
 
-def _resolved_config(project: Dict[str, Any], project_root: str) -> Dict[str, Any]:
-    """Global config (merged with local) + the project's layers injected."""
-    cfg = copy.deepcopy(load_config(project_root))
-    cfg["layers"] = project.get("layers") or {}
-    return cfg
-
-
-def resolve_run_config(config_path: Optional[str], project: Dict[str, Any],
-                       project_root: str, *, no_llm: bool = False) -> Dict[str, Any]:
-    """The resolved per-run config. Use `config_path` if given (the API server's
-    per-project config.json, carrying its architecture_layers + build_config overrides);
-    otherwise build the default from the global config + the project's own layers. Applies
-    the no_llm kill switch last."""
-    if config_path and os.path.isfile(config_path):
-        with open(config_path, "r", encoding="utf-8") as fh:
-            import json as _json
-            cfg = _json.load(fh)
-    else:
-        cfg = _resolved_config(project, project_root)
+def resolve_run_config(config_path: Optional[str], *, no_llm: bool = False) -> Dict[str, Any]:
+    """Load the PER-PROJECT config (workspaces/<pid>/config.json, written by the API from the
+    project's architecture_layers + build_config — see api/PROJECT_CONTEXT). The engine does
+    NOT build config: if it's missing, that's an error (the API creates it at onboarding /
+    when a job runs). Applies the no_llm kill switch last."""
+    if not (config_path and os.path.isfile(config_path)):
+        raise RuntimeError(
+            f"per-project config not found ({config_path!r}). It is created by the API "
+            f"(POST /projects onboarding, or when a job runs). Onboard the project / run a "
+            f"job, or pass --config <path>.")
+    import json as _json
+    with open(config_path, "r", encoding="utf-8") as fh:
+        cfg = _json.load(fh)
     if no_llm:
         apply_no_llm(cfg)
     return cfg
@@ -153,7 +148,7 @@ def generate_full(
     project_root = _paths().project_root
 
     ws = Workspace(project_id, workspaces_root)
-    project = ws.project()
+    project = get_project(project_id)        # api/db/data/projects.json (no project.json)
     vstore = VersionStore(ws)
     hstore, estore = HashStore(vstore), EdgeStore(vstore)
     ridx = ReuseIndex(ws)
@@ -180,7 +175,7 @@ def generate_full(
     if not config_path:
         _proj_cfg = os.path.join(ws.root, "config.json")
         config_path = _proj_cfg if os.path.isfile(_proj_cfg) else None
-    cfg = resolve_run_config(config_path, project, project_root, no_llm=no_llm)
+    cfg = resolve_run_config(config_path, no_llm=no_llm)
     if config_path and not no_llm:
         vcfg_path = config_path                       # run.py uses the per-project config as-is
     else:

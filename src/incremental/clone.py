@@ -14,12 +14,10 @@ then scrubbed from ``origin`` (never persisted to disk); tokens are scrubbed fro
 """
 from __future__ import annotations
 
-import json
 import os
-from typing import Optional, Tuple
+from typing import Optional
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from core.paths import paths as _paths
 from incremental import git_ops
 from incremental.git_ops import GitError, _check, _run
 
@@ -86,24 +84,3 @@ def ensure_commit_checkout(commit_dir: str, repo_url: str, branch: str, commit: 
     shallow_clone(repo_url, commit_dir, ref=(branch or None), depth=depth,
                   username=(token or ""), token="")
     git_ops.checkout(commit_dir, commit)
-
-
-def resolve_project_repo(project_id: str, *, project_root: str = None) -> Tuple[str, str, str]:
-    """Return ``(repo_url, default_branch, token)`` for a project from the API's JSON DB
-    (``api/db/data/projects.json``, the onboarding record). Returns ``("", "main", "")``
-    when the file or project is absent. Used by the CLI to clone a commit on demand; the
-    API passes these explicitly so it never needs this lookup."""
-    root = project_root or _paths().project_root
-    path = os.path.join(root, "api", "db", "data", "projects.json")
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            projects = json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        return "", "main", ""
-    records = projects.values() if isinstance(projects, dict) else projects
-    for p in records:
-        if isinstance(p, dict) and p.get("id") == project_id:
-            bc = p.get("build_config") or {}
-            tok = bc.get("repo_access_token") or bc.get("access_token") or ""
-            return (p.get("repo_url") or "", p.get("default_branch") or "main", tok)
-    return "", "main", ""
