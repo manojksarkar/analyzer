@@ -326,9 +326,17 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
     vdir = vstore.create_dir(version_id)  # == repo_dir (already checked out); never wiped
+    # Config is PER-PROJECT: workspaces/<pid>/config.json (written by the API). Use it as-is
+    # (or an explicit --config); only when --no-llm rewrites it, or none exists, write a copy.
+    if not config_path:
+        _proj_cfg = os.path.join(ws.root, "config.json")
+        config_path = _proj_cfg if os.path.isfile(_proj_cfg) else None
     cfg = resolve_run_config(config_path, project, project_root, no_llm=no_llm)
-    vstore.write_config(version_id, cfg)
-    vcfg_path = os.path.join(vdir, "config.json")
+    if config_path and not no_llm:
+        vcfg_path = config_path
+    else:
+        vstore.write_config(version_id, cfg)
+        vcfg_path = os.path.join(vdir, "config.json")
     vstore.write_manifest(version_id, _manifest(
         version_id, branch, target, scope, data_dict_id,
         decision="incremental", regenerated=0, reused=0, status="running", warnings=decision["warnings"]))

@@ -173,9 +173,19 @@ def generate_full(
     # 2. resolved config -> <commit[:16]>/config.json + a "running" manifest so the
     #    version is queryable immediately (status flips to complete/failed below).
     vdir = vstore.create_dir(version_id)     # == repo_dir; ensured, never wiped
+    # Config is PER-PROJECT: workspaces/<pid>/config.json (the API writes it from the
+    # project's architecture_layers + build_config). Use it as-is (or an explicit --config).
+    # Only when --no-llm must rewrite it, or no per-project config exists, do we materialize
+    # a per-run copy in the version dir.
+    if not config_path:
+        _proj_cfg = os.path.join(ws.root, "config.json")
+        config_path = _proj_cfg if os.path.isfile(_proj_cfg) else None
     cfg = resolve_run_config(config_path, project, project_root, no_llm=no_llm)
-    vstore.write_config(version_id, cfg)
-    vcfg_path = os.path.join(vdir, "config.json")
+    if config_path and not no_llm:
+        vcfg_path = config_path                       # run.py uses the per-project config as-is
+    else:
+        vstore.write_config(version_id, cfg)
+        vcfg_path = os.path.join(vdir, "config.json")
     vstore.write_manifest(version_id, _manifest(
         version_id, branch, actual_commit, scope, data_dict_id,
         decision="full", regenerated=0, reused=0, status="running", warnings=[]))

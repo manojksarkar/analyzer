@@ -131,6 +131,17 @@ def create_project(
         created_at=now, updated_at=now,
     )
     db.projects.create(project)
+    # Materialize the per-project workspace config (workspaces/<pid>/config.json) at
+    # onboarding — from architecture_layers + build_config — so the analyzer engine, the
+    # standalone CLI, and jobs can all use it immediately (reuses the job-time builder; a
+    # job re-writes it too). Best-effort: never fail onboarding on a config-write hiccup.
+    try:
+        from ..services import pipeline_runner
+        from ..services.settings import get_settings
+        pipeline_runner._write_project_config(
+            project, get_settings().repo_root / "workspaces" / project.id)
+    except Exception:
+        pass
     # Add creator as admin
     db.members.add_member(ProjectMember(
         id=f"m{uuid.uuid4().hex[:8]}", project_id=project.id,
