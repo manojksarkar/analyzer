@@ -37,13 +37,14 @@ if _SRC not in sys.path:
 from core.paths import paths as _paths
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
+from incremental.clone import ensure_commit_checkout, resolve_project_repo
 from incremental.baseline import select_baseline
 from incremental.impact import classify, impact_set
 from incremental.fingerprint import compute_fingerprints
 from incremental.affected import affected_tus, full_reparse_reason
 from incremental.parse_merge import merge_model, diff_models
 from incremental.report import build_report, emit_report
-from incremental.generate import (_resolved_config, _manifest, scope_to_args,
+from incremental.generate import (_resolved_config, _manifest, scope_to_args, resolve_run_config,
                                   generate_full, _now_iso, snapshot_parse_model, apply_no_llm)
 
 
@@ -201,7 +202,7 @@ def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any]) -> None:
                 json.dump(merged[n], fh, indent=2)
 
 
-def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, ws, project_root, model_dir,
+def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
                         *, target, base_commit, base_parse_dir) -> bool:
     """Narrowed parse (M4.4, doc 04 §11): re-parse ONLY the affected TUs and merge them
     into the baseline's parser-level snapshot, so the resulting model/ is the SAME blank
@@ -215,7 +216,7 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, ws, project_root, mod
         log.info("narrowed parse unavailable: baseline has no parser-level snapshot — full parse")
         return False
     tu_includes = _read(base_parse_dir, "tu_includes.json")
-    status = git_ops.changed_files_status(ws.repo_dir, base_commit, target)
+    status = git_ops.changed_files_status(repo_dir, base_commit, target)
     reason = full_reparse_reason(status, tu_includes)
     if reason:
         log.info(f"narrowed parse skipped ({reason}) — full parse")
@@ -241,7 +242,7 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, ws, project_root, mod
     if os.path.isfile(bfk):
         os.environ["ANALYZER_BASELINE_FUNCKEYS"] = bfk
     try:
-        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
+        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
                            extra_args=["--to-phase", "1", "--only-files", listfile])
     finally:
         if prev_bfk is None:
@@ -281,7 +282,10 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          version_id: Optional[str] = None,
                          force: bool = False,
                          narrowed_parse: bool = False,
-                         verify_parse: bool = False) -> Dict[str, Any]:
+                         verify_parse: bool = False,
+                         repo_url: Optional[str] = None,
+                         repo_token: Optional[str] = None,
+                         config_path: Optional[str] = None) -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
 
@@ -297,27 +301,32 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     ws = Workspace(project_id, workspaces_root)
     vstore = VersionStore(ws)
 
-    target = git_ops.resolve(ws.repo_dir, commit)
+    # Ensure the target's per-commit checkout (clone on demand for the CLI; the API
+    # pre-clones it). The repo for a commit IS its version dir workspaces/<pid>/<commit[:16]>.
+    repo_dir = ws.commit_dir(commit)
+    if not repo_url and not os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_url, _rb, repo_token = resolve_project_repo(project_id)
+    ensure_commit_checkout(repo_dir, repo_url or "", branch, commit, token=(repo_token or ""))
+
+    target = git_ops.resolve(repo_dir, commit)
     if not target:
         raise ValueError(f"commit {commit!r} not found in repo")
 
-    decision = select_baseline(ws.repo_dir, vstore.list(), target, base_version_id)
+    decision = select_baseline(repo_dir, vstore.list(), target, base_version_id)
     if decision["decision"] == "full":
         return generate_full(project_id, branch, commit, scope,
                              workspaces_root=workspaces_root, data_dict_id=data_dict_id,
-                             no_llm=no_llm, version_id=version_id, force=force)
+                             no_llm=no_llm, version_id=version_id, force=force,
+                             repo_url=repo_url, repo_token=repo_token, config_path=config_path)
 
     base_vid = decision["chosenBaseVersionId"]
     project = ws.project()
     hstore, estore, ridx = HashStore(vstore), EdgeStore(vstore), ReuseIndex(ws)
-    version_id = version_id or vstore.next_version_id()
+    version_id = target[:16]              # the commit IS the version id (== dir name)
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
-    git_ops.checkout(ws.repo_dir, target)
-    vdir = vstore.create_dir(version_id, force=force)
-    cfg = _resolved_config(project, project_root)
-    if no_llm:
-        apply_no_llm(cfg)
+    vdir = vstore.create_dir(version_id)  # == repo_dir (already checked out); never wiped
+    cfg = resolve_run_config(config_path, project, project_root, no_llm=no_llm)
     vstore.write_config(version_id, cfg)
     vcfg_path = os.path.join(vdir, "config.json")
     vstore.write_manifest(version_id, _manifest(
@@ -347,7 +356,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     used_narrowed = False
     if narrowed_parse:
         used_narrowed = _try_narrowed_parse(
-            vcfg_path, scope, no_llm, dd_path, ws, project_root, model_dir,
+            vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
             target=target, base_commit=decision["chosenBaseCommit"],
             base_parse_dir=os.path.join(vstore.version_dir(base_vid), "parse"))
     if used_narrowed and verify_parse:
@@ -356,7 +365,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         from core.logging_setup import get_logger as _get_logger
         _vlog = _get_logger("incremental")
         narrowed_model = _load_parse_dir(model_dir)
-        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
+        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
                            extra_args=["--to-phase", "1"])
         if rc != 0:
             _fail("parse", rc)
@@ -372,7 +381,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             _vlog.info("--verify-parse: narrowed parse is byte-identical (set-equal) to a full parse ✓")
         # model/ now holds the FULL parse -> trusted regardless of the narrowed result.
     elif not used_narrowed:
-        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
+        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
                            extra_args=["--to-phase", "1"])
         if rc != 0:
             _fail("parse", rc)
@@ -483,7 +492,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
-    rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, ws.repo_dir, project_root,
+    rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
                        extra_args=["--from-phase", "2"])
     if rc != 0:
         _fail("derive+views+export", rc)
@@ -579,11 +588,14 @@ def main() -> None:
     ap.add_argument("--verify-parse", action="store_true",
                     help="M4.5: with --narrowed-parse, also run a full parse and diff it against "
                          "the narrowed result (logs mismatches; uses the full parse). Slow; for validation.")
+    ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
+    ap.add_argument("--repo-url", default=None, help="clone URL (else resolved from the project record)")
     args = ap.parse_args()
     m = generate_incremental(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
                              base_version_id=args.base_version_id, data_dict_id=args.data_dict_id,
                              no_llm=args.no_llm, version_id=args.version_id, force=args.force,
-                             narrowed_parse=args.narrowed_parse, verify_parse=args.verify_parse)
+                             narrowed_parse=args.narrowed_parse, verify_parse=args.verify_parse,
+                             config_path=args.config, repo_url=args.repo_url)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, baseline={m.get('baselineVersionId')}, "
           f"regenerated={m['regenerated']}, reused={m['reused']}, "

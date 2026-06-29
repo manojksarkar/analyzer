@@ -19,8 +19,11 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from typing import Dict, List, Optional
 from urllib.parse import quote, urlsplit, urlunsplit
+
+from .settings import get_settings
 
 
 class GitError(RuntimeError):
@@ -118,21 +121,22 @@ def shallow_clone(
     clone_url: str, username: str, token: str, dest_dir: str,
     ref: Optional[str] = None, depth: int = 1,
 ) -> None:
-    """Shallow single-branch clone for read-only use (tree browsing needs
-    ``depth=1``; listing commits needs a larger depth). Resets ``origin`` to the
-    credential-free URL afterwards. ``ref`` selects the branch."""
-    os.makedirs(os.path.dirname(dest_dir) or ".", exist_ok=True)
-    auth = _auth_url(clone_url, username, token)
-    args = ["clone", "--depth", str(max(1, int(depth)))]
-    if ref:
-        args += ["--branch", ref]
-    args += [auth, dest_dir]
-    proc = _run(args)
-    if proc.returncode != 0:
-        msg = proc.stderr.strip().replace(auth, _clean_url(clone_url))
-        raise GitError(f"git clone --depth failed (exit {proc.returncode}): {msg}")
-    _check(_run(["-C", dest_dir, "remote", "set-url", "origin", _clean_url(clone_url)]),
-           "remote set-url")
+    """Shallow single-branch clone for read-only use (tree browsing needs ``depth=1``;
+    listing commits needs a larger depth). Resets ``origin`` to the credential-free URL
+    afterwards. ``ref`` selects the branch.
+
+    Delegates to the platform's single clone primitive (``src/incremental/clone``), so the
+    API, the per-commit job checkout, and the standalone engine all share ONE
+    implementation. Re-raised as ``git_cli.GitError`` to preserve this module's error type."""
+    src_dir = str(get_settings().repo_root / "src")
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
+    from incremental.clone import shallow_clone as _shared  # type: ignore[import]
+    from incremental.git_ops import GitError as _EngineGitError  # type: ignore[import]
+    try:
+        _shared(clone_url, dest_dir, ref=ref, depth=depth, username=username, token=token)
+    except _EngineGitError as exc:
+        raise GitError(str(exc))
 
 
 def list_tree(repo_dir: str, ref: str = "HEAD") -> List[Dict]:

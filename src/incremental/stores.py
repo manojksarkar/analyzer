@@ -9,14 +9,16 @@ Scope = the incremental METADATA stores only (versions / hashes / edges / reuse
 index). The analyzer's per-version model/ + output/ + documents/ artifacts stay
 file-based (captured under versions/<id>/) until the DB-native pipeline rewrite.
 
-Layout (per project, doc 04 §4) — onboarding owns the top, INCREMENTAL owns
-cache/ + versions/:
+Layout (per project) — versions are addressed BY COMMIT: each commit's git checkout
+AND its generated artifacts live together under <commit[:16]>/ (there is no separate
+versions/ tree). The API server (analyzer/api) owns onboarding + the per-commit clone;
+the incremental engine clones a needed commit on demand.
 
     workspaces/<projectId>/
-      project.json  repo/  datadict/<id>.csv        # onboarding-owned
       cache/index.json                              # ReuseIndex  {fingerprint -> {versionId, entityKey}}
-      versions/index.json                           # VersionStore registry
-      versions/<versionId>/
+      versions.json                                 # VersionStore registry (flat)
+      <commit[:16]>/                                # versionId == commit[:16]
+        <repo checkout: source + .git>
         manifest.json hashes.json edges.json config.json  model/ output/ documents/
 """
 from __future__ import annotations
@@ -76,17 +78,15 @@ class Workspace:
         if not os.path.isdir(self.root):
             raise WorkspaceNotFound(f"no workspace for project {project_id!r} at {self.root}")
 
-    @property
-    def repo_dir(self) -> str:
-        return os.path.join(self.root, "repo")
+    def commit_dir(self, commit: str) -> str:
+        """Per-commit working+artifact dir workspaces/<pid>/<commit[:16]> — holds the git
+        checkout (source + .git) AND that version's model/ output/ manifest. This is also
+        the version dir (versionId == commit[:16]). The repo for a commit IS this dir."""
+        return os.path.join(self.root, (commit or "")[:16])
 
     @property
     def cache_dir(self) -> str:
         return os.path.join(self.root, "cache")
-
-    @property
-    def versions_dir(self) -> str:
-        return os.path.join(self.root, "versions")
 
     def project(self) -> Dict[str, Any]:
         return _read_json(os.path.join(self.root, "project.json"), {})
@@ -101,7 +101,7 @@ class VersionStore:
 
     def __init__(self, workspace: Workspace):
         self.ws = workspace
-        self._index_path = os.path.join(self.ws.versions_dir, "index.json")
+        self._index_path = os.path.join(self.ws.root, "versions.json")
 
     # --- registry ---------------------------------------------------------
     def list(self) -> List[Dict[str, Any]]:
@@ -113,26 +113,17 @@ class VersionStore:
     def exists(self, version_id: str) -> bool:
         return os.path.isdir(self.version_dir(version_id))
 
-    def next_version_id(self) -> str:
-        """Sequential `v1, v2, …` — max existing + 1 (numeric suffix)."""
-        nums = []
-        for rec in self.list():
-            vid = str(rec.get("versionId", ""))
-            if vid.startswith("v") and vid[1:].isdigit():
-                nums.append(int(vid[1:]))
-        return f"v{(max(nums) + 1) if nums else 1}"
-
     def version_dir(self, version_id: str) -> str:
-        return os.path.join(self.ws.versions_dir, version_id)
+        """versionId == commit[:16]; the version dir IS the per-commit dir (which also
+        holds the git checkout). Never wipe it — capture merges artifacts alongside src."""
+        return self.ws.commit_dir(version_id)
 
     # --- creation ---------------------------------------------------------
     def create_dir(self, version_id: str, *, force: bool = False) -> str:
+        """Ensure the per-commit dir exists. Unlike the old versions/<id> tree this dir
+        also contains the git checkout, so we never rmtree it — just (re)create + return."""
         d = self.version_dir(version_id)
-        if os.path.isdir(d):
-            if not force:
-                raise FileExistsError(f"version {version_id} already exists at {d}")
-            _rmtree_force(d)
-        os.makedirs(d)
+        os.makedirs(d, exist_ok=True)
         return d
 
     def capture_artifacts(self, version_id: str, *, model_dir: str, output_dir: str) -> List[str]:

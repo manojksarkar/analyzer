@@ -206,6 +206,18 @@ def _inner_run(db: Any, job_id: str) -> None:
         sem.release()
 
 
+def _scope_to_cli(scope: Any) -> str:
+    """Map a scope dict {type, names} to the engine's --scope string
+    (project | layer:L | group:G | component:C1,C2)."""
+    if not isinstance(scope, dict):
+        return "project"
+    stype = scope.get("type") or "project"
+    names = scope.get("names") or []
+    if stype == "project" or not names:
+        return "project"
+    return f"{stype}:{','.join(str(n) for n in names)}"
+
+
 def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     job = db.jobs.get(job_id)
     if not job:
@@ -245,42 +257,35 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     job.current_activity = _ACTIVITY[1]
     db.jobs.update(job)
 
-    arch_layers = project.architecture_layers or []
-
-    # 3. Resolve the incremental baseline. mode == "full" forces full; otherwise auto-pick
-    # the nearest-ancestor completed version (an explicit reference_version_id still wins) —
-    # mirrors the standalone /generate decision. Degrades to full safely.
-    res = _resolve_baseline(db, job, checkout_dir)
-    ref_vid = res["refVid"]
-    baseline_version_dir = _get_baseline_version_dir(job.project_id, ref_vid) if ref_vid else None
-    decision = res["decision"] if baseline_version_dir else "full"
-    if not baseline_version_dir:
-        ref_vid = ""
+    # 3. Run the version4 incremental engine (does what the old /generate did):
+    #    mode "full"  -> src/incremental/generate.py (force a full generation)
+    #    otherwise    -> src/incremental/engine.py, which selects the nearest-ancestor
+    #                    baseline itself (an explicit reference_version_id still wins) and
+    #                    falls back to full when there is none.
+    #    The engine reuses the checkout we just made, writes model/output + manifest INTO
+    #    the commit dir (workspaces/<pid>/<commit[:16]>/), and seeds the reuse index. The
+    #    job lifecycle (SSE phase tailing, cancel) wraps the subprocess as before.
     job = db.jobs.get(job_id)
-    if job:
-        job.reference_version_id = ref_vid or None
-        job.decision = decision
-        job.baseline_commit = res["baselineCommit"] if baseline_version_dir else None
-        db.jobs.update(job)
-    for w in res["warnings"]:
-        _append_log(job_id, f"baseline: {w}")
-    _append_log(job_id,
-                f"Incremental mode ({decision}) — baseline version {ref_vid}."
-                if baseline_version_dir else f"Full generation ({decision}).")
+    mode = (getattr(job, "mode", "auto") or "auto")
+    scope = getattr(job, "scope", None) or {"type": "project"}
+    script = "generate.py" if mode == "full" else "engine.py"
+    cmd = [sys.executable, str(root / "src" / "incremental" / script),
+           "--project-id", job.project_id, "--branch", job.branch,
+           "--commit", job.commit_sha, "--scope", _scope_to_cli(scope),
+           "--config", str(config_path)]
+    if mode != "full" and getattr(job, "reference_version_id", None):
+        cmd += ["--base-version-id", job.reference_version_id]
+    if getattr(job, "data_dict_id", None):
+        cmd += ["--data-dict-id", job.data_dict_id]
+    if getattr(job, "no_llm", False):
+        cmd.append("--no-llm")
+    if mode != "full" and getattr(job, "narrowed_parse", False):
+        cmd.append("--narrowed-parse")
+    _append_log(job_id, f"Generating ({'full' if mode == 'full' else 'auto'}) via {script}…")
 
-    # 4. Run pipeline (full or incremental, with or without pause)
-    if job.pause_after_phase1:
-        if baseline_version_dir:
-            _run_incremental_with_pause(db, job_id, checkout_dir, config_path,
-                                        baseline_version_dir, arch_layers=arch_layers)
-        else:
-            _run_with_pause(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
-    else:
-        if baseline_version_dir:
-            _run_incremental(db, job_id, checkout_dir, config_path,
-                             baseline_version_dir, arch_layers=arch_layers)
-        else:
-            _run_full(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
+    ok = _execute_subprocess(db, job_id, cmd, phase_start=1)
+    if ok:
+        _complete(db, job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1253,6 +1258,22 @@ def _seed_reuse_index(project_id: str, version_id: str) -> None:
 # Completion — register Version + Documents
 # ---------------------------------------------------------------------------
 
+def _commit_dir(project_id: str, commit_sha: str) -> Path:
+    """The per-commit version dir workspaces/<pid>/<commit[:16]> — the git checkout PLUS the
+    model/ output/ manifest the incremental engine writes for that commit (== version)."""
+    return get_settings().repo_root / "workspaces" / project_id / (commit_sha or "")[:16]
+
+
+def _read_engine_manifest(project_id: str, commit_sha: str) -> dict:
+    """Read the engine's manifest.json from the commit dir (decision / baselineVersionId /
+    regenerated / reused / documents). Returns {} when absent."""
+    p = _commit_dir(project_id, commit_sha) / "manifest.json"
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _complete(db: Any, job_id: str) -> None:
     job = db.jobs.get(job_id)
     if not job or job.status in ("cancelled", "failed"):
@@ -1260,16 +1281,17 @@ def _complete(db: Any, job_id: str) -> None:
 
     now = _now()
     project = db.projects.get(job.project_id)
+    # The engine wrote model/output + manifest INTO the commit dir and seeded the reuse index
+    # itself — read the manifest for the incremental accounting; no separate capture/seed.
+    manifest = _read_engine_manifest(job.project_id, job.commit_sha)
 
-    version = _make_version(db, project, job, now)
+    version = _make_version(db, project, job, now, manifest)
     docs = _make_documents(db, project, version, now)
-    _make_sections(db, docs, now)
+    _make_sections(db, docs, now, _commit_dir(job.project_id, job.commit_sha) / "output")
     version.docs_count = len(docs)
     db.versions.update(version)
 
     _load_and_register_functions(db, job, version.id)
-    _capture_version_snapshot(job.project_id, version.id)
-    _seed_reuse_index(job.project_id, version.id)
 
     job.status = "complete"
     job.phase = 4
@@ -1292,11 +1314,11 @@ def _complete(db: Any, job_id: str) -> None:
     _append_log(job_id, f"Complete. Version {version.tag}, {len(docs)} document(s).")
 
 
-def _make_sections(db: Any, docs: list, now: datetime) -> None:
-    """Seed DocumentSection records for every document created by _make_documents."""
+def _make_sections(db: Any, docs: list, now: datetime, output_dir: Path) -> None:
+    """Seed DocumentSection records for every document created by _make_documents.
+    `output_dir` is the version's commit-dir output (workspaces/<pid>/<commit[:16]>/output)."""
     from ..models.domain import DocumentSection
 
-    output_dir = get_settings().repo_root / "output"
 
     for doc in docs:
         existing = db.documents.list_sections(doc.id)
@@ -1366,7 +1388,8 @@ def _make_sections(db: Any, docs: list, now: datetime) -> None:
             db.documents.update_section(sec)
 
 
-def _make_version(db: Any, project: Any, job: Any, now: datetime) -> Version:
+def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict = None) -> Version:
+    manifest = manifest or {}
     existing = db.versions.list_for_project(project.id) if project else []
     taken = {v.tag for v in existing}
     tag = (getattr(job, "version_tag", None) or "").strip() or f"v0.{len(existing) + 1}.0"
@@ -1385,10 +1408,12 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime) -> Version:
         docs_count=0,
         created_by=(project.created_by if project else "system"),
         created_at=now,
-        baseline_version_id=getattr(job, "reference_version_id", None),
-        decision=getattr(job, "decision", None),
-        regenerated=getattr(job, "regenerated", None),
-        reused=getattr(job, "reused", None),
+        # Incremental accounting comes from the engine's manifest (baselineVersionId is the
+        # baseline commit[:16]; resolvable by compare as a commit-sha prefix).
+        baseline_version_id=manifest.get("baselineVersionId"),
+        decision=manifest.get("decision") or getattr(job, "decision", None),
+        regenerated=manifest.get("regenerated"),
+        reused=manifest.get("reused"),
     )
     db.versions.create(version)
     return version
@@ -1430,7 +1455,7 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
 
     # Real output/ dirs — add one SWE.2 per group directory found that is also
     # declared in the project configuration (guards against stale dirs from prior runs).
-    output_dir = get_settings().repo_root / "output"
+    output_dir = _commit_dir(version.project_id, version.commit_sha) / "output"
     groups_found: list[str] = []
     if output_dir.is_dir():
         all_dirs = [d.name for d in sorted(output_dir.iterdir()) if d.is_dir()]
@@ -1478,10 +1503,9 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
 # Functions loader — reads model/functions.json and registers under the job
 # ---------------------------------------------------------------------------
 
-def _baseline_fn_keys(reference_version_id: str) -> Optional[Set[str]]:
-    """Return the set of function dict-keys from the baseline version's model, or None."""
-    versions_dir = get_settings().repo_root / "versions" / reference_version_id / "model"
-    path = versions_dir / "functions.json"
+def _baseline_fn_keys(project_id: str, reference_commit: str) -> Optional[Set[str]]:
+    """Return the set of function dict-keys from the baseline commit's model, or None."""
+    path = _commit_dir(project_id, reference_commit) / "model" / "functions.json"
     if not path.exists():
         return None
     try:
@@ -1496,7 +1520,7 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
     """Read model/functions.json and register functions in the DB under the job's id."""
     from ..models.domain import Function
 
-    path = get_settings().repo_root / "model" / "functions.json"
+    path = _commit_dir(job.project_id, job.commit_sha) / "model" / "functions.json"
     if not path.exists():
         return
     try:
@@ -1509,7 +1533,7 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
 
     ref_keys: Optional[Set[str]] = None
     if getattr(job, "reference_version_id", None):
-        ref_keys = _baseline_fn_keys(job.reference_version_id)
+        ref_keys = _baseline_fn_keys(job.project_id, job.reference_version_id)
 
     functions: list[Function] = []
     for fn_key, fn_data in raw.items():
