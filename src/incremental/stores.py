@@ -34,7 +34,8 @@ from core.paths import paths as _paths
 
 
 def default_workspaces_root() -> str:
-    """`<project_root>/workspaces` — where seed_workspace.py creates workspaces."""
+    """`<project_root>/workspaces` — the per-project workspaces root (created by the API at
+    onboarding / job time; the engine reads project + version metadata from api/db/data)."""
     return os.path.join(_paths().project_root, "workspaces")
 
 

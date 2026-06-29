@@ -36,19 +36,35 @@ _INCLUDE_GUARD_RE = _re.compile(r"^_*[A-Z][A-Z0-9_]*(?:_H|_HPP)_*$")
 
 # ── output dir lookup (path-traversal safe) ──────────────────────────────────
 
-def output_group_dir(group: Optional[str]) -> Optional[Path]:
-    """The live output dir for ``group`` if it exists and is safely inside OUTPUT_ROOT."""
-    if not group or not OUTPUT_ROOT.is_dir():
+def commit_output_root(project_id: Optional[str], commit_sha: Optional[str]) -> Optional[Path]:
+    """A specific version's output dir: ``workspaces/<pid>/<commit[:16]>/output`` (the
+    commit-addressed layout). None when project/commit is missing or the dir is absent. Pass
+    the result to output_group_dir/resolve_asset/find_docx so a VERSION renders, not the
+    latest shared run."""
+    if not (project_id and commit_sha):
         return None
-    d = (OUTPUT_ROOT / group).resolve()
-    if d.is_dir() and (d == OUTPUT_ROOT or OUTPUT_ROOT in d.parents):
+    d = _REPO_ROOT / "workspaces" / project_id / commit_sha[:16] / "output"
+    return d if d.is_dir() else None
+
+
+def output_group_dir(group: Optional[str], output_root: Optional[Path] = None) -> Optional[Path]:
+    """The output dir for ``group`` inside ``output_root`` — a version's commit-dir output (via
+    commit_output_root) or the shared OUTPUT_ROOT by default — if it exists and is safely
+    contained. Path-traversal safe."""
+    root = (output_root or OUTPUT_ROOT)
+    if not group or not root.is_dir():
+        return None
+    root = root.resolve()
+    d = (root / group).resolve()
+    if d.is_dir() and (d == root or root in d.parents):
         return d
     return None
 
 
-def resolve_asset(group: Optional[str], asset_path: str) -> Optional[Path]:
-    """Resolve ``<group>/<asset_path>`` inside the live output, or None if unsafe/absent."""
-    base = output_group_dir(group)
+def resolve_asset(group: Optional[str], asset_path: str,
+                  output_root: Optional[Path] = None) -> Optional[Path]:
+    """Resolve ``<group>/<asset_path>`` inside the (version's) output, or None if unsafe/absent."""
+    base = output_group_dir(group, output_root)
     if not base:
         return None
     target = (base / asset_path).resolve()
@@ -57,11 +73,11 @@ def resolve_asset(group: Optional[str], asset_path: str) -> Optional[Path]:
     return None
 
 
-def find_docx(group: Optional[str]) -> Optional[Path]:
-    """Return the real DOCX path for ``group`` if it exists."""
+def find_docx(group: Optional[str], output_root: Optional[Path] = None) -> Optional[Path]:
+    """Return the real DOCX path for ``group`` in the (version's) output if it exists."""
     if not group:
         return None
-    base = output_group_dir(group)
+    base = output_group_dir(group, output_root)
     if not base:
         return None
     p = base / f"software_detailed_design_{group}.docx"
