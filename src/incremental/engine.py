@@ -323,7 +323,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     base_vid = decision["chosenBaseVersionId"]
     project = get_project(project_id)        # api/db/data/projects.json (no project.json)
     hstore, estore, ridx = HashStore(vstore), EdgeStore(vstore), ReuseIndex(ws)
-    version_id = target[:16]              # the commit IS the version id (== dir name)
+    version_id = os.path.basename(repo_dir)  # the version id IS the checkout dir name (commit[:16])
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
     vdir = vstore.create_dir(version_id)  # == repo_dir (already checked out); never wiped

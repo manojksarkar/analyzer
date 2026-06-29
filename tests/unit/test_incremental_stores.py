@@ -14,11 +14,10 @@ from incremental.stores import (Workspace, VersionStore, HashStore, EdgeStore,
 
 
 def _make_ws(tmp_path, project_id="proj"):
+    # The root must exist; project + version metadata now come from api/db/data (not a
+    # workspaces/<pid>/project.json), so the workspace itself just needs its dirs.
     root = tmp_path / "workspaces" / project_id
     (root / "datadict").mkdir(parents=True)
-    (root / "repo").mkdir()
-    (root / "project.json").write_text(json.dumps(
-        {"projectId": project_id, "layers": {"L1": {"groups": {}}}, "currentDataDictId": "dd-001"}))
     return Workspace(project_id, str(tmp_path / "workspaces"))
 
 
@@ -27,52 +26,36 @@ class TestWorkspace:
         with pytest.raises(WorkspaceNotFound):
             Workspace("nope", str(tmp_path / "workspaces"))
 
-    def test_reads_project_and_paths(self, tmp_path):
+    def test_paths(self, tmp_path):
         ws = _make_ws(tmp_path)
-        assert ws.project()["projectId"] == "proj"
-        assert ws.repo_dir.endswith("repo")
+        # Versions are commit-addressed: the per-commit dir IS the version dir (commit[:16]).
+        assert ws.commit_dir("08d2f565cd03e72e82c32b57").endswith("08d2f565cd03e72e")
+        assert ws.cache_dir.endswith("cache")
         assert ws.datadict_path("dd-001").endswith(os.path.join("datadict", "dd-001.csv"))
 
 
 class TestVersionStore:
-    def test_next_version_id_sequence(self, tmp_path):
+    def test_create_dir_idempotent(self, tmp_path):
+        # The version dir == the commit dir (it holds the git checkout), so create_dir NEVER
+        # wipes it — it ensures it exists and returns it; a re-create keeps existing files.
         vs = VersionStore(_make_ws(tmp_path))
-        assert vs.next_version_id() == "v1"
-        vs.create_dir("v1")
-        vs.write_manifest("v1", {"versionId": "v1", "status": "complete"})
-        assert vs.next_version_id() == "v2"
+        d = vs.create_dir("08d2f565cd03e72e")
+        open(os.path.join(d, "x.txt"), "w").close()
+        assert vs.create_dir("08d2f565cd03e72e") == d        # no raise
+        assert os.path.isfile(os.path.join(d, "x.txt"))      # not wiped
 
-    def test_create_dir_force(self, tmp_path):
+    def test_manifest_roundtrip(self, tmp_path):
+        # write_manifest writes the per-version record into the commit dir; the registry is
+        # the API DB (api/db/data/versions.json), not a flat index here — get() reads it back.
         vs = VersionStore(_make_ws(tmp_path))
-        d = vs.create_dir("v1")
-        (open(os.path.join(d, "x.txt"), "w")).close()
-        with pytest.raises(FileExistsError):
-            vs.create_dir("v1")
-        vs.create_dir("v1", force=True)  # wipes + recreates
-        assert not os.path.isfile(os.path.join(d, "x.txt"))
-
-    def test_manifest_roundtrip_and_index_row(self, tmp_path):
-        vs = VersionStore(_make_ws(tmp_path))
-        vs.create_dir("v1")
-        man = {"versionId": "v1", "branch": "main", "commit": "abc", "scope": {"type": "project"},
+        vid = "08d2f565cd03e72e"
+        vs.create_dir(vid)
+        man = {"versionId": vid, "branch": "main", "commit": "abc", "scope": {"type": "project"},
                "decision": "full", "regenerated": 5, "reused": 0, "status": "complete",
                "createdAt": "t", "warnings": ["w1"]}
-        vs.write_manifest("v1", man)
-        assert vs.get("v1")["warnings"] == ["w1"]              # full manifest kept
-        rows = vs.list()
-        assert len(rows) == 1 and rows[0]["versionId"] == "v1"
-        assert "warnings" not in rows[0]                       # index row is compact
-
-    def test_index_newest_first_and_upsert(self, tmp_path):
-        vs = VersionStore(_make_ws(tmp_path))
-        for vid in ("v1", "v2"):
-            vs.create_dir(vid)
-            vs.write_manifest(vid, {"versionId": vid, "status": "complete"})
-        assert [r["versionId"] for r in vs.list()] == ["v2", "v1"]
-        # re-writing v1 upserts (no duplicate row), moves it to front
-        vs.write_manifest("v1", {"versionId": "v1", "status": "complete"})
-        ids = [r["versionId"] for r in vs.list()]
-        assert ids.count("v1") == 1
+        vs.write_manifest(vid, man)
+        assert vs.get(vid)["warnings"] == ["w1"]
+        assert vs.get(vid)["decision"] == "full"
 
     def test_capture_artifacts_collects_docx(self, tmp_path):
         ws = _make_ws(tmp_path)

@@ -163,7 +163,7 @@ def generate_full(
         repo_url, _rb, repo_token = resolve_project_repo(project_id)
     ensure_commit_checkout(repo_dir, repo_url or "", branch, commit, token=(repo_token or ""))
     actual_commit = git_ops.current_commit(repo_dir)
-    version_id = actual_commit[:16]          # the commit IS the version id (== dir name)
+    version_id = os.path.basename(repo_dir)  # the version id IS the checkout dir name (commit[:16])
 
     # 2. resolved config -> <commit[:16]>/config.json + a "running" manifest so the
     #    version is queryable immediately (status flips to complete/failed below).
