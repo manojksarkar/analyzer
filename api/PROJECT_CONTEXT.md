@@ -268,6 +268,29 @@ The frontend `ComparePage.tsx` renders the rich blocks two-up with inline
 highlights (word-level text, per-cell tables, changed-diagram badges) and shows
 the `source` artifact chip on each changed section.
 
+### Introduction (Purpose / Scope / Terms) missing or placeholder in UI
+
+Two problems made the UI Introduction not match the exported DOCX:
+
+1. **`doc_render._strip_jsonc` corrupted the config.** Its comment stripper was a
+   naive regex (`//[^\n]*`) that also stripped `//` *inside* string literals — e.g.
+   `"baseUrl": "http://localhost:11434"` — which made `config.json` unparseable, so
+   `_load_config()` silently returned `{}` and `docx.introduction` (Purpose / Scope
+   text) fell back to `[Purpose of this document.]` placeholders. Replaced with a
+   **string-aware** stripper mirroring `core.config._strip_json_comments`.
+2. **The synthesized + compare fallback renders omitted the Introduction.** Only the
+   live `build_render` built it. Extracted `doc_render.build_intro_section(config,
+   abbreviations, components, project_name)` (+ `intro_section_from_config(...)`),
+   mirroring `docx_exporter.py` exactly (1.1 Purpose, 1.2 Scope with component
+   bullets + scope items, 1.3 Terms = abbreviations table). Now used by:
+   - `build_render` (live/snapshot render),
+   - `routes/documents._render_doc_dict` (synthesized fallback — prepended),
+   - `compare_engine._flat_intro_sections` (compare flat fallback — markdown, always
+     `unchanged` since intro content is version-independent).
+
+   So Purpose / Scope / Terms appear in the inspector and the compare view in every
+   render path, matching the DOCX.
+
 ### bcrypt 4.x `__about__` AttributeError
 
 `passlib 1.7.4` reads `bcrypt.__about__.__version__` removed in bcrypt 4.x.
