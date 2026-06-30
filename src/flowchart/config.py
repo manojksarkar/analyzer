@@ -38,6 +38,10 @@ class EngineConfig:
     # Nodes per LLM call.  4 is safe for 2048-token models.
     # The generator auto-halves down to 1 node if the LLM returns no response.
     llm_batch_size: int = 4
+
+    # When True, skip the LLM entirely and emit fallback (non-LLM) node labels.
+    # Used by the analyzer's `--no-llm` for deterministic, LLM-free timing tests.
+    no_llm: bool = False
     # Ollama num_ctx: explicitly sets the model's context window for each call.
     # Ollama defaults to 2048 for many models; prompts >2048 tokens return empty.
     # Set to 8192 to safely handle all prompt sizes up to ~2500 tokens.

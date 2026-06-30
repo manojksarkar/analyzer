@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +409,10 @@ class RenderCover(BaseModel):
 
 
 class RenderMeta(BaseModel):
+    # `model_data_available` starts with "model_", pydantic v2's protected namespace;
+    # opt out so it doesn't warn (this is a plain data field, not a pydantic model attr).
+    model_config = ConfigDict(protected_namespaces=())
+
     pipeline_data_available: bool
     model_data_available: bool
     source: str                            # "pipeline" | "model"

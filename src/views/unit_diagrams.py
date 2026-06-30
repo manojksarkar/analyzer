@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 from .registry import register
-from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type
+from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type, render_mermaid_cached
 
 
 def _affected_units(impact_fids, functions_data, fid_to_unit):
@@ -299,13 +299,7 @@ def run(model, output_dir, model_dir, config):
             f.write(mermaid)
         if render_png:
             png_path = os.path.join(out_dir, f"{safe}.png")
-            run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png_path]
-            try:
-                if os_type == "Windows":
-                    subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False, shell=True)
-                else:
-                    subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                pass
+            # M-A: content-addressed cache -> unchanged unit diagrams skip mmdc.
+            render_mermaid_cached(project_root, mermaid, png_path, timeout=60)
     _suffix = " regenerated (rest carried)" if affected is not None else ""
     progress.done(summary=f"output/unit_diagrams/ ({total} units{_suffix})")

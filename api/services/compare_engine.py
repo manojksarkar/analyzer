@@ -20,8 +20,10 @@ _REPO_ROOT = _get_settings().repo_root
 # Snapshot helpers
 # ---------------------------------------------------------------------------
 
-def _snap(project_id: str, version_id: str) -> Optional[Path]:
-    d = _REPO_ROOT / "workspaces" / project_id / "versions" / version_id
+def _snap(project_id: str, commit_sha: str) -> Optional[Path]:
+    """Version snapshot dir = the per-commit dir workspaces/<pid>/<commit[:16]> (the engine
+    writes model/ + output/ there; there is no separate versions/<id> tree any more)."""
+    d = _REPO_ROOT / "workspaces" / project_id / (commit_sha or "")[:16]
     return d if d.is_dir() else None
 
 
@@ -192,8 +194,8 @@ def compute_compare(db: Any, project_id: str, current_ref: str, baseline_ref: st
                 "summary": {"added": 0, "changed": 0, "removed": 0, "unchanged": 0},
                 "changed_documents": []}
 
-    c_snap = _snap(project_id, cur_ver.id)
-    b_snap = _snap(project_id, base_ver.id)
+    c_snap = _snap(project_id, cur_ver.commit_sha)
+    b_snap = _snap(project_id, base_ver.commit_sha)
 
     if not c_snap or not b_snap:
         return _db_fallback_compare(db, project_id, cur_ver, base_ver, c_info, b_info)

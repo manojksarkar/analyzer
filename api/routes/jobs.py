@@ -35,6 +35,18 @@ class StartJobRequest(BaseModel):
     reference_version_id: Optional[str] = None
     pause_after_phase1: bool = False
     layer_filter: Optional[str] = None
+    # "auto" = pick the nearest-ancestor completed version as the incremental baseline
+    # (mirrors the standalone /generate decision); "full" = force a full generation.
+    # An explicit reference_version_id still wins under "auto".
+    mode: str = "auto"
+    # {"type": "project|group|component", "names": [...]} — maps to run.py's
+    # --selected-group / --selected-component (mutually exclusive with layer_filter).
+    scope: Optional[dict] = None
+    no_llm: bool = False                       # disable LLM descriptions/behaviour/summaries
+    data_dict_id: Optional[str] = None         # resolved to workspaces/<pid>/datadict/<id>.csv
+    # M4.4 opt-in: in an incremental run, re-parse only the affected TUs and merge into the
+    # baseline parser snapshot instead of a full Phase-1 parse (pays off on large repos).
+    narrowed_parse: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +76,14 @@ def _job_dict(job: AnalysisJob) -> dict:
         "branch": job.branch,
         "version_id": job.version_id,
         "version_tag": job.version_tag,
+        "reference_version_id": job.reference_version_id,
+        "mode": getattr(job, "mode", "auto"),
+        "decision": getattr(job, "decision", None),
+        "baseline_commit": getattr(job, "baseline_commit", None),
+        "scope": getattr(job, "scope", None),
+        "no_llm": getattr(job, "no_llm", False),
+        "data_dict_id": getattr(job, "data_dict_id", None),
+        "narrowed_parse": getattr(job, "narrowed_parse", False),
         "started_at": job.started_at.isoformat(),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "error_message": job.error_message,
@@ -120,10 +140,31 @@ def start_job(
         ],
         started_at=now, completed_at=None, error_message=None,
         branch=branch, version_tag=(body.version_tag or None),
+        mode=(body.mode or "auto"),
+        scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=body.data_dict_id,
+        narrowed_parse=bool(body.narrowed_parse),
     )
     db.jobs.create(job)
     pipeline_runner.start(db, job.id)
     return {"job_id": job.id, "status": job.status}
+
+
+@router.get("/projects/{project_id}/baseline-preview")
+def baseline_preview(
+    project_id: str,
+    commit: str,
+    base_version_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """Preview the incremental baseline decision for `commit` before starting a job
+    (read-only — no checkout/clone). Mirrors the standalone /generate/preview: returns
+    the auto/chosen baseline, ancestor/nearest flags, changed-file count, decision, warnings."""
+    project = db.projects.get(project_id)
+    if not project:
+        raise not_found("Project", project_id)
+    require_project_member(project_id, current_user, db)
+    return pipeline_runner.preview_baseline(db, project_id, commit, base_version_id)
 
 
 @router.get("/projects/{project_id}/jobs/current",

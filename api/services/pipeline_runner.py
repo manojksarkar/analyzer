@@ -206,6 +206,18 @@ def _inner_run(db: Any, job_id: str) -> None:
         sem.release()
 
 
+def _scope_to_cli(scope: Any) -> str:
+    """Map a scope dict {type, names} to the engine's --scope string
+    (project | layer:L | group:G | component:C1,C2)."""
+    if not isinstance(scope, dict):
+        return "project"
+    stype = scope.get("type") or "project"
+    names = scope.get("names") or []
+    if stype == "project" or not names:
+        return "project"
+    return f"{stype}:{','.join(str(n) for n in names)}"
+
+
 def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     job = db.jobs.get(job_id)
     if not job:
@@ -231,7 +243,8 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     # 2. Write per-project config
     workspace_dir = root / "workspaces" / job.project_id
     try:
-        config_path = _write_project_config(project, workspace_dir)
+        config_path = _write_project_config(project, workspace_dir,
+                                            no_llm=bool(getattr(job, "no_llm", False)))
     except Exception as exc:
         _mark_failed(db, job_id, f"Config generation failed: {exc}")
         return
@@ -244,28 +257,35 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     job.current_activity = _ACTIVITY[1]
     db.jobs.update(job)
 
-    arch_layers = project.architecture_layers or []
+    # 3. Run the version4 incremental engine (does what the old /generate did):
+    #    mode "full"  -> src/incremental/generate.py (force a full generation)
+    #    otherwise    -> src/incremental/engine.py, which selects the nearest-ancestor
+    #                    baseline itself (an explicit reference_version_id still wins) and
+    #                    falls back to full when there is none.
+    #    The engine reuses the checkout we just made, writes model/output + manifest INTO
+    #    the commit dir (workspaces/<pid>/<commit[:16]>/), and seeds the reuse index. The
+    #    job lifecycle (SSE phase tailing, cancel) wraps the subprocess as before.
+    job = db.jobs.get(job_id)
+    mode = (getattr(job, "mode", "auto") or "auto")
+    scope = getattr(job, "scope", None) or {"type": "project"}
+    script = "generate.py" if mode == "full" else "engine.py"
+    cmd = [sys.executable, str(root / "src" / "incremental" / script),
+           "--project-id", job.project_id, "--branch", job.branch,
+           "--commit", job.commit_sha, "--scope", _scope_to_cli(scope),
+           "--config", str(config_path)]
+    if mode != "full" and getattr(job, "reference_version_id", None):
+        cmd += ["--base-version-id", job.reference_version_id]
+    if getattr(job, "data_dict_id", None):
+        cmd += ["--data-dict-id", job.data_dict_id]
+    if getattr(job, "no_llm", False):
+        cmd.append("--no-llm")
+    if mode != "full" and getattr(job, "narrowed_parse", False):
+        cmd.append("--narrowed-parse")
+    _append_log(job_id, f"Generating ({'full' if mode == 'full' else 'auto'}) via {script}…")
 
-    # 3. Detect incremental baseline — use if reference_version_id is set and its
-    # model snapshot (written by _capture_version_snapshot on the prior run) exists.
-    ref_vid = getattr(job, "reference_version_id", None) or ""
-    baseline_version_dir = _get_baseline_version_dir(job.project_id, ref_vid) if ref_vid else None
-    if baseline_version_dir:
-        _append_log(job_id, f"Incremental mode: baseline version {ref_vid}")
-
-    # 4. Run pipeline (full or incremental, with or without pause)
-    if job.pause_after_phase1:
-        if baseline_version_dir:
-            _run_incremental_with_pause(db, job_id, checkout_dir, config_path,
-                                        baseline_version_dir, arch_layers=arch_layers)
-        else:
-            _run_with_pause(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
-    else:
-        if baseline_version_dir:
-            _run_incremental(db, job_id, checkout_dir, config_path,
-                             baseline_version_dir, arch_layers=arch_layers)
-        else:
-            _run_full(db, job_id, checkout_dir, config_path, arch_layers=arch_layers)
+    ok = _execute_subprocess(db, job_id, cmd, phase_start=1)
+    if ok:
+        _complete(db, job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +328,7 @@ def _checkout(project: Any, commit_sha: str, checkout_dir: Path, job_id: str) ->
 # Config generation
 # ---------------------------------------------------------------------------
 
-def _write_project_config(project: Any, workspace_dir: Path) -> Path:
+def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> Path:
     """Write a per-project config.json by merging the base config with project settings."""
     base_path = get_settings().repo_root / "config" / "config.json"
     try:
@@ -328,6 +348,13 @@ def _write_project_config(project: Any, workspace_dir: Path) -> Path:
     layers = _convert_layers(project.architecture_layers or [])
     if layers:
         cfg["layers"] = layers
+
+    # noLlm — disable per-entity LLM (descriptions + behaviour names), mirroring
+    # apply_no_llm. Phase summarization is disabled via --no-llm-summarize in _build_cmd.
+    if no_llm:
+        cfg.setdefault("llm", {})
+        cfg["llm"]["descriptions"] = False
+        cfg["llm"]["behaviourNames"] = False
 
     workspace_dir.mkdir(parents=True, exist_ok=True)
     out_path = workspace_dir / "config.json"
@@ -429,8 +456,25 @@ def _build_cmd(
         cmd += ["--from-phase", str(from_phase)]
     if to_phase is not None:
         cmd += ["--to-phase", str(to_phase)]
-    if job.layer_filter:
+    # Scope -> run.py selection flags (mutually exclusive with --selected-layer). A
+    # first-class scope wins over layer_filter; project scope selects nothing (full).
+    scope = getattr(job, "scope", None)
+    stype = (scope.get("type") if isinstance(scope, dict) else None) or "project"
+    names = (scope.get("names") if isinstance(scope, dict) else None) or []
+    if stype == "group" and names:
+        cmd += ["--selected-group", str(names[0])]
+    elif stype == "component" and names:
+        cmd += ["--selected-component", str(names[0])]
+    elif job.layer_filter:
         cmd += ["--selected-layer", job.layer_filter]
+    if getattr(job, "no_llm", False):
+        cmd.append("--no-llm-summarize")     # descriptions/behaviourNames disabled via config
+    ddid = getattr(job, "data_dict_id", None)
+    if ddid:
+        dd_path = (get_settings().repo_root / "workspaces" / job.project_id
+                   / "datadict" / f"{ddid}.csv")
+        if dd_path.is_file():
+            cmd += ["--data-dictionary", str(dd_path)]
     if getattr(job, "version_tag", None):
         cmd += ["--project-name", job.version_tag]
     # Extra include paths from architecture_layers.lib_paths (--include-path <layer> <abs_dir>)
@@ -452,266 +496,53 @@ def _build_cmd(
 # Incremental helpers
 # ---------------------------------------------------------------------------
 
-def _get_baseline_version_dir(project_id: str, reference_version_id: str) -> Optional[Path]:
-    """Return the baseline version directory if its model snapshot is usable, else None.
 
-    A snapshot is usable when model/hashes.json exists — that file is the entity-hash
-    index produced by Phase 1 and needed for impact classification.
-    """
-    if not reference_version_id:
+def _find_project_repo(project_id: str) -> Optional[Path]:
+    """Newest existing per-commit checkout (a git repo) for the project, for read-only git
+    queries (baseline preview). None when the project has never been generated."""
+    base = get_settings().repo_root / "workspaces" / project_id
+    if not base.is_dir():
         return None
-    root = get_settings().repo_root
-    vdir = root / "workspaces" / project_id / "versions" / reference_version_id
-    if (vdir / "model" / "hashes.json").is_file():
-        return vdir
-    return None
+    repos = [d for d in base.iterdir() if d.is_dir() and (d / ".git").is_dir()]
+    return max(repos, key=lambda d: d.stat().st_mtime) if repos else None
 
 
-def _compute_incremental_plan(job_id: str, model_dir: Path, baseline_version_dir: Path) -> None:
-    """Compute and write model/incremental_plan.json from the baseline version snapshot.
+def preview_baseline(db: Any, project_id: str, commit: str,
+                     base_version_id: Optional[str] = None) -> dict:
+    """Read-only baseline decision for `commit` (what an auto-mode job WOULD pick), using an
+    existing project checkout for git ancestry. No checkout/clone, changes nothing — mirrors
+    the standalone /generate/preview. Returns the select_baseline result, or a full-decision
+    stub with a warning when no local history is available yet."""
+    def _stub(warning: str) -> dict:
+        return {"targetCommit": commit, "decision": "full",
+                "chosenBaseVersionId": None, "chosenBaseCommit": None,
+                "chosenIsAncestor": False, "chosenIsNearest": False,
+                "changedFiles": None, "warnings": [warning]}
 
-    Called between Phase 1 (which produced the fresh hashes/functions/edges) and Phase 2.
-    Imports the incremental engine helpers from src/, classifies changed entities via
-    the entity-hash diff, carries forward baseline LLM outputs (descriptions, behaviour
-    names) for the reuse set so Phase 2 skips LLM for them, and writes the plan file
-    that Phases 2–3 read to restrict enrichment and flowchart regeneration.
-    """
-    import json as _json
     import sys as _sys
-
     src_dir = str(get_settings().repo_root / "src")
     if src_dir not in _sys.path:
         _sys.path.insert(0, src_dir)
+    try:
+        from incremental import git_ops                      # type: ignore[import]
+        from incremental.baseline import select_baseline     # type: ignore[import]
+        from incremental.project_db import list_versions     # type: ignore[import]
+    except Exception as exc:
+        return _stub(f"incremental engine unavailable ({exc})")
 
-    from incremental.engine import (  # type: ignore[import]
-        plan_incremental,
-        carry_forward_descriptions,
-        carry_forward_globals,
-    )
-
-    base_model_dir = baseline_version_dir / "model"
-
-    def _read(d: Path, name: str) -> dict:
-        p = d / name
-        return _json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
-
-    target_hashes    = _read(model_dir,      "hashes.json")
-    target_functions = _read(model_dir,      "functions.json")
-    target_edges     = _read(model_dir,      "edges.json")
-    target_globals   = _read(model_dir,      "globalVariables.json")
-    base_hashes      = _read(base_model_dir, "hashes.json")
-    base_functions   = _read(base_model_dir, "functions.json")
-    base_globals     = _read(base_model_dir, "globalVariables.json")
-
-    if not base_hashes:
-        _append_log(job_id, "Baseline hashes empty — incremental plan skipped (full enrichment).")
-        return
-
-    plan = plan_incremental(base_hashes, target_hashes, target_functions,
-                            target_edges, base_functions)
-
-    # Impacted globals = changed/new globals + globals read/written by impacted functions.
-    cls = plan["classify"]
-    impacted_globals: Set[str] = {k for k in (cls["changed"] | cls["new"]) if k.count("|") == 2}
-    for fid in plan["impact"]:
-        f = target_functions.get(fid) or {}
-        impacted_globals.update(f.get("readsGlobalIds") or [])
-        impacted_globals.update(f.get("writesGlobalIds") or [])
-    impacted_globals &= set(target_globals)
-    reused_globals = set(target_globals) - impacted_globals
-
-    # Carry baseline LLM outputs into the reuse set so Phase 2 skips them.
-    n_fn = carry_forward_descriptions(plan["reused"], target_functions, base_functions)
-    carry_forward_globals(reused_globals, target_globals, base_globals)
-
-    # Persist the mutated function/global data (carry-forwards baked in).
-    (model_dir / "functions.json").write_text(
-        _json.dumps(target_functions, indent=2), encoding="utf-8")
-    (model_dir / "globalVariables.json").write_text(
-        _json.dumps(target_globals, indent=2), encoding="utf-8")
-
-    # Flowchart scoping: file-level = files of the full impact set; function-level = direct fids.
-    impacted_files = sorted({
-        (target_functions.get(fid) or {}).get("location", {}).get("file")
-        for fid in plan["impact"]
-    } - {None})
-    direct_fns = {k for k in (cls["changed"] | cls["new"]) if k in target_functions}
-    flowchart_files: Set[str] = {
-        (target_functions.get(fid) or {}).get("location", {}).get("file")
-        for fid in direct_fns
-    }
-    for fid in cls["deleted"]:
-        bf = base_functions.get(fid)
-        if bf:
-            flowchart_files.add((bf.get("location") or {}).get("file"))
-
-    inc_plan = {
-        "impactFids":             sorted(plan["impact"]),
-        "impactedGlobals":        sorted(impacted_globals),
-        "impactedFiles":          impacted_files,
-        "flowchartFiles":         sorted(flowchart_files - {None}),
-        "flowchartFids":          sorted(direct_fns),
-        "crossVersionFlowcharts": {},
-        "baselineVersionDir":     str(baseline_version_dir),
-    }
-    (model_dir / "incremental_plan.json").write_text(
-        _json.dumps(inc_plan, indent=2), encoding="utf-8")
-
-    _append_log(job_id,
-                f"Incremental plan: {len(plan['reused'])} functions reused "
-                f"({n_fn} descriptions carried), {len(plan['impact'])} to regenerate.")
+    repo = _find_project_repo(project_id)
+    if not repo:
+        return _stub("no local checkout yet — run one generation to enable incremental previews")
+    target = git_ops.resolve(str(repo), commit)
+    if not target:
+        return _stub(f"commit {commit!r} not found in the local checkout")
+    # Same version list the engine uses (api/db/data/versions.json), commit-addressed.
+    return select_baseline(str(repo), list_versions(project_id), target, base_version_id)
 
 
 # ---------------------------------------------------------------------------
 # Run strategies
 # ---------------------------------------------------------------------------
-
-def _run_full(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
-              arch_layers: list = ()) -> None:
-    job = db.jobs.get(job_id)
-    cmd = _build_cmd(job, checkout_dir, config_path, arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd, phase_start=1)
-    if ok:
-        _complete(db, job_id)
-
-
-def _run_with_pause(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
-                    arch_layers: list = ()) -> None:
-    job = db.jobs.get(job_id)
-    # Phase 1+2 only
-    cmd = _build_cmd(job, checkout_dir, config_path, to_phase=2, arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd, phase_start=1)
-    if not ok or _is_cancelled(db, job_id):
-        return
-
-    # Pause
-    job = db.jobs.get(job_id)
-    job.status = "paused"
-    job.current_activity = "Paused after Phase 2 — review functions, then resume."
-    db.jobs.update(job)
-    _append_log(job_id, "Paused. Resume to run Phases 3–4.")
-
-    # Wait for resume signal or cancel
-    ev = None
-    with _LOCK:
-        ev = _job_resume_events.get(job_id)
-    while ev and not ev.is_set():
-        ev.wait(timeout=2.0)
-        if _is_cancelled(db, job_id):
-            return
-
-    if _is_cancelled(db, job_id):
-        return
-
-    # Phase 3+4
-    job = db.jobs.get(job_id)
-    if not job or job.status == "cancelled":
-        return
-    job.status = "running"
-    job.current_activity = _ACTIVITY[3]
-    db.jobs.update(job)
-    _append_log(job_id, "Resuming from Phase 3…")
-
-    job = db.jobs.get(job_id)
-    cmd = _build_cmd(job, checkout_dir, config_path, from_phase=3, use_model=True,
-                     arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd, phase_start=3)
-    if ok:
-        _complete(db, job_id)
-
-
-def _run_incremental(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
-                     baseline_version_dir: Path, arch_layers: list = ()) -> None:
-    """Incremental run: Phase 1 → compute impact plan → Phase 2–4.
-
-    Phase 1 produces fresh hashes/edges.  The in-process plan computation diffs them
-    against the baseline, carries forward LLM outputs for unchanged entities, and writes
-    model/incremental_plan.json.  Phases 2–4 then read the plan to restrict LLM
-    enrichment (Phase 2) and flowchart generation (Phase 3).
-    """
-    job = db.jobs.get(job_id)
-    model_dir = get_settings().repo_root / "model"
-
-    # Phase 1 only (parse → hashes.json, functions.json, edges.json, …)
-    cmd1 = _build_cmd(job, checkout_dir, config_path, to_phase=1, arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd1, phase_start=1)
-    if not ok or _is_cancelled(db, job_id):
-        return
-
-    # Impact classification + carry-forward → incremental_plan.json
-    _append_log(job_id, "Computing incremental plan from baseline snapshot…")
-    try:
-        _compute_incremental_plan(job_id, model_dir, baseline_version_dir)
-    except Exception as exc:
-        _append_log(job_id, f"Incremental plan error ({exc}) — Phase 2+ runs with full enrichment.")
-
-    # Phase 2–4 (model_deriver reads plan to restrict LLM; flowcharts view reads plan for reuse)
-    job = db.jobs.get(job_id)
-    cmd2 = _build_cmd(job, checkout_dir, config_path, from_phase=2, arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd2, phase_start=2)
-    if ok:
-        _complete(db, job_id)
-
-
-def _run_incremental_with_pause(db: Any, job_id: str, checkout_dir: Path, config_path: Path,
-                                 baseline_version_dir: Path, arch_layers: list = ()) -> None:
-    """Incremental run with a pause after Phase 2 for function-visibility review."""
-    job = db.jobs.get(job_id)
-    model_dir = get_settings().repo_root / "model"
-
-    # Phase 1 only
-    cmd1 = _build_cmd(job, checkout_dir, config_path, to_phase=1, arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd1, phase_start=1)
-    if not ok or _is_cancelled(db, job_id):
-        return
-
-    # Impact classification + carry-forward → incremental_plan.json
-    _append_log(job_id, "Computing incremental plan from baseline snapshot…")
-    try:
-        _compute_incremental_plan(job_id, model_dir, baseline_version_dir)
-    except Exception as exc:
-        _append_log(job_id, f"Incremental plan error ({exc}) — Phase 2 runs with full enrichment.")
-
-    # Phase 2 only (model derivation; LLM enrichment gated by the plan)
-    job = db.jobs.get(job_id)
-    cmd2 = _build_cmd(job, checkout_dir, config_path, from_phase=2, to_phase=2, arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd2, phase_start=2)
-    if not ok or _is_cancelled(db, job_id):
-        return
-
-    # Pause — user reviews function visibility
-    job = db.jobs.get(job_id)
-    job.status = "paused"
-    job.current_activity = "Paused after Phase 2 — review functions, then resume."
-    db.jobs.update(job)
-    _append_log(job_id, "Paused. Resume to run Phases 3–4.")
-
-    ev = None
-    with _LOCK:
-        ev = _job_resume_events.get(job_id)
-    while ev and not ev.is_set():
-        ev.wait(timeout=2.0)
-        if _is_cancelled(db, job_id):
-            return
-
-    if _is_cancelled(db, job_id):
-        return
-
-    # Phase 3–4 (incremental_plan.json still present → flowchart reuse active)
-    job = db.jobs.get(job_id)
-    if not job or job.status == "cancelled":
-        return
-    job.status = "running"
-    job.current_activity = _ACTIVITY[3]
-    db.jobs.update(job)
-    _append_log(job_id, "Resuming from Phase 3…")
-
-    job = db.jobs.get(job_id)
-    cmd3 = _build_cmd(job, checkout_dir, config_path, from_phase=3, use_model=True,
-                      arch_layers=arch_layers)
-    ok = _execute_subprocess(db, job_id, cmd3, phase_start=3)
-    if ok:
-        _complete(db, job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -894,25 +725,26 @@ def _is_cancelled(db: Any, job_id: str) -> bool:
 # Version snapshot — capture model/ + output/ for the compare engine (M3)
 # ---------------------------------------------------------------------------
 
-def _capture_version_snapshot(project_id: str, version_id: str) -> None:
-    """Copy current model/ and output/ into workspaces/<project_id>/versions/<version_id>/
-    so the compare engine can diff two versions without re-running the pipeline."""
-    root = get_settings().repo_root
-    vdir = root / "workspaces" / project_id / "versions" / version_id
-    try:
-        vdir.mkdir(parents=True, exist_ok=True)
-        for dirname in ("model", "output"):
-            src = root / dirname
-            dst = vdir / dirname
-            if src.is_dir():
-                shutil.copytree(str(src), str(dst), dirs_exist_ok=True)
-    except Exception:
-        pass  # snapshot is best-effort; failures must not break the job
-
 
 # ---------------------------------------------------------------------------
 # Completion — register Version + Documents
 # ---------------------------------------------------------------------------
+
+def _commit_dir(project_id: str, commit_sha: str) -> Path:
+    """The per-commit version dir workspaces/<pid>/<commit[:16]> — the git checkout PLUS the
+    model/ output/ manifest the incremental engine writes for that commit (== version)."""
+    return get_settings().repo_root / "workspaces" / project_id / (commit_sha or "")[:16]
+
+
+def _read_engine_manifest(project_id: str, commit_sha: str) -> dict:
+    """Read the engine's manifest.json from the commit dir (decision / baselineVersionId /
+    regenerated / reused / documents). Returns {} when absent."""
+    p = _commit_dir(project_id, commit_sha) / "manifest.json"
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+    except (OSError, ValueError):
+        return {}
+
 
 def _complete(db: Any, job_id: str) -> None:
     job = db.jobs.get(job_id)
@@ -921,15 +753,17 @@ def _complete(db: Any, job_id: str) -> None:
 
     now = _now()
     project = db.projects.get(job.project_id)
+    # The engine wrote model/output + manifest INTO the commit dir and seeded the reuse index
+    # itself — read the manifest for the incremental accounting; no separate capture/seed.
+    manifest = _read_engine_manifest(job.project_id, job.commit_sha)
 
-    version = _make_version(db, project, job, now)
+    version = _make_version(db, project, job, now, manifest)
     docs = _make_documents(db, project, version, now)
-    _make_sections(db, docs, now)
+    _make_sections(db, docs, now, _commit_dir(job.project_id, job.commit_sha) / "output")
     version.docs_count = len(docs)
     db.versions.update(version)
 
     _load_and_register_functions(db, job, version.id)
-    _capture_version_snapshot(job.project_id, version.id)
 
     job.status = "complete"
     job.phase = 4
@@ -952,11 +786,11 @@ def _complete(db: Any, job_id: str) -> None:
     _append_log(job_id, f"Complete. Version {version.tag}, {len(docs)} document(s).")
 
 
-def _make_sections(db: Any, docs: list, now: datetime) -> None:
-    """Seed DocumentSection records for every document created by _make_documents."""
+def _make_sections(db: Any, docs: list, now: datetime, output_dir: Path) -> None:
+    """Seed DocumentSection records for every document created by _make_documents.
+    `output_dir` is the version's commit-dir output (workspaces/<pid>/<commit[:16]>/output)."""
     from ..models.domain import DocumentSection
 
-    output_dir = get_settings().repo_root / "output"
 
     for doc in docs:
         existing = db.documents.list_sections(doc.id)
@@ -1026,7 +860,8 @@ def _make_sections(db: Any, docs: list, now: datetime) -> None:
             db.documents.update_section(sec)
 
 
-def _make_version(db: Any, project: Any, job: Any, now: datetime) -> Version:
+def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict = None) -> Version:
+    manifest = manifest or {}
     existing = db.versions.list_for_project(project.id) if project else []
     taken = {v.tag for v in existing}
     tag = (getattr(job, "version_tag", None) or "").strip() or f"v0.{len(existing) + 1}.0"
@@ -1045,6 +880,12 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime) -> Version:
         docs_count=0,
         created_by=(project.created_by if project else "system"),
         created_at=now,
+        # Incremental accounting comes from the engine's manifest (baselineVersionId is the
+        # baseline commit[:16]; resolvable by compare as a commit-sha prefix).
+        baseline_version_id=manifest.get("baselineVersionId"),
+        decision=manifest.get("decision") or getattr(job, "decision", None),
+        regenerated=manifest.get("regenerated"),
+        reused=manifest.get("reused"),
     )
     db.versions.create(version)
     return version
@@ -1086,7 +927,7 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
 
     # Real output/ dirs — add one SWE.2 per group directory found that is also
     # declared in the project configuration (guards against stale dirs from prior runs).
-    output_dir = get_settings().repo_root / "output"
+    output_dir = _commit_dir(version.project_id, version.commit_sha) / "output"
     groups_found: list[str] = []
     if output_dir.is_dir():
         all_dirs = [d.name for d in sorted(output_dir.iterdir()) if d.is_dir()]
@@ -1134,10 +975,9 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
 # Functions loader — reads model/functions.json and registers under the job
 # ---------------------------------------------------------------------------
 
-def _baseline_fn_keys(reference_version_id: str) -> Optional[Set[str]]:
-    """Return the set of function dict-keys from the baseline version's model, or None."""
-    versions_dir = get_settings().repo_root / "versions" / reference_version_id / "model"
-    path = versions_dir / "functions.json"
+def _baseline_fn_keys(project_id: str, reference_commit: str) -> Optional[Set[str]]:
+    """Return the set of function dict-keys from the baseline commit's model, or None."""
+    path = _commit_dir(project_id, reference_commit) / "model" / "functions.json"
     if not path.exists():
         return None
     try:
@@ -1152,7 +992,7 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
     """Read model/functions.json and register functions in the DB under the job's id."""
     from ..models.domain import Function
 
-    path = get_settings().repo_root / "model" / "functions.json"
+    path = _commit_dir(job.project_id, job.commit_sha) / "model" / "functions.json"
     if not path.exists():
         return
     try:
@@ -1165,7 +1005,7 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
 
     ref_keys: Optional[Set[str]] = None
     if getattr(job, "reference_version_id", None):
-        ref_keys = _baseline_fn_keys(job.reference_version_id)
+        ref_keys = _baseline_fn_keys(job.project_id, job.reference_version_id)
 
     functions: list[Function] = []
     for fn_key, fn_data in raw.items():
@@ -1210,9 +1050,9 @@ def _do_reexport(db: Any, job_id: str) -> None:
         return
 
     root = get_settings().repo_root
-    checkout_dir = root / "workspaces" / job.project_id / job.commit_sha[:16]
-    if not checkout_dir.is_dir():
-        _mark_failed(db, job_id, "Checkout not found — run the full analysis first.")
+    cdir = _commit_dir(job.project_id, job.commit_sha)   # the version dir (model/output live here)
+    if not (cdir / "model").is_dir():
+        _mark_failed(db, job_id, "Version model not found — generate this version first.")
         return
 
     workspace_dir = root / "workspaces" / job.project_id
@@ -1224,7 +1064,18 @@ def _do_reexport(db: Any, job_id: str) -> None:
             _mark_failed(db, job_id, f"Config generation failed: {exc}")
             return
 
+    # Re-export = run.py Phase 4 (--use-model). run.py reads model/output from the repo root,
+    # so stage THIS version's commit-dir model+output there first, then capture the
+    # re-rendered output back into the commit dir.
+    for sub in ("model", "output"):
+        src, dst = cdir / sub, root / sub
+        if src.is_dir():
+            shutil.rmtree(dst, ignore_errors=True)
+            shutil.copytree(src, dst)
+
     arch_layers = project.architecture_layers or []
-    cmd = _build_cmd(job, checkout_dir, config_path, from_phase=4, use_model=True,
-                     arch_layers=arch_layers)
-    _execute_subprocess(db, job_id, cmd, phase_start=4)
+    cmd = _build_cmd(job, cdir, config_path, from_phase=4, use_model=True, arch_layers=arch_layers)
+    if _execute_subprocess(db, job_id, cmd, phase_start=4):
+        out = root / "output"
+        if out.is_dir():
+            shutil.copytree(out, cdir / "output", dirs_exist_ok=True)

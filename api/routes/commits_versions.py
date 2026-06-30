@@ -231,4 +231,8 @@ def _version_dict(v: Version) -> dict:
         "docs_count": v.docs_count,
         "created_by": v.created_by,
         "created_at": v.created_at.isoformat(),
+        "baseline_version_id": getattr(v, "baseline_version_id", None),
+        "decision": getattr(v, "decision", None),
+        "regenerated": getattr(v, "regenerated", None),
+        "reused": getattr(v, "reused", None),
     }

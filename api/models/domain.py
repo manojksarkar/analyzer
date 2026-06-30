@@ -98,6 +98,10 @@ class Version:
     docs_count: int
     created_by: str
     created_at: datetime
+    baseline_version_id: Optional[str] = None   # incremental baseline (None for full)
+    decision: Optional[str] = None              # "incremental" | "full"
+    regenerated: Optional[int] = None           # functions regenerated this run
+    reused: Optional[int] = None                # functions reused (baseline + cross-version)
 
 
 @dataclass
@@ -144,6 +148,15 @@ class AnalysisJob:
     error_message: Optional[str]
     branch: str = "main"
     version_tag: Optional[str] = None
+    mode: str = "auto"                  # "auto" = nearest-ancestor baseline | "full" = force full
+    decision: Optional[str] = None      # "incremental" | "full" — resolved by the worker
+    baseline_commit: Optional[str] = None
+    scope: Optional[dict] = None        # {"type": "project|group|component", "names": [...]}
+    no_llm: bool = False
+    data_dict_id: Optional[str] = None
+    narrowed_parse: bool = False        # M4.4 opt-in: parse only affected TUs (large repos)
+    regenerated: Optional[int] = None   # incremental accounting, set by the worker
+    reused: Optional[int] = None
 
 
 @dataclass

@@ -280,7 +280,10 @@ def render_document(
         raise not_found("Document", doc_id)
     version = db.versions.get(doc.version_id) if doc.version_id else None
 
-    group_dir = doc_render.output_group_dir(doc.group)
+    # Render THIS version's artifacts from its commit dir (workspaces/<pid>/<commit[:16]>/
+    # output), not the shared latest run.
+    out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+    group_dir = doc_render.output_group_dir(doc.group, out_root)
     if group_dir is not None:
         return {"document": doc_render.build_render(doc, project, version, group_dir, project_id)}
 
@@ -301,7 +304,9 @@ def document_asset(
     doc = db.documents.get(doc_id)
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
-    target = doc_render.resolve_asset(doc.group, asset_path)
+    version = db.versions.get(doc.version_id) if doc.version_id else None
+    out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+    target = doc_render.resolve_asset(doc.group, asset_path, out_root)
     if target is None:
         raise not_found("Asset", asset_path)
     return FileResponse(target)
@@ -365,7 +370,9 @@ def download_export_all(
     added = 0
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for doc in docs:
-            docx = doc_render.find_docx(doc.group)
+            version = db.versions.get(doc.version_id) if doc.version_id else None
+            out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+            docx = doc_render.find_docx(doc.group, out_root)
             if docx is not None:
                 zf.write(docx, arcname=f"{doc.name}.docx")
                 added += 1
@@ -402,7 +409,9 @@ def download_document(
     doc = db.documents.get(doc_id)
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
-    docx = doc_render.find_docx(doc.group)
+    version = db.versions.get(doc.version_id) if doc.version_id else None
+    out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+    docx = doc_render.find_docx(doc.group, out_root)
     if docx is not None:
         return FileResponse(
             docx,
@@ -614,7 +623,9 @@ def export_document(
     doc = db.documents.get(doc_id)
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
-    docx = doc_render.find_docx(doc.group)
+    version = db.versions.get(doc.version_id) if doc.version_id else None
+    out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+    docx = doc_render.find_docx(doc.group, out_root)
     if docx is not None:
         return FileResponse(
             docx,

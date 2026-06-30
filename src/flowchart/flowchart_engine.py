@@ -138,6 +138,9 @@ def _parse_args() -> EngineConfig:
                    help="Max statements per ACTION node segment (default: 3)")
     p.add_argument("--max-lines", type=int, default=10,
                    help="Max source lines per ACTION node segment (default: 10)")
+    p.add_argument("--no-llm", action="store_true",
+                   help="Skip the LLM entirely; emit fallback (non-LLM) node labels. "
+                        "For deterministic, LLM-free runs (timing tests).")
     p.add_argument("--verbose", "-v", action="store_true",
                    help="Enable debug logging")
     p.add_argument("--quiet", "-q", action="store_true",
@@ -171,6 +174,7 @@ def _parse_args() -> EngineConfig:
         max_lines_per_segment=args.max_lines,
         llm_batch_size=args.llm_batch_size,
         llm_num_ctx=args.llm_num_ctx,
+        no_llm=args.no_llm,
     )
 
 
@@ -344,6 +348,17 @@ def _load_analyzer_llm_config() -> Optional[Dict]:
     return None
 
 
+class _NullLlmClient:
+    """No-op LLM client for --no-llm runs: every generate() returns "" so the label
+    generator treats each node as 'no LLM response' and falls back to non-LLM labels.
+    Lets the engine produce flowcharts (CFG + fallback labels) with zero LLM calls."""
+
+    model = "no-llm"
+
+    def generate(self, system: str = "", user: str = "", *args, **kwargs) -> str:
+        return ""
+
+
 def _build_llm_client(config: EngineConfig, llm_cfg: Optional[Dict]):
     """Build an LlmClient from the resolved llm config, or legacy CLI args.
 
@@ -466,7 +481,11 @@ def run(config: EngineConfig) -> None:
     # Initialise shared infrastructure
     source_extractor = SourceExtractor(base_path)
     tu_parser = TranslationUnitParser(config.std, config.clang_args)
-    llm_client = _build_llm_client(config, llm_cfg_resolved)
+    if config.no_llm:
+        logger.info("--no-llm: skipping the LLM; emitting fallback node labels")
+        llm_client = _NullLlmClient()
+    else:
+        llm_client = _build_llm_client(config, llm_cfg_resolved)
 
     # Derive enrichment flags + authoritative max_context_tokens from the
     # resolved llm config (displayed above). When standalone without a
