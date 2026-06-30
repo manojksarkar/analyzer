@@ -107,11 +107,54 @@ def _safe_fn(name: str) -> str:
 
 
 def _strip_jsonc(text: str) -> str:
-    """Strip // and /* */ comments + trailing commas from JSONC."""
-    text = _re.sub(r"//[^\n]*", "", text)
-    text = _re.sub(r"/\*.*?\*/", "", text, flags=_re.DOTALL)
-    text = _re.sub(r",\s*([}\]])", r"\1", text)
-    return text
+    """Strip // and /* */ comments + trailing commas from JSONC.
+
+    String-aware: ``//`` and ``/*`` inside string literals (e.g. a URL like
+    ``http://host``) are preserved — a naive regex strip corrupts such values
+    and makes the whole config unparseable (silently falling back to {}).
+    """
+    result: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    escape = False
+    while i < n:
+        c = text[i]
+        if escape:
+            result.append(c)
+            escape = False
+            i += 1
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            result.append(c)
+            i += 1
+            continue
+        if c == '"':
+            in_string = not in_string
+            result.append(c)
+            i += 1
+            continue
+        if in_string:
+            result.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n:
+            if text[i + 1] == "/":
+                i += 2
+                while i < n and text[i] != "\n":
+                    i += 1
+                continue
+            if text[i + 1] == "*":
+                i += 2
+                while i + 1 < n and (text[i] != "*" or text[i + 1] != "/"):
+                    i += 1
+                i += 2
+                continue
+        result.append(c)
+        i += 1
+    # trailing commas
+    return _re.sub(r",\s*([}\]])", r"\1", "".join(result))
 
 
 # ── model / config loaders ────────────────────────────────────────────────────
@@ -389,6 +432,56 @@ def _interfaces_table_8col(ifaces: list) -> Optional[dict]:
     }
 
 
+# ── Introduction builder (Purpose / Scope / Terms — mirrors docx_exporter) ────
+
+def build_intro_section(config: dict, abbreviations: dict,
+                        components: list[str], project_name: str) -> dict:
+    """Build the "1 Introduction" section (1.1 Purpose, 1.2 Scope, 1.3 Terms,
+    Abbreviations and Definitions) exactly as ``docx_exporter.py`` does.
+
+    ``components`` is the sorted list of component display keys; the Scope body
+    lists them as bullets. Shared by the live render and the synthesized /
+    compare fallbacks so the UI always matches the exported DOCX.
+    """
+    intro_cfg = (config.get("docx") or {}).get("introduction") or {}
+    purpose_text = intro_cfg.get("purpose", "[Purpose of this document.]").replace("{project_name}", project_name)
+    scope_intro = intro_cfg.get("scopeIntro", "[Scope of the software detailed design.]").replace("{project_name}", project_name)
+    scope_body = intro_cfg.get("scopeBody", "")
+    scope_items: list[str] = intro_cfg.get("scopeItems") or []
+
+    sorted_comps = sorted(components)
+    comp_bullets = "\n".join(f"• {c.replace('-', ' ')}" for c in sorted_comps)
+    scope_text = scope_intro
+    if comp_bullets:
+        scope_text += "\n" + comp_bullets
+    if scope_body:
+        scope_text += "\n" + scope_body
+    if scope_items:
+        scope_text += "\n" + "\n".join(f"- {item}" for item in scope_items)
+
+    if abbreviations:
+        terms_sec = _sec("intro-terms", "1.3", "Terms, Abbreviations and Definitions", 2,
+                         type="table",
+                         table={"headers": ["Term", "Description"],
+                                "rows": [[k, v] for k, v in sorted(abbreviations.items())]})
+    else:
+        terms_sec = _sec("intro-terms", "1.3", "Terms, Abbreviations and Definitions", 2,
+                         type="richtext", content="[Terms, abbreviations and definitions.]")
+
+    return _sec("intro", "1", "Introduction", 1, type="richtext", content=None, children=[
+        _sec("intro-purpose", "1.1", "Purpose", 2, type="richtext", content=purpose_text),
+        _sec("intro-scope", "1.2", "Scope", 2, type="richtext", content=scope_text),
+        terms_sec,
+    ])
+
+
+def intro_section_from_config(components: list[str], project_name: str) -> dict:
+    """Build the Introduction section from the repo config + abbreviations file —
+    for callers (fallback renders) that don't already have them loaded."""
+    config = _load_config()
+    return build_intro_section(config, _load_abbreviations(config), components, project_name)
+
+
 # ── main builder ──────────────────────────────────────────────────────────────
 
 def build_render(doc, project, version, group_dir: Path, project_id: str,
@@ -429,13 +522,6 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
     # Load config + abbreviations
     config = _load_config()
     abbreviations = _load_abbreviations(config)
-    intro_cfg = (config.get("docx") or {}).get("introduction") or {}
-    purpose_text = intro_cfg.get("purpose", "[Purpose of this document.]")
-    purpose_text = purpose_text.replace("{project_name}", project_name)
-    scope_intro = intro_cfg.get("scopeIntro", "[Scope of the software detailed design.]")
-    scope_intro = scope_intro.replace("{project_name}", project_name)
-    scope_body = intro_cfg.get("scopeBody", "")
-    scope_items: list[str] = intro_cfg.get("scopeItems") or []
 
     # Load flowcharts + behavior diagrams
     flowcharts_dir = group_dir / "flowcharts"
@@ -456,34 +542,10 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
 
     sorted_comps = sorted(comps.keys())
 
-    # ── 1. Introduction ──────────────────────────────────────────────────────
-    comp_bullets = "\n".join(f"• {c.replace('-', ' ')}" for c in sorted_comps)
-    scope_text = scope_intro
-    if comp_bullets:
-        scope_text += "\n" + comp_bullets
-    if scope_body:
-        scope_text += "\n" + scope_body
-    if scope_items:
-        scope_text += "\n" + "\n".join(f"- {item}" for item in scope_items)
-
-    if abbreviations:
-        abbr_table = {
-            "headers": ["Term", "Description"],
-            "rows": [[k, v] for k, v in sorted(abbreviations.items())],
-        }
-        terms_sec = _sec("intro-terms", "1.3", "Terms, Abbreviations and Definitions", 2,
-                         type="table", table=abbr_table)
-    else:
-        terms_sec = _sec("intro-terms", "1.3", "Terms, Abbreviations and Definitions", 2,
-                         type="richtext", content="[Terms, abbreviations and definitions.]")
-
-    intro_sec = _sec("intro", "1", "Introduction", 1, type="richtext", content=None, children=[
-        _sec("intro-purpose", "1.1", "Purpose", 2, type="richtext", content=purpose_text),
-        _sec("intro-scope", "1.2", "Scope", 2, type="richtext", content=scope_text),
-        terms_sec,
-    ])
-
-    sections: list[dict] = [intro_sec]
+    # ── 1. Introduction (Purpose / Scope / Terms) ────────────────────────────
+    sections: list[dict] = [
+        build_intro_section(config, abbreviations, sorted_comps, project_name),
+    ]
 
     # ── 2+. Per component ────────────────────────────────────────────────────
     for comp_idx, comp in enumerate(sorted_comps):
