@@ -5,6 +5,7 @@
 @import "@fontsource/inter/700.css";
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
+@import "material-symbols/outlined.css";
 
 @theme {
   --color-primary: #041627;
