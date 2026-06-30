@@ -1,10 +1,12 @@
+import { z } from 'zod'
 import type { TeamMember, UserRole } from '../../types'
 import { relativeTime, avatarPalette } from '../../lib/format'
 
-export interface ApiMember {
-  id: string; user_id: string; name: string; email: string; initials: string
-  role: string; status: string; joined_at: string | null
-}
+export const ApiMemberSchema = z.object({
+  id: z.string(), user_id: z.string(), name: z.string(), email: z.string(), initials: z.string(),
+  role: z.string(), status: z.string(), joined_at: z.string().nullable(),
+})
+export type ApiMember = z.infer<typeof ApiMemberSchema>
 
 export function mapMember(m: ApiMember): TeamMember {
   const pal = avatarPalette(m.user_id || m.id)

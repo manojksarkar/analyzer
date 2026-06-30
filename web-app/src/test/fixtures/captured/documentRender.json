@@ -1,0 +1,623 @@
+{
+  "document": {
+    "cover": {
+      "project_name": "VCU Engine Firmware",
+      "subtitle": "All components · Detailed Design",
+      "version": "v1.2.0",
+      "layer": "Layer1",
+      "group": "Full",
+      "standard": "ISO_26262",
+      "process": "SWE.3",
+      "generated_at": "2026-06-20T12:00:00+00:00"
+    },
+    "toc": [
+      {
+        "id": "intro",
+        "number": "1",
+        "title": "Introduction",
+        "level": 1
+      },
+      {
+        "id": "comp-Iface",
+        "number": "2",
+        "title": "Iface",
+        "level": 1
+      },
+      {
+        "id": "Iface-iface",
+        "number": "2.1",
+        "title": "Interfaces",
+        "level": 2
+      },
+      {
+        "id": "Iface-component_container_diagrams",
+        "number": "2.2",
+        "title": "Component Diagram",
+        "level": 2
+      },
+      {
+        "id": "Iface-component_header_dependency_diagrams",
+        "number": "2.3",
+        "title": "Include Dependencies",
+        "level": 2
+      },
+      {
+        "id": "unit-ReadWrite",
+        "number": "2.4",
+        "title": "Unit — ReadWrite",
+        "level": 2
+      },
+      {
+        "id": "unit-Flowcharts",
+        "number": "2.5",
+        "title": "Unit — Flowcharts",
+        "level": 2
+      },
+      {
+        "id": "unit-PointRect",
+        "number": "2.6",
+        "title": "Unit — PointRect",
+        "level": 2
+      },
+      {
+        "id": "unit-Types",
+        "number": "2.7",
+        "title": "Unit — Types",
+        "level": 2
+      },
+      {
+        "id": "cfg-Flowcharts_fnDeeplyNested",
+        "number": "2.8",
+        "title": "CFG — Flowcharts · fnDeeplyNested",
+        "level": 2
+      },
+      {
+        "id": "cfg-Flowcharts_fnDoWhile",
+        "number": "2.9",
+        "title": "CFG — Flowcharts · fnDoWhile",
+        "level": 2
+      },
+      {
+        "id": "comp-Cross",
+        "number": "3",
+        "title": "Cross",
+        "level": 1
+      },
+      {
+        "id": "Cross-iface",
+        "number": "3.1",
+        "title": "Interfaces",
+        "level": 2
+      },
+      {
+        "id": "Cross-component_container_diagrams",
+        "number": "3.2",
+        "title": "Component Diagram",
+        "level": 2
+      },
+      {
+        "id": "Cross-component_header_dependency_diagrams",
+        "number": "3.3",
+        "title": "Include Dependencies",
+        "level": 2
+      },
+      {
+        "id": "unit-Hub",
+        "number": "3.4",
+        "title": "Unit — Hub",
+        "level": 2
+      },
+      {
+        "id": "unit-Dispatch",
+        "number": "3.5",
+        "title": "Unit — Dispatch",
+        "level": 2
+      },
+      {
+        "id": "cfg-Dispatch_apply",
+        "number": "3.6",
+        "title": "CFG — Dispatch · apply",
+        "level": 2
+      },
+      {
+        "id": "cfg-Dispatch_applyWithCallback",
+        "number": "3.7",
+        "title": "CFG — Dispatch · applyWithCallback",
+        "level": 2
+      },
+      {
+        "id": "cfg-Dispatch_applyWithOperation",
+        "number": "3.8",
+        "title": "CFG — Dispatch · applyWithOperation",
+        "level": 2
+      },
+      {
+        "id": "cfg-Dispatch_divide",
+        "number": "3.9",
+        "title": "CFG — Dispatch · divide",
+        "level": 2
+      },
+      {
+        "id": "cfg-Dispatch_multiply",
+        "number": "3.10",
+        "title": "CFG — Dispatch · multiply",
+        "level": 2
+      },
+      {
+        "id": "cfg-Dispatch_multiplyCore",
+        "number": "3.11",
+        "title": "CFG — Dispatch · multiplyCore",
+        "level": 2
+      }
+    ],
+    "sections": [
+      {
+        "id": "intro",
+        "number": "1",
+        "title": "Introduction",
+        "level": 1,
+        "type": "richtext",
+        "content": "This Software Detailed Design describes the 'Full' group of VCU Engine Firmware, covering 6 unit(s) across 2 component(s). Interfaces, static structure and control-flow are derived from the Clang AST analysis.",
+        "table": null,
+        "image_url": null,
+        "mermaid": null,
+        "children": []
+      },
+      {
+        "id": "comp-Iface",
+        "number": "2",
+        "title": "Iface",
+        "level": 1,
+        "type": "richtext",
+        "content": "Detailed design for component Iface.",
+        "table": null,
+        "image_url": null,
+        "mermaid": null,
+        "children": [
+          {
+            "id": "Iface-iface",
+            "number": "2.1",
+            "title": "Interfaces",
+            "level": 2,
+            "type": "table",
+            "content": null,
+            "table": {
+              "headers": [
+                "Interface ID",
+                "Name",
+                "Type",
+                "Dir",
+                "Source/Dest"
+              ],
+              "rows": [
+                [
+                  "IF_LAYER1_FULL_READWRITE_01",
+                  "readGlobal",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_READWRITE_02",
+                  "readWriteGlobal",
+                  "Function",
+                  "In",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_READWRITE_03",
+                  "directionAdd",
+                  "Function",
+                  "Out",
+                  "App/Main; Math/Utils"
+                ],
+                [
+                  "IF_LAYER1_FULL_READWRITE_04",
+                  "g_readOnly",
+                  "Global Variable",
+                  "In/Out",
+                  "Iface/ReadWrite"
+                ],
+                [
+                  "IF_LAYER1_FULL_READWRITE_05",
+                  "g_readWrite",
+                  "Global Variable",
+                  "In/Out",
+                  "Iface/ReadWrite"
+                ],
+                [
+                  "IF_LAYER1_FULL_FLOWCHARTS_01",
+                  "runFlowTests",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_POINTRECT_01",
+                  "pointSumWithAdd",
+                  "Function",
+                  "Out",
+                  "App/Main; Math/Utils"
+                ],
+                [
+                  "IF_LAYER1_FULL_POINTRECT_02",
+                  "pointSum",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_POINTRECT_03",
+                  "rectArea",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_POINTRECT_04",
+                  "scalePoint",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_POINTRECT_05",
+                  "getDataAsInt",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_POINTRECT_06",
+                  "getPointX",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_TYPES_01",
+                  "checkStatus",
+                  "Function",
+                  "Out",
+                  "-"
+                ],
+                [
+                  "IF_LAYER1_FULL_TYPES_02",
+                  "nextColor",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_TYPES_03",
+                  "setMode",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_TYPES_04",
+                  "getDefaultStatus",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_TYPES_05",
+                  "getDefaultColor",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ]
+              ]
+            },
+            "image_url": null,
+            "mermaid": null,
+            "children": []
+          },
+          {
+            "id": "Iface-component_container_diagrams",
+            "number": "2.2",
+            "title": "Component Diagram",
+            "level": 2,
+            "type": "diagram",
+            "content": "Component Diagram for Iface.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/component_container_diagrams/Iface.png",
+            "mermaid": "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%\nflowchart TB\n  subgraph MOD[\"Iface\"]\n    U0[\"Flowcharts\"]\n    U1[\"PointRect\"]\n    U2[\"ReadWrite\"]\n    U3[\"Types\"]\n  end\n  classDef unitNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff\n  class U0,U1,U2,U3 unitNode\n  style MOD fill:#fef9c3,stroke:#fbbf24,color:#1e293b",
+            "children": []
+          },
+          {
+            "id": "Iface-component_header_dependency_diagrams",
+            "number": "2.3",
+            "title": "Include Dependencies",
+            "level": 2,
+            "type": "diagram",
+            "content": "Include Dependencies for Iface.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/component_header_dependency_diagrams/Iface.png",
+            "mermaid": "%%{init: {'flowchart': {'ranksep': '0.5', 'nodesep': '0.35'}}}%%\nflowchart BT\n  N1[\"Flowcharts\"]\n  N2[\"Flowcharts\nHeader\"]\n  N3[\"PointRect\"]\n  N4[\"PointRect\nHeader\"]\n  N5[\"ReadWrite\"]\n  N6[\"ReadWrite\nHeader\"]\n  N7[\"Types\"]\n  N8[\"Types\nHeader\"]\n  N1 --> N2\n  N3 --> N4\n  N5 --> N6\n  N7 --> N8\n  classDef cppNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff\n  class N1,N3,N5,N7 cppNode\n  classDef hNode fill:#1e293b,stroke:#334155,color:#ffffff\n  class N2,N4,N6,N8 hNode",
+            "children": []
+          },
+          {
+            "id": "unit-ReadWrite",
+            "number": "2.4",
+            "title": "Unit — ReadWrite",
+            "level": 2,
+            "type": "diagram",
+            "content": "Static structure of unit ReadWrite.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/unit_diagrams/Iface_ReadWrite.png",
+            "mermaid": "%%{init: {'flowchart': {'splines': 'ortho'}}}%%\nflowchart LR\n  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px\n  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px\n\n  App_Main[\"App/Main\"]\n  subgraph internal_mod[\"Iface\"]\n    direction TB\n    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px\n\n    Iface_ReadWrite[\"   ReadWrite   <br/>    <br/>    \"]\n\n\n    class Iface_ReadWrite mainUnit\n  end\n\n  Math_Utils[\"Math/Utils\"]\n\n  App_Main -->|IF_LAYER1_FULL_READWRITE_01<br/>IF_LAYER1_FULL_READWRITE_02<br/>IF_LAYER1_FULL_READWRITE_03<br/>PIF_LAYER1_FULL_READWRITE_01<br/>PIF_LAYER1_FULL_READWRITE_02| Iface_ReadWrite\n  Iface_ReadWrite -->|IF_LAYER1_SUPPORT_UTILS_01| Math_Utils",
+            "children": []
+          },
+          {
+            "id": "unit-Flowcharts",
+            "number": "2.5",
+            "title": "Unit — Flowcharts",
+            "level": 2,
+            "type": "diagram",
+            "content": "Static structure of unit Flowcharts.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/unit_diagrams/Iface_Flowcharts.png",
+            "mermaid": "%%{init: {'flowchart': {'splines': 'ortho'}}}%%\nflowchart LR\n  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px\n  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px\n\n  App_Main[\"App/Main\"]\n  subgraph internal_mod[\"Iface\"]\n    direction TB\n    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px\n\n    Iface_Flowcharts[\"   Flowcharts   <br/>    <br/>    \"]\n\n\n    class Iface_Flowcharts mainUnit\n  end\n\n\n  App_Main -->|IF_LAYER1_FULL_FLOWCHARTS_01| Iface_Flowcharts",
+            "children": []
+          },
+          {
+            "id": "unit-PointRect",
+            "number": "2.6",
+            "title": "Unit — PointRect",
+            "level": 2,
+            "type": "diagram",
+            "content": "Static structure of unit PointRect.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/unit_diagrams/Iface_PointRect.png",
+            "mermaid": "%%{init: {'flowchart': {'splines': 'ortho'}}}%%\nflowchart LR\n  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px\n  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px\n\n  App_Main[\"App/Main\"]\n  subgraph internal_mod[\"Iface\"]\n    direction TB\n    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px\n\n    Cross_Hub[\"Cross/Hub\"]\n    Iface_PointRect[\"   PointRect   <br/>    <br/>    <br/>    \"]\n\n    Cross_Hub -->|IF_LAYER1_FULL_POINTRECT_01| Iface_PointRect\n\n    class Iface_PointRect mainUnit\n    class Cross_Hub internal\n  end\n\n  Math_Utils[\"Math/Utils\"]\n\n  App_Main -->|IF_LAYER1_FULL_POINTRECT_01<br/>IF_LAYER1_FULL_POINTRECT_02<br/>IF_LAYER1_FULL_POINTRECT_03<br/>IF_LAYER1_FULL_POINTRECT_04<br/>IF_LAYER1_FULL_POINTRECT_05<br/>IF_LAYER1_FULL_POINTRECT_06<br/>PIF_LAYER1_FULL_POINTRECT_01| Iface_PointRect\n  Iface_PointRect -->|IF_LAYER1_SUPPORT_UTILS_01| Math_Utils",
+            "children": []
+          },
+          {
+            "id": "unit-Types",
+            "number": "2.7",
+            "title": "Unit — Types",
+            "level": 2,
+            "type": "diagram",
+            "content": "Static structure of unit Types.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/unit_diagrams/Iface_Types.png",
+            "mermaid": "%%{init: {'flowchart': {'splines': 'ortho'}}}%%\nflowchart LR\n  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px\n  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px\n\n  App_Main[\"App/Main\"]\n  subgraph internal_mod[\"Iface\"]\n    direction TB\n    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px\n\n    Cross_Hub[\"Cross/Hub\"]\n    Iface_Types[\"   Types   <br/>    <br/>    <br/>    \"]\n\n    Cross_Hub -->|IF_LAYER1_FULL_TYPES_01<br/>IF_LAYER1_FULL_TYPES_02<br/>IF_LAYER1_FULL_TYPES_05<br/>PIF_LAYER1_FULL_TYPES_01| Iface_Types\n\n    class Iface_Types mainUnit\n    class Cross_Hub internal\n  end\n\n  Outer_Helper[\"Outer/Helper\"]\n\n  App_Main -->|IF_LAYER1_FULL_TYPES_02<br/>IF_LAYER1_FULL_TYPES_03<br/>IF_LAYER1_FULL_TYPES_04<br/>IF_LAYER1_FULL_TYPES_05<br/>PIF_LAYER1_FULL_TYPES_01| Iface_Types\n  Iface_Types -->|IF_LAYER1_SUPPORT_HELPER_01| Outer_Helper",
+            "children": []
+          },
+          {
+            "id": "cfg-Flowcharts_fnDeeplyNested",
+            "number": "2.8",
+            "title": "CFG — Flowcharts · fnDeeplyNested",
+            "level": 2,
+            "type": "diagram",
+            "content": "Control-flow graph derived from the Clang AST.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/flowcharts/Flowcharts_fnDeeplyNested.png",
+            "mermaid": null,
+            "children": []
+          },
+          {
+            "id": "cfg-Flowcharts_fnDoWhile",
+            "number": "2.9",
+            "title": "CFG — Flowcharts · fnDoWhile",
+            "level": 2,
+            "type": "diagram",
+            "content": "Control-flow graph derived from the Clang AST.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/flowcharts/Flowcharts_fnDoWhile.png",
+            "mermaid": null,
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "comp-Cross",
+        "number": "3",
+        "title": "Cross",
+        "level": 1,
+        "type": "richtext",
+        "content": "Detailed design for component Cross.",
+        "table": null,
+        "image_url": null,
+        "mermaid": null,
+        "children": [
+          {
+            "id": "Cross-iface",
+            "number": "3.1",
+            "title": "Interfaces",
+            "level": 2,
+            "type": "table",
+            "content": null,
+            "table": {
+              "headers": [
+                "Interface ID",
+                "Name",
+                "Type",
+                "Dir",
+                "Source/Dest"
+              ],
+              "rows": [
+                [
+                  "IF_LAYER1_FULL_HUB_01",
+                  "hubCompute",
+                  "Function",
+                  "Out",
+                  "App/Main; Lib/Lib, Math/Utils, Outer/Helper, Sample-Core/Core, Util/Util"
+                ],
+                [
+                  "IF_LAYER1_FULL_DISPATCH_01",
+                  "multiply",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_DISPATCH_02",
+                  "applyWithCallback",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_DISPATCH_03",
+                  "applyWithOperation",
+                  "Function",
+                  "Out",
+                  "App/Main"
+                ],
+                [
+                  "IF_LAYER1_FULL_DISPATCH_04",
+                  "g_polymorphismFactor",
+                  "Global Variable",
+                  "In/Out",
+                  "Cross/Dispatch"
+                ]
+              ]
+            },
+            "image_url": null,
+            "mermaid": null,
+            "children": []
+          },
+          {
+            "id": "Cross-component_container_diagrams",
+            "number": "3.2",
+            "title": "Component Diagram",
+            "level": 2,
+            "type": "diagram",
+            "content": "Component Diagram for Cross.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/component_container_diagrams/Cross.png",
+            "mermaid": "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%\nflowchart TB\n  subgraph MOD[\"Cross\"]\n    U0[\"Dispatch\"]\n    U1[\"Hub\"]\n  end\n  classDef unitNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff\n  class U0,U1 unitNode\n  style MOD fill:#fef9c3,stroke:#fbbf24,color:#1e293b",
+            "children": []
+          },
+          {
+            "id": "Cross-component_header_dependency_diagrams",
+            "number": "3.3",
+            "title": "Include Dependencies",
+            "level": 2,
+            "type": "diagram",
+            "content": "Include Dependencies for Cross.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/component_header_dependency_diagrams/Cross.png",
+            "mermaid": "%%{init: {'flowchart': {'ranksep': '0.5', 'nodesep': '0.35'}}}%%\nflowchart BT\n  N1[\"Dispatch\"]\n  N2[\"Dispatch\nHeader\"]\n  N3[\"Hub\"]\n  N4[\"Hub\nHeader\"]\n  N1 --> N2\n  N3 --> N4\n  classDef cppNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff\n  class N1,N3 cppNode\n  classDef hNode fill:#1e293b,stroke:#334155,color:#ffffff\n  class N2,N4 hNode",
+            "children": []
+          },
+          {
+            "id": "unit-Hub",
+            "number": "3.4",
+            "title": "Unit — Hub",
+            "level": 2,
+            "type": "diagram",
+            "content": "Static structure of unit Hub.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/unit_diagrams/Cross_Hub.png",
+            "mermaid": "%%{init: {'flowchart': {'splines': 'ortho'}}}%%\nflowchart LR\n  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px\n  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px\n\n  App_Main[\"App/Main\"]\n  subgraph internal_mod[\"Cross\"]\n    direction TB\n    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px\n\n    Cross_Dispatch[\"Cross/Dispatch\"]\n    Cross_Hub[\"   Hub   <br/>    <br/>    <br/>    <br/>    <br/>    <br/>    <br/>    <br/>    <br/>    \"]\n    Iface_PointRect[\"Iface/PointRect\"]\n    Iface_Types[\"Iface/Types\"]\n\n    Cross_Dispatch -->|IF_LAYER1_FULL_HUB_01| Cross_Hub\n    Cross_Hub -->|IF_LAYER1_FULL_POINTRECT_01| Iface_PointRect\n    Cross_Hub -->|IF_LAYER1_FULL_TYPES_01<br/>IF_LAYER1_FULL_TYPES_02<br/>IF_LAYER1_FULL_TYPES_05<br/>PIF_LAYER1_FULL_TYPES_01| Iface_Types\n\n    class Cross_Hub mainUnit\n    class Cross_Dispatch,Iface_PointRect,Iface_Types internal\n  end\n\n  Lib_Lib[\"Lib/Lib\"]\n  Math_Utils[\"Math/Utils\"]\n  Outer_Helper[\"Outer/Helper\"]\n  Sample-Core_Core[\"Sample Core/Core\"]\n  Util_Util[\"Util/Util\"]\n\n  App_Main -->|IF_LAYER1_FULL_HUB_01| Cross_Hub\n  Cross_Hub -->|IF_LAYER1_MYSAMPLE_LIB_01<br/>IF_LAYER1_MYSAMPLE_LIB_02<br/>IF_LAYER1_MYSAMPLE_LIB_05<br/>IF_LAYER1_MYSAMPLE_LIB_06| Lib_Lib\n  Cross_Hub -->|IF_LAYER1_SUPPORT_UTILS_01<br/>IF_LAYER1_SUPPORT_UTILS_02| Math_Utils\n  Cross_Hub -->|IF_LAYER1_SUPPORT_HELPER_02| Outer_Helper\n  Cross_Hub -->|IF_LAYER1_CORE_01<br/>IF_LAYER1_CORE_03<br/>IF_LAYER1_CORE_04<br/>IF_LAYER1_CORE_05<br/>IF_LAYER1_CORE_06<br/>IF_LAYER1_CORE_07<br/>IF_LAYER1_CORE_08| Sample-Core_Core\n  Cross_Hub -->|IF_LAYER1_MYSAMPLE_UTIL_03<br/>IF_LAYER1_MYSAMPLE_UTIL_04<br/>IF_LAYER1_MYSAMPLE_UTIL_06| Util_Util",
+            "children": []
+          },
+          {
+            "id": "unit-Dispatch",
+            "number": "3.5",
+            "title": "Unit — Dispatch",
+            "level": 2,
+            "type": "diagram",
+            "content": "Static structure of unit Dispatch.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/unit_diagrams/Cross_Dispatch.png",
+            "mermaid": "%%{init: {'flowchart': {'splines': 'ortho'}}}%%\nflowchart LR\n  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px\n  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px\n\n  App_Main[\"App/Main\"]\n  subgraph internal_mod[\"Cross\"]\n    direction TB\n    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px\n\n    Cross_Dispatch[\"   Dispatch   <br/>    <br/>    <br/>    \"]\n    Cross_Hub[\"Cross/Hub\"]\n\n    Cross_Dispatch -->|IF_LAYER1_FULL_HUB_01| Cross_Hub\n\n    class Cross_Dispatch mainUnit\n    class Cross_Hub internal\n  end\n\n  Math_Utils[\"Math/Utils\"]\n\n  App_Main -->|IF_LAYER1_FULL_DISPATCH_01<br/>IF_LAYER1_FULL_DISPATCH_02<br/>IF_LAYER1_FULL_DISPATCH_03| Cross_Dispatch\n  Cross_Dispatch -->|IF_LAYER1_SUPPORT_UTILS_01| Math_Utils",
+            "children": []
+          },
+          {
+            "id": "cfg-Dispatch_apply",
+            "number": "3.6",
+            "title": "CFG — Dispatch · apply",
+            "level": 2,
+            "type": "diagram",
+            "content": "Control-flow graph derived from the Clang AST.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/flowcharts/Dispatch_apply.png",
+            "mermaid": null,
+            "children": []
+          },
+          {
+            "id": "cfg-Dispatch_applyWithCallback",
+            "number": "3.7",
+            "title": "CFG — Dispatch · applyWithCallback",
+            "level": 2,
+            "type": "diagram",
+            "content": "Control-flow graph derived from the Clang AST.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/flowcharts/Dispatch_applyWithCallback.png",
+            "mermaid": null,
+            "children": []
+          },
+          {
+            "id": "cfg-Dispatch_applyWithOperation",
+            "number": "3.8",
+            "title": "CFG — Dispatch · applyWithOperation",
+            "level": 2,
+            "type": "diagram",
+            "content": "Control-flow graph derived from the Clang AST.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/flowcharts/Dispatch_applyWithOperation.png",
+            "mermaid": null,
+            "children": []
+          },
+          {
+            "id": "cfg-Dispatch_divide",
+            "number": "3.9",
+            "title": "CFG — Dispatch · divide",
+            "level": 2,
+            "type": "diagram",
+            "content": "Control-flow graph derived from the Clang AST.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/flowcharts/Dispatch_divide.png",
+            "mermaid": null,
+            "children": []
+          },
+          {
+            "id": "cfg-Dispatch_multiply",
+            "number": "3.10",
+            "title": "CFG — Dispatch · multiply",
+            "level": 2,
+            "type": "diagram",
+            "content": "Control-flow graph derived from the Clang AST.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/flowcharts/Dispatch_multiply.png",
+            "mermaid": null,
+            "children": []
+          },
+          {
+            "id": "cfg-Dispatch_multiplyCore",
+            "number": "3.11",
+            "title": "CFG — Dispatch · multiplyCore",
+            "level": 2,
+            "type": "diagram",
+            "content": "Control-flow graph derived from the Clang AST.",
+            "table": null,
+            "image_url": "projects/p1/documents/doc1/assets/flowcharts/Dispatch_multiplyCore.png",
+            "mermaid": null,
+            "children": []
+          }
+        ]
+      }
+    ],
+    "meta": {
+      "pipeline_data_available": true,
+      "model_data_available": true,
+      "source": "pipeline",
+      "layers": [
+        "Layer1"
+      ],
+      "components": [
+        "Iface",
+        "Cross"
+      ],
+      "units_total": 6,
+      "functions_total": 19,
+      "globals_total": 0
+    }
+  }
+}

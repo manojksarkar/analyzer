@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type {
   Document, DocStats, DocStatus, DocumentDetail, SectionReviewState,
   RichDocument, RichSection, RichSectionType, TocEntry, DocCover, DocMeta,
@@ -6,21 +7,30 @@ import type {
 import { formatShortDate, avatarPalette } from '../../lib/format'
 import { API_BASE_URL } from '../../lib/http'
 
-export interface ApiAssignee { user_id: string; name: string; initials: string }
-export interface ApiDocument {
-  id: string; name: string; subtitle: string; process: string; layer: string; group: string
-  status: string; version_id: string; due_date: string | null
-  assignees: ApiAssignee[]; created_at: string; updated_at: string
-}
+export const ApiAssigneeSchema = z.object({
+  user_id: z.string(), name: z.string(), initials: z.string(),
+})
+export type ApiAssignee = z.infer<typeof ApiAssigneeSchema>
 
-export interface ApiDocSection {
-  key: string; title: string; order: number; content: string
-  review_state: string | null; reviewed_by: string | null; reviewed_at: string | null
-}
-export interface ApiDocumentDetail extends ApiDocument {
-  sections?: ApiDocSection[]
-  review_progress?: { resolved: number; total: number }
-}
+export const ApiDocumentSchema = z.object({
+  id: z.string(), name: z.string(), subtitle: z.string(), process: z.string(),
+  layer: z.string(), group: z.string(), status: z.string(), version_id: z.string(),
+  due_date: z.string().nullable(), assignees: z.array(ApiAssigneeSchema),
+  created_at: z.string(), updated_at: z.string(),
+})
+export type ApiDocument = z.infer<typeof ApiDocumentSchema>
+
+export const ApiDocSectionSchema = z.object({
+  key: z.string(), title: z.string(), order: z.number(), content: z.string(),
+  review_state: z.string().nullable(), reviewed_by: z.string().nullable(), reviewed_at: z.string().nullable(),
+})
+export type ApiDocSection = z.infer<typeof ApiDocSectionSchema>
+
+export const ApiDocumentDetailSchema = ApiDocumentSchema.extend({
+  sections: z.array(ApiDocSectionSchema).optional(),
+  review_progress: z.object({ resolved: z.number(), total: z.number() }).optional(),
+})
+export type ApiDocumentDetail = z.infer<typeof ApiDocumentDetailSchema>
 
 /**
  * @param versionTagById optional version_id → tag lookup so the UI can show
@@ -71,30 +81,34 @@ export function mapDocumentDetail(
 
 /* ── Rich render payload ── */
 
-interface ApiFlowchart {
-  image_url?: string | null
-  mermaid?: string | null
-  label: string
-}
+const ApiFlowchartSchema = z.object({
+  image_url: z.string().nullable().optional(),
+  mermaid: z.string().nullable().optional(),
+  label: z.string(),
+})
 
-interface ApiFlowchartTable {
-  description: string
-  flowcharts: ApiFlowchart[]
-  risk: string
-  capacity: string
-  input_name: string
-  output_name: string
-}
+const ApiFlowchartTableSchema = z.object({
+  description: z.string(),
+  flowcharts: z.array(ApiFlowchartSchema),
+  risk: z.string(),
+  capacity: z.string(),
+  input_name: z.string(),
+  output_name: z.string(),
+})
+type ApiFlowchartTable = z.infer<typeof ApiFlowchartTableSchema>
 
-interface ApiBehaviorTable {
-  description_list: string[]
-  risk: string
-  capacity: string
-  input_name: string
-  output_name: string
-  diagram_url?: string | null
-}
+const ApiBehaviorTableSchema = z.object({
+  description_list: z.array(z.string()),
+  risk: z.string(),
+  capacity: z.string(),
+  input_name: z.string(),
+  output_name: z.string(),
+  diagram_url: z.string().nullable().optional(),
+})
+type ApiBehaviorTable = z.infer<typeof ApiBehaviorTableSchema>
 
+// Recursive section — the type is hand-declared and the schema is built with
+// `z.lazy` so it can reference itself (zod can't infer a self-referential type).
 interface ApiRichSection {
   id: string; number: string; title: string; level: number; type: string
   content: string | null; table: { headers: string[]; rows: string[][] } | null
@@ -103,19 +117,36 @@ interface ApiRichSection {
   flowchart_table?: ApiFlowchartTable | null
   behavior_table?: ApiBehaviorTable | null
 }
-export interface ApiRichDocument {
-  cover: {
-    project_name: string; subtitle: string; version: string; layer: string; group: string
-    standard?: string; process?: string; generated_at?: string
-  }
-  toc: { id: string; number: string; title: string; level: number }[]
-  sections: ApiRichSection[]
-  meta: {
-    pipeline_data_available: boolean; model_data_available: boolean
-    source: string; layers: string[]; components: string[]
-    units_total: number; functions_total: number; globals_total: number
-  }
-}
+const ApiRichSectionSchema: z.ZodType<ApiRichSection> = z.lazy(() =>
+  z.object({
+    id: z.string(), number: z.string(), title: z.string(), level: z.number(), type: z.string(),
+    content: z.string().nullable(),
+    table: z.object({ headers: z.array(z.string()), rows: z.array(z.array(z.string())) }).nullable(),
+    image_url: z.string().nullable().optional(),
+    mermaid: z.string().nullable().optional(),
+    children: z.array(ApiRichSectionSchema),
+    flowchart_table: ApiFlowchartTableSchema.nullable().optional(),
+    behavior_table: ApiBehaviorTableSchema.nullable().optional(),
+  }),
+)
+
+export const ApiRichDocumentSchema = z.object({
+  cover: z.object({
+    project_name: z.string(), subtitle: z.string(), version: z.string(),
+    layer: z.string(), group: z.string(),
+    standard: z.string().optional(), process: z.string().optional(), generated_at: z.string().optional(),
+  }),
+  toc: z.array(z.object({
+    id: z.string(), number: z.string(), title: z.string(), level: z.number(),
+  })),
+  sections: z.array(ApiRichSectionSchema),
+  meta: z.object({
+    pipeline_data_available: z.boolean(), model_data_available: z.boolean(),
+    source: z.string(), layers: z.array(z.string()), components: z.array(z.string()),
+    units_total: z.number(), functions_total: z.number(), globals_total: z.number(),
+  }),
+})
+export type ApiRichDocument = z.infer<typeof ApiRichDocumentSchema>
 
 function mapRichSection(s: ApiRichSection): RichSection {
   let flowchartTable: FlowchartTableData | null = null
@@ -124,7 +155,7 @@ function mapRichSection(s: ApiRichSection): RichSection {
     flowchartTable = {
       description: ft.description,
       flowcharts: (ft.flowcharts ?? []).map((fc) => ({
-        imageUrl: fc.image_url ? `${API_BASE_URL}/${fc.image_url}` : null,
+        imageUrl: resolveAssetUrl(fc.image_url),
         mermaid: fc.mermaid ?? null,
         label: fc.label ?? '',
       })),
@@ -144,7 +175,7 @@ function mapRichSection(s: ApiRichSection): RichSection {
       capacity: bt.capacity,
       inputName: bt.input_name,
       outputName: bt.output_name,
-      diagramUrl: bt.diagram_url ? `${API_BASE_URL}/${bt.diagram_url}` : null,
+      diagramUrl: resolveAssetUrl(bt.diagram_url),
     }
   }
 
@@ -156,14 +187,45 @@ function mapRichSection(s: ApiRichSection): RichSection {
     type: (s.type as RichSectionType) ?? 'richtext',
     content: s.content,
     table: s.table,
-    // The API returns a base-relative asset path; resolve it to an absolute URL
-    // (the diagram route is unauthenticated, so an <img> can load it directly).
-    imageUrl: s.image_url ? `${API_BASE_URL}/${s.image_url}` : null,
+    imageUrl: resolveAssetUrl(s.image_url),
     mermaid: s.mermaid ?? null,
     children: (s.children ?? []).map(mapRichSection),
     flowchartTable,
     behaviorTable,
   }
+}
+
+/**
+ * Resolve a diagram asset reference (from the render payload) to a URL an `<img>`
+ * can lazy-load. The API returns a relative **path/key**, not a ready link — the
+ * UI builds the URL. Two shapes, selected by `VITE_ASSET_ENDPOINT`:
+ *
+ *  - **unset (default)** — the ref is a path under the API base:
+ *      `${API_BASE_URL}/<ref>`              (matches the mock's REST asset route)
+ *  - **set** (e.g. `/assets`) — hand the path to a dedicated asset endpoint as a
+ *    query param (the real-API model):
+ *      `${API_BASE_URL}/assets?path=<ref>`
+ *
+ * An absolute / protocol-relative ref always passes through unchanged (a backend
+ * that returns a full CDN/pre-signed link needs no config). This is the ONE place
+ * the asset-URL contract lives — change here when the real endpoint is fixed.
+ *
+ * Caveat: an `<img>` sends no `Authorization` header, so whichever endpoint serves
+ * the bytes must be reachable without a Bearer (the `path` query carries the asset
+ * path, never a token). If assets MUST be authenticated, the inspector switches to
+ * a blob fetch (auth GET → objectURL) instead — see INTEGRATION_NOTES.
+ */
+const ASSET_ENDPOINT = ((import.meta.env.VITE_ASSET_ENDPOINT as string | undefined) ?? '').trim()
+
+export function resolveAssetUrl(ref: string | null | undefined): string | null {
+  if (!ref) return null
+  if (/^(https?:)?\/\//i.test(ref)) return ref          // absolute / protocol-relative
+  const path = ref.replace(/^\/+/, '')
+  if (ASSET_ENDPOINT) {
+    const ep = ASSET_ENDPOINT.startsWith('/') ? ASSET_ENDPOINT : `/${ASSET_ENDPOINT}`
+    return `${API_BASE_URL}${ep}?path=${encodeURIComponent(path)}`
+  }
+  return `${API_BASE_URL}/${path}`                       // base-relative (mock default)
 }
 
 export function mapRichDocument(d: ApiRichDocument): RichDocument {

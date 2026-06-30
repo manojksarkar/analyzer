@@ -103,7 +103,12 @@ Zustand holds **client/UI/session state only** — never a copy of server data (
 ```bash
 npm run build   # tsc -b + vite build — must be clean
 npm run lint    # new code adds no warnings; pre-existing debt is tracked
+npm test        # Vitest unit suite (mappers/components/hooks) — must be green
 ```
+
+`npm run test:api` validates a **live** API's responses against the schemas the UI expects (run
+the mock, or point `API_TEST_URL` at the real API — it's read-only against a real backend).
+See [TESTING.md](TESTING.md).
 
 Migrations must be **pixel-identical** — they swap *how* a value is expressed (token/primitive), not
 the value. Spot-check against the mock in [`../docs/ui-mockups/`](../docs/ui-mockups/).

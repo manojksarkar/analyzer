@@ -1,0 +1,37 @@
+{
+  "versions": [
+    {
+      "id": "ver3",
+      "tag": "v1.2.0",
+      "commit_sha": "b2e8d45",
+      "branch": "main",
+      "description": "Powertrain refactor",
+      "status": "in_review",
+      "docs_count": 30,
+      "created_by": "u1",
+      "created_at": "2026-06-15T12:00:00+00:00"
+    },
+    {
+      "id": "ver2",
+      "tag": "v1.1.0",
+      "commit_sha": "e4f5g6h",
+      "branch": "main",
+      "description": "Brake system additions",
+      "status": "approved",
+      "docs_count": 22,
+      "created_by": "u1",
+      "created_at": "2026-05-08T12:00:00+00:00"
+    },
+    {
+      "id": "ver1",
+      "tag": "v1.0.0",
+      "commit_sha": "a1b2c3d",
+      "branch": "main",
+      "description": "Initial release",
+      "status": "approved",
+      "docs_count": 15,
+      "created_by": "u1",
+      "created_at": "2026-03-24T12:00:00+00:00"
+    }
+  ]
+}

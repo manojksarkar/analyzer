@@ -1,0 +1,69 @@
+{
+  "document": {
+    "id": "doc1",
+    "name": "Full",
+    "subtitle": "All components · Detailed Design",
+    "process": "SWE.3",
+    "layer": "Layer1",
+    "group": "Full",
+    "status": "in_review",
+    "version_id": "ver3",
+    "due_date": "2026-07-01",
+    "assignees": [
+      {
+        "user_id": "u2",
+        "name": "Bob Kumar",
+        "initials": "BK"
+      },
+      {
+        "user_id": "u3",
+        "name": "Carol Schmidt",
+        "initials": "CS"
+      }
+    ],
+    "created_at": "2026-06-12T12:00:00+00:00",
+    "updated_at": "2026-06-20T12:00:00+00:00",
+    "sections": [
+      {
+        "key": "intro",
+        "title": "1. Introduction",
+        "order": 1,
+        "content": "The Brake Controller unit implements the primary braking logic for the VCU Engine Firmware. It receives driver pedal inputs and wheel-speed sensor data, computes the optimal brake torque distribution, and issues commands to the individual wheel actuators.",
+        "review_state": "accepted",
+        "reviewed_by": "u2",
+        "reviewed_at": "2026-06-21T12:00:00+00:00"
+      },
+      {
+        "key": "interfaces",
+        "title": "2. Interfaces",
+        "order": 2,
+        "content": "| ID | Direction | Type | Description |\n|---|---|---|---|\n| IF_PedalPos | Input | float32 | Brake pedal position 0-100% |\n| IF_WheelSpd | Input | float32[4] | Individual wheel speeds in rpm |\n| IF_DiagStatus | Output | uint32 | Diagnostic trouble code bitmask |",
+        "review_state": "declined",
+        "reviewed_by": "u2",
+        "reviewed_at": "2026-06-21T12:00:00+00:00"
+      },
+      {
+        "key": "static_design",
+        "title": "3. Static Design",
+        "order": 3,
+        "content": "The module is structured as a single cyclic runnable `BrakeCtrl_Run` executing at 10 ms. Internal state is maintained in a static struct `BrakeCtrl_State_t` holding slip-ratio accumulators and PID integrators.",
+        "review_state": null,
+        "reviewed_by": null,
+        "reviewed_at": null
+      },
+      {
+        "key": "dynamic_design",
+        "title": "4. Dynamic Design",
+        "order": 4,
+        "content": "On each cycle: (1) read inputs, (2) compute slip ratios, (3) run PID controller, (4) clamp output to actuator limits, (5) write outputs and update diagnostics.",
+        "review_state": null,
+        "reviewed_by": null,
+        "reviewed_at": null
+      }
+    ],
+    "review_progress": {
+      "resolved": 2,
+      "total": 4
+    }
+  }
+}

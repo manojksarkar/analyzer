@@ -1,0 +1,22 @@
+{
+  "projects": [
+    {
+      "id": "p1",
+      "name": "Brake Control Unit",
+      "client": "Acme Mobility",
+      "compliance_standard": "ISO_26262",
+      "status": "in_review",
+      "last_run_at": "2026-06-20T10:00:00Z",
+      "current_version": "v1.2.0",
+      "doc_counts": { "total": 12, "approved": 5, "in_review": 7 },
+      "team_count": 4,
+      "my_role": "admin",
+      "repo_url": "https://github.com/acme/brake-control-unit",
+      "default_branch": "main",
+      "build_config": {},
+      "architecture_layers": [],
+      "created_at": "2026-06-01T00:00:00Z",
+      "updated_at": "2026-06-20T10:00:00Z"
+    }
+  ]
+}

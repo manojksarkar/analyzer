@@ -1,15 +1,86 @@
 # Frontend ↔ API integration notes
 
-The app calls the real FastAPI server in [`../../api`](../../api); wire-format differences are handled
-in the boundary mappers ([src/services/mappers/](src/services/mappers/)). `api/` is treated as fixed —
-the one exception is the new-project wizard, which needed `repositories/*`, `users/search`, and an
-`access_token` on `POST /projects` (server-side detail: [api/PROJECT_CONTEXT.md](../../api/PROJECT_CONTEXT.md) §12).
+The app calls a FastAPI backend over `VITE_API_URL`; wire-format differences are handled in the
+boundary mappers ([src/services/mappers/](src/services/mappers/)). For local dev that backend is the
+**mock** in [`../../mock-api`](../../mock-api); the **real** API is built separately by another team
+under repo-root [`../../api`](../../api). The web-app is backend-agnostic — it picks its backend solely
+via `VITE_API_URL`, so switching mock → real is a config change, not a code change (see
+**Real-API swap readiness** below). Server-side detail for the wizard endpoints (`repositories/*`,
+`users/search`, `access_token` on `POST /projects`):
+[mock-api/api/PROJECT_CONTEXT.md](../../mock-api/api/PROJECT_CONTEXT.md) §12.
+
+**Build-config file uploads (macros / data dictionary):** the wizard uploads each file (multipart) to
+`POST /repositories/uploads` and sends `{file_name, file_id}` in `build_config` — this is unchanged and
+**needs no frontend work**. The *backend* now persists the bytes: the upload stages them on disk and
+`POST /projects` finalizes them into a per-project workspace, rewriting `build_config` to carry the
+durable **path** (the data dictionary also gets a `data_dict_id` / `current_data_dict_id`) so a later
+run/update can hand the path to the analyzer. The overview mapper (`mapBuildConfig`) only reads
+`mode`/`file_name`/`defines`, so it tolerates the new shape unchanged. This lives in the mock backend
+(`mock-api/`); the real `api/` team mirrors the same upload + finalize contract. Detail:
+[mock-api/api/PROJECT_CONTEXT.md](../../mock-api/api/PROJECT_CONTEXT.md) §12 "Build-config file persistence".
 
 ## Setup
 
 - Base URL: `VITE_API_URL` ([.env.example](.env.example)) — defaults to `http://localhost:8000/api/v1`.
-- Run the API (repo root): `pip install -r api/requirements.txt && uvicorn api.main:app --reload --port 8000`.
-- Demo login: `alice@aspice.dev` / `secret` (admin). Seed users in [api/README.md](../../api/README.md).
+- Run the mock backend: `cd ../mock-api && uvicorn api.main:app --reload --port 8000`.
+- Demo login: `alice@aspice.dev` / `secret` (admin). Seed users in [mock-api/api/README.md](../../mock-api/api/README.md).
+
+## Real-API swap readiness
+
+**Goal:** stop the mock, start the real API — no web-app code change. The app is already wired for
+this; the items below are the contract the real API must satisfy and the two things config alone
+can't fix.
+
+**The single switch.** The backend is chosen only by `VITE_API_URL` ([src/lib/http.ts:18](src/lib/http.ts#L18)).
+Run the real API on `http://localhost:8000/api/v1`, **or** point `VITE_API_URL` at wherever it's hosted.
+There are no other backend references in the source (`localhost`/`:8000` appear only as the env fallback).
+
+**Verified (2026-06-25):** `npm run build` clean; every read endpoint the app calls returns 200 against
+the mock (auth, projects, commits, versions, documents list/detail/render, members, notifications). The
+7 lint errors are pre-existing (`NewProjectPage` set-state-in-effect / unused-expr), unrelated to the swap.
+
+**Swap-verification tool — `npm run test:api`.** This is now automated. The API-test suite signs
+in, walks every endpoint the app calls, and validates each raw response against the zod schema the UI
+expects (the mappers' `Api*` types are `z.infer<>` of those schemas — single source of truth). Green vs
+the mock; point it at the real API (`API_TEST_URL=<url> API_TEST_EMAIL/PASSWORD npm run test:api`) and it
+prints exactly which endpoint/field drifted (mismatch = fail; new field = warning). **It is read-only
+against a real API** — write requests run only against a local mock, so it can't corrupt real data. It
+also asserts the two tokenless requirements below — the SSE route and the asset route must not be
+`Bearer`-gated, and a real diagram `image_url` must load as an `image/*`. Full guide: [TESTING.md](TESTING.md).
+
+**⚠ Two hard requirements (browsers can't attach a Bearer header here):**
+1. **Job progress SSE** — `GET /projects/{id}/jobs/{jobId}/events` is opened by `EventSource`
+   ([useJobs.ts:16](src/hooks/useJobs.ts#L16) → [jobs.ts:43](src/services/api/jobs.ts#L43)), which sends
+   **no Authorization header**. The real API must keep this route reachable without a Bearer header
+   (unauthenticated, like the mock, or accept a `?token=` query param — tell us the param and we'll append it).
+2. **Diagram assets** — the render payload returns `image_url` as a relative **path/key**; the UI builds
+   the URL in `resolveAssetUrl` ([document.ts](src/services/mappers/document.ts)) and loads it with a plain
+   `<img loading="lazy">`, same no-header constraint. The URL shape is config-selectable via
+   **`VITE_ASSET_ENDPOINT`**: unset → `${base}/<path>` (mock's REST route); set (e.g. `/assets`) →
+   `${base}/assets?path=<path>` (dedicated endpoint, path as a query param — the real-API model). Absolute
+   / CDN URLs pass through. The serving endpoint must be reachable **without** a Bearer (the `path` query
+   carries the asset path, never a token); if it must be authenticated, the inspector switches to a blob
+   fetch (auth GET → objectURL). `npm run test:api` verifies a real `image_url` actually loads as an
+   `image/*` under whichever mode is configured.
+
+   *(Authenticated binary endpoints — DOCX `…/download`, `…/export-all` — are fine: they go through a
+   `fetch` + Bearer + blob in [http.ts](src/lib/http.ts#L153), not an `<img>`/`EventSource`.)*
+
+**Endpoints the app depends on** (the real API must implement these paths/shapes — the mock is the
+executable reference): `auth/{signin,refresh,signout,me}`; `projects` (list/get/create/update/delete,
+`access-requests`); `repositories/{test-connection,browse,uploads}` + `users/search` (wizard);
+`projects/{id}/{commits,versions,documents,members,members/pending,members/invite,jobs,compare,functions,notifications}`;
+document actions (`approve`, `approve-all`, `submit-review`, `request-changes`, `assignments[/self]`,
+`sections/{key}`, `download`, `export-all`, `render`); `notifications/{id}/read` + `read-all`.
+Snake_case in/out; per-project role via `my_role`. Full shapes: the mock routes + the mappers in
+[src/services/mappers/](src/services/mappers/).
+
+**Features still showing placeholder data (no endpoint in the contract — the real API would need to add
+one before the web-app can wire it):** Overview **Last Actions** feed and **Function Visibility** card
+are hard-coded ([ProjectDetailPage.tsx:742,765](src/pages/ProjectDetailPage.tsx#L742)); several
+secondary actions are info-toasts/no-ops (Archive, Request Access, Forgot password, SSO, Profile, Help).
+These won't light up just by swapping backends — they need both an endpoint and FE wiring. See the
+per-page TODO column below.
 
 ## Wire-format mismatches (handled in mappers)
 
