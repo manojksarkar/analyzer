@@ -328,14 +328,112 @@ def _checkout(project: Any, commit_sha: str, checkout_dir: Path, job_id: str) ->
 # Config generation
 # ---------------------------------------------------------------------------
 
+def _strip_json_comments(text: str) -> str:
+    """Strip // and /* */ comments, skipping the contents of "..." string literals
+    (so values like "http://host" or a Windows path are never corrupted).
+
+    Self-contained port of the analyzer's stripper — the API does not import from
+    src/. Kept char-by-char (not regex) precisely so a `//` inside a string value
+    is preserved.
+    """
+    result = []
+    i = 0
+    in_string = False
+    escape = False
+    while i < len(text):
+        c = text[i]
+        if escape:
+            result.append(c)
+            escape = False
+            i += 1
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            result.append(c)
+            i += 1
+            continue
+        if c == '"' and not escape:
+            in_string = not in_string
+            result.append(c)
+            i += 1
+            continue
+        if in_string:
+            result.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < len(text):
+            if text[i + 1] == "/":
+                i += 2
+                while i < len(text) and text[i] != "\n":
+                    i += 1
+                continue
+            if text[i + 1] == "*":
+                i += 2
+                while i + 1 < len(text) and (text[i] != "*" or text[i + 1] != "/"):
+                    i += 1
+                i += 2
+                continue
+        result.append(c)
+        i += 1
+    return "".join(result)
+
+
+def _strip_trailing_commas(text: str) -> str:
+    """Remove trailing commas before } or ] (JSON5-style), outside strings."""
+    out = []
+    i = 0
+    in_string = False
+    escape = False
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if escape:
+            out.append(c)
+            escape = False
+            i += 1
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            out.append(c)
+            i += 1
+            continue
+        if c == '"':
+            in_string = not in_string
+            out.append(c)
+            i += 1
+            continue
+        if not in_string and c == ",":
+            j = i + 1
+            while j < n and text[j] in (" ", "\t", "\r", "\n"):
+                j += 1
+            if j < n and text[j] in ("}", "]"):
+                i += 1
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _strip_jsonc(text: str) -> str:
+    """Strip JSONC comments + trailing commas (string-aware) so config.json may use
+    // and /* */ comments without breaking the parse."""
+    return _strip_trailing_commas(_strip_json_comments(text))
+
+
+def _load_base_config(base_path: Path) -> dict:
+    """Parse the base config/config.json as JSONC (comments + trailing commas allowed).
+    Returns {} on any read/parse failure, matching the prior json.load fallback."""
+    try:
+        with open(base_path, "r", encoding="utf-8") as f:
+            return json.loads(_strip_jsonc(f.read()))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> Path:
     """Write a per-project config.json by merging the base config with project settings."""
     base_path = get_settings().repo_root / "config" / "config.json"
-    try:
-        with open(base_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        cfg = {}
+    cfg = _load_base_config(base_path)
 
     # Apply explicit section overrides from build_config
     bc = project.build_config or {}
