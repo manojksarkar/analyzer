@@ -330,3 +330,90 @@ export interface CompareDocumentDetail {
   documentName: string
   sections: CompareSectionDiff[]
 }
+
+/* ── Rich, highlight-annotated compare diff (GET …/compare/documents/{id}) ── */
+
+/** Inline change mark on a piece of content. */
+export type DiffMark = 'none' | 'add' | 'del' | 'change'
+
+/** A run of text carrying one change mark (word-level highlight). */
+export interface DiffSegment {
+  text: string
+  mark: DiffMark
+}
+
+export interface CompareTextBlock {
+  kind: 'text'
+  segments: DiffSegment[]
+}
+
+export interface CompareKeyValueBlock {
+  kind: 'keyvalue'
+  label: string
+  segments: DiffSegment[]
+}
+
+export interface CompareTableBlock {
+  kind: 'table'
+  headers: string[]
+  rows: string[][]
+  /** Per-row mark, parallel to `rows`. */
+  rowMarks: DiffMark[]
+  /** Per-cell mark, parallel to `rows[i]`. */
+  cellMarks: DiffMark[][]
+}
+
+export interface CompareDiagramBlock {
+  kind: 'diagram'
+  imageUrl: string | null
+  mermaid: string | null
+  caption: string | null
+  changed: boolean
+}
+
+export type CompareBlock =
+  | CompareTextBlock
+  | CompareKeyValueBlock
+  | CompareTableBlock
+  | CompareDiagramBlock
+
+/** Where a section's data came from + which side(s) carry it. */
+export interface CompareSource {
+  artifact: string
+  present: 'both' | 'current' | 'baseline'
+}
+
+/** One diffed section rendered for both the reference and current panes. */
+export interface CompareRichSection {
+  id: string
+  number: string
+  title: string
+  level: number
+  diffType: DiffType
+  source: CompareSource
+  currentBlocks: CompareBlock[]
+  baselineBlocks: CompareBlock[]
+}
+
+export interface CompareDiffRefInfo {
+  ref: string | null
+  version: string | null
+  branch: string | null
+  shortSha: string | null
+  hasSnapshot: boolean
+}
+
+/**
+ * The compare-document-detail payload. `mode: 'rich'` carries the full
+ * highlight-annotated render (descriptions, tables, mermaid); `mode: 'flat'` is
+ * the legacy interface-table fallback (markdown strings in `flatSections`).
+ */
+export interface CompareDocumentDiff {
+  mode: 'rich' | 'flat'
+  documentName: string
+  current?: CompareDiffRefInfo
+  baseline?: CompareDiffRefInfo
+  summary?: CompareSummary
+  sections: CompareRichSection[]
+  flatSections: CompareSectionDiff[]
+}
