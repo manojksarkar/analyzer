@@ -42,6 +42,8 @@ from core.paths import paths as _paths
 from core.config import load_config
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
+from incremental.clone import ensure_commit_checkout
+from incremental.project_db import get_project, resolve_project_repo
 from incremental.fingerprint import compute_fingerprints
 from incremental.edges import build_edges  # noqa: F401  (kept for symmetry / future use)
 
@@ -89,11 +91,33 @@ def scope_to_args(scope: Dict[str, Any]) -> List[str]:
     raise ValueError(f"unknown scope type {stype!r}")
 
 
-def _resolved_config(project: Dict[str, Any], project_root: str) -> Dict[str, Any]:
-    """Global config (merged with local) + the project's layers injected."""
-    cfg = copy.deepcopy(load_config(project_root))
-    cfg["layers"] = project.get("layers") or {}
+def resolve_run_config(config_path: Optional[str], *, no_llm: bool = False) -> Dict[str, Any]:
+    """Load the PER-PROJECT config (workspaces/<pid>/config.json, written by the API from the
+    project's architecture_layers + build_config — see api/PROJECT_CONTEXT). The engine does
+    NOT build config: if it's missing, that's an error (the API creates it at onboarding /
+    when a job runs). Applies the no_llm kill switch last."""
+    if not (config_path and os.path.isfile(config_path)):
+        raise RuntimeError(
+            f"per-project config not found ({config_path!r}). It is created by the API "
+            f"(POST /projects onboarding, or when a job runs). Onboard the project / run a "
+            f"job, or pass --config <path>.")
+    import json as _json
+    with open(config_path, "r", encoding="utf-8") as fh:
+        cfg = _json.load(fh)
+    if no_llm:
+        apply_no_llm(cfg)
     return cfg
+
+
+def apply_no_llm(cfg: Dict[str, Any]) -> None:
+    """Make `--no-llm` a TRUE kill switch (M-D): disable every LLM-backed enrichment in the
+    resolved config — Phase 2 function descriptions + behaviour names, the DOCX struct/unit
+    summaries (gated on llm.descriptions), and (via flowcharts.py) the flowchart node labels.
+    Hierarchy summaries are already off via --no-llm-summarize. For deterministic, LLM-free
+    runs (timing tests); the output keeps structure but loses LLM prose / labels."""
+    llm = cfg.setdefault("llm", {})
+    llm["descriptions"] = False
+    llm["behaviourNames"] = False
 
 
 def generate_full(
@@ -107,6 +131,9 @@ def generate_full(
     no_llm: bool = False,
     force: bool = False,
     version_id: Optional[str] = None,
+    repo_url: Optional[str] = None,
+    repo_token: Optional[str] = None,
+    config_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
 
@@ -121,24 +148,39 @@ def generate_full(
     project_root = _paths().project_root
 
     ws = Workspace(project_id, workspaces_root)
-    project = ws.project()
+    project = get_project(project_id)        # api/db/data/projects.json (no project.json)
     vstore = VersionStore(ws)
     hstore, estore = HashStore(vstore), EdgeStore(vstore)
     ridx = ReuseIndex(ws)
 
-    version_id = version_id or vstore.next_version_id()
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
-    # 1. checkout
-    git_ops.checkout(ws.repo_dir, commit)
-    actual_commit = git_ops.current_commit(ws.repo_dir)
+    # 1. ensure the per-commit checkout. The repo for a commit IS its version dir,
+    #    workspaces/<pid>/<commit[:16]>/. The API pre-clones it for a Job; the CLI clones
+    #    on demand (repo_url/token from the project record when not passed explicitly).
+    repo_dir = ws.commit_dir(commit)
+    if not repo_url and not os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_url, _rb, repo_token = resolve_project_repo(project_id)
+    ensure_commit_checkout(repo_dir, repo_url or "", branch, commit, token=(repo_token or ""))
+    actual_commit = git_ops.current_commit(repo_dir)
+    version_id = os.path.basename(repo_dir)  # the version id IS the checkout dir name (commit[:16])
 
-    # 2. resolved config -> versions/<id>/config.json + a "running" manifest so the
+    # 2. resolved config -> <commit[:16]>/config.json + a "running" manifest so the
     #    version is queryable immediately (status flips to complete/failed below).
-    vdir = vstore.create_dir(version_id, force=force)
-    cfg = _resolved_config(project, project_root)
-    vstore.write_config(version_id, cfg)
-    vcfg_path = os.path.join(vdir, "config.json")
+    vdir = vstore.create_dir(version_id)     # == repo_dir; ensured, never wiped
+    # Config is PER-PROJECT: workspaces/<pid>/config.json (the API writes it from the
+    # project's architecture_layers + build_config). Use it as-is (or an explicit --config).
+    # Only when --no-llm must rewrite it, or no per-project config exists, do we materialize
+    # a per-run copy in the version dir.
+    if not config_path:
+        _proj_cfg = os.path.join(ws.root, "config.json")
+        config_path = _proj_cfg if os.path.isfile(_proj_cfg) else None
+    cfg = resolve_run_config(config_path, no_llm=no_llm)
+    if config_path and not no_llm:
+        vcfg_path = config_path                       # run.py uses the per-project config as-is
+    else:
+        vstore.write_config(version_id, cfg)
+        vcfg_path = os.path.join(vdir, "config.json")
     vstore.write_manifest(version_id, _manifest(
         version_id, branch, actual_commit, scope, data_dict_id,
         decision="full", regenerated=0, reused=0, status="running", warnings=[]))
@@ -166,12 +208,12 @@ def generate_full(
 
     # Phase-split (M4.4): Phase 1 (parse) -> snapshot the blank-skeleton model into the
     # version (the baseline a future narrowed parse merges against) -> Phase 2+.
-    rc = subprocess.run(base_cmd + ["--to-phase", "1", ws.repo_dir],
+    rc = subprocess.run(base_cmd + ["--to-phase", "1", repo_dir],
                         cwd=project_root, shell=(os.name == "nt")).returncode
     if rc != 0:
         _fail_full(rc)
     snapshot_parse_model(model_dir, vdir)
-    rc = subprocess.run(base_cmd + ["--from-phase", "2", ws.repo_dir],
+    rc = subprocess.run(base_cmd + ["--from-phase", "2", repo_dir],
                         cwd=project_root, shell=(os.name == "nt")).returncode
     if rc != 0:
         _fail_full(rc)
@@ -250,13 +292,15 @@ def main() -> None:
     ap.add_argument("--scope", default="project",
                     help="project | layer:L | group:G | component:C1,C2")
     ap.add_argument("--data-dict-id", default=None)
-    ap.add_argument("--version-id", default=None, help="use this (pre-allocated) version id")
+    ap.add_argument("--version-id", default=None, help="(derived from the commit; kept for compat)")
     ap.add_argument("--no-llm", action="store_true", help="skip LLM hierarchy summarization")
-    ap.add_argument("--force", action="store_true", help="overwrite the version dir if it exists")
+    ap.add_argument("--force", action="store_true", help="(no-op; the commit dir is reused)")
+    ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
+    ap.add_argument("--repo-url", default=None, help="clone URL (else resolved from the project record)")
     args = ap.parse_args()
     m = generate_full(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
                       data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
-                      version_id=args.version_id)
+                      version_id=args.version_id, config_path=args.config, repo_url=args.repo_url)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, regenerated={m['regenerated']}, "
           f"documents={m.get('documents')}")

@@ -19,7 +19,7 @@
 > the project's `layers` config, the data-dictionary upload). This spec **assumes a project already
 > exists** and you have its `projectId`. Onboarding endpoints are **not** specified here.
 >
-> **Implementation status:** ✅ **all endpoints below (G1, G2, 1–15) are implemented** in
+> **Implementation status:** ✅ **all endpoints below (G0, G1, G2, 1–15) are implemented** in
 > [backend/main.py](../../backend/main.py); the git operations live in `backend/git_service.py` +
 > `src/incremental/git_ops.py` (clone, fetch, checkout, branch/commit listing, ancestry, diff). The
 > spec remains the **contract** the UI is built against.
@@ -89,6 +89,7 @@ exists:
 
 | # | Method | Path | Purpose |
 |---|---|---|---|
+| **G0** | GET | `/projects` | List onboarded projects (call FIRST to get `projectId`) |
 | **G1** | GET | `/projects/{projectId}/branches` | List branches |
 | **G2** | GET | `/projects/{projectId}/branches/{branch}/commits` | List commits of a branch (paged) |
 | **1** | GET | `/projects/{projectId}/generate/preview` | Preview the plan (baseline, incremental/full, warnings) — call BEFORE generate |
@@ -109,7 +110,28 @@ exists:
 
 ---
 
-## 4. Git reads
+## 4. Projects & git reads
+
+### G0. GET `/projects`
+List every onboarded project. **The UI calls this first** — every other endpoint needs a
+`projectId`, and this is how it's discovered. A project is a `workspaces/<projectId>/`
+directory with a `project.json` (created by onboarding).
+**200**
+```json
+[
+  {
+    "projectId": "samplecpp",
+    "name": "SampleCppProject",
+    "repoUrl": "https://github.com/acme/SampleCppProject.git",
+    "defaultBranch": "main",
+    "currentDataDictId": "dd-001",
+    "versionCount": 2,
+    "latestVersionId": "v2"
+  }
+]
+```
+Returns `[]` when no projects are onboarded. (Onboarding/registration of a new project is a
+separate workstream — see §1.)
 
 ### G1. GET `/projects/{projectId}/branches`
 List the project's branches (newest commit first).
@@ -168,17 +190,52 @@ auto-chosen nearest-ancestor baseline).
 
 ### 2. POST `/projects/{projectId}/generate`
 Start a generation. Returns immediately with a `jobId` (poll #6/#9) and the `versionId` being produced.
-**Request**
+**Request fields**
+
+| Field | Type | Required | Default | Meaning |
+|---|---|---|---|---|
+| `branch` | string | **yes** | — | Branch the commit is on (recorded on the version). |
+| `commit` | string | **yes** | — | Target commit SHA to generate for. |
+| `scope` | object | no | `{"type":"project"}` | What to generate — see **scope object** below. |
+| `mode` | string | no | `"auto"` | `"auto"` = incremental when a baseline ancestor exists, else full; `"full"` = force a full generation. |
+| `baseVersionId` | string | no | `null` | Explicit baseline to diff against (e.g. `"v1"`). Omit/null = auto nearest-ancestor. **Quote it** (`"v1"`, not `v1`). |
+| `dataDictId` | string | no | project's current | Data dictionary to use; omit = the project's current one. |
+| `noLlm` | bool | no | `false` | `true` = fully **LLM-free** run (no descriptions / behaviour names / flowchart labels / struct summaries) — deterministic; for timing tests / offline runs. |
+
+**scope object** (one of):
+
+| Scope | JSON |
+|---|---|
+| Whole project | `{ "type": "project" }` |
+| One layer | `{ "type": "layer", "names": ["Layer1"] }` |
+| One group | `{ "type": "group", "names": ["Support"] }` |
+| One or more components | `{ "type": "component", "names": ["Math", "App"] }` |
+
+**Request body — examples**
+
+*Auto (incremental if a baseline ancestor exists, else full), whole project:*
 ```json
-{
-  "branch": "feature/x",
-  "commit": "a12b34c…",
-  "scope":  { "type": "project" },      // see §1 "scope object"
-  "mode":   "auto",                     // "auto" = incremental if an ancestor exists, else full | "full" = force full
-  "baseVersionId": null,                // optional override; null = auto nearest-ancestor
-  "dataDictId":    null                 // optional; null = the project's current data dictionary
-}
+{ "branch": "main", "commit": "a12b34c", "scope": { "type": "project" }, "mode": "auto" }
 ```
+*Incremental against a specific baseline, one group:*
+```json
+{ "branch": "main", "commit": "a12b34c", "scope": { "type": "group", "names": ["Support"] }, "baseVersionId": "v1" }
+```
+*Force a full generation (ignore any baseline):*
+```json
+{ "branch": "main", "commit": "a12b34c", "scope": { "type": "project" }, "mode": "full" }
+```
+*LLM-free run (deterministic; for timing tests), one group:*
+```json
+{ "branch": "main", "commit": "a12b34c", "scope": { "type": "group", "names": ["Support"] }, "noLlm": true }
+```
+*Explicit data dictionary + selected components:*
+```json
+{ "branch": "main", "commit": "a12b34c", "scope": { "type": "component", "names": ["Math", "App"] }, "dataDictId": "dd-002" }
+```
+
+> **JSON gotcha (422):** every string value must be quoted — `"baseVersionId": "v1"`, **not** `"baseVersionId": v1`. An unquoted/bare value makes the body invalid JSON and the API returns **422 Unprocessable Entity** before the handler runs. In Postman use **Body → raw → JSON**.
+
 **200**
 ```json
 {
@@ -245,6 +302,13 @@ several documents (e.g. one per component).
 
 A `generate` call returns a `jobId`. Poll these until the job completes, then download.
 
+> **Survives a backend restart.** Job metadata is persisted to `logs/jobs/<jobId>.json`, so
+> `/jobs/{jobId}/status` and `/jobs/{jobId}/prepare/logs` keep working after a `uvicorn`
+> restart (they reload the job and reconcile its final state from the version manifest —
+> which the generation subprocess writes). A job that was mid-run when the backend died is
+> reported `complete` with an `interrupted (...)` error if its process is gone, or kept
+> `running` if the (orphaned) subprocess is still alive.
+
 ### 6. GET `/jobs/{jobId}/status`
 ```json
 {
@@ -265,7 +329,9 @@ A `generate` call returns a `jobId`. Poll these until the job completes, then do
 **Errors:** 404 (unknown job).
 
 ### 7. GET `/jobs/{jobId}/prepare/logs`
-Up to the most recent ~200 log lines from the run.
+Up to the most recent log lines from the run. Works for **both `generate` and `prepare`
+jobs** (the `jobId` returned by `POST /generate` is valid here). **400** if the job has no
+tailable logs (e.g. an export job — use #9/#10 for those); **404** for an unknown job.
 ```json
 [ { "id": "0", "t": "10:00:01", "level": "info", "msg": "[1/4] === Phase 1: Parse C++ source ===" } ]
 ```

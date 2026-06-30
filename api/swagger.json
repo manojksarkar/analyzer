@@ -1,0 +1,2447 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ASPICE Documentation Platform API",
+    "description": "Multi-tenant, role-based SaaS API for automating automotive ASPICE / ISO 26262 documentation from C++ source code repositories.",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Local development server"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    { "name": "meta", "description": "Health and root endpoints" },
+    { "name": "auth", "description": "Authentication and user profile" },
+    { "name": "projects", "description": "Project CRUD and access control" },
+    { "name": "commits-versions", "description": "Git commits and tagged versions" },
+    { "name": "jobs", "description": "Analysis job lifecycle" },
+    { "name": "documents", "description": "ASPICE document management and review" },
+    { "name": "team", "description": "Project membership and invitations" },
+    { "name": "compare", "description": "Version diff and comparison" },
+    { "name": "functions", "description": "C++ function visibility management" },
+    { "name": "notifications", "description": "User notifications" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["meta"],
+        "summary": "Health check",
+        "operationId": "health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "version": { "type": "string", "example": "0.1.0" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": ["meta"],
+        "summary": "API root",
+        "operationId": "root",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "API info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "version": { "type": "string" },
+                    "docs": { "type": "string" },
+                    "health": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/signin": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Sign in",
+        "operationId": "signin",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SignInRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": { "type": "string" },
+                    "refresh_token": { "type": "string" },
+                    "user": { "$ref": "#/components/schemas/User" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Refresh access token",
+        "operationId": "refreshToken",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefreshRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/auth/signout": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Sign out",
+        "operationId": "signout",
+        "responses": {
+          "200": {
+            "description": "Signed out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "Get current user",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": { "$ref": "#/components/schemas/User" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "patch": {
+        "tags": ["auth"],
+        "summary": "Update current user profile",
+        "operationId": "updateMe",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateMeRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": { "$ref": "#/components/schemas/User" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "tags": ["projects"],
+        "summary": "List projects for current user",
+        "operationId": "listProjects",
+        "responses": {
+          "200": {
+            "description": "Project list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ProjectView" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["projects"],
+        "summary": "Create a new project",
+        "operationId": "createProject",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateProjectRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": { "$ref": "#/components/schemas/ProjectView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/projects/search": {
+      "get": {
+        "tags": ["projects"],
+        "summary": "Search projects",
+        "operationId": "searchProjects",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string", "default": "" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "client": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}": {
+      "get": {
+        "tags": ["projects"],
+        "summary": "Get project by ID",
+        "operationId": "getProject",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": { "$ref": "#/components/schemas/ProjectView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "tags": ["projects"],
+        "summary": "Update project",
+        "operationId": "updateProject",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateProjectRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": { "$ref": "#/components/schemas/ProjectView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["projects"],
+        "summary": "Delete project",
+        "operationId": "deleteProject",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "responses": {
+          "204": { "description": "Project deleted" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/access-requests": {
+      "post": {
+        "tags": ["projects"],
+        "summary": "Request access to a project",
+        "operationId": "requestAccess",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "responses": {
+          "201": {
+            "description": "Access request created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "request": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "status": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "get": {
+        "tags": ["projects"],
+        "summary": "List pending access requests (admin only)",
+        "operationId": "listAccessRequests",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending access requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "user_id": { "type": "string" },
+                          "requested_at": { "type": "string", "format": "date-time" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/access-requests/{req_id}": {
+      "patch": {
+        "tags": ["projects"],
+        "summary": "Approve or deny an access request (admin only)",
+        "operationId": "resolveAccessRequest",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          {
+            "name": "req_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AccessRequestAction" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resolved request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "request": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "status": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/commits": {
+      "get": {
+        "tags": ["commits-versions"],
+        "summary": "List commits for a project",
+        "operationId": "listCommits",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/PerPage" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Commit list with pagination",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "commits": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/CommitView" }
+                    },
+                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/versions": {
+      "get": {
+        "tags": ["commits-versions"],
+        "summary": "List versions for a project",
+        "operationId": "listVersions",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Version list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "versions": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/VersionView" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["commits-versions"],
+        "summary": "Create a new version (admin only)",
+        "operationId": "createVersion",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateVersionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": { "$ref": "#/components/schemas/VersionView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/versions/{version_id}": {
+      "get": {
+        "tags": ["commits-versions"],
+        "summary": "Get version by ID",
+        "operationId": "getVersion",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/VersionId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Version details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": { "$ref": "#/components/schemas/VersionView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "tags": ["commits-versions"],
+        "summary": "Update version (admin only)",
+        "operationId": "updateVersion",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/VersionId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateVersionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": { "$ref": "#/components/schemas/VersionView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["commits-versions"],
+        "summary": "Delete version (admin only)",
+        "operationId": "deleteVersion",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/VersionId" }
+        ],
+        "responses": {
+          "204": { "description": "Version deleted" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/baseline-preview": {
+      "get": {
+        "tags": ["jobs"],
+        "summary": "Preview the incremental baseline decision for a commit (read-only)",
+        "description": "Mirrors what an auto-mode job would pick, without any checkout/clone. Returns the auto/chosen baseline, ancestor/nearest flags, changed-file count, decision, and warnings (a full-decision stub when no local checkout exists yet).",
+        "operationId": "baselinePreview",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "name": "commit", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Target commit SHA to preview" },
+          { "name": "base_version_id", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Optional explicit baseline override" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Baseline decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "targetCommit": { "type": "string" },
+                    "decision": { "type": "string", "enum": ["incremental", "full"] },
+                    "chosenBaseVersionId": { "type": "string", "nullable": true },
+                    "chosenBaseCommit": { "type": "string", "nullable": true },
+                    "chosenIsAncestor": { "type": "boolean" },
+                    "chosenIsNearest": { "type": "boolean" },
+                    "changedFiles": { "type": "integer", "nullable": true },
+                    "warnings": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs": {
+      "post": {
+        "tags": ["jobs"],
+        "summary": "Start an analysis job (admin only)",
+        "operationId": "startJob",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StartJobRequest" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Job queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job_id": { "type": "string" },
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs/current": {
+      "get": {
+        "tags": ["jobs"],
+        "summary": "Get the current active job for a project",
+        "operationId": "getCurrentJob",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current job or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job": {
+                      "oneOf": [
+                        { "$ref": "#/components/schemas/JobView" },
+                        { "type": "null" }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs/{job_id}": {
+      "get": {
+        "tags": ["jobs"],
+        "summary": "Get job by ID",
+        "operationId": "getJob",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/JobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job": { "$ref": "#/components/schemas/JobView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": ["jobs"],
+        "summary": "Cancel a job (admin only)",
+        "operationId": "cancelJob",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/JobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job": { "$ref": "#/components/schemas/JobView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs/{job_id}/resume": {
+      "post": {
+        "tags": ["jobs"],
+        "summary": "Resume a paused job (admin only)",
+        "operationId": "resumeJob",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/JobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumed job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job": { "$ref": "#/components/schemas/JobView" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs/{job_id}/events": {
+      "get": {
+        "tags": ["jobs"],
+        "summary": "Server-Sent Events stream for live job progress",
+        "operationId": "jobEvents",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/JobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream. Events: phase_update, activity_update, log_line, job_complete, job_failed.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs/{job_id}/functions": {
+      "get": {
+        "tags": ["jobs"],
+        "summary": "List C++ functions discovered by a job",
+        "operationId": "listJobFunctions",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/JobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Function list with visibility summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "functions": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/FunctionView" }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "total": { "type": "integer" },
+                        "hidden": { "type": "integer" },
+                        "new_since_last": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs/{job_id}/reexport": {
+      "post": {
+        "tags": ["jobs"],
+        "summary": "Re-queue DOCX export for an existing job (admin only)",
+        "operationId": "reexportJob",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/JobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Re-export queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "job_id": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/stats": {
+      "get": {
+        "tags": ["documents"],
+        "summary": "Get document status counts for a project",
+        "operationId": "documentStats",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          {
+            "name": "version_id",
+            "in": "query",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stats": {
+                      "type": "object",
+                      "additionalProperties": { "type": "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents": {
+      "get": {
+        "tags": ["documents"],
+        "summary": "List documents with optional filters",
+        "operationId": "listDocuments",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "name": "version_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "process", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "assignee_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/PerPage" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated document list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documents": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/DocumentView" }
+                    },
+                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/approve-all": {
+      "post": {
+        "tags": ["documents"],
+        "summary": "Approve all documents for a version (admin only)",
+        "operationId": "approveAll",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ApproveAllRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk approval result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "approved_count": { "type": "integer" },
+                    "document_ids": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/assignments/batch": {
+      "post": {
+        "tags": ["documents"],
+        "summary": "Batch assign reviewers to multiple documents (admin only)",
+        "operationId": "batchAssign",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BatchAssignRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Batch assignment complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/export-all": {
+      "post": {
+        "tags": ["documents"],
+        "summary": "Trigger bulk DOCX export for a version",
+        "operationId": "exportAll",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ExportAllRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed download URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "download_url": { "type": "string" },
+                    "expires_at": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}": {
+      "get": {
+        "tags": ["documents"],
+        "summary": "Get document with sections",
+        "operationId": "getDocument",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document with sections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "document": { "$ref": "#/components/schemas/DocumentDetailView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "tags": ["documents"],
+        "summary": "Update document status or due date (admin only)",
+        "operationId": "updateDocument",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateDocumentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "document": { "$ref": "#/components/schemas/DocumentView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}/download": {
+      "get": {
+        "tags": ["documents"],
+        "summary": "Download document as DOCX",
+        "operationId": "downloadDocument",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "DOCX file",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}/export": {
+      "get": {
+        "tags": ["documents"],
+        "summary": "Export document as DOCX",
+        "operationId": "exportDocument",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "DOCX file",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}/assignments": {
+      "post": {
+        "tags": ["documents"],
+        "summary": "Assign reviewers to a document (admin only)",
+        "operationId": "assignReviewers",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AssignRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Updated assignee list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "assignees": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AssigneeView" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}/assignments/{user_id}": {
+      "delete": {
+        "tags": ["documents"],
+        "summary": "Remove a reviewer assignment (admin only)",
+        "operationId": "removeAssignee",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" },
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Assignee removed" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}/assignments/self": {
+      "post": {
+        "tags": ["documents"],
+        "summary": "Self-assign as reviewer (developer role only)",
+        "operationId": "selfAssign",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" }
+        ],
+        "responses": {
+          "201": {
+            "description": "Updated assignee list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "assignees": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AssigneeView" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}/sections/{section_key}": {
+      "patch": {
+        "tags": ["documents"],
+        "summary": "Review a document section (accept/decline/edit)",
+        "operationId": "reviewSection",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" },
+          { "name": "section_key", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateSectionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Section review result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "section": {
+                      "type": "object",
+                      "properties": {
+                        "key": { "type": "string" },
+                        "review_state": { "type": "string" },
+                        "reviewed_by": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}/submit-review": {
+      "post": {
+        "tags": ["documents"],
+        "summary": "Submit a document for review",
+        "operationId": "submitReview",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Review submitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "document_id": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}/approve": {
+      "post": {
+        "tags": ["documents"],
+        "summary": "Approve a document (admin only)",
+        "operationId": "approveDocument",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document approved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "document_id": { "type": "string" },
+                    "status": { "type": "string", "example": "approved" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/documents/{doc_id}/request-changes": {
+      "post": {
+        "tags": ["documents"],
+        "summary": "Request changes on a document (admin only)",
+        "operationId": "requestChanges",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document moved back to in_review",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "document_id": { "type": "string" },
+                    "status": { "type": "string", "example": "in_review" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/members": {
+      "get": {
+        "tags": ["team"],
+        "summary": "List project members",
+        "operationId": "listMembers",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/MemberView" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/members/pending": {
+      "get": {
+        "tags": ["team"],
+        "summary": "List pending invitations (admin only)",
+        "operationId": "listPendingMembers",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending invitations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pending": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/MemberView" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/members/invite": {
+      "post": {
+        "tags": ["team"],
+        "summary": "Invite a member to the project (admin only)",
+        "operationId": "inviteMember",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/InviteRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invitation sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invite": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "email": { "type": "string" },
+                        "role": { "type": "string" },
+                        "status": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/members/{user_id}/role": {
+      "patch": {
+        "tags": ["team"],
+        "summary": "Update a member's role (admin only)",
+        "operationId": "updateMemberRole",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateRoleRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "member": { "$ref": "#/components/schemas/MemberView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/members/{user_id}": {
+      "delete": {
+        "tags": ["team"],
+        "summary": "Remove a member from the project (admin only)",
+        "operationId": "removeMember",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "name": "user_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Member removed" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/members/pending/{invite_id}": {
+      "delete": {
+        "tags": ["team"],
+        "summary": "Cancel a pending invitation (admin only)",
+        "operationId": "cancelInvite",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "name": "invite_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Invitation cancelled" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/compare": {
+      "get": {
+        "tags": ["compare"],
+        "summary": "Compare two versions or commits",
+        "operationId": "compare",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "name": "current", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Version tag, commit SHA, or version ID to treat as current" },
+          { "name": "baseline", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Version tag, commit SHA, or version ID to treat as baseline" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comparison result summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CompareResult" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/compare/documents": {
+      "get": {
+        "tags": ["compare"],
+        "summary": "List changed documents between two versions",
+        "operationId": "compareDocuments",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "name": "current", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "baseline", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of changed documents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documents": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/DocumentDiffView" }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "additionalProperties": { "type": "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/compare/documents/{doc_id}": {
+      "get": {
+        "tags": ["compare"],
+        "summary": "Get section-level diff for a document",
+        "operationId": "compareDocumentDetail",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "$ref": "#/components/parameters/DocId" },
+          { "name": "current", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "baseline", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Section-level diff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "document_name": { "type": "string" },
+                    "sections": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/SectionDiffView" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/functions/{fn_id}": {
+      "patch": {
+        "tags": ["functions"],
+        "summary": "Update visibility of a single function (admin only)",
+        "operationId": "updateFunctionVisibility",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" },
+          { "name": "fn_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateVisibilityRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated function",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "function": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "name": { "type": "string" },
+                        "is_visible": { "type": "boolean" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/functions": {
+      "patch": {
+        "tags": ["functions"],
+        "summary": "Bulk update function visibility (admin only)",
+        "operationId": "bulkUpdateVisibility",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BulkVisibilityRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of updated functions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated_count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "tags": ["notifications"],
+        "summary": "List unread notifications for current user",
+        "operationId": "listNotifications",
+        "responses": {
+          "200": {
+            "description": "Notification list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notifications": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/NotificationView" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/notifications/{notification_id}/read": {
+      "patch": {
+        "tags": ["notifications"],
+        "summary": "Mark a notification as read",
+        "operationId": "markNotificationRead",
+        "parameters": [
+          { "name": "notification_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated notification",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notification": { "$ref": "#/components/schemas/NotificationView" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "tags": ["notifications"],
+        "summary": "Mark all notifications as read",
+        "operationId": "markAllNotificationsRead",
+        "responses": {
+          "200": {
+            "description": "All marked as read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "ProjectId": {
+        "name": "project_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Project identifier"
+      },
+      "VersionId": {
+        "name": "version_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Version identifier"
+      },
+      "JobId": {
+        "name": "job_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Analysis job identifier"
+      },
+      "DocId": {
+        "name": "doc_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "Document identifier"
+      },
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "schema": { "type": "integer", "default": 1, "minimum": 1 }
+      },
+      "PerPage": {
+        "name": "per_page",
+        "in": "query",
+        "schema": { "type": "integer", "default": 20, "minimum": 1, "maximum": 100 }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Validation error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid authentication token",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Insufficient permissions",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict — resource already exists or state prevents the action",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string", "example": "NOT_FOUND" },
+              "message": { "type": "string" },
+              "status": { "type": "integer", "example": 404 }
+            }
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "total": { "type": "integer" }
+        }
+      },
+      "SignInRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string" }
+        }
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "required": ["refresh_token"],
+        "properties": {
+          "refresh_token": { "type": "string" }
+        }
+      },
+      "UpdateMeRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "avatar_url": { "type": "string", "nullable": true }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "initials": { "type": "string" },
+          "avatar_url": { "type": "string", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateProjectRequest": {
+        "type": "object",
+        "required": ["name", "client", "compliance_standard", "repo_url"],
+        "properties": {
+          "name": { "type": "string" },
+          "client": { "type": "string" },
+          "compliance_standard": {
+            "type": "string",
+            "enum": ["ISO_26262", "ASPICE_L2", "ASPICE_L3"]
+          },
+          "repo_url": { "type": "string" },
+          "repo_provider": {
+            "type": "string",
+            "enum": ["github", "gitlab", "bitbucket"],
+            "default": "github"
+          },
+          "default_branch": { "type": "string", "default": "main" },
+          "build_config": { "type": "object" },
+          "architecture_layers": {
+            "type": "array",
+            "items": { "type": "object" }
+          },
+          "team": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": { "type": "string" },
+                "role": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "UpdateProjectRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "client": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["not_run", "running", "in_review", "complete", "stale"]
+          }
+        }
+      },
+      "AccessRequestAction": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": { "type": "string", "enum": ["approve", "deny"] }
+        }
+      },
+      "ProjectView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "client": { "type": "string" },
+          "compliance_standard": { "type": "string" },
+          "status": { "type": "string" },
+          "last_run_at": { "type": "string", "format": "date-time", "nullable": true },
+          "current_version": { "type": "string", "nullable": true },
+          "doc_counts": { "type": "object", "additionalProperties": { "type": "integer" } },
+          "team_count": { "type": "integer" },
+          "my_role": { "type": "string", "nullable": true },
+          "repo_url": { "type": "string" },
+          "architecture_layers": { "type": "array", "items": { "type": "object" } },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateVersionRequest": {
+        "type": "object",
+        "required": ["tag", "commit_sha"],
+        "properties": {
+          "tag": { "type": "string", "example": "v1.2.0" },
+          "commit_sha": { "type": "string" },
+          "branch": { "type": "string", "default": "main" },
+          "description": { "type": "string", "default": "" }
+        }
+      },
+      "UpdateVersionRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["draft", "in_review", "approved"]
+          },
+          "description": { "type": "string" }
+        }
+      },
+      "VersionView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "tag": { "type": "string" },
+          "commit_sha": { "type": "string" },
+          "branch": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["draft", "in_review", "approved"] },
+          "docs_count": { "type": "integer" },
+          "created_by": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "baseline_version_id": { "type": "string", "nullable": true, "description": "Incremental baseline used (null for a full generation)" },
+          "decision": { "type": "string", "nullable": true, "enum": ["incremental", "full", null], "description": "How this version was generated" },
+          "regenerated": { "type": "integer", "nullable": true, "description": "Functions regenerated this run" },
+          "reused": { "type": "integer", "nullable": true, "description": "Functions reused (baseline + cross-version index)" }
+        }
+      },
+      "CommitView": {
+        "type": "object",
+        "properties": {
+          "sha": { "type": "string" },
+          "message": { "type": "string" },
+          "author": { "type": "string" },
+          "committed_at": { "type": "string", "format": "date-time" },
+          "branch": { "type": "string" },
+          "doc_status": { "type": "string" },
+          "version": { "type": "string", "nullable": true },
+          "is_current": { "type": "boolean" }
+        }
+      },
+      "StartJobRequest": {
+        "type": "object",
+        "required": ["commit_sha"],
+        "properties": {
+          "commit_sha": { "type": "string" },
+          "version_tag": { "type": "string", "nullable": true },
+          "reference_version_id": { "type": "string", "nullable": true, "description": "Explicit incremental baseline; wins over auto-select under mode=auto" },
+          "pause_after_phase1": { "type": "boolean", "default": false },
+          "layer_filter": { "type": "string", "nullable": true },
+          "mode": { "type": "string", "enum": ["auto", "full"], "default": "auto", "description": "auto = pick nearest-ancestor completed version as the incremental baseline; full = force a full generation" },
+          "scope": { "type": "object", "nullable": true, "description": "{\"type\": \"project|group|component\", \"names\": [...]} - maps to run.py --selected-group / --selected-component (exclusive with layer_filter)" },
+          "no_llm": { "type": "boolean", "default": false, "description": "Disable LLM descriptions/behaviour/summaries" },
+          "data_dict_id": { "type": "string", "nullable": true, "description": "Resolved to workspaces/<projectId>/datadict/<id>.csv" },
+          "narrowed_parse": { "type": "boolean", "default": false, "description": "M4.4 opt-in: re-parse only affected TUs and merge into the baseline parser snapshot (large repos)" }
+        }
+      },
+      "AnalysisPhaseView": {
+        "type": "object",
+        "properties": {
+          "number": { "type": "integer" },
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "running", "done", "failed"] },
+          "duration_seconds": { "type": "integer", "nullable": true }
+        }
+      },
+      "JobView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string", "enum": ["queued", "running", "paused", "complete", "failed", "cancelled"] },
+          "phase": { "type": "integer" },
+          "phase_pct": { "type": "integer" },
+          "current_activity": { "type": "string" },
+          "activity_detail": { "type": "string" },
+          "elapsed_seconds": { "type": "integer" },
+          "eta_seconds": { "type": "integer", "nullable": true },
+          "phases": { "type": "array", "items": { "$ref": "#/components/schemas/AnalysisPhaseView" } },
+          "commit_sha": { "type": "string" },
+          "branch": { "type": "string" },
+          "version_id": { "type": "string", "nullable": true },
+          "started_at": { "type": "string", "format": "date-time" },
+          "completed_at": { "type": "string", "format": "date-time", "nullable": true },
+          "error_message": { "type": "string", "nullable": true }
+        }
+      },
+      "FunctionView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "file_path": { "type": "string" },
+          "layer": { "type": "string" },
+          "group": { "type": "string" },
+          "is_visible": { "type": "boolean" },
+          "is_new": { "type": "boolean" },
+          "description": { "type": "string" }
+        }
+      },
+      "UpdateDocumentRequest": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "due_date": { "type": "string", "format": "date" }
+        }
+      },
+      "AssignRequest": {
+        "type": "object",
+        "required": ["user_ids"],
+        "properties": {
+          "user_ids": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "BatchAssignRequest": {
+        "type": "object",
+        "required": ["document_ids", "user_ids"],
+        "properties": {
+          "document_ids": { "type": "array", "items": { "type": "string" } },
+          "user_ids": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "ApproveAllRequest": {
+        "type": "object",
+        "required": ["version_id"],
+        "properties": {
+          "version_id": { "type": "string" },
+          "process_filter": {
+            "type": "array",
+            "items": { "type": "string" },
+            "nullable": true
+          }
+        }
+      },
+      "ExportAllRequest": {
+        "type": "object",
+        "required": ["version_id"],
+        "properties": {
+          "version_id": { "type": "string" },
+          "process_filter": {
+            "type": "array",
+            "items": { "type": "string" },
+            "nullable": true
+          }
+        }
+      },
+      "UpdateSectionRequest": {
+        "type": "object",
+        "required": ["review_state"],
+        "properties": {
+          "review_state": { "type": "string", "enum": ["accepted", "declined", "edited"] },
+          "edited_content": { "type": "string", "nullable": true }
+        }
+      },
+      "AssigneeView": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "string" },
+          "name": { "type": "string" },
+          "initials": { "type": "string" }
+        }
+      },
+      "SectionView": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "title": { "type": "string" },
+          "order": { "type": "integer" },
+          "content": { "type": "string" },
+          "review_state": { "type": "string", "nullable": true, "enum": ["accepted", "declined", "edited"] },
+          "reviewed_by": { "type": "string", "nullable": true },
+          "reviewed_at": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "DocumentView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "subtitle": { "type": "string" },
+          "process": { "type": "string", "enum": ["SYS.1", "SYS.2", "SWE.1", "SWE.2", "SWE.3"] },
+          "layer": { "type": "string" },
+          "group": { "type": "string" },
+          "status": { "type": "string", "enum": ["never", "in_review", "approved", "unchanged"] },
+          "version_id": { "type": "string" },
+          "due_date": { "type": "string", "format": "date", "nullable": true },
+          "assignees": { "type": "array", "items": { "$ref": "#/components/schemas/AssigneeView" } },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "DocumentDetailView": {
+        "allOf": [
+          { "$ref": "#/components/schemas/DocumentView" },
+          {
+            "type": "object",
+            "properties": {
+              "sections": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/SectionView" }
+              },
+              "review_progress": {
+                "type": "object",
+                "properties": {
+                  "resolved": { "type": "integer" },
+                  "total": { "type": "integer" }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MemberView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "user_id": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string" },
+          "initials": { "type": "string" },
+          "role": { "type": "string", "enum": ["admin", "developer"] },
+          "status": { "type": "string", "enum": ["active", "pending"] },
+          "joined_at": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "InviteRequest": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "role": { "type": "string", "enum": ["admin", "developer"], "default": "developer" }
+        }
+      },
+      "UpdateRoleRequest": {
+        "type": "object",
+        "required": ["role"],
+        "properties": {
+          "role": { "type": "string", "enum": ["admin", "developer"] }
+        }
+      },
+      "CompareResult": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "object",
+            "properties": {
+              "ref": { "type": "string" },
+              "version": { "type": "string", "nullable": true },
+              "branch": { "type": "string" }
+            }
+          },
+          "baseline": {
+            "type": "object",
+            "properties": {
+              "ref": { "type": "string" },
+              "version": { "type": "string", "nullable": true },
+              "branch": { "type": "string" }
+            }
+          },
+          "summary": { "type": "object", "additionalProperties": { "type": "integer" } },
+          "changed_documents": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DocumentDiffView" }
+          }
+        }
+      },
+      "DocumentDiffView": {
+        "type": "object",
+        "properties": {
+          "document_id": { "type": "string" },
+          "name": { "type": "string" },
+          "process": { "type": "string" },
+          "diff_type": { "type": "string", "enum": ["added", "changed", "removed", "unchanged"] },
+          "sections_changed": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "SectionDiffView": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "title": { "type": "string" },
+          "diff_type": { "type": "string", "enum": ["changed", "unchanged"] },
+          "current_content": { "type": "string" },
+          "baseline_content": { "type": "string" }
+        }
+      },
+      "UpdateVisibilityRequest": {
+        "type": "object",
+        "required": ["is_visible"],
+        "properties": {
+          "is_visible": { "type": "boolean" }
+        }
+      },
+      "BulkVisibilityRequest": {
+        "type": "object",
+        "required": ["function_ids", "is_visible"],
+        "properties": {
+          "function_ids": { "type": "array", "items": { "type": "string" } },
+          "is_visible": { "type": "boolean" }
+        }
+      },
+      "NotificationView": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "project_id": { "type": "string" },
+          "type": { "type": "string" },
+          "message": { "type": "string" },
+          "read_at": { "type": "string", "format": "date-time", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

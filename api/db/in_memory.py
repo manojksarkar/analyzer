@@ -359,6 +359,15 @@ class _InMemUserRepo(IUserRepository):
     def list_by_ids(self, ids):
         return [copy.deepcopy(self._store[i]) for i in ids if i in self._store]
 
+    def search(self, query: str, limit: int = 10) -> list[User]:
+        q = query.strip().lower()
+        matches = [
+            u for u in self._store.values()
+            if not q or q in u.name.lower() or q in u.email.lower()
+        ]
+        matches.sort(key=lambda u: u.name)
+        return [copy.deepcopy(u) for u in matches[:limit]]
+
 
 class _InMemProjectRepo(IProjectRepository):
     def __init__(self, store: dict[str, Project], members: dict[str, ProjectMember]):
@@ -638,6 +647,13 @@ class _InMemFunctionRepo(IFunctionRepository):
             if f:
                 f.is_visible = is_visible
                 self.update(f)
+
+    def load_from_pipeline(self, pipeline_functions: dict[str, list[Function]]) -> None:
+        """Add/replace functions for the given job_ids (additive — preserves other jobs)."""
+        for job_id, fns in pipeline_functions.items():
+            self._store[job_id] = list(fns)
+            for f in fns:
+                self._by_id[f.id] = f
 
 
 class _InMemCompareRepo(ICompareRepository):

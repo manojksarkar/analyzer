@@ -1,0 +1,12 @@
+{
+  "notifications": [
+    {
+      "id": "n6",
+      "project_id": "p4",
+      "type": "job_complete",
+      "message": "Analysis job for commit 9f3a1c2 completed successfully.",
+      "read_at": null,
+      "created_at": "2026-06-17T12:00:00+00:00"
+    }
+  ]
+}

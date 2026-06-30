@@ -28,6 +28,9 @@ output*
 # The seed script (backend/seed_workspace.py) IS tracked; the data it creates is not.
 workspaces/
 
+# JSON DB data files (API_DB_BACKEND=json runtime state)
+api/db/data/
+
 .coverage
 logs
 

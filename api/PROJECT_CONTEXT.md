@@ -1,15 +1,22 @@
 # API Server — Project Context
 
-> Updated: 2026-06-22 (feat/api-server branch — initial implementation)
-> Active branch: `feat/api-server`
+> Updated: 2026-06-27  
+> Active branch: `feat/web-app-api`
+>
+> **Contract safety-net:** the web-app's `npm run test:api` suite validates this server's
+> live responses against the zod schemas the UI expects (~46 endpoints). Run it against
+> this API to catch contract drift — see `web-app/TESTING.md`.
 
 ---
 
 ## 1. What this is
 
-A FastAPI REST server that exposes the ASPICE Documentation Platform over HTTP.
-It ships with an in-memory database seeded with realistic dummy data so every
-endpoint is immediately usable without a real DB.
+A FastAPI REST server (70 endpoints) that exposes the Automotive ASPICE
+Documentation Platform over HTTP.  Analysis jobs invoke the **real analyzer
+pipeline** (`run.py`) as a subprocess; document render, download, and compare
+all read **real pipeline output** from `output/` and `model/`.  The server
+ships with an in-memory database seeded with realistic dummy data (default)
+or a JSON-file store that persists across restarts.
 
 ---
 
@@ -17,30 +24,46 @@ endpoint is immediately usable without a real DB.
 
 ```
 api/
-├── main.py                 ← FastAPI app, router registration, CORS
-├── requirements.txt        ← pip dependencies (FastAPI, uvicorn, jose, passlib…)
-├── README.md               ← Endpoint reference + quick-start
+├── main.py                  ← FastAPI app, router registration, CORS
+├── requirements.txt         ← pip dependencies (FastAPI, uvicorn, jose, passlib…)
+├── README.md                ← Endpoint reference + quick-start
+├── schemas.py               ← ~80 Pydantic response models for Swagger docs
+│
 ├── models/
-│   └── domain.py           ← 16 pure Python dataclasses — no ORM coupling
+│   └── domain.py            ← 16 pure Python dataclasses — no ORM coupling
+│
 ├── repositories/
-│   └── interfaces.py       ← 12 abstract ABCs — the DB contract every adapter must fulfill
+│   └── interfaces.py        ← 12 abstract ABCs — the DB contract every adapter fulfils
+│
 ├── db/
-│   ├── in_memory.py        ← Concrete in-memory adapter + seed data
-│   └── session.py          ← ONE LINE to swap backend: replace `InMemoryDatabase()`
+│   ├── in_memory.py         ← In-memory adapter + seed data
+│   ├── json_db.py           ← JSON-file adapter (persistent, write-through)
+│   └── session.py           ← ONE LINE to swap backend (reads API_DB_BACKEND)
+│
 ├── middleware/
-│   └── auth.py             ← JWT (HS256), RBAC helpers, bcrypt compatibility shims
+│   └── auth.py              ← JWT (HS256), RBAC helpers, bcrypt shims
+│
 ├── services/
-│   └── errors.py           ← Consistent HTTP error envelope helpers
+│   ├── errors.py            ← Consistent HTTP error envelope helpers
+│   ├── settings.py          ← Centralised env-var config
+│   ├── pipeline_runner.py   ← Real run.py subprocess driver
+│   ├── doc_render.py        ← Render payload from live output/ artifacts
+│   ├── compare_engine.py    ← Section-level diff between version snapshots
+│   ├── git_cli.py           ← Shell-safe git helpers (ls-remote, shallow-clone)
+│   └── repo_git.py          ← Repository wizard (list refs, commits, upload)
+│
 └── routes/
-    ├── auth.py             ← POST /auth/signin|refresh|signout, GET/PATCH /auth/me
-    ├── projects.py         ← CRUD projects, access requests
-    ├── commits_versions.py ← Commits list, version CRUD
-    ├── jobs.py             ← Analysis jobs + SSE streaming + function list
-    ├── documents.py        ← Documents, section review, approve, export
-    ├── team.py             ← Member invite, role management
-    ├── compare.py          ← Diff between commits / versions
-    ├── functions.py        ← Function visibility management
-    └── notifications.py    ← User notifications
+    ├── auth.py              ← /auth endpoints
+    ├── projects.py          ← CRUD + access requests
+    ├── commits_versions.py  ← Commits list, version CRUD
+    ├── jobs.py              ← Analysis jobs, SSE streaming, functions
+    ├── documents.py         ← Documents, sections, approve, download, export
+    ├── team.py              ← Member invite, role management
+    ├── compare.py           ← Diff between commits/versions
+    ├── functions.py         ← Function visibility management
+    ├── notifications.py     ← User notifications
+    ├── repositories.py      ← Repository wizard (validate, list refs/commits)
+    └── users.py             ← User search
 ```
 
 ---
@@ -49,7 +72,12 @@ api/
 
 ```bash
 pip install -r api/requirements.txt
+
+# In-memory DB (default — resets on restart)
 uvicorn api.main:app --reload --port 8000
+
+# JSON-file DB (persists across restarts)
+API_DB_BACKEND=json uvicorn api.main:app --reload --port 8000
 ```
 
 | URL | Description |
@@ -60,39 +88,39 @@ uvicorn api.main:app --reload --port 8000
 
 ---
 
-## 4. Auth — passing tokens
+## 4. Environment variables
 
-All endpoints except `/api/v1/auth/signin` and `/api/v1/auth/refresh` require:
+See `api/services/settings.py` for the canonical list.
 
-```
-Authorization: Bearer <access_token>
-```
+| Variable | Default | Description |
+|---|---|---|
+| `API_DB_BACKEND` | `memory` | `memory` or `json` |
+| `ANALYZER_REPO_ROOT` | auto-detected | Path to repo root (contains `run.py`) |
+| `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Per-project checkout + output root |
+| `JOB_MAX_CONCURRENCY` | `2` | Max simultaneous pipeline subprocesses |
+| `SUBPROCESS_TIMEOUT` | `0` | Kill subprocess after N seconds (0 = unlimited) |
+| `LIBCLANG_PATH` | _(auto)_ | Forwarded to `run.py` subprocesses |
 
-**Sign in:**
+---
+
+## 5. Auth — passing tokens
+
 ```bash
+# Sign in
 curl -X POST http://localhost:8000/api/v1/auth/signin \
   -H "Content-Type: application/json" \
   -d '{"email": "alice@aspice.dev", "password": "secret"}'
-```
 
-**Use the token:**
-```bash
+# Use the token
 curl http://localhost:8000/api/v1/projects \
   -H "Authorization: Bearer eyJhbGci..."
 ```
 
-**Refresh (access token expires after 15 min):**
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"refresh_token": "eyJhbGci..."}'
-```
-
-Refresh token lifetime: 7 days.
+Access token expires after 15 min; refresh token lifetime is 7 days.
 
 ---
 
-## 5. Seed data
+## 6. Seed data
 
 All seed users use password `secret`.
 
@@ -118,13 +146,12 @@ notifications for bob and carol, one compare result with diffs.
 
 ---
 
-## 6. Architecture — key decisions
+## 7. Architecture — key decisions
 
 ### Domain models are pure dataclasses
 
-`api/models/domain.py` contains 16 `@dataclass` classes. No SQLAlchemy,
-no Pydantic ORM mode, no Django models. Routes and services import only
-from here. The DB adapter converts to/from these.
+`api/models/domain.py` contains 16 `@dataclass` classes.  No SQLAlchemy,
+no Pydantic ORM mode.  Routes and services import only from here.
 
 ### Repository pattern — the DB contract
 
@@ -137,78 +164,124 @@ IAnalysisJobRepository     IDocumentRepository        IDocumentAssignmentReposit
 IFunctionRepository        ICompareRepository         INotificationRepository
 ```
 
-Every concrete storage adapter must implement all of them.
+Both `InMemoryDatabase` and `JsonDatabase` implement all 12.
 
 ### Swapping the database — one line
 
-`api/db/session.py`:
-```python
-_db = InMemoryDatabase()   # ← replace this line only
-```
+`api/db/session.py` reads `API_DB_BACKEND` and instantiates either adapter.
+To add a new backend, implement all 12 interfaces and change one line there.
 
-Steps to add a real DB:
-1. Implement all 12 ABCs.
-2. Replace `InMemoryDatabase()` with your adapter in `session.py`.
-3. Nothing else changes — routes and services only see the interfaces.
+### Real pipeline (not a simulation)
+
+`POST /projects/:id/jobs` spawns a **daemon thread** via `pipeline_runner.start()`.
+The thread:
+1. Clones / checks out the commit into `workspaces/<project_id>/<sha16>/` via
+   `git_cli.shallow_clone`.
+2. Writes a per-project `config.json` (from `build_config` + `architecture_layers`)
+   and passes it via `--config` to `run.py`.
+3. Runs `run.py` as a subprocess (`shell=False`, `cwd=repo_root`), merging
+   `stdout`+`stderr` and tailing the output for SSE events.
+4. Detects phase transitions from log markers (`=== Phase N: ===`), updates
+   the job record for the SSE stream.
+5. On completion: registers a `Version` + `Document`s by scanning `output/` dirs;
+   captures a version snapshot to `workspaces/<project_id>/versions/<id>/` for
+   future compare calls.
+6. On cancel: terminates the subprocess immediately.
+
+`JOB_MAX_CONCURRENCY` is enforced by a `threading.BoundedSemaphore` — threads
+that exceed the limit block until a slot frees.
+
+### Incremental generation (version4 engine)
+
+The job pipeline drives the version4 **incremental-changes** engine
+(`src/incremental/`) for fast re-generation. Everything below is layered into
+`pipeline_runner` / `routes/jobs.py` **additively** — existing full-generation
+behaviour, SSE, cancel, and pause/resume are unchanged.
+
+- **Baseline decision (`StartJobRequest.mode`).** `mode:"auto"` (default) auto-picks the
+  nearest-ancestor completed version (one with a captured snapshot) as the incremental
+  baseline via `incremental.baseline.select_baseline`, computed in the worker after
+  checkout; an explicit `reference_version_id` still wins. `mode:"full"` forces a full
+  run. A project's first generation has no ancestor, so it resolves to full.
+- **`GET /projects/:id/baseline-preview?commit=`** previews that decision read-only (no
+  checkout/clone) before starting a job.
+- **Selective regen.** Between Phase 1 and Phase 2, `_compute_incremental_plan` classifies
+  changed/impacted entities (`plan_incremental`), carries forward baseline LLM outputs for
+  the reuse set, and writes `model/incremental_plan.json` (read by Phase 2/3 to restrict
+  LLM enrichment + flowchart regeneration).
+- **Cross-version reuse index.** `workspaces/<id>/cache/index.json` (content-addressed
+  across ALL versions) lets a revert / cross-branch-identical entity reuse a prior
+  version's output instead of regenerating; seeded after every run (`_seed_reuse_index`).
+- **Narrowed parse (`narrowed_parse`, opt-in).** Re-parses only the affected TUs and merges
+  into the baseline parser snapshot instead of a full Phase-1 parse; safe full-parse
+  fallback on any uncertainty (no snapshot, header add/delete, fingerprint change, failure).
+- **Other `StartJobRequest` fields:** `scope` (project/group/component -> run.py
+  `--selected-group`/`--selected-component`, exclusive with `layer_filter`), `no_llm`
+  (disable LLM via config + `--no-llm-summarize`), `data_dict_id` (-> `--data-dictionary`).
+- **Version accounting.** `VersionView` carries `decision` / `baseline_version_id` /
+  `regenerated` / `reused`.
+
+> **One server.** The old standalone incremental server (`backend/main.py`) was retired in
+> favour of this `api/` server (its endpoints are functionally covered here). The
+> `backend/seed_workspace.py` + `backend/git_service.py` CLI tooling remains for
+> seeding/onboarding test workspaces.
+
+### Per-project workspace isolation
+
+Each project gets its own directory under `workspaces/<project_id>/`:
+- `<sha16>/` — git checkout used as the `<project_path>` argument to `run.py`
+- `config.json` — per-project config merged from defaults + `build_config`
+- `versions/<version_id>/model/` + `versions/<version_id>/output/` — version
+  snapshots captured after each successful run for the compare engine
+
+Currently, pipeline output (`model/`, `output/`) lands in the repo root shared
+dirs.  Full per-project isolation of these dirs requires a future `run.py` flag.
 
 ### RBAC is server-side
 
 `require_project_admin` / `require_project_member` in `middleware/auth.py`
-are called at the top of every protected route handler. The client's claimed
-role is never trusted.
+are called at the top of every protected route handler.
 
 ---
 
-## 7. Known issues fixed on this branch
+## 8. Known issues / previous fixes
+
+### Compare page rendered raw JSON instead of document content
+
+`compute_document_sections_diff` in `api/services/compare_engine.py` was
+calling `json.dumps(unit_data, indent=2)` on raw `interface_tables.json` unit
+values and passing the resulting JSON string as `current_content` /
+`baseline_content`.  The frontend's `SectionBody` component in `ComparePage.tsx`
+only understands plain text and GitHub-style pipe tables (parsed by
+`parseSectionBody` in `web-app/src/lib/markdown.ts`), so it displayed the raw
+JSON as unreadable text.
+
+Fixed by adding `_itf_unit_to_markdown(data)` which converts the `entries` list
+of a unit dict into a proper markdown pipe table (8 columns: Interface ID, Name,
+Information, Data Type, Data Range, Direction, Source/Dest, Type — matching the
+same column order used by `doc_render.py`).  Pipe characters inside cell values
+are escaped to `/`; newlines are collapsed to a space.  Commit `d8bd70b`.
 
 ### bcrypt 4.x `__about__` AttributeError
 
-`passlib 1.7.4` reads `bcrypt.__about__.__version__` which was removed in
-bcrypt 4.x. Fixed in `middleware/auth.py` with a shim injected before passlib
-imports:
-
-```python
-import bcrypt as _bcrypt
-if not hasattr(_bcrypt, "__about__"):
-    class _About:
-        __version__ = getattr(_bcrypt, "__version__", "4.0.0")
-    _bcrypt.__about__ = _About()
-```
-
-`api/requirements.txt` also pins `bcrypt>=3.2.0,<4.0.0` for clean installs.
+`passlib 1.7.4` reads `bcrypt.__about__.__version__` removed in bcrypt 4.x.
+Fixed in `middleware/auth.py` with a shim injected before passlib imports.
+`requirements.txt` pins `bcrypt>=3.2.0,<4.0.0` for clean installs.
 
 ### bcrypt 72-byte password limit
 
-`bcrypt 4.x` strictly enforces the 72-byte limit (previously silently truncated).
-Fixed by pre-hashing with SHA-256 + base64 before bcrypt, so bcrypt always
-sees exactly 44 ASCII chars regardless of password length:
-
-```python
-def _prepare(plain: str) -> str:
-    digest = hashlib.sha256(plain.encode()).digest()
-    return base64.b64encode(digest).decode()
-```
-
-Both `hash_password` and `verify_password` call `_prepare` — consistent on
-both sides so existing hashes verify correctly.
-
-### Corrupt seed hash from `sed` dollar-sign escaping
-
-An earlier `sed` substitution escaped `$` in the bcrypt hash, producing a
-structurally plausible but internally corrupt 60-char string. bcrypt accepted
-the length but failed verification, surfacing as a confusing error. Fixed by
-regenerating the hash directly in Python and writing it with a Python script.
+Fixed by pre-hashing with SHA-256 + base64 before bcrypt so bcrypt always
+sees exactly 44 ASCII chars.
 
 ### `api/models/` blocked by `.gitignore`
 
 The root `.gitignore` contains `model*` (intended for ML model files), which
-matched `api/models/`. Fixed with `git add -f api/models/`.
+matched `api/models/`.  Fixed with `git add -f api/models/`.
 
 ---
 
-## 8. Error envelope
+## 9. Error envelope
 
-All errors return:
 ```json
 {
   "error": {
@@ -219,12 +292,12 @@ All errors return:
 }
 ```
 
-Error helpers live in `api/services/errors.py`:
-`not_found`, `forbidden`, `conflict`, `bad_request`.
+Error helpers: `not_found`, `forbidden`, `conflict`, `bad_request`
+in `api/services/errors.py`.
 
 ---
 
-## 9. SSE — live job progress
+## 10. SSE — live job progress
 
 ```bash
 curl -N -H "Authorization: Bearer <token>" \
@@ -232,113 +305,53 @@ curl -N -H "Authorization: Bearer <token>" \
 ```
 
 Event types: `phase_update`, `activity_update`, `log_line`,
-`job_complete`, `job_failed`. Emits every 3 seconds while the job is active.
+`job_complete`, `job_failed`.  Emits every 3 seconds while the job is active.
 
 ---
 
-## 10. Route summary (51 endpoints)
+## 11. Route summary (70 endpoints)
 
-All under `/api/v1`. Full reference: `api/README.md`.
+All under `/api/v1`.  Full reference: `api/README.md`.
 
 | Group | Prefix | Count |
 |---|---|---|
 | Auth | `/auth` | 5 |
 | Projects | `/projects` | 9 |
-| Commits & Versions | `/projects/:id/commits`, `/projects/:id/versions` | 8 |
-| Jobs + Functions | `/projects/:id/jobs` | 8 |
-| Documents | `/projects/:id/documents` | 16 |
+| Repositories (wizard) | `/repositories` | 4 |
+| Commits & Versions | `/projects/:id/commits` + `/versions` | 8 |
+| Jobs + SSE | `/projects/:id/jobs` | 8 |
+| Documents | `/projects/:id/documents` | 18 |
 | Team | `/projects/:id/members` | 6 |
 | Compare | `/projects/:id/compare` | 3 |
 | Functions | `/projects/:id/functions` | 2 |
 | Notifications | `/notifications` | 3 |
+| Users | `/users` | 1 |
 | Meta | `/health`, `/` | 2 |
+| **Total** | | **69+** |
 
 ---
 
-## 11. JSON Database adapter (`api/db/json_db.py`)
+## 12. JSON Database adapter
 
-Added on branch `feat/api-server`. A second concrete storage adapter that
-uses JSON files instead of in-memory dicts, making the API state **persistent
-across restarts** and **integrated with the document-generation pipeline**.
+`api/db/json_db.py` — write-through persistence to `api/db/data/*.json`.
 
-### Motivation
+- On first run: seeds from same dummy data as `InMemoryDatabase`, writes files.
+- On subsequent runs: loads from disk.
+- On init: if `model/functions.json` exists, its contents replace the seeded
+  function store so the API reflects the latest pipeline run.
 
-The `InMemoryDatabase` resets on every server restart.  The `JsonDatabase`:
+Write-through uses an atomic rename (`path.tmp` → `path`) so a crash mid-write
+never leaves a corrupt file.
 
-1. **Persists all mutations** to `api/db/data/*.json` (write-through on every
-   create/update/delete — one file per aggregate).
-2. **Loads pipeline output automatically** — if `model/functions.json` exists
-   (written by Phase 2 of the document-generation pipeline), its contents
-   replace the seeded function data so the API always reflects the latest
-   analysis run without any manual migration step.
+---
 
-### Directory layout
+## 13. Implementation milestones
 
-```
-api/db/data/                ← created automatically on first startup
-  users.json
-  projects.json
-  members.json
-  access_requests.json
-  versions.json
-  commits.json
-  jobs.json
-  documents.json
-  sections.json
-  assignments.json
-  functions.json            ← overwritten by pipeline output if model/ exists
-  notifications.json
-  compare_results.json
-  compare_diffs.json
-
-model/                      ← pipeline output (read-only from API perspective)
-  functions.json            ← loaded on JsonDatabase init if present
-  metadata.json             ← used to derive project name
-```
-
-### How to switch backends
-
-**Environment variable (recommended):**
-```bash
-API_DB_BACKEND=json  uvicorn api.main:app --reload --port 8000
-API_DB_BACKEND=memory uvicorn api.main:app --reload --port 8000  # default
-```
-
-**Code change (one line in `api/db/session.py`):**
-```python
-from .json_db import JsonDatabase
-_db = JsonDatabase()          # was: InMemoryDatabase()
-```
-
-### First-run behaviour
-
-1. If `api/db/data/` files are **absent** → seed from same dummy data as
-   `InMemoryDatabase` and write files to disk.
-2. If files **exist** → load as-is (mutations from previous runs are preserved).
-3. If `model/functions.json` **exists** → replace the functions store with
-   pipeline output (regardless of whether it was seeded or loaded from disk).
-
-### Pipeline integration detail
-
-`_load_pipeline_functions(model_dir)` in `json_db.py` reads
-`model/functions.json` (written by Phase 1 + 2) and maps each entry to the
-`Function` domain model.  The mapping handles the analyzer's key format
-(`Layer::Component::FunctionName`) and field names (`componentName`, `layer`,
-`isVisible`, `description`, etc.).  The result is keyed under `job1` (the
-default seeded job ID) so the existing `/jobs/{job_id}/functions` endpoint
-returns the real pipeline data with no route changes.
-
-### Serialisation
-
-All `datetime` and `date` objects are serialised to ISO 8601 strings via a
-custom `_default` encoder passed to `json.dump`.  `_parse_dt` / `_parse_date`
-handle both string inputs (from disk) and native Python objects (from the seed
-path), so the adapter works correctly on both first-run seeding and subsequent
-disk reloads.
-
-### Write-through safety
-
-Every mutating repository method calls `_save()` before returning.  `_save()`
-uses an atomic rename (`path.with_suffix('.json.tmp') → path.replace(tmp)`) so
-a crash mid-write never leaves a corrupt file — the old data survives until the
-new write completes.
+| Milestone | Status | Description |
+|---|---|---|
+| M0 | ✅ | Static surface sync — schemas, users, repositories, domain fields, token-stripped config, commit backfill |
+| M1 | ✅ | Real analysis worker — pipeline_runner.py (clone → config → run.py → SSE → version+docs) |
+| M2 | ✅ | Real functions diff, doc_render on live output, assets, download/export, export-all ZIP |
+| M3 | ✅ | Real compare — section-level diff via compare_engine over version snapshots |
+| M4 | ✅ | Persistence, central config (settings.py), gitignore, docs, API smoke tests |
+| M5 | ✅ | version4 incremental engine integrated (auto-baseline + mode, scope/no_llm/data_dict, cross-version reuse index, narrowed parse, baseline-preview, version accounting); standalone `backend/` server retired (one server) |
