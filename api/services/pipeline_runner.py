@@ -369,11 +369,15 @@ def _convert_layers(arch_layers: list) -> dict:
     API shape (from NewProjectPage):
       [{"name": "L1", "path": "Layer1", "lib_paths": [...],
         "groups": [{"name": "G1", "components": [{"name": "C1", "files": [...]}]}]}]
-    Config shape:
-      {"L1": {"path": "Layer1", "groups": {"G1": {"C1": "Sample/C1"}}}}
+    Config shape (component value is the selection relative to the layer path —
+    a string for a single path, a list for several):
+      {"L1": {"path": "Layer1", "groups": {
+          "G1": {"Single": "Sample/Core",
+                 "Multi": ["Flow/Flowcharts.cpp", "Math/Utils.cpp"]}}}}
 
-    Component paths are derived from the files list: the common ancestor directory
-    of all selected files, stripped of the layer path prefix.
+    Component paths preserve the wizard selection verbatim (files stay files,
+    folders stay folders), each stripped of the layer path prefix. See
+    _component_paths_from_files.
     """
     result: dict = {}
     for layer in arch_layers:
@@ -399,8 +403,13 @@ def _convert_layers(arch_layers: list) -> dict:
                         cname = str(c.get("name") or "").strip()
                         files = [str(f) for f in (c.get("files") or []) if f]
                         if cname:
-                            comp_path = _derive_component_path(files, lpath) or cname
-                            comps[cname] = comp_path
+                            rels = _component_paths_from_files(files, lpath)
+                            if not rels:
+                                # No usable selection — fall back to the component
+                                # name (parity with the bare-string component case).
+                                comps[cname] = cname
+                            else:
+                                comps[cname] = rels[0] if len(rels) == 1 else rels
             else:
                 continue
             if gname:
@@ -409,29 +418,50 @@ def _convert_layers(arch_layers: list) -> dict:
     return result
 
 
-def _derive_component_path(files: list, layer_path: str) -> str:
-    """Return the component directory path relative to layer_path.
+def _norm_rel(path: str) -> str:
+    """Normalize a repo-relative path: backslashes -> '/', drop leading './' and
+    surrounding slashes."""
+    p = (path or "").replace("\\", "/").strip()
+    while p.startswith("./"):
+        p = p[2:]
+    return p.strip("/")
 
-    Finds the common ancestor directory of all file paths, then strips the
-    layer_path prefix so the result is relative to the layer root.
+
+def _component_paths_from_files(files: list, layer_path: str) -> list:
+    """Return the wizard selection relative to ``layer_path``, order-preserving.
+
+    Each entry in ``files`` (a file or a folder, expressed from the repo root) is
+    normalized and stripped of the ``layer_path`` prefix so it becomes relative to
+    the layer root. The selection is preserved verbatim — files stay files and
+    folders stay folders — rather than being collapsed to a common-ancestor
+    directory, which over-selects and degenerates to the layer root whenever the
+    selection spans sibling directories.
+
+    An entry equal to the layer path itself (a whole-layer selection) is dropped,
+    since there is nothing meaningful to scope below the layer. An entry that is
+    not under the layer is kept as-is (defensive; the wizard only picks within the
+    layer). Duplicates are removed.
+
+    Both the ``str`` (single path) and ``list`` (multiple paths) result forms are
+    accepted downstream by ``core.config._resolve_layer_paths`` and
+    ``parser._build_file_component_map``.
     """
-    import posixpath
-    dirs = [posixpath.dirname(f.replace("\\", "/")) for f in files if f]
-    dirs = [d for d in dirs if d]
-    if not dirs:
-        return ""
-    common = dirs[0]
-    for d in dirs[1:]:
-        while common and not (d == common or d.startswith(common + "/")):
-            common = posixpath.dirname(common)
-    if not common:
-        return ""
-    layer_norm = layer_path.rstrip("/").replace("\\", "/")
-    if common == layer_norm:
-        return ""
-    if layer_norm and common.startswith(layer_norm + "/"):
-        return common[len(layer_norm) + 1:]
-    return common
+    layer_norm = _norm_rel(layer_path)
+    prefix = layer_norm + "/" if layer_norm else ""
+    out: list = []
+    seen: set = set()
+    for f in files:
+        p = _norm_rel(str(f) if f is not None else "")
+        if not p:
+            continue
+        if layer_norm and p == layer_norm:
+            continue
+        if prefix and p.startswith(prefix):
+            p = p[len(prefix):]
+        if p and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
 
 
 # ---------------------------------------------------------------------------
