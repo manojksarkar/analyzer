@@ -137,16 +137,19 @@ def create_project(
         user_id=current_user.id, role="admin", status="active",
         invited_by=current_user.id, invited_at=now, joined_at=now,
     ))
-    # Invite team members
+    # Add selected developers as active members
     for invite in body.team:
-        user = db.users.get_by_email(invite.get("email", ""))
-        if user:
-            db.members.add_member(ProjectMember(
-                id=f"m{uuid.uuid4().hex[:8]}", project_id=project.id,
-                user_id=user.id, role=invite.get("role", "developer"),
-                status="pending", invited_by=current_user.id,
-                invited_at=now, joined_at=None,
-            ))
+        email = (invite.get("email") or "").strip()
+        if not email:
+            continue
+        user = db.users.get_by_email(email)
+        db.members.add_member(ProjectMember(
+            id=f"m{uuid.uuid4().hex[:8]}", project_id=project.id,
+            user_id=user.id if user else f"pending_{email}",
+            role=invite.get("role", "developer"),
+            status="active", invited_by=current_user.id,
+            invited_at=now, joined_at=now,
+        ))
     return {"project": _project_view(project, db, current_user.id)}
 
 

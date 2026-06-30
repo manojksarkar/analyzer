@@ -12,7 +12,7 @@ const STEPS = [
   { title: 'Project & Repository', sub: 'Name, source path' },
   { title: 'Build Configuration',  sub: 'Defines & data dictionary' },
   { title: 'Architecture',         sub: 'Layers & groups' },
-  { title: 'Team & Access',        sub: 'Invite developers' },
+  { title: 'Team & Access',        sub: 'Add developers' },
   { title: 'Review & Initialize',  sub: 'Confirm & create project' },
 ]
 
@@ -25,12 +25,11 @@ const STEP_HEADERS = [
   { title: 'Review & Initialize',  sub: 'Confirm every setting before the first analysis run.' },
 ]
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const TREE_CB = 'w-3.5 h-3.5 accent-secondary cursor-pointer flex-shrink-0'
 
 type Role = 'Admin' | 'Developer'
 type TestTone = 'neutral' | 'error' | 'ok'
-interface Member { name?: string; email: string; role: Role; pending?: boolean }
+interface Member { name?: string; email: string; role: Role }
 interface Comp { id: string; name: string; files: string[]; collapsed: boolean }
 interface Group { id: string; name: string; comps: Comp[]; collapsed: boolean }
 interface Layer { id: string; name: string; path: string; groups: Group[]; libPaths: string[]; collapsed: boolean }
@@ -253,6 +252,15 @@ function WizardView({
     setBranch('')
     setRepoTree([])
   }
+  // Load the source tree for a specific branch/ref (architecture + folder pickers).
+  // Re-run whenever the selected branch changes so the tree matches the branch.
+  async function loadRepoTree(ref: string) {
+    try {
+      setRepoTree(await repo.browse(repoUrl.trim(), ref || undefined, '', token.trim() || undefined))
+    } catch {
+      setRepoTree([])
+    }
+  }
   async function testConnection() {
     if (!repoUrl.trim()) {
       setErrs((p) => ({ ...p, repo: true }))
@@ -271,18 +279,13 @@ function WizardView({
         setBranches([]); setBranch(''); setRepoTree([])
         return
       }
+      const initialBranch = res.defaultBranch || res.branches[0] || ''
       setBranches(res.branches)
-      setBranch(res.defaultBranch || res.branches[0] || '')
+      setBranch(initialBranch)
       setTestState('connected')
       setTestMsg({ text: res.message, tone: 'ok' })
       // Pre-fetch the source tree for the architecture + folder pickers.
-      try {
-        setRepoTree(await repo.browse(
-          repoUrl.trim(), res.defaultBranch || undefined, '', token.trim() || undefined,
-        ))
-      } catch {
-        setRepoTree([])
-      }
+      await loadRepoTree(initialBranch)
     } catch (e) {
       setTestState('idle')
       setTestMsg({ text: (e as Error).message || 'Connection failed.', tone: 'error' })
@@ -397,7 +400,7 @@ function WizardView({
   const takenEmails = [me.email, ...members.map((m) => m.email)]
   function selectMember(email: string, mname?: string) {
     if (members.some((m) => m.email === email)) return
-    setMembers((prev) => [...prev, { name: mname, email, role: inviteRole, pending: !mname }])
+    setMembers((prev) => [...prev, { name: mname, email, role: inviteRole }])
     closeAddMember()
   }
   function closeAddMember() {
@@ -421,10 +424,6 @@ function WizardView({
     return () => { active = false; window.clearTimeout(t) }
   }, [search, addMemberOpen, repo])
   const searchMatches = searchResults.filter((u) => !takenEmails.includes(u.email))
-  const showInvite = (() => {
-    const raw = search.trim().toLowerCase()
-    return !!raw && EMAIL_RE.test(raw) && !searchResults.some((u) => u.email.toLowerCase() === raw) && !takenEmails.includes(raw)
-  })()
 
   /* ── Navigation ── */
   function validate(n: number): boolean {
@@ -472,7 +471,7 @@ function WizardView({
             components: g.comps.map((c) => ({ name: c.name, files: c.files })),
           })),
         })),
-        // Server matches each email against existing users → pending member.
+        // Server adds each selected developer as an active project member.
         team: members.map((m) => ({ email: m.email, role: m.role.toLowerCase() })),
       })
     }
@@ -537,7 +536,7 @@ function WizardView({
                   <div>
                     <div className="h-px bg-surface-container-low mb-4" />
                     <div className="lbl">Branch <span className="req">*</span></div>
-                    <select className={`inp ${errs.branch ? 'err' : ''}`} value={branch} onChange={(e) => { setBranch(e.target.value); setErrs((p) => ({ ...p, branch: false })) }}>
+                    <select className={`inp ${errs.branch ? 'err' : ''}`} value={branch} onChange={(e) => { const b = e.target.value; setBranch(b); setErrs((p) => ({ ...p, branch: false })); if (b) loadRepoTree(b) }}>
                       <option value="">Select a branch…</option>
                       {branches.map((b) => <option key={b} value={b}>{b}</option>)}
                     </select>
@@ -840,7 +839,7 @@ function WizardView({
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-on-surface truncate font-mono text-xs">{m.name || m.email}</p>
-                          <p className="text-on-surface-variant truncate font-mono text-label">{m.pending ? (m.name ? `${m.email} · Invite pending` : 'Invite pending') : m.email}</p>
+                          <p className="text-on-surface-variant truncate font-mono text-label">{m.email}</p>
                         </div>
                         <div className="w-[120px] flex-shrink-0">
                           <select value={m.role} onChange={(e) => setMembers((prev) => prev.map((x) => x.email === m.email ? { ...x, role: e.target.value as Role } : x))} className="font-mono text-label font-semibold tracking-[.04em] px-1.5 py-[3px] border border-outline-variant rounded-lg bg-white text-on-surface outline-none w-full">
@@ -862,7 +861,7 @@ function WizardView({
                     {!addMemberOpen ? (
                       <button onClick={() => setAddMemberOpen(true)} className="flex items-center gap-2 text-secondary hover:text-secondary-container transition-colors font-mono text-caption font-bold tracking-[.04em] uppercase">
                         <Icon name="person_add" size={16} />
-                        Add / Invite member
+                        Add member
                       </button>
                     ) : (
                       <div className="space-y-3">
@@ -872,13 +871,13 @@ function WizardView({
                               <Icon name="search" size={16} className="absolute left-[9px] top-1/2 -translate-y-1/2 text-outline pointer-events-none" />
                               <input className="inp pl-8" value={search} onChange={(e) => setSearch(e.target.value)} onFocus={() => setSearchOpen(true)} onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)} type="text" autoComplete="off" placeholder="Search by name or email…" />
                             </div>
-                            <select className="inp w-[130px] flex-shrink-0" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)}>
+                            <select className="w-[120px] flex-shrink-0 px-2 border border-outline-variant rounded-lg bg-white text-on-surface outline-none font-mono text-label font-semibold tracking-[.04em]" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)}>
                               <option value="Developer">Developer</option>
                               <option value="Admin">Admin</option>
                             </select>
                           </div>
                           {searchOpen && (
-                            <div className="absolute top-[calc(100%+4px)] left-0 right-[140px] bg-white border border-outline-variant rounded-lg shadow-[0_4px_16px_rgba(4,22,39,.12)] max-h-[200px] overflow-y-auto z-[200]">
+                            <div className="absolute top-[calc(100%+4px)] left-0 right-[128px] bg-white border border-outline-variant rounded-lg shadow-[0_4px_16px_rgba(4,22,39,.12)] max-h-[200px] overflow-y-auto z-[200]">
                               {searchMatches.map((u) => (
                                 <div key={u.email} className="ms-item" onMouseDown={() => selectMember(u.email, u.name)}>
                                   <div className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center flex-shrink-0 font-sans text-label font-bold text-secondary">{initialsOf(u.name)}</div>
@@ -888,20 +887,11 @@ function WizardView({
                                   </div>
                                 </div>
                               ))}
-                              {showInvite && (
-                                <div className="ms-item ms-invite" onMouseDown={() => selectMember(search.trim().toLowerCase())}>
-                                  <Icon name="mail" size={16} className="text-[#00a572] flex-shrink-0" />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-body text-on-surface">Send invite to <strong>{search.trim()}</strong></p>
-                                    <p className="text-caption text-outline">Not yet in the organisation</p>
-                                  </div>
-                                </div>
-                              )}
-                              {searchLoading && searchMatches.length === 0 && !showInvite && (
+                              {searchLoading && searchMatches.length === 0 && (
                                 <p className="px-3 py-2.5 text-xs text-outline">Searching…</p>
                               )}
-                              {!searchLoading && searchMatches.length === 0 && !showInvite && (
-                                <p className="px-3 py-2.5 text-xs text-outline">No matches — type a full email to invite</p>
+                              {!searchLoading && searchMatches.length === 0 && (
+                                <p className="px-3 py-2.5 text-xs text-outline">No matching members found</p>
                               )}
                             </div>
                           )}
@@ -1089,7 +1079,7 @@ function WizardView({
                     return <div className="rev-row"><span>Members</span><span>{parts.join(' · ')}</span></div>
                   })()}
                   <div>
-                    {[{ name: me.name, email: me.email, role: 'Admin' as Role, pending: false, you: true }, ...members.map((m) => ({ ...m, you: false }))].map((m) => (
+                    {[{ name: me.name, email: me.email, role: 'Admin' as Role, you: true }, ...members.map((m) => ({ ...m, you: false }))].map((m) => (
                       <div key={m.email} className="flex items-center gap-2.5 px-4 py-2.5 border-b border-surface-container-low">
                         <div className={cn('w-[30px] h-[30px] rounded-full flex items-center justify-center flex-shrink-0', m.role === 'Admin' ? 'bg-primary-container' : 'bg-secondary')}>
                           <span className="font-mono text-micro font-bold text-white tracking-[.04em]">{memberInitials(m)}</span>
@@ -1099,7 +1089,6 @@ function WizardView({
                           <div className="font-mono text-label text-outline mt-px">{m.email}</div>
                         </div>
                         <span className={cn('flex-shrink-0 font-mono text-micro font-bold uppercase tracking-[.06em] px-[7px] py-0.5 rounded-[3px]', m.role === 'Admin' ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container text-secondary')}>{m.role}</span>
-                        {m.pending && <span className="flex-shrink-0 font-mono text-micro text-outline bg-background border border-outline-variant px-1.5 py-0.5 rounded-[3px] ml-1">Invited</span>}
                       </div>
                     ))}
                   </div>
