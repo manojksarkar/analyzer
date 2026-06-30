@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useVersions, useCommits, useCommitsLastSync, useProjects } from '../../hooks/useProjects'
-import { useUIStore } from '../../store/ui'
+import { useUIStore, type Selection } from '../../store/ui'
 import { Icon, Skeleton } from '../ui'
 import { cn } from '../../lib/cn'
 import { relativeTime } from '../../lib/format'
@@ -134,9 +134,8 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
 
   // Selection is shared via the UI store so the detail page + status badge react
   // to it; default to the layout-supplied latest version / commit.
-  const storeSha = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
+  const selection = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
   const setSelectedRef = useUIStore((s) => s.setSelectedRef)
-  const selectedSha = storeSha ?? selectedCommit?.sha ?? selectedVersion?.sha
 
   // Close on outside click
   useEffect(() => {
@@ -148,17 +147,20 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [open])
 
-  // Resolve the chip label from the current selection. The default selection is
-  // the latest version (supplied by the layout), so the chip shows the version
-  // tag by default and only falls back to "branch @ commit" when a specific
-  // commit with no version is picked.
-  const activeCommit = commits?.find((c) => c.sha === selectedSha)
-  const activeVersion =
-    versions?.find((v) => v.sha === selectedSha) ??
-    (selectedSha && selectedSha === selectedVersion?.sha ? selectedVersion : undefined)
+  // Resolve the active version/commit from the selection. With nothing
+  // explicitly selected, default to the layout-supplied latest (prefer the
+  // version, else the commit) so they stay mutually exclusive: the chip shows
+  // the version tag by default and only falls back to "branch @ commit" when a
+  // specific commit with no version is picked.
+  const activeVersion = selection?.type === 'version'
+    ? versions?.find((v) => v.id === selection.id)
+    : !selection ? selectedVersion : undefined
+  const activeCommit = selection?.type === 'commit'
+    ? commits?.find((c) => c.sha === selection.sha)
+    : (!selection && !selectedVersion) ? selectedCommit : undefined
   const chipVersionTag = activeVersion?.tag ?? activeCommit?.versionTag
-  const chipBranch = activeCommit?.branch ?? activeVersion?.branch ?? selectedCommit?.branch ?? 'main'
-  const chipSha = activeCommit?.shortSha ?? activeVersion?.shortSha ?? selectedCommit?.shortSha ?? ''
+  const chipBranch = activeCommit?.branch ?? activeVersion?.branch ?? 'main'
+  const chipSha = activeCommit?.shortSha ?? activeVersion?.shortSha ?? ''
   const chipHasVersion = Boolean(chipVersionTag)
 
   const filteredCommits = (commits ?? []).filter((c) => {
@@ -166,8 +168,8 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
     return !q || c.shortSha.includes(q) || c.message.toLowerCase().includes(q) || c.author.toLowerCase().includes(q)
   })
 
-  function select(sha: string) {
-    if (projectId) setSelectedRef(projectId, sha)
+  function select(sel: Selection) {
+    if (projectId) setSelectedRef(projectId, sel)
     setOpen(false)
   }
 
@@ -211,7 +213,12 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
                 <div className="px-4 py-6 text-center text-xs text-outline">No versions yet</div>
               ) : (
                 versions!.map((v) => (
-                  <VersionRow key={v.tag} version={v} isActive={v.sha === selectedSha} onSelect={() => select(v.sha)} />
+                  <VersionRow
+                    key={v.id ?? v.tag}
+                    version={v}
+                    isActive={!!activeVersion && (v.id ? v.id === activeVersion.id : v.sha === activeVersion.sha)}
+                    onSelect={() => select(v.id ? { type: 'version', id: v.id } : { type: 'commit', sha: v.sha })}
+                  />
                 ))
               )}
             </div>
@@ -242,9 +249,9 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
                     <CommitRow
                       key={c.sha}
                       commit={c}
-                      isCurrent={c.sha === selectedSha}
+                      isCurrent={!!activeCommit && c.sha === activeCommit.sha}
                       isLast={i === filteredCommits.length - 1}
-                      onSelect={() => select(c.sha)}
+                      onSelect={() => select({ type: 'commit', sha: c.sha })}
                     />
                   ))
                 )}

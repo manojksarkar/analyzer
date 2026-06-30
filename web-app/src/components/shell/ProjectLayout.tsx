@@ -5,7 +5,7 @@ import { Topbar } from './Topbar'
 import { Subbar, StatusBadge } from './Subbar'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { Skeleton } from '../ui'
-import { useProject, useVersions } from '../../hooks/useProjects'
+import { useProject, useVersions, useCommits } from '../../hooks/useProjects'
 import { useProjectViewState } from '../../hooks/useProjectViewState'
 
 interface ProjectLayoutProps {
@@ -31,7 +31,10 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
 
   const { data: project } = useProject(projectId ?? '')
   const { data: versions } = useVersions(projectId ?? '')
+  const { data: commits } = useCommits(projectId ?? '')
   const latestVersion = versions?.[0]
+  // Default latest commit so the picker renders even before any version exists.
+  const latestCommit = commits?.[0]
 
   // Subbar status reflects the picker selection (and any live run) — shared with
   // the detail page via useProjectViewState.
@@ -55,6 +58,7 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
         <Subbar
           projectName={project?.name ?? '…'}
           selectedVersion={latestVersion}
+          selectedCommit={latestCommit}
           statusBadge={
             viewLoading
               ? <Skeleton className="h-5 w-20 rounded-full" />
