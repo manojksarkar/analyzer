@@ -85,7 +85,23 @@ export function useTeam(projectId: string) {
 }
 
 export function useCommits(projectId: string) {
-  return useQuery({ queryKey: projectKeys.commits(projectId), queryFn: () => commitsApi.list(projectId), enabled: !!projectId })
+  return useQuery({
+    queryKey: projectKeys.commits(projectId),
+    queryFn: () => commitsApi.list(projectId),
+    enabled: !!projectId,
+    select: (d) => d.commits,
+  })
+}
+
+/** Sibling of {@link useCommits} — shares the same query, selects the last
+ *  repo-sync time (ISO string or null) for the commit picker. */
+export function useCommitsLastSync(projectId: string) {
+  return useQuery({
+    queryKey: projectKeys.commits(projectId),
+    queryFn: () => commitsApi.list(projectId),
+    enabled: !!projectId,
+    select: (d) => d.lastSyncedAt,
+  })
 }
 
 /* ── Project mutations ─────────────────────────────────────────────────── */

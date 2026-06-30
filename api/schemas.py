@@ -167,6 +167,9 @@ class CommitView(BaseModel):
 class CommitListResponse(BaseModel):
     commits: List[CommitView]
     pagination: Pagination
+    # ISO-8601 time the commits were last synced from the connected repo, or
+    # null if no sync has run yet (e.g. a project with no repo connected).
+    last_synced_at: Optional[str] = None
 
 
 class VersionView(BaseModel):

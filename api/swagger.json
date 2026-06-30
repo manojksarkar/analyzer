@@ -528,7 +528,13 @@
                       "type": "array",
                       "items": { "$ref": "#/components/schemas/CommitView" }
                     },
-                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                    "pagination": { "$ref": "#/components/schemas/Pagination" },
+                    "last_synced_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "description": "Time commits were last synced from the connected repo, or null."
+                    }
                   }
                 }
               }

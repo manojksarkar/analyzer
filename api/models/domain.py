@@ -61,6 +61,10 @@ class Project:
     created_by: str
     created_at: datetime
     updated_at: datetime
+    # Last time commits were synced from the connected repo. Doubles as the
+    # throttle clock for the page-1 sync and the "last synced" value shown in
+    # the commit picker. None until the first sync runs.
+    last_commit_sync_at: Optional[datetime] = None
 
 
 @dataclass

@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useVersions, useCommits, useProjects } from '../../hooks/useProjects'
+import { useVersions, useCommits, useCommitsLastSync, useProjects } from '../../hooks/useProjects'
 import { useUIStore } from '../../store/ui'
 import { Icon } from '../ui'
 import { cn } from '../../lib/cn'
+import { relativeTime } from '../../lib/format'
 import type { Version, Commit, VersionStatus, PageState } from '../../types'
 
 /* ─── Version-status accent (left stripe) ─── */
@@ -124,6 +125,7 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
   const { projectId } = useParams<{ projectId: string }>()
   const { data: versions } = useVersions(projectId ?? '')
   const { data: commits } = useCommits(projectId ?? '')
+  const { data: lastSyncedAt } = useCommitsLastSync(projectId ?? '')
 
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<'versions' | 'commits'>('versions')
@@ -243,6 +245,12 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
                   ))
                 )}
               </div>
+              {lastSyncedAt && (
+                <div className="flex items-center gap-1 px-3 py-1.5 border-t border-outline-variant text-label text-outline">
+                  <Icon name="sync" size={11} />
+                  <span>Synced {relativeTime(lastSyncedAt)}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
