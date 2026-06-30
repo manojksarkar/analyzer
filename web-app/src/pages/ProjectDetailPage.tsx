@@ -4,7 +4,7 @@ import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../h
 import { useSelfAssign } from '../hooks/useDocumentMutations'
 import { useCurrentJob, useStartJob, useCancelJob, useJobEvents } from '../hooks/useJobs'
 import { useProjectViewState } from '../hooks/useProjectViewState'
-import { Icon, RoleBadge, Text } from '../components/ui'
+import { DashboardSkeleton, Icon, RoleBadge, Text } from '../components/ui'
 import { cn } from '../lib/cn'
 import { useAuthStore } from '../store/auth'
 import type { StartJobInput } from '../services/api'
@@ -833,8 +833,8 @@ export function ProjectDetailPage() {
 
   const { data: project } = useProject(projectId ?? '')
   // pageState + the version to view come from the Subbar selection (shared store).
-  const { pageState, viewVersionId, selectedCommit } = useProjectViewState(projectId ?? '')
-  const { data: documents } = useDocuments(projectId ?? '', viewVersionId ? { versionId: viewVersionId } : undefined)
+  const { pageState, isLoading, viewVersionId, selectedCommit } = useProjectViewState(projectId ?? '')
+  const { data: documents, isLoading: documentsLoading } = useDocuments(projectId ?? '', viewVersionId ? { versionId: viewVersionId } : undefined)
   const { data: team, isLoading: teamLoading } = useTeam(projectId ?? '')
   const { data: commits } = useCommits(projectId ?? '')
   const { data: job } = useCurrentJob(projectId ?? '')
@@ -858,6 +858,12 @@ export function ProjectDetailPage() {
   return (
     <div className="flex-1 overflow-y-auto bg-background">
       <div className="px-6 py-6 max-w-[1280px] mx-auto">
+
+        {/* ══ LOADING — gate the empty-state flash until the view state resolves ══ */}
+        {isLoading && !project ? (
+          <DashboardSkeleton />
+        ) : (
+          <>
 
         {/* ══ EMPTY STATE (not yet analysed) ══ */}
         {pageState === 'never' && (
@@ -1014,20 +1020,26 @@ export function ProjectDetailPage() {
 
         {/* ══ GENERATED CONTENT — KPI strip + docs + sidebar (matches project-detail.html) ══ */}
         {showContent && project && (
-          <GeneratedContent
-            project={project}
-            documents={documents}
-            team={team}
-            versions={versions}
-            isAdmin={isAdmin}
-            projectId={projectId ?? ''}
-            go={(to) => navigate(to)}
-            selfAssign={selfAssign}
-            meName={meName}
-            teamLoading={teamLoading}
-          />
+          documentsLoading && !documents ? (
+            <DashboardSkeleton />
+          ) : (
+            <GeneratedContent
+              project={project}
+              documents={documents}
+              team={team}
+              versions={versions}
+              isAdmin={isAdmin}
+              projectId={projectId ?? ''}
+              go={(to) => navigate(to)}
+              selfAssign={selfAssign}
+              meName={meName}
+              teamLoading={teamLoading}
+            />
+          )
         )}
 
+          </>
+        )}
 
       </div>
 

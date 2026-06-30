@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useVersions, useCommits, useCommitsLastSync, useProjects } from '../../hooks/useProjects'
 import { useUIStore } from '../../store/ui'
-import { Icon } from '../ui'
+import { Icon, Skeleton } from '../ui'
 import { cn } from '../../lib/cn'
 import { relativeTime } from '../../lib/format'
 import type { Version, Commit, VersionStatus, PageState } from '../../types'
@@ -123,8 +123,8 @@ function CommitRow({ commit, isCurrent, isLast, onSelect }: { commit: Commit; is
 /* ─── Commit/version picker ─── */
 function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: Version; selectedCommit?: Commit }) {
   const { projectId } = useParams<{ projectId: string }>()
-  const { data: versions } = useVersions(projectId ?? '')
-  const { data: commits } = useCommits(projectId ?? '')
+  const { data: versions, isLoading: versionsLoading } = useVersions(projectId ?? '')
+  const { data: commits, isLoading: commitsLoading } = useCommits(projectId ?? '')
   const { data: lastSyncedAt } = useCommitsLastSync(projectId ?? '')
 
   const [open, setOpen] = useState(false)
@@ -205,7 +205,9 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
           {/* Versions panel */}
           {tab === 'versions' && (
             <div className="overflow-y-auto max-h-[280px]">
-              {(versions ?? []).length === 0 ? (
+              {versionsLoading && !versions ? (
+                <div className="p-3 space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
+              ) : (versions ?? []).length === 0 ? (
                 <div className="px-4 py-6 text-center text-xs text-outline">No versions yet</div>
               ) : (
                 versions!.map((v) => (
@@ -231,7 +233,9 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
                 </div>
               </div>
               <div className="overflow-y-auto max-h-[240px]">
-                {filteredCommits.length === 0 ? (
+                {commitsLoading && !commits ? (
+                  <div className="p-3 space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
+                ) : filteredCommits.length === 0 ? (
                   <div className="px-4 py-6 text-center text-xs text-outline">No commits match</div>
                 ) : (
                   filteredCommits.map((c, i) => (
@@ -263,7 +267,7 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
 function ProjectSwitcher({ projectName }: { projectName: string }) {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
-  const { data: projects } = useProjects()
+  const { data: projects, isLoading: projectsLoading } = useProjects()
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -295,7 +299,9 @@ function ProjectSwitcher({ projectName }: { projectName: string }) {
             <span className="text-on-surface-variant uppercase font-mono text-label font-bold tracking-[.08em]">Switch project</span>
           </div>
           <div className="overflow-y-auto max-h-[320px]">
-            {(projects ?? []).length === 0 ? (
+            {projectsLoading && !projects ? (
+              <div className="p-3 space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
+            ) : (projects ?? []).length === 0 ? (
               <div className="p-4 text-xs text-outline">No projects</div>
             ) : (
               projects!.map((p) => {

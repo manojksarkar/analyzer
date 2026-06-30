@@ -21,16 +21,22 @@ import type { PageState, Version, Commit } from '../types'
  */
 export function useProjectViewState(projectId: string): {
   pageState: PageState
+  isLoading: boolean
   viewVersion?: Version
   viewVersionId?: string
   selectedCommit?: Commit
   selectedSha?: string
 } {
-  const { data: project } = useProject(projectId)
-  const { data: versions } = useVersions(projectId)
-  const { data: commits } = useCommits(projectId)
-  const { data: job } = useCurrentJob(projectId)
+  const { data: project, isLoading: projectLoading } = useProject(projectId)
+  const { data: versions, isLoading: versionsLoading } = useVersions(projectId)
+  const { data: commits, isLoading: commitsLoading } = useCommits(projectId)
+  const { data: job, isLoading: jobLoading } = useCurrentJob(projectId)
   const selectedSha = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
+
+  // First-load only (isLoading, not isFetching) so background refetches don't
+  // re-trigger skeletons. Consumers gate their empty states on this so the
+  // default `pageState = 'never'` isn't shown before the queries resolve.
+  const isLoading = projectLoading || versionsLoading || commitsLoading || jobLoading
 
   const selVersion = versions?.find((v) => v.sha === selectedSha)
   const selCommit = commits?.find((c) => c.sha === selectedSha)
@@ -61,5 +67,5 @@ export function useProjectViewState(projectId: string): {
     qc.invalidateQueries({ queryKey: ['projects', projectId, 'documents'] })
   }, [jobStatus, projectId, qc])
 
-  return { pageState, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit, selectedSha }
+  return { pageState, isLoading, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit, selectedSha }
 }

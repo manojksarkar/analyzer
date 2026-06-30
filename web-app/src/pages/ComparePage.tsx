@@ -6,7 +6,7 @@ import {
 import { useProjectViewState } from '../hooks/useProjectViewState'
 import { useCompareDocuments, useCompareDocumentDetail } from '../hooks/useCompare'
 import { useReviewSection, useApproveDoc, useSubmitReview } from '../hooks/useDocumentMutations'
-import { Icon } from '../components/ui'
+import { Icon, Skeleton, CompareSectionSkeleton } from '../components/ui'
 import { cn } from '../lib/cn'
 import { parseSectionBody } from '../lib/markdown'
 import type { DiffType, SectionReviewState } from '../types'
@@ -87,7 +87,9 @@ function DocTree({ rows, mode, setMode, activeId, onSelect, changedCount, total,
       </div>
       <div className="flex-1 overflow-y-auto py-2">
         {loading ? (
-          <div className="px-3 py-6 text-center text-outline font-mono text-caption">Loading…</div>
+          <div className="px-2.5 space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-5" />)}
+          </div>
         ) : rows.length === 0 ? (
           <div className="px-3 py-6 text-center text-outline font-mono text-caption">{mode === 'diff' ? 'No changed documents' : 'No documents'}</div>
         ) : (
@@ -181,7 +183,7 @@ export function ComparePage() {
   const [editing, setEditing] = useState<{ key: string; title: string; content: string } | null>(null)
 
   const { data: compareDocs, isLoading: docsLoading } = useCompareDocuments(pid, currentRef, baselineRef)
-  const { data: allDocs } = useDocuments(pid, currentVersion?.id ? { versionId: currentVersion.id } : undefined)
+  const { data: allDocs, isLoading: allDocsLoading } = useDocuments(pid, currentVersion?.id ? { versionId: currentVersion.id } : undefined)
 
   const changedSet = useMemo(() => new Set((compareDocs?.documents ?? []).map((d) => d.documentId)), [compareDocs])
   const changedById = useMemo(() => new Map((compareDocs?.documents ?? []).map((d) => [d.documentId, d])), [compareDocs])
@@ -191,7 +193,7 @@ export function ComparePage() {
   const defaultDocId = (paramDoc && changedSet.has(paramDoc) ? paramDoc : undefined) ?? compareDocs?.documents?.[0]?.documentId ?? null
   const activeDocId = pickedDocId ?? defaultDocId
 
-  const { data: detail } = useCompareDocumentDetail(pid, activeDocId ?? undefined, currentRef, baselineRef)
+  const { data: detail, isLoading: detailLoading } = useCompareDocumentDetail(pid, activeDocId ?? undefined, currentRef, baselineRef)
   const { data: docDetail } = useDocument(pid, activeDocId ?? '')
 
   const reviewSection = useReviewSection(pid)
@@ -261,11 +263,21 @@ export function ComparePage() {
       <DocTree
         rows={treeRows} mode={treeMode} setMode={setTreeMode}
         activeId={activeDocId} onSelect={selectDoc}
-        changedCount={changedCount} total={totalCount} loading={docsLoading}
+        changedCount={changedCount} total={totalCount}
+        loading={treeMode === 'diff' ? docsLoading && !compareDocs : allDocsLoading && !allDocs}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {!activeDocId ? (
+        {docsLoading && !compareDocs ? (
+          /* ─── Loading the diff list ─── */
+          <div className="flex-1 overflow-y-auto bg-surface-container-low">
+            <div className="bg-white border-b border-outline-variant px-8 pt-7 pb-5 space-y-3">
+              <Skeleton className="h-3 w-40" />
+              <Skeleton className="h-7 w-1/2" />
+            </div>
+            <CompareSectionSkeleton />
+          </div>
+        ) : !activeDocId ? (
           /* ─── Empty state ─── */
           <div className="flex-1 flex items-center justify-center p-8 bg-surface-container-low overflow-y-auto">
             <div className="text-center max-w-[480px]">
@@ -344,7 +356,9 @@ export function ComparePage() {
 
                 {/* Per-section rows — grid auto-row height = the taller side, so the
                     two cells of a row start at the same Y (filler on the shorter one). */}
-                {visibleSections.length === 0 ? (
+                {detailLoading && sections.length === 0 ? (
+                  <div className="col-span-2"><CompareSectionSkeleton /></div>
+                ) : visibleSections.length === 0 ? (
                   <div className="col-span-2 bg-white px-8 py-16 text-center text-on-surface-variant font-mono text-caption">
                     {changesOnly ? 'No changed sections' : 'No content'}
                   </div>

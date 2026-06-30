@@ -35,7 +35,7 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
 
   // Subbar status reflects the picker selection (and any live run) — shared with
   // the detail page via useProjectViewState.
-  const { pageState } = useProjectViewState(projectId ?? '')
+  const { pageState, isLoading: viewLoading } = useProjectViewState(projectId ?? '')
 
   const breadcrumbs = breadcrumbParentLabel
     ? [
@@ -55,7 +55,13 @@ export function ProjectLayout({ breadcrumbLabel, breadcrumbParentLabel, breadcru
         <Subbar
           projectName={project?.name ?? '…'}
           selectedVersion={latestVersion}
-          statusBadge={project ? <StatusBadge state={pageState} /> : undefined}
+          statusBadge={
+            viewLoading
+              ? <Skeleton className="h-5 w-20 rounded-full" />
+              : project
+                ? <StatusBadge state={pageState} />
+                : undefined
+          }
         />
         <div className="flex-1 flex flex-col overflow-hidden min-h-0">
           <ErrorBoundary>
