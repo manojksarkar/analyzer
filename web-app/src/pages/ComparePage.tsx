@@ -9,7 +9,10 @@ import { useReviewSection, useApproveDoc, useSubmitReview } from '../hooks/useDo
 import { Icon } from '../components/ui'
 import { cn } from '../lib/cn'
 import { parseSectionBody } from '../lib/markdown'
-import type { DiffType, SectionReviewState } from '../types'
+import type {
+  DiffType, SectionReviewState, DiffMark, DiffSegment, CompareBlock,
+  CompareRichSection,
+} from '../types'
 
 type TreeMode = 'diff' | 'all'
 
@@ -21,16 +24,149 @@ const DIFF_BADGE: Record<DiffType, { label: string; cls: string; dot: string }> 
   unchanged: { label: 'unchanged', cls: 'text-on-surface-variant bg-surface-container',        dot: 'bg-outline-variant' },
 }
 
+/* ─── Inline highlight styling by change mark ─── */
+const MARK_INLINE: Record<DiffMark, string> = {
+  none:   '',
+  add:    'bg-[rgba(0,165,114,.18)] text-on-tertiary-container rounded-[2px] px-px',
+  del:    'bg-error-container text-error line-through rounded-[2px] px-px',
+  change: 'bg-[#fff1cc] text-[#92600a] rounded-[2px] px-px',
+}
+const MARK_CELL: Record<DiffMark, string> = {
+  none:   '',
+  add:    'bg-[rgba(0,165,114,.14)]',
+  del:    'bg-error-container/70 line-through',
+  change: 'bg-[#fff4d6]',
+}
+
 /* ─── Section accent (left stripe at the gutter) by review state, else "changed" blue ─── */
 function sectionAccent(diffType: DiffType, review: SectionReviewState | null): string {
   if (diffType === 'unchanged') return ''
   if (review === 'accepted') return 'border-l-[3px] border-l-on-tertiary-container bg-[rgba(0,165,114,.04)]'
   if (review === 'declined') return 'border-l-[3px] border-l-outline-variant bg-surface-container-low'
   if (review === 'edited')   return 'border-l-[3px] border-l-secondary bg-[rgba(0,88,190,.04)]'
+  if (diffType === 'added')   return 'border-l-[3px] border-l-on-tertiary-container bg-[rgba(0,165,114,.03)]'
+  if (diffType === 'removed') return 'border-l-[3px] border-l-error bg-error-container/30'
   return 'border-l-[3px] border-l-secondary bg-surface-container-low'
 }
 
-/* ─── Markdown body → richtext / table blocks ─── */
+/* ─── Inline word-level highlighted text ─── */
+function Segments({ segments }: { segments: DiffSegment[] }) {
+  if (!segments.length) return null
+  return (
+    <>
+      {segments.map((s, i) =>
+        s.mark === 'none'
+          ? <span key={i}>{s.text}</span>
+          : <span key={i} className={MARK_INLINE[s.mark]}>{s.text}</span>,
+      )}
+    </>
+  )
+}
+
+/* ─── Mermaid / diagram block with a "changed" badge + source toggle ─── */
+function DiffDiagramBlock({ block }: { block: Extract<CompareBlock, { kind: 'diagram' }> }) {
+  const [showSrc, setShowSrc] = useState(false)
+  return (
+    <figure className={cn(
+      'bg-surface-container-low border rounded-lg overflow-hidden',
+      block.changed ? 'border-secondary/60' : 'border-outline-variant',
+    )}>
+      {block.imageUrl ? (
+        <img src={block.imageUrl} alt={block.caption ?? 'Diagram'} loading="lazy"
+             className="block w-full max-h-[400px] object-contain bg-white" />
+      ) : (
+        <div className="flex flex-col items-center justify-center text-center py-10 gap-2">
+          <Icon name="account_tree" size={32} className="text-outline-variant" />
+          <span className="font-mono text-caption text-on-surface-variant">{block.caption ?? 'Diagram'}</span>
+        </div>
+      )}
+      <figcaption className="flex items-center justify-between gap-2 px-3 py-2 border-t border-outline-variant bg-white">
+        <span className="flex items-center gap-1.5 font-mono text-label text-on-surface-variant truncate">
+          {block.changed && <span className="px-1.5 py-0.5 rounded bg-secondary/10 text-secondary font-semibold">diagram changed</span>}
+          <span className="truncate">{block.caption ?? 'Diagram'}</span>
+        </span>
+        {block.mermaid && (
+          <button onClick={() => setShowSrc((v) => !v)}
+                  className="flex items-center gap-1 flex-shrink-0 text-secondary hover:underline font-mono text-label">
+            <Icon name="code" size={12} />{showSrc ? 'Hide source' : 'View source'}
+          </button>
+        )}
+      </figcaption>
+      {showSrc && block.mermaid && (
+        <pre className="px-3 py-2 bg-surface-container-low border-t border-outline-variant overflow-x-auto font-mono text-label text-on-surface-variant whitespace-pre">{block.mermaid}</pre>
+      )}
+    </figure>
+  )
+}
+
+/* ─── One diff block (text | keyvalue | table | diagram) ─── */
+function DiffBlockView({ block }: { block: CompareBlock }) {
+  if (block.kind === 'text') {
+    return (
+      <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
+        <Segments segments={block.segments} />
+      </p>
+    )
+  }
+  if (block.kind === 'keyvalue') {
+    return (
+      <div className="flex items-baseline gap-2 text-sm">
+        <span className="font-mono text-caption text-on-surface-variant flex-shrink-0">{block.label}:</span>
+        <span className="text-on-surface"><Segments segments={block.segments} /></span>
+      </div>
+    )
+  }
+  if (block.kind === 'diagram') {
+    return <DiffDiagramBlock block={block} />
+  }
+  // table
+  return (
+    <div className="overflow-x-auto border border-outline-variant rounded-lg">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-surface-container text-on-surface-variant">
+          <tr>
+            {block.headers.map((h, hi) => (
+              <th key={hi} className="px-3 py-2.5 border-b border-outline-variant font-semibold whitespace-nowrap">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {block.rows.map((r, ri) => {
+            const rowMark = block.rowMarks[ri] ?? 'none'
+            return (
+              <tr key={ri} className={cn('border-b border-[rgba(196,198,205,.6)]', rowMark !== 'none' && rowMark !== 'change' && MARK_CELL[rowMark])}>
+                {r.map((c, ci) => {
+                  const cellMark = block.cellMarks[ri]?.[ci] ?? 'none'
+                  return (
+                    <td key={ci} className={cn(
+                      'px-3 py-2 align-top',
+                      ci === 0 ? 'text-secondary font-mono text-caption' : 'text-on-surface-variant',
+                      MARK_CELL[cellMark],
+                    )}>{c}</td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* ─── A pane's stack of blocks (or an empty-side placeholder) ─── */
+function BlocksPane({ blocks, emptyLabel }: { blocks: CompareBlock[]; emptyLabel: string }) {
+  if (!blocks.length) {
+    return <p className="text-on-surface-variant italic text-sm">{emptyLabel}</p>
+  }
+  return (
+    <div className="space-y-3">
+      {blocks.map((b, i) => <DiffBlockView key={i} block={b} />)}
+    </div>
+  )
+}
+
+/* ─── Flat-fallback markdown body → richtext / table blocks (legacy) ─── */
 function SectionBody({ content }: { content: string }) {
   const blocks = parseSectionBody(content)
   if (blocks.length === 0) {
@@ -117,9 +253,9 @@ function DocTree({ rows, mode, setMode, activeId, onSelect, changedCount, total,
 }
 
 /* ─── Per-section review controls (current pane, changed sections) ─── */
-function SectionControls({ review, onAccept, onDecline, onEdit }: {
+function SectionControls({ review, onAccept, onDecline }: {
   review: SectionReviewState | null
-  onAccept: () => void; onDecline: () => void; onEdit: () => void
+  onAccept: () => void; onDecline: () => void
 }) {
   return (
     <div className="flex-shrink-0 flex items-center gap-1.5 mt-0.5">
@@ -139,20 +275,25 @@ function SectionControls({ review, onAccept, onDecline, onEdit }: {
       <button onClick={onDecline} className="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container-high text-on-surface-variant transition-colors text-label font-mono">
         <Icon name="remove" size={11} />Decline
       </button>
-      <button onClick={onEdit} className="flex items-center gap-1 px-2 py-0.5 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant transition-colors text-label font-mono">
-        <Icon name="edit" size={11} />Edit
-      </button>
     </div>
   )
 }
 
-interface MergedSection {
+/* ─── A unified, render-ready section for the two-pane diff ─── */
+interface PaneSection {
   key: string
   title: string
+  number: string
+  level: number
   diffType: DiffType
-  current: string
-  baseline: string
+  sourceLabel: string
   reviewState: SectionReviewState | null
+  /** rich blocks (mode 'rich') */
+  current?: CompareBlock[]
+  baseline?: CompareBlock[]
+  /** flat markdown (mode 'flat') */
+  currentText?: string
+  baselineText?: string
 }
 
 export function ComparePage() {
@@ -178,7 +319,9 @@ export function ComparePage() {
   const [treeMode, setTreeMode] = useState<TreeMode>('diff')
   const [pickedDocId, setPickedDocId] = useState<string | null>(null)
   const [changesOnly, setChangesOnly] = useState(false)
-  const [editing, setEditing] = useState<{ key: string; title: string; content: string } | null>(null)
+  /** Optimistic per-section review state, keyed by section id (rich sections
+   *  don't round-trip through the stored-section table, so we track locally). */
+  const [localReview, setLocalReview] = useState<Record<string, SectionReviewState>>({})
 
   const { data: compareDocs, isLoading: docsLoading } = useCompareDocuments(pid, currentRef, baselineRef)
   const { data: allDocs } = useDocuments(pid, currentVersion?.id ? { versionId: currentVersion.id } : undefined)
@@ -198,23 +341,42 @@ export function ComparePage() {
   const approveDoc = useApproveDoc(pid)
   const submitReview = useSubmitReview(pid)
 
-  /* Compare detail (diff_type + baseline) overlaid with the live doc detail
-     (edited content + persisted review_state). */
+  const isRich = detail?.mode === 'rich'
+
+  /* Flat-fallback overlay: live doc detail (edited content + persisted review). */
   const liveByKey = useMemo(() => new Map((docDetail?.sections ?? []).map((s) => [s.key, s])), [docDetail])
-  const sections: MergedSection[] = useMemo(
-    () => (detail?.sections ?? []).map((s) => {
+
+  /* Unify rich + flat into one render-ready section list. */
+  const sections: PaneSection[] = useMemo(() => {
+    if (!detail) return []
+    if (detail.mode === 'rich') {
+      return detail.sections.map((s: CompareRichSection) => ({
+        key: s.id,
+        title: s.title,
+        number: s.number,
+        level: s.level,
+        diffType: s.diffType,
+        sourceLabel: s.source.artifact,
+        reviewState: localReview[s.id] ?? null,
+        current: s.currentBlocks,
+        baseline: s.baselineBlocks,
+      }))
+    }
+    return detail.flatSections.map((s) => {
       const live = liveByKey.get(s.key)
       return {
         key: s.key,
         title: s.title,
+        number: '',
+        level: 1,
         diffType: s.diffType,
-        current: live?.content ?? s.currentContent,
-        baseline: s.baselineContent,
-        reviewState: live?.reviewState ?? null,
+        sourceLabel: 'Interface table',
+        reviewState: live?.reviewState ?? localReview[s.key] ?? null,
+        currentText: live?.content ?? s.currentContent,
+        baselineText: s.baselineContent,
       }
-    }),
-    [detail, liveByKey],
-  )
+    })
+  }, [detail, liveByKey, localReview])
 
   const changedSections = sections.filter((s) => s.diffType !== 'unchanged')
   const resolved = changedSections.filter((s) => s.reviewState).length
@@ -237,16 +399,10 @@ export function ComparePage() {
 
   function selectDoc(id: string) {
     setPickedDocId(id)
-    setEditing(null)
   }
   function decide(sectionKey: string, state: SectionReviewState) {
+    setLocalReview((m) => ({ ...m, [sectionKey]: state }))
     if (activeDocId) reviewSection.mutate({ docId: activeDocId, sectionKey, reviewState: state })
-  }
-  function saveEdit() {
-    if (activeDocId && editing) {
-      reviewSection.mutate({ docId: activeDocId, sectionKey: editing.key, reviewState: 'edited', editedContent: editing.content })
-    }
-    setEditing(null)
   }
 
   const docTitle = detail?.documentName ?? docDetail?.name ?? changedById.get(activeDocId ?? '')?.name ?? 'Document'
@@ -351,27 +507,48 @@ export function ComparePage() {
                 ) : (
                   visibleSections.map((s) => {
                     const changed = s.diffType !== 'unchanged'
+                    const headingSize = s.level <= 1 ? 'text-lg' : s.level === 2 ? 'text-base' : 'text-sm'
                     return (
                       <Fragment key={s.key}>
                         {/* Reference cell */}
-                        <div className={cn('bg-white border-r border-b border-outline-variant/60 px-8 py-6', changed && 'opacity-70')}>
-                          <h2 className="text-primary font-semibold mb-3 font-sans text-lg">{s.title}</h2>
-                          <SectionBody content={s.baseline} />
+                        <div className={cn('bg-white border-r border-b border-outline-variant/60 px-8 py-6',
+                          s.diffType === 'removed' ? 'bg-error-container/20' : changed && 'opacity-90')}>
+                          <div className="flex items-baseline gap-2 mb-3">
+                            {s.number && <span className="font-mono text-caption text-outline flex-shrink-0">{s.number}</span>}
+                            <h2 className={cn('text-primary font-semibold font-sans', headingSize)}>{s.title}</h2>
+                          </div>
+                          {isRich
+                            ? <BlocksPane blocks={s.baseline ?? []} emptyLabel={s.diffType === 'added' ? 'New in current — not present in reference.' : 'No content.'} />
+                            : <SectionBody content={s.baselineText ?? ''} />}
                         </div>
                         {/* Current cell */}
                         <div className={cn('bg-white border-b border-outline-variant/60 px-8 py-6 transition-all', sectionAccent(s.diffType, s.reviewState))}>
                           <div className="flex items-start justify-between gap-3 mb-3">
-                            <h2 className="text-primary font-semibold font-sans text-lg">{s.title}</h2>
+                            <div className="flex items-baseline gap-2 min-w-0">
+                              {s.number && <span className="font-mono text-caption text-outline flex-shrink-0">{s.number}</span>}
+                              <h2 className={cn('text-primary font-semibold font-sans', headingSize)}>{s.title}</h2>
+                            </div>
                             {changed && reviewMode && (
                               <SectionControls
                                 review={s.reviewState}
                                 onAccept={() => decide(s.key, 'accepted')}
                                 onDecline={() => decide(s.key, 'declined')}
-                                onEdit={() => setEditing({ key: s.key, title: s.title, content: s.current })}
                               />
                             )}
                           </div>
-                          <SectionBody content={s.current} />
+                          {changed && (
+                            <div className="flex items-center gap-1.5 mb-3">
+                              <span className={cn('px-1.5 py-0.5 rounded font-mono text-caption', DIFF_BADGE[s.diffType].cls)}>{DIFF_BADGE[s.diffType].label}</span>
+                              {s.sourceLabel && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-caption text-on-surface-variant bg-surface-container-low border border-outline-variant">
+                                  <Icon name="source" size={11} />{s.sourceLabel}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {isRich
+                            ? <BlocksPane blocks={s.current ?? []} emptyLabel={s.diffType === 'removed' ? 'Removed — not present in current.' : 'No content.'} />
+                            : <SectionBody content={s.currentText ?? ''} />}
                         </div>
                       </Fragment>
                     )
@@ -415,35 +592,6 @@ export function ComparePage() {
           </>
         )}
       </div>
-
-      {/* Edit modal */}
-      {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-[rgba(4,22,39,.4)]">
-          <div className="bg-white rounded-xl w-full max-w-[560px] overflow-hidden shadow-[0_8px_40px_rgba(4,22,39,.2)]">
-            <div className="px-6 py-4 border-b border-outline-variant flex items-center justify-between">
-              <h3 className="text-on-surface font-semibold text-lg">Edit {editing.title}</h3>
-              <button onClick={() => setEditing(null)} className="p-1 hover:bg-surface-container rounded-lg transition-colors">
-                <Icon name="close" size={20} className="text-on-surface-variant" />
-              </button>
-            </div>
-            <div className="p-6">
-              <p className="text-on-surface-variant text-xs mb-3">Edit the content for this section. Changes are saved and the section is marked "Edited".</p>
-              <textarea
-                rows={8}
-                value={editing.content}
-                onChange={(e) => setEditing({ ...editing, content: e.target.value })}
-                className="w-full border border-outline-variant rounded-lg px-3 py-2.5 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 resize-none font-mono"
-              />
-            </div>
-            <div className="px-6 py-4 border-t border-outline-variant flex items-center justify-end gap-2">
-              <button onClick={() => setEditing(null)} className="px-4 py-2 border border-outline-variant hover:bg-surface-container rounded-lg font-mono text-caption text-on-surface-variant transition-colors">Cancel</button>
-              <button onClick={saveEdit} className="px-4 py-2 bg-secondary hover:bg-secondary-container text-white rounded-lg font-mono text-caption transition-colors flex items-center gap-1.5">
-                <Icon name="save" size={14} />Save &amp; Accept
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

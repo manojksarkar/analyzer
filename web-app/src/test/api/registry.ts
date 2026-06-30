@@ -21,9 +21,18 @@ const ApiChangedDocSchema = z.object({
   diff_type: z.string(), sections_changed: z.array(z.string()),
 })
 
+// Flat (legacy) interface-table section.
 const ApiCompareSectionSchema = z.object({
   key: z.string(), title: z.string(), diff_type: z.string(),
   current_content: z.string(), baseline_content: z.string(),
+})
+
+// Rich, highlight-annotated diff section (mode: 'rich').
+const ApiRichDiffSectionSchema = z.object({
+  id: z.string(), number: z.string(), title: z.string(), level: z.number(),
+  diff_type: z.string(),
+  source: z.object({ artifact: z.string(), present: z.string() }).optional(),
+  current_blocks: z.array(z.unknown()), baseline_blocks: z.array(z.unknown()),
 })
 
 const ApiOrgUserSchema = z.object({
@@ -77,7 +86,12 @@ export const Envelopes = {
     changed_documents: z.array(ApiChangedDocSchema),
   }),
   compareDocuments: z.object({ documents: z.array(ApiChangedDocSchema), summary: z.unknown() }),
-  compareDetail: z.object({ document_name: z.string(), sections: z.array(ApiCompareSectionSchema) }),
+  // Detail can be the rich diff (mode: 'rich') or the flat fallback (mode: 'flat').
+  compareDetail: z.object({
+    document_name: z.string(),
+    mode: z.string().optional(),
+    sections: z.array(z.union([ApiRichDiffSectionSchema, ApiCompareSectionSchema])),
+  }),
 
   // ── notifications ──
   notifications: z.object({ notifications: z.array(ApiNotificationSchema) }),

@@ -320,13 +320,13 @@ def _pngs(group_dir: Path, subdir: str, pred) -> list[str]:
     return sorted(p.name for p in d.iterdir() if p.suffix == ".png" and pred(p.name))
 
 
-def _diagram_sec(project_id: str, doc_id: str, group_dir: Path, subdir: str, fn: str,
+def _diagram_sec(asset_base: str, group_dir: Path, subdir: str, fn: str,
                  sid: str, number: str, title: str, level: int, caption: str) -> dict:
     rel = f"{subdir}/{fn}"
     mmd = (group_dir / subdir / fn).with_suffix(".mmd")
     return _sec(
         sid, number, title, level, type="diagram", content=caption,
-        image_url=f"projects/{project_id}/documents/{doc_id}/assets/{rel}",
+        image_url=f"{asset_base}/{rel}",
         mermaid=mmd.read_text(encoding="utf-8") if mmd.exists() else None,
     )
 
@@ -375,9 +375,19 @@ def _interfaces_table_8col(ifaces: list) -> Optional[dict]:
 
 # ── main builder ──────────────────────────────────────────────────────────────
 
-def build_render(doc, project, version, group_dir: Path, project_id: str) -> dict:
-    """Build a rich {cover, toc, sections, meta} payload mirroring the DOCX structure."""
+def build_render(doc, project, version, group_dir: Path, project_id: str,
+                 *, model_root: Optional[Path] = None,
+                 asset_base: Optional[str] = None) -> dict:
+    """Build a rich {cover, toc, sections, meta} payload mirroring the DOCX structure.
+
+    ``model_root`` overrides where model/*.json is read from (defaults to the live
+    ``model/`` dir); ``asset_base`` overrides the URL prefix used for diagram assets
+    (defaults to the live document-asset route). Both let the compare engine build
+    a render from a per-version snapshot instead of the live working tree.
+    """
     group = doc.group
+    if asset_base is None:
+        asset_base = f"projects/{project_id}/documents/{doc.id}/assets"
 
     # Load interface data
     itf: dict = {}
@@ -392,7 +402,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
         comps.setdefault(uk.split(KEY_SEP, 1)[0], []).append(uk)
 
     # Load model files
-    model_dir = _REPO_ROOT / "model"
+    model_dir = model_root or (_REPO_ROOT / "model")
     units_data = _load_model_json(model_dir, "units")
     dd_data = _load_model_json(model_dir, "dataDictionary")
     globals_data = _load_model_json(model_dir, "globalVariables")
@@ -482,7 +492,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
         for fn in _pngs(group_dir, "component_container_diagrams",
                         lambda nm, c=comp: nm == f"{c}.png"):
             static_children.append(_diagram_sec(
-                project_id, doc.id, group_dir, "component_container_diagrams", fn,
+                asset_base, group_dir, "component_container_diagrams", fn,
                 f"{comp}-container", "", "Component Structure", 2,
                 f"Component structure for {comp_display}.",
             ))
@@ -491,7 +501,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
         for fn in _pngs(group_dir, "component_header_dependency_diagrams",
                         lambda nm, c=comp: nm == f"{c}.png"):
             static_children.append(_diagram_sec(
-                project_id, doc.id, group_dir, "component_header_dependency_diagrams", fn,
+                asset_base, group_dir, "component_header_dependency_diagrams", fn,
                 f"{comp}-dep", "", "Include Dependencies", 2,
                 f"Include dependencies for {comp_display}.",
             ))
@@ -539,7 +549,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
             for fn in _pngs(group_dir, "unit_diagrams",
                             lambda nm, p=f"{comp}_{uname}": nm == f"{p}.png"):
                 unit_children.append(_diagram_sec(
-                    project_id, doc.id, group_dir, "unit_diagrams", fn,
+                    asset_base, group_dir, "unit_diagrams", fn,
                     f"unit-{uk}", "", f"Unit — {uname}", 3,
                     f"Static structure of unit {uname}.",
                 ))
@@ -597,7 +607,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
                     signature = f"{ret} {func_name}({params_str})".strip()
                     flowchart_entries.append({
                         "image_url": (
-                            f"projects/{project_id}/documents/{doc.id}/assets/{png_rel}"
+                            f"{asset_base}/{png_rel}"
                             if png_rel else None
                         ),
                         "mermaid": fc_mermaid,
@@ -642,7 +652,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
                         callee_sig = f"{callee.get('returnType', '')} {callee_fn}({cparams_str})".strip()
                         flowchart_entries.append({
                             "image_url": (
-                                f"projects/{project_id}/documents/{doc.id}/assets/{cpng_rel}"
+                                f"{asset_base}/{cpng_rel}"
                                 if cpng_rel else None
                             ),
                             "mermaid": callee_fc,
@@ -729,7 +739,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
                     try:
                         rel = Path(str(png_abs)).relative_to(group_dir)
                         diagram_url = (
-                            f"projects/{project_id}/documents/{doc.id}/assets/{rel.as_posix()}"
+                            f"{asset_base}/{rel.as_posix()}"
                         )
                     except (ValueError, TypeError):
                         pass
