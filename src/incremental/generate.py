@@ -91,6 +91,16 @@ def scope_to_args(scope: Dict[str, Any]) -> List[str]:
     raise ValueError(f"unknown scope type {stype!r}")
 
 
+def per_component_docx_args(scope: Dict[str, Any]) -> List[str]:
+    """Generate one DOCX *per component* (the default) instead of one per group.
+
+    Mutually exclusive with --selected-component (run.py errors if combined), so a
+    specific-component run gets nothing extra; project / layer / group scope all get
+    --component-per-docx. Groups with no components defined simply produce nothing."""
+    stype = (scope or {}).get("type", "project")
+    return [] if stype == "component" else ["--component-per-docx"]
+
+
 def resolve_run_config(config_path: Optional[str], *, no_llm: bool = False) -> Dict[str, Any]:
     """Load the PER-PROJECT config (workspaces/<pid>/config.json, written by the API from the
     project's architecture_layers + build_config — see api/PROJECT_CONTEXT). The engine does
@@ -190,6 +200,7 @@ def generate_full(
     _rmtree_force(os.path.join(project_root, "output"))
     base_cmd = [sys.executable, "run.py", "--config", vcfg_path]
     base_cmd += scope_to_args(scope)
+    base_cmd += per_component_docx_args(scope)
     if no_llm:
         base_cmd += ["--no-llm-summarize"]
     if data_dict_id:

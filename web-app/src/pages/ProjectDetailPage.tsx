@@ -556,10 +556,34 @@ function AdminDocsCard({ documents, go, projectId }: { documents: Document[]; go
           </tr>
         </thead>
         <tbody>
+          {/* Always render all 5 ASPICE process rows. A process with no real
+              generated document for the selected version renders as a distinct,
+              muted, non-clickable "Not generated yet" row — clearly set apart
+              from rows that actually have documents. */}
           {PROCESSES.map((p) => {
             const docs = documents.filter((d) => d.process === p.key)
-            if (!docs.length) return null
             const total = docs.length
+
+            if (total === 0) {
+              return (
+                <tr key={p.key} className="border-b border-outline-variant last:border-0">
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2.5 opacity-60">
+                      <span className="font-mono text-caption font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-[5px] flex-shrink-0">{p.key}</span>
+                      <div>
+                        <div className="text-body font-medium text-on-surface-variant leading-[1.3]">{p.label}</div>
+                        <div className="text-caption text-outline">0 docs</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3" colSpan={2}>
+                    <span className="text-caption text-outline-variant italic">Not generated yet</span>
+                  </td>
+                  <td className="px-3 py-2" />
+                </tr>
+              )
+            }
+
             const assigned = docs.filter((d) => !!d.assignee).length
             const unassigned = total - assigned
             const apct = pct(assigned, total)

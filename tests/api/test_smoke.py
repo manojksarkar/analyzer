@@ -114,6 +114,28 @@ def test_get_project_not_found(client, auth_header):
     assert r.status_code == 404
 
 
+def test_project_doc_counts_scoped_to_latest_version(client, auth_header):
+    """doc_counts on the project view reflects the latest version only, not the
+    sum across every run (regression: Task 4 — dashboard document numbers)."""
+    # The version list is sorted newest-first, so [0] is the latest.
+    versions = client.get("/api/v1/projects/p1/versions", headers=auth_header).json()["versions"]
+    assert versions, "no seeded versions for p1"
+    latest_id = versions[0]["id"]
+
+    scoped_total = client.get(
+        f"/api/v1/projects/p1/documents?version_id={latest_id}", headers=auth_header,
+    ).json()["pagination"]["total"]
+    all_total = client.get(
+        "/api/v1/projects/p1/documents", headers=auth_header,
+    ).json()["pagination"]["total"]
+
+    counts = client.get("/api/v1/projects/p1", headers=auth_header).json()["project"]["doc_counts"]
+    # Dashboard count == latest version's docs, and strictly below the all-versions
+    # sum (p1 has docs in an older version too — proves we no longer sum runs).
+    assert counts["total"] == scoped_total
+    assert counts["total"] < all_total
+
+
 def test_search_projects(client, auth_header):
     r = client.get("/api/v1/projects/search?q=VCU", headers=auth_header)
     assert r.status_code == 200

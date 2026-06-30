@@ -595,6 +595,11 @@ def _build_cmd(
         cmd += ["--selected-component", str(names[0])]
     elif job.layer_filter:
         cmd += ["--selected-layer", job.layer_filter]
+    # Generate one DOCX per component (the default), not one per group. This is
+    # mutually exclusive with --selected-component (run.py errors if combined), so
+    # add it for project / group / layer scope but never for a specific-component run.
+    if stype != "component":
+        cmd.append("--component-per-docx")
     if getattr(job, "no_llm", False):
         cmd.append("--no-llm-summarize")     # descriptions/behaviourNames disabled via config
     ddid = getattr(job, "data_dict_id", None)
@@ -1020,7 +1025,21 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
 
 
 def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> list[Document]:
-    """Create Documents by scanning real output/ dirs, falling back to architecture walk."""
+    """Create one Document per *real* generated DOCX in this version's output/.
+
+    Runs are generated **per component** (``--component-per-docx``), so the
+    pipeline writes ``output/<component>/software_detailed_design_<component>.docx``
+    — one dir per component declared under a group in ``architecture_layers``.
+    This creates one record per such dir that actually holds a real DOCX (verified
+    via ``doc_render.find_docx`` — the same file download/render serve), so records
+    map 1:1 to documents on disk. Output dirs that don't match a declared component
+    are skipped (stale dirs, or a group with no components mapped — which generates
+    nothing in per-component mode). The previous hardcoded SYS.2 / SWE.1
+    placeholders and architecture-walk fallbacks (no DOCX behind them) were dropped
+    so the dashboard count never overstates what exists; processes with no real
+    output still render on the dashboard as muted "Not generated yet" rows."""
+    from .doc_render import commit_output_root, find_docx
+
     docs: list[Document] = []
 
     def add(process: str, name: str, subtitle: str, layer: str, group: str) -> None:
@@ -1035,67 +1054,39 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
         db.documents.update(doc)
         docs.append(doc)
 
-    add("SYS.2", "System Requirements", "SyRS", "", "Global")
-    add("SWE.1", "Software Requirements", "SRS", "", "Global")
+    out_root = commit_output_root(version.project_id, version.commit_sha)
+    if out_root is None:
+        return docs
 
-    # Collect allowed groups from the project's architecture_layers so we don't
-    # pick up stale output dirs from previous pipeline runs for other projects.
-    allowed_groups: set[str] = set()
+    # Map every declared component to its output-dir name (pipeline normalises
+    # spaces -> hyphens) -> (display name, parent layer). Per-component output
+    # dirs are named by component, so a dir is only "real" when it matches one of
+    # these — guarding against stale dirs from prior runs / other projects.
+    comp_by_dir: dict[str, tuple[str, str]] = {}
     for _layer in (project.architecture_layers or []):
         if not isinstance(_layer, dict):
             continue
+        lname = str(_layer.get("name") or "")
         for _g in (_layer.get("groups") or []):
-            _gn = _g if isinstance(_g, str) else (str(_g.get("name") or "") if isinstance(_g, dict) else "")
-            if _gn:
-                allowed_groups.add(_gn)
+            if not isinstance(_g, dict):
+                continue
+            for _c in (_g.get("components") or []):
+                cname = _c if isinstance(_c, str) else (str(_c.get("name") or "") if isinstance(_c, dict) else "")
+                if cname:
+                    comp_by_dir[cname.replace(" ", "-")] = (cname, lname)
 
-    # The pipeline normalises group names to filesystem-safe dir names (spaces → hyphens).
-    # Build a matching set so we can compare against actual output/ subdirectory names.
-    allowed_dirs: set[str] = {g.replace(" ", "-") for g in allowed_groups}
-
-    # Real output/ dirs — add one SWE.2 per group directory found that is also
-    # declared in the project configuration (guards against stale dirs from prior runs).
-    output_dir = _commit_dir(version.project_id, version.commit_sha) / "output"
-    groups_found: list[str] = []
-    if output_dir.is_dir():
-        all_dirs = [d.name for d in sorted(output_dir.iterdir()) if d.is_dir()]
-        groups_found = [d for d in all_dirs if not allowed_dirs or d in allowed_dirs]
-        for gname in groups_found:
-            add("SWE.2", gname, "Component Design", "", gname)
-
-    # groups_found contains actual output dir names (e.g. "My-Sample").
-    # When a group already has a real pipeline output dir, it produces one
-    # consolidated document covering all its units — so skip per-unit SWE.3
-    # docs for that group to avoid duplicating what is already inside it.
-    groups_found_dirs: set[str] = set(groups_found)
-
-    # Walk architecture_layers: add SWE.2 only when no output dirs found (fallback),
-    # and add SWE.3 unit design docs only for groups that have no output coverage.
-    unit_count = 0
-    for layer in (project.architecture_layers or []):
-        if not isinstance(layer, dict):
+    # One component-design doc per component output dir that holds a real DOCX.
+    for d in sorted(out_root.iterdir()):
+        if not d.is_dir():
             continue
-        lname = str(layer.get("name") or "")
-        for g in (layer.get("groups") or []):
-            gname = g if isinstance(g, str) else (str(g.get("name") or "") if isinstance(g, dict) else "")
-            if not gname:
-                continue
-            if not groups_found:
-                add("SWE.2", gname, "Component Design", lname, gname)
-            # Skip unit-level docs when the group's output dir was produced by the
-            # pipeline — those units are already sections inside the group document.
-            gname_dir = gname.replace(" ", "-")
-            if gname_dir in groups_found_dirs:
-                continue
-            comps = [] if isinstance(g, str) else (g.get("components", []) or [])
-            for c in comps:
-                cname = c if isinstance(c, str) else (c.get("name", "") if isinstance(c, dict) else "")
-                if cname and unit_count < 24:
-                    add("SWE.3", str(cname), "Unit Design", lname, gname)
-                    unit_count += 1
+        meta = comp_by_dir.get(d.name)
+        if meta is None:
+            continue
+        if find_docx(d.name, out_root) is None:
+            continue
+        disp, lname = meta
+        add("SWE.2", disp, "Component Design", lname, d.name)
 
-    if unit_count == 0 and len(docs) <= 2:
-        add("SWE.3", "Main Module", "Unit Design", "", "Global")
     return docs
 
 
