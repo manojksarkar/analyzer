@@ -328,14 +328,112 @@ def _checkout(project: Any, commit_sha: str, checkout_dir: Path, job_id: str) ->
 # Config generation
 # ---------------------------------------------------------------------------
 
+def _strip_json_comments(text: str) -> str:
+    """Strip // and /* */ comments, skipping the contents of "..." string literals
+    (so values like "http://host" or a Windows path are never corrupted).
+
+    Self-contained port of the analyzer's stripper — the API does not import from
+    src/. Kept char-by-char (not regex) precisely so a `//` inside a string value
+    is preserved.
+    """
+    result = []
+    i = 0
+    in_string = False
+    escape = False
+    while i < len(text):
+        c = text[i]
+        if escape:
+            result.append(c)
+            escape = False
+            i += 1
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            result.append(c)
+            i += 1
+            continue
+        if c == '"' and not escape:
+            in_string = not in_string
+            result.append(c)
+            i += 1
+            continue
+        if in_string:
+            result.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < len(text):
+            if text[i + 1] == "/":
+                i += 2
+                while i < len(text) and text[i] != "\n":
+                    i += 1
+                continue
+            if text[i + 1] == "*":
+                i += 2
+                while i + 1 < len(text) and (text[i] != "*" or text[i + 1] != "/"):
+                    i += 1
+                i += 2
+                continue
+        result.append(c)
+        i += 1
+    return "".join(result)
+
+
+def _strip_trailing_commas(text: str) -> str:
+    """Remove trailing commas before } or ] (JSON5-style), outside strings."""
+    out = []
+    i = 0
+    in_string = False
+    escape = False
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if escape:
+            out.append(c)
+            escape = False
+            i += 1
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            out.append(c)
+            i += 1
+            continue
+        if c == '"':
+            in_string = not in_string
+            out.append(c)
+            i += 1
+            continue
+        if not in_string and c == ",":
+            j = i + 1
+            while j < n and text[j] in (" ", "\t", "\r", "\n"):
+                j += 1
+            if j < n and text[j] in ("}", "]"):
+                i += 1
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _strip_jsonc(text: str) -> str:
+    """Strip JSONC comments + trailing commas (string-aware) so config.json may use
+    // and /* */ comments without breaking the parse."""
+    return _strip_trailing_commas(_strip_json_comments(text))
+
+
+def _load_base_config(base_path: Path) -> dict:
+    """Parse the base config/config.json as JSONC (comments + trailing commas allowed).
+    Returns {} on any read/parse failure, matching the prior json.load fallback."""
+    try:
+        with open(base_path, "r", encoding="utf-8") as f:
+            return json.loads(_strip_jsonc(f.read()))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> Path:
     """Write a per-project config.json by merging the base config with project settings."""
     base_path = get_settings().repo_root / "config" / "config.json"
-    try:
-        with open(base_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        cfg = {}
+    cfg = _load_base_config(base_path)
 
     # Apply explicit section overrides from build_config
     bc = project.build_config or {}
@@ -369,11 +467,15 @@ def _convert_layers(arch_layers: list) -> dict:
     API shape (from NewProjectPage):
       [{"name": "L1", "path": "Layer1", "lib_paths": [...],
         "groups": [{"name": "G1", "components": [{"name": "C1", "files": [...]}]}]}]
-    Config shape:
-      {"L1": {"path": "Layer1", "groups": {"G1": {"C1": "Sample/C1"}}}}
+    Config shape (component value is the selection relative to the layer path —
+    a string for a single path, a list for several):
+      {"L1": {"path": "Layer1", "groups": {
+          "G1": {"Single": "Sample/Core",
+                 "Multi": ["Flow/Flowcharts.cpp", "Math/Utils.cpp"]}}}}
 
-    Component paths are derived from the files list: the common ancestor directory
-    of all selected files, stripped of the layer path prefix.
+    Component paths preserve the wizard selection verbatim (files stay files,
+    folders stay folders), each stripped of the layer path prefix. See
+    _component_paths_from_files.
     """
     result: dict = {}
     for layer in arch_layers:
@@ -399,8 +501,13 @@ def _convert_layers(arch_layers: list) -> dict:
                         cname = str(c.get("name") or "").strip()
                         files = [str(f) for f in (c.get("files") or []) if f]
                         if cname:
-                            comp_path = _derive_component_path(files, lpath) or cname
-                            comps[cname] = comp_path
+                            rels = _component_paths_from_files(files, lpath)
+                            if not rels:
+                                # No usable selection — fall back to the component
+                                # name (parity with the bare-string component case).
+                                comps[cname] = cname
+                            else:
+                                comps[cname] = rels[0] if len(rels) == 1 else rels
             else:
                 continue
             if gname:
@@ -409,29 +516,50 @@ def _convert_layers(arch_layers: list) -> dict:
     return result
 
 
-def _derive_component_path(files: list, layer_path: str) -> str:
-    """Return the component directory path relative to layer_path.
+def _norm_rel(path: str) -> str:
+    """Normalize a repo-relative path: backslashes -> '/', drop leading './' and
+    surrounding slashes."""
+    p = (path or "").replace("\\", "/").strip()
+    while p.startswith("./"):
+        p = p[2:]
+    return p.strip("/")
 
-    Finds the common ancestor directory of all file paths, then strips the
-    layer_path prefix so the result is relative to the layer root.
+
+def _component_paths_from_files(files: list, layer_path: str) -> list:
+    """Return the wizard selection relative to ``layer_path``, order-preserving.
+
+    Each entry in ``files`` (a file or a folder, expressed from the repo root) is
+    normalized and stripped of the ``layer_path`` prefix so it becomes relative to
+    the layer root. The selection is preserved verbatim — files stay files and
+    folders stay folders — rather than being collapsed to a common-ancestor
+    directory, which over-selects and degenerates to the layer root whenever the
+    selection spans sibling directories.
+
+    An entry equal to the layer path itself (a whole-layer selection) is dropped,
+    since there is nothing meaningful to scope below the layer. An entry that is
+    not under the layer is kept as-is (defensive; the wizard only picks within the
+    layer). Duplicates are removed.
+
+    Both the ``str`` (single path) and ``list`` (multiple paths) result forms are
+    accepted downstream by ``core.config._resolve_layer_paths`` and
+    ``parser._build_file_component_map``.
     """
-    import posixpath
-    dirs = [posixpath.dirname(f.replace("\\", "/")) for f in files if f]
-    dirs = [d for d in dirs if d]
-    if not dirs:
-        return ""
-    common = dirs[0]
-    for d in dirs[1:]:
-        while common and not (d == common or d.startswith(common + "/")):
-            common = posixpath.dirname(common)
-    if not common:
-        return ""
-    layer_norm = layer_path.rstrip("/").replace("\\", "/")
-    if common == layer_norm:
-        return ""
-    if layer_norm and common.startswith(layer_norm + "/"):
-        return common[len(layer_norm) + 1:]
-    return common
+    layer_norm = _norm_rel(layer_path)
+    prefix = layer_norm + "/" if layer_norm else ""
+    out: list = []
+    seen: set = set()
+    for f in files:
+        p = _norm_rel(str(f) if f is not None else "")
+        if not p:
+            continue
+        if layer_norm and p == layer_norm:
+            continue
+        if prefix and p.startswith(prefix):
+            p = p[len(prefix):]
+        if p and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +595,11 @@ def _build_cmd(
         cmd += ["--selected-component", str(names[0])]
     elif job.layer_filter:
         cmd += ["--selected-layer", job.layer_filter]
+    # Generate one DOCX per component (the default), not one per group. This is
+    # mutually exclusive with --selected-component (run.py errors if combined), so
+    # add it for project / group / layer scope but never for a specific-component run.
+    if stype != "component":
+        cmd.append("--component-per-docx")
     if getattr(job, "no_llm", False):
         cmd.append("--no-llm-summarize")     # descriptions/behaviourNames disabled via config
     ddid = getattr(job, "data_dict_id", None)
@@ -892,7 +1025,21 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
 
 
 def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> list[Document]:
-    """Create Documents by scanning real output/ dirs, falling back to architecture walk."""
+    """Create one Document per *real* generated DOCX in this version's output/.
+
+    Runs are generated **per component** (``--component-per-docx``), so the
+    pipeline writes ``output/<component>/software_detailed_design_<component>.docx``
+    — one dir per component declared under a group in ``architecture_layers``.
+    This creates one record per such dir that actually holds a real DOCX (verified
+    via ``doc_render.find_docx`` — the same file download/render serve), so records
+    map 1:1 to documents on disk. Output dirs that don't match a declared component
+    are skipped (stale dirs, or a group with no components mapped — which generates
+    nothing in per-component mode). The previous hardcoded SYS.2 / SWE.1
+    placeholders and architecture-walk fallbacks (no DOCX behind them) were dropped
+    so the dashboard count never overstates what exists; processes with no real
+    output still render on the dashboard as muted "Not generated yet" rows."""
+    from .doc_render import commit_output_root, find_docx
+
     docs: list[Document] = []
 
     def add(process: str, name: str, subtitle: str, layer: str, group: str) -> None:
@@ -907,67 +1054,39 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
         db.documents.update(doc)
         docs.append(doc)
 
-    add("SYS.2", "System Requirements", "SyRS", "", "Global")
-    add("SWE.1", "Software Requirements", "SRS", "", "Global")
+    out_root = commit_output_root(version.project_id, version.commit_sha)
+    if out_root is None:
+        return docs
 
-    # Collect allowed groups from the project's architecture_layers so we don't
-    # pick up stale output dirs from previous pipeline runs for other projects.
-    allowed_groups: set[str] = set()
+    # Map every declared component to its output-dir name (pipeline normalises
+    # spaces -> hyphens) -> (display name, parent layer). Per-component output
+    # dirs are named by component, so a dir is only "real" when it matches one of
+    # these — guarding against stale dirs from prior runs / other projects.
+    comp_by_dir: dict[str, tuple[str, str]] = {}
     for _layer in (project.architecture_layers or []):
         if not isinstance(_layer, dict):
             continue
+        lname = str(_layer.get("name") or "")
         for _g in (_layer.get("groups") or []):
-            _gn = _g if isinstance(_g, str) else (str(_g.get("name") or "") if isinstance(_g, dict) else "")
-            if _gn:
-                allowed_groups.add(_gn)
+            if not isinstance(_g, dict):
+                continue
+            for _c in (_g.get("components") or []):
+                cname = _c if isinstance(_c, str) else (str(_c.get("name") or "") if isinstance(_c, dict) else "")
+                if cname:
+                    comp_by_dir[cname.replace(" ", "-")] = (cname, lname)
 
-    # The pipeline normalises group names to filesystem-safe dir names (spaces → hyphens).
-    # Build a matching set so we can compare against actual output/ subdirectory names.
-    allowed_dirs: set[str] = {g.replace(" ", "-") for g in allowed_groups}
-
-    # Real output/ dirs — add one SWE.2 per group directory found that is also
-    # declared in the project configuration (guards against stale dirs from prior runs).
-    output_dir = _commit_dir(version.project_id, version.commit_sha) / "output"
-    groups_found: list[str] = []
-    if output_dir.is_dir():
-        all_dirs = [d.name for d in sorted(output_dir.iterdir()) if d.is_dir()]
-        groups_found = [d for d in all_dirs if not allowed_dirs or d in allowed_dirs]
-        for gname in groups_found:
-            add("SWE.2", gname, "Component Design", "", gname)
-
-    # groups_found contains actual output dir names (e.g. "My-Sample").
-    # When a group already has a real pipeline output dir, it produces one
-    # consolidated document covering all its units — so skip per-unit SWE.3
-    # docs for that group to avoid duplicating what is already inside it.
-    groups_found_dirs: set[str] = set(groups_found)
-
-    # Walk architecture_layers: add SWE.2 only when no output dirs found (fallback),
-    # and add SWE.3 unit design docs only for groups that have no output coverage.
-    unit_count = 0
-    for layer in (project.architecture_layers or []):
-        if not isinstance(layer, dict):
+    # One component-design doc per component output dir that holds a real DOCX.
+    for d in sorted(out_root.iterdir()):
+        if not d.is_dir():
             continue
-        lname = str(layer.get("name") or "")
-        for g in (layer.get("groups") or []):
-            gname = g if isinstance(g, str) else (str(g.get("name") or "") if isinstance(g, dict) else "")
-            if not gname:
-                continue
-            if not groups_found:
-                add("SWE.2", gname, "Component Design", lname, gname)
-            # Skip unit-level docs when the group's output dir was produced by the
-            # pipeline — those units are already sections inside the group document.
-            gname_dir = gname.replace(" ", "-")
-            if gname_dir in groups_found_dirs:
-                continue
-            comps = [] if isinstance(g, str) else (g.get("components", []) or [])
-            for c in comps:
-                cname = c if isinstance(c, str) else (c.get("name", "") if isinstance(c, dict) else "")
-                if cname and unit_count < 24:
-                    add("SWE.3", str(cname), "Unit Design", lname, gname)
-                    unit_count += 1
+        meta = comp_by_dir.get(d.name)
+        if meta is None:
+            continue
+        if find_docx(d.name, out_root) is None:
+            continue
+        disp, lname = meta
+        add("SWE.2", disp, "Component Design", lname, d.name)
 
-    if unit_count == 0 and len(docs) <= 2:
-        add("SWE.3", "Main Module", "Unit Design", "", "Global")
     return docs
 
 

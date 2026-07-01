@@ -11,7 +11,7 @@ import { groupDocsByProcess, buildAssigneeOptions } from '../lib/docTree'
 import { cn } from '../lib/cn'
 import type { DocStatus, Document } from '../types'
 
-const PROCESSES = ['All', 'SYS.1', 'SYS.2', 'SWE.1', 'SWE.3']
+const PROCESSES = ['All', 'SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3']
 
 /* status → {label, icon, badge classes} (matches design .badge-*) */
 const STATUS_BADGE: Record<string, { label: string; icon: string; cls: string }> = {

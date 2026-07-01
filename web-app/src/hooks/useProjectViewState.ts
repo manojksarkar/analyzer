@@ -21,33 +21,49 @@ import type { PageState, Version, Commit } from '../types'
  */
 export function useProjectViewState(projectId: string): {
   pageState: PageState
+  isLoading: boolean
   viewVersion?: Version
   viewVersionId?: string
   selectedCommit?: Commit
   selectedSha?: string
 } {
-  const { data: project } = useProject(projectId)
-  const { data: versions } = useVersions(projectId)
-  const { data: commits } = useCommits(projectId)
-  const { data: job } = useCurrentJob(projectId)
-  const selectedSha = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
+  const { data: project, isLoading: projectLoading } = useProject(projectId)
+  const { data: versions, isLoading: versionsLoading } = useVersions(projectId)
+  const { data: commits, isLoading: commitsLoading } = useCommits(projectId)
+  const { data: job, isLoading: jobLoading } = useCurrentJob(projectId)
+  const selection = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
 
-  const selVersion = versions?.find((v) => v.sha === selectedSha)
-  const selCommit = commits?.find((c) => c.sha === selectedSha)
+  // First-load only (isLoading, not isFetching) so background refetches don't
+  // re-trigger skeletons. Consumers gate their empty states on this so the
+  // default `pageState = 'never'` isn't shown before the queries resolve.
+  const isLoading = projectLoading || versionsLoading || commitsLoading || jobLoading
+
+  // Resolve the selection: a version by its id (so two versions on the same
+  // commit don't collide), a commit by sha.
+  const selVersion = selection?.type === 'version'
+    ? versions?.find((v) => v.id === selection.id)
+    : undefined
+  const selCommit = selection?.type === 'commit'
+    ? commits?.find((c) => c.sha === selection.sha)
+    : undefined
   const selCommitVersion = selCommit?.versionTag
     ? versions?.find((v) => v.tag === selCommit.versionTag)
     : undefined
   // The version whose documents we show; default to the latest when nothing is
   // explicitly selected. A "Not Run" commit has no version → undefined.
-  const viewVersion = selVersion ?? selCommitVersion ?? (selectedSha ? undefined : versions?.[0])
+  const viewVersion = selVersion ?? selCommitVersion ?? (selection ? undefined : versions?.[0])
 
   const jobActive = !!job && ['queued', 'running', 'paused'].includes(job.status)
   let base: PageState = project?.pageState ?? 'never'
-  if (selectedSha) {
+  if (selection) {
     if (viewVersion) base = viewVersion.pageState
     else if (selCommit) base = selCommit.pageState
   }
   const pageState: PageState = jobActive ? 'running' : base
+
+  // Back-compat sha for consumers that key off it (ComparePage); undefined when
+  // nothing is explicitly selected, matching the prior empty-store behaviour.
+  const selectedSha = selVersion?.sha ?? selCommit?.sha
 
   // When a job transitions to a terminal state, refresh project + versions +
   // documents so every page leaves the "running" / empty state automatically.
@@ -61,5 +77,5 @@ export function useProjectViewState(projectId: string): {
     qc.invalidateQueries({ queryKey: ['projects', projectId, 'documents'] })
   }, [jobStatus, projectId, qc])
 
-  return { pageState, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit, selectedSha }
+  return { pageState, isLoading, viewVersion, viewVersionId: viewVersion?.id, selectedCommit: selCommit, selectedSha }
 }

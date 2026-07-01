@@ -225,6 +225,7 @@ def _project_to_dict(p: Project) -> dict:
         "architecture_layers": p.architecture_layers, "status": p.status,
         "created_by": p.created_by, "created_at": p.created_at,
         "updated_at": p.updated_at,
+        "last_commit_sync_at": p.last_commit_sync_at,
     }
 
 
@@ -238,6 +239,9 @@ def _project_from_dict(d: dict) -> Project:
         status=d["status"], created_by=d["created_by"],
         created_at=_parse_dt(d["created_at"]),
         updated_at=_parse_dt(d["updated_at"]),
+        last_commit_sync_at=(
+            _parse_dt(d["last_commit_sync_at"]) if d.get("last_commit_sync_at") else None
+        ),
     )
 
 

@@ -119,11 +119,14 @@ def ls_remote(clone_url: str, username: str = "", token: str = "") -> Dict:
 
 def shallow_clone(
     clone_url: str, username: str, token: str, dest_dir: str,
-    ref: Optional[str] = None, depth: int = 1,
+    ref: Optional[str] = None, depth: int = 1, blobless: bool = False,
 ) -> None:
     """Shallow single-branch clone for read-only use (tree browsing needs ``depth=1``;
     listing commits needs a larger depth). Resets ``origin`` to the credential-free URL
     afterwards. ``ref`` selects the branch.
+
+    ``blobless=True`` requests a partial clone (no file contents) — used for tree browsing,
+    which only needs path names, so the whole repo's blobs are never downloaded.
 
     Delegates to the platform's single clone primitive (``src/incremental/clone``), so the
     API, the per-commit job checkout, and the standalone engine all share ONE
@@ -134,7 +137,8 @@ def shallow_clone(
     from incremental.clone import shallow_clone as _shared  # type: ignore[import]
     from incremental.git_ops import GitError as _EngineGitError  # type: ignore[import]
     try:
-        _shared(clone_url, dest_dir, ref=ref, depth=depth, username=username, token=token)
+        _shared(clone_url, dest_dir, ref=ref, depth=depth, username=username, token=token,
+                blobless=blobless)
     except _EngineGitError as exc:
         raise GitError(str(exc))
 

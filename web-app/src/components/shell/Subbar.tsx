@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useVersions, useCommits, useProjects } from '../../hooks/useProjects'
-import { useUIStore } from '../../store/ui'
-import { Icon } from '../ui'
+import { useVersions, useCommits, useCommitsLastSync, useProjects } from '../../hooks/useProjects'
+import { useUIStore, type Selection } from '../../store/ui'
+import { Icon, Skeleton } from '../ui'
 import { cn } from '../../lib/cn'
+import { relativeTime } from '../../lib/format'
 import type { Version, Commit, VersionStatus, PageState } from '../../types'
 
 /* ─── Version-status accent (left stripe) ─── */
@@ -122,8 +123,9 @@ function CommitRow({ commit, isCurrent, isLast, onSelect }: { commit: Commit; is
 /* ─── Commit/version picker ─── */
 function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: Version; selectedCommit?: Commit }) {
   const { projectId } = useParams<{ projectId: string }>()
-  const { data: versions } = useVersions(projectId ?? '')
-  const { data: commits } = useCommits(projectId ?? '')
+  const { data: versions, isLoading: versionsLoading } = useVersions(projectId ?? '')
+  const { data: commits, isLoading: commitsLoading } = useCommits(projectId ?? '')
+  const { data: lastSyncedAt } = useCommitsLastSync(projectId ?? '')
 
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<'versions' | 'commits'>('versions')
@@ -132,9 +134,8 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
 
   // Selection is shared via the UI store so the detail page + status badge react
   // to it; default to the layout-supplied latest version / commit.
-  const storeSha = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
+  const selection = useUIStore((s) => (projectId ? s.selectedRef[projectId] : undefined))
   const setSelectedRef = useUIStore((s) => s.setSelectedRef)
-  const selectedSha = storeSha ?? selectedCommit?.sha ?? selectedVersion?.sha
 
   // Close on outside click
   useEffect(() => {
@@ -146,17 +147,20 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [open])
 
-  // Resolve the chip label from the current selection. The default selection is
-  // the latest version (supplied by the layout), so the chip shows the version
-  // tag by default and only falls back to "branch @ commit" when a specific
-  // commit with no version is picked.
-  const activeCommit = commits?.find((c) => c.sha === selectedSha)
-  const activeVersion =
-    versions?.find((v) => v.sha === selectedSha) ??
-    (selectedSha && selectedSha === selectedVersion?.sha ? selectedVersion : undefined)
+  // Resolve the active version/commit from the selection. With nothing
+  // explicitly selected, default to the layout-supplied latest (prefer the
+  // version, else the commit) so they stay mutually exclusive: the chip shows
+  // the version tag by default and only falls back to "branch @ commit" when a
+  // specific commit with no version is picked.
+  const activeVersion = selection?.type === 'version'
+    ? versions?.find((v) => v.id === selection.id)
+    : !selection ? selectedVersion : undefined
+  const activeCommit = selection?.type === 'commit'
+    ? commits?.find((c) => c.sha === selection.sha)
+    : (!selection && !selectedVersion) ? selectedCommit : undefined
   const chipVersionTag = activeVersion?.tag ?? activeCommit?.versionTag
-  const chipBranch = activeCommit?.branch ?? activeVersion?.branch ?? selectedCommit?.branch ?? 'main'
-  const chipSha = activeCommit?.shortSha ?? activeVersion?.shortSha ?? selectedCommit?.shortSha ?? ''
+  const chipBranch = activeCommit?.branch ?? activeVersion?.branch ?? 'main'
+  const chipSha = activeCommit?.shortSha ?? activeVersion?.shortSha ?? ''
   const chipHasVersion = Boolean(chipVersionTag)
 
   const filteredCommits = (commits ?? []).filter((c) => {
@@ -164,8 +168,8 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
     return !q || c.shortSha.includes(q) || c.message.toLowerCase().includes(q) || c.author.toLowerCase().includes(q)
   })
 
-  function select(sha: string) {
-    if (projectId) setSelectedRef(projectId, sha)
+  function select(sel: Selection) {
+    if (projectId) setSelectedRef(projectId, sel)
     setOpen(false)
   }
 
@@ -203,11 +207,18 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
           {/* Versions panel */}
           {tab === 'versions' && (
             <div className="overflow-y-auto max-h-[280px]">
-              {(versions ?? []).length === 0 ? (
+              {versionsLoading && !versions ? (
+                <div className="p-3 space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
+              ) : (versions ?? []).length === 0 ? (
                 <div className="px-4 py-6 text-center text-xs text-outline">No versions yet</div>
               ) : (
                 versions!.map((v) => (
-                  <VersionRow key={v.tag} version={v} isActive={v.sha === selectedSha} onSelect={() => select(v.sha)} />
+                  <VersionRow
+                    key={v.id ?? v.tag}
+                    version={v}
+                    isActive={!!activeVersion && (v.id ? v.id === activeVersion.id : v.sha === activeVersion.sha)}
+                    onSelect={() => select(v.id ? { type: 'version', id: v.id } : { type: 'commit', sha: v.sha })}
+                  />
                 ))
               )}
             </div>
@@ -229,20 +240,28 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
                 </div>
               </div>
               <div className="overflow-y-auto max-h-[240px]">
-                {filteredCommits.length === 0 ? (
+                {commitsLoading && !commits ? (
+                  <div className="p-3 space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
+                ) : filteredCommits.length === 0 ? (
                   <div className="px-4 py-6 text-center text-xs text-outline">No commits match</div>
                 ) : (
                   filteredCommits.map((c, i) => (
                     <CommitRow
                       key={c.sha}
                       commit={c}
-                      isCurrent={c.sha === selectedSha}
+                      isCurrent={!!activeCommit && c.sha === activeCommit.sha}
                       isLast={i === filteredCommits.length - 1}
-                      onSelect={() => select(c.sha)}
+                      onSelect={() => select({ type: 'commit', sha: c.sha })}
                     />
                   ))
                 )}
               </div>
+              {lastSyncedAt && (
+                <div className="flex items-center gap-1 px-3 py-1.5 border-t border-outline-variant text-label text-outline">
+                  <Icon name="sync" size={11} />
+                  <span>Synced {relativeTime(lastSyncedAt)}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -255,7 +274,7 @@ function CommitPicker({ selectedVersion, selectedCommit }: { selectedVersion?: V
 function ProjectSwitcher({ projectName }: { projectName: string }) {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
-  const { data: projects } = useProjects()
+  const { data: projects, isLoading: projectsLoading } = useProjects()
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -287,7 +306,9 @@ function ProjectSwitcher({ projectName }: { projectName: string }) {
             <span className="text-on-surface-variant uppercase font-mono text-label font-bold tracking-[.08em]">Switch project</span>
           </div>
           <div className="overflow-y-auto max-h-[320px]">
-            {(projects ?? []).length === 0 ? (
+            {projectsLoading && !projects ? (
+              <div className="p-3 space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
+            ) : (projects ?? []).length === 0 ? (
               <div className="p-4 text-xs text-outline">No projects</div>
             ) : (
               projects!.map((p) => {

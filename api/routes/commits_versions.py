@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
 
 from ..db.session import get_db
@@ -17,6 +17,11 @@ from ..schemas import CommitListResponse, VersionResponse, VersionListResponse
 
 router = APIRouter(tags=["commits-versions"])
 UTC = timezone.utc
+
+# Min seconds between repo commit syncs for a single project. list_commits runs
+# the sync on every page-1 view, so this stops rapid refreshes from re-scanning
+# the repo on every call.
+_COMMIT_SYNC_THROTTLE_SECONDS = 60
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +48,7 @@ class UpdateVersionRequest(BaseModel):
             responses={200: {"model": CommitListResponse}})
 def list_commits(
     project_id: str,
+    background_tasks: BackgroundTasks,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
@@ -53,11 +59,26 @@ def list_commits(
         raise not_found("Project", project_id)
     require_project_member(project_id, current_user, db)
     commits, total = db.commits.list_for_project(project_id, page, per_page)
-    # A wizard-created project starts with no commits — fetch the real history
-    # from the connected repo on first view, persist it, then re-read.
-    if not commits and page == 1:
-        _backfill_commits_from_repo(project, db)
-        commits, total = db.commits.list_for_project(project_id, page, per_page)
+    # Sync new commits from the connected repo on every page-1 view (so pushes
+    # show up without re-creating the project), throttled per project and
+    # insert-only — see _backfill_commits_from_repo. The throttle clock is
+    # advanced synchronously so concurrent/rapid requests don't each schedule a
+    # scan and last_synced_at reflects this attempt.
+    if page == 1 and _should_sync(project):
+        first_sync = project.last_commit_sync_at is None
+        project.last_commit_sync_at = datetime.now(UTC)
+        db.projects.update(project)
+        if first_sync:
+            # First-ever view (e.g. a fresh wizard project): fetch inline so the
+            # commits show up immediately. This is the only sync that blocks the
+            # response, and it happens at most once per project.
+            _backfill_commits_from_repo(project_id, db)
+            commits, total = db.commits.list_for_project(project_id, page, per_page)
+        else:
+            # Steady state: pull new commits after the response is sent so the
+            # API is never slowed by the git round-trip; they appear on the next
+            # refetch.
+            background_tasks.add_task(_backfill_commits_from_repo, project_id, db)
     versions = {v.commit_sha: v.tag for v in db.versions.list_for_project(project_id)}
     # Mark the most recent commit as "current"
     current_job = db.jobs.get_current(project_id)
@@ -77,6 +98,10 @@ def list_commits(
             for c in commits
         ],
         "pagination": {"page": page, "per_page": per_page, "total": total},
+        "last_synced_at": (
+            project.last_commit_sync_at.isoformat()
+            if project.last_commit_sync_at else None
+        ),
     }
 
 
@@ -188,15 +213,44 @@ def delete_version(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _backfill_commits_from_repo(project: Project, db: InMemoryDatabase) -> None:
-    """Fetch recent commits from the project's connected repo and persist them.
+def _should_sync(project: Project) -> bool:
+    """True when the project's commits are due for a repo sync (throttle gate).
 
-    Best-effort: any git/network failure leaves the commit list empty (the same
-    state as before), so the overview just keeps showing "no commit to analyze".
-    The repo access token (stored in build_config, never exposed) is used for
-    private repos.
+    Syncs on the first-ever view (no timestamp) and at most once per
+    _COMMIT_SYNC_THROTTLE_SECONDS thereafter. Projects with no repo connected
+    never sync — there is nothing to pull.
     """
     if not project.repo_url or not project.default_branch:
+        return False
+    last = project.last_commit_sync_at
+    if last is None:
+        return True
+    if last.tzinfo is None:        # tolerate naive timestamps from storage
+        last = last.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - last).total_seconds() >= _COMMIT_SYNC_THROTTLE_SECONDS
+
+
+def _backfill_commits_from_repo(project_id: str, db: InMemoryDatabase) -> None:
+    """Sync recent commits from the project's connected repo (insert-only).
+
+    Inserts commits that aren't already stored; existing commits are left
+    untouched so their doc_status / version links are never overwritten. The
+    caller gates this behind _should_sync and owns advancing the throttle clock
+    (Project.last_commit_sync_at); this function only touches commits.
+
+    Takes a project_id (not the object) and re-reads the project, because it may
+    run as a BackgroundTask after the response is sent. Safe to reuse `db`: the
+    in-memory / json backends are process-global singletons, not per-request
+    sessions.
+
+    Best-effort: any git/network failure leaves the stored commits as-is. The
+    repo access token (stored in build_config, never exposed) is used for
+    private repos.
+    """
+    project = db.projects.get(project_id)
+    # _should_sync already guarantees repo_url/default_branch, but re-check since
+    # state may have changed between scheduling and running.
+    if not project or not project.repo_url or not project.default_branch:
         return
     token = (project.build_config or {}).get("repo_access_token")
     try:
@@ -207,6 +261,8 @@ def _backfill_commits_from_repo(project: Project, db: InMemoryDatabase) -> None:
         sha = rc.get("sha")
         if not sha:
             continue
+        if db.commits.get(project.id, sha):
+            continue  # insert-only — keep the existing doc_status / version link
         date_str = rc.get("date") or ""
         try:
             committed = datetime.fromisoformat(date_str) if date_str else datetime.now(UTC)

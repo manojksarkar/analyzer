@@ -1,10 +1,10 @@
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../hooks/useProjects'
 import { useSelfAssign } from '../hooks/useDocumentMutations'
 import { useCurrentJob, useStartJob, useCancelJob, useJobEvents } from '../hooks/useJobs'
 import { useProjectViewState } from '../hooks/useProjectViewState'
-import { Icon, RoleBadge, Text } from '../components/ui'
+import { DashboardSkeleton, Icon, RoleBadge, Text } from '../components/ui'
 import { cn } from '../lib/cn'
 import { useAuthStore } from '../store/auth'
 import type { StartJobInput } from '../services/api'
@@ -218,10 +218,11 @@ const SELECT_CLS = 'font-mono text-xs'
 const FIELD_LABEL = 'text-caption font-mono'
 
 function RunAnalysisModal({
-  project, commits, versions, submitting, defaultSha, onClose, onStart,
+  project, commits, commitsLoading, versions, submitting, defaultSha, onClose, onStart,
 }: {
   project: Project
   commits?: Commit[]
+  commitsLoading: boolean
   versions?: Version[]
   submitting: boolean
   defaultSha?: string
@@ -230,6 +231,13 @@ function RunAnalysisModal({
 }) {
   const cs = commits ?? []
   const [commitSha, setCommitSha] = useState(defaultSha ?? cs[0]?.sha ?? '')
+  // Commits may still be loading when the modal opens (the commit sync/clone is
+  // slow), so useState's initializer ran with an empty list. Adopt the default
+  // commit as soon as the list arrives — otherwise Start stays disabled until
+  // the user closes and reopens the modal.
+  useEffect(() => {
+    if (!commitSha && commits?.length) setCommitSha(defaultSha ?? commits[0].sha)
+  }, [commitSha, commits, defaultSha])
   const branch = cs.find((c) => c.sha === commitSha)?.branch || cs[0]?.branch || project.defaultBranch || 'main'
   const [referenceId, setReferenceId] = useState('')
   const [versionName, setVersionName] = useState(() => suggestNextVersion(versions))
@@ -278,7 +286,10 @@ function RunAnalysisModal({
           <div className="px-4 py-3">
             <label className={cn('text-on-surface-variant block mb-2', FIELD_LABEL)}>Commit</label>
             {cs.length === 0 ? (
-              <p className="text-on-surface-variant text-xs font-mono">No commits available to analyze yet.</p>
+              <p className="text-on-surface-variant text-xs font-mono flex items-center gap-1.5">
+                {commitsLoading && <Icon name="progress_activity" size={13} className="animate-spin" />}
+                {commitsLoading ? 'Loading commits…' : 'No commits available to analyze yet.'}
+              </p>
             ) : (
               <select value={commitSha} onChange={(e) => setCommitSha(e.target.value)} className={cn('w-full rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none border border-outline-variant', SELECT_CLS)}>
                 {cs.map((c) => (
@@ -556,10 +567,34 @@ function AdminDocsCard({ documents, go, projectId }: { documents: Document[]; go
           </tr>
         </thead>
         <tbody>
+          {/* Always render all 5 ASPICE process rows. A process with no real
+              generated document for the selected version renders as a distinct,
+              muted, non-clickable "Not generated yet" row — clearly set apart
+              from rows that actually have documents. */}
           {PROCESSES.map((p) => {
             const docs = documents.filter((d) => d.process === p.key)
-            if (!docs.length) return null
             const total = docs.length
+
+            if (total === 0) {
+              return (
+                <tr key={p.key} className="border-b border-outline-variant last:border-0">
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2.5 opacity-60">
+                      <span className="font-mono text-caption font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-[5px] flex-shrink-0">{p.key}</span>
+                      <div>
+                        <div className="text-body font-medium text-on-surface-variant leading-[1.3]">{p.label}</div>
+                        <div className="text-caption text-outline">0 docs</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3" colSpan={2}>
+                    <span className="text-caption text-outline-variant italic">Not generated yet</span>
+                  </td>
+                  <td className="px-3 py-2" />
+                </tr>
+              )
+            }
+
             const assigned = docs.filter((d) => !!d.assignee).length
             const unassigned = total - assigned
             const apct = pct(assigned, total)
@@ -833,10 +868,10 @@ export function ProjectDetailPage() {
 
   const { data: project } = useProject(projectId ?? '')
   // pageState + the version to view come from the Subbar selection (shared store).
-  const { pageState, viewVersionId, selectedCommit } = useProjectViewState(projectId ?? '')
-  const { data: documents } = useDocuments(projectId ?? '', viewVersionId ? { versionId: viewVersionId } : undefined)
+  const { pageState, isLoading, viewVersionId, selectedCommit } = useProjectViewState(projectId ?? '')
+  const { data: documents, isLoading: documentsLoading } = useDocuments(projectId ?? '', viewVersionId ? { versionId: viewVersionId } : undefined)
   const { data: team, isLoading: teamLoading } = useTeam(projectId ?? '')
-  const { data: commits } = useCommits(projectId ?? '')
+  const { data: commits, isLoading: commitsLoading } = useCommits(projectId ?? '')
   const { data: job } = useCurrentJob(projectId ?? '')
   const selfAssign = useSelfAssign(projectId ?? '')
   const startJob = useStartJob(projectId ?? '')
@@ -858,6 +893,12 @@ export function ProjectDetailPage() {
   return (
     <div className="flex-1 overflow-y-auto bg-background">
       <div className="px-6 py-6 max-w-[1280px] mx-auto">
+
+        {/* ══ LOADING — gate the empty-state flash until the view state resolves ══ */}
+        {isLoading && !project ? (
+          <DashboardSkeleton />
+        ) : (
+          <>
 
         {/* ══ EMPTY STATE (not yet analysed) ══ */}
         {pageState === 'never' && (
@@ -1014,20 +1055,26 @@ export function ProjectDetailPage() {
 
         {/* ══ GENERATED CONTENT — KPI strip + docs + sidebar (matches project-detail.html) ══ */}
         {showContent && project && (
-          <GeneratedContent
-            project={project}
-            documents={documents}
-            team={team}
-            versions={versions}
-            isAdmin={isAdmin}
-            projectId={projectId ?? ''}
-            go={(to) => navigate(to)}
-            selfAssign={selfAssign}
-            meName={meName}
-            teamLoading={teamLoading}
-          />
+          documentsLoading && !documents ? (
+            <DashboardSkeleton />
+          ) : (
+            <GeneratedContent
+              project={project}
+              documents={documents}
+              team={team}
+              versions={versions}
+              isAdmin={isAdmin}
+              projectId={projectId ?? ''}
+              go={(to) => navigate(to)}
+              selfAssign={selfAssign}
+              meName={meName}
+              teamLoading={teamLoading}
+            />
+          )
         )}
 
+          </>
+        )}
 
       </div>
 
@@ -1035,6 +1082,7 @@ export function ProjectDetailPage() {
         <RunAnalysisModal
           project={project}
           commits={commits}
+          commitsLoading={commitsLoading}
           versions={versions}
           submitting={startJob.isPending}
           defaultSha={shownCommit?.sha}

@@ -45,8 +45,9 @@ from incremental.fingerprint import compute_fingerprints
 from incremental.affected import affected_tus, full_reparse_reason
 from incremental.parse_merge import merge_model, diff_models
 from incremental.report import build_report, emit_report
-from incremental.generate import (_manifest, scope_to_args, resolve_run_config,
-                                  generate_full, _now_iso, snapshot_parse_model, apply_no_llm)
+from incremental.generate import (_manifest, scope_to_args, per_component_docx_args,
+                                  resolve_run_config, generate_full, _now_iso,
+                                  snapshot_parse_model, apply_no_llm)
 
 
 def _entity_kind(key: str) -> str:
@@ -172,6 +173,7 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   extra_args: Optional[List[str]] = None) -> int:
     cmd = [sys.executable, "run.py", "--config", vcfg_path]
     cmd += scope_to_args(scope)
+    cmd += per_component_docx_args(scope)
     if no_llm:
         cmd += ["--no-llm-summarize"]
     if data_dict_path:

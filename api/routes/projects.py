@@ -57,7 +57,9 @@ def _project_view(project: Project, db: InMemoryDatabase, user_id: str) -> dict:
     versions = db.versions.list_for_project(project.id)
     latest = max(versions, key=lambda v: v.created_at, default=None)
     docs, total = db.documents.list_for_project(project.id)
-    stats = db.documents.get_stats(project.id)
+    # Scope the dashboard doc counts to the version actually on display (latest),
+    # not the sum across every run. latest is None for a project with no versions.
+    stats = db.documents.get_stats(project.id, version_id=latest.id if latest else None)
     job = db.jobs.get_current(project.id)
     return {
         "id": project.id,
