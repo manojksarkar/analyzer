@@ -71,17 +71,23 @@ def test_connection(repo_url: str, access_token: Optional[str] = None) -> dict[s
     }
 
 
-def _cache_path(repo_url: str, ref: Optional[str], depth: int) -> Path:
-    key = hashlib.sha256(f"{repo_url.strip()}@{ref or ''}@d{depth}".encode()).hexdigest()[:16]
+def _cache_path(repo_url: str, ref: Optional[str], depth: int, blobless: bool = False) -> Path:
+    key = hashlib.sha256(
+        f"{repo_url.strip()}@{ref or ''}@d{depth}@b{int(blobless)}".encode()
+    ).hexdigest()[:16]
     return _CACHE_DIR / key
 
 
-def _clone_or_reuse(repo_url: str, ref: Optional[str], access_token: Optional[str], depth: int = 1) -> Path:
-    dest = _cache_path(repo_url, ref, depth)
+def _clone_or_reuse(
+    repo_url: str, ref: Optional[str], access_token: Optional[str],
+    depth: int = 1, blobless: bool = False,
+) -> Path:
+    dest = _cache_path(repo_url, ref, depth, blobless)
     if (dest / ".git").exists():
         return dest
     git_cli.shallow_clone(
-        repo_url.strip(), *_creds(access_token), str(dest), ref=ref or None, depth=depth,
+        repo_url.strip(), *_creds(access_token), str(dest),
+        ref=ref or None, depth=depth, blobless=blobless,
     )
     return dest
 
@@ -124,10 +130,12 @@ def browse(
     path: str = "",
     access_token: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Clone (cached, depth-1) and return the tree under ``path``. Raises
-    git_cli.GitError on clone failure (the route maps it to 400)."""
+    """Clone (cached, depth-1, **blobless**) and return the tree under ``path``. The
+    partial clone fetches commit + tree objects but no file contents, so listing folder
+    names doesn't download the whole repo. Raises git_cli.GitError on clone failure (the
+    route maps it to 400)."""
     url = (repo_url or "").strip()
-    repo_dir = _clone_or_reuse(url, ref, access_token)
+    repo_dir = _clone_or_reuse(url, ref, access_token, blobless=True)
     tree = git_cli.list_tree(str(repo_dir), "HEAD")
     norm = (path or "").strip().strip("/")
     entries = _children_at(tree, norm) if norm else tree
