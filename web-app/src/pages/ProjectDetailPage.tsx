@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProject, useDocuments, useTeam, useCommits, useVersions } from '../hooks/useProjects'
 import { useSelfAssign } from '../hooks/useDocumentMutations'
@@ -218,10 +218,11 @@ const SELECT_CLS = 'font-mono text-xs'
 const FIELD_LABEL = 'text-caption font-mono'
 
 function RunAnalysisModal({
-  project, commits, versions, submitting, defaultSha, onClose, onStart,
+  project, commits, commitsLoading, versions, submitting, defaultSha, onClose, onStart,
 }: {
   project: Project
   commits?: Commit[]
+  commitsLoading: boolean
   versions?: Version[]
   submitting: boolean
   defaultSha?: string
@@ -230,6 +231,13 @@ function RunAnalysisModal({
 }) {
   const cs = commits ?? []
   const [commitSha, setCommitSha] = useState(defaultSha ?? cs[0]?.sha ?? '')
+  // Commits may still be loading when the modal opens (the commit sync/clone is
+  // slow), so useState's initializer ran with an empty list. Adopt the default
+  // commit as soon as the list arrives — otherwise Start stays disabled until
+  // the user closes and reopens the modal.
+  useEffect(() => {
+    if (!commitSha && commits?.length) setCommitSha(defaultSha ?? commits[0].sha)
+  }, [commitSha, commits, defaultSha])
   const branch = cs.find((c) => c.sha === commitSha)?.branch || cs[0]?.branch || project.defaultBranch || 'main'
   const [referenceId, setReferenceId] = useState('')
   const [versionName, setVersionName] = useState(() => suggestNextVersion(versions))
@@ -278,7 +286,10 @@ function RunAnalysisModal({
           <div className="px-4 py-3">
             <label className={cn('text-on-surface-variant block mb-2', FIELD_LABEL)}>Commit</label>
             {cs.length === 0 ? (
-              <p className="text-on-surface-variant text-xs font-mono">No commits available to analyze yet.</p>
+              <p className="text-on-surface-variant text-xs font-mono flex items-center gap-1.5">
+                {commitsLoading && <Icon name="progress_activity" size={13} className="animate-spin" />}
+                {commitsLoading ? 'Loading commits…' : 'No commits available to analyze yet.'}
+              </p>
             ) : (
               <select value={commitSha} onChange={(e) => setCommitSha(e.target.value)} className={cn('w-full rounded-lg px-3 py-2 text-on-surface bg-white cursor-pointer focus:outline-none border border-outline-variant', SELECT_CLS)}>
                 {cs.map((c) => (
@@ -836,7 +847,7 @@ export function ProjectDetailPage() {
   const { pageState, viewVersionId, selectedCommit } = useProjectViewState(projectId ?? '')
   const { data: documents } = useDocuments(projectId ?? '', viewVersionId ? { versionId: viewVersionId } : undefined)
   const { data: team, isLoading: teamLoading } = useTeam(projectId ?? '')
-  const { data: commits } = useCommits(projectId ?? '')
+  const { data: commits, isLoading: commitsLoading } = useCommits(projectId ?? '')
   const { data: job } = useCurrentJob(projectId ?? '')
   const selfAssign = useSelfAssign(projectId ?? '')
   const startJob = useStartJob(projectId ?? '')
@@ -1035,6 +1046,7 @@ export function ProjectDetailPage() {
         <RunAnalysisModal
           project={project}
           commits={commits}
+          commitsLoading={commitsLoading}
           versions={versions}
           submitting={startJob.isPending}
           defaultSha={shownCommit?.sha}
