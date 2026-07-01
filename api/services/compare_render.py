@@ -43,8 +43,11 @@ _WORD_RE = re.compile(r"\s+|\S+")
 
 def resolve_snapshot_asset(project_id: str, version_id: str, group: str,
                            asset_path: str) -> Optional[Path]:
-    """Resolve ``<snapshot>/output/<group>/<asset_path>`` safely, or None."""
-    base = (_REPO_ROOT / "workspaces" / project_id / "versions" / version_id
+    """Resolve ``<snapshot>/output/<group>/<asset_path>`` safely, or None.
+
+    ``version_id`` here is the snapshot dir key (commit[:16]); snapshots live under
+    ``workspaces/<pid>/<commit[:16]>/output/<group>`` (there is no ``versions/`` tree)."""
+    base = (_REPO_ROOT / "workspaces" / project_id / version_id
             / "output" / group).resolve()
     if not base.is_dir():
         return None
@@ -67,7 +70,10 @@ def _version_render(db: Any, project: Any, doc: Any, version: Any,
     if not group_dir.is_dir():
         return None
     model_root = snap / "model"
-    asset_base = f"projects/{project_id}/compare/assets/{version.id}/{doc.group}"
+    # Asset URLs must key by the snapshot dir (commit[:16]), not the API Version.id —
+    # resolve_snapshot_asset resolves workspaces/<pid>/<commit[:16]>/output/<group>.
+    snap_key = (version.commit_sha or "")[:16]
+    asset_base = f"projects/{project_id}/compare/assets/{snap_key}/{doc.group}"
     try:
         return doc_render.build_render(
             doc, project, version, group_dir, project_id,

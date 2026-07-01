@@ -212,8 +212,10 @@ def compute_document_diff(db: Any, project_id: str, doc_id: str,
     project = db.projects.get(project_id)
     cur_ver = _resolve_ref(db, project_id, current_ref)
     base_ver = _resolve_ref(db, project_id, baseline_ref)
-    c_snap = _snap(project_id, cur_ver.id) if cur_ver else None
-    b_snap = _snap(project_id, base_ver.id) if base_ver else None
+    # Snapshots live under workspaces/<pid>/<commit[:16]> — key by commit_sha, NOT the
+    # API Version.id ('ver…'), which would never match the on-disk dir.
+    c_snap = _snap(project_id, cur_ver.commit_sha) if cur_ver else None
+    b_snap = _snap(project_id, base_ver.commit_sha) if base_ver else None
 
     rich = compare_render.compute_document_render_diff(
         db, project, doc, cur_ver, base_ver, c_snap, b_snap, project_id,
@@ -360,8 +362,9 @@ def compute_document_sections_diff(
     cur_ver = _resolve_ref(db, project_id, current_ref)
     base_ver = _resolve_ref(db, project_id, baseline_ref)
 
-    c_snap = _snap(project_id, cur_ver.id) if cur_ver else None
-    b_snap = _snap(project_id, base_ver.id) if base_ver else None
+    # Key snapshots by commit_sha (dir is workspaces/<pid>/<commit[:16]>), not Version.id.
+    c_snap = _snap(project_id, cur_ver.commit_sha) if cur_ver else None
+    b_snap = _snap(project_id, base_ver.commit_sha) if base_ver else None
 
     if not c_snap or not b_snap or not doc.group:
         # Fall back to DB-stored sections; mark changed if in the seeded diff set
