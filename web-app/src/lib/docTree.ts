@@ -1,7 +1,7 @@
 import type { Document } from '../types'
 
 /** Process column order shared by the documents list + the tree rail. */
-export const DOC_PROCESSES = ['SYS.1', 'SYS.2', 'SWE.1', 'SWE.3'] as const
+export const DOC_PROCESSES = ['SYS.1', 'SYS.2', 'SWE.1', 'SWE.2', 'SWE.3'] as const
 
 /** Distinct, sorted assignee names from a doc set (for the rail dropdown). */
 export function buildAssigneeOptions(docs: Document[]): string[] {

@@ -42,7 +42,7 @@ export function mapDocument(d: ApiDocument, versionTagById?: Record<string, stri
   return {
     id: d.id,
     name: d.name,
-    process: d.process === 'SWE.2' ? 'SWE.3' : d.process,
+    process: d.process,
     status: d.status as DocStatus,
     version: versionTagById?.[d.version_id] ?? d.version_id,
     updatedAt: formatShortDate(d.updated_at) ?? '',
