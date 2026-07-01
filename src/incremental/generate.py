@@ -159,6 +159,7 @@ def generate_full(
 
     ws = Workspace(project_id, workspaces_root)
     project = get_project(project_id)        # api/db/data/projects.json (no project.json)
+    project_name = (project.get("name") or "").strip()
     vstore = VersionStore(ws)
     hstore, estore = HashStore(vstore), EdgeStore(vstore)
     ridx = ReuseIndex(ws)
@@ -201,6 +202,10 @@ def generate_full(
     base_cmd = [sys.executable, "run.py", "--config", vcfg_path]
     base_cmd += scope_to_args(scope)
     base_cmd += per_component_docx_args(scope)
+    if project_name:
+        # Otherwise parser.py defaults projectName to the checkout dir basename
+        # (commit[:16]) — the sha would surface in the DOCX cover + 1.1 Purpose.
+        base_cmd += ["--project-name", project_name]
     if no_llm:
         base_cmd += ["--no-llm-summarize"]
     if data_dict_id:
