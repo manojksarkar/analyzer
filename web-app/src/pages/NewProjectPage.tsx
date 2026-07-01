@@ -38,6 +38,16 @@ interface Layer { id: string; name: string; path: string; groups: Group[]; libPa
 // (api/routes/repositories.py) as a nested RepoEntry[] — folders carry
 // `children`, files don't. Fetched once after a successful Test Connection.
 const isFolder = (n: RepoEntry) => n.type === 'folder'
+
+// Inline loader for the source-tree panels while the repo is being browsed.
+function TreeLoading() {
+  return (
+    <div className="flex items-center gap-2 px-2 py-6 text-on-surface-variant font-mono text-caption">
+      <Icon name="progress_activity" size={15} className="animate-spin" />
+      Loading repository tree…
+    </div>
+  )
+}
 const descendantFiles = (n: RepoEntry): string[] =>
   n.type === 'file' ? [n.path] : (n.children ?? []).flatMap(descendantFiles)
 
@@ -195,6 +205,9 @@ function WizardView({
   const [errs, setErrs] = useState<{ name?: boolean; repo?: boolean; branch?: boolean }>({})
   // Source tree fetched from /repositories/browse after a successful connection.
   const [repoTree, setRepoTree] = useState<RepoEntry[]>([])
+  // True while the (blobless) clone + tree fetch is in flight — drives the
+  // loaders in the Add-Component panel and the folder picker.
+  const [repoTreeLoading, setRepoTreeLoading] = useState(false)
 
   // ── Step 2: build configuration ──
   const [defTab, setDefTab] = useState<'upload' | 'manual'>('upload')
@@ -255,10 +268,13 @@ function WizardView({
   // Load the source tree for a specific branch/ref (architecture + folder pickers).
   // Re-run whenever the selected branch changes so the tree matches the branch.
   async function loadRepoTree(ref: string) {
+    setRepoTreeLoading(true)
     try {
       setRepoTree(await repo.browse(repoUrl.trim(), ref || undefined, '', token.trim() || undefined))
     } catch {
       setRepoTree([])
+    } finally {
+      setRepoTreeLoading(false)
     }
   }
   async function testConnection() {
@@ -1140,7 +1156,9 @@ function WizardView({
 
             <div className="flex-1 overflow-y-auto px-3 py-3">
               <div className="sect-label mb-2">Select files / folders</div>
-              {compTree.map((node) => renderTreeNode(node))}
+              {repoTreeLoading
+                ? <TreeLoading />
+                : compTree.map((node) => renderTreeNode(node))}
             </div>
 
             <div className="px-4 py-3 border-t border-outline-variant flex items-center gap-3 flex-shrink-0">
@@ -1168,7 +1186,9 @@ function WizardView({
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
               <div className="sect-label mb-2">Project root · {repoRoot}</div>
-              {pickerTree.map((node) => renderFpNode(node))}
+              {repoTreeLoading
+                ? <TreeLoading />
+                : pickerTree.map((node) => renderFpNode(node))}
             </div>
             <div className="px-4 py-3 border-t border-outline-variant flex gap-3 flex-shrink-0">
               <button onClick={() => setFpTarget(null)} className="px-4 py-2 border border-outline-variant text-on-surface-variant rounded-lg hover:bg-surface-container transition-colors font-mono text-xs font-medium">Cancel</button>

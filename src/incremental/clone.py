@@ -48,13 +48,22 @@ def _clean_url(clone_url: str) -> str:
 
 
 def shallow_clone(repo_url: str, dest_dir: str, *, ref: Optional[str] = None,
-                  depth: int = 1, username: str = "", token: str = "") -> None:
+                  depth: int = 1, username: str = "", token: str = "",
+                  blobless: bool = False) -> None:
     """The single shallow-clone primitive: ``git clone --depth <depth> [--branch <ref>]``
     into ``dest_dir`` with HTTPS auth injected, then reset ``origin`` to the credential-free
-    URL. Raises GitError (token scrubbed from the message)."""
+    URL. Raises GitError (token scrubbed from the message).
+
+    ``blobless=True`` adds ``--filter=blob:none --no-checkout`` for a *partial* clone that
+    fetches commit + tree objects but **no file contents** — used for read-only tree
+    browsing (the wizard folder picker), where only path names are needed. Blobs are
+    fetched lazily on demand if ever accessed. Analysis clones (jobs/CLI) leave this off
+    because they parse the source and need the blobs."""
     os.makedirs(os.path.dirname(dest_dir) or ".", exist_ok=True)
     auth = _auth_url(repo_url, username, token)
     args = ["clone", "--depth", str(max(1, int(depth)))]
+    if blobless:
+        args += ["--filter=blob:none", "--no-checkout"]
     if ref:
         args += ["--branch", ref]
     args += [auth, dest_dir]
