@@ -4,6 +4,7 @@ import { useUIStore } from '../../store/ui'
 import { useAuthStore } from '../../store/auth'
 import { useProject } from '../../hooks/useProjects'
 import { Icon } from '../ui'
+import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 
 const NAV_ITEMS = [
   { label: 'Overview',  icon: 'home',           to: 'overview'  },
@@ -47,10 +48,10 @@ export function Sidebar() {
           {!collapsed && (
             <div className="min-w-0 overflow-hidden text-left">
               <h1 className="text-primary font-bold tracking-tight whitespace-nowrap font-sans text-title leading-[1.2]">
-                [PRODUCT NAME]
+                {APP_NAME}
               </h1>
               <p className="text-on-surface-variant uppercase whitespace-nowrap mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">
-                Automotive Tier 1
+                {APP_TAGLINE}
               </p>
             </div>
           )}

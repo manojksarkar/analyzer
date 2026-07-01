@@ -5,6 +5,7 @@ import { useRepositoryWizard } from '../hooks/useRepositoryWizard'
 import { useAuthStore } from '../store/auth'
 import { Icon, toast } from '../components/ui'
 import { cn } from '../lib/cn'
+import { APP_NAME, APP_TAGLINE } from '../constants/branding'
 import type { CreateProjectInput, RepoEntry, OrgUser } from '../services/api'
 
 // Rail entries — short title + sub, mirroring the design's step rail.
@@ -97,8 +98,8 @@ function PageHeader({ step, onBack, backLabel }: { step: number; onBack: () => v
           <Icon name="account_tree" size={18} fill className="text-white" />
         </div>
         <div>
-          <h1 className="text-primary font-bold tracking-tight font-sans text-title leading-[1.2]">[PRODUCT NAME]</h1>
-          <p className="text-on-surface-variant uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">Automotive Tier 1</p>
+          <h1 className="text-primary font-bold tracking-tight font-sans text-title leading-[1.2]">{APP_NAME}</h1>
+          <p className="text-on-surface-variant uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">{APP_TAGLINE}</p>
         </div>
       </div>
 
