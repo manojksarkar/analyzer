@@ -386,10 +386,53 @@ def _build_llm_client(config: EngineConfig, llm_cfg: Optional[Dict]):
 
 
 # ---------------------------------------------------------------------------
+# libclang bootstrap
+# ---------------------------------------------------------------------------
+
+def _configure_libclang() -> None:
+    """Point libclang at the configured DLL before any Index.create().
+
+    The flowchart engine runs as its own subprocess and (unlike Phase 1's
+    src/parser.py) does not otherwise configure libclang, so clang.cindex falls
+    back to OS default discovery and fails with LibclangError when libclang.dll
+    is not on the loader path. Resolve the library from LIBCLANG_PATH (set by the
+    API) or the analyzer config's clang.llvmLibPath, mirroring src/parser.py.
+    """
+    lib = os.environ.get("LIBCLANG_PATH") or ""
+    if not lib:
+        try:
+            from utils import load_config  # noqa: WPS433
+            cwd = os.path.abspath(os.getcwd())
+            for candidate in (cwd, os.path.dirname(cwd)):
+                if os.path.isfile(os.path.join(candidate, "config", "config.json")):
+                    cfg = load_config(candidate) or {}
+                    clang_cfg = cfg.get("clang") or {}
+                    lib = clang_cfg.get("llvmLibPath") or cfg.get("llvmLibPath") or ""
+                    break
+        except Exception:
+            lib = ""
+    if not (lib and os.path.isfile(lib)):
+        logger.warning(
+            "libclang not configured (LIBCLANG_PATH / clang.llvmLibPath unset or "
+            "missing); relying on default discovery - flowchart parsing may fail.")
+        return
+    lib_dir = os.path.dirname(lib)
+    if lib_dir and os.path.isdir(lib_dir):
+        try:
+            os.add_dll_directory(lib_dir)  # type: ignore[attr-defined]
+        except Exception:
+            os.environ["PATH"] = lib_dir + os.pathsep + os.environ.get("PATH", "")
+    import clang.cindex as ci  # noqa: WPS433
+    ci.Config.set_library_file(lib)
+    logger.info("libclang configured: %s", lib)
+
+
+# ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
 
 def run(config: EngineConfig) -> None:
+    _configure_libclang()
     logger.info("=" * 60)
     logger.info("flowchart_engine starting")
     logger.info("  functions.json : %s", config.functions_json_path)
