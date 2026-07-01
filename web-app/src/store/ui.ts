@@ -15,6 +15,9 @@ interface UIState {
   sidebarCollapsed: boolean
   toggleSidebar: () => void
   setSidebarCollapsed: (v: boolean) => void
+  /** Document Inspector's right Review-status / outline panel collapse state. */
+  inspectorPanelCollapsed: boolean
+  toggleInspectorPanel: () => void
   /** Per-project picker selection (drives the detail view). In-memory only. */
   selectedRef: Record<string, Selection>
   setSelectedRef: (projectId: string, sel: Selection) => void
@@ -26,11 +29,19 @@ export const useUIStore = create<UIState>()(
       sidebarCollapsed: false,
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
+      inspectorPanelCollapsed: false,
+      toggleInspectorPanel: () => set((s) => ({ inspectorPanelCollapsed: !s.inspectorPanelCollapsed })),
       selectedRef: {},
       setSelectedRef: (projectId, sel) =>
         set((s) => ({ selectedRef: { ...s.selectedRef, [projectId]: sel } })),
     }),
-    // Only persist the sidebar; selection resets on reload.
-    { name: 'ui', partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed }) }
+    // Persist the collapse states; selection resets on reload.
+    {
+      name: 'ui',
+      partialize: (s) => ({
+        sidebarCollapsed: s.sidebarCollapsed,
+        inspectorPanelCollapsed: s.inspectorPanelCollapsed,
+      }),
+    }
   )
 )
