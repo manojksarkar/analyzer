@@ -1,6 +1,6 @@
 import { http } from '../../lib/http'
-import type { CompareResult, CompareDocumentDetail, CompareChangedDoc } from '../../types'
-import { mapCompare, mapCompareDetail } from '../mappers'
+import type { CompareResult, CompareDocumentDiff, CompareChangedDoc } from '../../types'
+import { mapCompare, mapCompareDocumentDiff } from '../mappers'
 
 export const compareApi = {
   summary: async (projectId: string, current: string, baseline: string): Promise<CompareResult> => {
@@ -35,11 +35,11 @@ export const compareApi = {
     docId: string,
     current: string,
     baseline: string,
-  ): Promise<CompareDocumentDetail> => {
-    const r = await http.get<Parameters<typeof mapCompareDetail>[0]>(
+  ): Promise<CompareDocumentDiff> => {
+    const r = await http.get<Parameters<typeof mapCompareDocumentDiff>[0]>(
       `/projects/${projectId}/compare/documents/${docId}`,
       { current, baseline },
     )
-    return mapCompareDetail(r)
+    return mapCompareDocumentDiff(r)
   },
 }

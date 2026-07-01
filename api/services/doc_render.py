@@ -107,11 +107,54 @@ def _safe_fn(name: str) -> str:
 
 
 def _strip_jsonc(text: str) -> str:
-    """Strip // and /* */ comments + trailing commas from JSONC."""
-    text = _re.sub(r"//[^\n]*", "", text)
-    text = _re.sub(r"/\*.*?\*/", "", text, flags=_re.DOTALL)
-    text = _re.sub(r",\s*([}\]])", r"\1", text)
-    return text
+    """Strip // and /* */ comments + trailing commas from JSONC.
+
+    String-aware: ``//`` and ``/*`` inside string literals (e.g. a URL like
+    ``http://host``) are preserved — a naive regex strip corrupts such values
+    and makes the whole config unparseable (silently falling back to {}).
+    """
+    result: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    escape = False
+    while i < n:
+        c = text[i]
+        if escape:
+            result.append(c)
+            escape = False
+            i += 1
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            result.append(c)
+            i += 1
+            continue
+        if c == '"':
+            in_string = not in_string
+            result.append(c)
+            i += 1
+            continue
+        if in_string:
+            result.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n:
+            if text[i + 1] == "/":
+                i += 2
+                while i < n and text[i] != "\n":
+                    i += 1
+                continue
+            if text[i + 1] == "*":
+                i += 2
+                while i + 1 < n and (text[i] != "*" or text[i + 1] != "/"):
+                    i += 1
+                i += 2
+                continue
+        result.append(c)
+        i += 1
+    # trailing commas
+    return _re.sub(r",\s*([}\]])", r"\1", "".join(result))
 
 
 # ── model / config loaders ────────────────────────────────────────────────────
@@ -336,13 +379,13 @@ def _pngs(group_dir: Path, subdir: str, pred) -> list[str]:
     return sorted(p.name for p in d.iterdir() if p.suffix == ".png" and pred(p.name))
 
 
-def _diagram_sec(project_id: str, doc_id: str, group_dir: Path, subdir: str, fn: str,
+def _diagram_sec(asset_base: str, group_dir: Path, subdir: str, fn: str,
                  sid: str, number: str, title: str, level: int, caption: str) -> dict:
     rel = f"{subdir}/{fn}"
     mmd = (group_dir / subdir / fn).with_suffix(".mmd")
     return _sec(
         sid, number, title, level, type="diagram", content=caption,
-        image_url=f"projects/{project_id}/documents/{doc_id}/assets/{rel}",
+        image_url=f"{asset_base}/{rel}",
         mermaid=mmd.read_text(encoding="utf-8") if mmd.exists() else None,
     )
 
@@ -389,11 +432,71 @@ def _interfaces_table_8col(ifaces: list) -> Optional[dict]:
     }
 
 
+# ── Introduction builder (Purpose / Scope / Terms — mirrors docx_exporter) ────
+
+def build_intro_section(config: dict, abbreviations: dict,
+                        components: list[str], project_name: str) -> dict:
+    """Build the "1 Introduction" section (1.1 Purpose, 1.2 Scope, 1.3 Terms,
+    Abbreviations and Definitions) exactly as ``docx_exporter.py`` does.
+
+    ``components`` is the sorted list of component display keys; the Scope body
+    lists them as bullets. Shared by the live render and the synthesized /
+    compare fallbacks so the UI always matches the exported DOCX.
+    """
+    intro_cfg = (config.get("docx") or {}).get("introduction") or {}
+    purpose_text = intro_cfg.get("purpose", "[Purpose of this document.]").replace("{project_name}", project_name)
+    scope_intro = intro_cfg.get("scopeIntro", "[Scope of the software detailed design.]").replace("{project_name}", project_name)
+    scope_body = intro_cfg.get("scopeBody", "")
+    scope_items: list[str] = intro_cfg.get("scopeItems") or []
+
+    sorted_comps = sorted(components)
+    comp_bullets = "\n".join(f"• {c.replace('-', ' ')}" for c in sorted_comps)
+    scope_text = scope_intro
+    if comp_bullets:
+        scope_text += "\n" + comp_bullets
+    if scope_body:
+        scope_text += "\n" + scope_body
+    if scope_items:
+        scope_text += "\n" + "\n".join(f"- {item}" for item in scope_items)
+
+    if abbreviations:
+        terms_sec = _sec("intro-terms", "1.3", "Terms, Abbreviations and Definitions", 2,
+                         type="table",
+                         table={"headers": ["Term", "Description"],
+                                "rows": [[k, v] for k, v in sorted(abbreviations.items())]})
+    else:
+        terms_sec = _sec("intro-terms", "1.3", "Terms, Abbreviations and Definitions", 2,
+                         type="richtext", content="[Terms, abbreviations and definitions.]")
+
+    return _sec("intro", "1", "Introduction", 1, type="richtext", content=None, children=[
+        _sec("intro-purpose", "1.1", "Purpose", 2, type="richtext", content=purpose_text),
+        _sec("intro-scope", "1.2", "Scope", 2, type="richtext", content=scope_text),
+        terms_sec,
+    ])
+
+
+def intro_section_from_config(components: list[str], project_name: str) -> dict:
+    """Build the Introduction section from the repo config + abbreviations file —
+    for callers (fallback renders) that don't already have them loaded."""
+    config = _load_config()
+    return build_intro_section(config, _load_abbreviations(config), components, project_name)
+
+
 # ── main builder ──────────────────────────────────────────────────────────────
 
-def build_render(doc, project, version, group_dir: Path, project_id: str) -> dict:
-    """Build a rich {cover, toc, sections, meta} payload mirroring the DOCX structure."""
+def build_render(doc, project, version, group_dir: Path, project_id: str,
+                 *, model_root: Optional[Path] = None,
+                 asset_base: Optional[str] = None) -> dict:
+    """Build a rich {cover, toc, sections, meta} payload mirroring the DOCX structure.
+
+    ``model_root`` overrides where model/*.json is read from (defaults to the live
+    ``model/`` dir); ``asset_base`` overrides the URL prefix used for diagram assets
+    (defaults to the live document-asset route). Both let the compare engine build
+    a render from a per-version snapshot instead of the live working tree.
+    """
     group = doc.group
+    if asset_base is None:
+        asset_base = f"projects/{project_id}/documents/{doc.id}/assets"
 
     # Load interface data
     itf: dict = {}
@@ -408,7 +511,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
         comps.setdefault(uk.split(KEY_SEP, 1)[0], []).append(uk)
 
     # Load model files
-    model_dir = _REPO_ROOT / "model"
+    model_dir = model_root or (_REPO_ROOT / "model")
     units_data = _load_model_json(model_dir, "units")
     dd_data = _load_model_json(model_dir, "dataDictionary")
     globals_data = _load_model_json(model_dir, "globalVariables")
@@ -419,13 +522,6 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
     # Load config + abbreviations
     config = _load_config()
     abbreviations = _load_abbreviations(config)
-    intro_cfg = (config.get("docx") or {}).get("introduction") or {}
-    purpose_text = intro_cfg.get("purpose", "[Purpose of this document.]")
-    purpose_text = purpose_text.replace("{project_name}", project_name)
-    scope_intro = intro_cfg.get("scopeIntro", "[Scope of the software detailed design.]")
-    scope_intro = scope_intro.replace("{project_name}", project_name)
-    scope_body = intro_cfg.get("scopeBody", "")
-    scope_items: list[str] = intro_cfg.get("scopeItems") or []
 
     # Load flowcharts + behavior diagrams
     flowcharts_dir = group_dir / "flowcharts"
@@ -446,34 +542,10 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
 
     sorted_comps = sorted(comps.keys())
 
-    # ── 1. Introduction ──────────────────────────────────────────────────────
-    comp_bullets = "\n".join(f"• {c.replace('-', ' ')}" for c in sorted_comps)
-    scope_text = scope_intro
-    if comp_bullets:
-        scope_text += "\n" + comp_bullets
-    if scope_body:
-        scope_text += "\n" + scope_body
-    if scope_items:
-        scope_text += "\n" + "\n".join(f"- {item}" for item in scope_items)
-
-    if abbreviations:
-        abbr_table = {
-            "headers": ["Term", "Description"],
-            "rows": [[k, v] for k, v in sorted(abbreviations.items())],
-        }
-        terms_sec = _sec("intro-terms", "1.3", "Terms, Abbreviations and Definitions", 2,
-                         type="table", table=abbr_table)
-    else:
-        terms_sec = _sec("intro-terms", "1.3", "Terms, Abbreviations and Definitions", 2,
-                         type="richtext", content="[Terms, abbreviations and definitions.]")
-
-    intro_sec = _sec("intro", "1", "Introduction", 1, type="richtext", content=None, children=[
-        _sec("intro-purpose", "1.1", "Purpose", 2, type="richtext", content=purpose_text),
-        _sec("intro-scope", "1.2", "Scope", 2, type="richtext", content=scope_text),
-        terms_sec,
-    ])
-
-    sections: list[dict] = [intro_sec]
+    # ── 1. Introduction (Purpose / Scope / Terms) ────────────────────────────
+    sections: list[dict] = [
+        build_intro_section(config, abbreviations, sorted_comps, project_name),
+    ]
 
     # ── 2+. Per component ────────────────────────────────────────────────────
     for comp_idx, comp in enumerate(sorted_comps):
@@ -498,7 +570,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
         for fn in _pngs(group_dir, "component_container_diagrams",
                         lambda nm, c=comp: nm == f"{c}.png"):
             static_children.append(_diagram_sec(
-                project_id, doc.id, group_dir, "component_container_diagrams", fn,
+                asset_base, group_dir, "component_container_diagrams", fn,
                 f"{comp}-container", "", "Component Structure", 2,
                 f"Component structure for {comp_display}.",
             ))
@@ -507,7 +579,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
         for fn in _pngs(group_dir, "component_header_dependency_diagrams",
                         lambda nm, c=comp: nm == f"{c}.png"):
             static_children.append(_diagram_sec(
-                project_id, doc.id, group_dir, "component_header_dependency_diagrams", fn,
+                asset_base, group_dir, "component_header_dependency_diagrams", fn,
                 f"{comp}-dep", "", "Include Dependencies", 2,
                 f"Include dependencies for {comp_display}.",
             ))
@@ -555,7 +627,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
             for fn in _pngs(group_dir, "unit_diagrams",
                             lambda nm, p=f"{comp}_{uname}": nm == f"{p}.png"):
                 unit_children.append(_diagram_sec(
-                    project_id, doc.id, group_dir, "unit_diagrams", fn,
+                    asset_base, group_dir, "unit_diagrams", fn,
                     f"unit-{uk}", "", f"Unit — {uname}", 3,
                     f"Static structure of unit {uname}.",
                 ))
@@ -613,7 +685,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
                     signature = f"{ret} {func_name}({params_str})".strip()
                     flowchart_entries.append({
                         "image_url": (
-                            f"projects/{project_id}/documents/{doc.id}/assets/{png_rel}"
+                            f"{asset_base}/{png_rel}"
                             if png_rel else None
                         ),
                         "mermaid": fc_mermaid,
@@ -658,7 +730,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
                         callee_sig = f"{callee.get('returnType', '')} {callee_fn}({cparams_str})".strip()
                         flowchart_entries.append({
                             "image_url": (
-                                f"projects/{project_id}/documents/{doc.id}/assets/{cpng_rel}"
+                                f"{asset_base}/{cpng_rel}"
                                 if cpng_rel else None
                             ),
                             "mermaid": callee_fc,
@@ -745,7 +817,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
                     try:
                         rel = Path(str(png_abs)).relative_to(group_dir)
                         diagram_url = (
-                            f"projects/{project_id}/documents/{doc.id}/assets/{rel.as_posix()}"
+                            f"{asset_base}/{rel.as_posix()}"
                         )
                     except (ValueError, TypeError):
                         pass

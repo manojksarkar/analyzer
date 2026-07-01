@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
+from . import compare_render, doc_render
 from .settings import get_settings as _get_settings
 _REPO_ROOT = _get_settings().repo_root
 
@@ -166,8 +167,68 @@ def _db_fallback_compare(db: Any, project_id: str, cur_ver, base_ver,
 
 
 # ---------------------------------------------------------------------------
+# Whole-document change detection (covers descriptions, tables, mermaid)
+# ---------------------------------------------------------------------------
+
+def _group_changed(db: Any, project: Any, project_id: str, group: str,
+                   c_snap: Path, b_snap: Path, cur_ver: Any, base_ver: Any,
+                   c_doc: Any, b_doc: Any) -> bool:
+    """A group is changed if its interface tables differ OR — when they match —
+    any other rendered content (descriptions, diagrams, mermaid) differs."""
+    if _itf_fingerprint(_itf(c_snap, group)) != _itf_fingerprint(_itf(b_snap, group)):
+        return True
+    # Interface tables identical — fall through to a full-render comparison so
+    # description / flowchart / behaviour / diagram changes are still detected.
+    if not project or not c_doc or not b_doc:
+        return False
+    try:
+        c_render = compare_render._version_render(db, project, c_doc, cur_ver, c_snap, project_id)
+        b_render = compare_render._version_render(db, project, b_doc, base_ver, b_snap, project_id)
+    except Exception:
+        return False
+    if c_render is None or b_render is None:
+        return False
+    return (compare_render.render_fingerprint(c_render)
+            != compare_render.render_fingerprint(b_render))
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def compute_document_diff(db: Any, project_id: str, doc_id: str,
+                          current_ref: str, baseline_ref: str) -> Optional[dict]:
+    """Highlight-annotated rich diff for a single document.
+
+    Builds the full DOCX-mirroring render for each version snapshot and diffs
+    them into typed, highlighted blocks (descriptions, tables, mermaid). Falls
+    back to the flat interface-table section diff when no rich render is
+    available. Returns None only when the document does not exist.
+    """
+    doc = db.documents.get(doc_id)
+    if not doc or doc.project_id != project_id:
+        return None
+
+    project = db.projects.get(project_id)
+    cur_ver = _resolve_ref(db, project_id, current_ref)
+    base_ver = _resolve_ref(db, project_id, baseline_ref)
+    c_snap = _snap(project_id, cur_ver.id) if cur_ver else None
+    b_snap = _snap(project_id, base_ver.id) if base_ver else None
+
+    rich = compare_render.compute_document_render_diff(
+        db, project, doc, cur_ver, base_ver, c_snap, b_snap, project_id,
+    )
+    if rich is not None:
+        rich["mode"] = "rich"
+        return rich
+
+    # Fallback — flat interface-table section diff (legacy shape).
+    flat = compute_document_sections_diff(db, project_id, doc_id, current_ref, baseline_ref)
+    if flat is None:
+        return None
+    flat["mode"] = "flat"
+    return flat
+
 
 def compute_compare(db: Any, project_id: str, current_ref: str, baseline_ref: str) -> dict:
     """Compute a compare result from version snapshots, falling back to DB docs.
@@ -205,17 +266,21 @@ def compute_compare(db: Any, project_id: str, current_ref: str, baseline_ref: st
     added = c_groups - b_groups
     removed = b_groups - c_groups
     common = c_groups & b_groups
+
+    c_by_group = _docs_by_group(db, project_id, cur_ver.id)
+    b_by_group = _docs_by_group(db, project_id, base_ver.id)
+    project = db.projects.get(project_id)
+
     changed = {g for g in common
-               if _itf_fingerprint(_itf(c_snap, g)) != _itf_fingerprint(_itf(b_snap, g))}
+               if _group_changed(db, project, project_id, g,
+                                  c_snap, b_snap, cur_ver, base_ver,
+                                  c_by_group.get(g), b_by_group.get(g))}
     unchanged = common - changed
 
     summary = {
         "added": len(added), "changed": len(changed),
         "removed": len(removed), "unchanged": len(unchanged),
     }
-
-    c_by_group = _docs_by_group(db, project_id, cur_ver.id)
-    b_by_group = _docs_by_group(db, project_id, base_ver.id)
 
     changed_docs = []
     for g in sorted(added):
@@ -242,6 +307,39 @@ def compute_compare(db: Any, project_id: str, current_ref: str, baseline_ref: st
             "summary": summary, "changed_documents": changed_docs}
 
 
+def _table_to_markdown(headers: list[str], rows: list[list[str]]) -> str:
+    """Render a header+rows table as a GitHub-style markdown pipe table."""
+    def cell(s: str) -> str:
+        return str(s).replace("|", "/").replace("\n", " ").strip()
+    if not headers:
+        return ""
+    head = "| " + " | ".join(cell(h) for h in headers) + " |"
+    sep = "| " + " | ".join(["---"] * len(headers)) + " |"
+    body = ["| " + " | ".join(cell(c) for c in r) + " |" for r in rows]
+    return "\n".join([head, sep] + body)
+
+
+def _flat_intro_sections(components: list[str], project_name: str) -> list[dict]:
+    """Flat (markdown) Introduction sections (Purpose / Scope / Terms) mirroring
+    the exported DOCX — so the compare flat fallback shows them too. Intro content
+    is version-independent, hence always ``unchanged``."""
+    intro = doc_render.intro_section_from_config(components, project_name)
+    out: list[dict] = []
+    for child in intro.get("children") or []:
+        if child.get("type") == "table" and child.get("table"):
+            content = _table_to_markdown(child["table"]["headers"], child["table"]["rows"])
+        else:
+            content = child.get("content") or ""
+        out.append({
+            "key": child["id"],
+            "title": f'{child["number"]} {child["title"]}',
+            "diff_type": "unchanged",
+            "current_content": content,
+            "baseline_content": content,
+        })
+    return out
+
+
 def compute_document_sections_diff(
     db: Any, project_id: str, doc_id: str,
     current_ref: str, baseline_ref: str,
@@ -256,6 +354,9 @@ def compute_document_sections_diff(
     if not doc or doc.project_id != project_id:
         return None
 
+    project = db.projects.get(project_id)
+    project_name = project.name if project else (doc.group or "")
+
     cur_ver = _resolve_ref(db, project_id, current_ref)
     base_ver = _resolve_ref(db, project_id, baseline_ref)
 
@@ -268,7 +369,7 @@ def compute_document_sections_diff(
         cr = db.compare.get_or_create(project_id, current_ref, baseline_ref)
         diff = db.compare.get_document_diff(cr.id, doc_id)
         changed_keys = set(diff.sections_changed) if diff else set()
-        result = []
+        result = _flat_intro_sections([doc.group] if doc.group else [], project_name)
         for s in sections_stored:
             dt = "changed" if s.section_key in changed_keys else "unchanged"
             result.append({
@@ -285,7 +386,8 @@ def compute_document_sections_diff(
     skip = {"unitNames"}
     all_keys = sorted((set(c_itf.keys()) | set(b_itf.keys())) - skip)
 
-    sections = []
+    intro_comps = sorted({uk.split("|", 1)[0] for uk in unit_names}) or ([doc.group] if doc.group else [])
+    sections = _flat_intro_sections(intro_comps, project_name)
     for k in all_keys:
         cv = c_itf.get(k, {})
         bv = b_itf.get(k, {})

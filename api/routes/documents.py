@@ -228,6 +228,12 @@ def _render_doc_dict(doc, sections, project, version) -> dict:
         layers = [doc.layer] if doc.layer else []
     if not components:
         components = [doc.group] if doc.group else []
+
+    # Prepend the Introduction (Purpose / Scope / Terms) so the synthesized
+    # fallback render matches the exported DOCX even without live pipeline output.
+    intro_comps = components or ([doc.group] if doc.group else [])
+    if not any(s.get("id") == "intro" for s in rich_sections):
+        rich_sections = [doc_render.intro_section_from_config(intro_comps, project.name), *rich_sections]
     units_total = max(len(components), 1) * 2
     return {
         "cover": {
