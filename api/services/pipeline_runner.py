@@ -1083,7 +1083,7 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
                 if cname:
                     comp_by_dir[cname.replace(" ", "-")] = (cname, lname)
 
-    # One component-design doc per component output dir that holds a real DOCX.
+    # One SWE.3 detailed-design doc per component output dir that holds a real DOCX.
     for d in sorted(out_root.iterdir()):
         if not d.is_dir():
             continue
@@ -1093,7 +1093,7 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
         if find_docx(d.name, out_root) is None:
             continue
         disp, lname = meta
-        add("SWE.2", disp, "Component Design", lname, d.name)
+        add("SWE.3", disp, "Detailed Design", lname, d.name)
 
     return docs
 
