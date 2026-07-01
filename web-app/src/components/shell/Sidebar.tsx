@@ -42,12 +42,12 @@ export function Sidebar() {
           onClick={() => navigate('/projects')}
           className={cn('flex items-center gap-3 min-w-0', collapsed ? 'flex-col' : 'flex-1')}
         >
-          <div className="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-            <Icon name="account_tree" size={18} fill className="text-white" />
+          <div className="w-9 h-9 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+            <Icon name="account_tree" size={20} fill className="text-white" />
           </div>
           {!collapsed && (
             <div className="min-w-0 overflow-hidden text-left">
-              <h1 className="text-primary font-bold tracking-tight whitespace-nowrap font-sans text-title leading-[1.2]">
+              <h1 className="text-primary font-bold tracking-tight whitespace-nowrap font-sans text-xl leading-[1.2]">
                 {APP_NAME}
               </h1>
               <p className="text-on-surface-variant uppercase whitespace-nowrap mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">

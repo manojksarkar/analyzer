@@ -41,11 +41,11 @@ export function ProjectsPage() {
       <header className="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-white border-b border-outline-variant z-40">
         {/* Brand */}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-            <Icon name="account_tree" size={18} fill className="text-white" />
+          <div className="w-9 h-9 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+            <Icon name="account_tree" size={20} fill className="text-white" />
           </div>
           <div>
-            <h1 className="text-primary font-bold tracking-tight font-sans text-title leading-[1.2]">
+            <h1 className="text-primary font-bold tracking-tight font-sans text-xl leading-[1.2]">
               {APP_NAME}
             </h1>
             <p className="text-on-surface-variant uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">

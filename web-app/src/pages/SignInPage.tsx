@@ -75,12 +75,12 @@ export function SignInPage() {
           <div>
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-                <Icon name="account_tree" size={18} fill className="text-white" />
+              <div className="w-11 h-11 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+                <Icon name="account_tree" size={24} fill className="text-white" />
               </div>
               <div>
-                <h1 className="font-bold tracking-tight font-sans text-title leading-[1.2]">{APP_NAME}</h1>
-                <p className="text-on-primary-container uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">{APP_TAGLINE}</p>
+                <h1 className="font-bold tracking-tight font-sans text-3xl leading-[1.1]">{APP_NAME}</h1>
+                <p className="text-on-primary-container uppercase mt-1 font-mono text-caption font-medium tracking-[0.08em]">{APP_TAGLINE}</p>
               </div>
             </div>
 
@@ -113,10 +113,10 @@ export function SignInPage() {
 
             {/* Mobile logo */}
             <div className="lg:hidden flex items-center gap-3 mb-8">
-              <div className="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-                <Icon name="account_tree" size={18} fill className="text-white" />
+              <div className="w-11 h-11 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+                <Icon name="account_tree" size={24} fill className="text-white" />
               </div>
-              <h1 className="text-primary font-bold tracking-tight font-sans text-title">{APP_NAME}</h1>
+              <h1 className="text-primary font-bold tracking-tight font-sans text-3xl">{APP_NAME}</h1>
             </div>
 
             {/* Heading */}
