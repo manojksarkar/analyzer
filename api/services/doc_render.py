@@ -300,6 +300,66 @@ def _load_flowcharts_from_dir(flowcharts_dir: Path) -> dict:
     return result
 
 
+def _resolve_flowchart_pngs(group_dir: Path, base_stem: str) -> list[tuple[str, str]]:
+    """Return per-image ``[(png_rel, part_label)]`` for a flowchart base stem.
+
+    Mirrors ``docx_exporter._resolve_flowchart_pngs``. A tall flowchart is sliced by
+    ``views/flowcharts.py`` into ``{stem}_part_K_of_N.png`` siblings; those take
+    precedence over the single ``{stem}.png``. ``png_rel`` is relative to
+    ``group_dir`` (POSIX-style, e.g. ``flowcharts/Unit_fn_part_1_of_3.png``) so it can
+    be handed straight to the asset URL builder. Empty list when nothing resolves.
+    """
+    if not base_stem:
+        return []
+    flowcharts_dir = group_dir / "flowcharts"
+    part_re = _re.compile(
+        r"^" + _re.escape(base_stem) + r"_part_(\d+)_of_(\d+)\.png$",
+        _re.IGNORECASE,
+    )
+    try:
+        names = [p.name for p in flowcharts_dir.iterdir()]
+    except OSError:
+        return []
+    parts: list[tuple[int, int, str]] = []
+    for name in names:
+        m = part_re.match(name)
+        if m:
+            parts.append((int(m.group(1)), int(m.group(2)), f"flowcharts/{name}"))
+    if parts:
+        parts.sort(key=lambda t: t[0])
+        return [(p[2], f"Part {p[0]} of {p[1]}") for p in parts]
+    single_rel = f"flowcharts/{base_stem}.png"
+    if (group_dir / single_rel).is_file():
+        return [(single_rel, "")]
+    return []
+
+
+def _flowchart_entries(project_id: str, doc_id: str, pngs: list[tuple[str, str]],
+                       mermaid: str, label: str) -> list[dict]:
+    """Build flowchart_table entry dicts from resolved PNGs (mirrors docx_exporter).
+
+    One entry per PNG. A multi-slice flowchart emits one entry per slice: the first
+    carries the full ``label`` + ``Part K of N`` and the mermaid fallback; the rest
+    carry only ``(continued - Part K of N)`` and no mermaid (so the UI does not repeat
+    the same script under every slice). When no PNG resolved, a single entry with
+    ``image_url=None`` keeps the mermaid-text fallback for that function.
+    """
+    if not pngs:
+        return [{"image_url": None, "mermaid": mermaid, "label": label}]
+    entries: list[dict] = []
+    for k, (png_rel, part_label) in enumerate(pngs):
+        if part_label:
+            combined = f"{label} - {part_label}" if k == 0 else f"(continued - {part_label})"
+        else:
+            combined = label
+        entries.append({
+            "image_url": f"projects/{project_id}/documents/{doc_id}/assets/{png_rel}",
+            "mermaid": mermaid if k == 0 else None,
+            "label": combined,
+        })
+    return entries
+
+
 def _load_behavior_diagrams(group_dir: Path) -> dict:
     """Return the _docxRows dict from behaviour_diagrams/_behaviour_pngs.json."""
     p = group_dir / "behaviour_diagrams" / "_behaviour_pngs.json"
@@ -601,24 +661,20 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
 
                 if fc_mermaid:
                     safe = _safe_fn(func_name)
-                    png_rel: Optional[str] = f"flowcharts/{unit_prefix}_{safe}.png"
-                    if not (group_dir / png_rel).is_file():
-                        alt = f"flowcharts/{unit_name_fc}_{safe}.png"
-                        png_rel = alt if (group_dir / alt).is_file() else None
+                    # Slice-aware: prefer {stem}_part_K_of_N.png (a tall flowchart split
+                    # across pages) over the single {stem}.png, mirroring docx_exporter.
+                    pngs = _resolve_flowchart_pngs(group_dir, f"{unit_prefix}_{safe}")
+                    if not pngs:
+                        pngs = _resolve_flowchart_pngs(group_dir, f"{unit_name_fc}_{safe}")
                     params = iface.get("parameters") or []
                     params_str = ", ".join(
                         f"{p.get('type', '')} {p.get('name', '')}".strip() for p in params
                     )
                     ret = iface.get("returnType", "") or ""
                     signature = f"{ret} {func_name}({params_str})".strip()
-                    flowchart_entries.append({
-                        "image_url": (
-                            f"projects/{project_id}/documents/{doc.id}/assets/{png_rel}"
-                            if png_rel else None
-                        ),
-                        "mermaid": fc_mermaid,
-                        "label": signature,
-                    })
+                    flowchart_entries.extend(
+                        _flowchart_entries(project_id, doc.id, pngs, fc_mermaid, signature)
+                    )
 
                 # Private callee flowcharts (mirrors docx_exporter)
                 fid = iface.get("functionId")
@@ -646,24 +702,18 @@ def build_render(doc, project, version, group_dir: Path, project_id: str) -> dic
                             continue
                         rendered_private_fids.add(callee_fid)
                         csafe = _safe_fn(callee_fn)
-                        cpng_rel: Optional[str] = f"flowcharts/{c_prefix}_{csafe}.png"
-                        if not (group_dir / cpng_rel).is_file():
-                            alt = f"flowcharts/{c_unit_name}_{csafe}.png"
-                            cpng_rel = alt if (group_dir / alt).is_file() else None
+                        cpngs = _resolve_flowchart_pngs(group_dir, f"{c_prefix}_{csafe}")
+                        if not cpngs:
+                            cpngs = _resolve_flowchart_pngs(group_dir, f"{c_unit_name}_{csafe}")
                         callee_params = callee.get("params") or callee.get("parameters") or []
                         cparams_str = ", ".join(
                             f"{p.get('type', '')} {p.get('name', '')}".strip()
                             for p in callee_params
                         )
                         callee_sig = f"{callee.get('returnType', '')} {callee_fn}({cparams_str})".strip()
-                        flowchart_entries.append({
-                            "image_url": (
-                                f"projects/{project_id}/documents/{doc.id}/assets/{cpng_rel}"
-                                if cpng_rel else None
-                            ),
-                            "mermaid": callee_fc,
-                            "label": callee_sig,
-                        })
+                        flowchart_entries.extend(
+                            _flowchart_entries(project_id, doc.id, cpngs, callee_fc, callee_sig)
+                        )
 
                 # Input / output names (mirrors docx_exporter)
                 fn_data = (functions_data.get(fid) or {}) if fid else {}
