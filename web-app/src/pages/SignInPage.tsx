@@ -5,7 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useId, useState } from 'react'
 import { useAuthStore } from '../store/auth'
 import { ApiError } from '../lib/http'
-import { Icon, toast } from '../components/ui'
+import { Icon, BrandMark, toast } from '../components/ui'
 import { cn } from '../lib/cn'
 import { APP_NAME, APP_TAGLINE } from '../constants/branding'
 
@@ -75,12 +75,10 @@ export function SignInPage() {
           <div>
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-                <Icon name="account_tree" size={18} fill className="text-white" />
-              </div>
+              <BrandMark size={40} className="flex-shrink-0 text-white" />
               <div>
-                <h1 className="font-bold tracking-tight font-sans text-title leading-[1.2]">{APP_NAME}</h1>
-                <p className="text-on-primary-container uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">{APP_TAGLINE}</p>
+                <h1 className="font-bold tracking-tight font-sans text-3xl leading-[1.1]">{APP_NAME}</h1>
+                <p className="text-on-primary-container uppercase mt-1 font-mono text-caption font-medium tracking-[0.08em]">{APP_TAGLINE}</p>
               </div>
             </div>
 
@@ -113,10 +111,8 @@ export function SignInPage() {
 
             {/* Mobile logo */}
             <div className="lg:hidden flex items-center gap-3 mb-8">
-              <div className="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-                <Icon name="account_tree" size={18} fill className="text-white" />
-              </div>
-              <h1 className="text-primary font-bold tracking-tight font-sans text-title">{APP_NAME}</h1>
+              <BrandMark size={40} className="flex-shrink-0 text-secondary" />
+              <h1 className="text-primary font-bold tracking-tight font-sans text-3xl">{APP_NAME}</h1>
             </div>
 
             {/* Heading */}

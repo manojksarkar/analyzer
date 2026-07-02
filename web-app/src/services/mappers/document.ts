@@ -47,6 +47,8 @@ export function mapDocument(d: ApiDocument, versionTagById?: Record<string, stri
     version: versionTagById?.[d.version_id] ?? d.version_id,
     updatedAt: formatShortDate(d.updated_at) ?? '',
     subtitle: d.subtitle || undefined,
+    layer: d.layer || undefined,
+    group: d.group || undefined,
     due: formatShortDate(d.due_date) ?? undefined,
     assignee: a?.name,
     assigneeInitials: a?.initials,

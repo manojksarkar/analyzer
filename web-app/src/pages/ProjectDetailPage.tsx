@@ -200,8 +200,7 @@ function PhaseStep({ n, label, status, time }: { n: number; label: string; statu
           <span className="text-body font-semibold text-outline">{n}</span>
         )}
       </div>
-      <p className={cn('mt-1.5 font-semibold text-caption', status === 'pending' ? 'text-outline' : 'text-on-surface')}>Phase {n}</p>
-      <p className="text-on-surface-variant text-label">{label}</p>
+      <p className={cn('mt-1.5 font-semibold text-body', status === 'pending' ? 'text-outline' : 'text-on-surface')}>{label}</p>
       <p className={cn('mt-0.5 text-label font-mono', timeColor)}>{time}</p>
     </div>
   )

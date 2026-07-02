@@ -41,6 +41,8 @@ config/last_run.json
 # Cache
 .flowchart_cache/
 **/.flowchart_cache/
+.mmdc_cache/
+**/.mmdc_cache/
 
 # Claude tooling
 .claude/settings.json

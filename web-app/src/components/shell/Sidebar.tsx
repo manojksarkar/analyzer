@@ -3,7 +3,7 @@ import { cn } from '../../lib/cn'
 import { useUIStore } from '../../store/ui'
 import { useAuthStore } from '../../store/auth'
 import { useProject } from '../../hooks/useProjects'
-import { Icon } from '../ui'
+import { Icon, BrandMark } from '../ui'
 import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 
 const NAV_ITEMS = [
@@ -42,12 +42,10 @@ export function Sidebar() {
           onClick={() => navigate('/projects')}
           className={cn('flex items-center gap-3 min-w-0', collapsed ? 'flex-col' : 'flex-1')}
         >
-          <div className="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-            <Icon name="account_tree" size={18} fill className="text-white" />
-          </div>
+          <BrandMark size={32} className="flex-shrink-0 text-secondary" />
           {!collapsed && (
             <div className="min-w-0 overflow-hidden text-left">
-              <h1 className="text-primary font-bold tracking-tight whitespace-nowrap font-sans text-title leading-[1.2]">
+              <h1 className="text-primary font-bold tracking-tight whitespace-nowrap font-sans text-xl leading-[1.2]">
                 {APP_NAME}
               </h1>
               <p className="text-on-surface-variant uppercase whitespace-nowrap mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">

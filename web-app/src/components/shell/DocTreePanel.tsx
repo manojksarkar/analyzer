@@ -7,7 +7,8 @@ import type { Document } from '../../types'
  * Left document-tree rail (assignee filter + process-grouped docs). Presentational:
  * the host page owns the grouping + assignee-filter state so it can stay in sync
  * with a table (Documents) or run standalone (Inspector). Single-doc processes
- * render as a flat row; only multi-doc processes (SWE.3) get a collapsible group.
+ * render as a flat row; multi-doc processes (SWE.3) get a collapsible group, and
+ * when a process spans more than one layer its docs are sub-grouped by layer.
  */
 export function DocTreePanel({
   groups, assigneeOptions, effectiveAssignee, meName, isDeveloper, activeDocId, onPickAssignee, onOpenDoc,
@@ -45,6 +46,25 @@ export function DocTreePanel({
       else next.add(p)
       return next
     })
+  }
+
+  function renderDocRow(d: Document, pad: string) {
+    const active = d.id === activeDocId
+    return (
+      <button
+        key={d.id}
+        onClick={() => onOpenDoc(d)}
+        title={d.name}
+        className={cn(
+          'w-full flex items-center gap-1.5 py-[5px] pr-2.5 transition-colors text-left font-mono text-caption',
+          pad,
+          active ? 'bg-surface-container text-secondary font-medium' : 'text-on-surface-variant hover:bg-surface-container-low',
+        )}
+      >
+        <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', active ? 'bg-secondary' : 'bg-outline-variant')} aria-hidden />
+        <span className="truncate">{d.name}</span>
+      </button>
+    )
   }
 
   return (
@@ -130,6 +150,17 @@ export function DocTreePanel({
               )
             }
             const isOpen = !collapsed.has(g.process)
+            // Sub-group the docs by layer. Only worth an extra tree level when the
+            // process spans more than one layer; a single-layer process stays flat.
+            const byLayer = new Map<string, Document[]>()
+            for (const d of g.docs) {
+              const k = d.layer || 'Other'
+              const arr = byLayer.get(k) ?? []
+              arr.push(d)
+              byLayer.set(k, arr)
+            }
+            const layers = [...byLayer.keys()].sort()
+            const multiLayer = layers.length > 1
             return (
               <div key={g.process}>
                 <button
@@ -140,23 +171,26 @@ export function DocTreePanel({
                   <span className="font-mono text-caption font-semibold text-on-surface">{g.process}</span>
                   <span className="ml-auto font-mono text-label text-on-surface-variant">{g.docs.length}</span>
                 </button>
-                {isOpen && g.docs.map((d) => {
-                  const active = d.id === activeDocId
-                  return (
-                    <button
-                      key={d.id}
-                      onClick={() => onOpenDoc(d)}
-                      title={d.name}
-                      className={cn(
-                        'w-full flex items-center gap-1.5 py-[5px] pr-2.5 pl-8 transition-colors text-left font-mono text-caption',
-                        active ? 'bg-surface-container text-secondary font-medium' : 'text-on-surface-variant hover:bg-surface-container-low',
-                      )}
-                    >
-                      <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', active ? 'bg-secondary' : 'bg-outline-variant')} aria-hidden />
-                      <span className="truncate">{d.name}</span>
-                    </button>
-                  )
-                })}
+                {isOpen && (multiLayer
+                  ? layers.map((layer) => {
+                      const key = `${g.process}/${layer}`
+                      const layerOpen = !collapsed.has(key)
+                      const docs = byLayer.get(layer)!
+                      return (
+                        <div key={key}>
+                          <button
+                            onClick={() => toggleCollapse(key)}
+                            className="w-full flex items-center gap-1.5 pl-7 pr-3 py-1.5 hover:bg-surface-container-low transition-colors select-none"
+                          >
+                            <Icon name="chevron_right" size={12} className={cn('text-on-surface-variant transition-transform', layerOpen && 'rotate-90')} />
+                            <span className="font-mono text-label font-medium text-on-surface-variant truncate">{layer}</span>
+                            <span className="ml-auto font-mono text-label text-on-surface-variant">{docs.length}</span>
+                          </button>
+                          {layerOpen && docs.map((d) => renderDocRow(d, 'pl-11'))}
+                        </div>
+                      )
+                    })
+                  : g.docs.map((d) => renderDocRow(d, 'pl-8')))}
               </div>
             )
           })
