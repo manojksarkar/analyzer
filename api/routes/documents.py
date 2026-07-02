@@ -291,7 +291,17 @@ def render_document(
     out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
     group_dir = doc_render.output_group_dir(doc.group, out_root)
     if group_dir is not None:
-        return {"document": doc_render.build_render(doc, project, version, group_dir, project_id)}
+        # Imported projects (created by scripts/import-output-project, no repo_url) render
+        # their own copied model snapshot (workspaces/<pid>/<commit[:16]>/model). Real
+        # repo-backed projects are left exactly as before: model read from the shared repo
+        # model/ (model_root=None). Scoped on repo_url so real flows are unchanged.
+        model_root = None
+        if not (project.repo_url or "").strip():
+            commit_model = out_root.parent / "model"
+            if commit_model.is_dir():
+                model_root = commit_model
+        return {"document": doc_render.build_render(
+            doc, project, version, group_dir, project_id, model_root=model_root)}
 
     sections = db.documents.list_sections(doc_id)
     return {"document": _render_doc_dict(doc, sections, project, version)}
