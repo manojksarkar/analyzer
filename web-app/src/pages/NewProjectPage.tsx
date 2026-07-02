@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useCreateProject } from '../hooks/useProjects'
 import { useRepositoryWizard } from '../hooks/useRepositoryWizard'
 import { useAuthStore } from '../store/auth'
-import { Icon, toast } from '../components/ui'
+import { Icon, BrandMark, toast } from '../components/ui'
 import { cn } from '../lib/cn'
 import { APP_NAME, APP_TAGLINE } from '../constants/branding'
 import type { CreateProjectInput, RepoEntry, OrgUser } from '../services/api'
@@ -94,9 +94,7 @@ function PageHeader({ step, onBack, backLabel }: { step: number; onBack: () => v
   return (
     <header className="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-white border-b border-outline-variant z-40">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-          <Icon name="account_tree" size={20} fill className="text-white" />
-        </div>
+        <BrandMark size={32} className="flex-shrink-0 text-secondary" />
         <div>
           <h1 className="text-primary font-bold tracking-tight font-sans text-xl leading-[1.2]">{APP_NAME}</h1>
           <p className="text-on-surface-variant uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">{APP_TAGLINE}</p>

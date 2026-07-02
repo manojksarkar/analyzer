@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useProjects } from '../../hooks/useProjects'
 import { useAuthStore } from '../../store/auth'
-import { Dropdown, DropdownTrigger, DropdownContent, Icon, TableSkeleton, toast } from '../../components/ui'
+import { Dropdown, DropdownTrigger, DropdownContent, Icon, BrandMark, TableSkeleton, toast } from '../../components/ui'
 import { NotificationBell } from '../../components/shell/NotificationBell'
 import { ProjectRow } from './components/ProjectRow'
 import { ProjectsEmptyState } from './components/ProjectsEmptyState'
@@ -41,9 +41,7 @@ export function ProjectsPage() {
       <header className="h-14 flex-shrink-0 flex items-center justify-between px-6 bg-white border-b border-outline-variant z-40">
         {/* Brand */}
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
-            <Icon name="account_tree" size={20} fill className="text-white" />
-          </div>
+          <BrandMark size={32} className="flex-shrink-0 text-secondary" />
           <div>
             <h1 className="text-primary font-bold tracking-tight font-sans text-xl leading-[1.2]">
               {APP_NAME}

@@ -1,5 +1,7 @@
 export { Icon } from './Icon'
 export type { IconProps } from './Icon'
+export { BrandMark } from './BrandMark'
+export type { BrandMarkProps } from './BrandMark'
 export { Text } from './Text'
 export type { TextVariant } from './Text'
 export { Card } from './Card'
