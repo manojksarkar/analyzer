@@ -102,6 +102,8 @@ export interface Document {
   version: string
   updatedAt: string
   subtitle?: string
+  layer?: string
+  group?: string
   due?: string
   assigneeInitials?: string
   assigneeColor?: string

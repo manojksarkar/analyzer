@@ -49,9 +49,12 @@ export function useVersions(projectId: string) {
 }
 
 export function useDocuments(projectId: string, filters?: DocumentFilters) {
+  // Fetch all documents (no visible pagination in the tree/list). API caps per_page at 100;
+  // a caller can still override perPage explicitly.
+  const withAll: DocumentFilters = { perPage: 100, ...filters }
   return useQuery({
-    queryKey: projectKeys.documents(projectId, filters),
-    queryFn: () => documentsApi.list(projectId, filters),
+    queryKey: projectKeys.documents(projectId, withAll),
+    queryFn: () => documentsApi.list(projectId, withAll),
     enabled: !!projectId,
   })
 }
