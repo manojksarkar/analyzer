@@ -143,6 +143,28 @@ def shallow_clone(
         raise GitError(str(exc))
 
 
+def fetch(
+    repo_dir: str, clone_url: str, username: str, token: str,
+    ref: str, depth: int = 50,
+) -> None:
+    """Update a cached shallow clone's ``origin/<ref>`` to the current remote tip.
+
+    Fetches straight from the credential-injected URL (not the clone's
+    credential-free ``origin``), so private repos keep working without
+    persisting the token, and stays shallow (``--depth``) to match the clone.
+    Without this a reused clone is frozen at clone time and newly-pushed commits
+    never appear. Raises GitError on failure."""
+    branch = (ref or "").strip()
+    if not branch:
+        return
+    auth = _auth_url(clone_url, username, token)
+    proc = _run(["-C", repo_dir, "fetch", "--depth", str(int(depth)), auth,
+                 f"+refs/heads/{branch}:refs/remotes/origin/{branch}"])
+    if proc.returncode != 0:
+        msg = proc.stderr.strip().replace(auth, _clean_url(clone_url))
+        raise GitError(f"git fetch failed (exit {proc.returncode}): {msg}")
+
+
 def list_tree(repo_dir: str, ref: str = "HEAD") -> List[Dict]:
     """Nested tree at ``ref`` from ``git ls-tree -r --name-only``. Each node:
     ``{type:'folder', name, path, children:[...]}`` or ``{type:'file', name, path}``.

@@ -47,8 +47,9 @@ api/
 │   ├── errors.py            ← Consistent HTTP error envelope helpers
 │   ├── settings.py          ← Centralised env-var config
 │   ├── pipeline_runner.py   ← Real run.py subprocess driver
-│   ├── doc_render.py        ← Render payload from live output/ artifacts
-│   ├── compare_engine.py    ← Section-level diff between version snapshots
+│   ├── doc_render.py        ← Render payload from live output/ (or a snapshot via model_root/asset_base)
+│   ├── compare_engine.py    ← Document-list diff + rich-diff orchestration over snapshots
+│   ├── compare_render.py    ← Rich, highlight-annotated two-version document diff
 │   ├── git_cli.py           ← Shell-safe git helpers (ls-remote, shallow-clone)
 │   └── repo_git.py          ← Repository wizard (list refs, commits, upload)
 │
@@ -261,6 +262,69 @@ of a unit dict into a proper markdown pipe table (8 columns: Interface ID, Name,
 Information, Data Type, Data Range, Direction, Source/Dest, Type — matching the
 same column order used by `doc_render.py`).  Pipe characters inside cell values
 are escaped to `/`; newlines are collapsed to a space.  Commit `d8bd70b`.
+
+### Compare page only showed interface tables, with no inline highlighting
+
+The compare detail endpoint (`/compare/documents/{id}`) used to build flat
+markdown sections from `interface_tables.json` only — so the side-by-side view
+showed interface tables but **no descriptions, flowchart/behaviour content, or
+mermaid diagrams**, and marked whole sections "changed" without highlighting
+*what* changed.
+
+Now `GET /compare/documents/{id}` returns a **rich, highlight-annotated diff**
+(`mode: "rich"`) built by `compare_render.py`:
+
+- `doc_render.build_render` was parameterised with `model_root` (read model
+  JSON from a version snapshot's `model/` instead of the live tree) and
+  `asset_base` (URL prefix for diagram assets). The compare engine builds the
+  full DOCX-mirroring render for **both** the current and baseline version
+  snapshots.
+- The two renders are flattened (pre-order) and merged in document order via
+  `difflib`, then each matched section is diffed into typed **blocks**:
+  - `text` / `keyvalue` → word-level `segments` (`mark`: `add`/`del`/`none`)
+  - `table` → per-row + per-cell `marks` (`add`/`del`/`change`/`none`), rows
+    aligned by their first column (interface id / declaration)
+  - `diagram` → a `changed` flag (mermaid source differs) + the snapshot image URL
+- Each section reports `diff_type` (added/changed/removed/unchanged) and a
+  `source` (`artifact` label + which side(s) carry it — the provenance of the
+  change).
+- Diagram assets are served per-version from the snapshot via
+  `GET /projects/{id}/compare/assets/{version_id}/{group}/{asset_path}`
+  (`compare_render.resolve_snapshot_asset`, path-traversal safe, unauthenticated
+  so `<img>` tags load).
+- When a version has no usable snapshot render, the endpoint falls back to the
+  legacy flat interface-table diff (`mode: "flat"`).
+- Document-level change detection in `compute_compare` was broadened: a group is
+  "changed" if its interface tables differ **or** (when they match) any other
+  rendered content (descriptions, flowcharts, diagrams) differs — via
+  `render_fingerprint` (URL-agnostic).
+
+The frontend `ComparePage.tsx` renders the rich blocks two-up with inline
+highlights (word-level text, per-cell tables, changed-diagram badges) and shows
+the `source` artifact chip on each changed section.
+
+### Introduction (Purpose / Scope / Terms) missing or placeholder in UI
+
+Two problems made the UI Introduction not match the exported DOCX:
+
+1. **`doc_render._strip_jsonc` corrupted the config.** Its comment stripper was a
+   naive regex (`//[^\n]*`) that also stripped `//` *inside* string literals — e.g.
+   `"baseUrl": "http://localhost:11434"` — which made `config.json` unparseable, so
+   `_load_config()` silently returned `{}` and `docx.introduction` (Purpose / Scope
+   text) fell back to `[Purpose of this document.]` placeholders. Replaced with a
+   **string-aware** stripper mirroring `core.config._strip_json_comments`.
+2. **The synthesized + compare fallback renders omitted the Introduction.** Only the
+   live `build_render` built it. Extracted `doc_render.build_intro_section(config,
+   abbreviations, components, project_name)` (+ `intro_section_from_config(...)`),
+   mirroring `docx_exporter.py` exactly (1.1 Purpose, 1.2 Scope with component
+   bullets + scope items, 1.3 Terms = abbreviations table). Now used by:
+   - `build_render` (live/snapshot render),
+   - `routes/documents._render_doc_dict` (synthesized fallback — prepended),
+   - `compare_engine._flat_intro_sections` (compare flat fallback — markdown, always
+     `unchanged` since intro content is version-independent).
+
+   So Purpose / Scope / Terms appear in the inspector and the compare view in every
+   render path, matching the DOCX.
 
 ### bcrypt 4.x `__about__` AttributeError
 

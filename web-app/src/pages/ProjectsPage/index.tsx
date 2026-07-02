@@ -5,6 +5,7 @@ import { Dropdown, DropdownTrigger, DropdownContent, Icon, TableSkeleton, toast 
 import { NotificationBell } from '../../components/shell/NotificationBell'
 import { ProjectRow } from './components/ProjectRow'
 import { ProjectsEmptyState } from './components/ProjectsEmptyState'
+import { APP_NAME, APP_TAGLINE } from '../../constants/branding'
 
 /* Column headers — width baked into the class so no inline style is needed. */
 const COLUMNS = [
@@ -45,10 +46,10 @@ export function ProjectsPage() {
           </div>
           <div>
             <h1 className="text-primary font-bold tracking-tight font-sans text-title leading-[1.2]">
-              [PRODUCT NAME]
+              {APP_NAME}
             </h1>
             <p className="text-on-surface-variant uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">
-              Automotive Tier 1
+              {APP_TAGLINE}
             </p>
           </div>
         </div>

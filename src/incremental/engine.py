@@ -170,10 +170,15 @@ def carry_forward_from_index(impact_keys: Iterable[str],
 
 def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   data_dict_path: Optional[str], repo_dir: str, project_root: str,
-                  extra_args: Optional[List[str]] = None) -> int:
+                  extra_args: Optional[List[str]] = None,
+                  project_name: Optional[str] = None) -> int:
     cmd = [sys.executable, "run.py", "--config", vcfg_path]
     cmd += scope_to_args(scope)
     cmd += per_component_docx_args(scope)
+    if project_name:
+        # Otherwise parser.py defaults projectName to the checkout dir basename
+        # (commit[:16]) — the sha would surface in the DOCX cover + 1.1 Purpose.
+        cmd += ["--project-name", project_name]
     if no_llm:
         cmd += ["--no-llm-summarize"]
     if data_dict_path:
@@ -206,7 +211,7 @@ def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any]) -> None:
 
 
 def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
-                        *, target, base_commit, base_parse_dir) -> bool:
+                        *, target, base_commit, base_parse_dir, project_name=None) -> bool:
     """Narrowed parse (M4.4, doc 04 §11): re-parse ONLY the affected TUs and merge them
     into the baseline's parser-level snapshot, so the resulting model/ is the SAME blank
     skeleton a full parse would produce (impacted functions arrive blank -> Phase 2
@@ -246,7 +251,8 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
         os.environ["ANALYZER_BASELINE_FUNCKEYS"] = bfk
     try:
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                           extra_args=["--to-phase", "1", "--only-files", listfile])
+                           extra_args=["--to-phase", "1", "--only-files", listfile],
+                           project_name=project_name)
     finally:
         if prev_bfk is None:
             os.environ.pop("ANALYZER_BASELINE_FUNCKEYS", None)
@@ -324,6 +330,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     base_vid = decision["chosenBaseVersionId"]
     project = get_project(project_id)        # api/db/data/projects.json (no project.json)
+    project_name = (project.get("name") or "").strip() or None
     hstore, estore, ridx = HashStore(vstore), EdgeStore(vstore), ReuseIndex(ws)
     version_id = os.path.basename(repo_dir)  # the version id IS the checkout dir name (commit[:16])
     data_dict_id = data_dict_id or project.get("currentDataDictId")
@@ -368,6 +375,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     if narrowed_parse:
         used_narrowed = _try_narrowed_parse(
             vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
+            project_name=project_name,
             target=target, base_commit=decision["chosenBaseCommit"],
             base_parse_dir=os.path.join(vstore.version_dir(base_vid), "parse"))
     if used_narrowed and verify_parse:
@@ -377,7 +385,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         _vlog = _get_logger("incremental")
         narrowed_model = _load_parse_dir(model_dir)
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                           extra_args=["--to-phase", "1"])
+                           extra_args=["--to-phase", "1"], project_name=project_name)
         if rc != 0:
             _fail("parse", rc)
         mism = diff_models(narrowed_model, _load_parse_dir(model_dir))
@@ -393,7 +401,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         # model/ now holds the FULL parse -> trusted regardless of the narrowed result.
     elif not used_narrowed:
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                           extra_args=["--to-phase", "1"])
+                           extra_args=["--to-phase", "1"], project_name=project_name)
         if rc != 0:
             _fail("parse", rc)
 
@@ -504,7 +512,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
     rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                       extra_args=["--from-phase", "2"])
+                       extra_args=["--from-phase", "2"], project_name=project_name)
     if rc != 0:
         _fail("derive+views+export", rc)
 

@@ -80,10 +80,19 @@ def _cache_path(repo_url: str, ref: Optional[str], depth: int, blobless: bool = 
 
 def _clone_or_reuse(
     repo_url: str, ref: Optional[str], access_token: Optional[str],
-    depth: int = 1, blobless: bool = False,
+    depth: int = 1, blobless: bool = False, refresh: bool = False,
 ) -> Path:
     dest = _cache_path(repo_url, ref, depth, blobless)
     if (dest / ".git").exists():
+        # A cached clone is frozen at clone time. When the caller needs fresh
+        # history (commit list), pull the branch's current tip so newly-pushed
+        # commits appear. Best-effort: on failure, fall back to the snapshot.
+        if refresh and ref:
+            try:
+                git_cli.fetch(str(dest), repo_url.strip(), *_creds(access_token),
+                              ref, depth=depth)
+            except git_cli.GitError:
+                pass
         return dest
     git_cli.shallow_clone(
         repo_url.strip(), *_creds(access_token), str(dest),
@@ -105,7 +114,7 @@ def list_commits(
     branch = (ref or "").strip()
     if not url or not branch:
         return []
-    repo_dir = _clone_or_reuse(url, branch, access_token, depth=max(1, limit))
+    repo_dir = _clone_or_reuse(url, branch, access_token, depth=max(1, limit), refresh=True)
     data = git_cli.list_commits(str(repo_dir), branch, limit=limit, offset=0)
     return data.get("commits", [])
 

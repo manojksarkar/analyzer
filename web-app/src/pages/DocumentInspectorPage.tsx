@@ -6,6 +6,7 @@ import {
   useApproveDoc, useSelfAssign, useAssignReviewers, useDownloadDoc,
 } from '../hooks/useDocumentMutations'
 import { useAuthStore } from '../store/auth'
+import { useUIStore } from '../store/ui'
 import { DocTreePanel } from '../components/shell/DocTreePanel'
 import { groupDocsByProcess, buildAssigneeOptions } from '../lib/docTree'
 import { Card, Icon, Skeleton, Text } from '../components/ui'
@@ -44,6 +45,8 @@ export function DocumentInspectorPage() {
   const isAdmin = project?.userRole === 'admin'
   const isDeveloper = project?.userRole === 'developer'
   const meName = useAuthStore((s) => s.user?.name ?? '')
+  const panelCollapsed = useUIStore((s) => s.inspectorPanelCollapsed)
+  const togglePanel = useUIStore((s) => s.toggleInspectorPanel)
 
   const canvasRef = useRef<HTMLElement>(null)
   const [assignOpen, setAssignOpen] = useState(false)
@@ -117,11 +120,11 @@ export function DocumentInspectorPage() {
 
       {/* ── Document canvas ── */}
       <main ref={canvasRef} className="flex-1 overflow-y-auto bg-surface-container-low">
-        <div className="max-w-3xl mx-auto px-6 py-8">
+        <div className="max-w-5xl mx-auto px-6 py-8">
           <div className="bg-white rounded-xl border border-outline-variant overflow-hidden shadow-[0_1px_4px_rgba(4,22,39,.06)]">
 
             {/* Cover header */}
-            <div className="px-12 pt-10 pb-8 border-b border-outline-variant">
+            <div className="px-8 pt-10 pb-8 border-b border-outline-variant">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <Text as="p" variant="label" className="text-on-surface-variant tracking-[0.1em] mb-2">
@@ -165,7 +168,7 @@ export function DocumentInspectorPage() {
             {rich && <MetaBanner meta={rich.meta} />}
 
             {/* Sections */}
-            <div className="px-12 py-10 space-y-12">
+            <div className="px-8 py-10 space-y-12">
               {!rich ? (
                 <div className="space-y-4">
                   <Skeleton className="h-6 w-1/3" />
@@ -185,12 +188,35 @@ export function DocumentInspectorPage() {
         </div>
       </main>
 
-      {/* ── Right panel: review tracker (in review) or outline ── */}
+      {/* ── Right panel: review tracker (in review) or outline; collapsible ── */}
+      {panelCollapsed ? (
+        <aside className="w-9 flex-shrink-0 bg-white border-l border-outline-variant flex flex-col items-center py-3">
+          <button
+            onClick={togglePanel}
+            title={inReview ? 'Show review status' : 'Show outline'}
+            className="p-1.5 rounded-lg hover:bg-surface-container-low transition-colors text-on-surface-variant"
+          >
+            <Icon name="chevron_left" size={16} />
+          </button>
+          <Icon
+            name={inReview ? 'fact_check' : 'toc'}
+            size={16}
+            className="text-outline mt-2"
+          />
+        </aside>
+      ) : (
       <aside className="w-48 flex-shrink-0 bg-white border-l border-outline-variant flex flex-col overflow-hidden">
-        <div className="px-3 py-3 border-b border-outline-variant flex-shrink-0">
+        <div className="px-3 py-3 border-b border-outline-variant flex-shrink-0 flex items-center justify-between gap-1">
           <Text variant="label" className="block text-on-surface-variant tracking-[0.1em]">
             {inReview ? 'Review Status' : 'On this page'}
           </Text>
+          <button
+            onClick={togglePanel}
+            title="Collapse panel"
+            className="p-1 -mr-1 rounded-lg hover:bg-surface-container-low transition-colors text-on-surface-variant flex-shrink-0"
+          >
+            <Icon name="chevron_right" size={15} />
+          </button>
         </div>
 
         {inReview ? (
@@ -224,6 +250,7 @@ export function DocumentInspectorPage() {
           </nav>
         )}
       </aside>
+      )}
 
       {/* ── Assign reviewers slide-in ── */}
       {assignOpen && (
@@ -252,7 +279,7 @@ function MetaBanner({ meta }: { meta: DocMeta }) {
     ['Layers', meta.layers.length],
   ]
   return (
-    <div className="px-12 py-3 border-b border-outline-variant bg-surface-container-low flex flex-wrap items-center gap-x-5 gap-y-1.5">
+    <div className="px-8 py-3 border-b border-outline-variant bg-surface-container-low flex flex-wrap items-center gap-x-5 gap-y-1.5">
       <span className="flex items-center gap-1.5 font-mono text-label uppercase tracking-[0.06em] text-on-surface-variant">
         <Icon
           name={meta.source === 'pipeline' ? 'bolt' : 'dataset'}
@@ -273,7 +300,7 @@ function MetaBanner({ meta }: { meta: DocMeta }) {
 /* ── Rendered table section ── */
 function TableView({ table }: { table: RichTable }) {
   return (
-    <div className="overflow-hidden border border-outline-variant rounded-lg">
+    <div className="overflow-x-auto border border-outline-variant rounded-lg">
       <table className="w-full text-left text-body">
         <thead className="bg-surface-container text-on-surface-variant">
           <tr>
@@ -336,7 +363,7 @@ function DiagramView({ section }: { section: RichSection }) {
 /* ── Flowchart table (5-row layout mirroring docx_exporter flowchart table) ── */
 function FlowchartTableView({ data }: { data: FlowchartTableData }) {
   return (
-    <div className="overflow-hidden border border-outline-variant rounded-lg">
+    <div className="overflow-x-auto border border-outline-variant rounded-lg">
       <table className="w-full text-left text-body">
         <tbody>
           <tr className="border-b border-outline-variant/60">
@@ -381,7 +408,7 @@ function FlowchartTableView({ data }: { data: FlowchartTableData }) {
 function BehaviorTableView({ data }: { data: BehaviorTableData }) {
   return (
     <div className="space-y-3">
-      <div className="overflow-hidden border border-outline-variant rounded-lg">
+      <div className="overflow-x-auto border border-outline-variant rounded-lg">
         <table className="w-full text-left text-body">
           <tbody>
             <tr className="border-b border-outline-variant/60">

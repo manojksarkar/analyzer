@@ -274,7 +274,11 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
            "--commit", job.commit_sha, "--scope", _scope_to_cli(scope),
            "--config", str(config_path)]
     if mode != "full" and getattr(job, "reference_version_id", None):
-        cmd += ["--base-version-id", job.reference_version_id]
+        # The engine's version namespace is commit[:16], not the API's 'ver…' ids —
+        # translate; fall back to the raw id so a deleted base still warns "not found".
+        _raw_ref = job.reference_version_id
+        _ref_commit = _resolve_ref_commit(db, _raw_ref)
+        cmd += ["--base-version-id", _ref_commit[:16] if _ref_commit else _raw_ref]
     if getattr(job, "data_dict_id", None):
         cmd += ["--data-dict-id", job.data_dict_id]
     if getattr(job, "no_llm", False):
@@ -670,7 +674,11 @@ def preview_baseline(db: Any, project_id: str, commit: str,
     if not target:
         return _stub(f"commit {commit!r} not found in the local checkout")
     # Same version list the engine uses (api/db/data/versions.json), commit-addressed.
-    return select_baseline(str(repo), list_versions(project_id), target, base_version_id)
+    # base_version_id from the UI is an API Version.id; translate to the engine's
+    # commit[:16] namespace (pass through unknown values so a real versionId still works).
+    _resolved = _resolve_ref_commit(db, base_version_id)
+    base_arg = _resolved[:16] if _resolved else base_version_id
+    return select_baseline(str(repo), list_versions(project_id), target, base_arg)
 
 
 # ---------------------------------------------------------------------------
@@ -1075,7 +1083,7 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
                 if cname:
                     comp_by_dir[cname.replace(" ", "-")] = (cname, lname)
 
-    # One component-design doc per component output dir that holds a real DOCX.
+    # One SWE.3 detailed-design doc per component output dir that holds a real DOCX.
     for d in sorted(out_root.iterdir()):
         if not d.is_dir():
             continue
@@ -1085,7 +1093,7 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
         if find_docx(d.name, out_root) is None:
             continue
         disp, lname = meta
-        add("SWE.2", disp, "Component Design", lname, d.name)
+        add("SWE.3", disp, "Detailed Design", lname, d.name)
 
     return docs
 
@@ -1093,6 +1101,19 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
 # ---------------------------------------------------------------------------
 # Functions loader — reads model/functions.json and registers under the job
 # ---------------------------------------------------------------------------
+
+def _resolve_ref_commit(db: Any, version_id: Optional[str]) -> Optional[str]:
+    """Translate an API Version.id ('ver…') to its commit sha.
+
+    The incremental engine's version namespace is commit[:16] (see
+    incremental/project_db.list_versions), not the API's 'ver…' ids, so callers
+    must translate before passing --base-version-id or resolving a per-commit dir.
+    Returns None if unset/unknown (→ auto baseline)."""
+    if not version_id:
+        return None
+    v = db.versions.get(version_id)
+    return v.commit_sha if v else None
+
 
 def _baseline_fn_keys(project_id: str, reference_commit: str) -> Optional[Set[str]]:
     """Return the set of function dict-keys from the baseline commit's model, or None."""
@@ -1124,7 +1145,10 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
 
     ref_keys: Optional[Set[str]] = None
     if getattr(job, "reference_version_id", None):
-        ref_keys = _baseline_fn_keys(job.project_id, job.reference_version_id)
+        # reference_version_id is an API Version.id; _baseline_fn_keys/_commit_dir
+        # expect a commit sha. Translate (fall back to raw → resolves to None, as before).
+        ref_commit = _resolve_ref_commit(db, job.reference_version_id) or job.reference_version_id
+        ref_keys = _baseline_fn_keys(job.project_id, ref_commit)
 
     functions: list[Function] = []
     for fn_key, fn_data in raw.items():

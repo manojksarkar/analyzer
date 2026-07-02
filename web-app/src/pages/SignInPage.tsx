@@ -7,6 +7,7 @@ import { useAuthStore } from '../store/auth'
 import { ApiError } from '../lib/http'
 import { Icon, toast } from '../components/ui'
 import { cn } from '../lib/cn'
+import { APP_NAME, APP_TAGLINE } from '../constants/branding'
 
 const schema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
@@ -78,8 +79,8 @@ export function SignInPage() {
                 <Icon name="account_tree" size={18} fill className="text-white" />
               </div>
               <div>
-                <h1 className="font-bold tracking-tight font-sans text-title leading-[1.2]">[PRODUCT NAME]</h1>
-                <p className="text-on-primary-container uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">Automotive Tier 1</p>
+                <h1 className="font-bold tracking-tight font-sans text-title leading-[1.2]">{APP_NAME}</h1>
+                <p className="text-on-primary-container uppercase mt-0.5 font-mono text-caption font-medium tracking-[0.08em]">{APP_TAGLINE}</p>
               </div>
             </div>
 
@@ -115,7 +116,7 @@ export function SignInPage() {
               <div className="w-8 h-8 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
                 <Icon name="account_tree" size={18} fill className="text-white" />
               </div>
-              <h1 className="text-primary font-bold tracking-tight font-sans text-title">[PRODUCT NAME]</h1>
+              <h1 className="text-primary font-bold tracking-tight font-sans text-title">{APP_NAME}</h1>
             </div>
 
             {/* Heading */}
