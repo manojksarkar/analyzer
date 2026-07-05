@@ -573,8 +573,8 @@ class FileKnowledgeExtractor:
                 existing.end_line = end_line
         elif cursor.is_definition() and not existing.description:
             knowledge.functions[qname] = fk
-        elif cursor.is_definition() and existing.end_line < end_line:
-            # Declaration was seen first, now we have a definition with a body that extends further
+        elif cursor.is_definition() and not existing.end_line and end_line:
+            # Declaration was seen first (end_line=0); fill it in from the definition.
             existing.end_line = end_line
 
     # ------------------------------------------------------------------

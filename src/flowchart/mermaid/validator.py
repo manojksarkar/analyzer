@@ -117,7 +117,7 @@ def validate_mermaid(script: str) -> ValidationResult:
         result.errors.append("Mermaid script does not start with 'flowchart'")
 
     # Check for unmatched quotes. Encoded quotes (#quot;) must not count as
-    # real double quotes - the previous ``* 0`` multiplier made the subtraction
+    # real double quotes - the previous `* 0` multiplier made the subtraction
     # a no-op, so even well-escaped labels tripped the odd-count heuristic.
     for i, line in enumerate(script.splitlines(), 1):
         dq_count = line.count('"') - line.count('#quot;')

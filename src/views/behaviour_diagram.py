@@ -101,7 +101,7 @@ def run(model, output_dir, model_dir, config):
             # External = outside selected group
             external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0].lower() not in allowed_components]
         else:
-            # Default behaviour: external = different module
+            # Default behaviour: external = different component
             external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] != component_name]
 
         for idx, mmd_path in enumerate(mmd_paths):
