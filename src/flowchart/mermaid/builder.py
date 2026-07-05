@@ -5,14 +5,14 @@ Converts a labeled ControlFlowGraph into a Mermaid `flowchart TD` script.
 
 Rules (DO NOT CHANGE):
   - Structural truth (edges, topology) comes only from the CFG.
-  - All Mermaid-unsafe characters in labels are escaped with #NNN; entity codes.
+  - Labels are wrapped in double-quotes; the few characters that still break
+    inside quotes (", <, >, & and the edge-label pipe |) are swapped for
+    fullwidth look-alikes so the raw script pastes cleanly into mermaid.live.
   - <br/> line breaks within labels are preserved.
-  - START/END nodes use stadium shape  ([...])
-  - DECISION / LOOP_HEAD / SWITCH_HEAD nodes use diamond  {...}
-  - All other nodes use rectangle  [...]
-  - CATCH nodes use subroutine shape  [[...]]
-  - Node/edge labels are NOT wrapped in double-quotes, to avoid \" sequences
-    when the Mermaid script is stored in a JSON output file.
+  - START/END nodes use stadium shape  (["..."])
+  - DECISION / LOOP_HEAD / SWITCH_HEAD nodes use diamond  {"..."}
+  - All other nodes use rectangle  ["..."]
+  - CATCH nodes use subroutine shape  [["..."]]
 """
 
 import re
@@ -42,12 +42,53 @@ _SUBROUTINE_TYPES = frozenset({
 })
 
 
+# Rendering configuration prepended to every flowchart. The ELK layout engine
+# gives far cleaner routing than the default dagre renderer on dense CFGs, where
+# graphs have crossings that are mathematically unavoidable.
+MERMAID_CONFIG = """---
+config:
+  flowchart:
+    defaultRenderer: elk
+---
+%%{
+  init: {
+    "flowchart": {
+      "defaultRenderer": "elk",
+      "padding": 0,
+      "nodeSpacing": 50,
+      "rankSpacing": 60,
+      "wrappingWidth": 500,
+      "curve": "linear"
+    },
+    "elk": {
+      "mergeEdges": false,
+      "nodePlacementStrategy": "BRANDES_KOEPF",
+      "cycleBreakingStrategy": "GREEDY",
+      "feedbackEdges": true,
+      "elk.layered.feedbackEdges": true,
+      "elk.layered.thoroughness": 50,
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP"
+    },
+    "sequence": {
+      "padding": 0,
+      "nodeMargin": 10,
+      "noteMargin": 10,
+      "messageMargin": 40,
+      "actorMargin": 50,
+      "mirrorActors": false
+    },
+    "theme": "base"
+  }
+}%%
+"""
+
+
 def build_mermaid(cfg: ControlFlowGraph) -> str:
     """
     Render a ControlFlowGraph as a Mermaid flowchart TD script.
     Returns the complete Mermaid string.
     """
-    lines: List[str] = ["flowchart TD"]
+    lines: List[str] = [MERMAID_CONFIG, "flowchart TD"]
 
     # Node definitions
     for node in _topo_order(cfg):
@@ -84,12 +125,12 @@ def _node_def(node: CfgNode) -> str:
     t = node.node_type
 
     if t in _STADIUM_TYPES:
-        return f"{nid}([{escaped}])"
+        return f'{nid}(["{escaped}"])'
     if t in _DIAMOND_TYPES:
-        return f"{nid}{{{escaped}}}"
+        return f'{nid}{{"{escaped}"}}'
     if t in _SUBROUTINE_TYPES:
-        return f"{nid}[[{escaped}]]"
-    return f"{nid}[{escaped}]"
+        return f'{nid}[["{escaped}"]]'
+    return f'{nid}["{escaped}"]'
 
 
 # ---------------------------------------------------------------------------
@@ -100,15 +141,14 @@ def _edge_def(edge: CfgEdge) -> str:
     """
     Render a Mermaid edge with an optional label.
 
-    Edge labels are NOT wrapped in double-quotes for the same reason as
-    node labels — JSON encoding would turn them into \" sequences.
-    All special characters are already #NNN;-encoded.
+    Edge labels are wrapped in double-quotes and escaped by _escape_edge_label()
+    (which also neutralises the pipe `|`, since it delimits the edge label).
     """
     norm_label = normalize_edge_label(edge.label)
     if norm_label:
         escaped = _escape_edge_label(norm_label)
-        return f"{edge.source} -->|{escaped}| {edge.target}"
-    return f"{edge.source} --> {edge.target}"
+        return f'{edge.source} -->|"{escaped}"| {edge.target}'
+    return f'{edge.source} --> {edge.target}'
 
 
 # ---------------------------------------------------------------------------
@@ -155,61 +195,22 @@ def _topo_order(cfg: ControlFlowGraph) -> List[CfgNode]:
 
 # ---------------------------------------------------------------------------
 # Label escaping
-#
-# Mermaid uses #NNN; (decimal ASCII code) entity syntax inside node labels.
-# All characters that can confuse Mermaid's parser — even inside double-quoted
-# labels — must be replaced with their #NNN; equivalents so that a script can
-# be pasted directly into mermaid.live without parse errors.
-#
-# Reference (from user examples):
-#   store[prg index]  →  store#91;prg index#93;
-#   back(info[index]) →  back#40;info#91;index#93;#41;
 # ---------------------------------------------------------------------------
 
-# Single-pass character maps for Mermaid entity encoding.
-#
-# Sequential str.replace() calls cause double-encoding: e.g. "(" → "#40;" and
-# then ";" → "#59;", which turns "#40;" into "#40#59;".  Using re.sub() with a
-# single compiled pattern ensures every original character is encoded exactly
-# once, regardless of the order entries appear in the map.
-
-_NODE_LABEL_CHAR_MAP: dict = {
-    "&":  "#38;",    # ampersand
-    '"':  "#quot;",  # double quote
-    "[":  "#91;",    # left square bracket
-    "]":  "#93;",    # right square bracket
-    "(":  "#40;",    # left parenthesis
-    ")":  "#41;",    # right parenthesis
-    "{":  "#123;",   # left curly brace
-    "}":  "#125;",   # right curly brace
-    "|":  "#124;",   # pipe / vertical bar
-    ";":  "#59;",    # semicolon
-    "%":  "#37;",    # percent
-    "^":  "#94;",    # caret
-    "~":  "#126;",   # tilde
-    "<":  "#60;",    # less-than  (applied after protecting <br/>)
-    ">":  "#62;",    # greater-than
+# Characters that must be neutralised even inside a double-quoted Mermaid label.
+# Instead of #NNN; entities we wrap labels in double-quotes and swap the few
+# remaining breakers for look-alike glyphs, so the raw script pastes cleanly
+# into mermaid.live (and survives JSON round-tripping).
+_QUOTED_LABEL_MAP: dict = {
+    '"': "'",
+    "<": "＜",  # < fullwidth less-than
+    ">": "＞",  # > fullwidth greater-than
+    "&": "＆",  # & fullwidth ampersand
 }
 
-_EDGE_LABEL_CHAR_MAP: dict = {
-    "&":  "#38;",
-    '"':  "#quot;",
-    "|":  "#124;",
-    "[":  "#91;",
-    "]":  "#93;",
-    "(":  "#40;",
-    ")":  "#41;",
-    "{":  "#123;",
-    "}":  "#125;",
-    ";":  "#59;",
-    "<":  "#60;",
-    ">":  "#62;",
-}
-
-# Pre-compiled single-pass patterns — each original character is matched and
-# replaced exactly once.
-_NODE_LABEL_RE  = re.compile("[&\"\\[\\](){}|;%^~<>]")
-_EDGE_LABEL_RE  = re.compile("[&\"\\[\\](){}|;<>]")
+_NODE_LABEL_RE = re.compile(r'["<>&]')
+_EDGE_LABEL_MAP: dict = dict(_QUOTED_LABEL_MAP, **{"|": "｜"})  # | fullwidth pipe
+_EDGE_LABEL_RE = re.compile(r'["<>&|]')
 
 _BR_PLACEHOLDER = "\x00BR\x00"
 
@@ -277,17 +278,18 @@ def _enforce_line_length(label: str, max_chars: int = _MAX_LINE_CHARS) -> str:
 
 def _escape_label(text: str) -> str:
     """
-    Escape all Mermaid-unsafe characters in a node label using #NNN; codes.
+    Make a node label safe inside a double-quoted Mermaid label.
 
-    - <br/> line-break tags are preserved verbatim.
+    - <br/> line-break tags are preserved verbatim (and protected from the
+      `<`/`>` look-alike substitution below).
     - Newline characters (\\n) are converted to <br/> for multi-line labels.
-    - A single-pass re.sub() is used so that entity semicolons introduced by
-      earlier replacements are never re-encoded (no double-encoding).
+    - Only ", <, >, & are replaced (see _QUOTED_LABEL_MAP); everything else is
+      literal inside the quotes.
     """
     if not text:
         return text
 
-    # Protect <br/> line-break tags
+    # Protect <br/> line-break tags (so their < > are not turned into look-alikes)
     text = text.replace("<br/>", _BR_PLACEHOLDER)
     text = text.replace("<br />", _BR_PLACEHOLDER)
 
@@ -295,8 +297,8 @@ def _escape_label(text: str) -> str:
     text = text.replace("\n", _BR_PLACEHOLDER)
     text = text.replace("\r", "")
 
-    # Single-pass entity encoding — each original character replaced exactly once
-    text = _NODE_LABEL_RE.sub(lambda m: _NODE_LABEL_CHAR_MAP[m.group(0)], text)
+    # Single-pass substitution — a replacement char never feeds back into the pattern
+    text = _NODE_LABEL_RE.sub(lambda m: _QUOTED_LABEL_MAP[m.group(0)], text)
 
     # Restore line-break placeholders
     text = text.replace(_BR_PLACEHOLDER, "<br/>")
@@ -306,10 +308,9 @@ def _escape_label(text: str) -> str:
 
 def _escape_edge_label(text: str) -> str:
     """
-    Escape characters in Mermaid edge labels using #NNN; codes.
-
-    Single-pass substitution to prevent double-encoding of semicolons.
+    Make an edge label safe inside `-->|"..."|`. Same as _escape_label plus the
+    pipe `|` (which delimits the edge label) is replaced with a look-alike.
     """
     if not text:
         return text
-    return _EDGE_LABEL_RE.sub(lambda m: _EDGE_LABEL_CHAR_MAP[m.group(0)], text)
+    return _EDGE_LABEL_RE.sub(lambda m: _EDGE_LABEL_MAP[m.group(0)], text)
