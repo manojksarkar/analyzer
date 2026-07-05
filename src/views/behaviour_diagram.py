@@ -9,15 +9,17 @@ import json
 import os
 import subprocess
 import sys
-from utils import os_type
-# behaviour_diagram_generator lives in project root
-_proj = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if _proj not in sys.path:
-    sys.path.insert(0, _proj)
+from pathlib import Path
+
+# Ensure src is in path for behaviour_diagram imports
+_src = Path(__file__).parent.parent
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
 
 from .registry import register
-from utils import log, mmdc_path, KEY_SEP
-from behaviour_diagram_generator import SequenceDiagramGenerator
+
+from behaviour_diagram import SequenceDiagramGenerator
+from utils import log, mmdc_path, KEY_SEP, os_type
 
 
 @register("behaviourDiagram")
@@ -42,7 +44,7 @@ def run(model, output_dir, model_dir, config):
     functions_path = os.path.join(model_dir, "functions.json")
     components_path = os.path.join(model_dir, "components.json")
     units_path = os.path.join(model_dir, "units.json")
-    gen = SequenceDiagramGenerator(components_path, units_path, functions_path)
+    gen = SequenceDiagramGenerator(components_path, units_path, functions_path, config)
 
     render_png = True
     mmdc = mmdc_path(project_root)
@@ -79,8 +81,9 @@ def run(model, output_dir, model_dir, config):
         progress.step()
 
         try:
-            mmd_paths = gen.generate_all_diagrams(fid, out_dir) or []
-            behaviour_descriptions = []
+            result = gen.generate_all_diagrams(fid, out_dir)
+            mmd_paths = result[0] if result else []
+            behaviour_descriptions = result[1] if result else []
         except Exception as e:
             log("generator error for %s: %s" % (fid, e), component="behaviourDiagram", err=True)
             continue

@@ -63,6 +63,12 @@ def main():
         i = args.index("--filter-mode")
         if i + 1 < len(args):
             filter_mode_override = args[i + 1]
+    allowed_components_override = None
+    if "--allowed-components" in args:
+        i = args.index("--allowed-components")
+        if i + 1 < len(args):
+            allowed_components_str = args[i + 1]
+            allowed_components_override = [m.strip() for m in allowed_components_str.split(",") if m.strip()]
     if not os.path.isabs(output_dir):
         output_dir = os.path.join(PROJECT_ROOT, output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -72,6 +78,7 @@ def main():
 
     model = _load_model()
     config = app_config()
+    config = dict(config)  # make a copy so we can modify it
     model_dir = _p.model_dir
     # Apply filter mode override from command line
     if filter_mode_override:
@@ -85,6 +92,11 @@ def main():
         from core.config import get_flat_groups
         groups = get_flat_groups(config)
         resolved = selected_group
+        
+        # For single-file mode, use allowed_components_override instead of componentsGroups
+        if selected_group.startswith("_single_file_") and allowed_components_override:
+            config["_analyzerAllowedComponents"] = allowed_components_override
+            config["_analyzerSelectedGroup"] = selected_group
         if isinstance(groups, dict) and selected_group not in groups:
             sk = selected_group.casefold()
             for k in groups.keys():

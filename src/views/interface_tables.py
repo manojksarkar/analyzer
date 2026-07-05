@@ -72,7 +72,7 @@ def _build_interface_tables(
                 mod = u.split(KEY_SEP, 1)[0]
                 if allowed_components:
                     return mod.lower() not in allowed_components
-                # Default behaviour: treat different module as external
+                # Default behaviour: treat different component as external
                 return mod != self_component
 
             callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _is_external_unit(u)))

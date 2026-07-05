@@ -5,7 +5,7 @@ from .registry import VIEW_REGISTRY
 
 
 def run_views(model, output_dir, model_dir, config):
-    """Run all enabled views. model = {functions, globalVariables, units, modules, dataDictionary}."""
+    """Run all enabled views. model = {functions, globalVariables, units, components, dataDictionary}."""
     views_cfg = (config or {}).get("views", {})
     for view_name, run_fn in VIEW_REGISTRY.items():
         default = view_name == "interfaceTables"
@@ -19,7 +19,7 @@ def run_views(model, output_dir, model_dir, config):
                 run_fn(model, output_dir, model_dir, config)
 
 
-# Import view modules so they register themselves
+# Import view components so they register themselves
 from . import interface_tables  # noqa: F401
 from . import behaviour_diagram  # noqa: F401
 from . import unit_diagrams  # noqa: F401

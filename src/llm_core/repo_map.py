@@ -147,7 +147,7 @@ class RepoMap:
         return self._format_file_groups(file_entries, "File")
 
     # ------------------------------------------------------------------
-    # Tier 3: Module level
+    # Tier 3: Component level
     # ------------------------------------------------------------------
 
     def _tier_component(self, fk, qualified_name: str) -> str:

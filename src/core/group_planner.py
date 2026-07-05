@@ -139,10 +139,14 @@ def plan_runs(
 
     resolved_selected = _resolve_group_name(groups_cfg, selected_group)
     if selected_group and not resolved_selected:
-        raise ValueError(
-            f"Unknown --selected-group {selected_group!r}. "
-            f"Valid groups: {', '.join(group_names) if group_names else '(none)'}"
-        )
+        # Allow single-file mode without layer entry
+        if selected_group.startswith("_single_file_"):
+            resolved_selected = selected_group
+        else:
+            raise ValueError(
+                f"Unknown --selected-group {selected_group!r}. "
+                f"Valid groups: {', '.join(group_names) if group_names else '(none)'}"
+            )
 
     # Validate --selected-layer and derive target groups for that layer.
     if selected_layer:
@@ -262,7 +266,26 @@ def plan_runs(
 
     local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
     for g in target_groups:
-        if component_per_docx:
+        # Single-file mode: use allowed components from config, not from layer
+        is_single_file = g.startswith("_single_file_")
+        if is_single_file:
+            # For single-file mode, get allowed components from config and skip layer lookup
+            allowed_components = (cfg.get("_analyzerAllowedComponents") or [])
+            if not allowed_components:
+                raise ValueError(
+                    f"Single-file mode requires _analyzerAllowedComponents in config"
+                )
+            # Create phases with defaults - views will use _analyzerAllowedComponents directly
+            # We need to make _analyzerAllowedComponents available to the subprocess via a new flag
+            view_phases = _view_export_phases(
+                selected_group=g,
+                filter_mode=filter_mode,
+            )
+            # Embed allowed components into the phase args to pass via CLI
+            for phase in view_phases:
+                allowed_components_quoted = ",".join(allowed_components)
+                phase.args.extend(["--allowed-components", allowed_components_quoted])
+        elif component_per_docx:
             grp = groups_cfg.get(g, {})
             if not isinstance(grp, dict):
                 continue

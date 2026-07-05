@@ -14,7 +14,7 @@ rich semantic context that flowchart_engine.py uses when prompting the LLM:
 Optionally, with --llm-summarize, runs a 4-level LLM summarization pass:
   1. Function level  — one-sentence summary for each undocumented function
   2. File level      — 2-3 sentence description per source file
-  3. Module level    — 2-3 sentence description per directory module
+  3. Module level    — 2-3 sentence description per directory component
   4. Project level   — overall project description (README preferred)
 
 Run this ONCE per project (or whenever the project changes) to build
@@ -533,11 +533,28 @@ class FileKnowledgeExtractor:
         if cursor.is_definition():
             calls = _collect_calls(cursor)
 
+        # End line of the function body. Only trust extent.end when it stays in
+        # the same file as cursor.location (libclang occasionally reports an end
+        # location in a different TU on malformed code).
+        end_line = 0
+        try:
+            if (
+                cursor.extent
+                and cursor.extent.end
+                and cursor.extent.end.file
+                and cursor.location.file
+                and cursor.extent.end.file.name == cursor.location.file.name
+            ):
+                end_line = int(cursor.extent.end.line)
+        except Exception:
+            end_line = 0
+
         fk = FunctionKnowledge(
             qualified_name=qname,
             signature=sig,
             file=rel_path,
             line=cursor.location.line,
+            end_line=end_line,
             description=comment,
             calls=calls,
         )
@@ -552,8 +569,13 @@ class FileKnowledgeExtractor:
         elif cursor.is_definition() and not existing.calls and calls:
             # Upgrade to add call-graph info from the definition
             existing.calls = calls
+            if not existing.end_line and end_line:
+                existing.end_line = end_line
         elif cursor.is_definition() and not existing.description:
             knowledge.functions[qname] = fk
+        elif cursor.is_definition() and existing.end_line < end_line:
+            # Declaration was seen first, now we have a definition with a body that extends further
+            existing.end_line = end_line
 
     # ------------------------------------------------------------------
     # Enum extraction
@@ -739,7 +761,7 @@ class HierarchySummarizer:
       1. Function  — one-sentence summary for undocumented functions
       2. File      — 2-3 sentence description per source file
       3. Module    — 2-3 sentence description per directory
-      4. Project   — overall description (README preferred, else from modules)
+      4. Project   — overall description (README preferred, else from components)
 
     All results are stored back into the ProjectKnowledge object and
     persisted to the output JSON by the caller.
@@ -747,7 +769,7 @@ class HierarchySummarizer:
     LLM calls are batched to minimise round-trips:
       - Functions : up to batch_size functions per call
       - Files     : 1 call per file
-      - Modules   : 1 call per module directory
+      - Modules   : 1 call per component directory
       - Project   : 1 call total
     """
 
@@ -1108,7 +1130,6 @@ class HierarchySummarizer:
     # ------------------------------------------------------------------
 
     def _read_body(self, fk: FunctionKnowledge, max_lines: int = 12) -> List[str]:
-        """Read the first max_lines of a function body from source."""
         try:
             file_path = Path(self._project_dir) / fk.file
             if not file_path.exists():
@@ -1116,7 +1137,11 @@ class HierarchySummarizer:
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 all_lines = f.readlines()
             start_idx = max(0, fk.line - 1)
-            end_idx = min(len(all_lines), start_idx + max_lines + 3)
+            if fk.end_line and fk.end_line >= fk.line:
+                func_end_idx = min(len(all_lines), fk.end_line)
+            else:
+                func_end_idx = len(all_lines)
+            end_idx = min(func_end_idx, start_idx + max_lines + 3)
             return [l.rstrip() for l in all_lines[start_idx:end_idx]]
         except Exception:
             return []
