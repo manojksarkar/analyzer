@@ -91,7 +91,7 @@ config:
   }
 }%%
 """
-    MERMAID_CONFIG_LINES = [line for line in MERMAID_CONFIG.split("\n") if line]
+    MERMAID_CONFIG_LINES = [line for line in MERMAID_CONFIG.strip().split("\n") if line]
     lines: List[str] = MERMAID_CONFIG_LINES + ["flowchart TD"]
 
     # Node definitions
