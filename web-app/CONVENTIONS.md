@@ -111,7 +111,7 @@ the mock, or point `API_TEST_URL` at the real API — it's read-only against a r
 See [TESTING.md](TESTING.md).
 
 Migrations must be **pixel-identical** — they swap *how* a value is expressed (token/primitive), not
-the value. Spot-check against the mock in [`../docs/ui-mockups/`](../docs/ui-mockups/).
+the value. Spot-check against the mock in [`../docs/ui/mockups/`](../docs/ui/mockups/).
 
 ## 5. Commits
 

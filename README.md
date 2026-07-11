@@ -35,6 +35,6 @@ Opens at `http://localhost:8501` in your browser.
 
 | Document | Description |
 |----------|-------------|
-| [docs/DESIGN.md](docs/DESIGN.md) | Architecture, model format, config, logic flow |
-| [docs/software_detailed_design.json](docs/software_detailed_design.json) | Document structure spec for the output DOCX |
-| [docs/images/architecture.drawio](docs/images/architecture.drawio) | Architecture diagram (edit in draw.io, export to PNG) |
+| [docs/design/DESIGN.md](docs/design/DESIGN.md) | Architecture, model format, config, logic flow |
+| [docs/spec/software_detailed_design.json](docs/spec/software_detailed_design.json) | Document structure spec for the output DOCX |
+| [docs/design/images/architecture.drawio](docs/design/images/architecture.drawio) | Architecture diagram (edit in draw.io, export to PNG) |
