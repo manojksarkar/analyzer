@@ -733,8 +733,8 @@ def _resolve_script(project_root: str, script_path: str) -> str:
     if not script_path:
         return os.path.join(project_root, "fake_flowchart_generator.py")
 
-    # Recover from unescaped backslashes in config.json: JSON parses "src\flowchart"
-    # as src + FF (0x0C) + lowchart, because \f/\b/\n/\r/\t are JSON escape sequences.
+    # Recover from unescaped backslashes in config.json: JSON parses "backend\flowchart"
+    # as backend + FF (0x0C) + lowchart, because \f/\b/\n/\r/\t are JSON escape sequences.
     # Reverse that so Windows paths written with single backslashes still work.
     if any(c in script_path for c in "\b\f\n\r\t"):
         for ctrl, letter in (
@@ -879,7 +879,7 @@ def run(model, output_dir, model_dir, config):
 
     script = _resolve_script(
         project_root,
-        r"src\flowchart\flowchart_engine.py"
+        r"backend\flowchart\flowchart_engine.py"
     )
 
     if not os.path.isfile(script):

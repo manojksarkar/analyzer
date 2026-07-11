@@ -131,7 +131,7 @@ def shallow_clone(
     Delegates to the platform's single clone primitive (``src/incremental/clone``), so the
     API, the per-commit job checkout, and the standalone engine all share ONE
     implementation. Re-raised as ``git_cli.GitError`` to preserve this module's error type."""
-    src_dir = str(get_settings().repo_root / "src")
+    src_dir = str(get_settings().repo_root / "backend")
     if src_dir not in sys.path:
         sys.path.insert(0, src_dir)
     from incremental.clone import shallow_clone as _shared  # type: ignore[import]

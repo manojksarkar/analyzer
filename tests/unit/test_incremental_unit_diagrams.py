@@ -14,11 +14,11 @@ import pytest
 pytestmark = pytest.mark.unit
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "backend"))
 
 # Stub the `views` package so the module's relative `from .registry import register` resolves.
 _views_pkg = types.ModuleType("views")
-_views_pkg.__path__ = [os.path.join(PROJECT_ROOT, "src", "views")]
+_views_pkg.__path__ = [os.path.join(PROJECT_ROOT, "backend", "views")]
 _views_pkg.__package__ = "views"
 _registry_mod = types.ModuleType("views.registry")
 _registry_mod.register = lambda name: (lambda fn: fn)
@@ -28,7 +28,7 @@ sys.modules.setdefault("views.registry", _registry_mod)
 
 _spec = importlib.util.spec_from_file_location(
     "views.unit_diagrams",
-    os.path.join(PROJECT_ROOT, "src", "views", "unit_diagrams.py"),
+    os.path.join(PROJECT_ROOT, "backend", "views", "unit_diagrams.py"),
     submodule_search_locations=[],
 )
 _mod = importlib.util.module_from_spec(_spec)

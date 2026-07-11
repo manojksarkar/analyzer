@@ -64,7 +64,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(SCRIPT_DIR)
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "src"))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "backend"))
 
 # Bring up logging early so every subsequent log() call (and every subprocess
 # this script spawns inheriting LOG_LEVEL) gets the same handlers.

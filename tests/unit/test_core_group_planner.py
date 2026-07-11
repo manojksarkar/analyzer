@@ -8,7 +8,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "backend"))
 
 from core.group_planner import _resolve_group_name, plan_runs
 
