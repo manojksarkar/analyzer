@@ -62,7 +62,11 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# run.py now lives in backend/; the repo root (holding backend/, model/, output/,
+# workspaces/) is one level up. SCRIPT_DIR is kept pointing at the repo root so every
+# repo-root-relative join below (chdir, model dir, SCRIPT_DIR/backend on sys.path,
+# PhaseRunner root, --config / --data-dictionary / project-path resolution) is unchanged.
+SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(SCRIPT_DIR)
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "backend"))
 

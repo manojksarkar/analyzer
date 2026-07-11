@@ -199,7 +199,7 @@ def generate_full(
     # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited).
     # Clean output/ first so the version captures only its own documents.
     _rmtree_force(os.path.join(project_root, "output"))
-    base_cmd = [sys.executable, "run.py", "--config", vcfg_path]
+    base_cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path]
     base_cmd += scope_to_args(scope)
     base_cmd += per_component_docx_args(scope)
     if project_name:

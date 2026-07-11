@@ -117,7 +117,7 @@ def _find_root() -> Path:
     """Walk up from this file to find the project root (contains run.py)."""
     here = Path(__file__).resolve().parent
     for candidate in [here, here.parent, here.parent.parent, here.parent.parent.parent]:
-        if (candidate / "run.py").exists():
+        if (candidate / "backend" / "run.py").exists():
             return candidate
     return here.parent.parent.parent   # fallback
 

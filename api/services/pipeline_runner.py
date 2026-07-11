@@ -580,7 +580,7 @@ def _build_cmd(
     use_model: bool = False,
     arch_layers: list = (),
 ) -> list[str]:
-    cmd = [sys.executable, str(get_settings().repo_root / "run.py")]
+    cmd = [sys.executable, str(get_settings().repo_root / "backend" / "run.py")]
     cmd += ["--config", str(config_path)]
     if use_model:
         cmd.append("--use-model")

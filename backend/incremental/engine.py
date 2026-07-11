@@ -172,7 +172,7 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   data_dict_path: Optional[str], repo_dir: str, project_root: str,
                   extra_args: Optional[List[str]] = None,
                   project_name: Optional[str] = None) -> int:
-    cmd = [sys.executable, "run.py", "--config", vcfg_path]
+    cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path]
     cmd += scope_to_args(scope)
     cmd += per_component_docx_args(scope)
     if project_name:
