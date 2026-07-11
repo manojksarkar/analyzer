@@ -39,7 +39,7 @@ in [vitest.config.ts](vitest.config.ts).
 
 `vitest` + Testing Library + **MSW** ([src/test/setup.ts](src/test/setup.ts),
 [src/test/handlers.ts](src/test/handlers.ts)). MSW intercepts HTTP and answers from committed
-fixtures, so this suite runs offline and **keeps working even if `mock-api/` is deleted**. Tests live
+fixtures, so this suite runs offline and **keeps working even if `tools/mock-api/` is deleted**. Tests live
 next to the code in `__tests__/` folders:
 
 - `src/services/mappers/__tests__/*` — snake_case → camelCase, derived fields, edge cases.

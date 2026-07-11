@@ -1,6 +1,6 @@
 # API Implementation Plan — Real Pipeline-Backed Server
 
-> Goal: make `api/` implement **every endpoint defined in `mock-api/api/openapi.yaml`**
+> Goal: make `api/` implement **every endpoint defined in `tools/mock-api/api/openapi.yaml`**
 > (the 70-route reference surface), backed by **both** the in-memory and JSON
 > databases, where the analysis/document operations **invoke the real analyzer
 > pipeline (`run.py`)** and **read real artifacts** (`model/`, `output/`,
@@ -10,7 +10,7 @@
 
 ## 0. Current state (verified)
 
-| | `api/` (target, real) | `mock-api/api/` (reference) |
+| | `api/` (target, real) | `tools/mock-api/api/` (reference) |
 |---|---|---|
 | Endpoints | 51 (older snapshot) | 70 |
 | `schemas.py` (Pydantic response models) | ❌ | ✅ ~80 models |
@@ -91,7 +91,7 @@ checkout is the `<project_path>` passed to `run.py`.
 
 ### M0 — Sync the static surface (low risk, no behaviour change)
 
-Port from `mock-api/api/` verbatim, then wire into `main.py`:
+Port from `tools/mock-api/api/` verbatim, then wire into `main.py`:
 
 1. `schemas.py` — ~80 Pydantic response models, attached via
    `responses={<status>: {"model": X}}` (documentation only, no runtime

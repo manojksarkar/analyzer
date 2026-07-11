@@ -2,12 +2,12 @@
 
 The app calls a FastAPI backend over `VITE_API_URL`; wire-format differences are handled in the
 boundary mappers ([src/services/mappers/](src/services/mappers/)). For local dev that backend is the
-**mock** in [`../../mock-api`](../../mock-api); the **real** API is built separately by another team
+**mock** in [`../../tools/mock-api`](../../tools/mock-api); the **real** API is built separately by another team
 under repo-root [`../../api`](../../api). The web-app is backend-agnostic — it picks its backend solely
 via `VITE_API_URL`, so switching mock → real is a config change, not a code change (see
 **Real-API swap readiness** below). Server-side detail for the wizard endpoints (`repositories/*`,
 `users/search`, `access_token` on `POST /projects`):
-[mock-api/api/PROJECT_CONTEXT.md](../../mock-api/api/PROJECT_CONTEXT.md) §12.
+[tools/mock-api/api/PROJECT_CONTEXT.md](../../tools/mock-api/api/PROJECT_CONTEXT.md) §12.
 
 **Build-config file uploads (macros / data dictionary):** the wizard uploads each file (multipart) to
 `POST /repositories/uploads` and sends `{file_name, file_id}` in `build_config` — this is unchanged and
@@ -16,14 +16,14 @@ via `VITE_API_URL`, so switching mock → real is a config change, not a code ch
 durable **path** (the data dictionary also gets a `data_dict_id` / `current_data_dict_id`) so a later
 run/update can hand the path to the analyzer. The overview mapper (`mapBuildConfig`) only reads
 `mode`/`file_name`/`defines`, so it tolerates the new shape unchanged. This lives in the mock backend
-(`mock-api/`); the real `api/` team mirrors the same upload + finalize contract. Detail:
-[mock-api/api/PROJECT_CONTEXT.md](../../mock-api/api/PROJECT_CONTEXT.md) §12 "Build-config file persistence".
+(`tools/mock-api/`); the real `api/` team mirrors the same upload + finalize contract. Detail:
+[tools/mock-api/api/PROJECT_CONTEXT.md](../../tools/mock-api/api/PROJECT_CONTEXT.md) §12 "Build-config file persistence".
 
 ## Setup
 
 - Base URL: `VITE_API_URL` ([.env.example](.env.example)) — defaults to `http://localhost:8000/api/v1`.
-- Run the mock backend: `cd ../mock-api && uvicorn api.main:app --reload --port 8000`.
-- Demo login: `alice@aspice.dev` / `secret` (admin). Seed users in [mock-api/api/README.md](../../mock-api/api/README.md).
+- Run the mock backend: `cd ../tools/mock-api && uvicorn api.main:app --reload --port 8000`.
+- Demo login: `alice@aspice.dev` / `secret` (admin). Seed users in [tools/mock-api/api/README.md](../../tools/mock-api/api/README.md).
 
 ## Real-API swap readiness
 

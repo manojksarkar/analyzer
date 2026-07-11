@@ -172,7 +172,7 @@ afterAll(() => {
   if (!serverUp) {
     process.stdout.write(
       `\n[api-test] API not reachable at ${BASE} — suite skipped.\n` +
-        `  Start the mock:          cd mock-api && python run.py\n` +
+        `  Start the mock:          cd tools/mock-api && python run.py\n` +
         `  Or target the real API:  API_TEST_URL=<url> npm run test:api\n\n`,
     )
     return

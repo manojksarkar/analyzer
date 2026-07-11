@@ -11,11 +11,11 @@ It creates a Project + Version + Commit + Documents (+ section bodies) in the JS
 
 ```bash
 # Point at a per-commit snapshot dir (auto-discovers output/, model/, and config.json):
-python scripts/import-output-project/import_output_project.py \
+python tools/import-output-project/import_output_project.py \
     workspaces/pb701836d/08d2f565cd03e72e --name "Imported Demo"
 
 # Or point at a bare output/ folder and supply the rest explicitly:
-python scripts/import-output-project/import_output_project.py output \
+python tools/import-output-project/import_output_project.py output \
     --name "My Project" --model model --config config/config.json
 ```
 

@@ -8,7 +8,7 @@ Project + Version + Commit + Documents (+ section bodies) in the JSON-backed DB
 layout the render route expects. No pipeline re-run — the long-ago output becomes browsable
 in the web UI.
 
-    python scripts/import-output-project/import_output_project.py <source> [options]
+    python tools/import-output-project/import_output_project.py <source> [options]
 
 Then start the API json-backed and open the web app:
 

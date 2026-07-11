@@ -115,7 +115,8 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
   api/                        FastAPI backend — kept at repo root, imports `api.*` (see §19/§21)
   web-app/                    React web client (Vite + TS + Tailwind; see §24)
   SampleCppProject/           Fixture C++ tree — Layer1 + Layer2/Platform (see §15)
-  tests/  docs/  scripts/  mock-api/
+  tools/                      Dev-only tooling — mock-api (mock backend), create-sample-project, import-output-project
+  tests/  docs/
   model/                      Phase 1+2 output (JSON) — at repo root (cwd)
     clang_include_paths.json  Written by run.py before Phase 1; {LayerName:[abs_dirs]}
   output/                     Phase 3+4 output (JSON, .mmd, .png, .docx)
@@ -126,9 +127,10 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
 
 Note: config/ few_shot_examples/ assets/ and both generators live UNDER backend/;
 load_config(<dir>) reads <dir>/config, so engine callers pass the backend dir
-(paths().src_dir). model/ output/ workspaces/ logs/ stay at the repo root (deferred
-`.data/` grouping + `tools/` are NOT done yet). api/ is intentionally not renamed
-(absolute `from api.` imports + a hyphen would break).
+(paths().src_dir). Dev tooling (mock-api + dev scripts) now lives under `tools/`.
+model/ output/ workspaces/ logs/ stay at the repo root (the gitignored `.data/`
+grouping is still deferred). api/ is intentionally not renamed (absolute `from api.`
+imports + a hyphen would break).
 ```
 
 ---
