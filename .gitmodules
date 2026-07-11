@@ -1,0 +1,3 @@
+[submodule "SampleCppProject"]
+	path = SampleCppProject
+	url = https://github.com/manojksarkar/SampleCppProject
