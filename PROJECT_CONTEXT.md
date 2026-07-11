@@ -101,8 +101,6 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
     views/                    View registry + four built-in views
     flowchart/                Real C++ → Mermaid CFG flowchart engine
     behaviour_diagram/        Sequence/behaviour diagram generator package (SequenceDiagramGenerator)
-    fake_flowchart_generator.py       Placeholder flowchart emitter (_resolve_script fallback)
-    behaviour_diagram_generator.py    Standalone fake behaviour-diagram CLI (orphaned)
     config/
       config.json             Main config (JSONC: // and /* */ comments allowed)
       config.local.json       Local overrides (gitignored)
@@ -1574,9 +1572,9 @@ component diagrams in [src/docx_exporter.py](src/docx_exporter.py)). Flowcharts
 
 ### View 3: `behaviourDiagram` — [backend/views/behaviour_diagram.py](backend/views/behaviour_diagram.py)
 
-Generates one `.mmd` per (current function, external caller) pair via the
-placeholder `FakeBehaviourGenerator` in
-[fake_behaviour_diagram_generator.py](fake_behaviour_diagram_generator.py).
+Generates one `.mmd` per (current function, external caller) pair via
+`SequenceDiagramGenerator` in the
+[backend/behaviour_diagram/](backend/behaviour_diagram/) package.
 
 - Filtered to `allowed_modules` (only generates diagrams for functions inside
   the selected group, but uses the full model so external callers outside the

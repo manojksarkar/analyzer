@@ -100,13 +100,13 @@ class TestResolveScript:
     def setup_method(self):
         self._resolve_script = _load_flowcharts_resolve_script()
 
-    def test_empty_script_path_returns_default(self):
-        result = self._resolve_script("/project", "")
-        assert result == os.path.join("/project", "backend", "fake_flowchart_generator.py")
+    def test_empty_script_path_raises(self):
+        with pytest.raises(ValueError):
+            self._resolve_script("/project", "")
 
-    def test_none_script_path_returns_default(self):
-        result = self._resolve_script("/project", None)
-        assert result == os.path.join("/project", "backend", "fake_flowchart_generator.py")
+    def test_none_script_path_raises(self):
+        with pytest.raises(ValueError):
+            self._resolve_script("/project", None)
 
     def test_absolute_path_returned_as_is(self):
         abs_path = "/absolute/path/to/generator.py"
