@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Entry: python backend/run.py [options] <project_path>
+"""Entry: python engine/run.py [options] <project_path>
 
 Options:
   --clean              Delete output/ and model/ before running
   --selected-group <name>
                        Export only the named modulesGroup
-  --config <path>      Use this config file instead of backend/config/config.json
+  --config <path>      Use this config file instead of engine/config/config.json
                        (a per-project/per-version config carrying the project's
                        `layers`). Exported as ANALYZER_CONFIG so every phase
                        subprocess honors it. config.local.json is NOT merged on
@@ -19,7 +19,7 @@ Options:
                        resume views+export (--from-phase 3).
   --data-dictionary <path>
                        CSV file to merge into model/dataDictionary.json (overrides
-                       auto-parsed entries). See backend/config/data_dictionary.csv for format.
+                       auto-parsed entries). See engine/config/data_dictionary.csv for format.
   --project-name <name>
                        Override the project name used in metadata and
                        interfaceIds (default: basename of project_path).
@@ -37,13 +37,13 @@ Options:
                        WARNING: large runs can emit tens of MB of prompt text.
 
 Examples:
-  python backend/run.py test_cpp_project
-  python backend/run.py --clean test_cpp_project
-  python backend/run.py --no-llm-summarize test_cpp_project
-  python backend/run.py --from-phase 3 test_cpp_project
-  python backend/run.py --selected-group MyGroup test_cpp_project
-  python backend/run.py --filter-mode single_per_function test_cpp_project
-  python backend/run.py --data-dictionary backend/config/data_dictionary.csv SampleCppProject
+  python engine/run.py test_cpp_project
+  python engine/run.py --clean test_cpp_project
+  python engine/run.py --no-llm-summarize test_cpp_project
+  python engine/run.py --from-phase 3 test_cpp_project
+  python engine/run.py --selected-group MyGroup test_cpp_project
+  python engine/run.py --filter-mode single_per_function test_cpp_project
+  python engine/run.py --data-dictionary engine/config/data_dictionary.csv SampleCppProject
 """
 import os
 import shutil
@@ -62,13 +62,13 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
-# run.py now lives in backend/; the repo root (holding backend/, model/, output/,
+# run.py now lives in engine/; the repo root (holding engine/, model/, output/,
 # workspaces/) is one level up. SCRIPT_DIR is kept pointing at the repo root so every
-# repo-root-relative join below (chdir, model dir, SCRIPT_DIR/backend on sys.path,
+# repo-root-relative join below (chdir, model dir, SCRIPT_DIR/engine on sys.path,
 # PhaseRunner root, --config / --data-dictionary / project-path resolution) is unchanged.
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(SCRIPT_DIR)
-sys.path.insert(0, os.path.join(SCRIPT_DIR, "backend"))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "engine"))
 
 # Bring up logging early so every subsequent log() call (and every subprocess
 # this script spawns inheriting LOG_LEVEL) gets the same handlers.
@@ -253,13 +253,13 @@ if component_per_docx and selected_components_arg:
     sys.exit(1)
 
 if len(raw_args) < 1:
-    print("Usage: python backend/run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
+    print("Usage: python engine/run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
     print("                     [--selected-layer <name>] [--no-llm-summarize] [--from-phase N]")
     print("                     [--selected-component <name> [--selected-component <name> ...]]")
     print("                     [--quiet|--verbose] [--trace-prompts] [--filter-mode MODE]")
     print("                     <project_path>")
-    print("Example: python backend/run.py test_cpp_project")
-    print("Example: python backend/run.py --selected-component Gpio SampleCppProject")
+    print("Example: python engine/run.py test_cpp_project")
+    print("Example: python engine/run.py --selected-component Gpio SampleCppProject")
     sys.exit(1)
 
 if clean_all:
@@ -291,7 +291,7 @@ if use_model:
 # ---------------------------------------------------------------------------
 if os.environ.get("ANALYZER_CONFIG"):
     log(f"Using injected config (--config): {os.environ['ANALYZER_CONFIG']}", component="run")
-cfg = load_config(os.path.join(SCRIPT_DIR, "backend"))
+cfg = load_config(os.path.join(SCRIPT_DIR, "engine"))
 if not (cfg.get("llm") or {}).get("summarize", True):
     no_llm_summarize = True
 

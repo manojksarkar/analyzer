@@ -56,8 +56,8 @@ from typing import Dict, List, Optional, Set, Tuple
 
 # Allow running from project root or from tests/unit/
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(_PROJECT_ROOT / "backend" / "flowchart"))
-sys.path.insert(0, str(_PROJECT_ROOT / "backend"))
+sys.path.insert(0, str(_PROJECT_ROOT / "engine" / "flowchart"))
+sys.path.insert(0, str(_PROJECT_ROOT / "engine"))
 
 from models import FunctionEntry, NodeType
 from ast_engine.cfg_builder import CFGBuilder

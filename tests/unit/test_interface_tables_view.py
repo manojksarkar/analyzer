@@ -7,14 +7,14 @@ import pytest
 pytestmark = pytest.mark.unit
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "backend"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 # Import the module directly, bypassing registry side-effects
 import importlib.util, types
 
 # Stub the views package so relative imports in the module under test resolve
 _views_pkg = types.ModuleType("views")
-_views_pkg.__path__ = [os.path.join(PROJECT_ROOT, "backend", "views")]
+_views_pkg.__path__ = [os.path.join(PROJECT_ROOT, "engine", "views")]
 _views_pkg.__package__ = "views"
 _registry_mod = types.ModuleType("views.registry")
 _registry_mod.register = lambda name: (lambda fn: fn)
@@ -24,7 +24,7 @@ sys.modules.setdefault("views.registry", _registry_mod)
 
 _spec = importlib.util.spec_from_file_location(
     "views.interface_tables",
-    os.path.join(PROJECT_ROOT, "backend", "views", "interface_tables.py"),
+    os.path.join(PROJECT_ROOT, "engine", "views", "interface_tables.py"),
     submodule_search_locations=[],
 )
 _mod = importlib.util.module_from_spec(_spec)

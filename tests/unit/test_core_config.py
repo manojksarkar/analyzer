@@ -7,7 +7,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "backend"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 from core.config import load_config, load_llm_config, LlmConfigError, format_llm_config_banner
 
@@ -74,7 +74,7 @@ class TestLoadConfigAnalyzerConfigOverride:
 
     def test_no_override_reads_default_config(self, monkeypatch):
         monkeypatch.delenv("ANALYZER_CONFIG", raising=False)
-        cfg = load_config(os.path.join(PROJECT_ROOT, "backend"))
+        cfg = load_config(os.path.join(PROJECT_ROOT, "engine"))
         assert "__injected__" not in cfg  # the marker only exists in an override
 
     def test_override_is_honored(self, monkeypatch, tmp_path):

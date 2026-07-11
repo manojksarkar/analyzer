@@ -8,7 +8,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "backend"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 
 # ---------------------------------------------------------------------------
@@ -19,7 +19,7 @@ def _load_registry():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "_test_registry",
-        os.path.join(PROJECT_ROOT, "backend", "views", "registry.py"),
+        os.path.join(PROJECT_ROOT, "engine", "views", "registry.py"),
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -77,7 +77,7 @@ def _load_flowcharts_resolve_script():
 
     # Stub views package
     views_pkg = types.ModuleType("_fc_views")
-    views_pkg.__path__ = [os.path.join(PROJECT_ROOT, "backend", "views")]
+    views_pkg.__path__ = [os.path.join(PROJECT_ROOT, "engine", "views")]
     views_pkg.__package__ = "_fc_views"
     registry_mod = types.ModuleType("_fc_views.registry")
     registry_mod.register = lambda name: (lambda fn: fn)
@@ -87,7 +87,7 @@ def _load_flowcharts_resolve_script():
 
     spec = importlib.util.spec_from_file_location(
         "_fc_views.flowcharts",
-        os.path.join(PROJECT_ROOT, "backend", "views", "flowcharts.py"),
+        os.path.join(PROJECT_ROOT, "engine", "views", "flowcharts.py"),
         submodule_search_locations=[],
     )
     mod = importlib.util.module_from_spec(spec)

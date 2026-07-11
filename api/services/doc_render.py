@@ -172,7 +172,7 @@ def _load_model_json(model_dir: Path, name: str) -> dict:
 def _load_config() -> dict:
     cfg: dict = {}
     for fname in ("config.json", "config.local.json"):
-        p = _REPO_ROOT / "backend" / "config" / fname
+        p = _REPO_ROOT / "engine" / "config" / fname
         if not p.exists():
             continue
         try:

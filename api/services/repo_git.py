@@ -2,7 +2,7 @@
 Real git-backed repository introspection for the new-project wizard.
 
 Thin adapter over [`api/services/git_cli.py`](./git_cli.py) — the API's own,
-self-contained `git` CLI wrapper (the API does **not** import from `backend/`):
+self-contained `git` CLI wrapper (the API does **not** import from `engine/`):
 
   * :func:`test_connection` runs ``git ls-remote`` — a real remote round-trip
     that authenticates and lists branches **without cloning**.

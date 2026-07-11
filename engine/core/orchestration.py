@@ -1,6 +1,6 @@
 """Phase orchestration: one place that runs the analyzer's phases as subprocesses.
 
-Each phase is a small Python script in `backend/`. Historically run.py contained
+Each phase is a small Python script in `engine/`. Historically run.py contained
 three branches that each hand-built `subprocess.run([sys.executable, ...])`
 argv lists, captured elapsed time, logged the result, and propagated exit
 codes. This module collapses that into:

@@ -8,7 +8,7 @@ Backs the new-project wizard's repository step:
 
 Branch lists and the source tree are produced by api.services.repo_git, which
 shells out to real git (`git ls-remote` for the connection test, a cached
-depth-1 clone + `git ls-tree` for browsing) via backend/git_service.py.
+depth-1 clone + `git ls-tree` for browsing) via engine/git_service.py.
 Uploaded files are kept in a process-local store (resets on restart).
 """
 from __future__ import annotations
