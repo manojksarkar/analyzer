@@ -52,7 +52,7 @@ Seed users (all use password `secret`):
 | Variable | Default | Description |
 |---|---|---|
 | `API_DB_BACKEND` | `memory` | `memory` = in-memory seed data; `json` = persistent JSON files |
-| `ANALYZER_REPO_ROOT` | auto-detected | Absolute path to the repo root (contains `run.py`) |
+| `ANALYZER_REPO_ROOT` | auto-detected | Absolute path to the repo root (contains `backend/run.py`) |
 | `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Where per-project checkouts and output dirs live |
 | `JOB_MAX_CONCURRENCY` | `2` | Max pipeline subprocesses running simultaneously |
 | `SUBPROCESS_TIMEOUT` | `0` | Seconds before a pipeline subprocess is killed (0 = no limit) |

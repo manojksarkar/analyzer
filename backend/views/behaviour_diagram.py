@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Ensure src is in path for behaviour_diagram imports
+# Ensure backend is in path for behaviour_diagram imports
 _src = Path(__file__).parent.parent
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))

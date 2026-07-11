@@ -1,5 +1,7 @@
 # C++ Codebase Analyzer — Complete Project Context
 
+> Updated: 2026-07-11 (**folder restructuring — engine consolidated under `backend/`** (branch `refactor/folder-restructuring`, roadmap task 1). Landed in tested stages (unit: only the 3 pre-existing `unit_diagrams` mermaid-label failures; `tests/api` 50/50 with `--skip-pipeline`): **(1) `src/` → `backend/`** — flat imports (`from core…`) unaffected; fixed ~30 literal `"src"` path refs (core/paths.py, run.py, test `sys.path` inserts, api/{pipeline_runner,git_cli}, flowcharts default engine path). **(2) `config/` → `backend/config/`** — `load_config(<dir>)` keeps its `<dir>/config` contract, so engine callers now pass the **backend dir** (`paths().src_dir` / `SCRIPT_DIR`); direct config-path sites (paths.py, flowchart_engine walk, puppeteer in views+utils, api base-config in pipeline_runner+doc_render, e2e tests) point at `backend/config`; abbreviations caller passes backend. **(3) `few_shot_examples/` + `assets/` → `backend/`** — few-shot resolves against the analyzed project's `base_path` (no code change); `assets/` was repo-root-relative in docx_exporter → `backend/assets`. **(4) generators → `backend/`** — `fake_flowchart_generator.py` (the `_resolve_script` fallback, now `project_root/backend/fake_flowchart_generator.py`) + the orphaned `behaviour_diagram_generator.py`. **(5) `run.py` → `backend/run.py`** — `SCRIPT_DIR` now resolves **two** dirs up so it still equals the repo root → every repo-root-relative join in run.py is unchanged (chdir, model dir, `SCRIPT_DIR/backend` on sys.path, PhaseRunner root); api root-detection (`json_db._find_root`) keys off `backend/run.py`; `pipeline_runner` + incremental `generate/engine` + the e2e/test_cli harness invoke `backend/run.py`. **`api/` kept as-is** — absolute `from api.` imports (and a hyphen in `api-server`) would break. **Deferred (NOT done):** `tools/` (mock-api + dev scripts) and gitignored `.data/` (model/output/workspaces/logs) — those still sit at the repo root. Every `src/…` **engine** path in this doc was rewritten to `backend/…`; the remaining `src/…` mentions are the **web-app frontend** (`web-app/src/…`), correctly unchanged.)
+
 > Updated: 2026-07-10 (**pre-V1 correctness batch logged** — 10 review findings (2026-07-10) tracked as `docs/planning/ROADMAP.md` task **3.1–3.10** and detailed in §16 "Known risks / technical debt" → "Pre-V1 correctness batch". In brief: exclude emulator files from the parse scope (3.1, root); parse header files `.h/.hpp` (3.2, root); some functions over-visible (3.3, **re-test after 3.1**); interface direction shows "Out" instead of "In" (3.4, **re-test after 3.2**); include same-component source/destination pairs (3.5); make interface-table direction consistent with the static diagram — **decision: follow the function-call relationship, stop factoring global-variable access into direction** (3.6); functions missing from DOCX by access specifier (3.7, known); if/else depiction (3.8) and overlapping edges (3.9) in the flowchart; under-specified dynamic-behaviour issue (3.10, needs repro). **Planning only — no code changed.**)
 
 > Updated: 2026-07-02 (brand: **ArtiFex product mark (logo icon)**. New shared component `web-app/src/components/ui/BrandMark.tsx` (exported from `components/ui/index.ts`) renders the mark: **‹ A ✦ ›** — code angle-brackets framing a half-drawn "A" whose right leg dissolves into an AI spark (coding + documentation/AI + the ArtiFex "A"). **No background/container** — every stroke/fill is `currentColor`, so callers set color per surface: the 5 branding spots pass `text-secondary` on light bars (Sidebar, ProjectsPage top bar, NewProjectPage header, SignInPage mobile logo) and `text-white` on the dark sign-in panel (SignInPage desktop). Replaced the earlier `bg-secondary rounded-lg` box + Material `account_tree` glyph at all 5 spots (functional `account_tree` tree/empty-state icons unchanged). `web-app/public/favicon.svg` is the same mark, **color-adaptive** via an inline `<style>` `@media (prefers-color-scheme: dark)` (brand-blue #0058be on light tabs → #fff on dark tabs) so it stays visible on any browser tab; `index.html` `<link rel=icon href="/favicon.svg?v=5">` carries a cache-buster (bumped through the design iterations) because browsers cache favicons hard. Iterated with the user through many concepts (craftsman/anvil → code/doc/testing → AI spark → hexagon frame → hexagon *outer box* badge → no-background mark) landing on the transparent ‹A✦› with "more gap" bracket spacing. `npm run build` clean; vitest 19/19.)
@@ -7,26 +9,26 @@
 > Updated: 2026-07-01 (merge-claude: **new tool — import a viewable project from existing analyzer output, no pipeline re-run**. `scripts/import-output-project/import_output_project.py` (+ README) takes a per-commit snapshot dir (auto-discovers `output/`, `model/`, and the project `config.json` one level up) or a bare `output/` folder (with `--model`/`--config` overrides), copies the artifacts into the render-addressed layout `workspaces/<newpid>/<commit[:16]>/{output,model}`, and inserts Project + Version + Commit + Documents (+ sections) + admin member into the **JSON-backed** DB (`api/db/data/*.json` — so run the API with `API_DB_BACKEND=json` to see it). It **reuses the pipeline's own record builders** `pipeline_runner._make_documents` / `_make_sections` (and `_load_base_config`/`_strip_jsonc` to parse the JSONC `layers`) so imported projects are identical to real runs — one SWE.3 "Detailed Design" doc per output dir holding a real `software_detailed_design_<group>.docx`. Architecture: the analyzer `config.json` `layers` nested-dict (`{LAYER:{path,groups:{GROUP:{COMPONENT:files}}}}`) is converted to the API `architecture_layers` list shape so doc `layer`/`group` labels are correct (e.g. `LAYER1`/`App`,`Math`); groups the config misses fall back to a synthesized `--layer` (default `LAYER1`). **No git commit/tag required** — `--commit` defaults to a synthesized 40-hex sha (used only as the workspace dir key + `version.commit_sha` + Commit record) and `--tag` defaults to `v1.0.0`; pass them to match a real revision. Owner defaults to seed user `admin@aspice.dev` (u1). **Companion render change** (`api/routes/documents.py::render_document`), **scoped to imported/repo-less projects so real flows are byte-for-byte unchanged**: when `project.repo_url` is empty **and** a per-commit `model/` exists at `out_root.parent/"model"`, it passes `model_root = <that dir>` to `doc_render.build_render` so the imported project renders its **own** copied functions/units/dataDictionary/metadata; otherwise `model_root=None` → the pre-existing default (shared repo `model/`). Real projects always have a `repo_url` (wizard requires it for cloning), so they hit the unchanged path. `build_render` already accepted `model_root` (compare engine uses it). **Deliberately NOT unconditional**: an earlier unconditional version was reverted per user because it would change what *every* real project's every version renders — today all versions share the last run's repo `model/` (a latent bug: e.g. `pd1672c12` versions currently render `SampleCppProject2-mnz`'s model), and fixing that for real projects was out of scope for this tool. Verified e2e: `p51dd294c` (imported, `repo_url=''`) → PER-COMMIT model, cover reads copied `projectName='SampleCppProject2-mnz'`; `pd1672c12`/`pb701836d` (real, `repo_url` set) → shared repo `model/`, identical to before. Note: deleting the shared repo `model/` is NOT a fix — `_load_model_json` returns `{}` for missing files, blanking model-derived content (function descriptions, data dictionary, cover name) for ALL projects; only per-version tables/flowcharts/diagrams (read from `group_dir`) would survive. Import verified e2e: `workspaces/pb701836d/08d2f565cd03e72e` → `p51dd294c` "Imported Demo", 2 docs (App/Math, SWE.3, LAYER1), rich render with interface tables + flowcharts + diagrams.)
 > Updated: 2026-07-01 (merge-claude: **UI — job phase stepper: removed the "Phase N" ordinal, promoted the step name**. On the Project Detail running-job panel the stepper previously made "Phase 1/2/3/4" the headline (11px semibold) and the descriptive step name ("Parse C++", "Derive Model", "Run Views", "Export DOCX") a small muted 10px sub-line. Inverted per user: the ordinal line is **dropped** and the descriptive name is now the headline (13px `text-body`, semibold, status-colored). Live UI: `web-app/src/pages/ProjectDetailPage.tsx::PhaseStep` (~L203) collapsed the two `<p>`s into one — `<p className={cn('mt-1.5 font-semibold text-body', pending?'text-outline':'text-on-surface')}>{label}</p>` (`label` is already `p.name` from L1002; `n` prop still used by the pending step-circle at L200). Mockup kept in sync: `docs/ui/mockups/project-detail.html` (4 phase blocks, ~L438-467) — deleted each `<p>Phase N</p>` and moved its `id="phN-name"`/classes onto the descriptive `<p>` at `font-size:13px` (ph1/ph2 `text-on-surface`; ph3/ph4 keep the pending `color:#74777d`); the mockup JS at L2334/2342/2350 only recolors `ph{n}-name` by status, so the id had to stay on the promoted element (no JS change). Unchanged: backend `_PHASES`/`AnalysisPhase`/`group_planner` phase-name strings (UI already receives "Parse C++"/… as `p.name`), and the "Pause after Phase 1" checkbox copy. `npm run build` clean; vitest 19/19 pass.)
 > Updated: 2026-07-01 (merge-claude: **brand — enlarged the ArtiFex lockup in the web app**. The wordmark previously rendered at `text-title` (15px) beside a 32px (`w-8 h-8`, icon 18) logo tile in all 5 brand spots. Bumped both proportionally: wordmark `text-title`→`text-xl` (20px) and tile `w-8 h-8`→`w-9 h-9` (icon 18→20) in `components/shell/Sidebar.tsx`, `pages/ProjectsPage/index.tsx`, `pages/NewProjectPage.tsx` (wizard `PageHeader`). On `pages/SignInPage.tsx` the brand was being visually dominated by the 28px marketing headline, so both its lockups (desktop panel + mobile logo) go **larger** — `text-3xl` (30px) wordmark + `w-11 h-11` tile (icon 24) — so the brand out-weighs the headline. Tagline (`text-caption`) and `constants/branding.ts` strings unchanged; scope web-app only (mockups/API/favicons untouched). `npm run build` clean; vitest 19/19.)
-> Updated: 2026-07-01 (merge-claude: **fix — commit sha shown as the project name in the DOCX cover + 1.1 Purpose/Scope**. The visible name comes from `model/metadata.json → projectName`, written by Phase 1 `src/parser.py:64` as `PROJECT_NAME = _project_name_override or os.path.basename(MODULE_BASE_PATH)`; the override is set **only** by the `--project-name` CLI flag. Normal runs do NOT go through `pipeline_runner._build_cmd`/`run.py` directly — `pipeline_runner._run` dispatches to the incremental engine (`src/incremental/generate.py` for `mode=full`, else `src/incremental/engine.py`), and **neither engine passed `--project-name`** when building its `run.py` command, so `MODULE_BASE_PATH` = the per-commit checkout dir `workspaces/<pid>/<commit[:16]>/` → its basename (the 16-char sha) became `projectName` → the sha surfaced in the cover title and the `{project_name}` placeholder of `docx.introduction.purpose`/`scopeIntro`. Fix (**source-level, both surfaces at once**): both engines already load the project record via `incremental.project_db.get_project(project_id)` (dict carries `name`), so now they forward it as `--project-name`. `generate.py::generate_full` derives `project_name = (project.get("name") or "").strip()` and appends `--project-name` to `base_cmd` (used for both the `--to-phase 1` parser run and `--from-phase 2`). `engine.py::_run_analyzer` gained an optional `project_name` kwarg (appends the flag when set); `generate_incremental` derives `project_name = (project.get("name") or "").strip() or None` and threads it through `_try_narrowed_parse` (which forwards to its `--to-phase 1 --only-files` call) and all `_run_analyzer` Phase-1 calls (also passed to the `--from-phase 2` call, harmless — `--project-name` only affects the parser). No change to `run.py`/`group_planner.py`/`parser.py` (they already accept + forward the flag). Fixing `metadata.json` at the source corrects **both** the web inspector (`api/services/doc_render.py:582` reads `meta_data.get("projectName")`) and the exported DOCX (`src/docx_exporter.py:1286-1289`). Note: `pipeline_runner._build_cmd:616` still passes `job.version_tag` as `--project-name`, but that path is only the Phase-4 re-export (`from_phase=4`, `use_model=True`) which doesn't re-run the parser, so it doesn't touch `metadata.json` — left as-is. **Pre-existing versions are not migrated** — docs generated before this fix keep the sha `projectName` in their snapshot until re-run. `tests/api` 50 pass (`--skip-pipeline`; no test asserts projectName). **Requires API restart to pick up the changed `src/incremental/*` modules.**)
+> Updated: 2026-07-01 (merge-claude: **fix — commit sha shown as the project name in the DOCX cover + 1.1 Purpose/Scope**. The visible name comes from `model/metadata.json → projectName`, written by Phase 1 `backend/parser.py:64` as `PROJECT_NAME = _project_name_override or os.path.basename(MODULE_BASE_PATH)`; the override is set **only** by the `--project-name` CLI flag. Normal runs do NOT go through `pipeline_runner._build_cmd`/`run.py` directly — `pipeline_runner._run` dispatches to the incremental engine (`backend/incremental/generate.py` for `mode=full`, else `backend/incremental/engine.py`), and **neither engine passed `--project-name`** when building its `run.py` command, so `MODULE_BASE_PATH` = the per-commit checkout dir `workspaces/<pid>/<commit[:16]>/` → its basename (the 16-char sha) became `projectName` → the sha surfaced in the cover title and the `{project_name}` placeholder of `docx.introduction.purpose`/`scopeIntro`. Fix (**source-level, both surfaces at once**): both engines already load the project record via `incremental.project_db.get_project(project_id)` (dict carries `name`), so now they forward it as `--project-name`. `generate.py::generate_full` derives `project_name = (project.get("name") or "").strip()` and appends `--project-name` to `base_cmd` (used for both the `--to-phase 1` parser run and `--from-phase 2`). `engine.py::_run_analyzer` gained an optional `project_name` kwarg (appends the flag when set); `generate_incremental` derives `project_name = (project.get("name") or "").strip() or None` and threads it through `_try_narrowed_parse` (which forwards to its `--to-phase 1 --only-files` call) and all `_run_analyzer` Phase-1 calls (also passed to the `--from-phase 2` call, harmless — `--project-name` only affects the parser). No change to `run.py`/`group_planner.py`/`parser.py` (they already accept + forward the flag). Fixing `metadata.json` at the source corrects **both** the web inspector (`api/services/doc_render.py:582` reads `meta_data.get("projectName")`) and the exported DOCX (`backend/docx_exporter.py:1286-1289`). Note: `pipeline_runner._build_cmd:616` still passes `job.version_tag` as `--project-name`, but that path is only the Phase-4 re-export (`from_phase=4`, `use_model=True`) which doesn't re-run the parser, so it doesn't touch `metadata.json` — left as-is. **Pre-existing versions are not migrated** — docs generated before this fix keep the sha `projectName` in their snapshot until re-run. `tests/api` 50 pass (`--skip-pipeline`; no test asserts projectName). **Requires API restart to pick up the changed `backend/incremental/*` modules.**)
 > Updated: 2026-07-01 (merge-claude: **product name locked = ArtiFex** (tagline "Crafted from Code"). The web UI previously shipped a literal `[PRODUCT NAME]` placeholder + an "Automotive Tier 1" category label wherever the brand appears. New single source of truth `web-app/src/constants/branding.ts` (`APP_NAME='ArtiFex'`, `APP_TAGLINE='Crafted from Code'`) is imported into the 4 branding spots — `components/shell/Sidebar.tsx`, `pages/SignInPage.tsx` (desktop logo has name+tagline, mobile logo name-only), `pages/ProjectsPage/index.tsx`, `pages/NewProjectPage.tsx` (the `uppercase` mono class still renders the tagline in caps). `web-app/index.html` `<title>` hardcoded to "ArtiFex" (static HTML can't import the TS constant). **Scope was web app only** — deliberately NOT touched: `api/main.py` FastAPI title ("ASPICE Documentation Platform"), the 8 `docs/ui/mockups/*.html`, README/CLAUDE.md/AGENTS.md, `package.json` names, favicon SVGs — all still carry the placeholder/working title and are a possible follow-up. `npm run build` clean; vitest 19/19 (no test asserts the brand string).)
 > Updated: 2026-07-01 (merge-claude: **fix — wide Document Inspector sections (Interface Table) were clipped/invisible**. `web-app/src/pages/DocumentInspectorPage.tsx` renders a rigid 3-column layout: left `DocTreePanel` (`w-60`, `flex-shrink-0`), center canvas (`flex-1` capped at **`max-w-3xl`** = 768px with nested `px-6`+`px-12` padding → only ~620px usable), right Review-status/outline panel (`w-48`, `flex-shrink-0`, always shown). The 8-column Interface Table and the flowchart/behaviour tables exceeded ~620px, and **all three table wrappers used `overflow-hidden`** (`TableView`, `FlowchartTableView`, `BehaviorTableView`) so overflowing columns were *clipped with no scrollbar* — worse on ≤1024px screens where the `flex-1` center is starved below 768px because both side panels refuse to shrink. Fix (frontend-only, "Combined" approach chosen by user): (1) the three table wrappers `overflow-hidden`→**`overflow-x-auto`** so nothing can be clipped (4px scrollbar already styled in index.css); (2) canvas cap `max-w-3xl`→**`max-w-5xl`** (768→1024px) and heavy inner `px-12`→`px-8` on the cover header, `MetaBanner`, and sections container so the extra width reaches the tables; (3) the right `<aside>` is now **collapsible** — new persisted `inspectorPanelCollapsed` + `toggleInspectorPanel()` in the zustand UI store (`web-app/src/store/ui.ts`, added to the `partialize` list beside `sidebarCollapsed`); collapsed state renders a thin `w-9` rail with a `chevron_left` expand button + a `fact_check`/`toc` context icon, expanded state adds a `chevron_right` collapse button to the panel header (the `ReviewTracker`/TOC bodies are unchanged). No backend/type/mapper/route change. `npm run build` clean; vitest 19/19 pass.)
-> Updated: 2026-07-01 (merge-claude: **fix — sliced (tall) flowcharts rendered as mermaid text, no image, in the web UI**. When a flowchart PNG is too tall, `src/views/flowcharts.py::_maybe_slice_tall_png` writes `{stem}_part_K_of_N.png` siblings and **deletes** the original `{stem}.png` (`os.unlink`, line 681) — state is "single OR N parts, never both." The DOCX exporter is slice-aware (`_resolve_flowchart_pngs`/`_append_flowchart_entries`, `src/docx_exporter.py:827/858`), but the web render path was not: `api/services/doc_render.py` hardcoded the single-file name `flowcharts/{stem}.png` (+ `unit_name_fc` alt) in **both** flowchart lookups (main function + private callee). Post-slice the original is gone → `png_rel` None → each entry shipped `image_url:null` → frontend correctly fell back to the mermaid `<pre>` (DocumentInspectorPage.tsx:349-352) → "only mermaid." Fix (**one file, `doc_render.py`**, no imports from `src/` — API stays self-contained): added `_resolve_flowchart_pngs(group_dir, base_stems)` (mirrors the docx resolver: regex `^{stem}_part_(\d+)_of_(\d+)\.png$`, prefers slices sorted by K, else the single png; returns rel paths `flowcharts/<name>` + "Part K of N" label) and `_flowchart_entries(group_dir, base_stems, mermaid, label, asset_base)` (mirrors `_append_flowchart_entries`: one entry per part — first carries full label + `" - Part K of N"` + mermaid, continuations carry `"(continued - Part K of N)"` + `mermaid=None`; no PNG → one `image_url:None` entry so mermaid fallback still runs). Both call sites now `flowchart_entries.extend(_flowchart_entries(...))`. **No frontend/model/route/schema change** — the frontend already renders one image per `flowcharts[]` entry (DocumentInspectorPage.tsx:346-352), the mapper passes fields 1:1 (mappers/document.ts:157-160), and the compare view (`compare_render.py`, reads `fc.image_url`) is fixed transitively since it consumes the same entries. The asset route already serves any file under the group dir by rel path, so part PNGs need no new wiring. `tests/api` 50 pass (`--skip-pipeline`). **Requires API server restart to pick up the changed module.**)
+> Updated: 2026-07-01 (merge-claude: **fix — sliced (tall) flowcharts rendered as mermaid text, no image, in the web UI**. When a flowchart PNG is too tall, `backend/views/flowcharts.py::_maybe_slice_tall_png` writes `{stem}_part_K_of_N.png` siblings and **deletes** the original `{stem}.png` (`os.unlink`, line 681) — state is "single OR N parts, never both." The DOCX exporter is slice-aware (`_resolve_flowchart_pngs`/`_append_flowchart_entries`, `backend/docx_exporter.py:827/858`), but the web render path was not: `api/services/doc_render.py` hardcoded the single-file name `flowcharts/{stem}.png` (+ `unit_name_fc` alt) in **both** flowchart lookups (main function + private callee). Post-slice the original is gone → `png_rel` None → each entry shipped `image_url:null` → frontend correctly fell back to the mermaid `<pre>` (DocumentInspectorPage.tsx:349-352) → "only mermaid." Fix (**one file, `doc_render.py`**, no imports from `src/` — API stays self-contained): added `_resolve_flowchart_pngs(group_dir, base_stems)` (mirrors the docx resolver: regex `^{stem}_part_(\d+)_of_(\d+)\.png$`, prefers slices sorted by K, else the single png; returns rel paths `flowcharts/<name>` + "Part K of N" label) and `_flowchart_entries(group_dir, base_stems, mermaid, label, asset_base)` (mirrors `_append_flowchart_entries`: one entry per part — first carries full label + `" - Part K of N"` + mermaid, continuations carry `"(continued - Part K of N)"` + `mermaid=None`; no PNG → one `image_url:None` entry so mermaid fallback still runs). Both call sites now `flowchart_entries.extend(_flowchart_entries(...))`. **No frontend/model/route/schema change** — the frontend already renders one image per `flowcharts[]` entry (DocumentInspectorPage.tsx:346-352), the mapper passes fields 1:1 (mappers/document.ts:157-160), and the compare view (`compare_render.py`, reads `fc.image_url`) is fixed transitively since it consumes the same entries. The asset route already serves any file under the group dir by rel path, so part PNGs need no new wiring. `tests/api` 50 pass (`--skip-pipeline`). **Requires API server restart to pick up the changed module.**)
 > Updated: 2026-07-01 (merge-claude: **fix — generated design docs reclassified SWE.2 → SWE.3**. The pipeline emits `output/<component>/software_detailed_design_<component>.docx` — a **Software Detailed Design**, which in ASPICE is **SWE.3** (Software Detailed Design and Unit Construction), not **SWE.2** (Software Architectural Design). `api/services/pipeline_runner.py::_make_documents` tagged every generated record `add("SWE.2", disp, "Component Design", …)`, filing real detailed-design docs under the wrong process. Fix (**one line + comment**, `pipeline_runner.py:1096`): `add("SWE.3", disp, "Detailed Design", …)`. This reverses the classification the earlier `fix/ui-offline-and-commit-issues` punch-list had set to SWE.2 — but needs **no frontend change**: `mapDocument` already passes `process` through untouched (the old SWE.2→SWE.3 remap was dropped), and the UI is fully SWE.3-ready (Badge color, `docTree.DOC_PROCESSES`, `DocumentsPage.PROCESSES`, `ProjectDetailPage.PROCESSES` "Detailed Design" row). Docs now surface under the existing SWE.3 tab/dashboard row; SWE.2 becomes an empty ASPICE process (renders "Not generated yet" like SYS.1/SYS.2/SWE.1). `_make_sections` already seeds the 4-section body for SWE.3 via its `else` branch, and `doc_render` cover + inspector read `doc.process` directly, so SWE.3 propagates everywhere for free. **Pre-existing `documents.json` rows are not migrated** — they keep SWE.2 "Component Design" until re-run. Seed/demo data in `api/db/in_memory.py` (doc3 sample) left as-is. `tests/api` 50 pass (`--skip-pipeline`; no test asserts the process). **Requires API restart to pick up the changed module.**)
 > Updated: 2026-07-01 (merge-claude: **fix — compare view showed no changes** (per-document detail rendered every section `unchanged` with identical current/baseline content). Same version-id-vs-commit confusion in the compare layer: `compare_engine._snap` locates a snapshot at `workspaces/<pid>/<commit[:16]>` (slices `[:16]`), but the two **per-document** functions passed the API `Version.id` (`ver…`) instead of the commit — `compute_document_diff` (`compare_engine.py:215-216`) and `compute_document_sections_diff` (`compare_engine.py:363-364`). `ver6154f950`[:16] → nonexistent dir → `_snap` None → the rich renderer (`compare_render.compute_document_render_diff`) got null snaps → returned None → the route fell to the **DB-stored sections fallback** where seeded sections are all `unchanged`. (`compute_compare`, the summary/left panel, already used `.commit_sha` — that's why only the detail was broken; frontend was fine — `mapCompareDocumentDiff` already renders both `mode:"rich"` blocks and flat.) Fix #1 (`compare_engine.py`, 4 lines): pass `cur_ver.commit_sha`/`base_ver.commit_sha` to `_snap`. Fix #2 (`compare_render.py`, diagram images): `_version_render` built the asset URL from `version.id` and `resolve_snapshot_asset` resolved under the removed `workspaces/<pid>/versions/<id>/…` tree; both now key by `commit[:16]` (`workspaces/<pid>/<commit[:16]>/output/<group>`), the only caller being the `compare_asset` route. Verified end-to-end on project `pd1672c12` (2 on-disk versions): `compute_document_diff` now returns `mode:"rich"` (App summary changed 3/unchanged 13; Math changed 5/removed 4) with word/table/diagram marks, and a diagram `image_url` resolves to a real PNG on disk. `tests/api` 50 pass. No frontend/model/route-signature change.)
-> Updated: 2026-07-01 (merge-claude: **fix — explicit incremental baseline ignored** (`baseVersionId 'ver…' not found; using auto baseline`). Two version-id namespaces were never translated: the API stores `job.reference_version_id` as its own DB `Version.id` (`ver6154f950`), but the incremental engine's version list is `versionId == commit[:16]` (`incremental/project_db.py:66-80 list_versions`, used by `engine.py:318` + `preview_baseline`). `api/services/pipeline_runner.py` passed the `ver…` id **raw** into the engine's namespace, so `select_baseline` (`src/incremental/baseline.py:60-63`) never matched → warning + silent auto fallback (correct but slower; chosen base dropped). Same mismatch hit **three** spots, all fixed by a new `pipeline_runner._resolve_ref_commit(db, version_id)` (uses `db.versions.get(...).commit_sha`): (1) the engine `--base-version-id` arg → now `commit[:16]` when resolvable, else raw id (a deleted base still warns); (2) `_load_and_register_functions` → `_baseline_fn_keys` was getting the `ver…` id where `_commit_dir` expects a commit (slices `[:16]`, line 869) → nonexistent dir → `None` → the "is this function new?" diff was **silently disabled**; now passes the full commit; (3) `preview_baseline` → translates the UI's `base_version_id` query the same way (unknown values pass through so a real versionId still works). No engine/model/namespace change — `reference_version_id` stays a `ver…` id everywhere it's stored/echoed; only values handed to the engine layer are translated. Verified: `ver6154f950` → `08d2f565cd03e72e82c…` → engine versionId `08d2f565cd03e72e` (a real prior version); `tests/api` 50 pass (`--skip-pipeline`).)
-> Updated: 2026-07-01 (merge-claude: **fix — flowcharts never generated**. The flowchart engine subprocess crashed at `clang.cindex.Index.create()` (`src/flowchart/ast_engine/parser.py:92`, reached from `TranslationUnitParser.__init__`) with `LibclangError: Could not find module 'libclang.dll'` on **every** run, so the DOCX exported with **zero flowcharts** while `src/views/flowcharts.py` swallowed the child traceback (`shell=True`, no stderr capture) and logged only `generator exited with code 1` — the failure was invisible (log jumps straight from `Processing N function(s)` to the error, never reaching the `--no-llm`/`── File:` lines). Root cause: `src/flowchart/` **never called `Config.set_library_file()`** — unlike Phase 1's `src/parser.py:79-90` — and relied on default OS discovery of libclang, which fails when LLVM's `bin` isn't on PATH (the installed `clang` pip binding, 21.1.7, bundles no DLL). Reproduced under the subprocess's Python 3.14: default `Index.create()` → LibclangError; `set_library_file(r'C:\Program Files\LLVM\bin\libclang.dll')` → OK. Fix (**one file, per user "minimum changes"**): added `src/flowchart/flowchart_engine.py::_configure_libclang()`, called as the first line of `run()` (before `TranslationUnitParser` is built), which resolves the DLL from `LIBCLANG_PATH` env (set by the API's `_execute_subprocess` when `cfg.libclang_path` is configured) **or** the analyzer config's `clang.llvmLibPath` (loaded via the same cwd-walk `_load_analyzer_llm_config` uses — config is proven reachable, it's the source of the LLM banner), then `os.add_dll_directory` + `Config.set_library_file`. Verified end-to-end: engine now logs `libclang configured: …`, processes functions, writes `output/<c>/flowcharts/*.json`, exits 0 (Math model → 3/3 OK). Deferred (not done, per minimum-changes): stderr capture in `views/flowcharts.py`, `run.py` setting `LIBCLANG_PATH`. See corrected §4c — its prior claim that run.py sets `LIBCLANG_PATH` and the engine reads it at import was never true.)
+> Updated: 2026-07-01 (merge-claude: **fix — explicit incremental baseline ignored** (`baseVersionId 'ver…' not found; using auto baseline`). Two version-id namespaces were never translated: the API stores `job.reference_version_id` as its own DB `Version.id` (`ver6154f950`), but the incremental engine's version list is `versionId == commit[:16]` (`incremental/project_db.py:66-80 list_versions`, used by `engine.py:318` + `preview_baseline`). `api/services/pipeline_runner.py` passed the `ver…` id **raw** into the engine's namespace, so `select_baseline` (`backend/incremental/baseline.py:60-63`) never matched → warning + silent auto fallback (correct but slower; chosen base dropped). Same mismatch hit **three** spots, all fixed by a new `pipeline_runner._resolve_ref_commit(db, version_id)` (uses `db.versions.get(...).commit_sha`): (1) the engine `--base-version-id` arg → now `commit[:16]` when resolvable, else raw id (a deleted base still warns); (2) `_load_and_register_functions` → `_baseline_fn_keys` was getting the `ver…` id where `_commit_dir` expects a commit (slices `[:16]`, line 869) → nonexistent dir → `None` → the "is this function new?" diff was **silently disabled**; now passes the full commit; (3) `preview_baseline` → translates the UI's `base_version_id` query the same way (unknown values pass through so a real versionId still works). No engine/model/namespace change — `reference_version_id` stays a `ver…` id everywhere it's stored/echoed; only values handed to the engine layer are translated. Verified: `ver6154f950` → `08d2f565cd03e72e82c…` → engine versionId `08d2f565cd03e72e` (a real prior version); `tests/api` 50 pass (`--skip-pipeline`).)
+> Updated: 2026-07-01 (merge-claude: **fix — flowcharts never generated**. The flowchart engine subprocess crashed at `clang.cindex.Index.create()` (`backend/flowchart/ast_engine/parser.py:92`, reached from `TranslationUnitParser.__init__`) with `LibclangError: Could not find module 'libclang.dll'` on **every** run, so the DOCX exported with **zero flowcharts** while `backend/views/flowcharts.py` swallowed the child traceback (`shell=True`, no stderr capture) and logged only `generator exited with code 1` — the failure was invisible (log jumps straight from `Processing N function(s)` to the error, never reaching the `--no-llm`/`── File:` lines). Root cause: `backend/flowchart/` **never called `Config.set_library_file()`** — unlike Phase 1's `backend/parser.py:79-90` — and relied on default OS discovery of libclang, which fails when LLVM's `bin` isn't on PATH (the installed `clang` pip binding, 21.1.7, bundles no DLL). Reproduced under the subprocess's Python 3.14: default `Index.create()` → LibclangError; `set_library_file(r'C:\Program Files\LLVM\bin\libclang.dll')` → OK. Fix (**one file, per user "minimum changes"**): added `backend/flowchart/flowchart_engine.py::_configure_libclang()`, called as the first line of `run()` (before `TranslationUnitParser` is built), which resolves the DLL from `LIBCLANG_PATH` env (set by the API's `_execute_subprocess` when `cfg.libclang_path` is configured) **or** the analyzer config's `clang.llvmLibPath` (loaded via the same cwd-walk `_load_analyzer_llm_config` uses — config is proven reachable, it's the source of the LLM banner), then `os.add_dll_directory` + `Config.set_library_file`. Verified end-to-end: engine now logs `libclang configured: …`, processes functions, writes `output/<c>/flowcharts/*.json`, exits 0 (Math model → 3/3 OK). Deferred (not done, per minimum-changes): stderr capture in `views/flowcharts.py`, `run.py` setting `LIBCLANG_PATH`. See corrected §4c — its prior claim that run.py sets `LIBCLANG_PATH` and the engine reads it at import was never true.)
 > Updated: 2026-07-01 (fix/ui-offline-and-commit-issues: Documents page now has a **SWE.2 filter** and shows real docs under SWE.2. Since the `_make_documents` rewrite the backend emits documents with `process="SWE.2"` ("Component Design"), but three frontend spots were stale from the original web-app-api commit and hid/mislabelled them: (1) `web-app/src/services/mappers/document.ts::mapDocument` **rewrote `SWE.2`→`SWE.3`**, so every real doc surfaced under the SWE.3 tab and a SWE.2 tab would have been dead; (2) `web-app/src/pages/DocumentsPage.tsx` `PROCESSES` tab list omitted `SWE.2`; (3) `web-app/src/lib/docTree.ts` `DOC_PROCESSES` (shared by the list grouping + the DocTree rail order) omitted `SWE.2`. Fix: dropped the remap (`process: d.process`) and inserted `'SWE.2'` between `SWE.1` and `SWE.3` in both process lists (ASPICE order). Consequence: the Component-Design docs now display/group/filter as **SWE.2** everywhere the mapper feeds — including `ProjectDetailPage`'s AdminDocsCard, where they shift from the "Detailed Design (SWE.3)" row to the "SW Architecture (SWE.2)" row (both rows already existed in that page's 5-process `PROCESSES`). No backend/API/type change. `ProcessBadge` (`Badge.tsx`) already had SWE.2 styling and `DocTreePanel`'s collapsible-group logic is doc-count-based (not hardcoded to SWE.3, only its comment names SWE.3), so both worked unchanged. No test asserted the remap. `web-app` build clean (304 modules) + vitest 19/19 pass.)
 > Updated: 2026-07-01 (fix/ui-offline-and-commit-issues: docs now re-scope on commit/version switch (#5). The Subbar commit/version **picker** drives which version's documents are shown, shared across project pages via the zustand UI store (`web-app/src/store/ui.ts`) and resolved by `web-app/src/hooks/useProjectViewState.ts` (yields `viewVersion`, whose `id` scopes `useDocuments(pid, { versionId })`). Selection was keyed by **commit sha only** (`selectedRef: Record<string, string>`); when >1 version shares a commit (a re-run on the same sha, or a tagged commit), `versions.find(v => v.sha === selectedSha)` returned the **first** match, so picking a different version resolved to the same `viewVersionId` and the docs never re-scoped. Fix: selection is now **id-based** — a new exported discriminated `Selection = { type:'version'; id } | { type:'commit'; sha }`; `selectedRef: Record<string, Selection>`, `setSelectedRef(projectId, sel)` (still in-memory only; `partialize` persists just `sidebarCollapsed`). `useProjectViewState` resolves a version **by id** and a commit **by sha** (`selVersion`/`selCommit`); the tagged-commit→version lookup stays by `tag`; `viewVersion = selVersion ?? selCommitVersion ?? (selection ? undefined : versions[0])`; the page-state gate keys on `selection`. The hook's **return contract is unchanged** (`pageState`/`isLoading`/`viewVersion`/`viewVersionId`/`selectedCommit`/`selectedSha`) so its five consumers (`ProjectDetailPage`, `DocumentsPage`, `DocumentInspectorPage`, `ComparePage`, `ProjectLayout`) need **no** edits — Task 5 ended up not touching `ProjectDetailPage.tsx` after all (the #3 note anticipated a collision that didn't materialise). `selectedSha` is derived for back-compat (`selVersion?.sha ?? selCommit?.sha`, undefined when nothing is explicitly selected — `ComparePage` still falls back to `versions[0].sha`). `Subbar.tsx` `CommitPicker` reads the `Selection`, resolves `activeVersion`/`activeCommit` (defaulting to the layout-supplied latest, version preferred over commit so they're mutually exclusive), writes `{type:'version',id}` for version rows (sha-fallback `{type:'commit',sha}` for id-less mock versions) and `{type:'commit',sha}` for commit rows, and highlights rows by id/sha. `ProjectLayout.tsx` now also fetches `useCommits` and passes `selectedCommit={latestCommit}` so the picker renders even on **never-run** projects (no versions). Known limitation (out of scope, not one of the 4 named files): `ComparePage` still resolves its "current" version from `selectedSha` by sha, so it keeps the same-sha ambiguity for its own picker. `npm run build` clean (304 modules); vitest unit suite 19/19 pass.)
-> Updated: 2026-06-30 (fix/ui-offline-and-commit-issues: dashboard document numbers scoped to the latest version (#4). `api/routes/projects.py::_project_view` built `doc_counts` via `db.documents.get_stats(project.id)` with **no version** — summing every document the project ever produced across all runs. That count feeds the home project list (`web-app/src/pages/ProjectsPage/components/ProjectRow.tsx`) via `mapProject`: `inReviewCount` and `progress` (`approved/total`), so a multi-run project showed the all-versions sum instead of the version on display. Fix (one line): pass the already-computed `latest` version → `get_stats(project.id, version_id=latest.id if latest else None)`; `latest is None` (no versions) keeps the prior behaviour and `get_stats` still returns the full zero-filled key set (`total/approved/in_review/never/unchanged`), so the response shape is unchanged. **No store change** — both `get_stats` backends (`api/db/in_memory.py`, `api/db/json_db.py`) already filter on `version_id`. Seed proof (p1): 6 docs in `ver3` (latest) + 1 in `ver2` → was `total` 7 / `approved` 3, now `total` 6 / `approved` 2. Plus a UI fix per user direction: the project dashboard's per-process Documents card (`web-app/src/pages/ProjectDetailPage.tsx::AdminDocsCard`) **hid** a process row entirely when the selected version had no docs for it (`if (!docs.length) return null`); removed so **all 5 ASPICE process rows always render**, and a `total === 0` process now renders a **distinct, muted, non-clickable "Not generated yet" row** (dimmed process cell + a single italic label spanning the Assignment/Team columns, `colSpan={2}`, no hover/arrow) so empty processes are visually set apart from rows that have real documents. Regression test `tests/api/test_smoke.py::test_project_doc_counts_scoped_to_latest_version` asserts `doc_counts.total` == the latest version's document count **and** is strictly below the all-versions sum. `tests/api` 50 passing; `web-app` build clean. `DocumentsPage` grouping left as-is (different surface, out of scope). **Follow-on (root cause): document records now map 1:1 to real generated DOCX files.** Debugging a real run (`api/db/data/documents.json`, json_db backend) showed 1 DOCX but 3 doc records per version because `api/services/pipeline_runner.py::_make_documents` **always** created 2 hardcoded placeholders (`SYS.2` "System Requirements", `SWE.1` "Software Requirements") with no file behind them, plus architecture-walk SWE.2/SWE.3 fallbacks. Rewrote `_make_documents` to create **one `SWE.2` "Component Design" doc per group output dir that holds a real `software_detailed_design_<group>.docx`** — verified via `doc_render.find_docx` (the same path download/render serve), restricted to groups declared in `architecture_layers` (stale-dir guard via `name.replace(" ","-")`). Dropped the SYS.2/SWE.1 placeholders and all no-DOCX fallbacks; returns `[]` when the commit has no `output/`. This also corrects `version.docs_count = len(docs)` and the job's "N document(s) generated" message (`_complete`). `_make_sections`' `SYS.2/SWE.1` intro-only branch is now unreachable for new runs (left in place, harmless). Pairs with the AdminDocsCard change above: the dashboard still shows all 5 process rows, now honestly at "0 docs" for processes with no real output. **Pre-existing data is not migrated** — `documents.json` rows from earlier runs keep their placeholders until re-run. **Follow-on: generation is now per-component, not per-group (per user direction).** Runs previously produced one DOCX per group (analyzer default). **Key gotcha: normal runs do NOT go through `pipeline_runner._build_cmd`/`run.py` directly** — `pipeline_runner._run` dispatches to the **incremental engine** (`src/incremental/generate.py` for `mode=full`, else `src/incremental/engine.py`), which is what actually invokes `run.py`. So the per-component flag had to be injected there, not only in `_build_cmd` (which covers only the Phase-4 re-export path). Added `per_component_docx_args(scope)` to `src/incremental/generate.py` (returns `["--component-per-docx"]` for project/layer/group scope, `[]` for a specific-component run since `run.py` rejects the combo) and appended it in **both** run.py command builders: `generate.py::generate_full` (`base_cmd`) and `engine.py::_run_analyzer` (`cmd`); `_build_cmd` also keeps it for re-export. The analyzer then emits `output/<component>/software_detailed_design_<component>.docx` per component (`src/core/group_planner.py` per-component dispatch over `grp.keys()`). `_make_documents` maps each component declared under a group in `architecture_layers` to its normalized output-dir name → `(display name, parent layer)`, creating one `SWE.2` "Component Design" record per component dir that holds a real DOCX (`name`=component, `group`=dir so download/render resolve, `layer`=parent layer). **Decision: groups with no components mapped generate nothing** (no per-group fallback). Example: project `p1e6c2c97` config has `L1 → group g1 → component ss` (3 files), so a run produces `output/ss/` → one `ss` record (not a `g1` group doc). `_make_sections` already keys off `doc.group` so per-component sections read `output/<component>/interface_tables.json`. `tests/unit/test_incremental_engine.py` + `tests/api` 60 passing. **Requires the API server to be restarted to pick up the changed modules** (pipeline_runner/incremental are loaded into the running process).)
+> Updated: 2026-06-30 (fix/ui-offline-and-commit-issues: dashboard document numbers scoped to the latest version (#4). `api/routes/projects.py::_project_view` built `doc_counts` via `db.documents.get_stats(project.id)` with **no version** — summing every document the project ever produced across all runs. That count feeds the home project list (`web-app/src/pages/ProjectsPage/components/ProjectRow.tsx`) via `mapProject`: `inReviewCount` and `progress` (`approved/total`), so a multi-run project showed the all-versions sum instead of the version on display. Fix (one line): pass the already-computed `latest` version → `get_stats(project.id, version_id=latest.id if latest else None)`; `latest is None` (no versions) keeps the prior behaviour and `get_stats` still returns the full zero-filled key set (`total/approved/in_review/never/unchanged`), so the response shape is unchanged. **No store change** — both `get_stats` backends (`api/db/in_memory.py`, `api/db/json_db.py`) already filter on `version_id`. Seed proof (p1): 6 docs in `ver3` (latest) + 1 in `ver2` → was `total` 7 / `approved` 3, now `total` 6 / `approved` 2. Plus a UI fix per user direction: the project dashboard's per-process Documents card (`web-app/src/pages/ProjectDetailPage.tsx::AdminDocsCard`) **hid** a process row entirely when the selected version had no docs for it (`if (!docs.length) return null`); removed so **all 5 ASPICE process rows always render**, and a `total === 0` process now renders a **distinct, muted, non-clickable "Not generated yet" row** (dimmed process cell + a single italic label spanning the Assignment/Team columns, `colSpan={2}`, no hover/arrow) so empty processes are visually set apart from rows that have real documents. Regression test `tests/api/test_smoke.py::test_project_doc_counts_scoped_to_latest_version` asserts `doc_counts.total` == the latest version's document count **and** is strictly below the all-versions sum. `tests/api` 50 passing; `web-app` build clean. `DocumentsPage` grouping left as-is (different surface, out of scope). **Follow-on (root cause): document records now map 1:1 to real generated DOCX files.** Debugging a real run (`api/db/data/documents.json`, json_db backend) showed 1 DOCX but 3 doc records per version because `api/services/pipeline_runner.py::_make_documents` **always** created 2 hardcoded placeholders (`SYS.2` "System Requirements", `SWE.1` "Software Requirements") with no file behind them, plus architecture-walk SWE.2/SWE.3 fallbacks. Rewrote `_make_documents` to create **one `SWE.2` "Component Design" doc per group output dir that holds a real `software_detailed_design_<group>.docx`** — verified via `doc_render.find_docx` (the same path download/render serve), restricted to groups declared in `architecture_layers` (stale-dir guard via `name.replace(" ","-")`). Dropped the SYS.2/SWE.1 placeholders and all no-DOCX fallbacks; returns `[]` when the commit has no `output/`. This also corrects `version.docs_count = len(docs)` and the job's "N document(s) generated" message (`_complete`). `_make_sections`' `SYS.2/SWE.1` intro-only branch is now unreachable for new runs (left in place, harmless). Pairs with the AdminDocsCard change above: the dashboard still shows all 5 process rows, now honestly at "0 docs" for processes with no real output. **Pre-existing data is not migrated** — `documents.json` rows from earlier runs keep their placeholders until re-run. **Follow-on: generation is now per-component, not per-group (per user direction).** Runs previously produced one DOCX per group (analyzer default). **Key gotcha: normal runs do NOT go through `pipeline_runner._build_cmd`/`run.py` directly** — `pipeline_runner._run` dispatches to the **incremental engine** (`backend/incremental/generate.py` for `mode=full`, else `backend/incremental/engine.py`), which is what actually invokes `run.py`. So the per-component flag had to be injected there, not only in `_build_cmd` (which covers only the Phase-4 re-export path). Added `per_component_docx_args(scope)` to `backend/incremental/generate.py` (returns `["--component-per-docx"]` for project/layer/group scope, `[]` for a specific-component run since `run.py` rejects the combo) and appended it in **both** run.py command builders: `generate.py::generate_full` (`base_cmd`) and `engine.py::_run_analyzer` (`cmd`); `_build_cmd` also keeps it for re-export. The analyzer then emits `output/<component>/software_detailed_design_<component>.docx` per component (`backend/core/group_planner.py` per-component dispatch over `grp.keys()`). `_make_documents` maps each component declared under a group in `architecture_layers` to its normalized output-dir name → `(display name, parent layer)`, creating one `SWE.2` "Component Design" record per component dir that holds a real DOCX (`name`=component, `group`=dir so download/render resolve, `layer`=parent layer). **Decision: groups with no components mapped generate nothing** (no per-group fallback). Example: project `p1e6c2c97` config has `L1 → group g1 → component ss` (3 files), so a run produces `output/ss/` → one `ss` record (not a `g1` group doc). `_make_sections` already keys off `doc.group` so per-component sections read `output/<component>/interface_tables.json`. `tests/unit/test_incremental_engine.py` + `tests/api` 60 passing. **Requires the API server to be restarted to pick up the changed modules** (pipeline_runner/incremental are loaded into the running process).)
 > Updated: 2026-06-30 (fix/ui-offline-and-commit-issues: loaders / no empty-state flash (#3). The dashboard flashed the "No documents generated yet" empty-state on every load (and the Compare page flashed "Select a document", the Subbar badge flickered to "Not Run", the pickers showed "No versions/commits/projects") because `web-app/src/hooks/useProjectViewState.ts` defaulted `pageState` to `'never'` while its queries (`useProject`/`useVersions`/`useCommits`/`useCurrentJob`) were still loading and exposed no loading flag. Fix: the hook now also returns `isLoading` (OR of those four queries' React-Query `isLoading` — first-load only, not `isFetching`, so background refetches don't re-skeleton). Two reusable skeletons added to `web-app/src/components/ui/Skeleton.tsx` (`DashboardSkeleton` mirroring the KPI-strip + two-column body; `CompareSectionSkeleton` for the diff pane) + exported from `ui/index.ts`. Consumers gate empty states on loading: `ProjectDetailPage.tsx` shows `DashboardSkeleton` while `isLoading && !project` (and again while documents refetch on a version switch — `documentsLoading && !documents`) instead of the `pageState==='never'` branch; `ComparePage.tsx` shows skeleton rows in the DocTree, a `CompareSectionSkeleton` in the right pane while the diff list loads (so the "Select a document" empty-state only shows once loaded-and-empty) and again per-section while a selected doc's detail loads, with a tree-mode-aware `loading` prop (`diff`→compareDocs, `all`→allDocs); `ProjectLayout.tsx` renders a `Skeleton` chip for the Subbar status badge until the view state resolves; `Subbar.tsx` shows skeleton rows in the Versions/Commits picker panels and the ProjectSwitcher panel while their queries load. Pages already correct and untouched: Projects/Versions/Team/Documents/DocumentInspector. Frontend-only; `npm run build` clean (304 modules) + `npm test` green (19). Note: Task 5 (id-based selection) will also touch `ProjectDetailPage.tsx` + `useProjectViewState.ts` — edits kept surgical to avoid collision.)
-> Updated: 2026-06-30 (fix/ui-offline-and-commit-issues: JSONC base config (#7). `api/services/pipeline_runner.py::_write_project_config` parsed the base `config/config.json` with plain `json.load`; that file is documented JSONC (`//`, `/* */`, trailing commas), so a single comment raised `JSONDecodeError`, the `except` swallowed it, and `cfg` fell back to `{}` — silently **wiping** the base (layers/clang/views/llm/docx) so the per-project `--config` carried only `build_config` overrides. Fix: a new **self-contained, string-aware** JSONC stripper local to `pipeline_runner.py` — `_strip_json_comments` + `_strip_trailing_commas` (char-by-char state machines that skip `"..."` literals) combined as `_strip_jsonc`, with `_load_base_config(base_path)` doing strip→`json.loads` and keeping the prior `{}`-on-failure fallback. The two strippers are **deliberately duplicated** from `src/core/config.py` (not imported): per user direction the API stays self-contained — **no imports from `src/`**. The in-package `api/services/doc_render.py::_strip_jsonc` was **not** reused because it is regex-based (`re.sub(r"//[^\n]*", ...)`) and not string-aware, so it would corrupt `"baseUrl": "http://localhost:11434"` → `"http:` → invalid JSON (same latent bug lives in doc_render; a follow-up could converge both on one correct API stripper). Verified: real `config/config.json` parses with `baseUrl`/Windows `llvmLibPath` intact; a commented config that breaks `json.load` now yields the full key set; `tests/api` 49 passing. Downstream merge logic (`_convert_layers`, build_config overrides, `no_llm`, the `json.dump` write) unchanged.)
+> Updated: 2026-06-30 (fix/ui-offline-and-commit-issues: JSONC base config (#7). `api/services/pipeline_runner.py::_write_project_config` parsed the base `backend/config/config.json` with plain `json.load`; that file is documented JSONC (`//`, `/* */`, trailing commas), so a single comment raised `JSONDecodeError`, the `except` swallowed it, and `cfg` fell back to `{}` — silently **wiping** the base (layers/clang/views/llm/docx) so the per-project `--config` carried only `build_config` overrides. Fix: a new **self-contained, string-aware** JSONC stripper local to `pipeline_runner.py` — `_strip_json_comments` + `_strip_trailing_commas` (char-by-char state machines that skip `"..."` literals) combined as `_strip_jsonc`, with `_load_base_config(base_path)` doing strip→`json.loads` and keeping the prior `{}`-on-failure fallback. The two strippers are **deliberately duplicated** from `backend/core/config.py` (not imported): per user direction the API stays self-contained — **no imports from `src/`**. The in-package `api/services/doc_render.py::_strip_jsonc` was **not** reused because it is regex-based (`re.sub(r"//[^\n]*", ...)`) and not string-aware, so it would corrupt `"baseUrl": "http://localhost:11434"` → `"http:` → invalid JSON (same latent bug lives in doc_render; a follow-up could converge both on one correct API stripper). Verified: real `backend/config/config.json` parses with `baseUrl`/Windows `llvmLibPath` intact; a commented config that breaks `json.load` now yields the full key set; `tests/api` 49 passing. Downstream merge logic (`_convert_layers`, build_config overrides, `no_llm`, the `json.dump` write) unchanged.)
 > Updated: 2026-06-30 (fix/ui-offline-and-commit-issues: layer-config conversion now preserves the wizard's per-file/per-folder selection (#6). `api/services/pipeline_runner.py::_convert_layers` built the workspace `config.json` `layers` block from the API `architecture_layers`, but `_derive_component_path` collapsed each component's selected `files` to their **common-ancestor directory** and stripped the layer prefix. When a selection spanned sibling dirs (e.g. `Layer1/Flow/*` + `Layer1/Math/*`) the common ancestor was the layer root → stripped to `""` → fell back to the component **name** (`"ComponentName": "ComponentName"`), pointing at nothing real. Fix: replaced `_derive_component_path` with `_component_paths_from_files(files, layer_path)` + a `_norm_rel` helper — it strips the layer prefix from **each** entry (preserving files-as-files and folders-as-folders, order-preserving, deduped; drops whole-layer/empty entries; keeps out-of-layer entries verbatim). `_convert_layers` now writes a **string for a single path and a list for several** (e.g. `"ComponentName": ["Flow/Flowcharts.cpp","Flow/Flowcharts.h","Math/Utils.cpp","Math/Utils.h"]`), matching the documented `str | list` component schema (§4d). **No downstream change needed**: `core.config._resolve_layer_paths` and `parser._build_file_component_map` already accept both forms (per-entry: known C/C++ ext → exact file, else directory walk). **No DB/response/swagger change**: `architecture_layers` is still stored + echoed verbatim; only the generated `workspaces/<pid>/config.json` content changes. New tests `tests/api/test_convert_layers.py` (18 cases: bug case, single/multi file+folder, backslash/`./`/trailing-slash/dup normalization, whole-layer, empty, out-of-layer, multi-segment layer path). API smoke tests still pass.)
 > Updated: 2026-06-30 (fix/ui-offline-and-commit-issues: new commits now sync on every commit-list view (#2) + "last synced" shown in picker. Before, `api/routes/commits_versions.py::list_commits` only backfilled commits from the repo when the stored list was **empty** (`if not commits and page == 1`), so a push to a connected repo never appeared unless the project was re-created. Fix: page-1 `list_commits` runs `_backfill_commits_from_repo` whenever `_should_sync(project)` is true — a per-project throttle (`_COMMIT_SYNC_THROTTLE_SECONDS = 60`) so rapid refreshes don't re-scan the repo. The backfill is **insert-only**: it skips any sha already stored (`db.commits.get(project.id, sha)`), so an existing commit's `doc_status`/`version` link is never overwritten. **Non-blocking by design** so the API isn't slowed by the git round-trip: the route advances + persists the throttle clock synchronously, then the **first-ever** sync for a project (no prior timestamp) runs **inline** (so a fresh wizard project shows commits immediately — the only sync that blocks, once per project), while **every subsequent** sync is dispatched as a FastAPI `BackgroundTasks` task that fetches after the response is sent (new commits appear on the next refetch). `_backfill_commits_from_repo` therefore takes a `project_id` (not the object) and re-reads the project, since it may run post-response; reusing `db` is safe because the in-memory/json backends are process-global singletons, not per-request sessions. The throttle clock is a new `Project.last_commit_sync_at` field (`api/models/domain.py`, defaulted None; round-tripped in `api/db/json_db.py` `_project_*_dict`); a repo-less project never syncs. That same timestamp doubles as the displayed value: `list_commits` returns `last_synced_at` (added to `CommitListResponse` + swagger), the web-app `commitsApi.list` now returns `{ commits, lastSyncedAt }`, `useCommits` keeps yielding `Commit[]` via a `select` (zero ripple on its 6 call sites) and a sibling `useCommitsLastSync` selects the time from the same cached query, rendered as a "Synced 2m ago" footer in the Commits tab of the picker (`web-app/src/components/shell/Subbar.tsx`, via `relativeTime`). `npm run build` clean; API smoke tests pass. **Follow-up root-cause fix (stale clone cache):** even with the above, a newly-pushed commit still never appeared because `api/services/repo_git.py::_clone_or_reuse` reuses the transient `workspaces/_wizard/<hash>/` clone forever and **never fetched** — so `git_cli.list_commits` ran `git log origin/<branch>` against a snapshot frozen at first-clone time. Fix: added `git_cli.fetch(repo_dir, url, user, token, ref, depth)` (fetches `+refs/heads/<ref>:refs/remotes/origin/<ref>` straight from the credential-injected URL so private repos work without persisting the token) and a `refresh` flag on `_clone_or_reuse`; `list_commits` now passes `refresh=True`, so a reused clone is updated to the current remote tip before `git log`. `browse` (wizard tree) still uses the frozen cache (refresh defaults False). Verified live against `github.com/manojksarkar/SampleCppProject`: pushing a commit then calling `repo_git.list_commits` returns it as newest. Note: the running API server must be restarted to pick up this fix.)
 > Updated: 2026-06-30 (fix/ui-offline-and-commit-issues: offline Material Symbols font (#1). The icon font was loaded at runtime from Google Fonts via a `<link>` in `web-app/index.html` — a network dependency that breaks offline/air-gapped use. Fix: added the `material-symbols` npm dep (`^0.45.4`), `@import "material-symbols/outlined.css"` in `web-app/src/index.css` (alongside the existing `@fontsource` Inter/JetBrains-Mono imports), and removed the Google Fonts `<link>`. `npm run build` now emits the font as a local hashed asset (`dist/assets/material-symbols-outlined-*.woff2`, ~3.96 MB full variable font) and `dist/` contains zero `fonts.googleapis.com`/`fonts.gstatic.com` references — fully self-hosted, no runtime network calls. The existing `.material-symbols-outlined` rule in index.css (font-variation-settings, 20px) still overrides the package defaults; family name "Material Symbols Outlined" is unchanged so all icon usage works as before.)
 > Updated: 2026-07-01 (perf/wizard-folder-browse: Run Analysis modal — "Start Analysis" stayed disabled when the commit list loaded *after* the modal opened. Root cause in `web-app/src/pages/ProjectDetailPage.tsx::RunAnalysisModal`: `const [commitSha, setCommitSha] = useState(defaultSha ?? cs[0]?.sha ?? '')` — `useState`'s initializer runs once at mount, so if `commits` were still loading (the commit sync/clone is slow) it initialised to `''` and never updated when the list arrived; the `<select>` visually showed the first commit (browser default for an unmatched `value=""`) but the controlled value stayed empty, so `disabled={!commitSha}` kept Start disabled until the user closed + reopened the modal. Fix: (1) an effect `useEffect(() => { if (!commitSha && commits?.length) setCommitSha(defaultSha ?? commits[0].sha) }, [commitSha, commits, defaultSha])` adopts the default commit as soon as the list loads (no-ops once set, so a manual pick is never overridden); (2) a new `commitsLoading` prop (from `useCommits().isLoading`) makes the empty-commit branch show a spinning "Loading commits…" instead of the misleading "No commits available to analyze yet." Frontend-only, `npm run build` clean. Pairs with punch-list #2 (commits sync on load) — that fixed the backend data, this fixes the modal reacting when the data lands late.)
 
 > Updated: 2026-07-01 (design mockups: added `docs/ui/mockups/projects-portfolio.html` — the main Projects screen as seen by a **new org-level role above project admin** (project admin → developers, plus a higher portfolio-owner tier). It is a copy of `projects.html`'s chrome/table with a **portfolio roll-up inserted above the unchanged projects table**: a 4-card KPI strip (Projects 5 · Overall Approval 21% · In Review 29 · Needs Attention 2) and a 3-panel insight row — Projects-by-status **donut** (in-review 3 / stale 1 / never 1, reusing the `project-detail.html` donut idiom), a **Needs-attention** list (stale + never-run rows → `project-detail.html`) and **Review-workload** bars (VCU 26 / ADAS 2 / EPS 1). The role is shown via an `ORG ADMIN` header pill. **Static design artifact only — no `web-app/` or `api/` change, no real RBAC**; all roll-up numbers are derived from the same 5 sample projects already in `projects.html` so the strip stays consistent with the table (In-Review 29 = 26+2+1; Needs-Attention 2 = the stale + never-run rows). See §24 page inventory (row 9). An earlier plan to build this as a real React page + seeded backend `org_role` was **descoped by the user to a mockup only**.)
-> Updated: 2026-07-01 (perf/wizard-folder-browse: new-project wizard Step 3 folder tree was slow to appear. Root cause: `GET /repositories/browse` (`api/services/repo_git.py::browse` → `_clone_or_reuse` → `api/services/git_cli.py::shallow_clone` → `src/incremental/clone.py::shallow_clone`) did a plain `git clone --depth 1 --branch <ref>`, which trims history but still downloads **every file's full contents at HEAD** — even though browsing only needs path names (`git ls-tree -r --name-only`). The whole recursive tree is also fetched up front (the frontend always requests `path=''`; there is no lazy per-folder load) and a branch switch re-clones from scratch. Fix (two parts): (1) **blobless partial clone for browsing** — `shallow_clone` gained an opt-in `blobless` flag that adds `--filter=blob:none --no-checkout`, so the wizard clone fetches commit + tree objects but no blobs (order-of-magnitude faster on large repos); threaded through `git_cli.shallow_clone` and used **only** by `repo_git.browse` (`blobless=True`), with the flag added to the `_wizard` clone-cache key (`@b{0|1}`) so it can't collide with the full clones `list_commits` makes. Analysis clones (jobs/CLI via the same shared primitive) are unchanged — they parse source and still need blobs. `git ls-tree`/`HEAD` resolve fine against a `--no-checkout` partial clone (only blobs are filtered, and ls-tree reads tree objects, so no lazy blob fetch is triggered). (2) **Step 3 loaders** — `web-app/src/pages/NewProjectPage.tsx` now tracks `repoTreeLoading` around `loadRepoTree` and shows an inline `TreeLoading` spinner in both right-side panels (Add-Component tree + the Select-Folder picker) instead of an empty root while the clone runs. Frontend build clean; `tests/api` green (`--skip-pipeline`). Branched off `main` (not stacked on the fix/ui-offline punch-list branch).)
+> Updated: 2026-07-01 (perf/wizard-folder-browse: new-project wizard Step 3 folder tree was slow to appear. Root cause: `GET /repositories/browse` (`api/services/repo_git.py::browse` → `_clone_or_reuse` → `api/services/git_cli.py::shallow_clone` → `backend/incremental/clone.py::shallow_clone`) did a plain `git clone --depth 1 --branch <ref>`, which trims history but still downloads **every file's full contents at HEAD** — even though browsing only needs path names (`git ls-tree -r --name-only`). The whole recursive tree is also fetched up front (the frontend always requests `path=''`; there is no lazy per-folder load) and a branch switch re-clones from scratch. Fix (two parts): (1) **blobless partial clone for browsing** — `shallow_clone` gained an opt-in `blobless` flag that adds `--filter=blob:none --no-checkout`, so the wizard clone fetches commit + tree objects but no blobs (order-of-magnitude faster on large repos); threaded through `git_cli.shallow_clone` and used **only** by `repo_git.browse` (`blobless=True`), with the flag added to the `_wizard` clone-cache key (`@b{0|1}`) so it can't collide with the full clones `list_commits` makes. Analysis clones (jobs/CLI via the same shared primitive) are unchanged — they parse source and still need blobs. `git ls-tree`/`HEAD` resolve fine against a `--no-checkout` partial clone (only blobs are filtered, and ls-tree reads tree objects, so no lazy blob fetch is triggered). (2) **Step 3 loaders** — `web-app/src/pages/NewProjectPage.tsx` now tracks `repoTreeLoading` around `loadRepoTree` and shows an inline `TreeLoading` spinner in both right-side panels (Add-Component tree + the Select-Folder picker) instead of an empty root while the clone runs. Frontend build clean; `tests/api` green (`--skip-pipeline`). Branched off `main` (not stacked on the fix/ui-offline punch-list branch).)
 
 > Updated: 2026-06-30 (feat/web-app-api: fix new-project wizard branch/tree mismatch — selecting a non-default branch in Step 1 still showed the default branch's folder structure in Add Layer / Add Component / folder picker. Root cause: `web-app/src/pages/NewProjectPage.tsx` fetched the source tree once in `testConnection` using `res.defaultBranch` and never re-fetched when the Branch `<select>` changed. Fix: extracted `loadRepoTree(ref)` (calls `repo.browse(repoUrl, ref, '', token)` → `setRepoTree`); `testConnection` now pre-fetches with the resolved initial branch, and the Branch dropdown's `onChange` calls `loadRepoTree(b)` so the tree always matches the selected branch. Backend `/repositories/browse` already honoured `ref` — no API change. Note: switching branches after layers are already defined does not auto-clear prior file selections.)
 
@@ -35,8 +37,8 @@
 > Updated: 2026-06-27 (feat/web-app-api-port: React app now lives in `web-app/` (was `frontend/app/`) and is wired to the live FastAPI API (§19) via typed mappers/hooks; **test framework added** — vitest Tier-1 unit tests (jsdom + MSW fixtures, `npm test`) + Tier-2 live-API contract validation (`npm run test:api`, ~46 endpoints vs zod schemas); commit `c888ae4`. Reference docs (not duplicated here): `web-app/TESTING.md`, `web-app/CONVENTIONS.md`, `web-app/INTEGRATION_NOTES.md`).
 > Updated: 2026-06-23 (feat/frontend-app: all five inner React pages — `ProjectDetailPage`, `DocumentsPage`, `ComparePage`, `VersionsPage`, `TeamPage` — rebuilt as faithful 1:1 ports of their design HTML (they were previously simplified sketches missing 50–80% of the design DOM: panels, KPI strips, sub-bars, state variants, detail rows); `Document`/`TeamMember` types + `data/mock.ts` extended to the design datasets (15 docs, 9 members incl. pending, `unchanged` doc status); `npm run build` clean (263 modules); commit `98af777`; see §24 React-app implementation table).
 > Updated: 2026-06-22 (feat/frontend-app branch created from `main`; `frontend/app/` (51 files, full React/Vite/TS/Tailwind v4 app) landed here; see §24 for frontend stack detail; branch supersedes `feat/product-ui-redesign`).
-> Previous update: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete; M3.1 (precise flowchart reuse) + M3.2 (function-summary reuse) + M3.3 (full Phase-2 enrichment reuse — behaviour-names/descriptions/globals restricted to the impact set; file/component summary gating; PNG reuse; + documents-capture bug fix) done**. The LLM-on payoff is now real (behaviour-names were the hidden 417s cost — config has descriptions+behaviourNames on). Re-test LLM-on **with a real diff** (baseline at an earlier commit than the target). **M3.4 end-of-run report done** (`src/incremental/report.py`: logged to `logs/run_<date>.log` + saved to `versions/<id>/report.txt`; inputs + change classification + reuse accounting %). Remaining M3: version-scoped reads (`?versionId=`), git_ops/git_service consolidation. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
-> Updated: 2026-06-23 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`src/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `src/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete; M3.1 (precise flowchart reuse) + M3.2 (function-summary reuse) + M3.3 (full Phase-2 enrichment reuse — behaviour-names/descriptions/globals restricted to the impact set; file/component summary gating; PNG reuse; + documents-capture bug fix) done**. The LLM-on payoff is now real (behaviour-names were the hidden 417s cost — config has descriptions+behaviourNames on). Re-test LLM-on **with a real diff** (baseline at an earlier commit than the target). **M3.4 end-of-run report done** (`src/incremental/report.py`: logged to `logs/run_<date>.log` + saved to `versions/<id>/report.txt`; inputs + change classification + reuse accounting %). **M3.5 flowchart impact-scoping fix done** (flowcharts scoped to directly-changed files, not the full impact set — a flowchart is its own CFG, independent of callee bodies). **M3.6 function-level flowchart granularity done** (per-function splice via `flowchartFids` + `_merge_incremental_flowcharts`: regenerate only the changed function, carry the rest, drop deleted; report counts flowcharts per-function). **M4.0 per-TU include-closure capture done** (`src/incremental/parse_includes.py`; `parser.py` writes `model/tu_includes.json` `{tuRelPath → in-repo included rel paths}` every parse — foundation for **M4 narrowed parse**, fully specced in doc 04 §11 / D10, v2.3). **M3.8 branch/commit endpoints + M3.9 version-scoped reads done** (backend `?projectId=&versionId=` on components/functions/flowcharts via a request-scoped `_ReadRoots`; `GET /projects/{id}/branches` + `/commits`). **M3.7 cross-version reuse-index lookup done** (engine now reads `cache/index.json` → reverts / cross-branch-identical entities are copied from a prior version, not LLM-regenerated; verified 0/113 regenerated re-genning C3). **Move/rename orphan cleanup done** (`_prune_orphan_flowcharts` drops carried flowchart JSON/PNG for deleted/renamed files). **git_ops/git_service consolidation done** (git_ops is the single local-git module; git_service keeps only clone/fetch/auth + re-exports; `GitError` unified). **M3.7b flowchart cross-version reuse done** (a reverted directly-changed fn's flowchart is spliced from its index source version, not regenerated → a re-gen/revert is 0 LLM end-to-end). **Virtual-dispatch over-approximation done** (D7 audit: virtual-family caller-edge spreading via `src/incremental/virtual_dispatch.py` + the `clang_getOverriddenCursors` C API; fn-ptr dispatch is a documented limitation). **M3.10 unit-diagram incremental reuse done** (carry-forward + affected-unit-only regen; no-LLM view). **All doc-05 incremental APIs implemented.** **The incremental feature is functionally complete + hardened for the POC** — only the deferred production track remains (M4 narrowed parse, M5 Postgres, M6 storage/dedup). **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Previous update: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`backend/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `backend/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete; M3.1 (precise flowchart reuse) + M3.2 (function-summary reuse) + M3.3 (full Phase-2 enrichment reuse — behaviour-names/descriptions/globals restricted to the impact set; file/component summary gating; PNG reuse; + documents-capture bug fix) done**. The LLM-on payoff is now real (behaviour-names were the hidden 417s cost — config has descriptions+behaviourNames on). Re-test LLM-on **with a real diff** (baseline at an earlier commit than the target). **M3.4 end-of-run report done** (`backend/incremental/report.py`: logged to `logs/run_<date>.log` + saved to `versions/<id>/report.txt`; inputs + change classification + reuse accounting %). Remaining M3: version-scoped reads (`?versionId=`), git_ops/git_service consolidation. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
+> Updated: 2026-06-23 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `backend/git_service.py` added (git ingestion — done); **P1 onboarding stub `backend/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`backend/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `backend/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `backend/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete; M3.1 (precise flowchart reuse) + M3.2 (function-summary reuse) + M3.3 (full Phase-2 enrichment reuse — behaviour-names/descriptions/globals restricted to the impact set; file/component summary gating; PNG reuse; + documents-capture bug fix) done**. The LLM-on payoff is now real (behaviour-names were the hidden 417s cost — config has descriptions+behaviourNames on). Re-test LLM-on **with a real diff** (baseline at an earlier commit than the target). **M3.4 end-of-run report done** (`backend/incremental/report.py`: logged to `logs/run_<date>.log` + saved to `versions/<id>/report.txt`; inputs + change classification + reuse accounting %). **M3.5 flowchart impact-scoping fix done** (flowcharts scoped to directly-changed files, not the full impact set — a flowchart is its own CFG, independent of callee bodies). **M3.6 function-level flowchart granularity done** (per-function splice via `flowchartFids` + `_merge_incremental_flowcharts`: regenerate only the changed function, carry the rest, drop deleted; report counts flowcharts per-function). **M4.0 per-TU include-closure capture done** (`backend/incremental/parse_includes.py`; `parser.py` writes `model/tu_includes.json` `{tuRelPath → in-repo included rel paths}` every parse — foundation for **M4 narrowed parse**, fully specced in doc 04 §11 / D10, v2.3). **M3.8 branch/commit endpoints + M3.9 version-scoped reads done** (backend `?projectId=&versionId=` on components/functions/flowcharts via a request-scoped `_ReadRoots`; `GET /projects/{id}/branches` + `/commits`). **M3.7 cross-version reuse-index lookup done** (engine now reads `cache/index.json` → reverts / cross-branch-identical entities are copied from a prior version, not LLM-regenerated; verified 0/113 regenerated re-genning C3). **Move/rename orphan cleanup done** (`_prune_orphan_flowcharts` drops carried flowchart JSON/PNG for deleted/renamed files). **git_ops/git_service consolidation done** (git_ops is the single local-git module; git_service keeps only clone/fetch/auth + re-exports; `GitError` unified). **M3.7b flowchart cross-version reuse done** (a reverted directly-changed fn's flowchart is spliced from its index source version, not regenerated → a re-gen/revert is 0 LLM end-to-end). **Virtual-dispatch over-approximation done** (D7 audit: virtual-family caller-edge spreading via `backend/incremental/virtual_dispatch.py` + the `clang_getOverriddenCursors` C API; fn-ptr dispatch is a documented limitation). **M3.10 unit-diagram incremental reuse done** (carry-forward + affected-unit-only regen; no-LLM view). **All doc-05 incremental APIs implemented.** **The incremental feature is functionally complete + hardened for the POC** — only the deferred production track remains (M4 narrowed parse, M5 Postgres, M6 storage/dedup). **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
 > Previous update: 2026-06-17 (version4 integration branch: brought the FastAPI backend (§21) + the production-redesign design docs (§22; `docs/production-redesign/`) from `version3` onto the newer `main` code line. The backend was built against the older `modulesGroups`/`module` schema — adapting it to main's `layers`/`component`/`components.json` schema and new CLI flags is an open follow-up; see §21).
 > Previous update: 2026-06-16 (fix/issues branch: three DOCX fixes — (1) TOC field depth extended from `"1-3"` to `"1-4"` so Heading 4 entries (`2.1.1.1`, `2.1.1.2`, …) appear in the table of contents; (2) `scopeItems` in 1.2 Scope section now render with `-` instead of `•` while actual component names keep `•`; (3) copyright sentence added below `assets/copyright.png` on cover page — 8 pt, gray (`#808080`), left-aligned, text defaults to `"© <year> All Rights Reserved."` and is overridable via `config.docx.copyrightText`; `_build_cover_page` gains a `copyright_text` param; see §12).
 > Previous update: 2026-06-16 (feat: styled DOCX cover page — `_build_cover_page(doc, project_name, group_name)` added to `docx_exporter.py`; replaces the old bare `Heading 0` title; first page now renders: project name (54 pt bold, navy, thick double underline) right-aligned, subtitle `"Software Detailed Design Specification — <group>"` (16 pt bold, right-aligned), version + date (12 pt, right-aligned), copyright image left-aligned below text, full-width decorative arc at bottom; project name read from `model/metadata.json → projectName` at export time; group label derived from `selected_group` / `selected_components` / `"All Components"`; static assets stored in `assets/copyright.png` and `assets/bottom_arc.png`; OOXML schema order (`w:spacing` before `w:jc`) enforced to avoid Word silently ignoring alignment; see §12).
@@ -44,7 +46,7 @@
 > Previous update: 2026-06-15 (fix: DOCX component display names — `component_name` (normalized identifier, spaces→`-`) was being used as visible text in section headings and the Component/Unit table; introduced `component_display = component_name.replace("-", " ")` in the `export_docx` loop and passed it to `_add_component_unit_table` and `_build_component_container_mermaid`; all key lookups and filenames keep using `component_name`; see §12).
 > Previous update: 2026-06-15 (`interfaceId` format change — first segment is now the layer name instead of project name: `IF_<LAYER>_<GROUP>_<UNIT>_<NN>` / `PIF_<LAYER>_<GROUP>_<UNIT>_<NN>`; digits preserved via new `_id_seg_layer` helper so "Layer1" → "LAYER1" not "LAYER"; `get_component_layer_name(config, component)` used per entry; falls back to project name for configs without a `layers` key; see §11).
 > Previous update: 2026-06-15 (feat/component-level-doc branch: `--include-path <layer> <dir>` CLI flag (repeatable) — merges extra `-I` include directories into `model/clang_include_paths.json` under the named layer before Phase 1 runs; existing layer-scoping in Phase 1 (`parser.py`) and Phase 3 (`flowcharts.py` `_resolve_layer_dirs`) handles the rest automatically; unknown layer or missing directory exits with code 1; see §5).
-> Previous update: 2026-06-12 (feat/component-level-doc branch: `--macros <path>` CLI flag — reads 2-column CSV (Name, Value; header row required), converts to `-D` Clang flags for Phase 1; rows with `Value="ne"` (case-insensitive) are skipped; empty Value → `-DNAME`; written to `model/clang_macros.json` so Phase 3 flowchart engine picks them up via `flowcharts.py`; sample at `config/macros.csv`; see §5, §10).
+> Previous update: 2026-06-12 (feat/component-level-doc branch: `--macros <path>` CLI flag — reads 2-column CSV (Name, Value; header row required), converts to `-D` Clang flags for Phase 1; rows with `Value="ne"` (case-insensitive) are skipped; empty Value → `-DNAME`; written to `model/clang_macros.json` so Phase 3 flowchart engine picks them up via `flowcharts.py`; sample at `backend/config/macros.csv`; see §5, §10).
 > Previous update: 2026-06-11 (feat/auto-clang-includes branch: component-level DOCX export + space normalization — `--selected-component` (repeatable, bundles into one DOCX), `--component-per-docx` (splits group/layer into one DOCX per component); spaces in group/component names replaced with `-` in all identifiers (keys, filenames, output dirs, Mermaid IDs) while display names keep spaces; `_build_file_component_map` in `parser.py` now normalizes component name values; `safe_filename` spaces→`-`; `get_component_layer_name` uses normalized comparison; see §4f, §5, §7, §9, §10).
 > Previous update: 2026-06-11 (feat/auto-clang-includes branch: `--selected-component` flag added — repeatable, accumulates a list; all components must be in the same layer; output to `output/<C1_C2>/`; new `get_component_layer_name` in `core.config`; `group_planner` has a fifth dispatch shape; `run_views` and `docx_exporter` both handle the new flag; see §5).
 > Previous update: 2026-06-09 (feat/auto-clang-includes branch: Phase 1 parsing scoped to selected layer — `--selected-group` passes itself to `parser.py` which derives the layer via `get_group_layer_name`; new `--selected-layer` flag parses one layer and generates DOCX for all its groups; both flags together are an error; `clang_include_paths.json` also scoped to the selected layer; new `get_group_layer_name` / `get_layer_flat_groups` helpers in `core.config`; see §4e, §5, §7).
@@ -56,7 +58,7 @@
 > intended way to onboard or to refresh context after compaction.
 >
 > Quick orientation:
-> - §4 covers the version2 refactor batches (architecture layer `src/core/`, `src/llm_core/`).
+> - §4 covers the version2 refactor batches (architecture layer `backend/core/`, `backend/llm_core/`).
 > - §4b covers the version3 LLM layer upgrade (token budgeting, two-pass descriptions, few-shot, cache, review, CFG simplify, strict config + startup banner).
 > - §4c covers the feat/test-framework changes (test overhaul, LIBCLANG_PATH, llm.summarize).
 > - §4d covers the feat/from-main changes (component rename, layers config, same-layer filtering, SampleCppProject restructure).
@@ -85,14 +87,9 @@ phases is its own Python entry point, and `run.py` resumes from any phase via
 ## 2. Top-level layout
 
 ```
-analyzer/
-  run.py                      Entry point — argv parsing, plan + dispatch
-  config/
-    config.json               Main config (JSONC: // and /* */ comments allowed)
-    config.local.json         Local overrides (gitignored)
-    abbreviations.txt         Abbreviation expansions for LLM prompts
-    puppeteer-config.json     Optional headless-chrome args for mmdc
-  src/
+analyzer/                     (repo root — cwd of the pipeline; model/ output/ logs/ resolve here)
+  backend/                    The analysis engine + CLI + its own config/assets
+    run.py                    Entry point — argv parsing, plan + dispatch (SCRIPT_DIR = repo root, one up)
     parser.py                 Phase 1 — libclang AST → model/*.json
     model_deriver.py          Phase 2 — units / modules / call-graph / LLM enrich
     run_views.py              Phase 3 — load model, dispatch view registry
@@ -103,17 +100,35 @@ analyzer/
     llm_core/                 Unified LLM HTTP client (Ollama + OpenAI gateway)
     views/                    View registry + four built-in views
     flowchart/                Real C++ → Mermaid CFG flowchart engine
-  fake_behaviour_diagram_generator.py    Placeholder behaviour-diagram emitter
-  ui/
-    app.py                    Streamlit UI — run/export controls + function browser (see §14b)
-    requirements.txt          streamlit, pyvis, networkx
+    behaviour_diagram/        Sequence/behaviour diagram generator package (SequenceDiagramGenerator)
+    fake_flowchart_generator.py       Placeholder flowchart emitter (_resolve_script fallback)
+    behaviour_diagram_generator.py    Standalone fake behaviour-diagram CLI (orphaned)
+    config/
+      config.json             Main config (JSONC: // and /* */ comments allowed)
+      config.local.json       Local overrides (gitignored)
+      abbreviations.txt       Abbreviation expansions for LLM prompts
+      data_dictionary.csv     Sample data-dictionary CSV (--data-dictionary <path>)
+      macros.csv              Sample macros CSV (--macros <path>)
+      puppeteer-config.json   Optional headless-chrome args for mmdc
+    few_shot_examples/        Few-shot pools (descriptions / behaviour_names / globals)
+    assets/                   DOCX cover assets (bottom_arc.png, copyright.png)
+  api/                        FastAPI backend — kept at repo root, imports `api.*` (see §19/§21)
+  web-app/                    React web client (Vite + TS + Tailwind; see §24)
   SampleCppProject/           Fixture C++ tree — Layer1 + Layer2/Platform (see §15)
-  model/                      Phase 1+2 output (JSON)
+  tests/  docs/  scripts/  mock-api/
+  model/                      Phase 1+2 output (JSON) — at repo root (cwd)
     clang_include_paths.json  Written by run.py before Phase 1; {LayerName:[abs_dirs]}
   output/                     Phase 3+4 output (JSON, .mmd, .png, .docx)
+  workspaces/                 Per-project API checkouts + per-commit output
   logs/                       Daily log files (run_YYYYMMDD.log)
   CLAUDE.md                   Onboarding pointer (says "read PROJECT_CONTEXT.md")
   PROJECT_CONTEXT.md          This file
+
+Note: config/ few_shot_examples/ assets/ and both generators live UNDER backend/;
+load_config(<dir>) reads <dir>/config, so engine callers pass the backend dir
+(paths().src_dir). model/ output/ workspaces/ logs/ stay at the repo root (deferred
+`.data/` grouping + `tools/` are NOT done yet). api/ is intentionally not renamed
+(absolute `from api.` imports + a hyphen would break).
 ```
 
 ---
@@ -121,25 +136,25 @@ analyzer/
 ## 3. The 4-phase pipeline
 
 ```
-Phase 1  src/parser.py          C++ source → model/metadata.json,
+Phase 1  backend/parser.py          C++ source → model/metadata.json,
                                              model/functions.json,
                                              model/globalVariables.json,
                                              model/dataDictionary.json
-Phase 2  src/model_deriver.py   model/ → model/units.json,
+Phase 2  backend/model_deriver.py   model/ → model/units.json,
                                           model/components.json,
                                           model/knowledge_base.json (for flowchart engine),
                                           model/summaries.json (LLM hierarchy summaries)
                                   + enriches functions.json with interfaceId,
                                     direction, transitive globals, behaviour
                                     names, and (optionally) LLM descriptions
-Phase 3  src/run_views.py       model/ → output/interface_tables.json,
+Phase 3  backend/run_views.py       model/ → output/interface_tables.json,
                                           output/unit_diagrams/*.mmd|.png,
                                           output/behaviour_diagrams/*.mmd|.png,
                                           output/flowcharts/*.json|.png
-Phase 4  src/docx_exporter.py   output/ → software_detailed_design_<group>.docx
+Phase 4  backend/docx_exporter.py   output/ → software_detailed_design_<group>.docx
 ```
 
-Each phase is launched as a subprocess by [src/core/orchestration.py](src/core/orchestration.py).
+Each phase is launched as a subprocess by [backend/core/orchestration.py](backend/core/orchestration.py).
 That keeps the phases hermetic (separate Python processes inherit `LOG_LEVEL`)
 and lets `--from-phase N` skip earlier phases on a resume.
 
@@ -148,20 +163,20 @@ and lets `--from-phase N` skip earlier phases on a resume.
 ## 4. Refactor history (`version2` branch)
 
 Six refactor batches landed on this branch on top of `main`. Each batch is a
-self-contained consolidation; together they introduce the `src/core/` and
-`src/llm_core/` layers and shrink the legacy hot files.
+self-contained consolidation; together they introduce the `backend/core/` and
+`backend/llm_core/` layers and shrink the legacy hot files.
 
 | # | Batch | Result |
 |---|---|---|
-| 1 | LLM Foundation | New `src/llm_core/` — single `LlmClient` for OpenAI gateway + Ollama with shared retry, think-section stripping, token tracking |
+| 1 | LLM Foundation | New `backend/llm_core/` — single `LlmClient` for OpenAI gateway + Ollama with shared retry, think-section stripping, token tracking |
 | 2 | Progress & Logging | `core.logging_setup` (stderr + daily file), `core.progress.ProgressReporter`, `LOG_LEVEL` env propagation to subprocesses |
 | 3 | Config & Paths | `core.paths.ProjectPaths` (cached snapshot), `core.config` typed accessors with JSONC parser |
 | 4 | Model IO | `core.model_io` — canonical filename constants, `read_model_file` / `write_model_file` (opt-in atomic), `load_model(*required, optional=...)` |
 | 5 | Phase Orchestration | `core.orchestration.Phase` + `PhaseRunner` (single subprocess authority), `core.group_planner.plan_runs` (collapses 3-branch dispatch), run.py 257 → 152 lines |
 | 6 | Config Relocation | Moved `load_config` / `load_llm_config` / JSONC strippers from `utils.py` into `core.config`, leaving thin re-export shims so existing call sites keep working |
 
-The result: `src/core/` is the bottom of the dependency graph and has no
-imports from analyzer-level modules. Verified by `grep -r "from utils" src/core/`
+The result: `backend/core/` is the bottom of the dependency graph and has no
+imports from analyzer-level modules. Verified by `grep -r "from utils" backend/core/`
 returning nothing.
 
 ---
@@ -185,7 +200,7 @@ nearly-useless global-variable descriptions, no few-shot examples, no cache, no
 self-review, and no structured-output repair. On large models this wasted the
 context window; on small models prompts silently overflowed and returned empty.
 version3 rewrites the LLM subsystem around a token budget and a set of
-reusable helpers in `src/llm_core/`.
+reusable helpers in `backend/llm_core/`.
 
 ### What was NOT adopted (explicit out-of-scope)
 
@@ -197,7 +212,7 @@ reusable helpers in `src/llm_core/`.
 
 | Phase | Delivered | Key files |
 |---|---|---|
-| **P1 — Foundation** | TokenCounter (tiktoken + char fallback), ContextBudget with `TASK_RATIOS`, `LlmClient.call()` multi-message API, config additions (`maxContextTokens`, `enrichment.*`, `fewShotExamplesDir`, `cacheVersion`) | `llm_core/token_counter.py`, `llm_core/budget.py`, `llm_core/client.py`, `core/config.py`, `config/config.json` |
+| **P1 — Foundation** | TokenCounter (tiktoken + char fallback), ContextBudget with `TASK_RATIOS`, `LlmClient.call()` multi-message API, config additions (`maxContextTokens`, `enrichment.*`, `fewShotExamplesDir`, `cacheVersion`) | `llm_core/token_counter.py`, `llm_core/budget.py`, `llm_core/client.py`, `core/config.py`, `backend/config/config.json` |
 | **P2 — Context quality** | Degradation ladder (`ContextBuilder`), scoped `RepoMap` (neighborhood → file → module → project tiers), `get_rich_description()` with callees / callers / types / globals / siblings / repo-map, `get_rich_global_description()` for variables | `llm_core/context_builder.py`, `llm_core/repo_map.py`, `llm_enrichment.py` |
 | **P3 — Two-pass + few-shot** | Two-pass descriptions (Pass 1 bottom-up, Pass 2 refines with caller context), `FewShotPool` with keyword-overlap ranking, seed example directories (`few_shot_examples/{descriptions,labels,globals,behaviour_names}`) | `llm_core/few_shot.py`, `llm_enrichment.py`, `few_shot_examples/` |
 | **P4 — Cache + structured output** | `EntityCache` with composite hash keys (source + sorted callee hashes + version), `extract_and_validate()` (strip fences → extract JSON → repair → validate keys), `parse_label_response()` for flowchart batches | `llm_core/cache.py`, `llm_core/structured_output.py` |
@@ -219,12 +234,12 @@ Every feature ships gated behind `config.llm.enrichment.<flag>`:
 The defaults trade conservative cost for quality on the features that most
 affect DOCX output (`twoPassDescriptions`, `variableEnrichment`). The expensive
 features (`selfReview`, `ensemble`, `cfgSimplification`) are **opt-in** — set
-them in `config/config.json` or `config.local.json`.
+them in `backend/config/config.json` or `config.local.json`.
 
 ### Token budgeting — `ContextBudget` + `TASK_RATIOS`
 
 One config knob (`maxContextTokens`) now scales every prompt allocation.
-[src/llm_core/budget.py](src/llm_core/budget.py) defines `TASK_RATIOS` — a
+[backend/llm_core/budget.py](backend/llm_core/budget.py) defines `TASK_RATIOS` — a
 dict of per-task section ratios summing to ~1.0 — for:
 
 - `function_description`, `function_description_refined`
@@ -257,7 +272,7 @@ are type-checked the same way. `provider` is restricted to
 `"ollama"`|`"openai"`.
 
 `core.config.format_llm_config_banner(llm_cfg)` returns a multi-line summary.
-Both [run.py](run.py) and [src/flowchart/flowchart_engine.py](src/flowchart/flowchart_engine.py)
+Both [run.py](run.py) and [backend/flowchart/flowchart_engine.py](backend/flowchart/flowchart_engine.py)
 print it at the top of every run so the user sees exactly which
 provider / baseUrl / model / `numCtx` / `maxContextTokens` (resolved, e.g.
 `auto -> 7680`) / timeout / retries / enrichment flags are active:
@@ -311,16 +326,16 @@ Three categories of change landed on this branch on top of `version3`:
 > `run.py` does **not** set `LIBCLANG_PATH`, and the flowchart engine did **not**
 > read it. The API (`api/services/pipeline_runner.py::_execute_subprocess`) sets
 > `env["LIBCLANG_PATH"]` only when `cfg.libclang_path` is configured, but nothing
-> in `src/flowchart/` consumed it — `clang.cindex` never auto-reads that env var —
+> in `backend/flowchart/` consumed it — `clang.cindex` never auto-reads that env var —
 > so flowcharts failed with `LibclangError` on any host where `libclang.dll` isn't
 > on the loader path. Now fixed: `flowchart_engine.py::_configure_libclang()` (called
 > first thing in `run()`) resolves the DLL from `LIBCLANG_PATH` **or** the analyzer
 > config's `clang.llvmLibPath`, does `os.add_dll_directory` + `Config.set_library_file`
-> (mirroring `src/parser.py:79-90`), before any `Index.create()`.
+> (mirroring `backend/parser.py:79-90`), before any `Index.create()`.
 
 _Original (inaccurate) note:_ "`run.py` reads `clang.llvmLibPath` and exports it as
 `os.environ["LIBCLANG_PATH"]`; `flowchart_engine.py` picks it up at import time." Only
-Phase 1 (`src/parser.py`) ever configured libclang; the flowchart engine did not until
+Phase 1 (`backend/parser.py`) ever configured libclang; the flowchart engine did not until
 the fix above.
 
 ### 2. `llm.summarize` config flag
@@ -338,7 +353,7 @@ for a permanent local preference.
 | `tests/unit/test_llm_client.py` | Fully rewritten to test `llm_core.client.LlmClient` + `from_config` (was testing legacy `llm_client` module). Covers constructor validation, `generate()` / `call()`, retry logic, `from_config` builder. |
 | `tests/unit/test_behaviour_diagram_generator.py` | Switched from `fake_behaviour_diagram_generator.FakeBehaviourGenerator` to the real `behaviour_diagram_generator.SequenceDiagramGenerator` (alias kept as `FakeBehaviourGenerator`). Patch target updated to `behaviour_diagram_generator.llm_client`. No-LLM pass: module docstring now lists which classes need no LLM (ExternalCallerFiltering, FileNaming, MmdContent) vs which are xfail (LlmContract); repeated `functions` dict extracted into `_ONE_EXTERNAL_CALLER` module-level constant; stale fence-strip comment removed from `TestMmdContent`. |
 | `tests/unit/test_utils.py` | `_strip_json_comments` / `_strip_trailing_commas` now imported from `core.config`, not from `utils`. |
-| `src/flowchart/tests/test_cfg_topo.py` | Added `src/` to `sys.path` so `ast_engine.*` imports resolve when running from the project root. |
+| `backend/flowchart/tests/test_cfg_topo.py` | Added `src/` to `sys.path` so `ast_engine.*` imports resolve when running from the project root. |
 | `tests/conftest.py` | Logs the full pipeline command string before executing it (aids debugging failed CI runs). |
 | `tests/unit/test_unit_diagrams_view.py` | Expanded with 10 new tests covering: subgraph module label, `mainUnit`/`internal` CSS classes, incoming caller edges, multi-iface edge joining, external caller/callee layout (before-subgraph / after-end), combined escape sequences, `_fid_to_unit` with missing key. Snapshot `tests/snapshots/Sample/unit_diagrams.json` refreshed to match current output. |
 
@@ -497,16 +512,16 @@ This is equivalent to running `--selected-group G` once per group in the layer, 
 **`--selected-component <name>`** (repeatable) — generate one DOCX covering the named component(s). Repeat the flag for each component; all must be in the same layer. Phase 1+2 parse that layer only. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx`. Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`.
 
 ```bash
-python run.py --selected-component Gpio SampleCppProject
-python run.py --selected-component "Sample Core" --selected-component Lib SampleCppProject
+python backend/run.py --selected-component Gpio SampleCppProject
+python backend/run.py --selected-component "Sample Core" --selected-component Lib SampleCppProject
 ```
 
 **`--component-per-docx`** — modifier flag (no value). When combined with `--selected-group`, `--selected-layer`, or no selection, splits output into **one DOCX per component** instead of one per group. Cannot be combined with `--selected-component`.
 
 ```bash
-python run.py --selected-group "My Sample" --component-per-docx SampleCppProject
-python run.py --selected-layer Layer1 --component-per-docx SampleCppProject
-python run.py --component-per-docx SampleCppProject   # all components in all layers
+python backend/run.py --selected-group "My Sample" --component-per-docx SampleCppProject
+python backend/run.py --selected-layer Layer1 --component-per-docx SampleCppProject
+python backend/run.py --component-per-docx SampleCppProject   # all components in all layers
 ```
 
 ### Naming conventions for identifiers
@@ -522,16 +537,16 @@ Display contexts (DOCX section headings, log labels) keep the original name with
 
 | Location | What changed |
 |---|---|
-| `src/utils.py` — `safe_filename` | Spaces → `-` before unsafe-char replacement |
-| `src/utils.py` — `_resolve_component_from_rel` | Returns `component.replace(" ", "-")` |
-| `src/parser.py` — `_build_file_component_map` | Both `setdefault` calls store `component.replace(" ", "-")` |
-| `src/views/unit_diagrams.py` — `_unit_part_id` | `replace(" ", "_")` → `replace(" ", "-")` |
-| `src/core/group_planner.py` — group output paths | `g.replace(" ", "-")` for dir + DOCX name |
-| `src/core/group_planner.py` — component bundle | `virtual_name = "_".join(selected_components)` |
-| `src/run_views.py` — `_filter_model_to_components` | `{c.lower().replace(" ", "-") for c in allowed}` |
-| `src/run_views.py` — `_analyzerAllowedComponents` | Keys normalized on set: `k.replace(" ", "-")` |
-| `src/docx_exporter.py` — same-layer filter | Both `lower` sets normalized with `.replace(" ", "-")` |
-| `src/core/config.py` — `get_component_layer_name` | Normalizes both sides of comparison |
+| `backend/utils.py` — `safe_filename` | Spaces → `-` before unsafe-char replacement |
+| `backend/utils.py` — `_resolve_component_from_rel` | Returns `component.replace(" ", "-")` |
+| `backend/parser.py` — `_build_file_component_map` | Both `setdefault` calls store `component.replace(" ", "-")` |
+| `backend/views/unit_diagrams.py` — `_unit_part_id` | `replace(" ", "_")` → `replace(" ", "-")` |
+| `backend/core/group_planner.py` — group output paths | `g.replace(" ", "-")` for dir + DOCX name |
+| `backend/core/group_planner.py` — component bundle | `virtual_name = "_".join(selected_components)` |
+| `backend/run_views.py` — `_filter_model_to_components` | `{c.lower().replace(" ", "-") for c in allowed}` |
+| `backend/run_views.py` — `_analyzerAllowedComponents` | Keys normalized on set: `k.replace(" ", "-")` |
+| `backend/docx_exporter.py` — same-layer filter | Both `lower` sets normalized with `.replace(" ", "-")` |
+| `backend/core/config.py` — `get_component_layer_name` | Normalizes both sides of comparison |
 | `run.py` — `--selected-component` collection | Normalizes input at `append` time |
 
 **Important after this change**: any existing `model/functions.json` built before this change will have `"Sample Core|..."` keys (with spaces). Re-run from Phase 1 (`--clean` or `--from-phase 1`) after updating to get normalized `"Sample-Core|..."` keys.
@@ -566,7 +581,7 @@ The hardcoded log string `"output/interface_tables.json"` was replaced with the 
 ### Syntax
 
 ```bash
-python run.py [options] <project_path>
+python backend/run.py [options] <project_path>
 ```
 
 ### Flags
@@ -574,7 +589,7 @@ python run.py [options] <project_path>
 | Flag | Effect |
 |---|---|
 | `--clean` | Delete `model/` and `output/` before starting |
-| `--config <path>` | Use this config file instead of `config/config.json` — a per-project/per-version config (carries the project's `layers`). Resolved+validated, then exported as `ANALYZER_CONFIG` **before** the import-time config load in `utils`, so every phase subprocess (env inherited) honors it. `config.local.json` is **not** merged on top (used as-is, for reproducibility); a set-but-missing path fails loud. Foundation for incremental per-project runs (§23, M1.1). |
+| `--config <path>` | Use this config file instead of `backend/config/config.json` — a per-project/per-version config (carries the project's `layers`). Resolved+validated, then exported as `ANALYZER_CONFIG` **before** the import-time config load in `utils`, so every phase subprocess (env inherited) honors it. `config.local.json` is **not** merged on top (used as-is, for reproducibility); a set-but-missing path fails loud. Foundation for incremental per-project runs (§23, M1.1). |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
@@ -583,9 +598,9 @@ python run.py [options] <project_path>
 | `--selected-component <name>` | Export a DOCX for the named component only. Repeatable — use once per component to bundle multiple into one DOCX. All named components must be in the same layer. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx` (`_` between names, `-` replaces spaces). Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`. |
 | `--component-per-docx` | Modifier: split group/layer runs into one DOCX per component instead of one per group. Compatible with `--selected-group`, `--selected-layer`, or no selection. Cannot be combined with `--selected-component`. See §4f. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
-| `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `config/data_dictionary.csv` for format. |
+| `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `backend/config/data_dictionary.csv` for format. |
 | `--project-name <name>` | Override the project name written into `model/metadata.json` as `projectName`. Default: `os.path.basename(project_path)`. Propagates to `model_deriver` (interfaceId fallback segment, LLM knowledge base), flowchart engine, and LLM prompts. `ui/app.py` derives its display name from the path directly and is unaffected. |
-| `--macros <path>` | CSV file (columns: `Name`, `Value`; first row is header) passed as `-D` flags to Clang in Phase 1. Rows where `Value` is `"ne"` (case-insensitive) are skipped. Empty `Value` → `-DNAME`; non-empty → `-DNAME=VALUE`. Macros are also written to `model/clang_macros.json` so the Phase 3 flowchart engine picks them up. Sample: `config/macros.csv`. |
+| `--macros <path>` | CSV file (columns: `Name`, `Value`; first row is header) passed as `-D` flags to Clang in Phase 1. Rows where `Value` is `"ne"` (case-insensitive) are skipped. Empty `Value` → `-DNAME`; non-empty → `-DNAME=VALUE`. Macros are also written to `model/clang_macros.json` so the Phase 3 flowchart engine picks them up. Sample: `backend/config/macros.csv`. |
 | `--include-path <layer> <dir>` | Add an extra `-I` include directory for the named layer. Repeatable — use once per directory. The directory is merged into `model/clang_include_paths.json` under the named layer key before Phase 1 runs, so Phase 1 and Phase 3 (`_resolve_layer_dirs`) pick it up automatically via existing layer-scoping. Unknown layer → exit 1. Missing directory → exit 1. |
 | `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`) |
 | `--trace-prompts` | Print full LLM prompts (system + user) to stdout. Sets `LLM_TRACE_PROMPTS=1` env var. **Warning**: large runs emit tens of MB. |
@@ -609,7 +624,7 @@ historical bugs are guarded against here:
 After parsing flags, run.py:
 
 0. **Layer include paths** — resolves the selected layer (from `--selected-group` or `--selected-layer`), then walks only that layer's directories (or all layers if neither flag is set) and writes `model/clang_include_paths.json`. Phase 1 reads this to extend `CLANG_ARGS` with `-I<dir>` for each collected directory.
-1. Loads `config/config.json` (+ `config.local.json`) via `load_config`.
+1. Loads `backend/config/config.json` (+ `config.local.json`) via `load_config`.
 1a. **Collects layer include paths** — walks the relevant layer directory/directories under `<project_path>` recursively (skipping hidden dirs), stores result as `{LayerName: [abs_dir, …]}`, and writes it to `model/clang_include_paths.json` before any phase starts. When `--selected-group` or `--selected-layer` is set, only the targeted layer is walked. Read by Phase 1 (`parser.py`) and Phase 3 (`flowcharts.py`) — neither re-walks the filesystem.
 2. **Resolves the LLM block strictly via `load_llm_config(cfg)`** and prints the
    `format_llm_config_banner` to the log so the operator sees exactly which
@@ -622,9 +637,9 @@ After parsing flags, run.py:
 4. If `--use-model` is set, verifies `model/functions.json`, `globalVariables.json`,
    `units.json`, and `modules.json` are all present (paths via
    `core.model_io.model_file_path`). Exits 2 if missing.
-5. Calls [core.group_planner.plan_runs(...)](src/core/group_planner.py) which
+5. Calls [core.group_planner.plan_runs(...)](backend/core/group_planner.py) which
    returns a flat `List[RunPlan]`.
-6. Iterates the plans through a single [PhaseRunner](src/core/orchestration.py)
+6. Iterates the plans through a single [PhaseRunner](backend/core/orchestration.py)
    instance. Each plan corresponds to one `runner.run(plan.phases, from_phase=plan.runner_from_phase)` call.
 
 The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
@@ -655,7 +670,7 @@ apply the same-layer model filter (see §4d).
 
 ---
 
-## 6. Config — `config/config.json`
+## 6. Config — `backend/config/config.json`
 
 JSONC: `//`, `/* */`, and trailing commas are tolerated by
 `core.config._strip_json_comments` + `_strip_trailing_commas`. A sibling
@@ -744,7 +759,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 
 ### Environment-variable overrides for `llm`
 
-`load_llm_config()` (in [src/core/config.py](src/core/config.py)) honors:
+`load_llm_config()` (in [backend/core/config.py](backend/core/config.py)) honors:
 
 | Env var | Wins over |
 |---|---|
@@ -784,12 +799,12 @@ Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 
 ---
 
-## 7. `src/core/` — infrastructure layer
+## 7. `backend/core/` — infrastructure layer
 
 Eight modules, all with no upward imports. Anything analyzer-specific stays
-in `src/utils.py` or one of the phase scripts.
+in `backend/utils.py` or one of the phase scripts.
 
-### `core.paths` — [src/core/paths.py](src/core/paths.py)
+### `core.paths` — [backend/core/paths.py](backend/core/paths.py)
 
 - `ProjectPaths` frozen dataclass with `project_root`, `src_dir`, `config_dir`,
   `config_path`, `config_local_path`, `model_dir`, `output_dir`, `logs_dir`,
@@ -798,10 +813,10 @@ in `src/utils.py` or one of the phase scripts.
 - Auto-detects root by walking two parents up from `paths.py` (so the snapshot
   works no matter where you launch from).
 
-### `core.config` — [src/core/config.py](src/core/config.py)
+### `core.config` — [backend/core/config.py](backend/core/config.py)
 
 - `_strip_json_comments` / `_strip_trailing_commas` — JSONC parser.
-- `load_config(project_root)` — merges `config/config.json` + `config.local.json`. **If `ANALYZER_CONFIG`
+- `load_config(project_root)` — merges `backend/config/config.json` + `config.local.json`. **If `ANALYZER_CONFIG`
   env points to a file, that file is loaded instead, as-is (JSONC), with no local merge** — the per-project
   config-injection seam (§23, M1.1); set-but-missing fails loud.
 - `load_llm_config(cfg)` — env-var overlay + normalised `llm` block (see §6).
@@ -821,7 +836,7 @@ in `src/utils.py` or one of the phase scripts.
 - `default_clang_macro_defs()` — returns the `-D` macro list shared by
   Phase 1 and the flowchart engine's per-function re-parser.
 
-### `core.model_io` — [src/core/model_io.py](src/core/model_io.py)
+### `core.model_io` — [backend/core/model_io.py](backend/core/model_io.py)
 
 Canonical filenames (use these constants, never bare strings):
 `METADATA`, `FUNCTIONS`, `GLOBALS`, `UNITS`, `COMPONENTS`, `DATA_DICTIONARY`,
@@ -840,7 +855,7 @@ Functions:
   place.
 - `ensure_model_dir()` → mkdirs and returns the model dir.
 
-### `core.logging_setup` — [src/core/logging_setup.py](src/core/logging_setup.py)
+### `core.logging_setup` — [backend/core/logging_setup.py](backend/core/logging_setup.py)
 
 - `configure_logging(*, project_root, quiet, verbose, log_dir)` installs:
   - **stderr** handler at INFO (or DEBUG/WARNING based on flags + `LOG_LEVEL`)
@@ -851,7 +866,7 @@ Functions:
 - Registers an `atexit` hook that dumps `llm_core.tokens.format_report()` so
   every subprocess records its own LLM token usage to the log file.
 
-### `core.progress` — [src/core/progress.py](src/core/progress.py)
+### `core.progress` — [backend/core/progress.py](backend/core/progress.py)
 
 `ProgressReporter(component, *, total, logger, log_every)` with `start()`,
 `step(label=...)`, `done(summary=...)`, and a context-manager API. On a TTY
@@ -859,7 +874,7 @@ it uses `\r` for live updates; when piped it falls back to periodic INFO log
 lines (every ~10% by default). Quiet mode suppresses the live line entirely
 but still logs the final summary.
 
-### `core.orchestration` — [src/core/orchestration.py](src/core/orchestration.py)
+### `core.orchestration` — [backend/core/orchestration.py](backend/core/orchestration.py)
 
 ```python
 @dataclass(frozen=True)
@@ -876,7 +891,7 @@ Single subprocess authority. Phases with `idx < from_phase` are skipped with a
 log line. On a non-zero exit code the runner emits
 `resume with: --from-phase {idx}` and raises `SystemExit(returncode)`.
 
-### `core.group_planner` — [src/core/group_planner.py](src/core/group_planner.py)
+### `core.group_planner` — [backend/core/group_planner.py](backend/core/group_planner.py)
 
 Constants: `PHASE_PARSE=1`, `PHASE_DERIVE=2`, `PHASE_VIEWS=3`, `PHASE_EXPORT=4`.
 
@@ -894,22 +909,22 @@ def plan_runs(cfg, *, project_path, selected_group, use_model,
 Implements the three dispatch shapes from §5 in one place. Raises `ValueError`
 on unknown `--selected-group`.
 
-### `core.__init__` — [src/core/__init__.py](src/core/__init__.py)
+### `core.__init__` — [backend/core/__init__.py](backend/core/__init__.py)
 
 Re-exports every public symbol so call sites can write
 `from core import PhaseRunner, plan_runs, FUNCTIONS, ...`.
 
 ---
 
-## 8. `src/llm_core/` — unified LLM client + token-budget toolkit
+## 8. `backend/llm_core/` — unified LLM client + token-budget toolkit
 
-Post-version3, `src/llm_core/` is a full toolkit: one HTTP client plus a set of
+Post-version3, `backend/llm_core/` is a full toolkit: one HTTP client plus a set of
 composable helpers (counter, budget, context builder, repo map, few-shot,
 cache, structured output, review). Everything LLM-related in the project
 flows through this layer.
 
 ```
-src/llm_core/
+backend/llm_core/
   client.py              LlmClient + from_config — single HTTP client (ollama + openai)
   headers.py             build_openai_headers + resolve_api_key
   think.py               strip_think_section
@@ -930,7 +945,7 @@ Public API re-exported from `llm_core.__init__`:
 `extract_and_validate`, `parse_label_response`, `self_review`,
 `ensemble_generate`.
 
-### `llm_core.client.LlmClient` — [src/llm_core/client.py](src/llm_core/client.py)
+### `llm_core.client.LlmClient` — [backend/llm_core/client.py](backend/llm_core/client.py)
 
 Two providers behind one interface:
 
@@ -1114,7 +1129,7 @@ Both helpers use `extract_and_validate` when parsing verdicts.
 
 ---
 
-## 9. `src/utils.py` — analyzer-specific helpers
+## 9. `backend/utils.py` — analyzer-specific helpers
 
 Post-Batch-6, this file is ~360 lines and only owns analyzer-specific logic.
 Anything that touches files or env or generic infra has moved into `core.*`.
@@ -1158,7 +1173,7 @@ import order constraints).
 
 ---
 
-## 10. Phase 1 — `src/parser.py`
+## 10. Phase 1 — `backend/parser.py`
 
 ### Initialization
 
@@ -1183,7 +1198,7 @@ import order constraints).
     appends `-DNAME=VALUE` (or `-DNAME` for empty value) for each non-`ne` row,
     then writes the list to `model/clang_macros.json` so `flowcharts.py` can
     apply the same flags to the Phase 3 flowchart engine re-parser. Sample:
-    `config/macros.csv` (`VOID,void`).
+    `backend/config/macros.csv` (`VOID,void`).
 
 ### Visibility detection (`_detect_visibility`)
 
@@ -1292,7 +1307,7 @@ written to `model/` via `core.model_io.write_model_file`.
 
 ---
 
-## 11. Phase 2 — `src/model_deriver.py`
+## 11. Phase 2 — `backend/model_deriver.py`
 
 Loads via `core.model_io.load_model(METADATA, FUNCTIONS, GLOBALS)` and exits
 with a clear "Run Phase 1 first" message on `ModelFileMissing`.
@@ -1372,7 +1387,7 @@ When `config.llm.descriptions: true`:
 1. Tries to load `model/knowledge_base.json` (may not exist on first run —
    the rich path still works, just without repo-map / sibling context).
 2. Calls **`enrich_functions_rich(functions_data, base_path, config, knowledge=…)`**
-   from [src/llm_enrichment.py](src/llm_enrichment.py) — the version3
+   from [backend/llm_enrichment.py](backend/llm_enrichment.py) — the version3
    budget-aware function enrichment path. It:
    - Resolves `max_context_tokens` via `resolve_max_tokens(llm_cfg)`.
    - Builds `ContextBuilder`, `RepoMap`, `FewShotPool`, `EntityCache`.
@@ -1405,7 +1420,7 @@ When `config.llm.descriptions: true`:
 ### `_enrich_with_hierarchy_summaries`
 
 Default-on (disabled by `--no-llm-summarize`). Uses the flowchart engine's
-`HierarchySummarizer` (in `src/flowchart/pkb/`) to produce a 4-level summary:
+`HierarchySummarizer` (in `backend/flowchart/pkb/`) to produce a 4-level summary:
 
 1. Function level — one-sentence summary for any undocumented function.
 2. File level — 2–3 sentences per source file.
@@ -1449,13 +1464,13 @@ This file is what `views/flowcharts.py` passes to `flowchart_engine.py` via
 
 ---
 
-## 12. Phase 3 — `src/run_views.py` + `src/views/`
+## 12. Phase 3 — `backend/run_views.py` + `backend/views/`
 
-### Orchestration — [src/run_views.py](src/run_views.py)
+### Orchestration — [backend/run_views.py](backend/run_views.py)
 
 CLI:
 ```
-python src/run_views.py [--output-dir <dir>] [--selected-group <name>]
+python backend/run_views.py [--output-dir <dir>] [--selected-group <name>]
 ```
 
 Loads model via `core.model_io.load_model(FUNCTIONS, GLOBALS, UNITS, COMPONENTS, optional=[DATA_DICTIONARY])`.
@@ -1474,7 +1489,7 @@ so cross-component call edges within the layer stay visible in the views.
 
 Then it calls `views.run_views(filtered_model, output_dir, model_dir, config)`.
 
-### View dispatch — [src/views/__init__.py](src/views/__init__.py)
+### View dispatch — [backend/views/__init__.py](backend/views/__init__.py)
 
 ```python
 def run_views(model, output_dir, model_dir, config):
@@ -1494,7 +1509,7 @@ explicitly configured. Setting any view's value to `false` disables it.
 The four view modules are imported at the bottom of `__init__.py` so their
 `@register("name")` decorators populate `VIEW_REGISTRY`.
 
-### View 1: `interfaceTables` — [src/views/interface_tables.py](src/views/interface_tables.py)
+### View 1: `interfaceTables` — [backend/views/interface_tables.py](backend/views/interface_tables.py)
 
 Output: `output/interface_tables.json` (or `output/<group>/interface_tables.json`).
 Full logic and column definitions: `docs/spec/DESIGN_SPEC.md` — Interface Tables.
@@ -1510,7 +1525,7 @@ Full logic and column definitions: `docs/spec/DESIGN_SPEC.md` — Interface Tabl
 - Columns: Interface ID, Interface Name, Information, Data Type, Data Range,
   Direction (In/Out), Source/Destination, Interface Type.
 
-### View 2: `unitDiagrams` — [src/views/unit_diagrams.py](src/views/unit_diagrams.py)
+### View 2: `unitDiagrams` — [backend/views/unit_diagrams.py](backend/views/unit_diagrams.py)
 
 One Mermaid `.mmd` (and optionally `.png`) per unit into
 `output/unit_diagrams/`.
@@ -1526,7 +1541,7 @@ Full logic and layout rules: `docs/spec/DESIGN_SPEC.md` — Unit Diagrams (REQ-U
   grouped output paths work.
 - PNG rendered by `mmdc` (mermaid-cli). 60s timeout per diagram.
 
-### View 3: `behaviourDiagram` — [src/views/behaviour_diagram.py](src/views/behaviour_diagram.py)
+### View 3: `behaviourDiagram` — [backend/views/behaviour_diagram.py](backend/views/behaviour_diagram.py)
 
 Generates one `.mmd` per (current function, external caller) pair via the
 placeholder `FakeBehaviourGenerator` in
@@ -1556,9 +1571,9 @@ placeholder `FakeBehaviourGenerator` in
 This file is what `docx_exporter.py` reads to build the Dynamic Behaviour
 section.
 
-### View 4: `flowcharts` — [src/views/flowcharts.py](src/views/flowcharts.py)
+### View 4: `flowcharts` — [backend/views/flowcharts.py](backend/views/flowcharts.py)
 
-Wraps the **real flowchart engine** under `src/flowchart/`. Steps:
+Wraps the **real flowchart engine** under `backend/flowchart/`. Steps:
 
 1. Resolves `out_dir = output_dir/flowcharts/`.
 2. Builds clang args in three layers (in order):
@@ -1576,7 +1591,7 @@ Wraps the **real flowchart engine** under `src/flowchart/`. Steps:
    traversal — see Risk 2 in §16.)
 4. Builds the engine command:
    ```
-   python src/flowchart/flowchart_engine.py
+   python backend/flowchart/flowchart_engine.py
        --interface-json <functions[_group].json>
        --metaData-json  model/metadata.json
        --std            c++14
@@ -1595,7 +1610,7 @@ Wraps the **real flowchart engine** under `src/flowchart/`. Steps:
 
 ---
 
-## 13. The flowchart engine — `src/flowchart/`
+## 13. The flowchart engine — `backend/flowchart/`
 
 A self-contained C++ → Mermaid CFG generator. Invoked as a subprocess by the
 `flowcharts` view but can also run standalone.
@@ -1603,7 +1618,7 @@ A self-contained C++ → Mermaid CFG generator. Invoked as a subprocess by the
 ### Subpackage layout
 
 ```
-src/flowchart/
+backend/flowchart/
   flowchart_engine.py        Main entry, orchestrates per-function pipeline
   project_scanner.py         Standalone scanner that builds project_knowledge.json
   config.py                  EngineConfig dataclass (CLI defaults)
@@ -1714,9 +1729,9 @@ propagates automatically into the flowchart engine subprocess.
 
 ### LLM client construction + banner + enrichment config (version3)
 
-At the top of `run()`, [src/flowchart/flowchart_engine.py](src/flowchart/flowchart_engine.py)
+At the top of `run()`, [backend/flowchart/flowchart_engine.py](backend/flowchart/flowchart_engine.py)
 calls `_load_analyzer_llm_config()` which walks `cwd` and one parent for
-`config/config.json`, loads it with `utils.load_config`, then resolves it
+`backend/config/config.json`, loads it with `utils.load_config`, then resolves it
 strictly with `utils.load_llm_config` (raising `LlmConfigError` with the
 specific failing field on any invalid input). The resolved llm_cfg is
 displayed via `format_llm_config_banner()` before any real work begins, so
@@ -1766,7 +1781,7 @@ Per source file: `out_dir/<source_file_name>.json` containing
 
 ---
 
-## 14. Phase 4 — `src/docx_exporter.py`
+## 14. Phase 4 — `backend/docx_exporter.py`
 
 ### Entry: `export_docx(json_path, docx_path, selected_group)`
 
@@ -1810,7 +1825,7 @@ hidden functions as nodes. Only text sections are filterable in Phase 4.
 ### CLI
 
 ```
-python src/docx_exporter.py [json_path] [docx_path] [--selected-group <name>]
+python backend/docx_exporter.py [json_path] [docx_path] [--selected-group <name>]
 ```
 
 `--selected-group` is stripped before positional parsing.
@@ -1973,7 +1988,7 @@ column: tabbed output (`Output log` / `Modules Groups`).
 
 ### Config controls (left column)
 
-Reads `config/config.json` + `config.local.json` on init, writes back to
+Reads `backend/config/config.json` + `config.local.json` on init, writes back to
 `config.local.json` on every run and on the hide/show toggle.
 Covers: project path, clang paths, all LLM fields, all views toggles,
 export settings, and `modulesGroups` (editable group/module/path tree).
@@ -1982,8 +1997,8 @@ export settings, and `modulesGroups` (editable group/module/path tree).
 
 | Button | What it runs |
 |---|---|
-| Run full pipeline | `python run.py [--no-llm-summarize] [--selected-group G] <proj>` |
-| Export only | `python run.py --from-phase 4 --use-model [--selected-group G] <proj>` |
+| Run full pipeline | `python backend/run.py [--no-llm-summarize] [--selected-group G] <proj>` |
+| Export only | `python backend/run.py --from-phase 4 --use-model [--selected-group G] <proj>` |
 
 ### Modules Groups tab — function browser
 
@@ -2068,22 +2083,22 @@ SampleCppProject/
 
 ```bash
 # Full run, all groups
-python run.py SampleCppProject
+python backend/run.py SampleCppProject
 
 # Full clean run, single group
-python run.py --clean SampleCppProject --selected-group Sample
+python backend/run.py --clean SampleCppProject --selected-group Sample
 
 # Skip the LLM hierarchy summaries (faster, lower quality)
-python run.py --no-llm-summarize SampleCppProject
+python backend/run.py --no-llm-summarize SampleCppProject
 
 # Reuse model/, regenerate views + docx for one group
-python run.py --use-model SampleCppProject --selected-group Platform
+python backend/run.py --use-model SampleCppProject --selected-group Platform
 
 # Resume after a Phase 4 crash without re-parsing
-python run.py --from-phase 4 SampleCppProject
+python backend/run.py --from-phase 4 SampleCppProject
 
 # Verbose stderr (DEBUG); inherited by every subprocess phase
-python run.py --verbose SampleCppProject --selected-group Sample
+python backend/run.py --verbose SampleCppProject --selected-group Sample
 ```
 
 ---
@@ -2100,7 +2115,7 @@ if not abs_path.startswith(abs_base):
 ```
 
 Allows `C:\foo` to match `C:\foobar`. The correct helper exists at
-[utils.path_is_under](src/utils.py); migrating `is_project_file` to use it
+[utils.path_is_under](backend/utils.py); migrating `is_project_file` to use it
 is open work.
 
 ### Risk 2 — flowchart filtering uses module prefix, not units.json
@@ -2125,8 +2140,8 @@ The CFG builder skips ASSERT calls using
 `(line, col)` pairs from a regex source-scan. **Do not switch back to
 `get_expansion_location()`** — that's the original bug. Linters and
 auto-formatters have reverted this fix in the past. After any change to
-[src/flowchart/ast_engine/cfg_builder.py](src/flowchart/ast_engine/cfg_builder.py),
-re-run `python src/flowchart/tests/diagnose_assert.py`.
+[backend/flowchart/ast_engine/cfg_builder.py](backend/flowchart/ast_engine/cfg_builder.py),
+re-run `python backend/flowchart/tests/diagnose_assert.py`.
 
 ### Pre-V1 correctness batch (open — targets V1; see `docs/planning/ROADMAP.md` task 3.1–3.10)
 
@@ -2437,7 +2452,7 @@ binary and falls back to system `mmdc`.
 For the literal-minded: this is what happens when you run
 
 ```bash
-python run.py --selected-group Sample SampleCppProject
+python backend/run.py --selected-group Sample SampleCppProject
 ```
 
 1. **`run.py` startup** — sets `cwd` to its own directory; prepends
@@ -2463,7 +2478,7 @@ python run.py --selected-group Sample SampleCppProject
    and `selected_group = "Sample"`. Returns two plans:
    - Plan 1: "Build model (all modules)" → `[parser.py <abs_project_path>, model_deriver.py]`
    - Plan 2: "Group: Sample" → `[run_views.py --output-dir output/Sample --selected-group Sample, docx_exporter.py output/Sample/interface_tables.json output/Sample/software_detailed_design_Sample.docx --selected-group Sample]`
-5. **`PhaseRunner.run(plan1.phases)`** — subprocess `python src/parser.py
+5. **`PhaseRunner.run(plan1.phases)`** — subprocess `python backend/parser.py
    <abs_project_path>`. The parser inherits `LOG_LEVEL` from env.
 6. **Parser (Phase 1)** — loads libclang, reads `model/clang_include_paths.json`
    and extends `CLANG_ARGS` with `-I<dir>` for all layer subdirs. Walks every
@@ -2471,7 +2486,7 @@ python run.py --selected-group Sample SampleCppProject
    `build_metadata`, writes `metadata.json` / `functions.json` /
    `globalVariables.json` / `dataDictionary.json` to `model/`.
 7. **`PhaseRunner.run(plan1.phases)` continues** — subprocess
-   `python src/model_deriver.py`.
+   `python backend/model_deriver.py`.
 8. **Model deriver (Phase 2)** — loads model via `core.model_io.load_model`.
    Builds units + components, propagates global access transitively, assigns
    interface IDs, runs static behaviour-name heuristics, optionally calls
@@ -2480,7 +2495,7 @@ python run.py --selected-group Sample SampleCppProject
    for the flowchart engine. Writes everything back to `model/` including the
    new `model/components.json`.
 9. **`PhaseRunner.run(plan2.phases)`** — subprocess
-   `python src/run_views.py --output-dir output/Sample --selected-group Sample`.
+   `python backend/run_views.py --output-dir output/Sample --selected-group Sample`.
 10. **`run_views.py`** — loads model (`load_model(FUNCTIONS, GLOBALS, UNITS, COMPONENTS, optional=[DATA_DICTIONARY])`),
     resolves the group name case-insensitively, calls `get_layer_components` to
     find all Layer1 components, filters the full model to same-layer components
@@ -2496,7 +2511,7 @@ python run.py --selected-group Sample SampleCppProject
 13. **`behaviour_diagram` view** — uses `FakeBehaviourGenerator` to emit
     `.mmd` files plus `_behaviour_pngs.json`.
 14. **`flowcharts` view** — filters `functions.json` to `functions_Sample.json`
-    via component prefix, launches `python src/flowchart/flowchart_engine.py …`
+    via component prefix, launches `python backend/flowchart/flowchart_engine.py …`
     with `--knowledge-json model/knowledge_base.json`. The engine:
     - builds (or restores from `.flowchart_cache/`) the PKB
     - groups functions by source file
@@ -2508,7 +2523,7 @@ python run.py --selected-group Sample SampleCppProject
     The view then walks the per-unit JSONs and renders every flowchart to
     PNG via `mmdc`.
 15. **`PhaseRunner.run(plan2.phases)` continues** — subprocess
-    `python src/docx_exporter.py output/Sample/interface_tables.json output/Sample/software_detailed_design_Sample.docx --selected-group Sample`.
+    `python backend/docx_exporter.py output/Sample/interface_tables.json output/Sample/software_detailed_design_Sample.docx --selected-group Sample`.
 16. **`docx_exporter.py`** — `artifacts_dir = output/Sample/`, loads model +
     abbreviations, applies same-layer filter (all Layer1 components) to model
     dicts, iterates only Sample's components (Core/Lib/Util), builds the DOCX
@@ -2558,7 +2573,7 @@ decisions, and the development history).
   DOCX).
 - **What it isn't**: a re-implementation of the pipeline. The backend
   never imports analyzer internals — it only reads JSON the analyzer
-  writes and shells out to `python run.py`. The pipeline contract
+  writes and shells out to `python backend/run.py`. The pipeline contract
   documented in §3, §10–§14 is the single source of truth.
 
 ### Process model
@@ -2604,7 +2619,7 @@ have 2 phases, others 4). To give the UI a stable progress bar:
 ### Config editing: surgical JSONC splice
 
 `POST /api/v1/config` updates only the `modulesGroups` key inside
-`config/config.json` while preserving every comment and every other
+`backend/config/config.json` while preserving every comment and every other
 key in the file. The implementation (`_find_modules_groups_key_pos`)
 is a small JSONC-aware state machine that tracks strings, line
 comments, block comments, and brace nesting depth — a regex or a
@@ -2862,7 +2877,7 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
   (its dep changed) and **hits** later when that dep state recurs. *Carried-forward* (unchanged & unimpacted)
   entities get **no** new entry — their fingerprint already points at the version that first produced them.
 - **Storage interface (D9 — doc 04 §3):** all incremental-store access goes through a thin interface
-  (`src/incremental/stores.py`: `VersionStore`, `ReuseIndex`, `HashStore`, `EdgeStore`) — **JSON-file impl now,
+  (`backend/incremental/stores.py`: `VersionStore`, `ReuseIndex`, `HashStore`, `EdgeStore`) — **JSON-file impl now,
   Postgres impl later behind the same methods**. The §5 engine + the APIs call *only* the interface (no
   scattered `open()`/`json.load`), so the §10 Postgres swap is one implementation, not a refactor. **Scope =
   the incremental *metadata* stores only** (versions/hashes/edges/reuse-index/jobs); the analyzer's per-version
@@ -2887,7 +2902,7 @@ workspaces/<projectId>/
   `workspaces/<projectId>/` with the **onboarding-owned** parts only (doc 04 §4): `project.json` (name, the
   project's `layers`, repo ref, `currentDataDictId`), `repo/` (a real **full** clone via
   `git_service.clone_repo`, public/no-creds), and `datadict/dd-001.csv` (seeded from
-  `config/data_dictionary.csv`). Leaves `cache/`+`versions/` to the incremental engine. Default fixture =
+  `backend/config/data_dictionary.csv`). Leaves `cache/`+`versions/` to the incremental engine. Default fixture =
   `projectId=samplecpp`, repo `github.com/vishal9359/SampleCppProject` (branches `main` + `feature1/2/3`,
   topology purpose-built for nearest/far/divergent-ancestor tests — see the repo's `README.md`). `workspaces/`
   is gitignored (data); the seed script is tracked. Re-seed with `python backend/seed_workspace.py --force`.
@@ -2898,7 +2913,7 @@ workspaces/<projectId>/
     first: if set it loads that file **as-is** (JSONC) — **no `config.local.json` merge**, for reproducibility —
     and **fails loud** (`FileNotFoundError`) on a set-but-missing path; unset → existing `config.json`+local
     behavior. Tests: `tests/unit/test_core_config.py::TestLoadConfigAnalyzerConfigOverride` (5).
-  - **M1.2a entity hashing — ✅ done.** New `src/incremental/hashing.py` (token-based full SHA-256;
+  - **M1.2a entity hashing — ✅ done.** New `backend/incremental/hashing.py` (token-based full SHA-256;
     formatting-insensitive, comment-inclusive — folds in the preceding doc comment; visibility macros expand
     away and are intentionally excluded since the hash governs *output reuse*, and visibility is caught by the
     changed-file re-parse). `parser.py` stores `_sourceHash` on function/global entries (internal — does **not**
@@ -2911,7 +2926,7 @@ workspaces/<projectId>/
     extra parse) that threads the enclosing function like `visit_calls`: **type usage** via AST
     (`_project_type_qn` resolves return/param/`TYPE_REF`/`VAR_DECL` types through pointer/ref/array layers to a
     project type's qn) and **macro usage** via per-function identifier-token capture. New pure
-    `src/incremental/edges.py::build_edges` (no libclang — unit-tested) inverts to
+    `backend/incremental/edges.py::build_edges` (no libclang — unit-tested) inverts to
     `model/edges.json` `{typeUsers, macroUsers}` keyed by model fid, **filtered to types/macros that have a hash**
     so every key cross-references `hashes.json`; keys+values sorted for byte-stable output. Macro keys
     `name@relFile`, type keys qn — identical to `hashes.json`. Calls/globals are deliberately **not** here
@@ -2919,21 +2934,21 @@ workspaces/<projectId>/
     vs `hashes.json`, `Point`/`Status`/`Mode` resolve to the right functions, deterministic. Tests:
     `tests/unit/test_incremental_edges.py` (8). *Known limits (M2/M3): typedef→underlying transitive type edges
     and synthetic-from-VAR_DECL functions are not tracked; macro detection over-approximates (token-name match).*
-  - **M1.3a substrate — ✅ done.** **D9 store interface** `src/incremental/stores.py`
+  - **M1.3a substrate — ✅ done.** **D9 store interface** `backend/incremental/stores.py`
     (`Workspace`/`VersionStore`/`HashStore`/`EdgeStore`/`ReuseIndex`, JSON-file impl, atomic writes) +
-    **fingerprints** `src/incremental/fingerprint.py` (`compute_fingerprints` =
+    **fingerprints** `backend/incremental/fingerprint.py` (`compute_fingerprints` =
     `sha256(source_hash + sorted(dep source_hashes))` — **content-only**, no recipe component (recipe-fingerprint
     invalidation dropped by decision) — over functions+globals; deps = callees/globals from functions.json +
     types/macros forward-inverted from edges) +
-    the **version-producing full-gen orchestrator** `src/incremental/generate.py` (CLI:
-    `python src/incremental/generate.py --project-id … --branch … --commit … --scope group:G --no-llm`): checkout
+    the **version-producing full-gen orchestrator** `backend/incremental/generate.py` (CLI:
+    `python backend/incremental/generate.py --project-id … --branch … --commit … --scope group:G --no-llm`): checkout
     → resolved config (global + project layers) → run `run.py --config` → capture `model/output/documents` +
     `hashes.json`/`edges.json` into `versions/<vN>/` → seed `cache/index.json` → write manifest + index. Verified
     e2e on `samplecpp` (scope group:Support, LLM off): `versions/v2` complete, 127 entities fingerprinted, docx
     captured, reuse index seeded; failed attempts recorded (status=failed) and still consume a versionId. Tests:
     `tests/unit/test_incremental_stores.py` (13) + `test_incremental_fingerprint.py` (7).
   - **M1.3b backend HTTP — ✅ done.** [backend/main.py](backend/main.py) gains `POST /api/v1/projects/{id}/generate`
-    (FULL path only — spawns `src/incremental/generate.py` as a job via `_spawn_generate`; pre-allocates the
+    (FULL path only — spawns `backend/incremental/generate.py` as a job via `_spawn_generate`; pre-allocates the
     versionId, serializes per project with **409**, returns `{versionId, jobId, decision:"full", …}`),
     `GET …/versions`, `GET …/versions/{id}` (+ per-doc `downloadUrl`), `…/versions/{id}/download`
     (`.docx`, or `.zip` for multi-doc). generate.py: `--version-id` (pre-allocatable) + early **running** manifest
@@ -2943,16 +2958,16 @@ workspaces/<projectId>/
     live (TestClient blocks on the watcher; orchestrator is e2e-tested via the identical CLI path) — test live on a
     running server. `mode:"auto"`/baseline (incremental) is M2.*
 - **M2 — incremental engine — ✅ done** (M2.1–M2.4 below; incremental generation works e2e + via the API).
-  - **M2.1 baseline selection + preview — ✅ done.** `src/incremental/git_ops.py` (engine-local git wrapper —
+  - **M2.1 baseline selection + preview — ✅ done.** `backend/incremental/git_ops.py` (engine-local git wrapper —
     checkout/current_commit/is_ancestor/merge_base/rev_list_count/changed_files/nearest_ancestor; decoupled from
-    `backend/git_service.py`, consolidation deferred to M3) + `src/incremental/baseline.py::select_baseline`
+    `backend/git_service.py`, consolidation deferred to M3) + `backend/incremental/baseline.py::select_baseline`
     (auto nearest-ancestor among *complete* versions → none = full; optional `baseVersionId` override with
     **divergent** [not-ancestor] / **not-nearest** warnings; base only narrows the parse, never staleness) +
     backend `GET …/generate/preview?commit=&baseVersionId=` (read-only, no checkout). `generate.py` now uses
     `git_ops`. Verified: tmp-repo unit tests (`test_incremental_git_ops.py` 12 + `test_incremental_baseline.py` 11)
     + TestClient preview on `samplecpp` (main→incremental/v2/nearest/0-changed, feature1→full, override-v2→divergent
     +warning, unknown→404).
-  - **M2.2 classify + impact BFS — ✅ done.** `src/incremental/impact.py` (pure): `classify(baseline_hashes,
+  - **M2.2 classify + impact BFS — ✅ done.** `backend/incremental/impact.py` (pure): `classify(baseline_hashes,
     target_hashes)` → {changed/new/deleted/unchanged}; `impact_set(changed_keys, functions, edges,
     extra_seed_functions=)` → set of function fids to regenerate = changed/new functions + **everything
     transitively depending on any changed entity** (reverse-BFS: callers via `calledByIds`, global users via
@@ -2966,7 +2981,7 @@ workspaces/<projectId>/
     complex and easy to get subtly wrong → staleness, whereas the *primary* benefit (skip the rate-limited LLM for
     unchanged+unimpacted entities = hours→minutes) is parse-strategy-independent and a full parse is **never
     stale** (D7). Parse time becomes the bottleneck to optimize only after LLM time is removed.
-  - **M2.3 incremental engine — ✅ done.** `src/incremental/engine.py::generate_incremental`: baseline-pick →
+  - **M2.3 incremental engine — ✅ done.** `backend/incremental/engine.py::generate_incremental`: baseline-pick →
     checkout → full parse (`run.py`) → `plan_incremental` (classify vs baseline `hashes.json` + impact BFS +
     deleted-caller seeding) → **carry forward** baseline outputs (description/behaviour names) for the reuse set
     (`carry_forward_descriptions`) → reassemble (`run.py --from-phase 4 --use-model`) → capture version + seed
@@ -2989,7 +3004,7 @@ workspaces/<projectId>/
     version's `output/<scope>/flowcharts/*.json` then **restricts** the flowchart engine's functions file to the
     impacted source files (engine overwrites only those). `engine.py` computes `impactedFiles` BEFORE the run
     from the **baseline model + `git diff`** (over-approx, safe — no Phase-split) and writes/cleans the plan.
-    The `src/flowchart/` engine is unchanged. Verified e2e on `samplecpp` (carried 3 / restricted 16 in 9 files;
+    The `backend/flowchart/` engine is unchanged. Verified e2e on `samplecpp` (carried 3 / restricted 16 in 9 files;
     output complete, plan not leaked into the version). *(Superseded by M3.1: the impacted-file seeding is now
     precise/function-level, not file+git-diff.)*
 - **M3 — hardening** — *in progress.*
@@ -3026,7 +3041,7 @@ workspaces/<projectId>/
     reuse** — `views/flowcharts.py` carries forward baseline PNGs and re-renders only impacted units. Verified e2e
     (LLM-off flow): "enriching 9 functions + 3 globals; reusing the rest", documents=[just the scope's doc], PNGs
     carried. `tests/unit/test_incremental_engine.py` +2 (carry_forward_globals).
-  - **M3.4 end-of-run report — ✅ done.** `src/incremental/report.py` (`build_report` pure + `emit_report`): both
+  - **M3.4 end-of-run report — ✅ done.** `backend/incremental/report.py` (`build_report` pure + `emit_report`): both
     `generate_incremental` and `generate_full` print a summary at the end — **logged** (to `logs/run_<date>.log` via
     `get_logger`) **and saved** to `versions/<id>/report.txt`. Sections: inputs (project/branch/commit/scope/
     **baseline + changed-file count**/dataDict/LLM recipe/status/**wall-clock**), **change classification** (changed/
@@ -3063,7 +3078,7 @@ workspaces/<projectId>/
     flowchart engine restricted to **1 changed function** (was 3 file-level), `Utils.json` correctly retains all 3
     (`add`,`subtract`,`computeBoth`) with `subtract` fresh, **1 PNG** re-rendered; +6 merge unit tests (120 pass).
   - **M4.0 per-TU include-closure capture — ✅ done (foundation for narrowed parse; no behaviour change).**
-    New `src/incremental/parse_includes.py` (pure, libclang-free): `to_repo_relative` + `build_closure` —
+    New `backend/incremental/parse_includes.py` (pure, libclang-free): `to_repo_relative` + `build_closure` —
     normalize libclang include paths to **repo-relative, forward-slash, case-preserved**, drop out-of-repo
     (system/third-party) headers, dedup/sort, exclude the TU's own source. `parser.py::_capture_tu_includes(tu, path)`
     reads `tu.get_includes()` in the first parse pass (best-effort — never breaks parsing) and `main()` writes
@@ -3114,7 +3129,7 @@ workspaces/<projectId>/
     (guards against a load glitch nuking the carry-forward); prefix-collision safe (`Foo` won't drop `Foobar`).
     +4 unit tests; e2e confirms zero spurious pruning on the no-rename C1→C3 diff. **Note: also confirmed unit
     diagrams use NO LLM (pure structural) — incremental reuse there would only save PNG-render time; deprioritized.**
-  - **git_ops/git_service consolidation — ✅ done (no behavior change).** `src/incremental/git_ops.py` is now the
+  - **git_ops/git_service consolidation — ✅ done (no behavior change).** `backend/incremental/git_ops.py` is now the
     **single** home for every local git primitive (checkout / current_commit / ancestry / diff / `list_branches` /
     `list_commits` — the last two moved over from git_service). `backend/git_service.py` keeps **only** the
     credentialed network ops (`clone_repo`, `fetch`, `_auth_url`, `_clean_url`) and **re-exports** the locals from
@@ -3138,7 +3153,7 @@ workspaces/<projectId>/
     resolves (libclang) to the static method — or, when the base is pure-virtual, an *arbitrary* override by
     name — so sibling overrides got **no caller** (e.g. `MultiplyOperation::apply` showed `calledByIds: []`):
     changing an override wouldn't impact the dispatcher (**stale**) and the model was inaccurate. Fix: new pure
-    `src/incremental/virtual_dispatch.py::spread_virtual_families` — unions virtual *families* (override→base via
+    `backend/incremental/virtual_dispatch.py::spread_virtual_families` — unions virtual *families* (override→base via
     `clang_getOverriddenCursors`, bound through the **C API by ctypes** since this Python binding lacks the wrapper;
     queried on `cursor.canonical` because out-of-line defs report no overrides) and links every caller of any member
     to **all** members. `parser.py` collects `_override_pairs` in `visit_definitions` and spreads in `build_metadata`
@@ -3162,7 +3177,7 @@ workspaces/<projectId>/
     Avoids the whole-project Phase-1 parse: parse only the affected TUs, reuse the baseline model for the rest, merge
     + recompute reverse edges. Opt-in (`--narrowed-parse`) + `--verify-parse` self-check; full parse stays the default
     until the self-check is clean across a diff matrix on a large repo. Validated byte-equal (set-level) on C1→C3.
-    - **M4.1 affected-TU set — ✅ done.** `src/incremental/affected.py` (pure): `affected_tus(changed, tu_includes)`
+    - **M4.1 affected-TU set — ✅ done.** `backend/incremental/affected.py` (pure): `affected_tus(changed, tu_includes)`
       = TUs whose closure ∩ git-diff ≠ ∅ (+ new `.cpp` not yet in the map; case-insensitive match on Windows);
       `full_reparse_reason(status_pairs, tu_includes)` = the §11.4 must-full-reparse triggers (no closure map; a
       **header added/deleted** → shadowing risk). `git_ops.changed_files_status` (`git diff --name-status`, renames
@@ -3173,7 +3188,7 @@ workspaces/<projectId>/
     - **M4.3 partial-parse + merge — ✅ done (the core).** `parser.py --only-files <listfile>` parses only the
       affected TUs → a *forward-only* partial model; verified (1 TU → 3 fns). Parser also emits
       **`model/entity_files.json`** `{entityKey → defining file}` (covers all hashed entities — types/hashes have no
-      inline location; full parse: 353/353). `src/incremental/parse_merge.py::merge_model(baseline, fresh, drop_files)`
+      inline location; full parse: 353/353). `backend/incremental/parse_merge.py::merge_model(baseline, fresh, drop_files)`
       (pure): drop baseline entities whose file ∈ drop, overlay fresh, merge edges/dataDictionary/tu_includes by file,
       then **recompute calledByIds** (filter callsIds to merged fns → re-run virtual spread → invert). Verified on REAL
       data: full-parse a baseline, re-parse 1 TU as a partial, `merge_model(...)` == the full parse
@@ -3222,7 +3237,7 @@ workspaces/<projectId>/
       the impacted *dependents* (unaffected files that call a changed fn) would carry a description → Phase 2 skips
       them → **stale**. So the merge must produce a parser-level model (source-comment descriptions, no LLM fields),
       identical to a full-parse Phase-1 output, so the engine's EXISTING classify→impact→carry_forward→Phase-2 flow
-      runs unchanged. **M4.4 steps:** (1) `src/core/group_planner.py` + `run.py`: thread a new `--only-files <list>`
+      runs unchanged. **M4.4 steps:** (1) `backend/core/group_planner.py` + `run.py`: thread a new `--only-files <list>`
       through to `parser.py` (Phase-1 parses only those TUs); (2) a `_snapshot_parse_model(model_dir, version_dir)`
       helper that copies the 8 parser artifacts (functions/globalVariables/dataDictionary/hashes/edges/tu_includes/
       entity_files/metadata) to `versions/<id>/parse/` — captured after Phase 1 in BOTH paths (phase-split
@@ -3268,7 +3283,7 @@ workspaces/<projectId>/
 `run.py` (`--config`/`ANALYZER_CONFIG`, `--incremental`); `core/config.py` (honor `ANALYZER_CONFIG`);
 `parser.py` (partial-parse; entity hashing; slim type/macro index); `model_deriver.py` (incremental mode;
 extend `EntityCache`); `views/flowcharts.py` (restrict the engine's functions file to the impact set; the
-`src/flowchart/` engine itself is unchanged); new `src/incremental/` — incl. `stores.py` (D9 interface:
+`backend/flowchart/` engine itself is unchanged); new `backend/incremental/` — incl. `stores.py` (D9 interface:
 `VersionStore`/`ReuseIndex`/`HashStore`/`EdgeStore`, JSON-file impl now, Postgres later) that all version /
 hash / edge / reuse-index access goes through.
 
