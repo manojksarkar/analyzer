@@ -7,7 +7,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "backend"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 from incremental.generate import apply_no_llm  # noqa: E402
 

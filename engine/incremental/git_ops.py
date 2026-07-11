@@ -1,8 +1,8 @@
 """Canonical local git primitives — no auth, no network (M2; consolidated in M3).
 
 Operates on an already-cloned repo. Kept in src/ so the engine has **no dependency on
-backend/**. This is the single home for every local git read/checkout op (ancestry,
-diff, branch/commit listing, …); `backend/git_service.py` keeps only the credentialed
+engine/**. This is the single home for every local git read/checkout op (ancestry,
+diff, branch/commit listing, …); `engine/git_service.py` keeps only the credentialed
 network ops (clone/fetch) and re-exports these. Both are thin `shell=False` wrappers
 over the system git (shell=False is deliberate — credential/URL safety).
 """

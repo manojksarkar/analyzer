@@ -341,9 +341,9 @@ def _load_analyzer_llm_config() -> Optional[Dict]:
     from utils import load_config, load_llm_config  # noqa: WPS433
     cwd = os.path.abspath(os.getcwd())
     for candidate in (cwd, os.path.dirname(cwd)):
-        cfg_path = os.path.join(candidate, "backend", "config", "config.json")
+        cfg_path = os.path.join(candidate, "engine", "config", "config.json")
         if os.path.isfile(cfg_path):
-            cfg = load_config(os.path.join(candidate, "backend"))
+            cfg = load_config(os.path.join(candidate, "engine"))
             return load_llm_config(cfg)
     return None
 
@@ -404,8 +404,8 @@ def _configure_libclang() -> None:
             from utils import load_config  # noqa: WPS433
             cwd = os.path.abspath(os.getcwd())
             for candidate in (cwd, os.path.dirname(cwd)):
-                if os.path.isfile(os.path.join(candidate, "backend", "config", "config.json")):
-                    cfg = load_config(os.path.join(candidate, "backend")) or {}
+                if os.path.isfile(os.path.join(candidate, "engine", "config", "config.json")):
+                    cfg = load_config(os.path.join(candidate, "engine")) or {}
                     clang_cfg = cfg.get("clang") or {}
                     lib = clang_cfg.get("llvmLibPath") or cfg.get("llvmLibPath") or ""
                     break

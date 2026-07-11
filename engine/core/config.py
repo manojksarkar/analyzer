@@ -119,7 +119,7 @@ def load_config(project_root: str) -> Dict[str, Any]:
     """Load config from <project_root>/config/config.json, then config.local.json overrides.
 
     Callers pass the directory that *contains* ``config/``. Since the config now
-    lives under ``backend/config/``, engine callers pass the backend dir
+    lives under ``engine/config/``, engine callers pass the engine dir
     (``paths().src_dir``), not the repo root.
 
     If the ``ANALYZER_CONFIG`` environment variable points to a file, that file
