@@ -1,6 +1,6 @@
 # Design
 
-> See also: [README](../../README.md) | [software_detailed_design.json](../spec/software_detailed_design.json) (output doc structure)
+> See also: [README](../../README.md) | [software_detailed_design.json](../spec/software_detailed_design.json) (output doc structure) | [DOCX generation walkthrough](DOCX_generation_walkthrough.md) | [REDESIGN.md](REDESIGN.md) (v2 redesign notes)
 
 ## Architecture
 
