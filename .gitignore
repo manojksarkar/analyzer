@@ -25,7 +25,6 @@ model*
 output*
 
 # Incremental workspaces — runtime data (clones, versions, cache).
-# The seed script (backend/seed_workspace.py) IS tracked; the data it creates is not.
 workspaces/
 
 # JSON DB data files (API_DB_BACKEND=json runtime state)
@@ -35,14 +34,17 @@ api/db/data/
 logs
 
 # Local config overrides (optional)
-config/config.local.json
-config/last_run.json
+backend/config/config.local.json
+backend/config/last_run.json
 
 # Cache
 .flowchart_cache/
 **/.flowchart_cache/
 .mmdc_cache/
 **/.mmdc_cache/
+.pytest_cache/
+tests/coverage_html/
+htmlcov/
 
 # Claude tooling
 .claude/settings.json

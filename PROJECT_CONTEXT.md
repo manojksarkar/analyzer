@@ -599,7 +599,7 @@ python backend/run.py [options] <project_path>
 | `--component-per-docx` | Modifier: split group/layer runs into one DOCX per component instead of one per group. Compatible with `--selected-group`, `--selected-layer`, or no selection. Cannot be combined with `--selected-component`. See §4f. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
 | `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `backend/config/data_dictionary.csv` for format. |
-| `--project-name <name>` | Override the project name written into `model/metadata.json` as `projectName`. Default: `os.path.basename(project_path)`. Propagates to `model_deriver` (interfaceId fallback segment, LLM knowledge base), flowchart engine, and LLM prompts. `ui/app.py` derives its display name from the path directly and is unaffected. |
+| `--project-name <name>` | Override the project name written into `model/metadata.json` as `projectName`. Default: `os.path.basename(project_path)`. Propagates to `model_deriver` (interfaceId fallback segment, LLM knowledge base), flowchart engine, and LLM prompts. |
 | `--macros <path>` | CSV file (columns: `Name`, `Value`; first row is header) passed as `-D` flags to Clang in Phase 1. Rows where `Value` is `"ne"` (case-insensitive) are skipped. Empty `Value` → `-DNAME`; non-empty → `-DNAME=VALUE`. Macros are also written to `model/clang_macros.json` so the Phase 3 flowchart engine picks them up. Sample: `backend/config/macros.csv`. |
 | `--include-path <layer> <dir>` | Add an extra `-I` include directory for the named layer. Repeatable — use once per directory. The directory is merged into `model/clang_include_paths.json` under the named layer key before Phase 1 runs, so Phase 1 and Phase 3 (`_resolve_layer_dirs`) pick it up automatically via existing layer-scoping. Unknown layer → exit 1. Missing directory → exit 1. |
 | `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`) |
@@ -2006,55 +2006,6 @@ Reads `artifacts_dir/behaviour_diagrams/_behaviour_pngs.json`. For every
 
 ---
 
-## 14b. Streamlit UI — `ui/app.py`
-
-Run with: `streamlit run ui/app.py` (opens at `http://localhost:8501`).
-
-### What it does
-
-Single-page app. Left column: all config controls + run buttons. Right
-column: tabbed output (`Output log` / `Modules Groups`).
-
-### Config controls (left column)
-
-Reads `backend/config/config.json` + `config.local.json` on init, writes back to
-`config.local.json` on every run and on the hide/show toggle.
-Covers: project path, clang paths, all LLM fields, all views toggles,
-export settings, and `modulesGroups` (editable group/module/path tree).
-
-### Run buttons
-
-| Button | What it runs |
-|---|---|
-| Run full pipeline | `python backend/run.py [--no-llm-summarize] [--selected-group G] <proj>` |
-| Export only | `python backend/run.py --from-phase 4 --use-model [--selected-group G] <proj>` |
-
-### Modules Groups tab — function browser
-
-Hierarchical tree: Group → Module → Unit → functions. Each function row
-has two columns:
-- **Function button** (col 5): opens `_function_dialog` modal (description,
-  callers/callees, flowchart viewer). Shows `fname() [hidden]` and is
-  disabled when hidden.
-- **Hide/Show button** (col 1): calls `_toggle_function_hidden(fid, bool)`,
-  which writes `{"hidden": true/false}` directly into `model/functions.json`.
-  No config change. Triggers `st.rerun()` so the label updates immediately.
-
-### `_toggle_function_hidden(fid, hidden)`
-
-Writes the `hidden` field into `model/functions.json` at `ROOT/model/functions.json`.
-Uses the same path as `_save_function_description` — no group-aware path logic.
-The `hidden` field is read by Phase 4 (`export_docx`) to filter output
-(see §14 — Function hiding). Phase 3 does **not** read this field.
-
-### `_function_dialog` modal
-
-Opens on function button click. Left panel: signature, description textarea
-+ Save button, Calls/Called-by expanders, Behaviour names. Right panel:
-flowchart viewer (reads pre-rendered PNG or Mermaid from `output/`).
-
----
-
 ## 15. Test fixture — `SampleCppProject/`
 
 The old `test_cpp_project/` fixture is superseded. Current fixture (matches
@@ -2927,14 +2878,14 @@ workspaces/<projectId>/
 
 ### 23.5 Implementation plan + status
 - **P0 `git_service` — ✅ done.**
-- **P1 onboarding stub fixture — ✅ done.** [backend/seed_workspace.py](backend/seed_workspace.py) seeds
+- **P1 onboarding stub fixture — done, then removed** (with the Streamlit UI in #28). `backend/seed_workspace.py` seeded
   `workspaces/<projectId>/` with the **onboarding-owned** parts only (doc 04 §4): `project.json` (name, the
   project's `layers`, repo ref, `currentDataDictId`), `repo/` (a real **full** clone via
   `git_service.clone_repo`, public/no-creds), and `datadict/dd-001.csv` (seeded from
   `backend/config/data_dictionary.csv`). Leaves `cache/`+`versions/` to the incremental engine. Default fixture =
   `projectId=samplecpp`, repo `github.com/vishal9359/SampleCppProject` (branches `main` + `feature1/2/3`,
   topology purpose-built for nearest/far/divergent-ancestor tests — see the repo's `README.md`). `workspaces/`
-  is gitignored (data); the seed script is tracked. Re-seed with `python backend/seed_workspace.py --force`.
+  is gitignored (data). (Both this seed script and `backend/git_service.py` were later removed.)
 - **M1 — version-producing FULL gen + substrate** — *in progress.*
   - **M1.1 `--config`/`ANALYZER_CONFIG` — ✅ done.** `run.py --config <path>` resolves+validates the path and
     exports `ANALYZER_CONFIG` **before** importing `utils` (which loads config at import time), so this process

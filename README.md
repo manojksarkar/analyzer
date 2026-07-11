@@ -10,26 +10,11 @@ python backend/run.py test_cpp_project
 
 Config: [backend/config/config.json](backend/config/config.json) (override with `config.local.json`).
 
-## UI
+## Web UI
 
-A Streamlit web interface for configuring, running the pipeline, and viewing results.
-
-### Install
-
-```bash
-pip install -r requirements.txt
-pip install -r ui/requirements.txt
-```
-
-### Run
-
-```bash
-streamlit run ui/app.py
-```
-
-Opens at `http://localhost:8501` in your browser.
-
-> The UI reads and writes `backend/config/config.json`. Set your project path, configure groups/modules, then click **Run full** to execute the pipeline.
+The web client is [web-app/](web-app/) (React + Vite) talking to the FastAPI backend in
+[api/](api/) — see each folder's README to run them. (The legacy Streamlit `ui/` was
+removed when the web app landed.)
 
 ## Documentation
 

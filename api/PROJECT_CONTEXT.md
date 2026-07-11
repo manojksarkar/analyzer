@@ -223,9 +223,9 @@ behaviour, SSE, cancel, and pause/resume are unchanged.
   `regenerated` / `reused`.
 
 > **One server.** The old standalone incremental server (`backend/main.py`) was retired in
-> favour of this `api/` server (its endpoints are functionally covered here). The
-> `backend/seed_workspace.py` + `backend/git_service.py` CLI tooling remains for
-> seeding/onboarding test workspaces.
+> favour of this `api/` server (its endpoints are functionally covered here). The former
+> `backend/seed_workspace.py` + `backend/git_service.py` onboarding CLI tooling has since
+> been removed; workspace seeding is handled through the API.
 
 ### Per-project workspace isolation
 
