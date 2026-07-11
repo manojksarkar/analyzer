@@ -731,7 +731,7 @@ def _resolve_layer_dirs(config, group_name, layer_paths):
 
 def _resolve_script(project_root: str, script_path: str) -> str:
     if not script_path:
-        return os.path.join(project_root, "fake_flowchart_generator.py")
+        return os.path.join(project_root, "backend", "fake_flowchart_generator.py")
 
     # Recover from unescaped backslashes in config.json: JSON parses "backend\flowchart"
     # as backend + FF (0x0C) + lowchart, because \f/\b/\n/\r/\t are JSON escape sequences.
