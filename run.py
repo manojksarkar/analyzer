@@ -287,7 +287,7 @@ if use_model:
 # ---------------------------------------------------------------------------
 if os.environ.get("ANALYZER_CONFIG"):
     log(f"Using injected config (--config): {os.environ['ANALYZER_CONFIG']}", component="run")
-cfg = load_config(SCRIPT_DIR)
+cfg = load_config(os.path.join(SCRIPT_DIR, "backend"))
 if not (cfg.get("llm") or {}).get("summarize", True):
     no_llm_summarize = True
 

@@ -50,7 +50,7 @@ def _file_path(data: dict, base_path: str) -> str:
 
 def _defined_macros_from_config() -> set:
     """Extract macro names defined via -D flags in config clang.clangArgs."""
-    cfg = load_config(PROJECT_ROOT)
+    cfg = load_config(SCRIPT_DIR)
     args = (cfg.get("clang") or {}).get("clangArgs") or []
     if isinstance(args, str):
         args = [args]
@@ -625,7 +625,7 @@ def _enrich_behaviour_names_llm(
         return
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
-    abbreviations = load_abbreviations(PROJECT_ROOT, config)
+    abbreviations = load_abbreviations(SCRIPT_DIR, config)  # SCRIPT_DIR == backend/, which contains config/
     order = list(functions_data.keys())
     n = len(order)
     progress = ProgressReporter("LLM-behaviour-names", total=n, logger=get_logger("model_deriver"))
