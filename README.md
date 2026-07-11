@@ -4,8 +4,11 @@ Parse C++ source → model/ (Phase 1–2) → output/ (Phase 3 views) → **soft
 
 ## Quick start
 
+The `SampleCppProject/` test fixture is a **git submodule** — after cloning, run:
+
 ```bash
-python backend/run.py test_cpp_project
+git submodule update --init            # fetches SampleCppProject/ (else it's empty)
+python backend/run.py SampleCppProject
 ```
 
 Config: [backend/config/config.json](backend/config/config.json) (override with `config.local.json`).

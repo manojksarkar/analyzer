@@ -1981,6 +1981,13 @@ Reads `artifacts_dir/behaviour_diagrams/_behaviour_pngs.json`. For every
 
 ## 15. Test fixture — `SampleCppProject/`
 
+`SampleCppProject/` is a **git submodule** → `github.com/manojksarkar/SampleCppProject`
+(pinned to `main`). A fresh analyzer clone gets an **empty** folder until
+`git submodule update --init` fetches it — the e2e tests need this. The submodule is
+the single source of truth for the fixture (the local folder used to be an untracked,
+hollow shell holding only a stale `.flowchart_cache/`). Note: only `main` exists on the
+remote today; the incremental-diff tests' `feature1/2/3` branch topology is not yet pushed.
+
 The old `test_cpp_project/` fixture is superseded. Current fixture (matches
 `config.json` `layers`):
 
