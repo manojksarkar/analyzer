@@ -27,7 +27,7 @@ from typing import Optional
 @dataclass(frozen=True)
 class ProjectPaths:
     project_root: str
-    src_dir: str
+    src_dir: str              # engine source dir (== <root>/backend); field name kept for compat
     config_dir: str
     config_path: str          # config/config.json
     config_local_path: str    # config/config.local.json (may not exist)
@@ -45,12 +45,12 @@ _CACHED: Optional[ProjectPaths] = None
 def _detect_project_root() -> str:
     """Walk upward from this file to find the analyzer root.
 
-    The analyzer root is the directory that contains both `src/` and `config/`.
-    This file lives at <root>/src/core/paths.py, so two parents up is the root.
+    The analyzer root is the directory that contains both `backend/` and `config/`.
+    This file lives at <root>/backend/core/paths.py, so two parents up is the root.
     """
-    here = os.path.dirname(os.path.abspath(__file__))           # .../src/core
-    src_dir = os.path.dirname(here)                              # .../src
-    return os.path.dirname(src_dir)                              # .../
+    here = os.path.dirname(os.path.abspath(__file__))           # .../backend/core
+    backend_dir = os.path.dirname(here)                         # .../backend
+    return os.path.dirname(backend_dir)                         # .../
 
 
 def set_project_root(path: str) -> None:
@@ -70,11 +70,11 @@ def paths() -> ProjectPaths:
         if _CACHED is not None:
             return _CACHED
         root = _OVERRIDE_ROOT or _detect_project_root()
-        src = os.path.join(root, "src")
+        backend = os.path.join(root, "backend")
         cfg_dir = os.path.join(root, "config")
         _CACHED = ProjectPaths(
             project_root=root,
-            src_dir=src,
+            src_dir=backend,
             config_dir=cfg_dir,
             config_path=os.path.join(cfg_dir, "config.json"),
             config_local_path=os.path.join(cfg_dir, "config.local.json"),

@@ -269,7 +269,7 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     mode = (getattr(job, "mode", "auto") or "auto")
     scope = getattr(job, "scope", None) or {"type": "project"}
     script = "generate.py" if mode == "full" else "engine.py"
-    cmd = [sys.executable, str(root / "src" / "incremental" / script),
+    cmd = [sys.executable, str(root / "backend" / "incremental" / script),
            "--project-id", job.project_id, "--branch", job.branch,
            "--commit", job.commit_sha, "--scope", _scope_to_cli(scope),
            "--config", str(config_path)]
@@ -657,7 +657,7 @@ def preview_baseline(db: Any, project_id: str, commit: str,
                 "changedFiles": None, "warnings": [warning]}
 
     import sys as _sys
-    src_dir = str(get_settings().repo_root / "src")
+    src_dir = str(get_settings().repo_root / "backend")
     if src_dir not in _sys.path:
         _sys.path.insert(0, src_dir)
     try:
