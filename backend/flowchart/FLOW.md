@@ -1,6 +1,6 @@
 # Analyzer — Complete End-to-End Flow Reference
 
-Starting point: `python run.py <project_path>`
+Starting point: `python backend/run.py <project_path>`
 
 Everything in this document traces from that single command through every
 module, function, file read/write, LLM call, and output artifact.
@@ -17,7 +17,7 @@ run.py  main block
     --no-llm-summarize   → skip LLM phase/hierarchy summarization
     --from-phase N       → skip phases before N
 
-  load_config(PROJECT_ROOT)          reads config/config.json
+  load_config(PROJECT_ROOT)          reads backend/config/config.json
                                      merges config.local.json if present
 
   if --all-groups:
@@ -29,16 +29,16 @@ run.py  main block
       _run_pipeline(from_ph)
 
 _run_pipeline(from_ph)
-  subprocess: python src/parser.py        <project_path>   → Phase 1
-  subprocess: python src/model_deriver.py                  → Phase 2
-  subprocess: python src/run_views.py                      → Phase 3
-  subprocess: python src/docx_exporter.py                  → Phase 4
+  subprocess: python backend/parser.py        <project_path>   → Phase 1
+  subprocess: python backend/model_deriver.py                  → Phase 2
+  subprocess: python backend/run_views.py                      → Phase 3
+  subprocess: python backend/docx_exporter.py                  → Phase 4
   each phase must exit 0, else pipeline stops
 ```
 
 ---
 
-## PHASE 1 — C++ Source Parser (`src/parser.py`)
+## PHASE 1 — C++ Source Parser (`backend/parser.py`)
 
 **Purpose:** Walk every C++ source file in the project and extract the raw
 structural model using libclang.
@@ -92,7 +92,7 @@ model/dataDictionary.json  → enums, macros, typedefs, structs
 
 ---
 
-## PHASE 2 — Model Deriver (`src/model_deriver.py`)
+## PHASE 2 — Model Deriver (`backend/model_deriver.py`)
 
 **Purpose:** Enrich the raw parser model: derive units/modules, assign
 interface IDs, propagate global access, generate LLM descriptions, build
@@ -167,7 +167,7 @@ model_deriver.py  main()
   │ _run_hierarchy_summarizer(base_path, project_name,                 │
   │                            functions_data, config)                 │
   │                                                                    │
-  │     Imports from src/flowchart/ (reuses flowchart module):         │
+  │     Imports from backend/flowchart/ (reuses flowchart module):         │
   │         from project_scanner import HierarchySummarizer            │
   │         from llm.client import LlmClient                           │
   │         from pkb.knowledge import FunctionKnowledge, ProjectKnowledge│
@@ -280,7 +280,7 @@ model/modules.json           → module grouping
 
 ---
 
-## PHASE 3 — Views Generator (`src/run_views.py`)
+## PHASE 3 — Views Generator (`backend/run_views.py`)
 
 **Purpose:** Load the enriched model and generate all output views.
 Flowcharts are one of four views.
@@ -303,12 +303,12 @@ run_views.py  main()
           "flowcharts"      → flowcharts.run()   ← flowchart engine entry
 ```
 
-### Flowcharts View — `src/views/flowcharts.py`
+### Flowcharts View — `backend/views/flowcharts.py`
 
 ```
 flowcharts.run(model, output_dir, model_dir, config)
   reads config.views.flowcharts.scriptPath
-      → resolves to src/flowchart/flowchart_engine.py
+      → resolves to backend/flowchart/flowchart_engine.py
 
   reads model/metadata.json basePath → derive -I<basePath> clang arg
   reads config.llm: baseUrl, defaultModel, numCtx
@@ -316,7 +316,7 @@ flowcharts.run(model, output_dir, model_dir, config)
   if model/knowledge_base.json exists → --knowledge-json argument
 
   builds subprocess command:
-      python src/flowchart/flowchart_engine.py
+      python backend/flowchart/flowchart_engine.py
           --interface-json  model/functions.json
           --metaData-json   model/metadata.json
           --std             c++14
@@ -342,7 +342,7 @@ flowcharts.run(model, output_dir, model_dir, config)
 ---
 
 ## PHASE 3 (cont.) — Flowchart Engine Subprocess
-### `src/flowchart/flowchart_engine.py`
+### `backend/flowchart/flowchart_engine.py`
 
 This runs as a child process launched by `flowcharts.run()`.
 
@@ -614,7 +614,7 @@ On any exception → FlowchartResult(error=str(exc))
 
 ## LLM Label Generation (Step 6 detail)
 
-### `src/flowchart/llm/generator.py`
+### `backend/flowchart/llm/generator.py`
 
 ```
 LabelGenerator.label_cfg(cfg, func_entry, source_code, base_path)
@@ -783,7 +783,7 @@ Report fallback usage:
 
 ---
 
-## PHASE 4 — DOCX Exporter (`src/docx_exporter.py`)
+## PHASE 4 — DOCX Exporter (`backend/docx_exporter.py`)
 
 ```
 docx_exporter.py
@@ -936,8 +936,8 @@ USER PROMPT per batch:
 ```
 analyzer/                          ← project root
   run.py                           pipeline entry point (4 phases)
-  config/config.json               llm, clang, views, modulesGroups settings
-  config/abbreviations.txt         domain abbreviations for LLM behaviour names
+  backend/config/config.json               llm, clang, views, modulesGroups settings
+  backend/config/abbreviations.txt         domain abbreviations for LLM behaviour names
 
   src/
     parser.py                      Phase 1: C++ → model/ (libclang AST scan)

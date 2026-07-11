@@ -5,10 +5,10 @@ Parse C++ source → model/ (Phase 1–2) → output/ (Phase 3 views) → **soft
 ## Quick start
 
 ```bash
-python run.py test_cpp_project
+python backend/run.py test_cpp_project
 ```
 
-Config: [config/config.json](config/config.json) (override with `config.local.json`).
+Config: [backend/config/config.json](backend/config/config.json) (override with `config.local.json`).
 
 ## UI
 
@@ -29,7 +29,7 @@ streamlit run ui/app.py
 
 Opens at `http://localhost:8501` in your browser.
 
-> The UI reads and writes `config/config.json`. Set your project path, configure groups/modules, then click **Run full** to execute the pipeline.
+> The UI reads and writes `backend/config/config.json`. Set your project path, configure groups/modules, then click **Run full** to execute the pipeline.
 
 ## Documentation
 

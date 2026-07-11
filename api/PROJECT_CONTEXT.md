@@ -96,7 +96,7 @@ See `api/services/settings.py` for the canonical list.
 | Variable | Default | Description |
 |---|---|---|
 | `API_DB_BACKEND` | `memory` | `memory` or `json` |
-| `ANALYZER_REPO_ROOT` | auto-detected | Path to repo root (contains `run.py`) |
+| `ANALYZER_REPO_ROOT` | auto-detected | Path to repo root (contains `backend/run.py`) |
 | `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Per-project checkout + output root |
 | `JOB_MAX_CONCURRENCY` | `2` | Max simultaneous pipeline subprocesses |
 | `SUBPROCESS_TIMEOUT` | `0` | Kill subprocess after N seconds (0 = unlimited) |
@@ -195,7 +195,7 @@ that exceed the limit block until a slot frees.
 ### Incremental generation (version4 engine)
 
 The job pipeline drives the version4 **incremental-changes** engine
-(`src/incremental/`) for fast re-generation. Everything below is layered into
+(`backend/incremental/`) for fast re-generation. Everything below is layered into
 `pipeline_runner` / `routes/jobs.py` **additively** — existing full-generation
 behaviour, SSE, cancel, and pause/resume are unchanged.
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Entry: python run.py [options] <project_path>
+"""Entry: python backend/run.py [options] <project_path>
 
 Options:
   --clean              Delete output/ and model/ before running
   --selected-group <name>
                        Export only the named modulesGroup
-  --config <path>      Use this config file instead of config/config.json
+  --config <path>      Use this config file instead of backend/config/config.json
                        (a per-project/per-version config carrying the project's
                        `layers`). Exported as ANALYZER_CONFIG so every phase
                        subprocess honors it. config.local.json is NOT merged on
@@ -19,7 +19,7 @@ Options:
                        resume views+export (--from-phase 3).
   --data-dictionary <path>
                        CSV file to merge into model/dataDictionary.json (overrides
-                       auto-parsed entries). See config/data_dictionary.csv for format.
+                       auto-parsed entries). See backend/config/data_dictionary.csv for format.
   --project-name <name>
                        Override the project name used in metadata and
                        interfaceIds (default: basename of project_path).
@@ -37,13 +37,13 @@ Options:
                        WARNING: large runs can emit tens of MB of prompt text.
 
 Examples:
-  python run.py test_cpp_project
-  python run.py --clean test_cpp_project
-  python run.py --no-llm-summarize test_cpp_project
-  python run.py --from-phase 3 test_cpp_project
-  python run.py --selected-group MyGroup test_cpp_project
-  python run.py --filter-mode single_per_function test_cpp_project
-  python run.py --data-dictionary config/data_dictionary.csv SampleCppProject
+  python backend/run.py test_cpp_project
+  python backend/run.py --clean test_cpp_project
+  python backend/run.py --no-llm-summarize test_cpp_project
+  python backend/run.py --from-phase 3 test_cpp_project
+  python backend/run.py --selected-group MyGroup test_cpp_project
+  python backend/run.py --filter-mode single_per_function test_cpp_project
+  python backend/run.py --data-dictionary backend/config/data_dictionary.csv SampleCppProject
 """
 import os
 import shutil
@@ -253,13 +253,13 @@ if component_per_docx and selected_components_arg:
     sys.exit(1)
 
 if len(raw_args) < 1:
-    print("Usage: python run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
+    print("Usage: python backend/run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
     print("                     [--selected-layer <name>] [--no-llm-summarize] [--from-phase N]")
     print("                     [--selected-component <name> [--selected-component <name> ...]]")
     print("                     [--quiet|--verbose] [--trace-prompts] [--filter-mode MODE]")
     print("                     <project_path>")
-    print("Example: python run.py test_cpp_project")
-    print("Example: python run.py --selected-component Gpio SampleCppProject")
+    print("Example: python backend/run.py test_cpp_project")
+    print("Example: python backend/run.py --selected-component Gpio SampleCppProject")
     sys.exit(1)
 
 if clean_all:

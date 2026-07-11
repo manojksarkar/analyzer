@@ -114,7 +114,7 @@ _BOOTSTRAP_USERS: dict = {
 # ---------------------------------------------------------------------------
 
 def _find_root() -> Path:
-    """Walk up from this file to find the project root (contains run.py)."""
+    """Walk up from this file to find the project root (contains backend/run.py)."""
     here = Path(__file__).resolve().parent
     for candidate in [here, here.parent, here.parent.parent, here.parent.parent.parent]:
         if (candidate / "backend" / "run.py").exists():
@@ -1067,7 +1067,7 @@ class JsonDatabase:
     Parameters
     ----------
     root : str | Path | None
-        Project root directory (the one containing ``run.py``).
+        Project root directory (the one containing ``backend/run.py``).
         Defaults to auto-detected root.
 
     Pipeline integration
