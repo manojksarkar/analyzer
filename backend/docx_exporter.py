@@ -1097,7 +1097,7 @@ def _build_cover_page(doc, project_name: str, group_name: str, version: str = "1
 
     NAVY = RGBColor(30, 60, 120)
     DARK = RGBColor(60, 60, 60)
-    ASSETS = os.path.join(PROJECT_ROOT, "assets")
+    ASSETS = os.path.join(PROJECT_ROOT, "backend", "assets")
 
     def _spacing(para, before=0, after=0):
         pPr = para._p.get_or_add_pPr()
