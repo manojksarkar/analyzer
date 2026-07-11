@@ -21,5 +21,5 @@ Priority = automation priority (P0 highest). To be verified when V2 begins.
 | 11 | Technical Review — Review Checklist | P0 | checklist filling automatable in Polarion |
 
 ## Status
-- Not started — V2. Moved here from `docs/SWE2_PLAN.md` (was mis-attributed to SWE.2 during discussion).
+- Not started — V2. Moved here from `docs/planning/SWE2_PLAN.md` (was mis-attributed to SWE.2 during discussion).
 - Full discovery (purpose, template, per-section content, sourcing) to happen when V2 begins.

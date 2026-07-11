@@ -1,6 +1,6 @@
 """Interface tables view tests.
 
-Covers every rule in docs/DESIGN_SPEC.md — Interface Tables section.
+Covers every rule in docs/spec/DESIGN_SPEC.md — Interface Tables section.
 Update the spec first, then update these tests.
 """
 import copy

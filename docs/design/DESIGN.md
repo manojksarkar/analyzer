@@ -1,6 +1,6 @@
 # Design
 
-> See also: [README](../README.md) | [software_detailed_design.json](software_detailed_design.json) (output doc structure)
+> See also: [README](../../README.md) | [software_detailed_design.json](../spec/software_detailed_design.json) (output doc structure)
 
 ## Architecture
 
@@ -60,11 +60,11 @@ run.py
 
 **Visibility filtering:** Functions and global variables tagged `PRIVATE` are excluded from the interface table, unit header table, and behaviour diagrams. The DOCX flowchart section renders a non-private function's own flowchart followed by flowcharts of any private functions it calls — each private function flowchart is rendered at most once per unit (deduplication via `rendered_private_fids` set). `PUBLIC` and `PROTECTED` entries are included everywhere.
 
-**Output:** software_detailed_design.docx — structure spec in [software_detailed_design.json](software_detailed_design.json): 1 Introduction, 2..N Modules (Static Design with unit interface tables, Dynamic Behaviour), Code Metrics, Appendix A.
+**Output:** software_detailed_design.docx — structure spec in [software_detailed_design.json](../spec/software_detailed_design.json): 1 Introduction, 2..N Modules (Static Design with unit interface tables, Dynamic Behaviour), Code Metrics, Appendix A.
 
 ---
 
-## Config ([config/config.json](../config/config.json))
+## Config ([config/config.json](../../config/config.json))
 
 | Key | Default | Description |
 |-----|---------|-------------|
