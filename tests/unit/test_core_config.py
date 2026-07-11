@@ -74,7 +74,7 @@ class TestLoadConfigAnalyzerConfigOverride:
 
     def test_no_override_reads_default_config(self, monkeypatch):
         monkeypatch.delenv("ANALYZER_CONFIG", raising=False)
-        cfg = load_config(PROJECT_ROOT)
+        cfg = load_config(os.path.join(PROJECT_ROOT, "backend"))
         assert "__injected__" not in cfg  # the marker only exists in an override
 
     def test_override_is_honored(self, monkeypatch, tmp_path):

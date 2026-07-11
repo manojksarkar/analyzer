@@ -101,7 +101,7 @@ def _run_mmdc(project_root: str, mermaid: str, png_path: str, *,
         cmd = [mmdc, "-i", mmd_path, "-o", png_path]
         if scale is not None:
             cmd += ["--scale", str(scale)]
-        pup = os.path.join(project_root, "config", "puppeteer-config.json")
+        pup = os.path.join(project_root, "backend", "config", "puppeteer-config.json")
         if puppeteer and os.path.isfile(pup):
             cmd += ["-p", pup]
         try:
@@ -156,7 +156,7 @@ def safe_filename(s: str) -> str:
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
-_CONFIG_CACHE = load_config(_PROJECT_ROOT)
+_CONFIG_CACHE = load_config(_SCRIPT_DIR)  # _SCRIPT_DIR == backend/, which contains config/
 
 # Component mapping cache (initialized at import).
 _COMPONENT_OVERRIDES: dict = {}

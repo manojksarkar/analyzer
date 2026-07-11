@@ -48,7 +48,7 @@ def run(model, output_dir, model_dir, config):
 
     render_png = True
     mmdc = mmdc_path(project_root)
-    puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
+    puppeteer = os.path.join(project_root, "backend", "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):
         puppeteer = os.path.join(project_root, puppeteer)
     run_cmd_base = [mmdc, "--scale", "2"]

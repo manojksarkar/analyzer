@@ -43,7 +43,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 FC_DIR = os.path.join(PROJECT_ROOT, "output", "flowcharts")
 
 # Skip entire module when flowcharts are disabled in config
-_cfg_path = os.path.join(PROJECT_ROOT, "config", "config.json")
+_cfg_path = os.path.join(PROJECT_ROOT, "backend", "config", "config.json")
 if os.path.isfile(_cfg_path):
     import json as _json
     with open(_cfg_path, encoding="utf-8") as _f:

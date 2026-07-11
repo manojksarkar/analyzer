@@ -1078,6 +1078,7 @@ def run(model, output_dir, model_dir, config):
 
     puppeteer = os.path.join(
         project_root,
+        "backend",
         "config",
         "puppeteer-config.json",
     )

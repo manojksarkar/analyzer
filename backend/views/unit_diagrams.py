@@ -250,7 +250,7 @@ def run(model, output_dir, model_dir, config):
     # Project root must not be derived from output_dir: with --all-groups output is output/<group>/.
     project_root = os.path.dirname(os.path.abspath(model_dir))
     mmdc = mmdc_path(project_root)
-    puppeteer = os.path.join(project_root, "config", "puppeteer-config.json")
+    puppeteer = os.path.join(project_root, "backend", "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):
         puppeteer = os.path.join(project_root, puppeteer)
     run_cmd_base = [mmdc]

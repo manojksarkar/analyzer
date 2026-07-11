@@ -14,7 +14,7 @@ def _load_cfg():
     """Load config.json via the project's own utility (strips comments/trailing commas)."""
     sys.path.insert(0, os.path.join(PROJECT_ROOT, "backend"))
     from utils import load_config
-    return load_config(PROJECT_ROOT)
+    return load_config(os.path.join(PROJECT_ROOT, "backend"))
 
 
 @pytest.fixture(scope="session")

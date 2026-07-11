@@ -278,7 +278,7 @@ def test_behaviour_description_tables_present(docx):
 def test_flowchart_tables_present(docx):
     """_add_flowchart_table uses 'Capacity(Density)' — distinct from the behaviour table."""
     import json
-    cfg_path = os.path.join(PROJECT_ROOT, "config", "config.json")
+    cfg_path = os.path.join(PROJECT_ROOT, "backend", "config", "config.json")
     with open(cfg_path, encoding="utf-8") as f:
         cfg = json.load(f)
     if not cfg.get("views", {}).get("flowcharts"):

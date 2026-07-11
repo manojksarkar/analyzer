@@ -436,7 +436,7 @@ def _load_base_config(base_path: Path) -> dict:
 
 def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> Path:
     """Write a per-project config.json by merging the base config with project settings."""
-    base_path = get_settings().repo_root / "config" / "config.json"
+    base_path = get_settings().repo_root / "backend" / "config" / "config.json"
     cfg = _load_base_config(base_path)
 
     # Apply explicit section overrides from build_config

@@ -116,7 +116,11 @@ def _strip_trailing_commas(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def load_config(project_root: str) -> Dict[str, Any]:
-    """Load config from config/config.json, then config.local.json overrides.
+    """Load config from <project_root>/config/config.json, then config.local.json overrides.
+
+    Callers pass the directory that *contains* ``config/``. Since the config now
+    lives under ``backend/config/``, engine callers pass the backend dir
+    (``paths().src_dir``), not the repo root.
 
     If the ``ANALYZER_CONFIG`` environment variable points to a file, that file
     is loaded **instead**, as the complete self-contained per-run config — no
@@ -434,7 +438,7 @@ def app_config(*, refresh: bool = False) -> Dict[str, Any]:
         return _CACHED
     with _LOCK:
         if _CACHED is None or refresh:
-            _CACHED = load_config(paths().project_root)
+            _CACHED = load_config(paths().src_dir)
         return _CACHED
 
 

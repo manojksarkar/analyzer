@@ -29,7 +29,7 @@ class ProjectPaths:
     project_root: str
     src_dir: str              # engine source dir (== <root>/backend); field name kept for compat
     config_dir: str
-    config_path: str          # config/config.json
+    config_path: str          # backend/config/config.json
     config_local_path: str    # config/config.local.json (may not exist)
     model_dir: str
     output_dir: str
@@ -71,7 +71,7 @@ def paths() -> ProjectPaths:
             return _CACHED
         root = _OVERRIDE_ROOT or _detect_project_root()
         backend = os.path.join(root, "backend")
-        cfg_dir = os.path.join(root, "config")
+        cfg_dir = os.path.join(root, "backend", "config")
         _CACHED = ProjectPaths(
             project_root=root,
             src_dir=backend,
