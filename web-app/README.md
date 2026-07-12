@@ -2,7 +2,7 @@
 
 Web client for the ASPICE doc-automation product. React 19 + Vite + TypeScript + Tailwind v4.
 Wired to the real FastAPI server in [`../../api`](../../api) (see [INTEGRATION_NOTES.md](INTEGRATION_NOTES.md));
-the design mockups it ports live in [`../docs/ui/mockups/`](../docs/ui/mockups/).
+the design mockups it ports live in [`../docs/ui-mockups/`](../docs/ui-mockups/).
 
 ## Run
 
@@ -38,4 +38,4 @@ hooks-only data flow — are in [CONVENTIONS.md](CONVENTIONS.md) (ESLint-enforce
 - **Keep pages thin** — big pages live in `pages/<Name>/`.
 - **Commits**: short and prefixed — `feat:`, `fix:`, `docs:`.
 
-Product & design context: [`../docs/ui/UI_CONTEXT.md`](../docs/ui/UI_CONTEXT.md).
+Product & design context: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).

@@ -1,8 +1,9 @@
-# Frontend UI Design Context
+# Web App — Project Context
 
-> Last updated: 2026-06-22
-> Active branch: `feat/product-ui-redesign`
-> Read this file before doing any UI design work in this repo.
+> Last updated: 2026-07-12
+> Read this file before doing any UI design work in the web app.
+> Scope: the `web-app/` client (product/design *what & why*). For the root project
+> context see `../PROJECT_CONTEXT.md`; for the engineering *how* see `README.md`.
 
 ---
 
@@ -33,7 +34,7 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 
 ## Design files
 
-8 HTML mockups live in `docs/ui/mockups/`. Read these before implementing any page in React.
+8 HTML mockups live in `docs/ui-mockups/`. Read these before implementing any page in React.
 
 | File | Sidebar | Subbar | What it shows |
 |---|---|---|---|
@@ -112,7 +113,7 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 
 ## Pages — implementation order
 
-All pages are designed as HTML mockups in `docs/ui/mockups/`. Build in React in this order:
+All pages are designed as HTML mockups in `docs/ui-mockups/`. Build in React in this order:
 
 1. **Shared shell** — sidebar (220px / 56px collapsed), top bar, subbar, design tokens (`signin.html`, `projects.html`)
 2. **Sign-in** — `signin.html`
