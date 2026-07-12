@@ -22,7 +22,7 @@ Parent tasks are numbered + bold with a rollup estimate; sub-tasks (↳) sit und
 
 | # | Task / sub-task | Est (days) | Milestone | Pri | Notes / dependency |
 |---|---|---|---|---|---|
-| 1 | **Folder restructuring** — engine consolidated under `backend/` | 1–2 | V1 | P0 | **Mostly done** (branch `refactor/folder-restructuring`, 5 tested commits): `src/`→`backend/` + `config/` `few_shot_examples/` `assets/` both generators + `run.py` all under `backend/`. `api/` **kept** (hyphen in `api-server` + absolute `from api.` imports would break). `tools/` (mock-api + dev scripts) also done. **Deferred:** gitignored `.data/`. Layout ↓. |
+| 1 | **Folder restructuring** — engine consolidated under `engine/` | 1–2 | V1 | P0 | **Mostly done** (branch `refactor/folder-restructuring`, 5 tested commits): `src/`→`engine/` + `config/` `few_shot_examples/` `assets/` both generators + `run.py` all under `engine/`. `api/` **kept** (hyphen in `api-server` + absolute `from api.` imports would break). `tools/` (mock-api + dev scripts) also done. **Deferred:** gitignored `.data/`. Layout ↓. |
 | 2 | **Deploy in office** | **~5–8.5** | V1 | P0 | |
 | | ↳ environment (server, domain, network, LLM host, libclang/LLVM) | 1–2 | V1 | P0 | depends on office IT/access |
 | | ↳ runtime setup (offline deps, Python+Node build, LLM backend) | 1–2 | V1 | P0 | |
@@ -109,7 +109,7 @@ Rollups: **V1 ~20–46 · V1.1 (SWE.4) ~8–16 · V1.2 (SWE.2) ~12–24 · V1.x 
   ahead of SWE.2** (task 7). SWE.4 is **not client-demanded**; chosen first because it is smaller/faster, reuses
   SWE.3 machinery almost directly, and one slice (dynamic-behaviour test specs) is buildable today. **SWE.2 follows**
   (V1.2). SYS.1/SYS.2/SWE.1 remain V2 (~end Aug 2026).
-- **Restructuring (task 1) — status:** the **`backend/` bucket is done** (branch `refactor/folder-restructuring`): `backend/` = former `src/` **plus** its `config/`, `few_shot_examples/`, `assets/`, both dev generators, and `run.py`. Turned out **not purely cosmetic** — `config/` is resolved in ~6 sites + read by the api, and `run.py`'s location drives api root-detection; both were rewired (see PROJECT_CONTEXT top entry). **`api/` is kept, NOT renamed** to `api-server` — the hyphen is an illegal Python module name and api uses absolute `from api.` imports. **`tools/` is also done** — `mock-api` + the dev scripts (`create-sample-project`, `import-output-project`) moved under `tools/`. **Deferred (not done):** only the gitignored `.data/` grouping (model/output/workspaces/logs stay at repo root). Still `sys.path`-based; the ~47 path-injection sites remain **known debt, not scheduled**.
+- **Restructuring (task 1) — status:** the **`engine/` bucket is done** (branch `refactor/folder-restructuring`): `engine/` = former `src/` **plus** its `config/`, `few_shot_examples/`, `assets/`, both dev generators, and `run.py`. Turned out **not purely cosmetic** — `config/` is resolved in ~6 sites + read by the api, and `run.py`'s location drives api root-detection; both were rewired (see PROJECT_CONTEXT top entry). **`api/` is kept, NOT renamed** to `api-server` — the hyphen is an illegal Python module name and api uses absolute `from api.` imports. **`tools/` is also done** — `mock-api` + the dev scripts (`create-sample-project`, `import-output-project`) moved under `tools/`. **Deferred (not done):** only the gitignored `.data/` grouping (model/output/workspaces/logs stay at repo root). Still `sys.path`-based; the ~47 path-injection sites remain **known debt, not scheduled**.
 - **Real DB = PostgreSQL** via SQLAlchemy over the 12 repo interfaces (`api/repositories/interfaces.py`)
   — swap-in, no route/service changes. After V1; foundation can start in parallel. V1 runs JSON with a
   single uvicorn worker + `api/db/data/` backups.
@@ -123,8 +123,8 @@ Rollups: **V1 ~20–46 · V1.1 (SWE.4) ~8–16 · V1.2 (SWE.2) ~12–24 · V1.x 
 
 ### V1 folder layout (task 1)  — ✅ done · ⏳ deferred
 ```
-backend/          ✅ src/ renamed + run.py + generators
-   config/  few_shot_examples/  assets/   ✅ moved under backend/
+engine/          ✅ src/ renamed + run.py + generators
+   config/  few_shot_examples/  assets/   ✅ moved under engine/
 api/              ✅ KEPT (not renamed to api-server — hyphen breaks `from api.` imports)
 web-app/          ✅ unchanged
 tools/            ✅ mock-api + dev scripts (create-sample-project, import-output-project)

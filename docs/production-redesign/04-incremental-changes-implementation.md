@@ -45,7 +45,7 @@ Incremental generation assumes a project already exists and reads these — it d
 | current data dictionary | onboarding (replaceable per version — §5 step 7) | interface-table ranges + LLM type context |
 | target `branch` + `commit` | the UI (picked from the project-mgmt git browser) | the commit to generate for |
 
-The shared git helper `backend/git_service.py` (already built) backs both workstreams: onboarding
+The shared git helper `engine/git_service.py` (already built) backs both workstreams: onboarding
 uses `clone_repo`/`list_branches`/`list_commits`; incremental uses `checkout`/`changed_files`/
 `is_ancestor`/`nearest_ancestor`.
 
@@ -62,7 +62,7 @@ uses `clone_repo`/`list_branches`/`list_commits`; incremental uses `checkout`/`c
 | D5 | **Scope is a request parameter** — whole project (all layers) / a layer / a group / a component → maps to `--selected-layer` / `--selected-group` / `--selected-component`. |
 | D6 | **Data dictionary is per-version, replaceable.** A data-dict-only change → recompute the **cheap** interface-table ranges at reassembly; **no forced LLM regeneration**. |
 | D7 | **Bias to over-regenerate, never stale** — every ambiguous case (indirect/virtual calls, move/rename, non-ancestor base) regenerates *more*. |
-| D8 | **Auth (POC) = plaintext credentials.** For HTTPS, `username:token` is injected into the clone/fetch URL, then the clone's `origin` is reset to the credential-free URL so the token is **not** persisted in `.git/config`; the token is never logged. Production graduation: a deployment-appropriate secrets store (K8s Secrets / Vault / env injection). Implemented in `backend/git_service.py`. |
+| D8 | **Auth (POC) = plaintext credentials.** For HTTPS, `username:token` is injected into the clone/fetch URL, then the clone's `origin` is reset to the credential-free URL so the token is **not** persisted in `.git/config`; the token is never logged. Production graduation: a deployment-appropriate secrets store (K8s Secrets / Vault / env injection). Implemented in `engine/git_service.py`. |
 | D9 | **All incremental-store access goes through a thin interface** (`src/incremental/stores.py`: `VersionStore`, `ReuseIndex`, `HashStore`, `EdgeStore`) — a **JSON-file** implementation now, a **Postgres** implementation later behind the *same* methods. The §5 engine and the APIs call only the interface — no scattered `open()` / `json.load`. This makes the §10 "Postgres seam" a **swap of one implementation**, not a refactor. **Scope: the incremental *metadata* stores only** (versions / hashes / edges / reuse-index / jobs); the analyzer's per-version `model/`+`output/` artifacts stay file-based until the DB-native pipeline rewrite (`03`/§22.3). |
 | D10 | **Parse strategy = FULL parse now; narrowed (incremental) parse = M4 (designed in §11, deferred).** Every incremental generation runs a full libclang parse (Phase 1), so the call graph is **correct by construction** and impact analysis can never go stale. The hours→minutes win comes from **selective LLM regeneration**, *not* from narrowing the parse — the parse is cheap next to the LLM. Narrowed parse (parse only the TUs whose preprocessed input changed, reuse the baseline model for the rest) is fully specced in **§11** and scheduled as **M4**; implement it once Phase-1 parse time is the **measured** bottleneck on a large codebase. |
 
