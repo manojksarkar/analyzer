@@ -6,20 +6,20 @@
 
 Parse C++ → model (single source of truth) → views → software_detailed_design.docx.
 
-The **Flowchart Engine** is embedded inside the analyzer at `backend/flowchart/` and runs as
+The **Flowchart Engine** is embedded inside the analyzer at `engine/flowchart/` and runs as
 Phase 3's flowchart view. It reads the model files produced by Phases 1–2 and generates
 real Control Flow Graph (CFG) Mermaid diagrams for every function.
 
 ```
 run.py
   │
-  ├─ Phase 1: backend/parser.py
+  ├─ Phase 1: engine/parser.py
   │    libclang AST → model/functions.json (+ comment field)
   │                 → model/globalVariables.json
   │                 → model/dataDictionary.json (+ comment fields on types)
   │                 → model/metadata.json
   │
-  ├─ Phase 2: backend/model_deriver.py  [--llm-summarize ON by default]
+  ├─ Phase 2: engine/model_deriver.py  [--llm-summarize ON by default]
   │    Standard enrichment:
   │      → model/units.json, model/modules.json
   │      → interfaceIds, direction, behaviourNames, LLM descriptions
@@ -29,15 +29,15 @@ run.py
   │    Always:
   │      → model/knowledge_base.json  (rich context for Flowchart Engine)
   │
-  ├─ Phase 3: backend/run_views.py
-  │    ├─ flowcharts view → backend/flowchart/flowchart_engine.py (subprocess)
+  ├─ Phase 3: engine/run_views.py
+  │    ├─ flowcharts view → engine/flowchart/flowchart_engine.py (subprocess)
   │    │    reads: functions.json + metadata.json + knowledge_base.json
   │    │    CFG build (libclang, statement-level) + LLM labeling
   │    │    writes: output/flowcharts/{unit}.json  (Mermaid strings)
   │    ├─ unitDiagrams, behaviourDiagram, moduleStaticDiagram, interfaceTables
   │    └─ renderPng (mmdc) for each enabled view
   │
-  └─ Phase 4: backend/docx_exporter.py
+  └─ Phase 4: engine/docx_exporter.py
        reads: output/  → software_detailed_design.docx
 ```
 
@@ -64,11 +64,11 @@ run.py
 
 ---
 
-## Config ([backend/config/config.json](../../backend/config/config.json))
+## Config ([engine/config/config.json](../../engine/config/config.json))
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `views.flowcharts.scriptPath` | `backend/flowchart/flowchart_engine.py` | Path to flowchart engine |
+| `views.flowcharts.scriptPath` | `engine/flowchart/flowchart_engine.py` | Path to flowchart engine |
 | `views.flowcharts.renderPng` | `true` | Render flowchart Mermaid → PNG via mmdc |
 | `views.unitDiagrams.renderPng` | `true` | Render unit diagrams to PNG |
 | `views.behaviourDiagram.renderPng` | `true` | Render behaviour diagrams to PNG |
@@ -83,7 +83,7 @@ run.py
 | `llm.timeoutSeconds` | `120` | HTTP timeout per LLM call |
 | `llm.descriptions` | `true` | Enable LLM function descriptions |
 | `llm.behaviourNames` | `true` | Enable LLM behaviour Input/Output name polish |
-| `llm.abbreviationsPath` | `backend/config/abbreviations.txt` | Domain abbreviation expansions |
+| `llm.abbreviationsPath` | `engine/config/abbreviations.txt` | Domain abbreviation expansions |
 | `export.docxPath` | `output/software_detailed_design_{group}.docx` | Output path |
 | `export.docxFontSize` | `8` | Font size in the DOCX |
 
@@ -97,7 +97,7 @@ same folder — it is merged on top at runtime.
 ### run.py
 
 ```
-python backend/run.py [options] <project_path>
+python engine/run.py [options] <project_path>
 
 Options:
   --clean              Delete output/ and model/ before running
@@ -115,11 +115,11 @@ when label quality is less important.
 restart without redoing Phases 1 and 2 (which include LLM calls):
 
 ```bash
-python backend/run.py --from-phase 3 test_cpp_project   # re-run views only
-python backend/run.py --from-phase 4 test_cpp_project   # re-export DOCX only
+python engine/run.py --from-phase 3 test_cpp_project   # re-run views only
+python engine/run.py --from-phase 4 test_cpp_project   # re-export DOCX only
 ```
 
-Alternatively, run `python backend/run_views.py` directly to re-run Phase 3 standalone.
+Alternatively, run `python engine/run_views.py` directly to re-run Phase 3 standalone.
 
 ---
 
@@ -286,7 +286,7 @@ is richer when `--llm-summarize` is active (default).
 6. `_enrich_behaviour_names` → static Input/Output names from params/globals/returnType.
 7. `_enrich_behaviour_names_llm` → LLM polish for generic static names.
 8. **`_run_hierarchy_summarizer`** *(skipped with --no-llm-summarize)*:
-   - Imports `HierarchySummarizer` from `backend/flowchart/project_scanner.py`.
+   - Imports `HierarchySummarizer` from `engine/flowchart/project_scanner.py`.
    - Builds `ProjectKnowledge` from model data (no extra libclang parse).
    - Runs 4-level LLM summarization: function summaries → phase breakdowns →
      file summaries → module summaries → project summary.
@@ -341,7 +341,7 @@ Reads all view outputs from `output/` and assembles `software_detailed_design.do
 
 ## Flowchart Engine
 
-The flowchart engine lives at `backend/flowchart/` and is invoked as a subprocess by the
+The flowchart engine lives at `engine/flowchart/` and is invoked as a subprocess by the
 `flowcharts` view. It does **statement-level** CFG analysis — a separate, deeper libclang
 pass that the declaration-level parser.py cannot do in a single shared traversal.
 
@@ -349,7 +349,7 @@ pass that the declaration-level parser.py cannot do in a single shared traversal
 
 ```bash
 # Standalone usage:
-python backend/flowchart/flowchart_engine.py \
+python engine/flowchart/flowchart_engine.py \
     --interface-json  model/functions.json \
     --metaData-json   model/metadata.json \
     --knowledge-json  model/knowledge_base.json \
@@ -517,14 +517,14 @@ both = **In**; no global access = **In**.
 
 ## Extensibility
 
-**Adding a new view:** 1) Add `backend/views/my_view.py` with `@register("myView")` and
+**Adding a new view:** 1) Add `engine/views/my_view.py` with `@register("myView")` and
 `run(model, output_dir, model_dir, config)`. 2) Add `"myView": true` to `config.views`.
 3) Import the module in `views/__init__.py`. Views read the model and write to `output/`.
 
 **Running the flowchart engine standalone** (useful for debugging one function):
 
 ```bash
-python backend/flowchart/flowchart_engine.py \
+python engine/flowchart/flowchart_engine.py \
     --interface-json model/functions.json \
     --metaData-json  model/metadata.json \
     --knowledge-json model/knowledge_base.json \

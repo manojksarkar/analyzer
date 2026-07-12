@@ -4,7 +4,7 @@ This document explains how `software_detailed_design.docx` is created section-by
 
 ## What generates the DOCX
 
-1. DOCX exporter script: `backend/docx_exporter.py`
+1. DOCX exporter script: `engine/docx_exporter.py`
 2. It produces: `output/software_detailed_design_all.docx` (or per-group filename)
 
 ## Main inputs to the exporter
@@ -23,7 +23,7 @@ The exporter loads these files:
 
 ## Config that affects DOCX content
 
-Important config keys (from `backend/config/config.json`):
+Important config keys (from `engine/config/config.json`):
 
 - `views.moduleStaticDiagram.enabled`, `views.moduleStaticDiagram.renderPng`, `views.moduleStaticDiagram.widthInches`
 - `views.flowcharts.renderPng` (controls whether flowchart PNGs are used)
@@ -124,5 +124,5 @@ Other interface-table columns are populated directly:
 
 1. Generate model and views (pipeline)
 2. Then re-run DOCX export:
-   - `python backend/docx_exporter.py`
+   - `python engine/docx_exporter.py`
 

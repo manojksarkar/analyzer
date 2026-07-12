@@ -8,10 +8,10 @@ The `SampleCppProject/` test fixture is a **git submodule** — after cloning, r
 
 ```bash
 git submodule update --init            # fetches SampleCppProject/ (else it's empty)
-python backend/run.py SampleCppProject
+python engine/run.py SampleCppProject
 ```
 
-Config: [backend/config/config.json](backend/config/config.json) (override with `config.local.json`).
+Config: [engine/config/config.json](engine/config/config.json) (override with `config.local.json`).
 
 ## Web UI
 
