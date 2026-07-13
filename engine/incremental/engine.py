@@ -171,7 +171,8 @@ def carry_forward_from_index(impact_keys: Iterable[str],
 def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   data_dict_path: Optional[str], repo_dir: str, project_root: str,
                   extra_args: Optional[List[str]] = None,
-                  project_name: Optional[str] = None) -> int:
+                  project_name: Optional[str] = None,
+                  macros_path: Optional[str] = None) -> int:
     cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path]
     cmd += scope_to_args(scope)
     cmd += per_component_docx_args(scope)
@@ -183,6 +184,8 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
         cmd += ["--no-llm-summarize"]
     if data_dict_path:
         cmd += ["--data-dictionary", data_dict_path]
+    if macros_path:
+        cmd += ["--macros", macros_path]
     cmd += list(extra_args or [])
     cmd += [repo_dir]
     return subprocess.run(cmd, cwd=project_root, shell=(os.name == "nt")).returncode
@@ -211,7 +214,8 @@ def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any]) -> None:
 
 
 def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
-                        *, target, base_commit, base_parse_dir, project_name=None) -> bool:
+                        *, target, base_commit, base_parse_dir, project_name=None,
+                        mp_path=None) -> bool:
     """Narrowed parse (M4.4, doc 04 §11): re-parse ONLY the affected TUs and merge them
     into the baseline's parser-level snapshot, so the resulting model/ is the SAME blank
     skeleton a full parse would produce (impacted functions arrive blank -> Phase 2
@@ -252,7 +256,7 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     try:
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
                            extra_args=["--to-phase", "1", "--only-files", listfile],
-                           project_name=project_name)
+                           project_name=project_name, macros_path=mp_path)
     finally:
         if prev_bfk is None:
             os.environ.pop("ANALYZER_BASELINE_FUNCKEYS", None)
@@ -287,6 +291,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          workspaces_root: Optional[str] = None,
                          base_version_id: Optional[str] = None,
                          data_dict_id: Optional[str] = None,
+                         preprocessor_defs_id: Optional[str] = None,
                          no_llm: bool = False,
                          version_id: Optional[str] = None,
                          force: bool = False,
@@ -334,6 +339,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     hstore, estore, ridx = HashStore(vstore), EdgeStore(vstore), ReuseIndex(ws)
     version_id = os.path.basename(repo_dir)  # the version id IS the checkout dir name (commit[:16])
     data_dict_id = data_dict_id or project.get("currentDataDictId")
+    preprocessor_defs_id = preprocessor_defs_id or project.get("currentPreprocDefsId")
 
     vdir = vstore.create_dir(version_id)  # == repo_dir (already checked out); never wiped
     # Config is PER-PROJECT: workspaces/<pid>/config.json (written by the API). Use it as-is
@@ -353,6 +359,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     dd_path = ws.datadict_path(data_dict_id) if data_dict_id and os.path.isfile(
         ws.datadict_path(data_dict_id)) else None
+    mp_path = ws.macros_path(preprocessor_defs_id) if preprocessor_defs_id and os.path.isfile(
+        ws.macros_path(preprocessor_defs_id)) else None
     model_dir = os.path.join(project_root, "model")
     # Clean the shared output/ so this version captures only its own documents
     # (the flowchart-reuse step re-seeds output/<scope>/flowcharts from the baseline).
@@ -375,7 +383,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     if narrowed_parse:
         used_narrowed = _try_narrowed_parse(
             vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
-            project_name=project_name,
+            project_name=project_name, mp_path=mp_path,
             target=target, base_commit=decision["chosenBaseCommit"],
             base_parse_dir=os.path.join(vstore.version_dir(base_vid), "parse"))
     if used_narrowed and verify_parse:
@@ -385,7 +393,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         _vlog = _get_logger("incremental")
         narrowed_model = _load_parse_dir(model_dir)
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                           extra_args=["--to-phase", "1"], project_name=project_name)
+                           extra_args=["--to-phase", "1"], project_name=project_name, macros_path=mp_path)
         if rc != 0:
             _fail("parse", rc)
         mism = diff_models(narrowed_model, _load_parse_dir(model_dir))
@@ -401,7 +409,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         # model/ now holds the FULL parse -> trusted regardless of the narrowed result.
     elif not used_narrowed:
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                           extra_args=["--to-phase", "1"], project_name=project_name)
+                           extra_args=["--to-phase", "1"], project_name=project_name, macros_path=mp_path)
         if rc != 0:
             _fail("parse", rc)
 
@@ -512,7 +520,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
     rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                       extra_args=["--from-phase", "2"], project_name=project_name)
+                       extra_args=["--from-phase", "2"], project_name=project_name, macros_path=mp_path)
     if rc != 0:
         _fail("derive+views+export", rc)
 
@@ -598,6 +606,7 @@ def main() -> None:
     ap.add_argument("--scope", default="project")
     ap.add_argument("--base-version-id", default=None)
     ap.add_argument("--data-dict-id", default=None)
+    ap.add_argument("--preprocessor-defs-id", default=None)
     ap.add_argument("--version-id", default=None)
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--force", action="store_true")
@@ -612,6 +621,7 @@ def main() -> None:
     args = ap.parse_args()
     m = generate_incremental(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
                              base_version_id=args.base_version_id, data_dict_id=args.data_dict_id,
+                             preprocessor_defs_id=args.preprocessor_defs_id,
                              no_llm=args.no_llm, version_id=args.version_id, force=args.force,
                              narrowed_parse=args.narrowed_parse, verify_parse=args.verify_parse,
                              config_path=args.config, repo_url=args.repo_url)

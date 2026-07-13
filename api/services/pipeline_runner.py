@@ -281,6 +281,8 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
         cmd += ["--base-version-id", _ref_commit[:16] if _ref_commit else _raw_ref]
     if getattr(job, "data_dict_id", None):
         cmd += ["--data-dict-id", job.data_dict_id]
+    if getattr(job, "preprocessor_defs_id", None):
+        cmd += ["--preprocessor-defs-id", job.preprocessor_defs_id]
     if getattr(job, "no_llm", False):
         cmd.append("--no-llm")
     if mode != "full" and getattr(job, "narrowed_parse", False):

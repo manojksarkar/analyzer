@@ -92,6 +92,9 @@ class Workspace:
     def datadict_path(self, data_dict_id: str) -> str:
         return os.path.join(self.root, "datadict", f"{data_dict_id}.csv")
 
+    def macros_path(self, preprocessor_defs_id: str) -> str:
+        return os.path.join(self.root, "macros", f"{preprocessor_defs_id}.csv")
+
 
 class VersionStore:
     """Version lifecycle: create per-commit version dirs (capturing model/output/documents)

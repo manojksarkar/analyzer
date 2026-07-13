@@ -2201,8 +2201,11 @@ before doing separate work on them.
   `preprocessor_defs_id` to `AnalysisJob` (`models/domain.py`) + the job request body (`routes/jobs.py`),
   and a `--macros` block in `_build_cmd` reading `workspaces/<pid>/macros/<id>.csv` (mirrors datadict).
   **The onboarding/upload side must place the uploaded preprocessor_definitions CSV at that path**
-  (same external step as datadict). **Not yet covered:** the incremental path (`--data-dict-id`,
-  pipeline_runner.py:282) — macros there is a follow-up if the incremental script gains `--macros`.
+  (same external step as datadict). **Incremental path also wired (2026-07-13):** the incremental
+  `generate.py`/`engine.py` scripts gained a `--preprocessor-defs-id` arg → `stores.macros_path()` →
+  `--macros` (mirroring `--data-dict-id`; threaded through `_run_analyzer`/`_try_narrowed_parse`), and
+  `pipeline_runner` passes it for incremental runs too. Full upload→generate E2E still pends an env
+  with the onboarding upload + macros file.
   End-to-end (upload→generate) verify pending; `_build_cmd` unit-verified (adds `--macros` iff id set
   AND file exists).
 
