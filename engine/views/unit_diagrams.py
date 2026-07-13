@@ -107,34 +107,36 @@ def _build_unit_diagram(
     this_id = _unit_part_id(unit_key)
     this_component = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
 
+    # Orient each interface by its function's TABLE direction (3.6): In => inbound edge
+    # (partner -> this unit); Out => outbound edge (this unit -> partner). This keeps the
+    # diagram's direction consistent with the interface table (REQ-IT-05), even where it
+    # diverges from the underlying call arrows. A partner unit with both In and Out
+    # interfaces appears on both sides.
     edges = {}
-    for fid in unit_info.get("functionIds", []):
-        if fid not in functions_data:
-            continue
-        f = functions_data[fid]
-        for callee_fid in f.get("callsIds", []) or []:
-            callee_unit = fid_to_unit.get(callee_fid)
-            if not callee_unit or callee_unit == unit_key:
-                continue
-            callee_f = functions_data.get(callee_fid, {})
-            iface = callee_f.get("interfaceId", "")
-            if iface:
-                key = (this_id, _unit_part_id(callee_unit))
-                edges.setdefault(key, set()).add(iface)
+
+    def _dir_of(fn):
+        return "out" if (fn.get("direction") or "In").strip().lower() == "out" else "in"
+
+    def _add_edge(partner_unit, iface, direction):
+        if not partner_unit or partner_unit == unit_key or not iface:
+            return
+        pid = _unit_part_id(partner_unit)
+        key = (this_id, pid) if direction == "out" else (pid, this_id)
+        edges.setdefault(key, set()).add(iface)
 
     for fid in unit_info.get("functionIds", []):
         if fid not in functions_data:
             continue
         f = functions_data[fid]
-        iface = f.get("interfaceId", "")
-        if not iface:
-            continue
+        # (1) this unit's own interface, oriented by its direction, once per external caller
+        f_iface = f.get("interfaceId", "")
+        f_dir = _dir_of(f)
         for caller_fid in f.get("calledByIds", []) or []:
-            caller_unit = fid_to_unit.get(caller_fid)
-            if not caller_unit or caller_unit == unit_key:
-                continue
-            key = (_unit_part_id(caller_unit), this_id)
-            edges.setdefault(key, set()).add(iface)
+            _add_edge(fid_to_unit.get(caller_fid), f_iface, f_dir)
+        # (2) callee interfaces this unit uses, oriented by the callee's direction
+        for callee_fid in f.get("callsIds", []) or []:
+            callee_f = functions_data.get(callee_fid, {})
+            _add_edge(fid_to_unit.get(callee_fid), callee_f.get("interfaceId", ""), _dir_of(callee_f))
 
     caller_ids = {fr for (fr, to) in edges if to == this_id}
     callee_ids = {to for (fr, to) in edges if fr == this_id}
@@ -150,8 +152,8 @@ def _build_unit_diagram(
                 internal_set.add(pid)
     internal_callers = sorted(caller_ids & internal_set)
     external_callers = sorted(caller_ids - internal_set)
-    internal_callees = sorted((callee_ids - caller_ids) & internal_set)
-    external_callees = sorted((callee_ids - caller_ids) - internal_set)
+    internal_callees = sorted(callee_ids & internal_set)
+    external_callees = sorted(callee_ids - internal_set)
 
     n_edges = len(edges)
     n_extra_lines = min(max(2, n_edges), 12)

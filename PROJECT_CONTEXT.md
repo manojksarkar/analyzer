@@ -2137,8 +2137,8 @@ before doing separate work on them.
   DESIGN_SPEC REQ-IT-12 and the e2e sourceDest test were updated from "external (outside-module)
   only" to "every interacting unit except the self-unit"** (client choice, 2026-07-13). Snapshot
   regenerated.
-- **3.6 — make the static diagram consistent with the interface-table direction. ⏳ OPEN (correct
-  alignment direction clarified 2026-07-13).** The interface **table's logic is canonical** —
+- **3.6 — make the static diagram consistent with the interface-table direction. ✅ IMPLEMENTED
+  (2026-07-13) — diagram-side change.** The interface **table's logic is canonical** —
   global-based direction, REQ-IT-05 — so "**align on interface table logic**" means change the
   **static diagram (`views/unit_diagrams.py`)** to match the table, NOT the table to match the
   diagram. An earlier attempt did the reverse (made the table call-based in `model_deriver`) and was
@@ -2148,11 +2148,14 @@ before doing separate work on them.
   edges labelled with interfaceIds; no In/Out text). **DECISION (client, 2026-07-13): "orient
   interfaces by table In/Out"** — each interface's placement/arrow follows its function's table
   `direction` (In ⇒ inbound/left, arrow into the unit; Out ⇒ outbound/right, arrow out), **even
-  where that diverges from the call arrows** (accepted). **Non-trivial:** a diagram edge connects a
-  caller/callee unit pair and can carry several interfaces with *different* directions, so edges must
-  be re-derived/split by each interface's `direction` rather than by call role; the DESIGN_SPEC
-  diagram section (left=caller/right=callee) also needs updating. **Needs mmdc visual verification,
-  blocked by the config↔test group-name mismatch (`My Sample` vs `Sample`).**
+  where that diverges from the call arrows** (accepted). **Implemented** in `unit_diagrams.py`: the
+  edge-building orients each interface by `_dir_of(fn)` (In → edge `(partner, this)`; Out → edge
+  `(this, partner)`), and a partner sharing both In and Out interfaces appears on both sides. Verified
+  by rendering the `My Sample` Core diagram — only `coreSetResult` is In (inbound), everything else Out
+  (outbound), i.e. one-sided as expected for code that rarely writes globals. DESIGN_SPEC REQ-UD-05/06
+  updated to the orient-by-direction rule. **Follow-ups:** the `unit_diagrams` e2e tests + snapshot
+  still encode the old call-based layout (pipeline-gated update); the sample could gain more In
+  (global-writing) functions for a less one-sided demo (a SampleCppProject submodule change).
 
 **Export completeness:**
 - **3.7 — namespaced functions missing from DOCX. ✅ FIXED (2026-07-13) — this was

@@ -219,21 +219,22 @@ The diagram flows left-to-right. The current unit's module is visually grouped a
 
 ---
 
-### REQ-UD-05 — Call edges
+### REQ-UD-05 — Interface edges
 
-An arrow connects two units for every cross-unit call relationship. The arrow is labelled with the interface identifier of the called function. When a unit makes multiple calls to another unit, all interface identifiers appear on the same arrow. A unit does not draw an arrow to itself.
+An arrow connects the current unit to each other unit it shares an interface with, labelled with that interface's identifier. **The arrow is oriented by the interface's table direction (REQ-IT-05), not by the call relationship:** an interface with direction **In** is drawn as inbound (arrow into the current unit); an interface with direction **Out** is drawn as outbound (arrow out of the current unit). This keeps the diagram's direction consistent with the interface table, even where it diverges from the underlying call arrows. When multiple interfaces share the same partner unit and orientation, all identifiers appear on the same arrow. A unit does not draw an arrow to itself.
 
-**Verification:** Known cross-unit calls produce labelled arrows with `IF_` identifiers. Same-unit calls produce no arrow. Multiple calls share one arrow with all identifiers.
+**Verification:** Each interface produces a labelled arrow with an `IF_` identifier oriented by its In/Out direction. Same-unit interfaces produce no arrow.
 
 ---
 
 ### REQ-UD-06 — Node placement
 
-External units that call into the current module appear to the left of the module subgraph.
-External units that the current module calls appear to the right.
+Partner units connected via an **In** interface (inbound) appear to the left of the module subgraph.
+Partner units connected via an **Out** interface (outbound) appear to the right.
+A partner unit that shares both In and Out interfaces appears on both sides.
 The current unit and its same-module peers occupy the subgraph in the centre.
 
-**Verification:** External caller nodes appear before the subgraph declaration. External callee nodes appear after the subgraph close.
+**Verification:** In-interface (inbound) partner nodes appear before the subgraph declaration. Out-interface (outbound) partner nodes appear after the subgraph close.
 
 ---
 
