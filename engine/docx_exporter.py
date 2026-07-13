@@ -1457,10 +1457,15 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 (i for i in interfaces if i.get("type") != "Global Variable"), start=3
             ):
                 func_name = iface.get("name", "")
+                # Flowchart JSON + PNGs are keyed by qualifiedName (flowchart/output/writer.py),
+                # so look up by qualifiedName; fall back to the short name for un-namespaced funcs.
+                func_qn = iface.get("qualifiedName", "") or func_name
                 doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{func_name}", level=4)
                 unit_prefix = unit_key.replace(KEY_SEP, "_").replace(" ", "_")
                 flowchart = (
-                    flowcharts_map.get(unit_prefix, {}).get(func_name)
+                    flowcharts_map.get(unit_prefix, {}).get(func_qn)
+                    or flowcharts_map.get(unit_name_flowchart, {}).get(func_qn)
+                    or flowcharts_map.get(unit_prefix, {}).get(func_name)
                     or flowcharts_map.get(unit_name_flowchart, {}).get(func_name)
                 ) if flowcharts_enabled and func_name else None
                 # Build flowcharts list: own flowchart + private callee flowcharts
@@ -1475,6 +1480,8 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                     # Slice-aware: prefer {stem}_part_K_of_N.png (a tall flowchart split by
                     # views/flowcharts.py), else the single {stem}.png, else mermaid text.
                     base_stems = [
+                        f"{unit_prefix}_{safe_filename(func_qn)}",
+                        f"{unit_name_flowchart}_{safe_filename(func_qn)}",
                         f"{unit_prefix}_{safe_filename(func_name)}",
                         f"{unit_name_flowchart}_{safe_filename(func_name)}",
                     ]
@@ -1498,8 +1505,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         callee_func_name = callee_qn.split("::")[-1] if callee_qn else ""
                         if not callee_func_name:
                             continue
+                        # Keyed by qualifiedName (writer.py); short-name fallback for un-namespaced.
                         callee_flowchart = (
-                            flowcharts_map.get(callee_unit_prefix, {}).get(callee_func_name)
+                            flowcharts_map.get(callee_unit_prefix, {}).get(callee_qn)
+                            or flowcharts_map.get(callee_unit_name, {}).get(callee_qn)
+                            or flowcharts_map.get(callee_unit_prefix, {}).get(callee_func_name)
                             or flowcharts_map.get(callee_unit_name, {}).get(callee_func_name)
                         )
                         if not callee_flowchart:
@@ -1514,6 +1524,8 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         callee_return = callee.get("returnType", "")
                         callee_signature = f"{callee_return} {callee_func_name}({callee_params})".strip()
                         callee_stems = [
+                            f"{callee_unit_prefix}_{safe_filename(callee_qn)}",
+                            f"{callee_unit_name}_{safe_filename(callee_qn)}",
                             f"{callee_unit_prefix}_{safe_filename(callee_func_name)}",
                             f"{callee_unit_name}_{safe_filename(callee_func_name)}",
                         ]
