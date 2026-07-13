@@ -29,7 +29,7 @@ Parent tasks are numbered + bold with a rollup estimate; sub-tasks (↳) sit und
 | | ↳ serve web-app + API (reverse proxy, domain, persistent workspaces) | 1–1.5 | V1 | P0 | |
 | | ↳ auth/users (SSO stub disabled → simple accounts) | 1–2 | V1 | P0 | |
 | | ↳ end-to-end smoke test from a client machine | 1 | V1 | P0 | after the others |
-| 3 | **V1 fixes** | **~9–25** | V1 | P0 | rollup ↑: adds pre-V1 correctness batch (3.1–3.10) from review |
+| 3 | **V1 fixes** | **~9–25** | V1 | P0 | **✅ mostly done (2026-07-13):** flowchart-in-DOCX, macros (full+incremental), 3.1, 3.2, 3.5, 3.6, 3.7 landed on `fix/v1-issues`; full test suite green. 3.3 resolved by 3.1. Remaining: 3.4 (re-test on client project), 3.8/3.9 (need repro), 3.10 (other team) |
 | | ↳ flowcharts generated but missing from DOCX | 2–4 | V1 | P0 | `src/views/flowcharts.py` vs `src/docx_exporter.py` |
 | | ↳ data dictionary + macros not ingested properly | 1–3 | V1 | P0 | `config/macros.csv` path |
 | | **↳ Pre-V1 correctness batch (10 review findings; fix roots first, re-test dependents):** | **~6–18** | V1 | P0 | 3.3/3.4 are re-test-after-fix — may vanish once roots land |
@@ -38,11 +38,11 @@ Parent tasks are numbered + bold with a rollup estimate; sub-tasks (↳) sit und
 | | ↳ 3.3 some functions should not be visible | 0–1 | V1 | P0 | **re-test after 3.1**; fix only if it persists |
 | | ↳ 3.4 interface direction shows "Out" instead of "In" for some functions | 0–1 | V1 | P0 | **re-test after 3.2**; fix only if it persists |
 | | ↳ 3.5 include same-component pairs as source/destination too | 0.5–1 | V1 | P0 | table currently drops same-component pairs |
-| | ↳ 3.6 make interface-table direction consistent with static diagram | 1–2 | V1 | P0 | table factors in global-var access; static diagram uses function-call rel. — align on function-call basis |
-| | ↳ 3.7 functions missing from DOCX due to access specifier | 0.5–1.5 | V1 | P0 | known issue |
+| | ↳ 3.6 make interface-table direction consistent with static diagram | 1–2 | V1 | P0 | **✅ DONE** — align on **interface-table logic**: the diagram now orients each interface by the table's In/Out (REQ-UD-05/06); the table keeps global-based direction (REQ-IT-05). An earlier table-side call-based change was reverted |
+| | ↳ 3.7 functions missing from DOCX due to access specifier | 0.5–1.5 | V1 | P0 | **✅ DONE** — was NOT access-specifier (that "no cross-file caller ⇒ private" rule is intended). Real bug: namespaced `A::B::C` functions lost their flowchart (producer keys by qualifiedName, consumer looked up short name). Same root as flowchart-in-DOCX |
 | | ↳ 3.8 if/else condition depiction in flowchart | 1–2 | V1 | P0 | |
 | | ↳ 3.9 overlapping flowchart edges | 0.5–2 | V1 | P0 | layout / ELK spacing |
-| | ↳ 3.10 dynamic-behaviour issue | 1–3 | V1 | P0 | **needs detail** — scope/repro unclear |
+| | ↳ 3.10 dynamic-behaviour issue | 1–3 | V1 | P0 | **owned by another team member — out of our fix scope** |
 | 4 | **Function hide/unhide** → re-run Phases 3–4 in full (reuse 1–2) | 2–4 | V1 | P1 | `Function.is_visible` modeled; optimize later (task 13) |
 | 5 | **Release & client review** | **~3.5–6.5** | V1 | | |
 | | ↳ define V1 scope + deliverables list | 0.5 | V1 | P0 | |
