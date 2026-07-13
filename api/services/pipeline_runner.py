@@ -612,6 +612,15 @@ def _build_cmd(
                    / "datadict" / f"{ddid}.csv")
         if dd_path.is_file():
             cmd += ["--data-dictionary", str(dd_path)]
+    # Macros (preprocessor definitions): mirror the data-dictionary wiring. The uploaded
+    # preprocessor_definitions CSV is placed at workspaces/<pid>/macros/<id>.csv (same convention
+    # as datadict) and passed as --macros so Clang -D flags are applied in Phase 1.
+    mid = getattr(job, "preprocessor_defs_id", None)
+    if mid:
+        macros_path = (get_settings().repo_root / "workspaces" / job.project_id
+                       / "macros" / f"{mid}.csv")
+        if macros_path.is_file():
+            cmd += ["--macros", str(macros_path)]
     if getattr(job, "version_tag", None):
         cmd += ["--project-name", job.version_tag]
     # Extra include paths from architecture_layers.lib_paths (--include-path <layer> <abs_dir>)

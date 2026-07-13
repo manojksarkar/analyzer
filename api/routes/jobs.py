@@ -44,6 +44,7 @@ class StartJobRequest(BaseModel):
     scope: Optional[dict] = None
     no_llm: bool = False                       # disable LLM descriptions/behaviour/summaries
     data_dict_id: Optional[str] = None         # resolved to workspaces/<pid>/datadict/<id>.csv
+    preprocessor_defs_id: Optional[str] = None # macros CSV -> workspaces/<pid>/macros/<id>.csv (--macros)
     # M4.4 opt-in: in an incremental run, re-parse only the affected TUs and merge into the
     # baseline parser snapshot instead of a full Phase-1 parse (pays off on large repos).
     narrowed_parse: bool = False
@@ -83,6 +84,7 @@ def _job_dict(job: AnalysisJob) -> dict:
         "scope": getattr(job, "scope", None),
         "no_llm": getattr(job, "no_llm", False),
         "data_dict_id": getattr(job, "data_dict_id", None),
+        "preprocessor_defs_id": getattr(job, "preprocessor_defs_id", None),
         "narrowed_parse": getattr(job, "narrowed_parse", False),
         "started_at": job.started_at.isoformat(),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
@@ -142,6 +144,7 @@ def start_job(
         branch=branch, version_tag=(body.version_tag or None),
         mode=(body.mode or "auto"),
         scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=body.data_dict_id,
+        preprocessor_defs_id=body.preprocessor_defs_id,
         narrowed_parse=bool(body.narrowed_parse),
     )
     db.jobs.create(job)

@@ -2178,6 +2178,21 @@ before doing separate work on them.
 - **3.10 — dynamic-behaviour issue.** **Owned by another team member — out of our
   V1 fix scope.** Still under-specified; they hold the repro/definition.
 
+**Ingestion (headline V1 fix, separate from 3.1–3.10):**
+- **Data-dictionary + macros not ingested via the app. ✅ macros wired (2026-07-13).** The engine
+  supports `--macros`/`--data-dictionary` (run.py→group_planner→parser), and the upload API
+  (`routes/repositories.py`) accepts both `data_dictionary` and **`preprocessor_definitions`**
+  (= macros) kinds. But the pipeline invoker `api/services/pipeline_runner._build_cmd` wired only the
+  data-dict side — it passed `--data-dictionary` (from `workspaces/<pid>/datadict/<ddid>.csv`) and
+  **never `--macros`**, so macros were silently dropped in the app/office path. Fix: added
+  `preprocessor_defs_id` to `AnalysisJob` (`models/domain.py`) + the job request body (`routes/jobs.py`),
+  and a `--macros` block in `_build_cmd` reading `workspaces/<pid>/macros/<id>.csv` (mirrors datadict).
+  **The onboarding/upload side must place the uploaded preprocessor_definitions CSV at that path**
+  (same external step as datadict). **Not yet covered:** the incremental path (`--data-dict-id`,
+  pipeline_runner.py:282) — macros there is a follow-up if the incremental script gains `--macros`.
+  End-to-end (upload→generate) verify pending; `_build_cmd` unit-verified (adds `--macros` iff id set
+  AND file exists).
+
 ---
 
 ## 17. Key design decisions
