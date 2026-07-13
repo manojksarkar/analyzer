@@ -45,10 +45,10 @@ class TestUnitPartId:
         assert _unit_part_id("Mod|core") == "Mod_core"
 
     def test_space_replaced_by_underscore(self):
-        assert _unit_part_id("My Module") == "My_Module"
+        assert _unit_part_id("My Module") == "My-Module"  # KEY_SEP->_, space->-
 
     def test_pipe_and_space_combined(self):
-        assert _unit_part_id("My|core unit") == "My_core_unit"
+        assert _unit_part_id("My|core unit") == "My_core-unit"
 
     def test_empty_string_returns_u(self):
         assert _unit_part_id("") == "u"
@@ -155,7 +155,7 @@ class TestBuildUnitDiagram:
     def test_subgraph_labelled_with_component_name(self):
         unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
-        assert "subgraph internal_mod[Mod]" in result
+        assert 'subgraph internal_mod["Mod"]' in result
 
     def test_unit_node_appears_in_diagram(self):
         unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
@@ -284,7 +284,9 @@ class TestBuildUnitDiagram:
         }
         functions_data = {
             "f1": {"qualifiedName": "Mod::run", "callsIds": ["f2"], "calledByIds": [], "interfaceId": "IFC_A"},
-            "f2": {"qualifiedName": "Ext::work", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_B"},
+            # 3.6: the diagram orients by table In/Out, not call role — an "Out" interface is drawn
+            # outbound (after the subgraph). Without a direction it would default to "In" (inbound).
+            "f2": {"qualifiedName": "Ext::work", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_B", "direction": "Out"},
         }
         fid_to_unit = {"f1": unit_key, "f2": callee_key}
         unit_names = {unit_key: "core", callee_key: "svc"}
