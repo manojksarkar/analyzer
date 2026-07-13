@@ -2123,28 +2123,43 @@ before doing separate work on them.
 **Dependent on the roots (re-test before fixing):**
 - **3.3 — some functions should not be visible.** Re-test after 3.1; most likely
   the emulator files leaking into the model. Fix separately only if it persists.
-- **3.4 — direction shows "Out" instead of "In" for some functions.** Re-test
-  after 3.2. Direction is computed from global access + call relationships (see
-  §18 "Direction default was wrong" — no-global functions default to "Out", and
-  "`visit_global_access` used wrong visited-set"); a missing header can make a
-  function look global-free and default it to "Out".
+- **3.4 — direction shows "Out" instead of "In" for some functions. ✅ RESOLVED by 3.6.**
+  Root cause: direction defaulted no-global-write functions to "Out", so called-but-non-global-
+  writing functions were mislabeled. The 3.6 switch to call-based direction makes any function
+  with a cross-unit caller "In", fixing this directly (independent of header parsing).
 
 **Interface table ↔ static diagram consistency:**
-- **3.5 — same-component source/destination dropped.** The interface table omits
-  pairs where source and destination are in the same component; include them too
-  (§12 `views/interface_tables.py`).
-- **3.6 — direction logic inconsistent with the static diagram.** The interface
-  table factors **global-variable access** into direction, but the static diagram
-  is drawn from the **function-call relationship**. **DECISION: make the table
-  follow the function-call relationship (drop global-var access from direction)
-  so table ↔ diagram agree.** Touches the interface-table builder (§12) and the
-  direction fields written in Phases 1–2 (§10/§11). Confirm this is the intended
-  source of truth before implementing.
+- **3.5 — same-component source/destination dropped. ✅ FIXED (2026-07-13).** The
+  interface table's `sourceDest` dropped every caller/callee unit in the function's
+  own component (and, under a group filter, every in-scope unit). `views/interface_tables.py`
+  now keeps all units except the function's own unit (`u != unit_key`), matching the
+  static diagram (§12). (Fixture `My-Sample` has no same-component cross-unit calls,
+  so verified by predicate proof + no-regression, not by fixture diff.)
+- **3.6 — direction logic inconsistent with the static diagram. ✅ FIXED (2026-07-13).**
+  Direction is now finalized in `model_deriver` (the clamp that sets `direction`) from the
+  **function-call relationship**, not global-variable access: a function with a caller in a
+  DIFFERENT unit is a provided/inbound interface ("In"); otherwise "Out". This matches the
+  static diagram's inbound-edge rule (`unit_diagrams` labels inbound edges with the cross-unit
+  callee's interfaceId). `readsGlobalIds`/`writesGlobalIds` remain for other consumers but no
+  longer affect direction. **On the sample this flips 49/117 functions** (In 10→53): called
+  functions (`libAdd`, `libNormalize`, `coreAdd`, …) correctly become "In"; uncalled global-
+  writers (`main`, `coreReset`) become "Out". **Follow-up: regenerate
+  `tests/snapshots/Sample/interface_tables.json` (needs a pipeline run) and eyeball edge cases.**
 
 **Export completeness:**
-- **3.7 — functions missing from DOCX due to access specifier.** Known issue:
-  functions are dropped from the DOCX by access specifier (e.g. private). Decide
-  the intended visibility rule and apply it in Phase 4 export (§14).
+- **3.7 — namespaced functions missing from DOCX. ✅ FIXED (2026-07-13) — this was
+  NOT an access-specifier issue.** The "no cross-file caller ⇒ private" rule
+  (`model_deriver._fn_is_private`) is **intended behaviour — left as-is.** The real
+  symptom (confirmed by debugging): a function with a qualified name like `A::B::C`
+  produced no flowchart in the DOCX. Root cause = the flowchart producer keys its
+  JSON `name` and PNG filename by **qualifiedName** (`flowchart/output/writer.py`,
+  `views/flowcharts.py`), while `docx_exporter` looked them up by the **short** name
+  (`iface["name"] = short_name(qn)`), so any namespaced function missed and silently
+  fell back to mermaid text — or nothing (the dict lookup returned `None`, skipping
+  the whole block). Fix: `docx_exporter` now keys the flowchart map + PNG `base_stems`
+  by qualifiedName (short-name fallback) on both the main-function and private-callee
+  paths. **This is the same root cause as the headline "flowcharts generated but
+  missing from DOCX."**
 
 **Flowchart rendering (§13):**
 - **3.8 — if/else condition depiction.** Conditional branches are not rendered
@@ -2152,8 +2167,8 @@ before doing separate work on them.
 - **3.9 — overlapping edges.** Flowchart edges overlap — layout / ELK spacing.
 
 **Behaviour:**
-- **3.10 — dynamic-behaviour issue.** Under-specified; needs a concrete repro /
-  definition before it can be scoped (flagged in the roadmap open questions).
+- **3.10 — dynamic-behaviour issue.** **Owned by another team member — out of our
+  V1 fix scope.** Still under-specified; they hold the repro/definition.
 
 ---
 
