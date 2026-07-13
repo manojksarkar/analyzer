@@ -2123,28 +2123,27 @@ before doing separate work on them.
 **Dependent on the roots (re-test before fixing):**
 - **3.3 — some functions should not be visible.** Re-test after 3.1; most likely
   the emulator files leaking into the model. Fix separately only if it persists.
-- **3.4 — direction shows "Out" instead of "In" for some functions. ✅ RESOLVED by 3.6.**
-  Root cause: direction defaulted no-global-write functions to "Out", so called-but-non-global-
-  writing functions were mislabeled. The 3.6 switch to call-based direction makes any function
-  with a cross-unit caller "In", fixing this directly (independent of header parsing).
+- **3.4 — direction shows "Out" instead of "In" for some functions.** Direction stays
+  **global-based** per DESIGN_SPEC REQ-IT-05 (writes-global⇒In, else Out) — see 3.6, the call-based
+  change was reverted. So this is **not** a direction-rule fix; the working hypothesis is again 3.2:
+  a function whose defining body wasn't parsed (missing header) looks global-free and defaults to
+  "Out". **Re-test after 3.2.**
 
 **Interface table ↔ static diagram consistency:**
-- **3.5 — same-component source/destination dropped. ✅ FIXED (2026-07-13).** The
-  interface table's `sourceDest` dropped every caller/callee unit in the function's
-  own component (and, under a group filter, every in-scope unit). `views/interface_tables.py`
-  now keeps all units except the function's own unit (`u != unit_key`), matching the
-  static diagram (§12). (Fixture `My-Sample` has no same-component cross-unit calls,
-  so verified by predicate proof + no-regression, not by fixture diff.)
-- **3.6 — direction logic inconsistent with the static diagram. ✅ FIXED (2026-07-13).**
-  Direction is now finalized in `model_deriver` (the clamp that sets `direction`) from the
-  **function-call relationship**, not global-variable access: a function with a caller in a
-  DIFFERENT unit is a provided/inbound interface ("In"); otherwise "Out". This matches the
-  static diagram's inbound-edge rule (`unit_diagrams` labels inbound edges with the cross-unit
-  callee's interfaceId). `readsGlobalIds`/`writesGlobalIds` remain for other consumers but no
-  longer affect direction. **On the sample this flips 49/117 functions** (In 10→53): called
-  functions (`libAdd`, `libNormalize`, `coreAdd`, …) correctly become "In"; uncalled global-
-  writers (`main`, `coreReset`) become "Out". **Follow-up: regenerate
-  `tests/snapshots/Sample/interface_tables.json` (needs a pipeline run) and eyeball edge cases.**
+- **3.5 — same-component source/destination dropped. ✅ FIXED (2026-07-13).** The interface
+  table's `sourceDest` dropped every caller/callee unit in the function's own component (and, under
+  a group filter, every in-scope unit). `views/interface_tables.py` now keeps **all units except the
+  function's own unit** (`u != unit_key`), matching the static diagram. **Deliberate spec change:
+  DESIGN_SPEC REQ-IT-12 and the e2e sourceDest test were updated from "external (outside-module)
+  only" to "every interacting unit except the self-unit"** (client choice, 2026-07-13). Snapshot
+  regenerated.
+- **3.6 — direction logic inconsistent with the static diagram. ⛔ REVERTED (2026-07-13) — spec
+  wins.** A call-based direction (cross-unit caller ⇒ "In") was implemented then **reverted**: it
+  contradicts DESIGN_SPEC REQ-IT-05 (global-based: writes-global⇒In, else Out) and flipped 49/117
+  sample functions. **DECISION (client, 2026-07-13): keep global-based direction; do NOT make the
+  table match the diagram on direction** — the roadmap's earlier "make it call-based" note is
+  superseded. Table↔diagram may still differ on direction; that is accepted. Remaining "wrong Out"
+  cases are a parsing-coverage problem (see 3.4 → 3.2), not a direction-rule problem.
 
 **Export completeness:**
 - **3.7 — namespaced functions missing from DOCX. ✅ FIXED (2026-07-13) — this was

@@ -172,11 +172,11 @@ Each named segment uses uppercase letters only.
 
 ### REQ-IT-12 — Source/Destination
 
-For functions: lists the external units (from outside the current module) that call or are called by this function.
-Shows `-` when there are no external connections.
+For functions: lists every unit that calls, or is called by, this function — **excluding only the function's own unit**. Same-component and same-group peer units are included, so the list matches the unit architecture diagram (which draws an edge to every interacting unit except a same-unit self-loop).
+Shows `-` only when the function has no callers or callees in any other unit.
 Global variable rows have no caller or callee lists.
 
-**Verification:** Functions with known external callers show them. Functions with no external connections show `-`. Global variable rows have empty caller/callee fields.
+**Verification:** Functions show every interacting unit except their own. Functions with no cross-unit connections show `-`. Global variable rows have empty caller/callee fields.
 
 ---
 

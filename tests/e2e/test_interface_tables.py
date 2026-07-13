@@ -161,7 +161,8 @@ def test_interface_id_segments_uppercase(all_entries):
 
 
 # ---------------------------------------------------------------------------
-# Caller / callee units (spec: both lists include same-module; sourceDest external only)
+# Caller / callee units (spec: callerUnits/calleesUnits include same-module;
+# sourceDest lists every interacting unit except the function's own unit — REQ-IT-12)
 # ---------------------------------------------------------------------------
 
 def test_required_fields_present(all_entries):
@@ -190,14 +191,15 @@ def test_global_entries_have_empty_caller_callee(all_entries):
             )
 
 
-def test_sourcedest_dash_when_no_external_connections(util_entries):
-    # utilCompute and utilScale are called only by Core (within the Sample group),
-    # so they have no connections outside the group — sourceDest must be '-'
+def test_sourcedest_includes_cross_unit_callers(util_entries):
+    # utilCompute and utilScale are called by Core (a different unit). Per REQ-IT-12 the
+    # sourceDest lists every interacting unit except the function's own unit, so Core appears
+    # even though it is in the same group.
     for name in ("utilCompute", "utilScale"):
         entry = next((e for e in util_entries if e["name"] == name), None)
         assert entry is not None, f"'{name}' not found in util_entries"
-        assert entry["sourceDest"] == "-", (
-            f"'{name}' has no external connections, sourceDest should be '-', got '{entry['sourceDest']}'"
+        assert "Core/Core" in entry["sourceDest"], (
+            f"'{name}' is called by Core; sourceDest should include 'Core/Core', got '{entry['sourceDest']}'"
         )
 
 
