@@ -25,23 +25,26 @@ pytestmark = pytest.mark.e2e
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UNIT_DIAGRAMS_DIR = os.path.join(PROJECT_ROOT, "output", "My-Sample", "unit_diagrams")
 
-# unit_key "Core|Core"  →  safe_filename  →  "Core_Core"
+# unit_key "Sample-Core|Core"  →  safe_filename  →  "Sample-Core_Core"
 UNITS = {
-    "Core": "Core_Core",
+    "Core": "Sample-Core_Core",
     "Lib":  "Lib_Lib",
     "Util": "Util_Util",
 }
+
+# Subgraph label = the unit's component name (unit_key's component part, '-' -> ' ').
+COMPONENT_LABELS = {"Core": "Sample Core", "Lib": "Lib", "Util": "Util"}
 
 # Every cross-component edge × every diagram it must appear in.
 # Each graph edge appears twice: once in the source unit's diagram (as outgoing)
 # and once in the target unit's diagram (as incoming caller).
 CROSS_COMPONENT_EDGES = [
     # (diagram,  src_node,    dst_node,    reason)
-    ("Core", "Core_Core", "Lib_Lib",   "coreAdd/coreOrchestrate→libAdd, coreProcess/coreOrchestrate→libNormalize"),
-    ("Core", "Core_Core", "Util_Util", "coreOrchestrate→utilCompute/utilScale"),
-    ("Lib",  "Core_Core", "Lib_Lib",   "Core is caller — must appear in Lib's diagram"),
+    ("Core", "Sample-Core_Core", "Lib_Lib",   "coreAdd/coreOrchestrate→libAdd, coreProcess/coreOrchestrate→libNormalize"),
+    ("Core", "Sample-Core_Core", "Util_Util", "coreOrchestrate→utilCompute/utilScale"),
+    ("Lib",  "Sample-Core_Core", "Lib_Lib",   "Core is caller — must appear in Lib's diagram"),
     ("Lib",  "Lib_Lib",   "Util_Util", "libNormalize→utilCompute"),
-    ("Util", "Core_Core", "Util_Util", "Core is caller — must appear in Util's diagram"),
+    ("Util", "Sample-Core_Core", "Util_Util", "Core is caller — must appear in Util's diagram"),
     ("Util", "Lib_Lib",   "Util_Util", "Lib is caller — must appear in Util's diagram"),
 ]
 
@@ -99,8 +102,8 @@ def test_subgraph_present(mmd_files, unit):
 
 @pytest.mark.parametrize("unit", UNITS)
 def test_subgraph_label_matches_module(mmd_files, unit):
-    """The subgraph must be labelled with the unit's own module name."""
-    assert f"subgraph internal_mod[{unit}]" in mmd_files[unit]
+    """The subgraph must be labelled with the unit's component name."""
+    assert f'subgraph internal_mod["{COMPONENT_LABELS[unit]}"]' in mmd_files[unit]
 
 
 # ---------------------------------------------------------------------------
@@ -117,9 +120,9 @@ def test_main_unit_has_main_unit_class(mmd_files, unit, node_id):
 @pytest.mark.parametrize("unit,peer_id", [
     ("Core", "Lib_Lib"),
     ("Core", "Util_Util"),
-    ("Lib",  "Core_Core"),
+    ("Lib",  "Sample-Core_Core"),
     ("Lib",  "Util_Util"),
-    ("Util", "Core_Core"),
+    ("Util", "Sample-Core_Core"),
     ("Util", "Lib_Lib"),
 ])
 def test_peer_not_styled_as_main_unit(mmd_files, unit, peer_id):
@@ -151,19 +154,16 @@ def test_cross_module_edge_with_if_label(mmd_files, diagram, src, dst, reason):
 
 
 # ---------------------------------------------------------------------------
-# Direction invariants (negative)
+# Direction invariants
+#
+# The old call-based negative invariants ("Util never initiates a cross-module
+# call"; "Core has no incoming callers") no longer hold. Under REQ-UD-05 (3.6) the
+# diagram orients each interface by its interface-table In/Out direction, not by the
+# call relationship: a unit with Out interfaces is now an edge SOURCE, and a unit with
+# In interfaces is an edge TARGET, independent of who calls whom. Those assertions were
+# therefore removed. Direction correctness is now covered by the interface-table
+# direction tests (REQ-IT-05) plus the unit-diagram snapshot below.
 # ---------------------------------------------------------------------------
-
-def test_util_never_initiates_cross_module_call(mmd_files):
-    """Util has no outgoing cross-module calls — Util_Util must never be an edge source."""
-    bad = [l.strip() for l in mmd_files["Util"].splitlines() if "Util_Util -->" in l]
-    assert not bad, f"Util_Util should not initiate calls, found: {bad}"
-
-
-def test_core_has_no_incoming_cross_module_callers(mmd_files):
-    """Nothing in the Sample group calls Core — Core_Core must never be an edge target."""
-    bad = [l.strip() for l in mmd_files["Core"].splitlines() if "--> Core_Core" in l]
-    assert not bad, f"Core_Core should have no incoming edges, found: {bad}"
 
 
 # ---------------------------------------------------------------------------
@@ -171,4 +171,4 @@ def test_core_has_no_incoming_cross_module_callers(mmd_files):
 # ---------------------------------------------------------------------------
 
 def test_snapshot(mmd_files, assert_snapshot, llm_summarize_off):
-    assert_snapshot(mmd_files, "Sample/unit_diagrams.json")
+    assert_snapshot(mmd_files, "My-Sample/unit_diagrams.json")
