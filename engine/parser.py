@@ -38,6 +38,7 @@ _selected_group: str | None = None
 _selected_layer: str | None = None
 _project_name_override: str | None = None
 _only_files_path: str | None = None  # narrowed parse (M4.3): parse only the listed TUs
+_include_emulator: bool = False  # opt out of the default *emul* file exclusion (3.1)
 _i = 2
 while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
@@ -58,6 +59,9 @@ while _i < len(sys.argv):
     elif sys.argv[_i] == "--project-name" and _i + 1 < len(sys.argv):
         _project_name_override = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--include-emulator":
+        _include_emulator = True
+        _i += 1
     else:
         _i += 1
 
@@ -180,6 +184,16 @@ def _build_file_component_map(components_cfg: dict, base_path: str) -> dict:
 
 
 _FILE_COMPONENT_MAP: dict = _build_file_component_map(_components_cfg, MODULE_BASE_PATH)
+
+# Emulator/stub files are excluded from the parse scope by default (3.1): any file whose
+# basename contains one of these (case-insensitive) substrings is skipped. Overridable per
+# project via config `excludeNamePatterns` (a list); `--include-emulator` disables it.
+_cfg_exclude = _config.get("excludeNamePatterns")
+if _cfg_exclude is None:
+    _cfg_exclude = ["emul"]
+_EXCLUDE_NAME_PATTERNS: list = [] if _include_emulator else [
+    str(p).lower() for p in _cfg_exclude if p
+]
 
 # Read layer include paths written by run.py before Phase 1 started.
 _layer_include_paths: dict = {}
@@ -450,6 +464,10 @@ def is_project_file(file_path: str) -> bool:
     """
     if not file_path:
         return False
+    if _EXCLUDE_NAME_PATTERNS:
+        _bn = os.path.basename(file_path).lower()
+        if any(pat in _bn for pat in _EXCLUDE_NAME_PATTERNS):
+            return False
     abs_path = os.path.normcase(os.path.abspath(file_path))
     abs_base = os.path.normcase(os.path.abspath(MODULE_BASE_PATH))
     if not abs_path.startswith(abs_base):
