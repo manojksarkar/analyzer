@@ -2137,13 +2137,22 @@ before doing separate work on them.
   DESIGN_SPEC REQ-IT-12 and the e2e sourceDest test were updated from "external (outside-module)
   only" to "every interacting unit except the self-unit"** (client choice, 2026-07-13). Snapshot
   regenerated.
-- **3.6 — direction logic inconsistent with the static diagram. ⛔ REVERTED (2026-07-13) — spec
-  wins.** A call-based direction (cross-unit caller ⇒ "In") was implemented then **reverted**: it
-  contradicts DESIGN_SPEC REQ-IT-05 (global-based: writes-global⇒In, else Out) and flipped 49/117
-  sample functions. **DECISION (client, 2026-07-13): keep global-based direction; do NOT make the
-  table match the diagram on direction** — the roadmap's earlier "make it call-based" note is
-  superseded. Table↔diagram may still differ on direction; that is accepted. Remaining "wrong Out"
-  cases are a parsing-coverage problem (see 3.4 → 3.2), not a direction-rule problem.
+- **3.6 — make the static diagram consistent with the interface-table direction. ⏳ OPEN (correct
+  alignment direction clarified 2026-07-13).** The interface **table's logic is canonical** —
+  global-based direction, REQ-IT-05 — so "**align on interface table logic**" means change the
+  **static diagram (`views/unit_diagrams.py`)** to match the table, NOT the table to match the
+  diagram. An earlier attempt did the reverse (made the table call-based in `model_deriver`) and was
+  **reverted** (see the fix→revert commits). The table keeps global-based direction. **Remaining 3.6
+  work = a `unit_diagrams.py` change so the diagram reflects the table's In/Out.** The diagram is
+  currently structurally call-based (external callers left, callees right, arrows caller→callee,
+  edges labelled with interfaceIds; no In/Out text). **DECISION (client, 2026-07-13): "orient
+  interfaces by table In/Out"** — each interface's placement/arrow follows its function's table
+  `direction` (In ⇒ inbound/left, arrow into the unit; Out ⇒ outbound/right, arrow out), **even
+  where that diverges from the call arrows** (accepted). **Non-trivial:** a diagram edge connects a
+  caller/callee unit pair and can carry several interfaces with *different* directions, so edges must
+  be re-derived/split by each interface's `direction` rather than by call role; the DESIGN_SPEC
+  diagram section (left=caller/right=callee) also needs updating. **Needs mmdc visual verification,
+  blocked by the config↔test group-name mismatch (`My Sample` vs `Sample`).**
 
 **Export completeness:**
 - **3.7 — namespaced functions missing from DOCX. ✅ FIXED (2026-07-13) — this was
