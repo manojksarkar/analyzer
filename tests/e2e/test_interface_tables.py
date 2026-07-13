@@ -31,7 +31,7 @@ PRIVATE_GLOBALS = {
 # ---------------------------------------------------------------------------
 
 def test_expected_units_present(interface_tables):
-    for key in ("Core|Core", "Lib|Lib", "Util|Util"):
+    for key in ("Sample-Core|Core", "Lib|Lib", "Util|Util"):
         assert key in interface_tables, f"Unit '{key}' missing from interface_tables"
 
 
@@ -40,7 +40,7 @@ def test_unit_names_present(interface_tables):
 
 
 def test_unit_names_map(interface_tables):
-    assert interface_tables["unitNames"]["Core|Core"] == "Core"
+    assert interface_tables["unitNames"]["Sample-Core|Core"] == "Core"
     assert interface_tables["unitNames"]["Lib|Lib"] == "Lib"
     assert interface_tables["unitNames"]["Util|Util"] == "Util"
 
@@ -152,7 +152,7 @@ def test_interface_ids_start_with_IF(all_entries):
 
 def test_interface_id_segments_uppercase(all_entries):
     import re
-    pattern = re.compile(r"^IF(_[A-Z]+)+_\d+$")
+    pattern = re.compile(r"^IF(_[A-Z0-9]+)+_\d+$")  # segments may embed a layer name with digits (e.g. LAYER1)
     for entry in all_entries:
         iid = entry["interfaceId"]
         assert pattern.match(iid), (
@@ -247,4 +247,4 @@ def _normalize(data):
 
 
 def test_snapshot(interface_tables, assert_snapshot, llm_descriptions_off, llm_behaviour_names_off):
-    assert_snapshot(_normalize(interface_tables), "Sample/interface_tables.json")
+    assert_snapshot(_normalize(interface_tables), "My-Sample/interface_tables.json")

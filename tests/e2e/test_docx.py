@@ -22,7 +22,7 @@ except ImportError:
     pytest.skip("python-docx not installed", allow_module_level=True)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "Sample", "software_detailed_design_Sample.docx")
+DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "My-Sample", "software_detailed_design_My-Sample.docx")
 
 COL_IF_ID    = 0
 COL_IF_NAME  = 1

@@ -67,7 +67,7 @@ def pytest_collection_finish(session):
         return
 
     project_name = os.path.basename(SAMPLE_PROJECT)
-    group = "Sample"
+    group = "My Sample"
     label = f"{project_name} [{group}]"
 
     show_output = session.config.getoption("--show-pipeline-output", default=False)
