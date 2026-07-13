@@ -40,7 +40,7 @@ def is_valid_mermaid(text: str) -> bool:
     return bool(_MERMAID_HEADERS.search(_strip_fences(text)))
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-FC_DIR = os.path.join(PROJECT_ROOT, "output", "flowcharts")
+FC_DIR = os.path.join(PROJECT_ROOT, "output", "My-Sample", "flowcharts")
 
 # Skip entire module when flowcharts are disabled in config
 _cfg_path = os.path.join(PROJECT_ROOT, "engine", "config", "config.json")
