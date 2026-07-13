@@ -1012,10 +1012,21 @@ def main():
 
     _enrich_from_llm(base_path, functions_data, global_variables_data, config, only_globals=only_globals)
 
-    # Functions: must be In or Out (never -)
-    for fentry in functions_data.values():
-        d = fentry.get("direction", "").strip()
-        fentry["direction"] = "Out" if d == "Out" else "In"
+    # Interface direction (3.6/3.4): follow the function-call relationship so the table stays
+    # consistent with the static diagram. A function called from a DIFFERENT unit is a provided /
+    # inbound interface ("In"); otherwise it is outbound ("Out"). Global-variable access no longer
+    # determines direction (readsGlobalIds/writesGlobalIds remain for other consumers).
+    _fid_units: dict = {}
+    for _uk, _u in units_data.items():
+        for _fid in _u.get("functionIds", []) or []:
+            _fid_units.setdefault(_fid, set()).add(_uk)
+    for fid, fentry in functions_data.items():
+        own_units = _fid_units.get(fid, set())
+        caller_units = {
+            cu for cid in (fentry.get("calledByIds") or [])
+            for cu in _fid_units.get(cid, set())
+        }
+        fentry["direction"] = "In" if (caller_units - own_units) else "Out"
     # Globals: In/Out
     for g in global_variables_data.values():
         g["direction"] = "In/Out"
