@@ -2113,12 +2113,22 @@ interdependent — **fix the parsing roots first, then re-test the dependents**
 before doing separate work on them.
 
 **Parsing scope / ingestion (roots):**
-- **3.1 — emulator files in analysis scope.** Emulator/stub sources are being
-  parsed and should be excluded from the parse set (config module folders /
-  `parser.is_project_file`, §10). Suspected root cause of 3.3.
-- **3.2 — header files not parsed.** Declarations in `.h/.hpp` are skipped; only
-  source files are parsed (§10 Phase 1). Suspected root cause of 3.4 — a callee/
-  declaration only visible in a header can starve the analysis.
+- **3.1 — emulator files in analysis scope. ✅ FIXED (2026-07-13).** `parser.is_project_file`
+  now excludes files whose basename matches a default `*emul*` substring (case-insensitive),
+  overridable via config `excludeNamePatterns`; `--include-emulator` disables it. Verified: a
+  `CoreEmul.cpp` fixture is excluded by default, included with the flag. (Re-test 3.3 on a project
+  that actually has emulator files.)
+- **3.2 — header files not parsed. ✅ FIXED (2026-07-13).** `_collect_source_files` now also parses
+  `.h/.hpp/.hxx` as their own TUs (after the `.cpp`s, so full-context `.cpp` definitions win the
+  stable-`func_key` dedup); `CLANG_ARGS` gained **`-x c++`** so headers load as C++ (without it all 13
+  sample headers failed to parse). Header symbols reached via a `.cpp`'s `#include` were already
+  captured; this additionally captures **header-only definitions** (inline functions / header-only
+  components) that no `.cpp` includes. Verified: an orphan-header `coreInlineTriple` fixture now
+  appears in the model (117→118) with **0 failed parses** and no `.cpp` regression. **NOTE —
+  downstream limitation:** a header-only function's unit is a `.h`, and the interface-table /
+  unit-diagram views gate units to `.cpp` fileName (`interface_tables.py:43`, `unit_diagrams.py:104`),
+  so it lands in `functions.json` but not yet in the DOCX — relaxing that gate is a follow-up if
+  header-only functions must appear in the document. Records **definitions**, not pure declarations.
 
 **Dependent on the roots (re-test before fixing):**
 - **3.3 — some functions should not be visible.** Re-test after 3.1; most likely

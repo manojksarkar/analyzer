@@ -206,6 +206,8 @@ if os.path.isfile(_clang_paths_file):
         pass
 
 CLANG_ARGS = [
+    "-x", "c++",  # treat every parsed TU as C++ — required so .h headers parse as C++ (3.2),
+                  # otherwise libclang infers C/ambiguous for .h and the TU fails to load.
     "-std=c++14",
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
@@ -1320,14 +1322,25 @@ def build_metadata():
 
 
 def _collect_source_files():
-    files = []
+    # Parse .cpp translation units first, then headers (3.2). Symbols declared in a header and
+    # defined in a .cpp are already captured during the .cpp parse (its #include pulls the header
+    # into the TU); parsing headers as their own TUs additionally captures header-only definitions
+    # (inline functions / header-only components) that no parsed .cpp includes. Headers go LAST so a
+    # full-context .cpp definition wins the dedup (stable mangled func_key / _visited_usage_keys) and
+    # standalone header parses only ADD what was otherwise missing.
+    sources, headers = [], []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
             if f.endswith((".cpp", ".cc", ".cxx")):
-                path = os.path.join(root, f)
-                if is_project_file(path):
-                    files.append(path)
-    return files
+                bucket = sources
+            elif f.endswith((".h", ".hpp", ".hxx")):
+                bucket = headers
+            else:
+                continue
+            path = os.path.join(root, f)
+            if is_project_file(path):
+                bucket.append(path)
+    return sources + headers
 
 
 def _restrict_to_only_files(source_files):
