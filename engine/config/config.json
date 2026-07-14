@@ -7,7 +7,7 @@
     "interfaceTables": true,
     "unitDiagrams": true,
     "flowcharts": true,
-    "behaviourDiagram": false,
+    "behaviourDiagram": true,
     "componentStaticDiagram": true
   },
   "layers": {

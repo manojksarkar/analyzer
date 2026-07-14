@@ -21,8 +21,8 @@ ENV/
 Thumbs.db
 
 # Analyzer output
-model*
-output*
+model*/
+output*/
 
 # Incremental workspaces — runtime data (clones, versions, cache).
 workspaces/
