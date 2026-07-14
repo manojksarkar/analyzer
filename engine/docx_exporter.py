@@ -488,7 +488,11 @@ def _build_component_header_dependency_mermaid(
     )
 
     lines = [
-        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
+        """---
+config:
+  flowchart:
+    defaultRenderer: elk
+---""",
         "flowchart BT",
     ]
 

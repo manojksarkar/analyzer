@@ -169,7 +169,11 @@ def _build_unit_diagram(
         return ""
 
     lines = [
-        "%%{init: {'flowchart': {'splines': 'ortho'}}}%%",
+        """---
+config:
+  flowchart:
+    defaultRenderer: elk
+---""",
         "flowchart LR",
         "  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px",
         "  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px",
