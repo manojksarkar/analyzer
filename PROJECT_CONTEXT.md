@@ -2013,12 +2013,14 @@ Reads `artifacts_dir/behaviour_diagrams/_behaviour_pngs.json`. For every
 
 ## 15. Test fixture — `SampleCppProject/`
 
-`SampleCppProject/` is a **git submodule** → `github.com/manojksarkar/SampleCppProject`
-(pinned to `main`). A fresh analyzer clone gets an **empty** folder until
-`git submodule update --init` fetches it — the e2e tests need this. The submodule is
-the single source of truth for the fixture (the local folder used to be an untracked,
-hollow shell holding only a stale `.flowchart_cache/`). Note: only `main` exists on the
-remote today; the incremental-diff tests' `feature1/2/3` branch topology is not yet pushed.
+`SampleCppProject/` is **vendored directly in this repo** — committed as normal tracked
+files, so a plain `git clone` has the full fixture (no submodule, no `git submodule update
+--init`, no empty folder). It is the single source of truth for the fixture. It was briefly
+a git submodule → `github.com/manojksarkar/SampleCppProject`; that standalone repo is now
+abandoned and the analyzer no longer depends on it. The incremental-diff **unit tests build
+their own throwaway git repos** in a temp dir, so they don't need any external fixture repo;
+for a manual incremental-UI demo, onboard the analyzer repo's own URL (a shallow, single-
+branch clone) rather than maintaining a separate sample repo.
 
 The old `test_cpp_project/` fixture is superseded. Current fixture (matches
 `config.json` `layers`):
