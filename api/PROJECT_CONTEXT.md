@@ -96,7 +96,7 @@ See `api/services/settings.py` for the canonical list.
 | Variable | Default | Description |
 |---|---|---|
 | `API_DB_BACKEND` | `memory` | `memory` or `json` |
-| `ANALYZER_REPO_ROOT` | auto-detected | Path to repo root (contains `run.py`) |
+| `ANALYZER_REPO_ROOT` | auto-detected | Path to repo root (contains `engine/run.py`) |
 | `ANALYZER_WORKSPACES_DIR` | `<repo_root>/workspaces/` | Per-project checkout + output root |
 | `JOB_MAX_CONCURRENCY` | `2` | Max simultaneous pipeline subprocesses |
 | `SUBPROCESS_TIMEOUT` | `0` | Kill subprocess after N seconds (0 = unlimited) |
@@ -195,7 +195,7 @@ that exceed the limit block until a slot frees.
 ### Incremental generation (version4 engine)
 
 The job pipeline drives the version4 **incremental-changes** engine
-(`src/incremental/`) for fast re-generation. Everything below is layered into
+(`engine/incremental/`) for fast re-generation. Everything below is layered into
 `pipeline_runner` / `routes/jobs.py` **additively** — existing full-generation
 behaviour, SSE, cancel, and pause/resume are unchanged.
 
@@ -222,10 +222,10 @@ behaviour, SSE, cancel, and pause/resume are unchanged.
 - **Version accounting.** `VersionView` carries `decision` / `baseline_version_id` /
   `regenerated` / `reused`.
 
-> **One server.** The old standalone incremental server (`backend/main.py`) was retired in
-> favour of this `api/` server (its endpoints are functionally covered here). The
-> `backend/seed_workspace.py` + `backend/git_service.py` CLI tooling remains for
-> seeding/onboarding test workspaces.
+> **One server.** The old standalone incremental server (`engine/main.py`) was retired in
+> favour of this `api/` server (its endpoints are functionally covered here). The former
+> `engine/seed_workspace.py` + `engine/git_service.py` onboarding CLI tooling has since
+> been removed; workspace seeding is handled through the API.
 
 ### Per-project workspace isolation
 
@@ -418,4 +418,4 @@ never leaves a corrupt file.
 | M2 | ✅ | Real functions diff, doc_render on live output, assets, download/export, export-all ZIP |
 | M3 | ✅ | Real compare — section-level diff via compare_engine over version snapshots |
 | M4 | ✅ | Persistence, central config (settings.py), gitignore, docs, API smoke tests |
-| M5 | ✅ | version4 incremental engine integrated (auto-baseline + mode, scope/no_llm/data_dict, cross-version reuse index, narrowed parse, baseline-preview, version accounting); standalone `backend/` server retired (one server) |
+| M5 | ✅ | version4 incremental engine integrated (auto-baseline + mode, scope/no_llm/data_dict, cross-version reuse index, narrowed parse, baseline-preview, version accounting); standalone `engine/` server retired (one server) |

@@ -20,7 +20,7 @@
 > exists** and you have its `projectId`. Onboarding endpoints are **not** specified here.
 >
 > **Implementation status:** ✅ **all endpoints below (G0, G1, G2, 1–15) are implemented** in
-> [backend/main.py](../../backend/main.py); the git operations live in `backend/git_service.py` +
+> [engine/main.py](../../engine/main.py); the git operations live in `engine/git_service.py` +
 > `src/incremental/git_ops.py` (clone, fetch, checkout, branch/commit listing, ancestry, diff). The
 > spec remains the **contract** the UI is built against.
 

@@ -4,37 +4,25 @@ Parse C++ source → model/ (Phase 1–2) → output/ (Phase 3 views) → **soft
 
 ## Quick start
 
-```bash
-python run.py test_cpp_project
-```
-
-Config: [config/config.json](config/config.json) (override with `config.local.json`).
-
-## UI
-
-A Streamlit web interface for configuring, running the pipeline, and viewing results.
-
-### Install
+The `SampleCppProject/` test fixture lives directly in this repo, so a plain clone has
+everything:
 
 ```bash
-pip install -r requirements.txt
-pip install -r ui/requirements.txt
+python engine/run.py SampleCppProject
 ```
 
-### Run
+Config: [engine/config/config.json](engine/config/config.json) (override with `config.local.json`).
 
-```bash
-streamlit run ui/app.py
-```
+## Web UI
 
-Opens at `http://localhost:8501` in your browser.
-
-> The UI reads and writes `config/config.json`. Set your project path, configure groups/modules, then click **Run full** to execute the pipeline.
+The web client is [web-app/](web-app/) (React + Vite) talking to the FastAPI backend in
+[api/](api/) — see each folder's README to run them. (The legacy Streamlit `ui/` was
+removed when the web app landed.)
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [docs/DESIGN.md](docs/DESIGN.md) | Architecture, model format, config, logic flow |
-| [docs/software_detailed_design.json](docs/software_detailed_design.json) | Document structure spec for the output DOCX |
-| [docs/images/architecture.drawio](docs/images/architecture.drawio) | Architecture diagram (edit in draw.io, export to PNG) |
+| [docs/design/DESIGN.md](docs/design/DESIGN.md) | Architecture, model format, config, logic flow |
+| [docs/spec/software_detailed_design.json](docs/spec/software_detailed_design.json) | Document structure spec for the output DOCX |
+| [docs/design/images/architecture.drawio](docs/design/images/architecture.drawio) | Architecture diagram (edit in draw.io, export to PNG) |

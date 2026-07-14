@@ -19,7 +19,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_RUN_PY = os.path.join(PROJECT_ROOT, "run.py")
+_RUN_PY = os.path.join(PROJECT_ROOT, "engine", "run.py")
 SAMPLE_PROJECT = os.path.join(PROJECT_ROOT, "SampleCppProject")
 
 

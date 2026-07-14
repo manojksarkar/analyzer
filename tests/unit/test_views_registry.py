@@ -8,7 +8,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 
 # ---------------------------------------------------------------------------
@@ -19,7 +19,7 @@ def _load_registry():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "_test_registry",
-        os.path.join(PROJECT_ROOT, "src", "views", "registry.py"),
+        os.path.join(PROJECT_ROOT, "engine", "views", "registry.py"),
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -77,7 +77,7 @@ def _load_flowcharts_resolve_script():
 
     # Stub views package
     views_pkg = types.ModuleType("_fc_views")
-    views_pkg.__path__ = [os.path.join(PROJECT_ROOT, "src", "views")]
+    views_pkg.__path__ = [os.path.join(PROJECT_ROOT, "engine", "views")]
     views_pkg.__package__ = "_fc_views"
     registry_mod = types.ModuleType("_fc_views.registry")
     registry_mod.register = lambda name: (lambda fn: fn)
@@ -87,7 +87,7 @@ def _load_flowcharts_resolve_script():
 
     spec = importlib.util.spec_from_file_location(
         "_fc_views.flowcharts",
-        os.path.join(PROJECT_ROOT, "src", "views", "flowcharts.py"),
+        os.path.join(PROJECT_ROOT, "engine", "views", "flowcharts.py"),
         submodule_search_locations=[],
     )
     mod = importlib.util.module_from_spec(spec)
@@ -100,13 +100,13 @@ class TestResolveScript:
     def setup_method(self):
         self._resolve_script = _load_flowcharts_resolve_script()
 
-    def test_empty_script_path_returns_default(self):
-        result = self._resolve_script("/project", "")
-        assert result == os.path.join("/project", "fake_flowchart_generator.py")
+    def test_empty_script_path_raises(self):
+        with pytest.raises(ValueError):
+            self._resolve_script("/project", "")
 
-    def test_none_script_path_returns_default(self):
-        result = self._resolve_script("/project", None)
-        assert result == os.path.join("/project", "fake_flowchart_generator.py")
+    def test_none_script_path_raises(self):
+        with pytest.raises(ValueError):
+            self._resolve_script("/project", None)
 
     def test_absolute_path_returned_as_is(self):
         abs_path = "/absolute/path/to/generator.py"

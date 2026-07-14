@@ -3,7 +3,7 @@ Central settings — reads from environment variables.
 
 Environment variables (all optional — defaults apply):
 
-  ANALYZER_REPO_ROOT        Path to the repository root (contains run.py).
+  ANALYZER_REPO_ROOT        Path to the repository root (contains engine/run.py).
                             Default: auto-detected relative to this file.
   ANALYZER_WORKSPACES_DIR   Where per-project checkout + output dirs live.
                             Default: <ANALYZER_REPO_ROOT>/workspaces/

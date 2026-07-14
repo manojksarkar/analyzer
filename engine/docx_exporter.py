@@ -1,0 +1,1651 @@
+"""Export interface_tables.json -> Software Detailed Design DOCX. Unit header table built from model."""
+import os
+import re
+import sys
+import json
+import subprocess
+from typing import Optional, Tuple, List, Dict, Any
+from utils import os_type
+from core.paths import paths as _paths
+
+_p = _paths()
+PROJECT_ROOT = _p.project_root
+OUTPUT_DIR = _p.output_dir
+
+MODEL_DIR = _p.model_dir
+COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Range", "Direction(In/Out)", "Source/Destination", "Interface Type")
+# Placeholder when no value (no column may be empty)
+NA = "N/A"
+# Include-guard defines (#define FILE_NAME_H) — no value, name ends with _H/_HPP
+_INCLUDE_GUARD_RE = re.compile(r"^_*[A-Z][A-Z0-9_]*(?:_H|_HPP)_*$")
+
+
+def _readable_label(name: str) -> str:
+    """Convert an identifier like 'g_readWrite' or 'sb_index' into a human label."""
+    if not name:
+        return ""
+    # Strip common global prefixes
+    for prefix in ("g_", "s_", "t_"):
+        if name.startswith(prefix):
+            name = name[len(prefix) :]
+            break
+    # Replace underscores with spaces
+    name = name.replace("_", " ")
+    # Ignore very short/meaningless identifiers (e.g. "i", "v", "x")
+    if len(name.strip()) <= 2:
+        return ""
+    # Basic title-case
+    return name[:1].upper() + name[1:] if name else ""
+
+
+def _strip_ext(path: str) -> str:
+    if not path:
+        return path
+    return (path or "").replace("\\", "/")
+
+
+def _path_no_ext(path: str) -> str:
+    base, _ = os.path.splitext(path)
+    return base.replace("\\", "/")
+
+
+def _unit_paths(unit_info: dict) -> List[str]:
+    """Path(s) without extension for this unit (for matching dataDictionary locations)."""
+    path = unit_info.get("path")
+    if not path:
+        return []
+    if isinstance(path, list):
+        return [_strip_ext(p) for p in path]
+    return [_strip_ext(path)]
+
+def _struct_info_from_name(name: str) -> str:
+    """Build a short description for a struct, e.g. 'HeapSort' -> 'Structure for Heap sorting'."""
+    if not (name or "").strip():
+        return "Structure for (unnamed)"
+    s = name.strip()
+    # Snake_case -> spaces; CamelCase -> spaces before capitals
+    readable = []
+    for i, c in enumerate(s):
+        if c == "_":
+            readable.append(" ")
+        elif c.isupper() and i > 0 and readable and readable[-1] != " ":
+            readable.append(" ")
+            readable.append(c)
+        else:
+            readable.append(c)
+    base = "".join(readable).strip()
+    # Optional: lowercase trailing 'ing' context, e.g. "Heap Sort" -> "Heap sorting"
+    if base and base.endswith(" Sort"):
+        base = base[:-5] + " sorting"
+    return f"Structure for {base}"
+
+
+def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
+    """Extract declaration snippet safely using brace depth."""
+
+    if not abs_file or not os.path.isfile(abs_file) or start_line < 1:
+        return "-"
+
+    try:
+        with open(abs_file, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except (OSError, IOError):
+        return "-"
+
+    if start_line > len(lines):
+        return "-"
+
+    i = start_line - 1
+    buf = []
+    max_lines = 60
+
+    brace_depth = 0
+    started = False
+
+    for _ in range(max_lines):
+
+        if i >= len(lines):
+            break
+
+        line = lines[i].rstrip("\n")
+        stripped = line.strip()
+
+        # skip leading comments
+        if not started and (not stripped or stripped.startswith("//") or stripped.startswith("/*")):
+            i += 1
+            continue
+
+        buf.append(line)
+
+        if "{" in line:
+            brace_depth += line.count("{")
+            started = True
+
+        if "}" in line:
+            brace_depth -= line.count("}")
+
+        # stop when typedef/struct block closes
+        if started and brace_depth == 0 and ";" in line:
+            break
+
+        # stop simple declarations
+        if not started and ";" in line:
+            break
+
+        i += 1
+
+    out = "\n".join(buf).strip()
+
+    # filter out function prototypes
+    first_line = buf[0].strip() if buf else ""
+
+    if "(" in first_line and ")" in first_line and first_line.endswith(";"):
+        return "-"
+
+    if kind == "typedef" and not out.lstrip().startswith("typedef"):
+        return "-"
+
+    if kind == "enum" and not (
+        out.lstrip().startswith("enum") or out.lstrip().startswith("typedef enum")
+    ):
+        return "-"
+
+    if kind == "struct":
+        if not out.lstrip().startswith(("struct", "typedef struct")):
+            return "-"
+
+    return out if out else "-"
+
+def _load_model_json(name: str) -> dict:
+    path = os.path.join(MODEL_DIR, f"{name}.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _load_base_path() -> str:
+    meta = _load_model_json("metadata")
+    return (meta.get("basePath") or "").strip()
+
+
+def _load_abbreviations(project_root: str, config: dict) -> dict:
+    """Load abbreviations from text file in config (llm.abbreviationsPath). Format: one per line, 'abbrev: meaning' or 'abbrev=meaning'; # = comment."""
+    path = (config.get("llm") or {}).get("abbreviationsPath", "").strip()
+    if not path:
+        return {}
+    full_path = os.path.join(project_root, path) if not os.path.isabs(path) else path
+    if not os.path.isfile(full_path):
+        return {}
+    result = {}
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if ":" in line:
+                    k, _, v = line.partition(":")
+                elif "=" in line:
+                    k, _, v = line.partition("=")
+                else:
+                    continue
+                k, v = k.strip(), v.strip()
+                if k:
+                    result[k] = v
+        return result
+    except OSError:
+        return {}
+
+
+def _build_unit_header_table(
+    unit_info: dict,
+    interfaces: list,
+    data_dictionary: dict,
+    global_variables_data: dict,
+    base_path: str,
+    config: Optional[dict] = None,
+    abbreviations: Optional[dict] = None,
+) -> List[Dict[str, str]]:
+    """Build rows for unit header table.
+
+    - Column 1: full declaration as in code
+    - Column 2: value (initializer / underlying type / enumerator values)
+    """
+    rows: List[Dict[str, str]] = []
+    dd = data_dictionary or {}
+    unit_paths_set = set(_unit_paths(unit_info))
+
+    # Globals: use model/globalVariables.json so we can read exact line(s)
+    for gid in unit_info.get("globalVariableIds", []) or []:
+        g = (global_variables_data or {}).get(gid) or {}
+        if (g.get("visibility") or "").lower() == "private":
+            continue
+        loc = g.get("location") or {}
+        rel_file = (loc.get("file") or "").replace("\\", "/")
+        line = int(loc.get("line") or 0)
+        abs_file = os.path.join(base_path, rel_file) if base_path and rel_file else ""
+        decl = _read_decl_snippet(abs_file, line, kind="var")
+        info = g.get("value") or NA
+        if (decl or "").strip() in ("", "-"):
+            decl = g.get("qualifiedName") or g.get("name") or str(gid) or NA
+        rows.append({"declaration": decl or NA, "information": info})
+
+    # typedef, enum, define: match by unit file(s)
+    # Track (file, line) already emitted for typedefs so that multiple aliases
+    # from the same declaration (e.g. "} one_s, *one_s_2;") don't produce
+    # extra rows.
+    _typedef_locations_seen: set = set()
+    for _type_name, t in dd.items():
+        loc = t.get("location") or {}
+        rel_file = (loc.get("file") or "").replace("\\", "/")
+        type_file = _path_no_ext(rel_file)
+        if not type_file or type_file not in unit_paths_set:
+            continue
+        kind = t.get("kind", "")
+        # Include structs/unions so typedef-based structs (and unions) are visible
+        # in the unit header table alongside typedef/enum/define entries.
+        if kind not in ("typedef", "enum", "define"):
+            continue
+        line = int(loc.get("line") or 0)
+        if kind == "typedef":
+            loc_key = (rel_file, line)
+            if loc_key in _typedef_locations_seen:
+                continue
+            _typedef_locations_seen.add(loc_key)
+        abs_file = os.path.join(base_path, rel_file) if base_path and rel_file else ""
+        # Defines: use stored text/value from parser for exact macro
+        if kind == "define":
+            macro_name = t.get("name") or _type_name or ""
+            macro_value = t.get("value", "") or ""
+            # Skip include guards (#define FILE_NAME_H with no value)
+            if not macro_value and _INCLUDE_GUARD_RE.match(macro_name):
+                continue
+            decl = t.get("text") or _read_decl_snippet(abs_file, line, kind="var")
+            info = macro_value or NA
+            if (decl or "").strip() in ("", "-"):
+                decl = macro_name or NA
+            rows.append({"declaration": decl or NA, "information": info})
+            continue
+
+        decl = _read_decl_snippet(abs_file, line, kind=kind)
+
+        if kind == "typedef":
+            # If the snippet didn't start with "typedef", this entry is an alias
+            # at a non-start position (e.g. "} one_s, *one_s_2;" line).  The full
+            # declaration is emitted by the entry at the actual "typedef struct" line,
+            # so skip this one entirely rather than falling back to just the name.
+            if (decl or "").strip() in ("", "-"):
+                continue
+
+            underlying = (t.get("underlyingType", "") or "").strip()
+
+            # Only show values if typedef is aliasing an enum
+            enum_ent = dd.get(underlying)
+
+            if isinstance(enum_ent, dict) and enum_ent.get("kind") == "enum":
+                enums = enum_ent.get("enumerators", []) or []
+                parts = []
+                for e in enums:
+                    n = e.get("name", "")
+                    v = e.get("value")
+                    if n:
+                        parts.append(f"{n}={v}" if v is not None else n)
+                info = ", ".join(parts) if parts else NA
+
+            elif isinstance(enum_ent, dict) and enum_ent.get("kind") == "struct":
+                # typedef struct: description from name + fields (on the go, no store)
+                type_name = t.get("name") or underlying or _type_name
+                fields = enum_ent.get("fields") or []
+                info = _struct_info_from_name(type_name)  # fallback
+                if config:
+                    try:
+                        from llm_enrichment import get_struct_description, llm_provider_reachable
+                        if llm_provider_reachable(config) and config.get("llm", {}).get("descriptions", True):
+                            llm_desc = get_struct_description(type_name, fields, config, abbreviations or {})
+                            if llm_desc:
+                                info = llm_desc
+                    except ImportError:
+                        pass
+            else:
+                info = NA
+        elif kind == "enum":
+            enums = t.get("enumerators", [])
+            parts = []
+            for e in enums:
+                n = e.get("name", "")
+                v = e.get("value")
+                if n:
+                    parts.append(f"{n}={v}" if v is not None else n)
+            info = ", ".join(parts) if parts else NA
+        else:
+            info = NA
+
+        if (decl or "").strip() in ("", "-"):
+            decl = t.get("name") or _type_name or NA
+        rows.append({"declaration": decl or NA, "information": info})
+
+    # Deduplicate (same declaration can appear via enum + typedef entries)
+    dedup = {}
+    for r in rows:
+        d = (r.get("declaration") or NA).strip()
+        if d not in dedup:
+            dedup[d] = r
+        else:
+            # Prefer the richer "name=value" info when both exist
+            existing = dedup[d]
+            existing_info = (existing.get("information") or "").strip()
+            new_info = (r.get("information") or "").strip()
+            if ("=" not in existing_info) and ("=" in new_info):
+                dedup[d] = r
+    out_rows = list(dedup.values())
+    out_rows.sort(key=lambda r: (r.get("declaration") or "").lower())
+    return out_rows
+
+
+def _load_model_for_unit_headers() -> Tuple[dict, dict]:
+    """Load units and dataDictionary from model/ for unit header table. Returns (units_data, data_dictionary)."""
+    units_data = _load_model_json("units")
+    data_dictionary = _load_model_json("dataDictionary")
+    return units_data, data_dictionary
+
+
+def _set_cell_font(cell, font_pt, bold=False):
+    for p in cell.paragraphs:
+        for r in p.runs:
+            r.font.size = font_pt
+            r.font.bold = bold
+
+
+def _add_horizontal_rule(doc) -> None:
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    p = doc.add_paragraph()
+    pPr = p._p.get_or_add_pPr()
+    pBdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")
+    bottom.set(qn("w:space"), "1")
+    bottom.set(qn("w:color"), "auto")
+    pBdr.append(bottom)
+    pPr.append(pBdr)
+
+
+def _add_para(doc, text, style="Normal"):
+    p = doc.add_paragraph(text, style=style)
+    return p
+
+
+def _add_mermaid_as_text(doc, mermaid: str, font_small):
+    """Add Mermaid flowchart as monospace text block."""
+    p = doc.add_paragraph()
+    run = p.add_run(mermaid.strip())
+    run.font.name = "Consolas"
+    run.font.size = font_small
+
+
+def _add_toc(doc) -> None:
+    """Insert a Word automatic table of contents field followed by a page break."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    try:
+        p_title = doc.add_paragraph("Contents", style="TOC Heading")
+    except KeyError:
+        from docx.shared import Pt
+        p_title = doc.add_paragraph()
+        run = p_title.add_run("Contents")
+        run.font.size = Pt(16)
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in p_title.runs:
+        run.bold = True
+
+    p = doc.add_paragraph()
+
+    run = p.add_run()
+    fldChar = OxmlElement("w:fldChar")
+    fldChar.set(qn("w:fldCharType"), "begin")
+    fldChar.set(qn("w:dirty"), "true")
+    run._r.append(fldChar)
+
+    run2 = p.add_run()
+    instrText = OxmlElement("w:instrText")
+    instrText.set(qn("xml:space"), "preserve")
+    instrText.text = ' TOC \\o "1-4" \\h \\z \\u '
+    run2._r.append(instrText)
+
+    run3 = p.add_run()
+    fldChar2 = OxmlElement("w:fldChar")
+    fldChar2.set(qn("w:fldCharType"), "separate")
+    run3._r.append(fldChar2)
+
+    run4 = p.add_run()
+    t = OxmlElement("w:t")
+    t.text = "Right-click here and select 'Update Field' to populate the table of contents."
+    run4._r.append(t)
+
+    run5 = p.add_run()
+    fldChar3 = OxmlElement("w:fldChar")
+    fldChar3.set(qn("w:fldCharType"), "end")
+    run5._r.append(fldChar3)
+
+    doc.add_page_break()
+
+    # Tell Word to update all fields (including this TOC) when the document is opened
+    update_fields = OxmlElement("w:updateFields")
+    update_fields.set(qn("w:val"), "true")
+    doc.settings.element.append(update_fields)
+
+
+def _escape_mermaid_label_for_structure(text: str) -> str:
+    t = (text or "").replace('"', "'").replace("\n", " ").replace("|", "\u00a6")
+    return t
+
+
+def _build_component_container_mermaid(
+    component_name: str,
+    unit_rows: List[Tuple[Any, str, Any]],
+) -> str:
+    """Mermaid subgraph: blue component box containing all unit nodes.
+
+    Uses the default (dagre) renderer with tight ranksep/nodesep — dagre stacks
+    the disconnected unit nodes vertically, whereas elk lays them out side by side.
+    """
+    mod_label = _escape_mermaid_label_for_structure(component_name)
+    lines = [
+        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
+        "flowchart TB",
+        f'  subgraph MOD["{mod_label}"]',
+    ]
+    unit_ids = []
+    for i, row in enumerate(unit_rows):
+        disp = row[1] if len(row) > 1 else str(row[0])
+        uid = f"U{i}"
+        unit_ids.append(uid)
+        lines.append(f'    {uid}["{_escape_mermaid_label_for_structure(disp)}"]')
+    lines.append("  end")
+    lines.append("  classDef unitNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff")
+    if unit_ids:
+        lines.append(f"  class {','.join(unit_ids)} unitNode")
+    lines.append("  style MOD fill:#fef9c3,stroke:#fbbf24,color:#1e293b")
+    return "\n".join(lines)
+
+
+def _build_component_header_dependency_mermaid(
+    component_name: str,
+    unit_rows: List[Tuple[Any, str, Any]],
+    units_data: dict,
+    components_data: dict,
+) -> str:
+    """Mermaid BT chart: header nodes at top, source nodes below, same-component headers only."""
+    component_headers: set = set(
+        (components_data.get(component_name) or {}).get("headerFiles") or []
+    )
+
+    lines = [
+        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
+        "flowchart BT",
+    ]
+
+    cpp_ids: Dict[str, str] = {}
+    h_ids: Dict[str, str] = {}
+    edges: List[Tuple[str, str]] = []
+    counter = [0]
+
+    def _nid() -> str:
+        counter[0] += 1
+        return f"N{counter[0]}"
+
+    for unit_key, _, _ in unit_rows:
+        unit_info = units_data.get(unit_key) or {}
+        file_name = unit_info.get("fileName") or ""
+        path_no_ext = unit_info.get("path") or ""
+        if not file_name:
+            continue
+
+        cpp_rel = (path_no_ext + os.path.splitext(file_name)[1]).replace("\\", "/")
+        cpp_label = _escape_mermaid_label_for_structure(os.path.splitext(file_name)[0])
+        if cpp_rel not in cpp_ids:
+            nid = _nid()
+            cpp_ids[cpp_rel] = nid
+            lines.append(f'  {nid}["{cpp_label}"]')
+
+        for h_rel in (unit_info.get("includedHeaders") or []):
+            h_rel = h_rel.replace("\\", "/")
+            if h_rel not in component_headers:
+                continue
+            h_base = os.path.basename(h_rel)
+            h_label = _escape_mermaid_label_for_structure(os.path.splitext(h_base)[0]) + "\nHeader"
+            if h_rel not in h_ids:
+                nid = _nid()
+                h_ids[h_rel] = nid
+                lines.append(f'  {nid}["{h_label}"]')
+            edges.append((cpp_ids[cpp_rel], h_ids[h_rel]))
+
+    for src, dst in edges:
+        lines.append(f"  {src} --> {dst}")
+
+    if cpp_ids:
+        lines.append("  classDef cppNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff")
+        lines.append(f"  class {','.join(cpp_ids.values())} cppNode")
+    if h_ids:
+        lines.append("  classDef hNode fill:#1e293b,stroke:#334155,color:#ffffff")
+        lines.append(f"  class {','.join(h_ids.values())} hNode")
+    return "\n".join(lines)
+
+
+def _build_component_static_structure_mermaid(
+    component_name: str,
+    unit_rows: List[Tuple[Any, str, Any]],
+) -> str:
+    """Mermaid TB chart: one box for component, one row of child boxes for units.
+
+    unit_rows: sorted list of (unit_key, unit_name_display, interfaces) per component.
+    """
+    mod_id = "MOD"
+    mod_label = _escape_mermaid_label_for_structure(component_name)
+    lines = [
+        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
+        "flowchart TB",
+        f'  {mod_id}["{mod_label}"]',
+    ]
+    unit_ids = []
+    for i, row in enumerate(unit_rows):
+        disp = row[1] if len(row) > 1 else str(row[0])
+        uid = f"U{i}"
+        unit_ids.append(uid)
+        lines.append(f'  {uid}["{_escape_mermaid_label_for_structure(disp)}"]')
+        lines.append(f"  {mod_id} --> {uid}")
+    lines.append(
+        "  classDef componentNode fill:#1e293b,stroke:#334155,color:#ffffff"
+    )
+    lines.append(
+        "  classDef unitNode fill:#2563eb,stroke:#1d4ed8,color:#ffffff"
+    )
+    lines.append(f"  class {mod_id} componentNode")
+    if unit_ids:
+        lines.append(f"  class {','.join(unit_ids)} unitNode")
+    return "\n".join(lines)
+
+
+def _parse_component_static_diagram_cfg(views_cfg: dict) -> Tuple[bool, bool, float]:
+    """enabled, renderPng, widthInches for Static Design component→units diagram (config.views.componentStaticDiagram)."""
+    raw = (views_cfg or {}).get("componentStaticDiagram")
+    if raw is None:
+        raw = True
+    return bool(raw), True, 5.5
+
+
+def _render_mermaid_to_png(project_root: str, mermaid: str, png_path: str) -> bool:
+    """Render a component-level Mermaid diagram to PNG via the content-addressed cache
+    (M-A) — identical diagrams across components/versions are rendered by mmdc only once.
+    Returns True iff png exists afterward."""
+    from utils import render_mermaid_cached
+    ok = render_mermaid_cached(project_root, mermaid, png_path, scale=2, timeout=90)
+    if not ok:
+        print(f"[docx_exporter] warning: mmdc render failed for {os.path.basename(png_path)}")
+    return ok
+
+def _add_flowchart_table(doc, func_name: str, description: str, input_name: str,
+                         output_name: str, flowcharts: list, font_small):
+    """Render a flowchart table matching the behaviour diagram table layout.
+
+    Rows: Requirements (description + all flowcharts stacked), Capacity, Risk,
+          Input Name, Output Name.
+
+    flowcharts: list of (png_path_or_None, mermaid_str, label_str) tuples.
+                First entry is the function's own flowchart; subsequent entries
+                are private callee flowcharts.
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    from docx.shared import Inches
+
+    table = doc.add_table(rows=5, cols=2)
+    table.style = "Table Grid"
+
+    def _tight(para):
+        para.paragraph_format.space_before = 0
+        para.paragraph_format.space_after = 0
+        para.paragraph_format.line_spacing = 1
+
+    # Row 0: Requirements — description header then all flowcharts stacked
+    row0 = table.rows[0].cells
+    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AUTO
+    for cell in row0:
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP
+        for para in cell.paragraphs:
+            _tight(para)
+    row0[0].text = "Requirements"
+    _set_cell_font(row0[0], font_small)
+    row0[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    for para in row0[0].paragraphs:
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        _tight(para)
+
+    # Right cell: description header, then each flowchart with an optional label
+    p = row0[1].paragraphs[0]
+    header_run = p.add_run(description.strip() if description and description.strip() else func_name or "-")
+    header_run.bold = False
+    header_run.font.size = font_small
+    _tight(p)
+
+    for png_path, mermaid, label in (flowcharts or []):
+        if label:
+            lp = row0[1].add_paragraph()
+            label_run = lp.add_run(label)
+            label_run.font.size = font_small
+            _tight(lp)
+        if png_path and os.path.isfile(png_path):
+            ip = row0[1].add_paragraph()
+            _tight(ip)
+            try:
+                ip.add_run().add_picture(png_path, width=Inches(4.0))
+            except Exception:
+                if mermaid:
+                    fb = ip.add_run(mermaid.strip())
+                    fb.font.name = "Consolas"
+                    fb.font.size = font_small
+        elif mermaid:
+            mp = row0[1].add_paragraph()
+            _tight(mp)
+            fb = mp.add_run(mermaid.strip())
+            fb.font.name = "Consolas"
+            fb.font.size = font_small
+
+    # Row 1: Risk
+    row1 = table.rows[1].cells
+    row1[0].text = "Risk"
+    row1[1].text = "Medium"
+    _set_cell_font(row1[0], font_small)
+    _set_cell_font(row1[1], font_small)
+
+    # Row 2: Capacity (Density)
+    row2 = table.rows[2].cells
+    row2[0].text = "Capacity(Density)"
+    row2[1].text = "Common"
+    _set_cell_font(row2[0], font_small)
+    _set_cell_font(row2[1], font_small)
+
+    # Row 3: Input Name
+    row3 = table.rows[3].cells
+    row3[0].text = "Input Name"
+    row3[1].text = input_name or ""
+    _set_cell_font(row3[0], font_small)
+    _set_cell_font(row3[1], font_small)
+
+    # Row 4: Output Name
+    row4 = table.rows[4].cells
+    row4[0].text = "Output Name"
+    row4[1].text = output_name or ""
+    _set_cell_font(row4[0], font_small)
+    _set_cell_font(row4[1], font_small)
+
+
+def _add_behavior_description_table(doc, behavior_description_list, input_name: str = "", output_name: str = ""):
+    """Create a table with Requirements, Risk, Capacity, Input Name, Output Name rows.
+
+    Args:
+        doc: The python-docx Document object
+        behavior_description_list: A list of strings to be displayed as bullet points
+        input_name: Short human label for input of this behaviour
+        output_name: Short human label for output of this behaviour
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+
+    table = doc.add_table(rows=5, cols=2)
+    table.style = "Table Grid"
+
+    # Row 0: Requirements
+    row0 = table.rows[0].cells
+    row0[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    row0[1].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AUTO
+    row0[0].text = "Requirements"
+    for para in row0[0].paragraphs:
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    # Remove extra spacing and fill second column for row 0
+    for cell in row0:
+        for para in cell.paragraphs:
+            para.paragraph_format.space_before = 0
+            para.paragraph_format.space_after = 0
+            para.paragraph_format.line_spacing = 1
+
+    # Second column: Bullet points from the list
+    if behavior_description_list and isinstance(behavior_description_list, list):
+        p = row0[1].paragraphs[0]
+        header_run = p.add_run("Behavior Description\n")
+        header_run.bold = True
+        p.paragraph_format.space_before = 0
+        p.paragraph_format.space_after = 0
+        for item in behavior_description_list:
+            bullet_p = row0[1].add_paragraph()
+            bullet_p.add_run(f"• {item}")
+            bullet_p.paragraph_format.space_before = 0
+            bullet_p.paragraph_format.space_after = 0
+    else:
+        row0[1].text = "-"
+
+    # Row 1: Risk (default Medium for now)
+    row1 = table.rows[1].cells
+    row1[0].text = "Risk"
+    row1[1].text = "Medium"
+
+    # Row 2: Capacity (default Common for now)
+    row2 = table.rows[2].cells
+    row2[0].text = "Capacity"
+    row2[1].text = "Common"
+
+    # Row 3: Input Name (second column filled from model when available)
+    row3 = table.rows[3].cells
+    row3[0].text = "Input Name"
+    row3[1].text = input_name or ""
+
+    # Row 4: Output Name (second column filled from model when available)
+    row4 = table.rows[4].cells
+    row4[0].text = "Output Name"
+    row4[1].text = output_name or ""
+
+def _add_requirement_image_table(doc, png_path: str, flowchart_mermaid: str, font_small):
+    import os
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    from docx.shared import Inches
+
+    width_inches = 4.0
+
+    table = doc.add_table(rows=1, cols=2)
+    table.style = "Table Grid"
+
+    table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AUTO
+
+    row = table.rows[0].cells
+
+    # Vertical align TOP
+    row[0].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+    row[1].vertical_alignment = WD_ALIGN_VERTICAL.TOP
+
+    row[0].text = "Requirements"
+    _set_cell_font(row[0], font_small)
+
+    for para in row[0].paragraphs:
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    # Remove extra spacing in both cells
+    for cell in row:
+        for para in cell.paragraphs:
+            para.paragraph_format.space_before = 0
+            para.paragraph_format.space_after = 0
+            para.paragraph_format.line_spacing = 1
+
+    # Clear second cell
+    row[1].text = ""
+    p = row[1].paragraphs[0]
+
+    if png_path and os.path.isfile(png_path):
+        try:
+            run = p.add_run()
+            run.add_picture(png_path, width=Inches(width_inches))
+        except Exception:
+            run = p.add_run(flowchart_mermaid.strip())
+            run.font.name = "Consolas"
+            run.font.size = font_small
+    else:
+        run = p.add_run(flowchart_mermaid.strip())
+        run.font.name = "Consolas"
+        run.font.size = font_small
+
+def _load_flowcharts(flowcharts_dir: str) -> dict:
+    """Return { unit_name: { func_name: flowchart_str } }."""
+    result = {}
+    if not os.path.isdir(flowcharts_dir):
+        return result
+    for fname in os.listdir(flowcharts_dir):
+        if not fname.endswith(".json"):
+            continue
+        unit_name = fname[:-5]
+        path = os.path.join(flowcharts_dir, fname)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                arr = json.load(f)
+            if not isinstance(arr, list):
+                continue
+            result[unit_name] = {}
+            for item in arr:
+                name = (item.get("name") or "").strip()
+                flowchart = (item.get("flowchart") or "").strip()
+                if name and flowchart:
+                    result[unit_name][name] = flowchart
+        except (json.JSONDecodeError, OSError):
+            pass
+    return result
+
+
+def _resolve_flowchart_pngs(flowcharts_dir: str, base_stem: str) -> List[Tuple[str, str]]:
+    """Return per-image [(png_path, part_label)] for a flowchart base stem.
+
+    Sliced parts produced by views/flowcharts.py ({stem}_part_K_of_N.png) take precedence
+    over the single {stem}.png. The single file is returned when no slices exist. Empty
+    list when neither is present.
+    """
+    if not flowcharts_dir or not base_stem:
+        return []
+    part_re = re.compile(
+        r"^" + re.escape(base_stem) + r"_part_(\d+)_of_(\d+)\.png$",
+        re.IGNORECASE,
+    )
+    try:
+        names = os.listdir(flowcharts_dir)
+    except OSError:
+        return []
+    parts: List[Tuple[int, int, str]] = []
+    for name in names:
+        m = part_re.match(name)
+        if m:
+            parts.append((int(m.group(1)), int(m.group(2)), os.path.join(flowcharts_dir, name)))
+    if parts:
+        parts.sort(key=lambda t: t[0])
+        return [(p[2], f"Part {p[0]} of {p[1]}") for p in parts]
+    single = os.path.join(flowcharts_dir, f"{base_stem}.png")
+    if os.path.isfile(single):
+        return [(single, "")]
+    return []
+
+
+def _append_flowchart_entries(flowcharts_list: list, flowcharts_dir: str,
+                              base_stems, mermaid: str, label: str) -> None:
+    """Append (png_path, mermaid, label) tuples for a function's flowchart.
+
+    Tries each base stem in order; the first that resolves to >=1 PNG wins. A multi-slice
+    result emits one tuple per slice (the first carries the full label + 'Part K of N' and
+    the mermaid fallback; the rest carry only 'continued - Part K of N'). When no PNG
+    resolves, appends one (None, mermaid, label) so the mermaid-text fallback still runs.
+    """
+    entries: List[Tuple[str, str]] = []
+    if flowcharts_dir:
+        for stem in base_stems:
+            entries = _resolve_flowchart_pngs(flowcharts_dir, stem)
+            if entries:
+                break
+    if not entries:
+        # DIAGNOSTIC (zero behaviour change): this flowchart is about to fall back to
+        # mermaid text. Log exactly what the resolver saw so the cause is pinpointed.
+        try:
+            if flowcharts_dir and os.path.isdir(flowcharts_dir):
+                _parts_present = sorted(n for n in os.listdir(flowcharts_dir) if "_part_" in n)
+            else:
+                _parts_present = "<flowcharts_dir missing>"
+            print(f"[docx_exporter] flowchart->mermaid fallback: label={label!r} "
+                  f"flowcharts_dir={flowcharts_dir!r} base_stems={list(base_stems)} "
+                  f"part_files_present={_parts_present}")
+        except Exception:
+            pass
+        flowcharts_list.append((None, mermaid, label))
+        return
+    for k, (png_path, part_label) in enumerate(entries):
+        if part_label:
+            combined = f"{label} - {part_label}" if k == 0 else f"(continued - {part_label})"
+        else:
+            combined = label
+        mm = mermaid if k == 0 else ""
+        flowcharts_list.append((png_path, mm, combined))
+
+
+def _add_unit_header_table(doc, unit_header_rows: List[Dict[str, str]], font_small) -> None:
+    """Add 2-column table under unit header: global variables/typedef/enum/define | information."""
+    if not unit_header_rows:
+        _add_para(doc, "NA")
+        return
+    table = doc.add_table(rows=1, cols=2)
+    table.style = "Table Grid"
+    hdr = table.rows[0].cells
+    hdr[0].text = "global variables / typedef / enum / define"
+    hdr[1].text = "information"
+    _set_cell_font(hdr[0], font_small, bold=True)
+    _set_cell_font(hdr[1], font_small, bold=True)
+    for row_data in unit_header_rows:
+        row = table.add_row().cells
+        row[0].text = str(row_data.get("declaration") or NA)
+        row[1].text = str(row_data.get("information") or NA)
+        _set_cell_font(row[0], font_small)
+        _set_cell_font(row[1], font_small)
+
+
+def _add_interface_table(doc, interfaces, font_small):
+    table = doc.add_table(rows=1, cols=len(COLS))
+    table.style = "Table Grid"
+    hdr = table.rows[0].cells
+    for i, c in enumerate(COLS):
+        hdr[i].text = c
+        _set_cell_font(hdr[i], font_small, bold=True)
+
+    for iface in interfaces:
+        iface_type = iface.get("type", "") or "-"
+        if "variableType" in iface:
+            data_type = iface.get("variableType", "") or "-"
+            data_range = iface.get("range", "") or "NA"
+        else:
+            params = iface.get("parameters", [])
+            data_type = "; ".join(p.get("type", "") for p in params) if params else "VOID"
+            data_range = "; ".join(p.get("range", "") for p in params) if params else "NA"
+
+        src_dest = iface.get("sourceDest") or "-"
+        direction = iface.get("direction") or "-"
+        info = iface.get("description", "") or "-"
+
+        row = table.add_row().cells
+        cells_text = (
+            str(iface.get("interfaceId", "")),
+            str(iface.get("interfaceName", "")),
+            info,
+            data_type,
+            data_range,
+            direction,
+            src_dest,
+            iface_type,
+        )
+        for i, txt in enumerate(cells_text):
+            row[i].text = str(txt)
+            _set_cell_font(row[i], font_small)
+
+
+def _merge_vertical_cells(table, col: int, start_row: int, end_row: int) -> None:
+    """Merge vertically from start_row to end_row inclusive (same column). Word keeps top-left cell content."""
+    if start_row >= end_row:
+        return
+    top = table.cell(start_row, col)
+    bottom = table.cell(end_row, col)
+    top.merge(bottom)
+
+
+def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, config: dict, abbreviations: dict) -> None:
+    """Add component-level table: Component | Unit | Description | Note.
+
+    Description is derived from per-unit `interface_tables.json` entries:
+    it aggregates available `description` fields from both functions and globals.
+    Note column is left as N/A for now.
+    """
+    if not unit_rows:
+        return
+    table = doc.add_table(rows=1, cols=4)
+    table.style = "Table Grid"
+    hdr = table.rows[0].cells
+    headers = ("Component", "Unit", "Description", "Note")
+    for i, h in enumerate(headers):
+        hdr[i].text = h
+        _set_cell_font(hdr[i], font_small, bold=True)
+
+    def _cell_trim(s: str, max_len: int = 90) -> str:
+        s = (s or "").strip()
+        if not s:
+            return ""
+        if len(s) <= max_len:
+            return s
+        return s[: max_len - 3] + "..."
+
+    def _unique_preserve_order(items: List[str]) -> List[str]:
+        seen = set()
+        out = []
+        for it in items:
+            if it in seen:
+                continue
+            seen.add(it)
+            out.append(it)
+        return out
+
+    for row_idx, row_data in enumerate(unit_rows):
+        # row_data = (unit_key, unit_name_display, interfaces)
+        unit_name_display = row_data[1] if len(row_data) > 1 else str(row_data[0])
+        interfaces = row_data[2] if len(row_data) > 2 else []
+
+        # Pull descriptions from both functions and globals.
+        fn_items: List[Tuple[str, str]] = []
+        gv_items: List[Tuple[str, str]] = []
+        for iface in interfaces or []:
+            d = str(iface.get("description") or "").strip()
+            if not d or d in ("-", NA):
+                continue
+
+            # Clean up newlines so prompt/table content stays readable.
+            d_clean = " ".join(d.split())
+
+            iface_type = iface.get("type") or ""
+            name = (
+                iface.get("interfaceName")
+                or iface.get("name")
+                or (iface.get("qualifiedName") or "").split("::")[-1]
+                or ""
+            )
+            name = str(name).strip()
+
+            if iface_type == "Global Variable":
+                gv_items.append((name, d_clean))
+            else:
+                # Default to "Function" for any non-global interface types we got.
+                fn_items.append((name, d_clean))
+
+        # De-duplicate while preserving order.
+        def _dedup_items(items: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+            seen = set()
+            out = []
+            for n, d in items:
+                key = (n or "").strip().lower() + "|" + (d or "").strip().lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append((n, d))
+            return out
+
+        fn_items = _dedup_items(fn_items)
+        gv_items = _dedup_items(gv_items)
+
+        description_text = NA
+        try:
+            from llm_enrichment import llm_provider_reachable, get_unit_description
+
+            if config.get("llm", {}).get("descriptions", True) and llm_provider_reachable(config):
+                description_text = get_unit_description(
+                    unit_name_display,
+                    fn_items,
+                    gv_items,
+                    config,
+                    abbreviations or {},
+                ).strip()
+        except Exception:
+            # Fall back to deterministic join if the LLM call fails.
+            description_text = NA
+
+        if not description_text or description_text in ("-", NA):
+            # Fallback: join all descriptions (not just 3), but cap length for DOCX readability.
+            all_descs = [d for _, d in (fn_items + gv_items)]
+            all_descs = _unique_preserve_order(all_descs)
+            joined = "; ".join(all_descs)
+            description_text = _cell_trim(joined, max_len=120)
+
+        # Keep output short even when the LLM returns long text.
+        description_text = str(description_text or NA)
+        if not description_text:
+            description_text = NA
+
+        note_text = NA
+
+        row = table.add_row().cells
+        # Component is one per component; only first body row holds text, then column 0 is merged.
+        row[0].text = str(component_name or NA) if row_idx == 0 else ""
+        row[1].text = str(unit_name_display or NA)
+        row[2].text = str(description_text or NA)
+        row[3].text = str(note_text or NA)
+        for c in row:
+            _set_cell_font(c, font_small)
+
+    # Merge Component column across all body rows (same component for the whole table).
+    n = len(table.rows)
+    if n > 2:
+        _merge_vertical_cells(table, 0, 1, n - 1)
+
+
+def _build_cover_page(doc, project_name: str, group_name: str, version: str = "1.0.0", copyright_text: str = "") -> None:
+    """Render the cover page (first page) of the DOCX."""
+    from datetime import date as _date
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    NAVY = RGBColor(30, 60, 120)
+    DARK = RGBColor(60, 60, 60)
+    ASSETS = os.path.join(PROJECT_ROOT, "engine", "assets")
+
+    def _spacing(para, before=0, after=0):
+        pPr = para._p.get_or_add_pPr()
+        for old in pPr.findall(qn("w:spacing")):
+            pPr.remove(old)
+        sp = OxmlElement("w:spacing")
+        sp.set(qn("w:before"), str(before))
+        sp.set(qn("w:after"),  str(after))
+        pPr.append(sp)
+
+    def _align(para, val="right"):
+        pPr = para._p.get_or_add_pPr()
+        for old in pPr.findall(qn("w:jc")):
+            pPr.remove(old)
+        jc = OxmlElement("w:jc")
+        jc.set(qn("w:val"), val)
+        pPr.append(jc)
+        para.alignment = (WD_ALIGN_PARAGRAPH.RIGHT if val == "right" else
+                          WD_ALIGN_PARAGRAPH.CENTER if val == "center" else
+                          WD_ALIGN_PARAGRAPH.LEFT)
+
+    def _run(para, text, size_pt, bold=False, color=None):
+        r = para.add_run(text)
+        r.bold = bold
+        r.font.size = Pt(size_pt)
+        if color:
+            r.font.color.rgb = color
+        return r
+
+    def _double_underline(run, color_hex="1E3C78"):
+        rPr = run._r.get_or_add_rPr()
+        for old in rPr.findall(qn("w:u")):
+            rPr.remove(old)
+        u = OxmlElement("w:u")
+        u.set(qn("w:val"),   "double")
+        u.set(qn("w:color"), color_hex)
+        u.set(qn("w:sz"),    "12")
+        rPr.append(u)
+
+    def _spacer(n=1):
+        for _ in range(n):
+            p = doc.add_paragraph()
+            _spacing(p, 0, 0)
+
+    section    = doc.sections[0]
+    body_w_in  = (section.page_width / 914400) - (
+        section.left_margin / 914400 + section.right_margin / 914400)
+
+    _spacer(8)
+
+    # Project name — largest, bold, double-underlined
+    p_name = doc.add_paragraph()
+    _spacing(p_name, before=0, after=120)
+    _align(p_name, "right")
+    r_name = _run(p_name, project_name, size_pt=36, bold=True, color=NAVY)
+    _double_underline(r_name, "1E3C78")
+
+    # Subtitle — single line, no dash
+    p_sub = doc.add_paragraph()
+    _spacing(p_sub, before=0, after=100)
+    _align(p_sub, "right")
+    _run(p_sub, f"Software Detailed Design Specification  {group_name}", size_pt=16, bold=True, color=NAVY)
+
+    # Version
+    p_ver = doc.add_paragraph()
+    _spacing(p_ver, before=0, after=60)
+    _align(p_ver, "right")
+    _run(p_ver, f"Version {version}", size_pt=12, color=DARK)
+
+    # Date
+    p_date = doc.add_paragraph()
+    _spacing(p_date, before=0, after=400)
+    _align(p_date, "right")
+    _run(p_date, _date.today().strftime("%Y-%m-%d"), size_pt=12, color=DARK)
+
+    # Copyright image — left-aligned
+    cr_path = os.path.join(ASSETS, "copyright.png")
+    p_cr = doc.add_paragraph()
+    _spacing(p_cr, before=0, after=0)
+    _align(p_cr, "left")
+    if os.path.isfile(cr_path):
+        p_cr.add_run().add_picture(cr_path, width=Inches(2.6))
+    else:
+        _run(p_cr, "© All Rights Reserved", size_pt=10, color=DARK)
+
+    # Copyright sentence below the image
+    _cr_text = copyright_text or f"© {_date.today().year} All Rights Reserved."
+    p_cr_text = doc.add_paragraph()
+    _spacing(p_cr_text, before=0, after=0)
+    _align(p_cr_text, "left")
+    _run(p_cr_text, _cr_text, size_pt=8, color=RGBColor(128, 128, 128))
+
+    _spacer(4)
+
+    # Bottom arc — full body width
+    arc_path = os.path.join(ASSETS, "bottom_arc.png")
+    p_arc = doc.add_paragraph()
+    _spacing(p_arc, before=0, after=0)
+    _align(p_arc, "center")
+    if os.path.isfile(arc_path):
+        p_arc.add_run().add_picture(arc_path, width=Inches(body_w_in))
+
+    doc.add_page_break()
+
+
+def export_docx(json_path: str = None, docx_path: str = None, selected_group: str | None = None, selected_components: list | None = None) -> Tuple[bool, Optional[str]]:
+    from utils import safe_filename, KEY_SEP
+    from core.config import app_config
+    config = app_config()
+    json_path = json_path or os.path.join(OUTPUT_DIR, "interface_tables.json")
+    json_path = os.path.abspath(json_path)
+    # Views write next to interface_tables.json (e.g. output/<group>/); do not use output/ only.
+    artifacts_dir = os.path.dirname(json_path)
+    if selected_components:
+        group_name = "_".join(selected_components)
+    else:
+        group_name = selected_group or "all"
+    if not docx_path:
+        docx_path = os.path.join(PROJECT_ROOT, f"output/software_detailed_design_{group_name}.docx")
+    font_size = 8
+    views_cfg = config.get("views", {})
+    msd_enabled, msd_render_png, msd_width_in = _parse_component_static_diagram_cfg(views_cfg)
+    flowcharts_enabled = bool(views_cfg.get("flowcharts"))
+    flowcharts_dir = os.path.abspath(os.path.join(artifacts_dir, "flowcharts"))
+    flowcharts_map = _load_flowcharts(flowcharts_dir) if flowcharts_enabled else {}
+
+    if not os.path.isfile(json_path):
+        print(f"Error: {json_path} not found. Run pipeline first.")
+        return (False, None)
+
+    try:
+        from docx import Document
+        from docx.shared import Pt, Inches
+        font_small = Pt(font_size)
+    except ImportError:
+        print("Error: python-docx not installed. pip install python-docx")
+        return (False, None)
+
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    abbreviations = _load_abbreviations(PROJECT_ROOT, config)
+    units_data, data_dictionary = _load_model_for_unit_headers()
+    components_data = _load_model_json("components")
+    global_variables_data = _load_model_json("globalVariables")
+    functions_data = _load_model_json("functions")
+
+    # Filter model data to only the components in the same layer as the selected group/components
+    if selected_group:
+        from core.config import get_layer_components, app_config
+        layer_comps = get_layer_components(app_config(), selected_group)
+        if layer_comps:
+            lower = {c.lower().replace(" ", "-") for c in layer_comps}
+            units_data = {k: v for k, v in units_data.items() if k.split("|")[0].lower() in lower}
+            components_data = {k: v for k, v in components_data.items() if k.lower() in lower}
+            global_variables_data = {k: v for k, v in global_variables_data.items() if k.split("|")[0].lower() in lower}
+            functions_data = {k: v for k, v in functions_data.items() if k.split("|")[0].lower() in lower}
+    elif selected_components:
+        from core.config import get_component_layer_name, get_layer_flat_groups, app_config
+        _cfg = app_config()
+        _derived_layer = get_component_layer_name(_cfg, selected_components[0])
+        if _derived_layer:
+            _layer_groups = get_layer_flat_groups(_cfg, _derived_layer)
+            layer_comps = set()
+            for _g in _layer_groups.values():
+                if isinstance(_g, dict):
+                    layer_comps.update(_g.keys())
+            if layer_comps:
+                lower = {c.lower().replace(" ", "-") for c in layer_comps}
+                units_data = {k: v for k, v in units_data.items() if k.split("|")[0].lower() in lower}
+                components_data = {k: v for k, v in components_data.items() if k.lower() in lower}
+                global_variables_data = {k: v for k, v in global_variables_data.items() if k.split("|")[0].lower() in lower}
+                functions_data = {k: v for k, v in functions_data.items() if k.split("|")[0].lower() in lower}
+    _hidden_fids: set = {fid for fid, f in functions_data.items() if f.get("hidden", False)}
+    _hidden_by_mod_unit: dict = {}
+    for _fid in _hidden_fids:
+        _fp = _fid.split(KEY_SEP)
+        if len(_fp) >= 3:
+            _qn = (functions_data[_fid].get("qualifiedName") or "")
+            _base = _qn.split("::")[-1] if _qn else _fp[2]
+            _hidden_by_mod_unit.setdefault((_fp[0], _fp[1]), set()).add(_base)
+    base_path = _load_base_path()
+
+    # Resolve project name from metadata
+    _meta_path = os.path.join(MODEL_DIR, "metadata.json")
+    _project_name = "Software Project"
+    if os.path.isfile(_meta_path):
+        with open(_meta_path, "r", encoding="utf-8") as _f:
+            _project_name = json.load(_f).get("projectName", _project_name)
+    # Build a readable cover label for the group / component selection
+    from core.config import get_group_layer_name, get_component_layer_name as _get_comp_layer
+    if selected_components:
+        _layer_name = _get_comp_layer(config, selected_components[0])
+        _comp_display = " / ".join(c.replace("-", " ") for c in selected_components)
+        _cover_group = f"{_layer_name} {_comp_display}" if _layer_name else _comp_display
+    elif selected_group:
+        _layer_name = get_group_layer_name(config, selected_group)
+        _group_display = selected_group.replace("-", " ")
+        _cover_group = f"{_layer_name} {_group_display}" if _layer_name else _group_display
+    else:
+        _cover_group = "All Components"
+
+    doc = Document()
+    _build_cover_page(doc, _project_name, _cover_group,
+                      copyright_text=config.get("docx", {}).get("copyrightText", ""))
+    _add_toc(doc)
+
+    # Group by component; use data as-is from view output
+    by_component = {}
+    for unit_key in data.keys():
+        if unit_key in ("basePath", "projectName", "unitNames"):
+            continue
+        unit_data = data[unit_key]
+        if not isinstance(unit_data, dict) or "entries" not in unit_data:
+            continue
+        parts = unit_key.split(KEY_SEP, 1)
+        component_name = parts[0]
+        unit_name_display = unit_data.get("name", unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
+        interfaces = [
+            i for i in unit_data["entries"]
+            if i.get("functionId") not in _hidden_fids
+        ]
+        by_component.setdefault(component_name, []).append((unit_key, unit_name_display, interfaces))
+
+    sorted_components = sorted(by_component.keys())
+
+    # 1 Introduction
+    doc.add_heading("1 Introduction", level=1)
+    doc.add_heading("1.1 Purpose", level=2)
+    _purpose_tpl = (
+        config.get("docx", {})
+        .get("introduction", {})
+        .get("purpose", "[Purpose of this document.]")
+    )
+    _add_para(doc, _purpose_tpl.replace("{project_name}", _project_name))
+    doc.add_heading("1.2 Scope", level=2)
+    _intro_cfg = config.get("docx", {}).get("introduction", {})
+    _scope_intro = _intro_cfg.get("scopeIntro", "[Scope of the software detailed design.]")
+    _add_para(doc, _scope_intro.replace("{project_name}", _project_name))
+    for _comp in sorted_components:
+        _add_para(doc, f"• {_comp.replace('-', ' ')}")
+    _scope_body = _intro_cfg.get("scopeBody", "")
+    if _scope_body:
+        _add_para(doc, _scope_body)
+    for _item in _intro_cfg.get("scopeItems", []):
+        _add_para(doc, f"- {_item}")
+    doc.add_heading("1.3 Terms, Abbreviations and Definitions", level=2)
+    if abbreviations:
+        _abbr_tbl = doc.add_table(rows=1, cols=2)
+        _abbr_tbl.style = "Table Grid"
+        _abbr_hdr = _abbr_tbl.rows[0].cells
+        _abbr_hdr[0].text = "Term"
+        _abbr_hdr[1].text = "Description"
+        for _cell in _abbr_hdr:
+            for _run in _cell.paragraphs[0].runs:
+                _run.bold = True
+        for _term, _desc in sorted(abbreviations.items()):
+            _r = _abbr_tbl.add_row().cells
+            _r[0].text = _term
+            _r[1].text = _desc
+    else:
+        _add_para(doc, "[Terms, abbreviations and definitions.]")
+
+    # 2, 3, ... Modules
+    from core.progress import ProgressReporter
+    from core.logging_setup import get_logger
+    n_components = len(sorted_components)
+    _docx_progress = ProgressReporter("docx_exporter", total=n_components, logger=get_logger("docx_exporter"))
+    _docx_progress.start()
+    for sec_idx, component_name in enumerate(sorted_components, start=0):
+        sec_num = sec_idx + 2
+        component_display = component_name.replace("-", " ")
+        _docx_progress.step(label=component_display)
+        doc.add_heading(f"{sec_num} {component_display}", level=1)
+
+        # 2.1 Static Design
+        doc.add_heading(f"{sec_num}.1 Static Design", level=2)
+
+        unit_rows_component = sorted(by_component[component_name])
+        if msd_enabled and unit_rows_component:
+            # Container diagram: blue component subgraph with all units inside
+            container_mmd = _build_component_container_mermaid(component_display, unit_rows_component)
+            container_png = os.path.join(
+                artifacts_dir, "component_container_diagrams", f"{safe_filename(component_name)}.png"
+            )
+            if msd_render_png:
+                _render_mermaid_to_png(PROJECT_ROOT, container_mmd, container_png)
+            if os.path.isfile(container_png):
+                try:
+                    doc.add_picture(container_png, width=Inches(6))
+                except Exception:
+                    _add_mermaid_as_text(doc, container_mmd, font_small)
+            else:
+                _add_mermaid_as_text(doc, container_mmd, font_small)
+            _add_horizontal_rule(doc)
+
+            # File dependency diagram: .cpp → .h include edges inside component
+            dep_mmd = _build_component_header_dependency_mermaid(component_name, unit_rows_component, units_data, components_data)
+            dep_png = os.path.join(
+                artifacts_dir, "component_header_dependency_diagrams", f"{safe_filename(component_name)}.png"
+            )
+            if msd_render_png:
+                _render_mermaid_to_png(PROJECT_ROOT, dep_mmd, dep_png)
+            if os.path.isfile(dep_png):
+                try:
+                    doc.add_picture(dep_png, width=Inches(6))
+                except Exception:
+                    _add_mermaid_as_text(doc, dep_mmd, font_small)
+            else:
+                _add_mermaid_as_text(doc, dep_mmd, font_small)
+
+        # Module-level index table (Component/Unit/Description/Note)
+        _add_component_unit_table(
+            doc,
+            component_display,
+            unit_rows_component,
+            font_small,
+            config=config,
+            abbreviations=abbreviations,
+        )
+
+        unit_diag_dir = os.path.join(artifacts_dir, "unit_diagrams")
+        for unit_idx, (unit_key, unit_name_display, interfaces) in enumerate(unit_rows_component, start=1):
+            # 2.1.1 unit1
+            doc.add_heading(f"{sec_num}.1.{unit_idx} {unit_name_display}", level=3)
+
+            # Unit diagram (before unit header)
+            unit_png = os.path.join(unit_diag_dir, f"{safe_filename(unit_key)}.png")
+            if os.path.isfile(unit_png):
+                try:
+                    doc.add_picture(unit_png, width=Inches(6))
+                except Exception:
+                    _add_para(doc, f"[Unit diagram: {unit_png}]")
+
+            # 2.1.1.1 unit header
+            doc.add_heading(f"{sec_num}.1.{unit_idx}.1 unit header", level=4)
+            unit_info = units_data.get(unit_key, {})
+            unit_header_rows = _build_unit_header_table(
+                unit_info,
+                interfaces,
+                data_dictionary,
+                global_variables_data,
+                base_path,
+                config,
+                abbreviations,
+            )
+            _add_unit_header_table(doc, unit_header_rows, font_small)
+
+            # 2.1.1.2 unit interface (table)
+            doc.add_heading(f"{sec_num}.1.{unit_idx}.2 unit interface", level=4)
+            _add_interface_table(doc, interfaces, font_small)
+
+            # 2.1.1.3, 2.1.1.4, ... per interface (functions only — globals have no flowchart section)
+            unit_name_flowchart = unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_name_display
+            rendered_private_fids = set()  # track private flowcharts already shown in this unit
+            for iface_idx, iface in enumerate(
+                (i for i in interfaces if i.get("type") != "Global Variable"), start=3
+            ):
+                func_name = iface.get("name", "")
+                doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{func_name}", level=4)
+                unit_prefix = unit_key.replace(KEY_SEP, "_").replace(" ", "_")
+                flowchart = (
+                    flowcharts_map.get(unit_prefix, {}).get(func_name)
+                    or flowcharts_map.get(unit_name_flowchart, {}).get(func_name)
+                ) if flowcharts_enabled and func_name else None
+                # Build flowcharts list: own flowchart + private callee flowcharts
+                flowcharts_list = []
+                if flowchart:
+                    iface_params = ", ".join(
+                        f"{p.get('type', '')} {p.get('name', '')}".strip()
+                        for p in (iface.get("parameters") or [])
+                    )
+                    iface_return = iface.get("returnType", "") or ""
+                    iface_signature = f"{iface_return} {func_name}({iface_params})".strip()
+                    # Slice-aware: prefer {stem}_part_K_of_N.png (a tall flowchart split by
+                    # views/flowcharts.py), else the single {stem}.png, else mermaid text.
+                    base_stems = [
+                        f"{unit_prefix}_{safe_filename(func_name)}",
+                        f"{unit_name_flowchart}_{safe_filename(func_name)}",
+                    ]
+                    _append_flowchart_entries(
+                        flowcharts_list, flowcharts_dir, base_stems, flowchart, iface_signature
+                    )
+
+                if flowcharts_enabled:
+                    callee_fids = (functions_data.get(iface.get("functionId")) or {}).get("callsIds") or []
+                    for callee_fid in callee_fids:
+                        if callee_fid in _hidden_fids:
+                            continue
+                        callee = functions_data.get(callee_fid) or {}
+                        if (callee.get("visibility") or "").lower() != "private":
+                            continue
+                        callee_parts = callee_fid.split(KEY_SEP)
+                        callee_unit_key = KEY_SEP.join(callee_parts[:2]) if len(callee_parts) >= 2 else ""
+                        callee_unit_prefix = callee_unit_key.replace(KEY_SEP, "_").replace(" ", "_")
+                        callee_unit_name = callee_parts[1] if len(callee_parts) > 1 else ""
+                        callee_qn = callee.get("qualifiedName", "")
+                        callee_func_name = callee_qn.split("::")[-1] if callee_qn else ""
+                        if not callee_func_name:
+                            continue
+                        callee_flowchart = (
+                            flowcharts_map.get(callee_unit_prefix, {}).get(callee_func_name)
+                            or flowcharts_map.get(callee_unit_name, {}).get(callee_func_name)
+                        )
+                        if not callee_flowchart:
+                            continue
+                        if callee_fid in rendered_private_fids:
+                            continue
+                        rendered_private_fids.add(callee_fid)
+                        callee_params = ", ".join(
+                            f"{p.get('type', '')} {p.get('name', '')}".strip()
+                            for p in (callee.get("params") or callee.get("parameters") or [])
+                        )
+                        callee_return = callee.get("returnType", "")
+                        callee_signature = f"{callee_return} {callee_func_name}({callee_params})".strip()
+                        callee_stems = [
+                            f"{callee_unit_prefix}_{safe_filename(callee_func_name)}",
+                            f"{callee_unit_name}_{safe_filename(callee_func_name)}",
+                        ]
+                        _append_flowchart_entries(
+                            flowcharts_list, flowcharts_dir, callee_stems, callee_flowchart, callee_signature
+                        )
+
+                if flowcharts_list:
+                    input_label = (functions_data.get(iface.get("functionId")) or {}).get("behaviourInputName") or \
+                        (_readable_label(func_name) + " input").strip() if func_name else ""
+                    output_label = (functions_data.get(iface.get("functionId")) or {}).get("behaviourOutputName") or \
+                        (_readable_label(func_name) + " result").strip() if func_name else ""
+                    _add_flowchart_table(doc, func_name, iface.get("description", ""),
+                        input_label, output_label, flowcharts_list, font_small)
+                else:
+                    _add_para(doc, iface.get("description", "") or "-")
+
+        # 2.2 Dynamic Behaviour: one sub-header per external call (from view output)
+        doc.add_heading(f"{sec_num}.2 Dynamic Behaviour", level=2)
+        docx_rows = {}
+        pngs_path = os.path.join(artifacts_dir, "behaviour_diagrams", "_behaviour_pngs.json")
+        if os.path.isfile(pngs_path):
+            try:
+                with open(pngs_path, "r", encoding="utf-8") as f:
+                    docx_rows = json.load(f).get("_docxRows", {})
+            except (json.JSONDecodeError, IOError):
+                pass
+        beh_idx = 0
+        for unit_name, entries in sorted((docx_rows.get(component_name) or {}).items()):
+            for row in entries:
+                current_fn = row.get("currentFunctionName", "") or ""
+                if current_fn in _hidden_by_mod_unit.get((component_name, unit_name), set()):
+                    continue
+                beh_idx += 1
+                ext = row.get("externalUnitFunction", "")
+                subheader = f"{unit_name} - {current_fn}"
+                if ext:
+                    subheader += f" ({ext})"
+                doc.add_heading(f"{sec_num}.2.{beh_idx} {subheader}", level=3)
+                # Prefer precomputed behaviourInputName / behaviourOutputName from model_deriver
+                input_label = ""
+                output_label = ""
+                try:
+                    for fid, f in (functions_data or {}).items():
+                        parts = fid.split("|")
+                        if len(parts) < 3:
+                            continue
+                        mod, unit, _ = parts[0], parts[1], parts[2]
+                        if mod != component_name or unit != unit_name:
+                            continue
+                        qn = f.get("qualifiedName", "") or ""
+                        base_name = qn.split("::")[-1] if qn else ""
+                        if base_name != current_fn:
+                            continue
+                        input_label = (f.get("behaviourInputName") or "").strip()
+                        output_label = (f.get("behaviourOutputName") or "").strip()
+                        break
+                except Exception:
+                    input_label = input_label or ""
+                    output_label = output_label or ""
+
+                # Fallback if model is old/missing fields
+                if not input_label:
+                    base_fn_label = _readable_label(current_fn)
+                    input_label = (base_fn_label + " input").strip() if base_fn_label else "Behaviour input"
+                if not output_label:
+                    base_fn_label = _readable_label(current_fn)
+                    output_label = (base_fn_label + " result").strip() if base_fn_label else "Behaviour result"
+
+                _add_behavior_description_table(doc, row.get("behaviorDescription", None), input_label, output_label)
+                p = doc.add_paragraph()
+                r = p.add_run("Behaviour")
+                r.bold = True
+                png_path = row.get("pngPath")
+                if png_path and os.path.isfile(png_path):
+                    try:
+                        doc.add_picture(png_path, width=Inches(6))
+                    except Exception:
+                        _add_para(doc, f"[Behaviour diagram: {png_path}]")
+                elif png_path:
+                    _add_para(doc, f"[Behaviour diagram: {png_path}]")
+
+    _docx_progress.done(summary=f"{n_components} components written")
+    # N Code Metrics, Coding rule, test coverage
+    metrics_sec = len(sorted_components) + 2
+    doc.add_heading(f"{metrics_sec} Code Metrics, Coding Rule, Test Coverage", level=1)
+    _add_para(doc, "[Code metrics, coding rules and test coverage.]")
+
+    # Appendix A
+    doc.add_heading("Appendix A. Design Guideline", level=1)
+    _add_para(doc, "[Design guidelines.]")
+
+    os.makedirs(os.path.dirname(docx_path) or ".", exist_ok=True)
+    doc.save(docx_path)
+    return (True, docx_path)
+
+
+def main():
+    args = sys.argv[1:]
+    selected_group = None
+    if "--selected-group" in args:
+        i = args.index("--selected-group")
+        if i + 1 < len(args):
+            selected_group = args[i + 1]
+            args = args[:i] + args[i + 2 :]
+
+    # Collect --selected-component flags (repeatable); remove them from args
+    selected_components = []
+    filtered_args = []
+    j = 0
+    while j < len(args):
+        if args[j] == "--selected-component" and j + 1 < len(args):
+            selected_components.append(args[j + 1])
+            j += 2
+        else:
+            filtered_args.append(args[j])
+            j += 1
+    args = filtered_args
+
+    json_path = args[0] if len(args) >= 1 else None
+    docx_path = args[1] if len(args) >= 2 else None
+    ok, out_path = export_docx(json_path, docx_path,
+                               selected_group=selected_group,
+                               selected_components=selected_components or None)
+    if ok:
+        print(f"Exported: {out_path}")
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

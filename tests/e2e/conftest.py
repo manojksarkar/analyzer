@@ -12,9 +12,9 @@ SNAPSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "
 
 def _load_cfg():
     """Load config.json via the project's own utility (strips comments/trailing commas)."""
-    sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
     from utils import load_config
-    return load_config(PROJECT_ROOT)
+    return load_config(os.path.join(PROJECT_ROOT, "engine"))
 
 
 @pytest.fixture(scope="session")

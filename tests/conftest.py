@@ -89,7 +89,7 @@ def pytest_collection_finish(session):
             PROJECT_ROOT + os.pathsep + existing_pypath if existing_pypath else PROJECT_ROOT
         )
 
-    cmd = [sys.executable, "run.py", SAMPLE_PROJECT, "--clean", "--selected-group", group]
+    cmd = [sys.executable, os.path.join(PROJECT_ROOT, "engine", "run.py"), SAMPLE_PROJECT, "--clean", "--selected-group", group]
 
     out.write(f"  Command: {' '.join(cmd)}\n")
     out.flush()

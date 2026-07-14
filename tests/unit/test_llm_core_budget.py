@@ -6,7 +6,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
 from llm_core.budget import TASK_RATIOS, DEFAULT_SAFETY_MARGIN, ContextBudget, resolve_max_tokens
 from llm_core.token_counter import TokenCounter

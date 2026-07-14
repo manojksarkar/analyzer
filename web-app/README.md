@@ -38,4 +38,4 @@ hooks-only data flow — are in [CONVENTIONS.md](CONVENTIONS.md) (ESLint-enforce
 - **Keep pages thin** — big pages live in `pages/<Name>/`.
 - **Commits**: short and prefixed — `feat:`, `fix:`, `docs:`.
 
-Product & design context: [`../docs/UI_CONTEXT.md`](../docs/UI_CONTEXT.md).
+Product & design context: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).

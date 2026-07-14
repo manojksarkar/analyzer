@@ -3,7 +3,7 @@ Self-contained git CLI wrapper for the API server.
 
 A thin, dependency-free wrapper over the system ``git`` executable — the only
 place the API talks to git. It is intentionally **independent of the analyzer
-backend** (`backend/git_service.py`); the API does not import from `backend/`.
+backend** (`engine/git_service.py`); the API does not import from `engine/`.
 
 Conventions (mirrors the rest of the platform):
 * **`shell=False`** — git args carry URLs/credentials; routing them through a
@@ -131,7 +131,7 @@ def shallow_clone(
     Delegates to the platform's single clone primitive (``src/incremental/clone``), so the
     API, the per-commit job checkout, and the standalone engine all share ONE
     implementation. Re-raised as ``git_cli.GitError`` to preserve this module's error type."""
-    src_dir = str(get_settings().repo_root / "src")
+    src_dir = str(get_settings().repo_root / "engine")
     if src_dir not in sys.path:
         sys.path.insert(0, src_dir)
     from incremental.clone import shallow_clone as _shared  # type: ignore[import]

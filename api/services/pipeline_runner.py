@@ -269,7 +269,7 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     mode = (getattr(job, "mode", "auto") or "auto")
     scope = getattr(job, "scope", None) or {"type": "project"}
     script = "generate.py" if mode == "full" else "engine.py"
-    cmd = [sys.executable, str(root / "src" / "incremental" / script),
+    cmd = [sys.executable, str(root / "engine" / "incremental" / script),
            "--project-id", job.project_id, "--branch", job.branch,
            "--commit", job.commit_sha, "--scope", _scope_to_cli(scope),
            "--config", str(config_path)]
@@ -436,7 +436,7 @@ def _load_base_config(base_path: Path) -> dict:
 
 def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> Path:
     """Write a per-project config.json by merging the base config with project settings."""
-    base_path = get_settings().repo_root / "config" / "config.json"
+    base_path = get_settings().repo_root / "engine" / "config" / "config.json"
     cfg = _load_base_config(base_path)
 
     # Apply explicit section overrides from build_config
@@ -580,7 +580,7 @@ def _build_cmd(
     use_model: bool = False,
     arch_layers: list = (),
 ) -> list[str]:
-    cmd = [sys.executable, str(get_settings().repo_root / "run.py")]
+    cmd = [sys.executable, str(get_settings().repo_root / "engine" / "run.py")]
     cmd += ["--config", str(config_path)]
     if use_model:
         cmd.append("--use-model")
@@ -657,7 +657,7 @@ def preview_baseline(db: Any, project_id: str, commit: str,
                 "changedFiles": None, "warnings": [warning]}
 
     import sys as _sys
-    src_dir = str(get_settings().repo_root / "src")
+    src_dir = str(get_settings().repo_root / "engine")
     if src_dir not in _sys.path:
         _sys.path.insert(0, src_dir)
     try:
