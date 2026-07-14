@@ -451,10 +451,14 @@ def _build_component_container_mermaid(
     component_name: str,
     unit_rows: List[Tuple[Any, str, Any]],
 ) -> str:
-    """Mermaid subgraph: blue component box containing all unit nodes."""
+    """Mermaid subgraph: blue component box containing all unit nodes.
+
+    Uses the default (dagre) renderer with tight ranksep/nodesep — dagre stacks
+    the disconnected unit nodes vertically, whereas elk lays them out side by side.
+    """
     mod_label = _escape_mermaid_label_for_structure(component_name)
     lines = [
-        "%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%",
+        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
         "flowchart TB",
         f'  subgraph MOD["{mod_label}"]',
     ]
@@ -484,7 +488,7 @@ def _build_component_header_dependency_mermaid(
     )
 
     lines = [
-        "%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%",
+        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
         "flowchart BT",
     ]
 
@@ -546,7 +550,7 @@ def _build_component_static_structure_mermaid(
     mod_id = "MOD"
     mod_label = _escape_mermaid_label_for_structure(component_name)
     lines = [
-        "%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%",
+        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
         "flowchart TB",
         f'  {mod_id}["{mod_label}"]',
     ]

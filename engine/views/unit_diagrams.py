@@ -169,7 +169,7 @@ def _build_unit_diagram(
         return ""
 
     lines = [
-        "%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%",
+        "%%{init: {'flowchart': {'splines': 'ortho'}}}%%",
         "flowchart LR",
         "  classDef internal fill:#87CEEB,stroke:#333,stroke-width:1px",
         "  classDef mainUnit fill:#87CEEB,stroke:#4682B4,stroke-width:3px",
