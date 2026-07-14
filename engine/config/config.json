@@ -38,6 +38,9 @@
         "Access": {
           "Access": "Access"
         },
+        "Signal": {
+          "Signal": "Signal"
+        },
         "Diag": {
           "Diag": "Diag"
         }
