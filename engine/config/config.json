@@ -7,7 +7,7 @@
     "interfaceTables": true,
     "unitDiagrams": true,
     "flowcharts": true,
-    "behaviourDiagram": true,
+    "behaviourDiagram": false,
     "componentStaticDiagram": true
   },
   "layers": {
@@ -37,6 +37,9 @@
         },
         "Access": {
           "Access": "Access"
+        },
+        "Signal": {
+          "Signal": "Signal"
         },
         "Diag": {
           "Diag": "Diag"
