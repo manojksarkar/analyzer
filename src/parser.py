@@ -1146,8 +1146,6 @@ def _capture_tu_includes(tu, path):
 def parse_file(path):
     try:
         tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
-        for d in tu.diagnostics:
-            print(d)
         _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
@@ -1288,9 +1286,7 @@ def build_metadata():
             functions_dict[fid]["writesGlobalIds"] = write_vids
 
         # Direction: Get=Out, Set=In, both=In. No direct global access -> In.
-        if write_raw and not read_raw:
-            functions_dict[fid]["direction"] = "In"
-        elif write_raw and read_raw:
+        if write_raw:
             functions_dict[fid]["direction"] = "In"
         else:
             functions_dict[fid]["direction"] = "Out"
@@ -1396,7 +1392,7 @@ def _scan_defines():
 
 
 def _merge_external_data_dictionary(path: str) -> None:
-    """Merge a user-authored CSV into the module-level data_dictionary (external wins).
+    """Merge a user-authored CSV into the component-level data_dictionary (external wins).
 
     CSV columns: Name, Kind, EntryName, Range, Comment
     - Name (required for top-level rows): type key in dataDictionary.

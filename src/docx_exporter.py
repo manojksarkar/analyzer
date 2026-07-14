@@ -454,7 +454,7 @@ def _build_component_container_mermaid(
     """Mermaid subgraph: blue component box containing all unit nodes."""
     mod_label = _escape_mermaid_label_for_structure(component_name)
     lines = [
-        "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
+        "%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%",
         "flowchart TB",
         f'  subgraph MOD["{mod_label}"]',
     ]
@@ -484,7 +484,7 @@ def _build_component_header_dependency_mermaid(
     )
 
     lines = [
-        "%%{init: {'flowchart': {'ranksep': '0.5', 'nodesep': '0.35'}}}%%",
+        "%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%",
         "flowchart BT",
     ]
 
@@ -546,7 +546,7 @@ def _build_component_static_structure_mermaid(
     mod_id = "MOD"
     mod_label = _escape_mermaid_label_for_structure(component_name)
     lines = [
-        "%%{init: {'flowchart': {'ranksep': '0.55', 'nodesep': '0.35'}}}%%",
+        "%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%",
         "flowchart TB",
         f'  {mod_id}["{mod_label}"]',
     ]
