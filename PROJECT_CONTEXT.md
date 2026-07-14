@@ -1523,6 +1523,35 @@ Full logic and layout rules: `docs/DESIGN_SPEC.md` — Unit Diagrams (REQ-UD-XX)
 - Project root resolved from `dirname(model_dir)` (NOT `output_dir`) so
   grouped output paths work.
 - PNG rendered by `mmdc` (mermaid-cli). 60s timeout per diagram.
+- Header uses the **ELK renderer** (`%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%`).
+  See **"ELK renderer everywhere"** below for the rationale and the version caveats.
+
+#### ELK renderer everywhere (2026-07-14)
+
+**All** non-placeholder diagram generators now emit the ELK renderer directive
+`%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%`, replacing the older dagre
+headers (`splines: 'ortho'` on unit diagrams; `ranksep`/`nodesep` on the three
+component diagrams in [src/docx_exporter.py](src/docx_exporter.py)). Flowcharts
+([builder.py](src/flowchart/mermaid/builder.py)) were already ELK.
+
+- **Why:** dagre's `splines: 'ortho'` silently fails to route edges orthogonally
+  (peripheral edges render diagonal on both mermaid v10 and v11); ELK routes at true 90°.
+- **Keep the header minimal** — do NOT copy the flowchart builder's *full* header, whose
+  `theme: base` + `themeVariables` override `classDef` fills (nodes go white on v10). The
+  one-line `defaultRenderer: elk` directive preserves `classDef` node colours on both versions.
+- **Known caveat — inline subgraph `style … fill`** (the unit-diagram yellow module box and
+  the component-container yellow box) is **dropped by ELK on mermaid 10.x** (renders default
+  purple) but **preserved on 11.x**. Node `classDef` colours survive on both. The component
+  container diagram has no edges, so ELK there is purely for consistency.
+- **mmdc version caveat for diamonds:** v11's ELK renderer draws diagonal stubs off decision
+  diamonds (flowcharts / future behaviour diagrams); **v10 gives clean 90°**. Rectangle-only
+  diagrams (unit + component) are unaffected. Net tension: flowcharts want **v10**,
+  subgraph-fill styling wants **v11**. The pipeline's [mmdc_path](src/utils.py#L59) prefers the
+  local `node_modules` mmdc (pinned to mermaid **10.9.5** via `@mermaid-js/mermaid-cli ^10.6.1`);
+  a global mmdc (currently **11.x**) is only used as a fallback when local deps are absent —
+  which is what silently changed flowchart rendering. Run `npm ci` before generating.
+- Placeholder generators (`behaviour_diagram_generator.py`, `fake_flowchart_generator.py`,
+  disabled behaviour-diagram view) were left on plain `flowchart TD` — not real product output.
 
 ### View 3: `behaviourDiagram` — [src/views/behaviour_diagram.py](src/views/behaviour_diagram.py)
 
