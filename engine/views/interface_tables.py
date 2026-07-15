@@ -65,18 +65,15 @@ def _build_interface_tables(
                 u for cid in f.get("callsIds", []) or []
                 for u in fid_to_unit.get(cid, []) if u
             }
-            self_component = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
-            def _is_external_unit(u: str) -> bool:
-                if KEY_SEP not in u:
-                    return True
-                mod = u.split(KEY_SEP, 1)[0]
-                if allowed_components:
-                    return mod.lower() not in allowed_components
-                # Default behaviour: treat different component as external
-                return mod != self_component
+            # Include every caller/callee unit except this function's own unit — mirrors the
+            # static diagram (unit_diagrams), which only skips same-unit self-loops, so the
+            # table's Source/Destination stays consistent with it. Same-component (different-
+            # unit) and same-group peer units are now kept instead of dropped (3.5, REQ-IT-12).
+            def _keep_unit(u: str) -> bool:
+                return u != unit_key
 
-            callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _is_external_unit(u)))
-            callees_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in callee_units if _is_external_unit(u)))
+            callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _keep_unit(u)))
+            callees_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in callee_units if _keep_unit(u)))
             parts = [', '.join(callers_fmt), ', '.join(callees_fmt)]
             source_dest = '; '.join(p for p in parts if p) if (callers_fmt or callees_fmt) else "-"
             raw_params = f.get("parameters", [])
