@@ -22,6 +22,14 @@ PRIVATE void indirectWrite(int v) {
     writeGlobal(v);
 }
 
+PUBLIC void setHdrGlobal(int v) {
+    g_hdrGlobal = v;      // writes a HEADER-defined global -> direction In
+}
+
+PUBLIC void setHdrGlobalIndirect(int v) {
+    setHdrGlobal(v);      // transitive write of a header-defined global -> direction In
+}
+
 PUBLIC int directionAdd(int a, int b) {
     return add(a, b);  // cross-module: tests/direction -> math
 }

@@ -1012,10 +1012,13 @@ def main():
 
     _enrich_from_llm(base_path, functions_data, global_variables_data, config, only_globals=only_globals)
 
-    # Functions: must be In or Out (never -)
+    # Functions: In if the function writes a global (directly OR transitively), else Out (3.4).
+    # Runs after _propagate_global_access, so writesGlobalIdsTransitive is populated — a function
+    # that writes a global only via a callee (e.g. indirectWrite, directionAdd) is correctly In,
+    # not Out (the parser's direct-write-only value at parser.py:1308 is preliminary; refined here).
     for fentry in functions_data.values():
-        d = fentry.get("direction", "").strip()
-        fentry["direction"] = "Out" if d == "Out" else "In"
+        writes = fentry.get("writesGlobalIdsTransitive") or fentry.get("writesGlobalIds")
+        fentry["direction"] = "In" if writes else "Out"
     # Globals: In/Out
     for g in global_variables_data.values():
         g["direction"] = "In/Out"
