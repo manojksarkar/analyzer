@@ -38,6 +38,7 @@ _selected_group: str | None = None
 _selected_layer: str | None = None
 _project_name_override: str | None = None
 _only_files_path: str | None = None  # narrowed parse (M4.3): parse only the listed TUs
+_include_emulator: bool = False  # opt out of the default *emul* file exclusion (3.1)
 _i = 2
 while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
@@ -58,6 +59,9 @@ while _i < len(sys.argv):
     elif sys.argv[_i] == "--project-name" and _i + 1 < len(sys.argv):
         _project_name_override = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--include-emulator":
+        _include_emulator = True
+        _i += 1
     else:
         _i += 1
 
@@ -181,6 +185,16 @@ def _build_file_component_map(components_cfg: dict, base_path: str) -> dict:
 
 _FILE_COMPONENT_MAP: dict = _build_file_component_map(_components_cfg, MODULE_BASE_PATH)
 
+# Emulator/stub files are excluded from the parse scope by default (3.1): any file whose
+# basename contains one of these (case-insensitive) substrings is skipped. Overridable per
+# project via config `excludeNamePatterns` (a list); `--include-emulator` disables it.
+_cfg_exclude = _config.get("excludeNamePatterns")
+if _cfg_exclude is None:
+    _cfg_exclude = ["emul"]
+_EXCLUDE_NAME_PATTERNS: list = [] if _include_emulator else [
+    str(p).lower() for p in _cfg_exclude if p
+]
+
 # Read layer include paths written by run.py before Phase 1 started.
 _layer_include_paths: dict = {}
 _clang_paths_file = os.path.join(PROJECT_ROOT, "model", "clang_include_paths.json")
@@ -192,6 +206,8 @@ if os.path.isfile(_clang_paths_file):
         pass
 
 CLANG_ARGS = [
+    "-x", "c++",  # treat every parsed TU as C++ — required so .h headers parse as C++ (3.2),
+                  # otherwise libclang infers C/ambiguous for .h and the TU fails to load.
     "-std=c++14",
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
@@ -450,6 +466,10 @@ def is_project_file(file_path: str) -> bool:
     """
     if not file_path:
         return False
+    if _EXCLUDE_NAME_PATTERNS:
+        _bn = os.path.basename(file_path).lower()
+        if any(pat in _bn for pat in _EXCLUDE_NAME_PATTERNS):
+            return False
     abs_path = os.path.normcase(os.path.abspath(file_path))
     abs_base = os.path.normcase(os.path.abspath(MODULE_BASE_PATH))
     if not abs_path.startswith(abs_base):
@@ -1302,14 +1322,25 @@ def build_metadata():
 
 
 def _collect_source_files():
-    files = []
+    # Parse .cpp translation units first, then headers (3.2). Symbols declared in a header and
+    # defined in a .cpp are already captured during the .cpp parse (its #include pulls the header
+    # into the TU); parsing headers as their own TUs additionally captures header-only definitions
+    # (inline functions / header-only components) that no parsed .cpp includes. Headers go LAST so a
+    # full-context .cpp definition wins the dedup (stable mangled func_key / _visited_usage_keys) and
+    # standalone header parses only ADD what was otherwise missing.
+    sources, headers = [], []
     for root, _, fnames in os.walk(MODULE_BASE_PATH):
         for f in fnames:
             if f.endswith((".cpp", ".cc", ".cxx")):
-                path = os.path.join(root, f)
-                if is_project_file(path):
-                    files.append(path)
-    return files
+                bucket = sources
+            elif f.endswith((".h", ".hpp", ".hxx")):
+                bucket = headers
+            else:
+                continue
+            path = os.path.join(root, f)
+            if is_project_file(path):
+                bucket.append(path)
+    return sources + headers
 
 
 def _restrict_to_only_files(source_files):

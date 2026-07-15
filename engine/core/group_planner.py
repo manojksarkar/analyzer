@@ -65,7 +65,8 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
                         selected_group: Optional[str] = None,
                         selected_layer: Optional[str] = None,
                         project_name: Optional[str] = None,
-                        only_files: Optional[str] = None) -> List[Phase]:
+                        only_files: Optional[str] = None,
+                        include_emulator: bool = False) -> List[Phase]:
     deriver_args = [] if no_llm_summarize else ["--llm-summarize"]
     parser_args = [project_path]
     if data_dictionary_path:
@@ -80,6 +81,8 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
         parser_args += ["--project-name", project_name]
     if only_files:  # narrowed parse (M4.4): parser parses only the listed TUs
         parser_args += ["--only-files", only_files]
+    if include_emulator:  # opt out of the default *emul* file exclusion (3.1)
+        parser_args += ["--include-emulator"]
     return [
         Phase("Phase 1: Parse C++ source", "parser.py", parser_args),
         Phase("Phase 2: Derive model", "model_deriver.py", deriver_args),
@@ -123,6 +126,7 @@ def plan_runs(
     project_name: Optional[str] = None,
     output_name: Optional[str] = None,
     only_files: Optional[str] = None,
+    include_emulator: bool = False,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -181,6 +185,7 @@ def plan_runs(
                 selected_layer=derived_layer,
                 project_name=project_name,
                 only_files=only_files,
+                include_emulator=include_emulator,
             )
             if from_phase <= 2:
                 plans.append(RunPlan(
@@ -226,7 +231,8 @@ def plan_runs(
             phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                          data_dictionary_path=data_dictionary_path,
                                          macros_path=macros_path,
-                                         project_name=project_name, only_files=only_files) \
+                                         project_name=project_name, only_files=only_files,
+                                         include_emulator=include_emulator) \
                      + _view_export_phases(filter_mode=filter_mode)
             plans.append(RunPlan(label="single run",
                                  phases=phases,
@@ -250,7 +256,8 @@ def plan_runs(
                                             macros_path=macros_path,
                                             selected_group=resolved_selected,
                                             selected_layer=selected_layer,
-                                            project_name=project_name, only_files=only_files)
+                                            project_name=project_name, only_files=only_files,
+                                            include_emulator=include_emulator)
         # If the user wants to start at phase >= 3, the build step is skipped
         # entirely (use existing model on disk).
         if from_phase <= 2:

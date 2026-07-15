@@ -25,6 +25,9 @@ Options:
                        interfaceIds (default: basename of project_path).
   --macros <path>      CSV file (Name, Value) passed as -D flags to Clang. Rows
                        with Value="ne" are skipped. Empty Value → -DMACRONAME.
+  --include-emulator   Parse emulator/stub files too. By default files whose
+                       basename matches config `excludeNamePatterns` (default
+                       ["emul"]) are skipped from the parse scope (3.1).
   --include-path <layer> <dir>
                        Add an extra -I include directory for the named layer.
                        Repeatable. Merged into clang_include_paths.json before
@@ -124,6 +127,7 @@ macros_arg              = None
 project_name_arg        = None
 output_name_arg         = None
 only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
+include_emulator_arg    = False  # opt out of the default *emul* file exclusion (3.1)
 include_path_args       = []   # list of (layer_name, abs_dir) tuples
 raw_args                = []
 
@@ -185,6 +189,8 @@ while i < len(sys.argv):
             log("--only-files requires a file path", component="run", err=True)
             sys.exit(1)
         only_files_arg = sys.argv[i]
+    elif a == "--include-emulator":
+        include_emulator_arg = True
     elif a == "--project-name":
         i += 1
         if i >= len(sys.argv):
@@ -423,6 +429,7 @@ try:
         project_name=project_name_arg,
         output_name=output_name_arg,
         only_files=only_files_arg,
+        include_emulator=include_emulator_arg,
     )
 except ValueError as e:
     log(str(e), component="run", err=True)
