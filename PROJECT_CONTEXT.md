@@ -1343,6 +1343,19 @@ Based on direct global access recorded by `visit_global_access`:
 Phase 2 forces every function's direction to `"In"` or `"Out"` (never empty)
 and every global to `"In/Out"`.
 
+**`directionReason` (audit trail).** Alongside `direction`, the finalize loop in
+`model_deriver` (after `_propagate_global_access`) writes a human-readable
+`directionReason` on every function and global so the In/Out decision is
+verifiable in the interface tables (which already surface `f["directionReason"]`
+as the `reason` field). Forms:
+- `In: writes global(s) <names> directly.` — has a direct write.
+- `In: writes global(s) transitively: <g> (via <callee(s)>); …` — transitive-only
+  write; names the direct callee(s) that actually write each global, so the chain
+  is auditable.
+- `Out: reads global(s) <names> but writes none.`
+- `Out: accesses no globals (reads none, writes none).` — pure function.
+- Globals: `In/Out: global variables are bidirectional interfaces.`
+
 ### Final keying (`build_metadata` + `utils.make_function_key`)
 
 Final model key: `component|unit|qualifiedName|paramTypes`.
