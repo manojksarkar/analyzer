@@ -35,13 +35,13 @@ Parent tasks are numbered + bold with a rollup estimate; sub-tasks (↳) sit und
 | | **↳ Pre-V1 correctness batch (10 review findings; fix roots first, re-test dependents):** | **~6–18** | V1 | P0 | 3.3/3.4 are re-test-after-fix — may vanish once roots land |
 | | ↳ 3.1 exclude emulator files from analysis/parse scope | 0.5–1.5 | V1 | P0 | root cause; likely resolves 3.3 |
 | | ↳ 3.2 parse header files (.h/.hpp), not just sources | 1–3 | V1 | P0 | root cause; likely resolves 3.4 |
-| | ↳ 3.3 some functions should not be visible | 0–1 | V1 | P0 | **re-test after 3.1**; fix only if it persists |
-| | ↳ 3.4 interface direction shows "Out" instead of "In" for some functions | 0–1 | V1 | P0 | **re-test after 3.2**; fix only if it persists |
+| | ↳ 3.3 some functions should not be visible | 0–1 | V1 | P0 | ✅ **resolved by 3.1** — emulator files excluded from parse scope, so their functions never enter the model (sample-verified). Non-emulator residual needs the client project. |
+| | ↳ 3.4 interface direction shows "Out" instead of "In" for some functions | 0–1 | V1 | P0 | ✅ **fixed 2026-07-15** (`fix/direction-transitive-writes`): re-derive direction from `writesGlobalIdsTransitive` in `model_deriver` (Phase 2) so transitive-only global writers show `In`. Header-defined globals handled (global-ID based). Root was direct-write-only in the parser, not headers. |
 | | ↳ 3.5 include same-component pairs as source/destination too | 0.5–1 | V1 | P0 | table currently drops same-component pairs |
 | | ↳ 3.6 make interface-table direction consistent with static diagram | 1–2 | V1 | P0 | table factors in global-var access; static diagram uses function-call rel. — align on function-call basis |
 | | ↳ 3.7 functions missing from DOCX due to access specifier | 0.5–1.5 | V1 | P0 | known issue |
 | | ↳ 3.8 if/else condition depiction in flowchart | 1–2 | V1 | P0 | |
-| | ↳ 3.9 overlapping flowchart edges | 0.5–2 | V1 | P0 | layout / ELK spacing |
+| | ↳ 3.9 overlapping / bending flowchart edges | 0.5–2 | V1 | P0 | **already ELK** (`engine/flowchart/mermaid/builder.py:51-93`). Diagnosed 2026-07-15 from a client DOCX flowchart (`GCN_RegisterDelayedBadFromBadInfo`). Two symptoms: (a) edges **bend** — loop back-edges (`feedbackEdges:true`) + long-span branches route around nodes in orthogonal channels, and `mergeEdges:false` leaves doubled parallel tracks; (b) edges meet **diamonds at a slanted angle** — decision rhombi expose no fixed ELK ports, so routes hit the box border on a sloped face (largely inherent). Levers: ↑`rankSpacing`/`nodeSpacing`, `mergeEdges:true`, explicit `elk.edgeRouting:ORTHOGONAL`. Back-edge detours are unavoidable with orthogonal routing — can widen, not straighten. Verify by A/B rendering one busy function before touching the builder. |
 | | ↳ 3.10 dynamic-behaviour issue | 1–3 | V1 | P0 | **needs detail** — scope/repro unclear |
 | 4 | **Function hide/unhide** → re-run Phases 3–4 in full (reuse 1–2) | 2–4 | V1 | P1 | `Function.is_visible` modeled; optimize later (task 13) |
 | 5 | **Release & client review** | **~3.5–6.5** | V1 | | |
