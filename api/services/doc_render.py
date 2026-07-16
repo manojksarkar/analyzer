@@ -478,9 +478,11 @@ def _interfaces_table_8col(ifaces: list) -> Optional[dict]:
             ret = (iface.get("returnType") or "").strip()
             if ret:
                 # Only add the return line when a return type was actually captured.
-                # Display void uniformly as VOID (matches the no-parameter convention).
-                ret_disp = "VOID" if ret.lower() == "void" else ret
-                ret_range = (iface.get("returnRange") or "").strip() or "NA"
+                # Display void uniformly as VOID with an NA range (matches the
+                # no-parameter convention: type VOID, range NA).
+                is_void = ret.lower() == "void"
+                ret_disp = "VOID" if is_void else ret
+                ret_range = "NA" if is_void else ((iface.get("returnRange") or "").strip() or "NA")
                 data_type = f"{param_types}\nreturn: {ret_disp}"
                 data_range = f"{param_ranges}\nreturn: {ret_range}"
             else:

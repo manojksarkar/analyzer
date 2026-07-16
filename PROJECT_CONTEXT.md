@@ -2039,7 +2039,7 @@ Data Range | Direction(In/Out) | Source/Destination | Interface Type
   other types render verbatim. `Data Range` = `; `.join of param ranges from
   `get_range()`, then a second line `return: <returnRange>` where `returnRange` is
   `get_range(returnType)` (the view enriches each function entry with `returnRange`;
-  void → the `VOID` sentinel). When a function has **no** captured return type the
+  a void return shows range `NA`, not a range value). When a function has **no** captured return type the
   `return:` line is omitted from both columns (not shown as `VOID`/`NA`). The `\n`
   renders as a Word line break in DOCX and needs `whitespace-pre-line` on the web
   cell (`DocumentInspectorPage.tsx`); the compare/diff view flattens it to a space
