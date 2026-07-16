@@ -231,10 +231,10 @@ An arrow connects two units for every cross-unit interface (a called function). 
 
 External units with an arrow pointing **into** the current unit appear to the left of the module subgraph.
 External units with an arrow pointing **out of** the current unit appear to the right.
-A partner that has an arrow in each direction (a mutual pair) is drawn **once**, on the left.
+A partner that has an arrow in **each** direction (a mutual pair) is drawn on **both** sides: a left box receiving the inbound arrow (labelled with the inbound interface id(s)) and a right box sending the outbound arrow (labelled with the outbound interface id(s)). The two boxes carry the same unit label but distinct node ids. The same rule applies to same-module peers inside the subgraph, split top (caller) vs bottom (callee).
 The current unit and its same-module peers occupy the subgraph in the centre.
 
-**Verification:** External nodes with an inbound arrow appear before the subgraph declaration; external nodes with only an outbound arrow appear after the subgraph close; a bidirectional partner is declared exactly once.
+**Verification:** External nodes with an inbound arrow appear before the subgraph declaration; external nodes with an outbound arrow appear after the subgraph close; a bidirectional partner appears in both positions with interface ids split by arrow direction.
 
 ---
 
