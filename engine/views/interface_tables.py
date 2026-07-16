@@ -90,6 +90,7 @@ def _build_interface_tables(
                 "location": loc,
                 "parameters": params,
                 "returnType": f.get("returnType", ""),
+                "returnRange": get_range(f.get("returnType", ""), dd),
                 "direction": f.get("direction") or "In",
                 "reason": f.get("reason") or f.get("directionReason") or "",
                 "sourceDest": source_dest,

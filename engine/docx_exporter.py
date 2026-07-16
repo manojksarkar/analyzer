@@ -938,9 +938,18 @@ def _add_interface_table(doc, interfaces, font_small):
         else:
             params = iface.get("parameters", [])
             param_types = "; ".join(p.get("type", "") for p in params) if params else "VOID"
-            ret = (iface.get("returnType") or "").strip() or "VOID"
-            data_type = f"{param_types}\nreturn: {ret}"
-            data_range = "; ".join(p.get("range", "") for p in params) if params else "NA"
+            param_ranges = "; ".join(p.get("range", "") for p in params) if params else "NA"
+            ret = (iface.get("returnType") or "").strip()
+            if ret:
+                # Only add the return line when a return type was actually captured.
+                # Display void uniformly as VOID (matches the no-parameter convention).
+                ret_disp = "VOID" if ret.lower() == "void" else ret
+                ret_range = (iface.get("returnRange") or "").strip() or "NA"
+                data_type = f"{param_types}\nreturn: {ret_disp}"
+                data_range = f"{param_ranges}\nreturn: {ret_range}"
+            else:
+                data_type = param_types
+                data_range = param_ranges
 
         src_dest = iface.get("sourceDest") or "-"
         direction = iface.get("direction") or "-"

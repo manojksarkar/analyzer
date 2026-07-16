@@ -186,7 +186,8 @@ class TestBuildInterfaceTables:
         result = _build_interface_tables(units, {"f1": func}, {})
         e = result["Mod|core"]["entries"][0]
         for key in ("interfaceId", "functionId", "type", "interfaceName", "name", "qualifiedName",
-                    "unitKey", "unitName", "location", "parameters", "returnType", "direction", "sourceDest"):
+                    "unitKey", "unitName", "location", "parameters", "returnType", "returnRange",
+                    "direction", "sourceDest"):
             assert key in e, f"Missing key: {key}"
 
     def test_return_type_passed_through(self):
@@ -200,6 +201,18 @@ class TestBuildInterfaceTables:
         fid, func = _make_func("f1", "process")
         result = _build_interface_tables(units, {"f1": func}, {})
         assert result["Mod|core"]["entries"][0]["returnType"] == ""
+
+    def test_return_range_derived_from_return_type(self):
+        units = {"Mod|core": {"name": "core", "fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}}
+        fid, func = _make_func("f1", "getSpeed", returnType="uint8_t")
+        result = _build_interface_tables(units, {"f1": func}, {})
+        assert result["Mod|core"]["entries"][0]["returnRange"] == "0-0xFF"
+
+    def test_return_range_defaults_to_na(self):
+        units = {"Mod|core": {"name": "core", "fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}}
+        fid, func = _make_func("f1", "process")
+        result = _build_interface_tables(units, {"f1": func}, {})
+        assert result["Mod|core"]["entries"][0]["returnRange"] == "NA"
 
     def test_file_extension_stripped_in_location(self):
         units = {"Mod|core": {"name": "core", "fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}}
