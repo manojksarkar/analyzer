@@ -219,21 +219,22 @@ The diagram flows left-to-right. The current unit's module is visually grouped a
 
 ---
 
-### REQ-UD-05 — Call edges
+### REQ-UD-05 — Interface edges
 
-An arrow connects two units for every cross-unit call relationship. The arrow is labelled with the interface identifier of the called function. When a unit makes multiple calls to another unit, all interface identifiers appear on the same arrow. A unit does not draw an arrow to itself.
+An arrow connects two units for every cross-unit interface (a called function). Each arrow is **oriented by the interface owner's direction**, where the owner is the unit of the called function: an **`Out`** interface points **away from** the owner (owner → other); an **`In`** interface points **towards** the owner (other → owner). The caller's own direction does not affect the edge. The arrow is labelled with the interface identifier(s); interfaces between the same two units in the **same** direction share one arrow, while interfaces in opposite directions form two arrows. Because orientation is owner-relative (not relative to "this unit"), the **same interface renders as the identical arrow in both units' diagrams**. A unit does not draw an arrow to itself.
 
-**Verification:** Known cross-unit calls produce labelled arrows with `IF_` identifiers. Same-unit calls produce no arrow. Multiple calls share one arrow with all identifiers.
+**Verification:** For each `IF_` label, the arrow matches that interface's In/Out in the interface table (In → into the owner, Out → out of the owner), and the identical arrow appears in both the owner's and the partner's diagram. Same-unit calls produce no arrow.
 
 ---
 
 ### REQ-UD-06 — Node placement
 
-External units that call into the current module appear to the left of the module subgraph.
-External units that the current module calls appear to the right.
+External units with an arrow pointing **into** the current unit appear to the left of the module subgraph.
+External units with an arrow pointing **out of** the current unit appear to the right.
+A partner that has an arrow in each direction (a mutual pair) is drawn **once**, on the left.
 The current unit and its same-module peers occupy the subgraph in the centre.
 
-**Verification:** External caller nodes appear before the subgraph declaration. External callee nodes appear after the subgraph close.
+**Verification:** External nodes with an inbound arrow appear before the subgraph declaration; external nodes with only an outbound arrow appear after the subgraph close; a bidirectional partner is declared exactly once.
 
 ---
 

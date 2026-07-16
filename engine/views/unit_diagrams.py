@@ -108,33 +108,31 @@ def _build_unit_diagram(
     this_component = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
 
     edges = {}
-    for fid in unit_info.get("functionIds", []):
-        if fid not in functions_data:
-            continue
-        f = functions_data[fid]
-        for callee_fid in f.get("callsIds", []) or []:
-            callee_unit = fid_to_unit.get(callee_fid)
-            if not callee_unit or callee_unit == unit_key:
-                continue
-            callee_f = functions_data.get(callee_fid, {})
-            iface = callee_f.get("interfaceId", "")
-            if iface:
-                key = (this_id, _unit_part_id(callee_unit))
-                edges.setdefault(key, set()).add(iface)
+
+    def _dir_of(fn):
+        return "out" if (fn.get("direction") or "In").strip().lower() == "out" else "in"
+
+    def _add_edge(owner_unit, other_unit, iface, direction):
+        # 3.6: orient each edge by the interface OWNER's In/Out so the SAME edge renders
+        # identically in both units' diagrams. Out => owner->other (arrow away from owner),
+        # In => other->owner (arrow towards owner). The caller's own direction is irrelevant.
+        if not owner_unit or not other_unit or owner_unit == other_unit or not iface:
+            return
+        o, x = _unit_part_id(owner_unit), _unit_part_id(other_unit)
+        key = (o, x) if direction == "out" else (x, o)
+        edges.setdefault(key, set()).add(iface)
 
     for fid in unit_info.get("functionIds", []):
         if fid not in functions_data:
             continue
         f = functions_data[fid]
-        iface = f.get("interfaceId", "")
-        if not iface:
-            continue
+        # (1) this unit OWNS f: each external caller edge is oriented by f's own direction
         for caller_fid in f.get("calledByIds", []) or []:
-            caller_unit = fid_to_unit.get(caller_fid)
-            if not caller_unit or caller_unit == unit_key:
-                continue
-            key = (_unit_part_id(caller_unit), this_id)
-            edges.setdefault(key, set()).add(iface)
+            _add_edge(unit_key, fid_to_unit.get(caller_fid), f.get("interfaceId", ""), _dir_of(f))
+        # (2) callees this unit USES are owned by the partner: orient by the callee's direction
+        for callee_fid in f.get("callsIds", []) or []:
+            callee_f = functions_data.get(callee_fid, {})
+            _add_edge(fid_to_unit.get(callee_fid), unit_key, callee_f.get("interfaceId", ""), _dir_of(callee_f))
 
     caller_ids = {fr for (fr, to) in edges if to == this_id}
     callee_ids = {to for (fr, to) in edges if fr == this_id}
@@ -152,6 +150,10 @@ def _build_unit_diagram(
     external_callers = sorted(caller_ids - internal_set)
     internal_callees = sorted((callee_ids - caller_ids) & internal_set)
     external_callees = sorted((callee_ids - caller_ids) - internal_set)
+    # 3.6: every external partner (inbound and/or outbound). Used for edge emission so a mutual
+    # partner's outbound edge still renders even though it is declared as a box only once (on the
+    # left, as a caller) via external_callers above — no dropped edge, no duplicate node.
+    external_all = (caller_ids | callee_ids) - internal_set
 
     n_edges = len(edges)
     n_extra_lines = min(max(2, n_edges), 12)
@@ -220,8 +222,8 @@ config:
     for (fr, to), ifaces in sorted(edges.items()):
         label = "<br/>".join(sorted(ifaces))
         label = _escape_label(label)
-        is_ext_in = fr in external_callers and to in internal_set
-        is_ext_out = fr in internal_set and to in external_callees
+        is_ext_in = fr in external_all and to in internal_set
+        is_ext_out = fr in internal_set and to in external_all
         if is_ext_in or is_ext_out:
             lines.append(f"  {fr} -->|{label}| {to}")
 
