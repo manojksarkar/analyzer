@@ -937,7 +937,9 @@ def _add_interface_table(doc, interfaces, font_small):
             data_range = iface.get("range", "") or "NA"
         else:
             params = iface.get("parameters", [])
-            data_type = "; ".join(p.get("type", "") for p in params) if params else "VOID"
+            param_types = "; ".join(p.get("type", "") for p in params) if params else "VOID"
+            ret = (iface.get("returnType") or "").strip() or "VOID"
+            data_type = f"{param_types}\nreturn: {ret}"
             data_range = "; ".join(p.get("range", "") for p in params) if params else "NA"
 
         src_dest = iface.get("sourceDest") or "-"

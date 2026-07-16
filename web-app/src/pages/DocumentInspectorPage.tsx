@@ -313,7 +313,7 @@ function TableView({ table }: { table: RichTable }) {
           {table.rows.map((r, ri) => (
             <tr key={ri} className="border-b border-outline-variant/60 last:border-0 hover:bg-surface-container-low">
               {r.map((c, ci) => (
-                <td key={ci} className={cn('px-4 py-3', ci === 0 && 'font-mono text-caption text-secondary')}>{c}</td>
+                <td key={ci} className={cn('px-4 py-3 whitespace-pre-line', ci === 0 && 'font-mono text-caption text-secondary')}>{c}</td>
               ))}
             </tr>
           ))}

@@ -89,6 +89,7 @@ def _build_interface_tables(
                 "unitName": unit_name_display,
                 "location": loc,
                 "parameters": params,
+                "returnType": f.get("returnType", ""),
                 "direction": f.get("direction") or "In",
                 "reason": f.get("reason") or f.get("directionReason") or "",
                 "sourceDest": source_dest,
