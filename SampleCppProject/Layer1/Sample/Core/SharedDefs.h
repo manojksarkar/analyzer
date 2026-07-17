@@ -10,6 +10,9 @@ typedef unsigned char UINT8;
 #define SHARED_MIN_ITEMS 4
 #define SHARED_SCALE_FACTOR 8
 #define SHARED_BUFSZ (6)
+#define SHARED_MASK ((1 << 0) | \
+                     (1 << 1) | \
+                     (1 << 2))
 
 // Enum with explicit underlying type (mirrors the "enum : UINT8" office case).
 enum SharedLevel : UINT8 {
