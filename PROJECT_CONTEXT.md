@@ -8,23 +8,25 @@
 >   poc-4**): **3.1** (exclude `*emul*` files from parse scope, `--include-emulator` opt-out wired through
 >   run.py→group_planner) + **3.2** (parse `.h/.hpp/.hxx` as C++ TUs for header-only defs). Fixtures under
 >   `SampleCppProject/Layer1/Signal/` (`SignalEmul.cpp`, `SignalInline.h`).
-> - **DEFERRED — orphan-header handling** (explored at length 2026-07-15, **not implemented**; tree
->   reverted clean). **Agreed rule:** a unit exists **iff it has a source file** (`.cpp/.cc/.cxx`); a
->   header with a same-name source folds into that unit; an **orphan header** (no same-name source) is
->   **never a unit**. Today an orphan header becomes a *ghost* unit the views filter out (the `.cpp`
->   check), so its content (`#define`/`enum`/`typedef`/`class`) shows **nowhere** — the reported office
->   bug (a shared header's `#define some_x` and `enum … : UINT8` were missing). **Intended fix:** orphan
->   header → not a unit (skip in `model_deriver._build_units_components` — precompute the set of
->   unit-keys with a source file, skip header files not in it); surface an orphan header's content **only
->   in the units that use it** ("in many places"). **Why deferred = the hard part:** for *functions*
->   "used" = called → the call graph gives the exact 1–2 used (easy, precise). For *defines/enums/types*
->   "used" means the unit's code textually references the macro/type — **no call graph** → showing only
->   the used ones (not all ~1000 in a shared header) needs real usage analysis. **Also known:** the unit
->   header table currently **skips `class`/`struct`** (`docx_exporter.py:251`) and matches declarations by
->   the unit's **own path only** (companion header); `includedHeaders` has a cross-dir path-resolution
->   quirk (resolves relative to the `.cpp` dir). **Abandoned ideas:** a `hasCpp` boolean and a
->   `views.includeHeaderOnlyUnits` config toggle (both rejected). Pick this up only with time to do the
->   used-only analysis properly.
+> - **DONE — orphan-header handling** (2026-07-17, branch `fix/interface-tables-and-unit-diagrams`).
+>   An **orphan header** (`.h/.hpp/.hxx` with no same-name source) contributes its `#define`/`enum`/
+>   `typedef` to the unit-header table of **every unit that USES it** — each unit shows only the subset
+>   it references (never the header's full contents, never in a non-using unit). The "hard part" the
+>   2026-07-15 exploration assumed didn't exist was **already solved**: `model/edges.json` carries
+>   `macroUsers`/`typeUsers` (fid-keyed usage). Whole fix is in
+>   `docx_exporter._build_unit_header_table` (loads edges + a `source_unit_paths` set; an entry not
+>   matched by own-path is included iff it lives in an orphan header AND the unit uses it). **No
+>   `model_deriver` change** — the exporter already emits only `.cpp`-backed unit sections, so the
+>   orphan header never shows as its own unit. **Kept current kinds** (`define`/`enum`/`typedef`); the
+>   `class`/`struct` skip at `docx_exporter.py:251` was **deliberately left as-is** per user. **Known
+>   gap** (accepted): edges only records function-body/signature usage → misses a macro used only in a
+>   global initializer / inside another macro, or an enum referenced only by enumerator value. Fixture:
+>   `SampleCppProject/Layer1/Sample/Core/SharedDefs.h` (orphan; `SHARED_MAX/MIN/SCALE` + `enum
+>   SharedLevel : UINT8`) used by `coreLevelBudget` (Core: MAX+MIN+enum) and `libScaleShared` (Lib:
+>   SCALE), Util uses none. **NOTE:** the header must live in a **mapped component dir** or
+>   `is_project_file` (`_FILE_COMPONENT_MAP`) drops it from the parse entirely. Spec: `DESIGN_SPEC.md`
+>   REQ-UH-01/02. Test: `tests/unit/test_unit_header_orphan.py` (6 cases, filesystem-free). Verified
+>   A/B: Core baseline 2 rows → 5 (+MAX,+MIN,+enum), own `enum Mode` unaffected.
 > - **Committed on branch `fix/direction-transitive-writes`** (off `poc-4`, **PR pending into poc-4**):
 >   **3.4** — interface direction re-derived from `writesGlobalIdsTransitive` at `model_deriver` finalize
 >   (Phase 2), so a function that writes a global only *transitively* (e.g. `indirectWrite`,
@@ -48,6 +50,8 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-07-17 (**orphan-header symbols surface in the using unit's header table**. Branch `fix/interface-tables-and-unit-diagrams`. An **orphan header** = a `.h/.hpp/.hxx` with no same-name source file; it is never its own unit (the DOCX exporter already emits only `.cpp`-backed unit sections), so its `#define`/`enum`/`typedef` previously showed **nowhere** (the reported office bug: a shared header's `#define` + `enum … : UINT8` missing). Fix is isolated to `engine/docx_exporter.py::_build_unit_header_table`: besides the existing own-path matches, it now also emits a `define`/`enum`/`typedef` row when the symbol is defined in an orphan header **and this unit uses it**. "Uses" comes from the already-existing usage index `model/edges.json` (`macroUsers` keyed `name@relFile`, `typeUsers` keyed by qualifiedName) intersected with the unit's own `functionIds` — so each unit shows **only the subset it references**, never the full header, never in a non-using unit. An orphan header is told apart from a **companion** header via a new `source_unit_paths` set (extension-less paths that have a `.cpp/.cc/.cxx`), computed from the **full** unit list before layer filtering; companion-header content is not pulled into other units. The exporter loads `edges.json` (`_load_model_json("edges")`, `{}` if absent) and threads `macro_users`/`type_users`/`source_unit_paths` into the builder. **Kinds unchanged** (`define`/`enum`/`typedef`); the `class`/`struct` skip at `docx_exporter.py:251` was **left as-is** per user. **Known coverage gap (accepted):** edges records usage inside function bodies/signatures only → a macro used only in a global initializer or inside another macro, or an enum referenced only by enumerator value (not its type), is not surfaced. **Fixture placement gotcha:** an orphan header must live in a **mapped component dir** or `parser.is_project_file` (`_FILE_COMPONENT_MAP`) excludes it from the parse entirely — a header under an unconfigured folder (e.g. `Sample/Shared/`) is silently dropped. Fixture: `SampleCppProject/Layer1/Sample/Core/SharedDefs.h` (`SHARED_MAX_ITEMS`/`SHARED_MIN_ITEMS`/`SHARED_SCALE_FACTOR` + `enum SharedLevel : UINT8`), used by `coreLevelBudget` (Core → MAX+MIN+enum) and `libScaleShared` (Lib → SCALE); Util uses none. **Verified A/B** (My Sample, Phase 4 build path): Core header rows 2 → 5 (adds `#define SHARED_MAX_ITEMS`, `#define SHARED_MIN_ITEMS`, `enum SharedLevel`), Lib gets only `SHARED_SCALE_FACTOR`, Util none; own `enum Mode` unaffected; empty-edges baseline reproduces the old (no-surfacing) behavior. Docs: `DESIGN_SPEC.md` new `## Unit Header Table` REQ-UH-01/02. Test: `tests/unit/test_unit_header_orphan.py` (6 cases, filesystem-free, green). Pre-existing broken e2e `test_docx.py` (output/Sample vs output/My-Sample) and stale `test_unit_diagrams_view.py` `_unit_part_id` `-`-vs-`_` failures are **unrelated**. Not committed — working-tree only pending review.)
 
 > Updated: 2026-07-16 (**fix 3.6 — unit-diagram edges oriented by the interface owner's In/Out**. Branch `fix/unit-diagram-direction` off `fix/direction-transitive-writes` (builds on 3.4-correct `direction`). **Diagram-only — no model change** (`model/*.json` untouched; only `output/<group>/unit_diagrams/*.mmd|png` and the embedded DOCX images change; `interface_tables.json` unchanged). `engine/views/unit_diagrams.py` built every cross-unit edge from the raw call relationship (`caller → callee`, labelled with the callee's `interfaceId`) and never consulted `f["direction"]`, so the diagram disagreed with the interface table — a getter (`Out`) *called by* a peer was drawn inbound, opposite the table. Fix: orient each edge by the interface **owner's** direction (owner = unit of the called function) — **`In` → arrow towards owner, `Out` → away**; caller's own direction irrelevant. New `_add_edge(owner, other, iface, dir)` keys `(owner→other)` for `Out`, `(other→owner)` for `In`, fed by two loops (this unit's `calledByIds` oriented by `f`; its `callsIds` oriented by the callee). Owner-relative (unlike the stranded `da5f07d`, which is "this-unit"-relative and makes the two diagrams contradict) ⇒ the **same interface renders as the identical arrow in both units' diagrams**. One interface = one arrow; same-direction interfaces between a pair stack labels on one arrow; a mutual pair = two arrows with the partner **box drawn once** (`external_all = (caller_ids|callee_ids) - internal_set`; both external-edge emit tests gate on it, node-declaration lists unchanged ⇒ no dropped edge, no duplicate node). **Net: only `Out` (getter) edges flip; `In` edges already pointed into the owner so they're unchanged.** Docs: `DESIGN_SPEC.md` REQ-UD-05 ("Call edges"→"Interface edges", owner-oriented) + REQ-UD-06 (placement by arrow direction, mutual partner once). **Verified A/B** (My Sample, Phase 3): 48/48 edge-labels match owner direction in `interface_tables.json`; in-group shared edges identical across diagrams; no self/duplicate. Fix stashed → `CORE_01…11` (Out) `App→Core`/`Hub→Core` (✗) + `Core→Lib`/`Core→Util`; restored → `Core→App`/`Core→Hub` + `Lib→Core`/`Util→Core` (✓), `CORE_02` (In) `App→Core` both ways. Not committed — working-tree only pending review.)
 

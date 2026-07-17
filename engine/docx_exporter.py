@@ -209,15 +209,40 @@ def _build_unit_header_table(
     base_path: str,
     config: Optional[dict] = None,
     abbreviations: Optional[dict] = None,
+    macro_users: Optional[dict] = None,
+    type_users: Optional[dict] = None,
+    source_unit_paths: Optional[set] = None,
 ) -> List[Dict[str, str]]:
     """Build rows for unit header table.
 
     - Column 1: full declaration as in code
     - Column 2: value (initializer / underlying type / enumerator values)
+
+    Besides declarations defined in the unit's own file, also surfaces
+    define/enum/typedef symbols defined in an *orphan header* (a header with no
+    same-name source) — but only the ones THIS unit uses, per model/edges.json
+    (``macroUsers``/``typeUsers``). ``source_unit_paths`` is the set of
+    extension-less paths that have a source file, used to tell an orphan header
+    apart from a companion header.
     """
     rows: List[Dict[str, str]] = []
     dd = data_dictionary or {}
     unit_paths_set = set(_unit_paths(unit_info))
+
+    # Orphan-header symbols this unit USES (from edges.json). A symbol qualifies
+    # only if some function of this unit references it; symbols from an orphan
+    # header the unit does not touch are never listed.
+    unit_fids = set(unit_info.get("functionIds") or [])
+    src_paths = source_unit_paths or set()
+    used_macro_keys: set = set()
+    used_type_qns: set = set()
+    if unit_fids:
+        for _mk, _fids in (macro_users or {}).items():
+            if unit_fids.intersection(_fids):
+                used_macro_keys.add(_mk)
+        for _tq, _fids in (type_users or {}).items():
+            if unit_fids.intersection(_fids):
+                used_type_qns.add(_tq)
 
     # Globals: use model/globalVariables.json so we can read exact line(s)
     for gid in unit_info.get("globalVariableIds", []) or []:
@@ -243,13 +268,28 @@ def _build_unit_header_table(
         loc = t.get("location") or {}
         rel_file = (loc.get("file") or "").replace("\\", "/")
         type_file = _path_no_ext(rel_file)
-        if not type_file or type_file not in unit_paths_set:
+        if not type_file:
             continue
         kind = t.get("kind", "")
         # Include structs/unions so typedef-based structs (and unions) are visible
         # in the unit header table alongside typedef/enum/define entries.
         if kind not in ("typedef", "enum", "define"):
             continue
+        is_own = type_file in unit_paths_set
+        # An orphan header = a header file whose stem has no same-name source.
+        is_orphan_header = (
+            rel_file.lower().endswith((".h", ".hpp", ".hxx"))
+            and type_file not in src_paths
+        )
+        if not is_own:
+            # Only pull in orphan-header symbols this unit actually uses.
+            if not is_orphan_header:
+                continue
+            if kind == "define":
+                if f"{t.get('name') or ''}@{rel_file}" not in used_macro_keys:
+                    continue
+            elif (t.get("qualifiedName") or _type_name) not in used_type_qns:
+                continue
         line = int(loc.get("line") or 0)
         if kind == "typedef":
             loc_key = (rel_file, line)
@@ -1262,6 +1302,17 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
 
     abbreviations = _load_abbreviations(PROJECT_ROOT, config)
     units_data, data_dictionary = _load_model_for_unit_headers()
+    edges_data = _load_model_json("edges")
+    macro_users = edges_data.get("macroUsers") or {}
+    type_users = edges_data.get("typeUsers") or {}
+    # Extension-less paths that have a source file — computed from the FULL unit
+    # set (before layer filtering) so a header whose .cpp lives elsewhere is not
+    # misread as orphan. Used to tell orphan headers from companion headers.
+    source_unit_paths = {
+        u.get("path")
+        for u in units_data.values()
+        if (u.get("fileName") or "").lower().endswith((".cpp", ".cc", ".cxx")) and u.get("path")
+    }
     components_data = _load_model_json("components")
     global_variables_data = _load_model_json("globalVariables")
     functions_data = _load_model_json("functions")
@@ -1464,6 +1515,9 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 base_path,
                 config,
                 abbreviations,
+                macro_users,
+                type_users,
+                source_unit_paths,
             )
             _add_unit_header_table(doc, unit_header_rows, font_small)
 

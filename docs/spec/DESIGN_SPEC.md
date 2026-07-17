@@ -180,6 +180,30 @@ Global variable rows have no caller or callee lists.
 
 ---
 
+## Unit Header Table
+
+**Output:** One table per unit, embedded in the DOCX unit section. Lists the unit's global variables, typedefs, enums and defines.
+
+---
+
+### REQ-UH-01 — Own declarations
+
+The table lists every public global variable, typedef, enum and define **defined in the unit's own file(s)** (its source and companion header). Structs/classes are out of scope.
+
+**Verification:** A unit's own typedef/enum/define entries appear; its private globals do not.
+
+---
+
+### REQ-UH-02 — Orphan-header symbols (used-only)
+
+Besides its own declarations, a unit's table also lists the **define / enum / typedef** symbols that this unit **uses** which are defined in an **orphan header** — a header (`.h/.hpp/.hxx`) that has **no same-name source file**. A symbol from an orphan header appears **only in the units that reference it**: each unit shows exactly the subset it uses, never the header's full contents, and never in a unit that does not use it. Companion headers (a header whose stem has a `.cpp/.cc/.cxx`) are not orphan headers, so their content is not pulled into other units.
+
+Usage is taken from the precomputed usage index `model/edges.json` (`macroUsers` keyed `name@relFile`, `typeUsers` keyed by qualified name), intersected with the unit's own `functionIds`. **Known coverage gap:** the index records usage inside function bodies/signatures only, so a macro used solely in a global initializer or inside another macro, or an enum referenced only by its enumerator values (not its type), is not surfaced.
+
+**Verification:** Given an orphan header with several symbols used by different units, each unit's header table shows only the symbols it uses; a non-using unit shows none; a companion header of another unit is never pulled in. (`tests/unit/test_unit_header_orphan.py`.)
+
+---
+
 ## Unit Architecture Diagrams
 
 **Output:** One diagram per unit, embedded in the DOCX unit section.

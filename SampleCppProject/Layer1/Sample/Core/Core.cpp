@@ -1,6 +1,7 @@
 #include "Core.h"
 #include "../Lib/Lib.h"
 #include "../Util/Util.h"
+#include "SharedDefs.h"
 
 PUBLIC int g_result = 0;
 PRIVATE int g_count = 0;
@@ -165,6 +166,16 @@ PUBLIC int coreMultiCallChain(int a, int b, int c) {
     int scaled   = utilScale(computed, 2);
     int chained  = utilChain(scaled);
     return chained;
+}
+
+PUBLIC int coreLevelBudget(SharedLevel lvl) {
+    // Uses orphan-header SharedDefs.h: type SharedLevel + macros
+    // SHARED_MAX_ITEMS / SHARED_MIN_ITEMS (but NOT SHARED_SCALE_FACTOR).
+    int budget = SHARED_MAX_ITEMS;
+    if (lvl == LEVEL_HIGH) {
+        budget = SHARED_MIN_ITEMS;
+    }
+    return budget;
 }
 
 PROTECTED int coreGetCount() {
