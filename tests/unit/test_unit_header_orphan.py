@@ -111,3 +111,42 @@ class TestOrphanHeaderSurfacing:
                  "functionIds": [OTHER_FID], "globalVariableIds": []}
         decls = _decls(_build(other))
         assert not any(("MAXN" in d or "SCALE" in d or "Level" in d) for d in decls)
+
+
+class TestTextualFallback:
+    """Symbols edges.json misses (file-scope usage) are recovered from the unit's
+    own source text passed as used_symbol_names."""
+
+    def _other_unit(self):
+        return {"path": "Comp/OtherUnit", "fileName": "OtherUnit.cpp",
+                "functionIds": [OTHER_FID], "globalVariableIds": []}
+
+    def _build_with_text(self, unit_info, text_names):
+        return dx._build_unit_header_table(
+            unit_info, [], DD, {}, "", None, {}, MACRO_USERS, TYPE_USERS,
+            SRC_PATHS, text_names,
+        )
+
+    def test_file_scope_macro_recovered_from_text(self):
+        # OtherUnit has no edges usage, but its source text references SCALE
+        # (e.g. an array size) — the fallback must surface it.
+        decls = _decls(self._build_with_text(self._other_unit(), {"SCALE"}))
+        assert any("#define SCALE 8" in d for d in decls)
+
+    def test_symbol_absent_from_text_not_surfaced(self):
+        decls = _decls(self._build_with_text(self._other_unit(), {"UNRELATED"}))
+        assert not any("SCALE" in d or "MAXN" in d for d in decls)
+
+    def test_orphan_enum_recovered_from_text(self):
+        rows = self._build_with_text(self._other_unit(), {"Level"})
+        assert any("LO=0" in (r.get("information") or "") for r in rows)
+
+
+class TestCommentStringStripping:
+    def test_symbol_in_comment_or_string_is_stripped(self):
+        src = '// SCALE mentioned\nint x = 1; const char* s = "MAXN";\n/* Level */'
+        cleaned = dx._COMMENT_STRING_RE.sub(" ", src)
+        import re as _re
+        ids = set(_re.findall(r"[A-Za-z_]\w*", cleaned))
+        assert "SCALE" not in ids and "MAXN" not in ids and "Level" not in ids
+        assert "x" in ids  # real code identifiers survive
