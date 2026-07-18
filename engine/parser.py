@@ -1398,8 +1398,13 @@ def _scan_defines():
                 macro_lines.append(lines[i].rstrip("\n"))
                 i += 1
             full = "\n".join(macro_lines).strip()
-            # Parse "#define NAME [value...]"
-            after = stripped[len("#define"):].strip()
+            # Parse "#define NAME [value...]". Join continuation lines into one
+            # logical line (drop the trailing "\") so a multi-line macro's value
+            # is captured in full, not just its first line.
+            logical = " ".join(
+                ml.rstrip().rstrip("\\").strip() for ml in macro_lines
+            ).strip()
+            after = logical[len("#define"):].strip()
             if not after:
                 continue
             parts = after.split(None, 1)

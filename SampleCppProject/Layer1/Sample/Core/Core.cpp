@@ -175,7 +175,7 @@ PUBLIC int coreLevelBudget(SharedLevel lvl) {
     if (lvl == LEVEL_HIGH) {
         budget = SHARED_MIN_ITEMS;
     }
-    return budget;
+    return budget & SHARED_MASK;
 }
 
 PROTECTED int coreGetCount() {

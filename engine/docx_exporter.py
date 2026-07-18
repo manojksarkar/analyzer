@@ -18,6 +18,15 @@ COLS = ("Interface ID", "Interface Name", "Information", "Data Type", "Data Rang
 NA = "N/A"
 # Include-guard defines (#define FILE_NAME_H) — no value, name ends with _H/_HPP
 _INCLUDE_GUARD_RE = re.compile(r"^_*[A-Z][A-Z0-9_]*(?:_H|_HPP)_*$")
+# Strip string/char literals and comments before scanning source for identifier
+# usage (literals first so // or /* inside a string isn't treated as a comment).
+_COMMENT_STRING_RE = re.compile(
+    r'"(?:\\.|[^"\\])*"'      # string literal
+    r"|'(?:\\.|[^'\\])*'"     # char literal
+    r"|/\*.*?\*/"             # block comment
+    r"|//[^\n]*",             # line comment
+    re.DOTALL,
+)
 
 
 def _readable_label(name: str) -> str:
@@ -212,6 +221,7 @@ def _build_unit_header_table(
     macro_users: Optional[dict] = None,
     type_users: Optional[dict] = None,
     source_unit_paths: Optional[set] = None,
+    used_symbol_names: Optional[set] = None,
 ) -> List[Dict[str, str]]:
     """Build rows for unit header table.
 
@@ -234,6 +244,10 @@ def _build_unit_header_table(
     # header the unit does not touch are never listed.
     unit_fids = set(unit_info.get("functionIds") or [])
     src_paths = source_unit_paths or set()
+    # Identifier tokens appearing anywhere in this unit's own source — the textual
+    # fallback that catches orphan-header usage edges.json misses (macros used at
+    # file scope: array sizes, global initializers, macro-in-macro).
+    text_names = used_symbol_names or set()
     used_macro_keys: set = set()
     used_type_qns: set = set()
     if unit_fids:
@@ -282,14 +296,22 @@ def _build_unit_header_table(
             and type_file not in src_paths
         )
         if not is_own:
-            # Only pull in orphan-header symbols this unit actually uses.
+            # Only pull in orphan-header symbols this unit actually uses. "Used" =
+            # the precise edges.json index OR (fallback) the symbol name appears in
+            # this unit's own source text — the latter catches file-scope usages
+            # (array sizes, initializers, macro-in-macro) that edges cannot see.
             if not is_orphan_header:
                 continue
+            _sym_name = t.get("name") or _type_name
             if kind == "define":
-                if f"{t.get('name') or ''}@{rel_file}" not in used_macro_keys:
+                if (f"{t.get('name') or ''}@{rel_file}" not in used_macro_keys
+                        and _sym_name not in text_names):
                     continue
-            elif (t.get("qualifiedName") or _type_name) not in used_type_qns:
-                continue
+            else:
+                _qn = t.get("qualifiedName") or _type_name
+                if (_qn not in used_type_qns
+                        and _sym_name not in text_names and _qn not in text_names):
+                    continue
         line = int(loc.get("line") or 0)
         if kind == "typedef":
             loc_key = (rel_file, line)
@@ -1353,6 +1375,37 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             _hidden_by_mod_unit.setdefault((_fp[0], _fp[1]), set()).add(_base)
     base_path = _load_base_path()
 
+    # Per-unit identifier tokens from each unit's own source file(s) — textual
+    # fallback for orphan-header usage that edges.json misses (macros used at file
+    # scope aren't in macroUsers, which only sees function-body tokens).
+    _unit_src_rels: Dict[str, set] = {}
+    for _fid, _f in functions_data.items():
+        _uk = KEY_SEP.join(_fid.split(KEY_SEP)[:2])
+        _rf = ((_f.get("location") or {}).get("file") or "").replace("\\", "/")
+        if _rf:
+            _unit_src_rels.setdefault(_uk, set()).add(_rf)
+    for _gid, _g in global_variables_data.items():
+        _uk = KEY_SEP.join(_gid.split(KEY_SEP)[:2])
+        _rf = ((_g.get("location") or {}).get("file") or "").replace("\\", "/")
+        if _rf:
+            _unit_src_rels.setdefault(_uk, set()).add(_rf)
+    unit_used_names: Dict[str, set] = {}
+    for _uk, _rels in _unit_src_rels.items():
+        _ids: set = set()
+        for _rel in _rels:
+            _abs = os.path.join(base_path, _rel) if base_path and _rel else _rel
+            try:
+                with open(_abs, "r", encoding="utf-8", errors="replace") as _fh:
+                    _src = _fh.read()
+            except OSError:
+                continue
+            # Strip string/char literals and comments first so a symbol merely
+            # mentioned in a comment doesn't count as usage (literals listed before
+            # comments so // or /* inside a string isn't misread as a comment).
+            _src = _COMMENT_STRING_RE.sub(" ", _src)
+            _ids.update(re.findall(r"[A-Za-z_]\w*", _src))
+        unit_used_names[_uk] = _ids
+
     # Resolve project name from metadata
     _meta_path = os.path.join(MODEL_DIR, "metadata.json")
     _project_name = "Software Project"
@@ -1518,6 +1571,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 macro_users,
                 type_users,
                 source_unit_paths,
+                unit_used_names.get(unit_key),
             )
             _add_unit_header_table(doc, unit_header_rows, font_small)
 

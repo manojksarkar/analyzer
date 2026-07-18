@@ -1,6 +1,11 @@
 #include "Util.h"
+#include "../Core/SharedDefs.h"
 
 PUBLIC int g_utilBase = 0;
+
+// File-scope use of an orphan-header macro (array size) — NOT inside any
+// function body, so edges.json/macroUsers does not capture it.
+PUBLIC int g_utilBuf[SHARED_BUFSZ] = {0};
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
