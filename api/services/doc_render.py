@@ -473,8 +473,21 @@ def _interfaces_table_8col(ifaces: list) -> Optional[dict]:
             data_range = iface.get("range", "") or "NA"
         else:
             params = iface.get("parameters", []) or []
-            data_type = "; ".join(p.get("type", "") for p in params) if params else "VOID"
-            data_range = "; ".join(p.get("range", "") for p in params) if params else "NA"
+            param_types = "; ".join(p.get("type", "") for p in params) if params else "VOID"
+            param_ranges = "; ".join(p.get("range", "") for p in params) if params else "NA"
+            ret = (iface.get("returnType") or "").strip()
+            if ret:
+                # Only add the return line when a return type was actually captured.
+                # Display void uniformly as VOID with an NA range (matches the
+                # no-parameter convention: type VOID, range NA).
+                is_void = ret.lower() == "void"
+                ret_disp = "VOID" if is_void else ret
+                ret_range = "NA" if is_void else ((iface.get("returnRange") or "").strip() or "NA")
+                data_type = f"{param_types}\nreturn: {ret_disp}"
+                data_range = f"{param_ranges}\nreturn: {ret_range}"
+            else:
+                data_type = param_types
+                data_range = param_ranges
         rows.append([
             str(iface.get("interfaceId", "")),
             str(iface.get("interfaceName") or iface.get("name", "")),

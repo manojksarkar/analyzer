@@ -108,33 +108,31 @@ def _build_unit_diagram(
     this_component = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
 
     edges = {}
-    for fid in unit_info.get("functionIds", []):
-        if fid not in functions_data:
-            continue
-        f = functions_data[fid]
-        for callee_fid in f.get("callsIds", []) or []:
-            callee_unit = fid_to_unit.get(callee_fid)
-            if not callee_unit or callee_unit == unit_key:
-                continue
-            callee_f = functions_data.get(callee_fid, {})
-            iface = callee_f.get("interfaceId", "")
-            if iface:
-                key = (this_id, _unit_part_id(callee_unit))
-                edges.setdefault(key, set()).add(iface)
+
+    def _dir_of(fn):
+        return "out" if (fn.get("direction") or "In").strip().lower() == "out" else "in"
+
+    def _add_edge(owner_unit, other_unit, iface, direction):
+        # 3.6: orient each edge by the interface OWNER's In/Out so the SAME edge renders
+        # identically in both units' diagrams. Out => owner->other (arrow away from owner),
+        # In => other->owner (arrow towards owner). The caller's own direction is irrelevant.
+        if not owner_unit or not other_unit or owner_unit == other_unit or not iface:
+            return
+        o, x = _unit_part_id(owner_unit), _unit_part_id(other_unit)
+        key = (o, x) if direction == "out" else (x, o)
+        edges.setdefault(key, set()).add(iface)
 
     for fid in unit_info.get("functionIds", []):
         if fid not in functions_data:
             continue
         f = functions_data[fid]
-        iface = f.get("interfaceId", "")
-        if not iface:
-            continue
+        # (1) this unit OWNS f: each external caller edge is oriented by f's own direction
         for caller_fid in f.get("calledByIds", []) or []:
-            caller_unit = fid_to_unit.get(caller_fid)
-            if not caller_unit or caller_unit == unit_key:
-                continue
-            key = (_unit_part_id(caller_unit), this_id)
-            edges.setdefault(key, set()).add(iface)
+            _add_edge(unit_key, fid_to_unit.get(caller_fid), f.get("interfaceId", ""), _dir_of(f))
+        # (2) callees this unit USES are owned by the partner: orient by the callee's direction
+        for callee_fid in f.get("callsIds", []) or []:
+            callee_f = functions_data.get(callee_fid, {})
+            _add_edge(fid_to_unit.get(callee_fid), unit_key, callee_f.get("interfaceId", ""), _dir_of(callee_f))
 
     caller_ids = {fr for (fr, to) in edges if to == this_id}
     callee_ids = {to for (fr, to) in edges if fr == this_id}
@@ -148,24 +146,36 @@ def _build_unit_diagram(
         else:
             if uk_component == this_component:
                 internal_set.add(pid)
+    # A partner that has arrows in BOTH directions (mutual) is drawn on BOTH sides: once as a
+    # caller (inbound arrow + inbound interface ids) and once as a callee (outbound arrow +
+    # outbound interface ids). Same rule for internal (module box, top vs bottom) and external
+    # (left vs right) partners. The two boxes need distinct node ids or Mermaid collapses them
+    # into one, so the callee-side box gets a suffix. Interface ids split naturally by direction
+    # because each side only carries the edges pointing its way.
+    mutual = caller_ids & callee_ids
+
+    def _callee_node_id(pid):
+        return f"{pid}__out" if pid in mutual else pid
+
     internal_callers = sorted(caller_ids & internal_set)
     external_callers = sorted(caller_ids - internal_set)
-    internal_callees = sorted((callee_ids - caller_ids) & internal_set)
-    external_callees = sorted((callee_ids - caller_ids) - internal_set)
+    internal_callees = sorted(callee_ids & internal_set)
+    external_callees = sorted(callee_ids - internal_set)
 
     n_edges = len(edges)
     n_extra_lines = min(max(2, n_edges), 12)
     pad = "   "
 
-    def _node_line(pid):
+    def _node_line(node_id, base_pid=None):
+        base_pid = base_pid if base_pid is not None else node_id
         for uk in units_data:
-            if _unit_part_id(uk) == pid:
-                raw = unit_names.get(uk, uk) if pid == this_id else uk.replace(KEY_SEP, "/").replace("-", " ")
+            if _unit_part_id(uk) == base_pid:
+                raw = unit_names.get(uk, uk) if base_pid == this_id else uk.replace(KEY_SEP, "/").replace("-", " ")
                 box_label = (raw or "?").replace("]", "'").replace("[", "'")
-                if pid == this_id:
+                if base_pid == this_id:
                     extra = "<br/>".join([f"{pad} " for _ in range(n_extra_lines)])
                     box_label = f"{pad}{box_label}{pad}<br/>{extra}"
-                return f'  {pid}["{box_label}"]'
+                return f'  {node_id}["{box_label}"]'
         return ""
 
     lines = [
@@ -194,18 +204,20 @@ config:
         lines.append("    " + _node_line(pid).strip())
     lines.append("    " + _node_line(this_id).strip())
     for pid in internal_callees:
-        lines.append("    " + _node_line(pid).strip())
+        lines.append("    " + _node_line(_callee_node_id(pid), pid).strip())
     lines.append("")
 
-    # Internal edges
+    # Internal edges (partner inside the module). Outbound arrows land on the callee-side box.
     for (fr, to), ifaces in sorted(edges.items()):
-        if fr in internal_set and to in internal_set:
-            label = "<br/>".join(sorted(ifaces))
-            label = _escape_label(label)
-            lines.append(f"    {fr} -->|{label}| {to}")
+        partner = fr if to == this_id else to
+        if partner not in internal_set:
+            continue
+        label = _escape_label("<br/>".join(sorted(ifaces)))
+        src, dst = (fr, to) if to == this_id else (fr, _callee_node_id(to))
+        lines.append(f"    {src} -->|{label}| {dst}")
     lines.append("")
     lines.append(f"    class {this_id} mainUnit")
-    others = internal_callers + internal_callees
+    others = internal_callers + [_callee_node_id(p) for p in internal_callees]
     if others:
         lines.append("    class " + ",".join(others) + " internal")
     lines.append("  end")
@@ -213,17 +225,17 @@ config:
 
     # External callees (right)
     for pid in external_callees:
-        lines.append("  " + _node_line(pid).strip())
+        lines.append("  " + _node_line(_callee_node_id(pid), pid).strip())
     lines.append("")
 
-    # External connections
+    # External connections (partner outside the module). Outbound arrows land on the callee box.
     for (fr, to), ifaces in sorted(edges.items()):
-        label = "<br/>".join(sorted(ifaces))
-        label = _escape_label(label)
-        is_ext_in = fr in external_callers and to in internal_set
-        is_ext_out = fr in internal_set and to in external_callees
-        if is_ext_in or is_ext_out:
-            lines.append(f"  {fr} -->|{label}| {to}")
+        partner = fr if to == this_id else to
+        if partner in internal_set:
+            continue
+        label = _escape_label("<br/>".join(sorted(ifaces)))
+        src, dst = (fr, to) if to == this_id else (fr, _callee_node_id(to))
+        lines.append(f"  {src} -->|{label}| {dst}")
 
     return "\n".join(lines) if len(lines) > 1 else None
 

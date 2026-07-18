@@ -26,6 +26,8 @@ DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "Sample", "software_detailed_de
 
 COL_IF_ID    = 0
 COL_IF_NAME  = 1
+COL_DATA_TYPE = 3
+COL_DATA_RANGE = 4
 COL_DIRECTION = 5
 COL_IF_TYPE  = 7
 
@@ -99,6 +101,22 @@ def test_interface_type_values_valid(all_interface_rows):
     for row in all_interface_rows:
         itype = row.cells[COL_IF_TYPE].text.strip()
         assert itype in valid, f"Unexpected Interface Type in DOCX: '{itype}'"
+
+
+def test_function_rows_show_return_type(all_interface_rows):
+    fn_rows = [r for r in all_interface_rows if r.cells[COL_IF_TYPE].text.strip() == "Function"]
+    assert fn_rows, "No function interface rows found"
+    for row in fn_rows:
+        data_type = row.cells[COL_DATA_TYPE].text
+        assert "return:" in data_type, f"Data Type missing return line: {data_type!r}"
+
+
+def test_function_rows_show_return_range(all_interface_rows):
+    fn_rows = [r for r in all_interface_rows if r.cells[COL_IF_TYPE].text.strip() == "Function"]
+    assert fn_rows, "No function interface rows found"
+    for row in fn_rows:
+        data_range = row.cells[COL_DATA_RANGE].text
+        assert "return:" in data_range, f"Data Range missing return line: {data_range!r}"
 
 
 # ---------------------------------------------------------------------------

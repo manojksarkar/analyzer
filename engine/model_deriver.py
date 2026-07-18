@@ -4,7 +4,7 @@ import re
 import sys
 import json
 
-from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group
+from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group, short_name
 from core.config import get_component_layer_name
 from core.paths import paths as _paths
 
@@ -1016,12 +1016,54 @@ def main():
     # Runs after _propagate_global_access, so writesGlobalIdsTransitive is populated — a function
     # that writes a global only via a callee (e.g. indirectWrite, directionAdd) is correctly In,
     # not Out (the parser's direct-write-only value at parser.py:1308 is preliminary; refined here).
+    # directionReason records WHY each direction was chosen so it can be verified in the interface
+    # tables (which already surface f["directionReason"]); keep it human-readable and auditable.
+    def _gname(gid):
+        return short_name(global_variables_data.get(gid, {}).get("qualifiedName", "")) or gid
+
+    def _fname(fid):
+        return short_name(functions_data.get(fid, {}).get("qualifiedName", "")) or fid
+
+    def _writers_of(fentry, gid):
+        # Direct callees of fentry that write gid (directly or transitively) — the ones
+        # responsible for fentry inheriting this global as a transitive write.
+        writers = []
+        for cid in (fentry.get("callsIds") or []):
+            c = functions_data.get(cid) or {}
+            cw = set(c.get("writesGlobalIdsTransitive") or c.get("writesGlobalIds") or [])
+            if gid in cw:
+                writers.append(_fname(cid))
+        return sorted(set(writers))
+
     for fentry in functions_data.values():
-        writes = fentry.get("writesGlobalIdsTransitive") or fentry.get("writesGlobalIds")
-        fentry["direction"] = "In" if writes else "Out"
+        direct_w = list(fentry.get("writesGlobalIds") or [])
+        trans_w = list(fentry.get("writesGlobalIdsTransitive") or [])
+        reads = list(fentry.get("readsGlobalIdsTransitive") or fentry.get("readsGlobalIds") or [])
+        if direct_w or trans_w:
+            fentry["direction"] = "In"
+            if direct_w:
+                names = ", ".join(_gname(g) for g in sorted(direct_w))
+                fentry["directionReason"] = f"In: writes global(s) {names} directly."
+            else:
+                # transitive-only: written by a callee, not by this function's own body.
+                # Name the responsible callee(s) per global so the chain is verifiable.
+                parts = []
+                for g in sorted(trans_w):
+                    writers = _writers_of(fentry, g)
+                    via = ", ".join(writers) if writers else "a callee"
+                    parts.append(f"{_gname(g)} (via {via})")
+                fentry["directionReason"] = f"In: writes global(s) transitively: {'; '.join(parts)}."
+        else:
+            fentry["direction"] = "Out"
+            if reads:
+                names = ", ".join(_gname(g) for g in sorted(reads))
+                fentry["directionReason"] = f"Out: reads global(s) {names} but writes none."
+            else:
+                fentry["directionReason"] = "Out: accesses no globals (reads none, writes none)."
     # Globals: In/Out
     for g in global_variables_data.values():
         g["direction"] = "In/Out"
+        g["directionReason"] = "In/Out: global variables are bidirectional interfaces."
 
     # Clean and persist
     for fentry in functions_data.values():

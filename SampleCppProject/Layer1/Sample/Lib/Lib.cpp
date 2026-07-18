@@ -1,5 +1,6 @@
 #include "Lib.h"
 #include "../Util/Util.h"
+#include "../Core/SharedDefs.h"
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
@@ -61,6 +62,11 @@ PUBLIC int libMin(int a, int b) {
 PUBLIC int libNormalize(int v, int max) {
     int clamped = libClamp(v, -max, max);     // private call
     return utilCompute(clamped, 0);           // Lib -> Util (fan-in)
+}
+
+PUBLIC int libScaleShared(int v) {
+    // Uses orphan-header SharedDefs.h macro SHARED_SCALE_FACTOR only.
+    return v * SHARED_SCALE_FACTOR;
 }
 
 PUBLIC int libLinearScale(int v, int from_max, int to_max) {

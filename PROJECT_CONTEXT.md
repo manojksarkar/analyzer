@@ -8,33 +8,52 @@
 >   poc-4**): **3.1** (exclude `*emul*` files from parse scope, `--include-emulator` opt-out wired through
 >   run.py→group_planner) + **3.2** (parse `.h/.hpp/.hxx` as C++ TUs for header-only defs). Fixtures under
 >   `SampleCppProject/Layer1/Signal/` (`SignalEmul.cpp`, `SignalInline.h`).
-> - **DEFERRED — orphan-header handling** (explored at length 2026-07-15, **not implemented**; tree
->   reverted clean). **Agreed rule:** a unit exists **iff it has a source file** (`.cpp/.cc/.cxx`); a
->   header with a same-name source folds into that unit; an **orphan header** (no same-name source) is
->   **never a unit**. Today an orphan header becomes a *ghost* unit the views filter out (the `.cpp`
->   check), so its content (`#define`/`enum`/`typedef`/`class`) shows **nowhere** — the reported office
->   bug (a shared header's `#define some_x` and `enum … : UINT8` were missing). **Intended fix:** orphan
->   header → not a unit (skip in `model_deriver._build_units_components` — precompute the set of
->   unit-keys with a source file, skip header files not in it); surface an orphan header's content **only
->   in the units that use it** ("in many places"). **Why deferred = the hard part:** for *functions*
->   "used" = called → the call graph gives the exact 1–2 used (easy, precise). For *defines/enums/types*
->   "used" means the unit's code textually references the macro/type — **no call graph** → showing only
->   the used ones (not all ~1000 in a shared header) needs real usage analysis. **Also known:** the unit
->   header table currently **skips `class`/`struct`** (`docx_exporter.py:251`) and matches declarations by
->   the unit's **own path only** (companion header); `includedHeaders` has a cross-dir path-resolution
->   quirk (resolves relative to the `.cpp` dir). **Abandoned ideas:** a `hasCpp` boolean and a
->   `views.includeHeaderOnlyUnits` config toggle (both rejected). Pick this up only with time to do the
->   used-only analysis properly.
+> - **DONE — orphan-header handling** (2026-07-17, branch `fix/interface-tables-and-unit-diagrams`).
+>   An **orphan header** (`.h/.hpp/.hxx` with no same-name source) contributes its `#define`/`enum`/
+>   `typedef` to the unit-header table of **every unit that USES it** — each unit shows only the subset
+>   it references (never the header's full contents, never in a non-using unit). The "hard part" the
+>   2026-07-15 exploration assumed didn't exist was **already solved**: `model/edges.json` carries
+>   `macroUsers`/`typeUsers` (fid-keyed usage). Whole fix is in
+>   `docx_exporter._build_unit_header_table` (loads edges + a `source_unit_paths` set; an entry not
+>   matched by own-path is included iff it lives in an orphan header AND the unit uses it). **No
+>   `model_deriver` change** — the exporter already emits only `.cpp`-backed unit sections, so the
+>   orphan header never shows as its own unit. **Kept current kinds** (`define`/`enum`/`typedef`); the
+>   `class`/`struct` skip at `docx_exporter.py:251` was **deliberately left as-is** per user. **Known
+>   gap** (accepted): edges only records function-body/signature usage → misses a macro used only in a
+>   global initializer / inside another macro, or an enum referenced only by enumerator value. Fixture:
+>   `SampleCppProject/Layer1/Sample/Core/SharedDefs.h` (orphan; `SHARED_MAX/MIN/SCALE` + `enum
+>   SharedLevel : UINT8`) used by `coreLevelBudget` (Core: MAX+MIN+enum) and `libScaleShared` (Lib:
+>   SCALE), Util uses none. **NOTE:** the header must live in a **mapped component dir** or
+>   `is_project_file` (`_FILE_COMPONENT_MAP`) drops it from the parse entirely. Spec: `DESIGN_SPEC.md`
+>   REQ-UH-01/02. Test: `tests/unit/test_unit_header_orphan.py` (6 cases, filesystem-free). Verified
+>   A/B: Core baseline 2 rows → 5 (+MAX,+MIN,+enum), own `enum Mode` unaffected.
 > - **Committed on branch `fix/direction-transitive-writes`** (off `poc-4`, **PR pending into poc-4**):
 >   **3.4** — interface direction re-derived from `writesGlobalIdsTransitive` at `model_deriver` finalize
 >   (Phase 2), so a function that writes a global only *transitively* (e.g. `indirectWrite`,
 >   `directionAdd`) now shows `In`, not `Out`. Header-defined globals need no special case (global-ID
 >   based). See dated note below.
-> - **PARKED (analysis agreed, not implemented):** **3.6** — orient unit-diagram edges by the interface
->   **owner's** In/Out direction (NOT the shipped `da5f07d`, which is inverted for callee edges → the two
->   units' diagrams contradict); same physical arrow in both diagrams.
-> - **Not started:** macros ingestion (V1 done-criterion), 3.8 (if/else in flowchart), 3.9 (bending/
->   overlapping flowchart edges — already ELK; logged under ROADMAP 3.9), 3.10 (other team).
+> - **Committed on branch `fix/unit-diagram-direction`** (off `fix/direction-transitive-writes`, so it
+>   includes 3.4): **3.6** — unit-diagram edges now oriented by the interface **owner's** In/Out
+>   (`In` → arrow *towards* owner, `Out` → *away*); one interface = one arrow; mutual pairs = two arrows
+>   with the box drawn once. Diagram-only, no model change. See dated note below.
+> - **Pending — partial machinery exists in code, but the issues are NOT fixed** (audited 2026-07-15,
+>   status corrected with user — do not read "code exists" as "done"): **macros ingestion** — `--macros`
+>   is today a single **global** CSV applied to *all* layers (`run.py` → `-D` for Phase 1 +
+>   `clang_macros.json` for the Phase-3 flowchart engine); the requirement is **per-layer macros**, which
+>   is not yet supported → **pending**. **Function hide/unhide (task 4)** — `docx_exporter.py:1282-1568`
+>   already drops functions flagged `f["hidden"]` from the DOCX (interface-table rows, call edges, unit
+>   flowcharts); Phase-3 view JSON does NOT filter `hidden` (only Phase 4 does); exact pending scope still
+>   **TBD with user** → **pending**. **3.8 if/else** — the flowchart builder already renders DECISION
+>   diamonds `{…}` + labeled branch edges (`builder.py`), but the reported depiction issue is unfixed
+>   (needs a concrete repro) → **pending**. **3.9 bending/overlapping edges** — already ELK with tuned
+>   config (`builder.py:54-73`), but the tuning levers (`mergeEdges:true`, ↑spacing, explicit
+>   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
+> - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
+>   its branch — see above.)
+
+> Updated: 2026-07-17 (**orphan-header symbols surface in the using unit's header table**. Branch `fix/interface-tables-and-unit-diagrams`. An **orphan header** = a `.h/.hpp/.hxx` with no same-name source file; it is never its own unit (the DOCX exporter already emits only `.cpp`-backed unit sections), so its `#define`/`enum`/`typedef` previously showed **nowhere** (the reported office bug: a shared header's `#define` + `enum … : UINT8` missing). Fix is isolated to `engine/docx_exporter.py::_build_unit_header_table`: besides the existing own-path matches, it now also emits a `define`/`enum`/`typedef` row when the symbol is defined in an orphan header **and this unit uses it**. "Uses" comes from the already-existing usage index `model/edges.json` (`macroUsers` keyed `name@relFile`, `typeUsers` keyed by qualifiedName) intersected with the unit's own `functionIds` — so each unit shows **only the subset it references**, never the full header, never in a non-using unit. An orphan header is told apart from a **companion** header via a new `source_unit_paths` set (extension-less paths that have a `.cpp/.cc/.cxx`), computed from the **full** unit list before layer filtering; companion-header content is not pulled into other units. The exporter loads `edges.json` (`_load_model_json("edges")`, `{}` if absent) and threads `macro_users`/`type_users`/`source_unit_paths` into the builder. **Kinds unchanged** (`define`/`enum`/`typedef`); the `class`/`struct` skip at `docx_exporter.py:251` was **left as-is** per user. **Known coverage gap (accepted):** edges records usage inside function bodies/signatures only → a macro used only in a global initializer or inside another macro, or an enum referenced only by enumerator value (not its type), is not surfaced. **Fixture placement gotcha:** an orphan header must live in a **mapped component dir** or `parser.is_project_file` (`_FILE_COMPONENT_MAP`) excludes it from the parse entirely — a header under an unconfigured folder (e.g. `Sample/Shared/`) is silently dropped. Fixture: `SampleCppProject/Layer1/Sample/Core/SharedDefs.h` (`SHARED_MAX_ITEMS`/`SHARED_MIN_ITEMS`/`SHARED_SCALE_FACTOR` + `enum SharedLevel : UINT8`), used by `coreLevelBudget` (Core → MAX+MIN+enum) and `libScaleShared` (Lib → SCALE); Util uses none. **Verified A/B** (My Sample, Phase 4 build path): Core header rows 2 → 5 (adds `#define SHARED_MAX_ITEMS`, `#define SHARED_MIN_ITEMS`, `enum SharedLevel`), Lib gets only `SHARED_SCALE_FACTOR`, Util none; own `enum Mode` unaffected; empty-edges baseline reproduces the old (no-surfacing) behavior. Docs: `DESIGN_SPEC.md` new `## Unit Header Table` REQ-UH-01/02. Test: `tests/unit/test_unit_header_orphan.py` (6 cases, filesystem-free, green). Pre-existing broken e2e `test_docx.py` (output/Sample vs output/My-Sample) and stale `test_unit_diagrams_view.py` `_unit_part_id` `-`-vs-`_` failures are **unrelated**. Not committed — working-tree only pending review.)
+
+> Updated: 2026-07-16 (**fix 3.6 — unit-diagram edges oriented by the interface owner's In/Out**. Branch `fix/unit-diagram-direction` off `fix/direction-transitive-writes` (builds on 3.4-correct `direction`). **Diagram-only — no model change** (`model/*.json` untouched; only `output/<group>/unit_diagrams/*.mmd|png` and the embedded DOCX images change; `interface_tables.json` unchanged). `engine/views/unit_diagrams.py` built every cross-unit edge from the raw call relationship (`caller → callee`, labelled with the callee's `interfaceId`) and never consulted `f["direction"]`, so the diagram disagreed with the interface table — a getter (`Out`) *called by* a peer was drawn inbound, opposite the table. Fix: orient each edge by the interface **owner's** direction (owner = unit of the called function) — **`In` → arrow towards owner, `Out` → away**; caller's own direction irrelevant. New `_add_edge(owner, other, iface, dir)` keys `(owner→other)` for `Out`, `(other→owner)` for `In`, fed by two loops (this unit's `calledByIds` oriented by `f`; its `callsIds` oriented by the callee). Owner-relative (unlike the stranded `da5f07d`, which is "this-unit"-relative and makes the two diagrams contradict) ⇒ the **same interface renders as the identical arrow in both units' diagrams**. One interface = one arrow; same-direction interfaces between a pair stack labels on one arrow; a mutual pair = two arrows with the partner **box drawn once** (`external_all = (caller_ids|callee_ids) - internal_set`; both external-edge emit tests gate on it, node-declaration lists unchanged ⇒ no dropped edge, no duplicate node). **Net: only `Out` (getter) edges flip; `In` edges already pointed into the owner so they're unchanged.** Docs: `DESIGN_SPEC.md` REQ-UD-05 ("Call edges"→"Interface edges", owner-oriented) + REQ-UD-06 (placement by arrow direction, mutual partner once). **Verified A/B** (My Sample, Phase 3): 48/48 edge-labels match owner direction in `interface_tables.json`; in-group shared edges identical across diagrams; no self/duplicate. Fix stashed → `CORE_01…11` (Out) `App→Core`/`Hub→Core` (✗) + `Core→Lib`/`Core→Util`; restored → `Core→App`/`Core→Hub` + `Lib→Core`/`Util→Core` (✓), `CORE_02` (In) `App→Core` both ways. Not committed — working-tree only pending review.)
 
 > Updated: 2026-07-15 (**fix 3.4 — interface direction from transitive global writes**. Branch `fix/direction-transitive-writes` off `poc-4`. Direction was set once in the parser (`parser.py:1308`) from **direct** writes only (`write_raw`), *before* Phase 2's `_propagate_global_access` fills the transitive global sets — so a function that writes a global **only via a callee** (e.g. `indirectWrite(v){ writeGlobal(v); }`, or `directionAdd` → `add` → `g_utilsCounter`) wrongly showed `Out`. Fix (isolated to `engine/model_deriver.py`, ~L1015): in the finalize normalize (runs **after** `_propagate_global_access`, so `writesGlobalIdsTransitive` is populated) re-derive `direction = "In" if (writesGlobalIdsTransitive or writesGlobalIds) else "Out"`. The parser's direct-only value is now **preliminary**; the deriver refines it — `parser.py` unchanged. Two-phase converge-then-derive is order-safe (X = In iff any callee's write-set is non-empty ⇒ folded into X's transitive set). Only transitive-only writers flip `Out→In`; reads-only and no-access stay `Out`; direct writers stay `In`. **Header-defined globals need no special case** — direction is global-**ID** based, so a global DEFINED in a header (`g_hdrGlobal` in `ReadWrite.h`, non-`extern`) is tracked like any other: `setHdrGlobal` (direct) = In, `setHdrGlobalIndirect` (transitive) = In. Fixtures: `SampleCppProject/Layer1/Direction/ReadWrite.{h,cpp}` gained `g_hdrGlobal` + `setHdrGlobal`/`setHdrGlobalIndirect`; the stale direction comments (had read→In / write→Out **backwards**) were corrected to read→Out / write→In. **Verified A/B** (Full group, Phase 2): fix stashed → `indirectWrite`/`directionAdd`/`setHdrGlobalIndirect` = `Out`; restored → `In`; direct writers `writeGlobal`/`setHdrGlobal` = `In` both ways. **Impact note:** broad by design — any function transitively reaching a common writer (logger/counter) becomes `In`. Also confirmed this run: **poc-4 advanced to `f4fc004` = the merge of PR #41 (3.1 + 3.2)**, so 3.1/3.2 is now *on poc-4* and this branch sits on top of it. Committed; PR pending into `poc-4`. **3.3** is resolved by 3.1 — verification-only, no code.)
 
@@ -1328,6 +1347,19 @@ Based on direct global access recorded by `visit_global_access`:
 Phase 2 forces every function's direction to `"In"` or `"Out"` (never empty)
 and every global to `"In/Out"`.
 
+**`directionReason` (audit trail).** Alongside `direction`, the finalize loop in
+`model_deriver` (after `_propagate_global_access`) writes a human-readable
+`directionReason` on every function and global so the In/Out decision is
+verifiable in the interface tables (which already surface `f["directionReason"]`
+as the `reason` field). Forms:
+- `In: writes global(s) <names> directly.` — has a direct write.
+- `In: writes global(s) transitively: <g> (via <callee(s)>); …` — transitive-only
+  write; names the direct callee(s) that actually write each global, so the chain
+  is auditable.
+- `Out: reads global(s) <names> but writes none.`
+- `Out: accesses no globals (reads none, writes none).` — pure function.
+- Globals: `In/Out: global variables are bidirectional interfaces.`
+
 ### Final keying (`build_metadata` + `utils.make_function_key`)
 
 Final model key: `component|unit|qualifiedName|paramTypes`.
@@ -1568,6 +1600,8 @@ Full logic and column definitions: `docs/spec/DESIGN_SPEC.md` — Interface Tabl
 - For each function: builds `callerUnits` / `calleesUnits` (all units including
   same-module), and `sourceDest` (external units only; `"-"` if none).
 - Enriches parameters with `range` from the data dictionary via `get_range()`.
+- Function entries also carry `returnType` (verbatim from the model; `""` when
+  absent → rendered as `VOID`). Globals have no `returnType`.
 - Strips file extensions from `location.file`.
 - Columns: Interface ID, Interface Name, Information, Data Type, Data Range,
   Direction (In/Out), Source/Destination, Interface Type.
@@ -2017,7 +2051,18 @@ Name;`. Deduplicates by declaration text, preferring richer `name=value` info.
 8 columns: Interface ID | Interface Name | Information | Data Type |
 Data Range | Direction(In/Out) | Source/Destination | Interface Type
 
-- Functions: `Data Type` = `; `.join of param types; `Data Range` = `; `.join of param ranges from `get_range()`.
+- Functions: `Data Type` = `; `.join of param types (or `VOID` if none), then a
+  second line `return: <returnType>`. `void` (any casing) is displayed as `VOID`;
+  other types render verbatim. `Data Range` = `; `.join of param ranges from
+  `get_range()`, then a second line `return: <returnRange>` where `returnRange` is
+  `get_range(returnType)` (the view enriches each function entry with `returnRange`;
+  a void return shows range `NA`, not a range value). When a function has **no** captured return type the
+  `return:` line is omitted from both columns (not shown as `VOID`/`NA`). The `\n`
+  renders as a Word line break in DOCX and needs `whitespace-pre-line` on the web
+  cell (`DocumentInspectorPage.tsx`); the compare/diff view flattens it to a space
+  via `_table_to_markdown`. Return type is captured verbatim from Clang's canonical
+  spelling (`parser.py` unchanged — a `VOID` **macro** resolves to `void` via
+  `--macros`, then the renderer uppercases it back to `VOID`).
 - Globals: `Data Type` = variable type; `Data Range` from data dictionary.
 - Private functions/globals are already filtered out by Phase 3.
 - `Interface Name` is generated by `_readable_label(qn)` (strip prefixes,

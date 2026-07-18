@@ -180,6 +180,30 @@ Global variable rows have no caller or callee lists.
 
 ---
 
+## Unit Header Table
+
+**Output:** One table per unit, embedded in the DOCX unit section. Lists the unit's global variables, typedefs, enums and defines.
+
+---
+
+### REQ-UH-01 — Own declarations
+
+The table lists every public global variable, typedef, enum and define **defined in the unit's own file(s)** (its source and companion header). Structs/classes are out of scope.
+
+**Verification:** A unit's own typedef/enum/define entries appear; its private globals do not.
+
+---
+
+### REQ-UH-02 — Orphan-header symbols (used-only)
+
+Besides its own declarations, a unit's table also lists the **define / enum / typedef** symbols that this unit **uses** which are defined in an **orphan header** — a header (`.h/.hpp/.hxx`) that has **no same-name source file**. A symbol from an orphan header appears **only in the units that reference it**: each unit shows exactly the subset it uses, never the header's full contents, and never in a unit that does not use it. Companion headers (a header whose stem has a `.cpp/.cc/.cxx`) are not orphan headers, so their content is not pulled into other units.
+
+Usage is taken from the precomputed usage index `model/edges.json` (`macroUsers` keyed `name@relFile`, `typeUsers` keyed by qualified name), intersected with the unit's own `functionIds`. **Known coverage gap:** the index records usage inside function bodies/signatures only, so a macro used solely in a global initializer or inside another macro, or an enum referenced only by its enumerator values (not its type), is not surfaced.
+
+**Verification:** Given an orphan header with several symbols used by different units, each unit's header table shows only the symbols it uses; a non-using unit shows none; a companion header of another unit is never pulled in. (`tests/unit/test_unit_header_orphan.py`.)
+
+---
+
 ## Unit Architecture Diagrams
 
 **Output:** One diagram per unit, embedded in the DOCX unit section.
@@ -219,21 +243,22 @@ The diagram flows left-to-right. The current unit's module is visually grouped a
 
 ---
 
-### REQ-UD-05 — Call edges
+### REQ-UD-05 — Interface edges
 
-An arrow connects two units for every cross-unit call relationship. The arrow is labelled with the interface identifier of the called function. When a unit makes multiple calls to another unit, all interface identifiers appear on the same arrow. A unit does not draw an arrow to itself.
+An arrow connects two units for every cross-unit interface (a called function). Each arrow is **oriented by the interface owner's direction**, where the owner is the unit of the called function: an **`Out`** interface points **away from** the owner (owner → other); an **`In`** interface points **towards** the owner (other → owner). The caller's own direction does not affect the edge. The arrow is labelled with the interface identifier(s); interfaces between the same two units in the **same** direction share one arrow, while interfaces in opposite directions form two arrows. Because orientation is owner-relative (not relative to "this unit"), the **same interface renders as the identical arrow in both units' diagrams**. A unit does not draw an arrow to itself.
 
-**Verification:** Known cross-unit calls produce labelled arrows with `IF_` identifiers. Same-unit calls produce no arrow. Multiple calls share one arrow with all identifiers.
+**Verification:** For each `IF_` label, the arrow matches that interface's In/Out in the interface table (In → into the owner, Out → out of the owner), and the identical arrow appears in both the owner's and the partner's diagram. Same-unit calls produce no arrow.
 
 ---
 
 ### REQ-UD-06 — Node placement
 
-External units that call into the current module appear to the left of the module subgraph.
-External units that the current module calls appear to the right.
+External units with an arrow pointing **into** the current unit appear to the left of the module subgraph.
+External units with an arrow pointing **out of** the current unit appear to the right.
+A partner that has an arrow in **each** direction (a mutual pair) is drawn on **both** sides: a left box receiving the inbound arrow (labelled with the inbound interface id(s)) and a right box sending the outbound arrow (labelled with the outbound interface id(s)). The two boxes carry the same unit label but distinct node ids. The same rule applies to same-module peers inside the subgraph, split top (caller) vs bottom (callee).
 The current unit and its same-module peers occupy the subgraph in the centre.
 
-**Verification:** External caller nodes appear before the subgraph declaration. External callee nodes appear after the subgraph close.
+**Verification:** External nodes with an inbound arrow appear before the subgraph declaration; external nodes with an outbound arrow appear after the subgraph close; a bidirectional partner appears in both positions with interface ids split by arrow direction.
 
 ---
 

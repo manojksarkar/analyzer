@@ -312,6 +312,67 @@ class TestBuildUnitDiagram:
         assert "class Mod_peer internal" in result
         assert "class Mod_peer mainUnit" not in result
 
+    def test_mutual_external_partner_drawn_on_both_sides(self):
+        # svc both calls into core (inbound) and is called by core (outbound) => mutual.
+        unit_key = "Mod|core"
+        svc_key = "Ext|svc"
+        unit_info = {"fileName": "core.cpp", "functionIds": ["f_out", "f_in"], "globalVariableIds": []}
+        units_data = {
+            unit_key: unit_info,
+            svc_key: {"fileName": "svc.cpp", "functionIds": ["g1", "g2"], "globalVariableIds": []},
+        }
+        functions_data = {
+            # core owns f_out (Out) => outbound arrow core -> svc, svc on the RIGHT
+            "f_out": {"qualifiedName": "Mod::a", "callsIds": [], "calledByIds": ["g1"],
+                      "interfaceId": "IFC_OUT", "direction": "Out"},
+            # core owns f_in (In) => inbound arrow svc -> core, svc on the LEFT
+            "f_in": {"qualifiedName": "Mod::b", "callsIds": [], "calledByIds": ["g2"],
+                     "interfaceId": "IFC_IN", "direction": "In"},
+            "g1": {"qualifiedName": "Ext::g1", "callsIds": ["f_out"], "calledByIds": []},
+            "g2": {"qualifiedName": "Ext::g2", "callsIds": ["f_in"], "calledByIds": []},
+        }
+        fid_to_unit = {"f_out": unit_key, "f_in": unit_key, "g1": svc_key, "g2": svc_key}
+        unit_names = {unit_key: "core", svc_key: "svc"}
+        result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        lines = result.splitlines()
+        end_idx = next(i for i, l in enumerate(lines) if l.strip() == "end")
+        before = "\n".join(lines[:end_idx])
+        after = "\n".join(lines[end_idx:])
+        # left (caller) box appears before subgraph end; right (callee) box after, with distinct id
+        assert "Ext_svc[" in before
+        assert "Ext_svc__out[" in after
+        # interface ids split by direction
+        assert "Ext_svc -->|IFC_IN| Mod_core" in result
+        assert "Mod_core -->|IFC_OUT| Ext_svc__out" in result
+
+    def test_mutual_internal_partner_split_within_module(self):
+        # peer in the same module, mutual => two boxes inside the subgraph, distinct ids.
+        unit_key = "Mod|core"
+        peer_key = "Mod|peer"
+        unit_info = {"fileName": "core.cpp", "functionIds": ["f_out", "f_in"], "globalVariableIds": []}
+        units_data = {
+            unit_key: unit_info,
+            peer_key: {"fileName": "peer.cpp", "functionIds": ["g1", "g2"], "globalVariableIds": []},
+        }
+        functions_data = {
+            "f_out": {"qualifiedName": "Mod::a", "callsIds": [], "calledByIds": ["g1"],
+                      "interfaceId": "IFC_OUT", "direction": "Out"},
+            "f_in": {"qualifiedName": "Mod::b", "callsIds": [], "calledByIds": ["g2"],
+                     "interfaceId": "IFC_IN", "direction": "In"},
+            "g1": {"qualifiedName": "Mod::g1", "callsIds": ["f_out"], "calledByIds": []},
+            "g2": {"qualifiedName": "Mod::g2", "callsIds": ["f_in"], "calledByIds": []},
+        }
+        fid_to_unit = {"f_out": unit_key, "f_in": unit_key, "g1": peer_key, "g2": peer_key}
+        unit_names = {unit_key: "core", peer_key: "peer"}
+        result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
+        # both the caller-side and callee-side boxes exist and both are styled internal
+        assert "Mod_peer[" in result
+        assert "Mod_peer__out[" in result
+        assert "Mod_peer" in result and "Mod_peer__out" in result
+        assert "class " in result and "internal" in result
+        assert "Mod_peer -->|IFC_IN| Mod_core" in result
+        assert "Mod_core -->|IFC_OUT| Mod_peer__out" in result
+
     def test_allowed_components_marks_internal_units(self):
         unit_key = "Mod|core"
         peer_key = "Mod|peer"
