@@ -984,6 +984,16 @@ def _add_unit_header_table(doc, unit_header_rows: List[Dict[str, str]], font_sma
         _set_cell_font(row[1], font_small)
 
 
+def _param_type_label(p) -> str:
+    """Render a parameter as 'type name' (e.g. 'uint8_t signalId').
+
+    Falls back to type-only when the parameter has no captured name.
+    """
+    t = (p.get("type", "") or "").strip()
+    n = (p.get("name", "") or "").strip()
+    return f"{t} {n}".strip() if n else t
+
+
 def _add_interface_table(doc, interfaces, font_small):
     table = doc.add_table(rows=1, cols=len(COLS))
     table.style = "Table Grid"
@@ -999,7 +1009,7 @@ def _add_interface_table(doc, interfaces, font_small):
             data_range = iface.get("range", "") or "NA"
         else:
             params = iface.get("parameters", [])
-            param_types = "; ".join(p.get("type", "") for p in params) if params else "VOID"
+            param_types = "; ".join(_param_type_label(p) for p in params) if params else "VOID"
             param_ranges = "; ".join(p.get("range", "") for p in params) if params else "NA"
             ret = (iface.get("returnType") or "").strip()
             if ret:
