@@ -19,6 +19,7 @@ in llm_core.LlmClient.
 """
 
 import os
+import re
 import sys
 from typing import Dict, List, Optional
 
@@ -73,6 +74,75 @@ def load_abbreviations(project_root: str, config: dict) -> dict:
         return result
     except OSError:
         return {}
+
+
+def load_domain_context(project_root: str, config: dict) -> str:
+    """Load the domain brief from config (llm.domainContextPath).
+
+    Free text injected into description prompts so the model stays anchored to
+    the codebase's actual domain instead of inventing unrelated vocabulary
+    (task 3.14). Format: plain text, one thought per line; `#` lines are
+    comments and blank lines are dropped. Returns "" when unset/missing.
+    """
+    path = (config.get("llm") or {}).get("domainContextPath", "").strip()
+    if not path:
+        return ""
+    full_path = os.path.join(project_root, path) if not os.path.isabs(path) else path
+    if not os.path.isfile(full_path):
+        return ""
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            lines = [ln.strip() for ln in f]
+        kept = [ln for ln in lines if ln and not ln.startswith("#")]
+        return "\n".join(kept).strip()
+    except OSError:
+        return ""
+
+
+# Memoized by config path so the brief file is read once per process, not on
+# every description call. _call_llm has no base_path, so resolve the project
+# root via core.paths (same accessor the aux-description cache uses).
+_DOMAIN_CONTEXT_CACHE: Dict[str, str] = {}
+
+
+def _get_domain_context(config: dict) -> str:
+    path = (config.get("llm") or {}).get("domainContextPath", "").strip()
+    if not path:
+        return ""
+    if path in _DOMAIN_CONTEXT_CACHE:
+        return _DOMAIN_CONTEXT_CACHE[path]
+    try:
+        from core.paths import paths
+        root = paths().project_root
+    except Exception:
+        root = os.getcwd()
+    text = load_domain_context(root, config)
+    _DOMAIN_CONTEXT_CACHE[path] = text
+    return text
+
+
+def _scrub_blocklist(text: str, config: dict) -> str:
+    """Remove blocklisted whole-words from a generated description (task 3.14).
+
+    Configurable via llm.descriptionBlocklist. Case-insensitive, word-boundary
+    matched (so a real identifier like `videoDecoderId` is left intact — only
+    free-standing words are stripped). Cleans up the whitespace/punctuation left
+    behind. Empty/absent list is a no-op.
+    """
+    if not text:
+        return text
+    words = [w.strip() for w in ((config.get("llm") or {}).get("descriptionBlocklist") or []) if w and w.strip()]
+    if not words:
+        return text
+    pattern = r"\b(?:" + "|".join(re.escape(w) for w in words) + r")\b"
+    scrubbed = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    # Tidy artifacts left by removal: doubled spaces, spaces before punctuation,
+    # doubled/leading punctuation.
+    scrubbed = re.sub(r"\s+([,.;:])", r"\1", scrubbed)
+    scrubbed = re.sub(r"([,;:])\s*(?=[,.;:])", "", scrubbed)
+    scrubbed = re.sub(r"\s{2,}", " ", scrubbed)
+    scrubbed = scrubbed.strip(" ,;:")
+    return scrubbed.strip()
 
 
 def extract_source(base_path: str, loc: dict) -> str:
@@ -182,13 +252,24 @@ def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "defau
         if not HAS_REQUESTS:
             _log.warning("requests not installed. pip install requests")
         return ""
+    # Task 3.14: for description prompts, anchor the model to the project's real
+    # domain so it stops inventing unrelated vocabulary. Appended to whatever
+    # system prompt is already in play (get_rich_description supplies one).
+    if kind == "description":
+        domain = _get_domain_context(config)
+        if domain:
+            system = f"{system}\n\n{domain}".strip() if system else domain
     text = client.generate(system, prompt)
     if not text and client.provider == "ollama":
         _log.warning(
             "Ollama returned no response (prompt may exceed context window or "
             "ollama not running). Start with: ollama serve"
         )
-    return text or ""
+    text = text or ""
+    # Task 3.14: deterministic backstop — strip blocklisted words from descriptions.
+    if kind == "description":
+        text = _scrub_blocklist(text, config)
+    return text
 
 
 # ---------------------------------------------------------------------------

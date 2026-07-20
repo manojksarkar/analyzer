@@ -72,10 +72,12 @@ def _build_interface_tables(
             def _keep_unit(u: str) -> bool:
                 return u != unit_key
 
+            # 3.15: Source/Destination lists CALLERS only. Every cross-unit relationship is
+            # documented once, from the provider (callee unit)'s perspective; a function's own
+            # callee side is surfaced in those partner units' rows instead. callee_units is still
+            # computed and emitted as the calleesUnits field below for completeness.
             callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _keep_unit(u)))
-            callees_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in callee_units if _keep_unit(u)))
-            parts = [', '.join(callers_fmt), ', '.join(callees_fmt)]
-            source_dest = '; '.join(p for p in parts if p) if (callers_fmt or callees_fmt) else "-"
+            source_dest = ', '.join(callers_fmt) if callers_fmt else "-"
             raw_params = f.get("parameters", [])
             params = [{**p, "range": get_range(p.get("type", ""), dd)} for p in raw_params]
             e = {

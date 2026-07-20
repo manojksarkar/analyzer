@@ -126,13 +126,12 @@ def _build_unit_diagram(
         if fid not in functions_data:
             continue
         f = functions_data[fid]
-        # (1) this unit OWNS f: each external caller edge is oriented by f's own direction
+        # 3.15: only this unit's OWNED (caller) edges are drawn. Each caller edge is oriented by
+        # f's own direction. Callee edges (functions this unit uses) are intentionally dropped —
+        # they render in the partner (provider) unit's own diagram, so every relationship still
+        # appears exactly once across the model, from the provider's perspective.
         for caller_fid in f.get("calledByIds", []) or []:
             _add_edge(unit_key, fid_to_unit.get(caller_fid), f.get("interfaceId", ""), _dir_of(f))
-        # (2) callees this unit USES are owned by the partner: orient by the callee's direction
-        for callee_fid in f.get("callsIds", []) or []:
-            callee_f = functions_data.get(callee_fid, {})
-            _add_edge(fid_to_unit.get(callee_fid), unit_key, callee_f.get("interfaceId", ""), _dir_of(callee_f))
 
     caller_ids = {fr for (fr, to) in edges if to == this_id}
     callee_ids = {to for (fr, to) in edges if fr == this_id}

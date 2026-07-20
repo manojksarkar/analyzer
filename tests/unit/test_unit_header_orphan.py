@@ -141,6 +141,13 @@ class TestTextualFallback:
         rows = self._build_with_text(self._other_unit(), {"Level"})
         assert any("LO=0" in (r.get("information") or "") for r in rows)
 
+    def test_orphan_enum_recovered_via_enumerator_only(self):
+        # The unit references only the enumerator HI, never the enum type Level.
+        # Neither edges (typeUsers) nor the type-name text test would catch it, so
+        # the enum must be recovered by matching the enumerator name.
+        rows = self._build_with_text(self._other_unit(), {"HI"})
+        assert any("LO=0" in (r.get("information") or "") for r in rows)
+
 
 class TestCommentStringStripping:
     def test_symbol_in_comment_or_string_is_stripped(self):

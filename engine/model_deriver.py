@@ -15,6 +15,20 @@ PROJECT_ROOT = _p.project_root
 MODEL_DIR = _p.model_dir
 os.makedirs(MODEL_DIR, exist_ok=True)
 
+# Interface In/Out direction — name-based Set/Get match (roadmap 3.17). We tokenize the function
+# name into words across snake_case and camelCase, then treat it as a setter/getter only if a
+# whole word equals "set"/"get". This catches every convention in use — prefix ('SetX'/'setX'),
+# underscored ('Module_SetX', 'SET_X') AND infix camelCase ('coreSetResult', 'adcGetValue') —
+# while excluding 'Setup', 'Settings', 'Setter', 'Reset', 'offset', 'target' (each a single word
+# that merely contains the letters). Case-insensitive by lowercasing the tokens.
+#   _WORD_RE splits identifier chunks: ACRONYM | Capitalized | lowercase-run | digits.
+_WORD_RE = re.compile(r'[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|\d+')
+
+
+def _name_words(name: str) -> set:
+    """Lowercased word tokens of an identifier (camelCase + snake_case aware)."""
+    return {w.lower() for w in _WORD_RE.findall(name or "")}
+
 
 def _load_model():
     from core.model_io import load_model, METADATA, FUNCTIONS, GLOBALS, ModelFileMissing
@@ -1012,7 +1026,12 @@ def main():
 
     _enrich_from_llm(base_path, functions_data, global_variables_data, config, only_globals=only_globals)
 
-    # Functions: In if the function writes a global (directly OR transitively), else Out (3.4).
+    # Functions: In/Out direction by precedence (roadmap 3.17):
+    #   1. Name match — Set (write) tested FIRST, then Get (read). "Set dominates" mirrors the
+    #      both-read-and-write -> In rule of the global-access fallback. See _name_words/_WORD_RE.
+    #   2. else a non-void return value -> Out.
+    #   3. else the global-access rule (3.4): writes a global (directly OR transitively) -> In,
+    #      else reads one -> Out, else Out. This is also the default when nothing above matches.
     # Runs after _propagate_global_access, so writesGlobalIdsTransitive is populated — a function
     # that writes a global only via a callee (e.g. indirectWrite, directionAdd) is correctly In,
     # not Out (the parser's direct-write-only value at parser.py:1308 is preliminary; refined here).
@@ -1036,30 +1055,48 @@ def main():
         return sorted(set(writers))
 
     for fentry in functions_data.values():
-        direct_w = list(fentry.get("writesGlobalIds") or [])
-        trans_w = list(fentry.get("writesGlobalIdsTransitive") or [])
-        reads = list(fentry.get("readsGlobalIdsTransitive") or fentry.get("readsGlobalIds") or [])
-        if direct_w or trans_w:
+        name = short_name(fentry.get("qualifiedName", "")) or ""
+        words = _name_words(name)
+        ret = (fentry.get("returnType") or "").strip()
+        returns_value = bool(ret) and ret != "void"  # "void *" is a value; "" falls through to rule 3
+
+        # Rule 1: name-based Set/Get. Set tested first so a write intent wins.
+        if "set" in words:
             fentry["direction"] = "In"
-            if direct_w:
-                names = ", ".join(_gname(g) for g in sorted(direct_w))
-                fentry["directionReason"] = f"In: writes global(s) {names} directly."
-            else:
-                # transitive-only: written by a callee, not by this function's own body.
-                # Name the responsible callee(s) per global so the chain is verifiable.
-                parts = []
-                for g in sorted(trans_w):
-                    writers = _writers_of(fentry, g)
-                    via = ", ".join(writers) if writers else "a callee"
-                    parts.append(f"{_gname(g)} (via {via})")
-                fentry["directionReason"] = f"In: writes global(s) transitively: {'; '.join(parts)}."
-        else:
+            fentry["directionReason"] = f"In: function name '{name}' contains 'Set' (writes/updates state)."
+        elif "get" in words:
             fentry["direction"] = "Out"
-            if reads:
-                names = ", ".join(_gname(g) for g in sorted(reads))
-                fentry["directionReason"] = f"Out: reads global(s) {names} but writes none."
+            fentry["directionReason"] = f"Out: function name '{name}' contains 'Get' (reads/returns state)."
+        # Rule 2: a non-void return value is data flowing out.
+        elif returns_value:
+            fentry["direction"] = "Out"
+            fentry["directionReason"] = f"Out: returns a value ({ret})."
+        # Rule 3 (3.4 fallback): global access. Also the default when nothing above matched.
+        else:
+            direct_w = list(fentry.get("writesGlobalIds") or [])
+            trans_w = list(fentry.get("writesGlobalIdsTransitive") or [])
+            reads = list(fentry.get("readsGlobalIdsTransitive") or fentry.get("readsGlobalIds") or [])
+            if direct_w or trans_w:
+                fentry["direction"] = "In"
+                if direct_w:
+                    names = ", ".join(_gname(g) for g in sorted(direct_w))
+                    fentry["directionReason"] = f"In: writes global(s) {names} directly."
+                else:
+                    # transitive-only: written by a callee, not by this function's own body.
+                    # Name the responsible callee(s) per global so the chain is verifiable.
+                    parts = []
+                    for g in sorted(trans_w):
+                        writers = _writers_of(fentry, g)
+                        via = ", ".join(writers) if writers else "a callee"
+                        parts.append(f"{_gname(g)} (via {via})")
+                    fentry["directionReason"] = f"In: writes global(s) transitively: {'; '.join(parts)}."
             else:
-                fentry["directionReason"] = "Out: accesses no globals (reads none, writes none)."
+                fentry["direction"] = "Out"
+                if reads:
+                    names = ", ".join(_gname(g) for g in sorted(reads))
+                    fentry["directionReason"] = f"Out: reads global(s) {names} but writes none."
+                else:
+                    fentry["directionReason"] = "Out: accesses no globals (reads none, writes none)."
     # Globals: In/Out
     for g in global_variables_data.values():
         g["direction"] = "In/Out"

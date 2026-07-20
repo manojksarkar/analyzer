@@ -309,8 +309,17 @@ def _build_unit_header_table(
                     continue
             else:
                 _qn = t.get("qualifiedName") or _type_name
-                if (_qn not in used_type_qns
-                        and _sym_name not in text_names and _qn not in text_names):
+                _hit = (_qn in used_type_qns
+                        or _sym_name in text_names or _qn in text_names)
+                # An enum can be used purely via its enumerators (e.g. `x = eNone`)
+                # without the enum type name ever appearing in source or edges —
+                # recover it when any enumerator name shows up in this unit's text.
+                if not _hit and kind == "enum":
+                    _hit = any(
+                        (e.get("name") or "") in text_names
+                        for e in (t.get("enumerators") or [])
+                    )
+                if not _hit:
                     continue
         line = int(loc.get("line") or 0)
         if kind == "typedef":
@@ -984,6 +993,16 @@ def _add_unit_header_table(doc, unit_header_rows: List[Dict[str, str]], font_sma
         _set_cell_font(row[1], font_small)
 
 
+def _param_type_label(p) -> str:
+    """Render a parameter as 'type name' (e.g. 'uint8_t signalId').
+
+    Falls back to type-only when the parameter has no captured name.
+    """
+    t = (p.get("type", "") or "").strip()
+    n = (p.get("name", "") or "").strip()
+    return f"{t} {n}".strip() if n else t
+
+
 def _add_interface_table(doc, interfaces, font_small):
     table = doc.add_table(rows=1, cols=len(COLS))
     table.style = "Table Grid"
@@ -999,7 +1018,7 @@ def _add_interface_table(doc, interfaces, font_small):
             data_range = iface.get("range", "") or "NA"
         else:
             params = iface.get("parameters", [])
-            param_types = "; ".join(p.get("type", "") for p in params) if params else "VOID"
+            param_types = "; ".join(_param_type_label(p) for p in params) if params else "VOID"
             param_ranges = "; ".join(p.get("range", "") for p in params) if params else "NA"
             ret = (iface.get("returnType") or "").strip()
             if ret:

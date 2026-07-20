@@ -85,7 +85,9 @@
     "retries": 1,
     "fewShotExamplesDir": "few_shot_examples",
     "abbreviationsPath": "config/abbreviations.txt",
-    "cacheVersion": 1,
+    "domainContextPath": "config/domain.txt",
+    "descriptionBlocklist": ["audio", "video"],
+    "cacheVersion": 2,
     "enrichment": {
       "twoPassDescriptions": false,
       "selfReview": false,

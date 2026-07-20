@@ -21,8 +21,11 @@
 >   `class`/`struct` skip at `docx_exporter.py:251` was **deliberately left as-is** per user. **Usage =
 >   edges.json ∪ textual scan** of the unit's own source (comments/strings stripped) — the scan closes
 >   the edges gap for **file-scope** macro usage (array size / global initializer / macro-in-macro) that
->   `macroUsers` misses; residual gap only for an enumerator-value usage whose spelling never appears in
->   the unit's own text. Fixture:
+>   `macroUsers` misses. **Enumerator-only usage** (a unit references `eNone` but never the enum type
+>   `SomeEnum` — parser records no `typeUsers` edge for a bare enum-constant `DECL_REF_EXPR`, and the
+>   type name never appears in text) is now recovered by also matching an orphan enum when **any of its
+>   enumerator names** appears in the unit's own text (2026-07-20, `_build_unit_header_table` enum
+>   fallback). Fixture:
 >   `SampleCppProject/Layer1/Sample/Core/SharedDefs.h` (orphan; `SHARED_MAX/MIN/SCALE` + `enum
 >   SharedLevel : UINT8`) used by `coreLevelBudget` (Core: MAX+MIN+enum) and `libScaleShared` (Lib:
 >   SCALE), Util uses none. **NOTE:** the header must live in a **mapped component dir** or
@@ -52,6 +55,10 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-07-19 (**second V1 correctness batch logged (3.11–3.19) from client/office review — all ADDITIONS, nothing reversed** per user. In `docs/planning/ROADMAP.md` task 3. Verified against code where noted: **3.11** BOOL32 return shows literal `TRUE` not `TRUE/FALSE` in **Output Name** — root cause `model_deriver._enrich_behaviour_names` (`:548-564`) uses the return **expression's** first identifier; fix = boolean return → `TRUE/FALSE` (+ Data Range, `get_range_for_type` has no bool case) [needs more checking]. **3.12** void param → Input Name should be `VOID` not a global (`:539-546` falls back to first written/read global) [pending manager]. **3.13** some `#define`s missing from header [needs repro; likely file-scope/macro-in-macro edges gap]. **3.14** LLM descriptions contain irrelevant domain words (audio/video) → **blocklist now** (audio, video; extensible), root-cause dig later [approach agreed]. **3.15** Source/Dest + unit diagrams keep **only callers** (`calledBy`), drop callees (`calls`); refines 3.5/3.6 [**IMPLEMENTED 2026-07-19, uncommitted** on `v1-fixes-more`: `interface_tables.py` `sourceDest` = callers only; `unit_diagrams.py` callee loop deleted. Verified A/B (8 Sample rows drop `; <callees>`; provenance holds; diagram has no orphan nodes). **Sample snapshot regen DEFERRED to end of 3.11–3.19 batch** (per user 2026-07-19: regenerate all Sample snapshots once, after all fixes). The snapshot is *already* stale on this branch independent of 3.15 (vs 3.5/REQ-IT-12 + the return-type commits), so e2e `test_snapshot` stays red until the batch-end regen — expected, not a 3.15 regression]. **3.16** Source/Dest missing via macro-wrapped **SVC** call (a unit in the *service* component of the **client's** project, not our sample) [needs client project]. **3.17** In/Out new precedence: (1) Get/Set in name (Get→Out, Set→In), (2) returns value→Out, (3) void return → Set→In / Get→Out / both→In — supersedes current global-only logic (`:1016-1066`, the 3.4 rule) [confirmed, full spec coming]. **3.18** Data Type column add variable name alongside type (`docx_exporter.py:1002` shows type only) [confirmed]. **3.19** unit-header type visibility: same-component types used in functions shown; cross-component type shown only if not used in any other unit [look later]. Framed as additions, not reversals of 3.4/3.5/3.6.)
+
+> Updated: 2026-07-18 (**V1-fixes status reconciled + flowchart-in-DOCX verified resolved**. Traced the Phase-3→Phase-4 name-matching chain end to end: the flowchart engine writes PNGs as `{source_basename_stem}_{safe_filename(qualifiedName)}.png` (`views/flowcharts.py:1157`; JSON stem = source basename via `flowchart/output/writer.py:44`), and `docx_exporter._append_flowchart_entries`/`_resolve_flowchart_pngs` now try **4 candidate stems** (`{unit_prefix|unit_name_flowchart}_{func_qn|func_name}`, `docx_exporter.py:1611-1616`) — the 2nd matches the engine exactly. Slice-aware (`{stem}_part_K_of_N.png` from `_maybe_slice_tall_png`) with a diagnostic log emitted before the mermaid-text fallback (`docx_exporter.py:944-956`). All committed (predates the `backend/`→`engine/` rename; landed on `poc-4`). **`docs/planning/ROADMAP.md` synced:** task-3 top item "flowcharts missing from DOCX" ✅ resolved; 3.5 ✅ (REQ-IT-12, all non-self units), 3.7 ✅ (access specifier) marked done; 3.1–3.4/3.6 already done. **Remaining V1 fixes:** 3.8 (if/else depiction — needs repro), 3.9 (bending/overlapping edges — ELK tuning levers not yet applied), 3.10 (dynamic-behaviour — blocked/under-specified), and **per-layer macros** (`--macros` is still a single global CSV). Plus non-fix V1 work: deploy (task 2), function hide/unhide scope (task 4, TBD with user), release/client review (task 5).)
 
 > Updated: 2026-07-17 (**multi-line `#define` value no longer truncated in the unit-header table**. `parser._scan_defines` collected continuation lines (`\`-terminated) into the `text`/declaration field but parsed **`value`** from the **first line only** (`after = stripped[len("#define"):]`), so a macro like `#define SHARED_MASK ((1<<0) | \ (1<<1) | \ (1<<2))` showed only `((1 << 0) | \` in the **Information** column. Fix (`engine/parser.py` ~L1400): build a `logical` one-line form by joining all `macro_lines` with the trailing `\` stripped, then parse name/value from that → `value = ((1 << 0) | (1 << 1) | (1 << 2))`. `text` (declaration column) still shows the raw multi-line macro. Verified via `SampleCppProject/Layer1/Sample/Core/SharedDefs.h` `SHARED_MASK` (used by `coreLevelBudget`): dataDictionary `value` full + DOCX Information cell full. Parser is a script (not importable — runs argv parse + libclang at import), so no isolated unit test; the fixture macro is the regression anchor.)
 
@@ -1351,17 +1358,34 @@ Based on direct global access recorded by `visit_global_access`:
 Phase 2 forces every function's direction to `"In"` or `"Out"` (never empty)
 and every global to `"In/Out"`.
 
-**`directionReason` (audit trail).** Alongside `direction`, the finalize loop in
-`model_deriver` (after `_propagate_global_access`) writes a human-readable
-`directionReason` on every function and global so the In/Out decision is
-verifiable in the interface tables (which already surface `f["directionReason"]`
-as the `reason` field). Forms:
-- `In: writes global(s) <names> directly.` — has a direct write.
-- `In: writes global(s) transitively: <g> (via <callee(s)>); …` — transitive-only
+**Phase 2 direction precedence (roadmap 3.17).** The finalize loop in `model_deriver`
+(after `_propagate_global_access`) decides each function's direction by the first rule
+that applies — the parser's `build_metadata` value above is only the rule-3 fallback:
+1. **Name match.** Tokenize the function's short name into words (camelCase + snake_case
+   aware, via `_name_words`/`_WORD_RE`). If a whole word equals `set` → **In** (tested
+   first: write intent dominates, mirroring the both-read-and-write → In fallback); else
+   if a whole word equals `get` → **Out**. Whole-word matching catches `SetX`/`setX`/
+   `Module_SetX`/`coreSetResult` (infix camelCase) while excluding `Setup`/`Settings`/
+   `Setter`/`Reset`/`offset`/`target`. Known edge: predicate names like `isSet` match.
+2. **Non-void return** (`returnType` present and ≠ `"void"`; `void *` counts as a value)
+   → **Out** (data flows out through the return value).
+3. **Global-access fallback (the 3.4 rule).** Writes a global directly or transitively
+   → **In**; else reads one → **Out**; else **Out** (pure). Reuses
+   `writesGlobalIdsTransitive`/`readsGlobalIdsTransitive`.
+
+**`directionReason` (audit trail).** Alongside `direction`, the same loop writes a
+human-readable `directionReason` on every function and global so the decision is
+verifiable in the interface tables (which surface `f["directionReason"]` as the `reason`
+field). Forms:
+- `In: function name '<n>' contains 'Set' (writes/updates state).` — rule 1 set.
+- `Out: function name '<n>' contains 'Get' (reads/returns state).` — rule 1 get.
+- `Out: returns a value (<type>).` — rule 2.
+- `In: writes global(s) <names> directly.` — rule 3, direct write.
+- `In: writes global(s) transitively: <g> (via <callee(s)>); …` — rule 3, transitive-only
   write; names the direct callee(s) that actually write each global, so the chain
   is auditable.
-- `Out: reads global(s) <names> but writes none.`
-- `Out: accesses no globals (reads none, writes none).` — pure function.
+- `Out: reads global(s) <names> but writes none.` — rule 3.
+- `Out: accesses no globals (reads none, writes none).` — rule 3, pure function.
 - Globals: `In/Out: global variables are bidirectional interfaces.`
 
 ### Final keying (`build_metadata` + `utils.make_function_key`)
@@ -1500,6 +1524,38 @@ When `config.llm.descriptions: true`:
    `variableEnrichment=false`.
 4. A `ProgressReporter` reports `[idx/total]` progress for every pass.
 
+### Domain anchoring + description blocklist (task 3.14)
+
+Every description prompt — `get_description`, `get_global_description`,
+`get_unit_description`, `get_struct_description`, `get_rich_description` —
+routes through **`_call_llm(prompt, config, *, system, kind)`** in
+[engine/llm_enrichment.py](engine/llm_enrichment.py) with `kind="description"`.
+Two guards apply there, and **only** for `kind="description"` (behaviour-name
+and other calls are untouched):
+
+- **Domain anchoring (root-cause fix).** `load_domain_context(project_root,
+  config)` reads a free-text brief from `config.llm.domainContextPath` (default
+  `config/domain.txt`; `#` lines are comments) and `_call_llm` **appends it to
+  the `system` message** — so the model is told the codebase's real domain and
+  stops inventing unrelated vocabulary. The brief is memoized per path
+  (`_get_domain_context`, project root resolved via `core.paths`) so the file is
+  read once, not per description. It stacks on top of `get_rich_description`'s
+  own `_RICH_DESCRIPTION_SYSTEM`. The shipped `config/domain.txt` describes the
+  client's flash-storage firmware (FTL/HIL/FIL layers, explicitly *not*
+  audio/video). Per-layer briefs are a future option.
+- **Blocklist (deterministic backstop).** `_scrub_blocklist(text, config)`
+  strips `config.llm.descriptionBlocklist` words (default `["audio", "video"]`)
+  from the returned description — whole-word, case-insensitive, so identifiers
+  like `videoDecoderId` are left intact; it also tidies the leftover
+  whitespace/punctuation. Empty list = no-op. Stays on permanently even with
+  anchoring, as a safety net.
+
+Because both affect output, `llm.cacheVersion` was bumped **1→2** so
+previously-cached descriptions regenerate. Offline runs are unaffected —
+`_call_llm` returns `""` early when the client is `None`, before either guard.
+Tests: [tests/unit/test_llm_scrub.py](tests/unit/test_llm_scrub.py) (14 cases:
+scrubber, loader, and prompt-only anchoring assertions).
+
 ### `_enrich_with_hierarchy_summaries`
 
 Default-on (disabled by `--no-llm-summarize`). Uses the flowchart engine's
@@ -1602,7 +1658,10 @@ Full logic and column definitions: `docs/spec/DESIGN_SPEC.md` — Interface Tabl
 - Includes `PUBLIC` and `PROTECTED` functions and globals; excludes `PRIVATE`.
 - Entries sorted by source line number within each unit.
 - For each function: builds `callerUnits` / `calleesUnits` (all units including
-  same-module), and `sourceDest` (external units only; `"-"` if none).
+  same-module). **3.15:** `sourceDest` (rendered as Source/Destination) lists
+  **callers only** (external units; `"-"` if none) — each cross-unit relationship is
+  documented once, from the provider (callee) unit's row. `calleesUnits` is still
+  emitted as a JSON field but no longer feeds `sourceDest`.
 - Enriches parameters with `range` from the data dictionary via `get_range()`.
 - Function entries also carry `returnType` (verbatim from the model; `""` when
   absent → rendered as `VOID`). Globals have no `returnType`.
@@ -1617,8 +1676,14 @@ One Mermaid `.mmd` (and optionally `.png`) per unit into
 Full logic and layout rules: `docs/spec/DESIGN_SPEC.md` — Unit Diagrams (REQ-UD-XX).
 
 - `.cpp` units only; filtered by `allowed_modules` when set.
-- Layout: external callers on the left, **yellow** module box in the centre,
-  external callees on the right, all flowing left-to-right.
+- Layout: partners on the left / right of the **yellow** module box in the centre,
+  flowing left-to-right (In-oriented owned interfaces inbound on the left, Out-oriented
+  outbound on the right; a mutual partner appears on both sides).
+- **3.15:** only edges the unit **owns** (from `calledByIds`, i.e. its callers) are
+  drawn; the callee/consumer loop (interfaces this unit *uses*, `callsIds`) is dropped —
+  those edges render in the provider unit's own diagram, so every relationship appears
+  once model-wide. 3.6 owner-orientation is unchanged; it now operates over the reduced
+  (caller-only) edge set.
 - The main unit is **blue with a thick border** (`mainUnit` class); sibling units in the module subgraph are blue thin (`internal` class).
 - Edges labelled with `interfaceId` values, `<br/>`-separated for multi-edge.
 - Self-calls (callee in the same unit) produce no edge.

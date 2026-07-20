@@ -1,12 +1,12 @@
 # ArtiFex — Roadmap & Task List
 
-> Last updated: 2026-07-10. Est = person-days of effort (rough ±).
+> Last updated: 2026-07-18. Est = person-days of effort (rough ±).
 > Pri: **P0** blocks V1 · **P1** soon · **P2** later. TBD = unknown until discovery.
 
 ## Milestones
 | Milestone | When | Definition of done |
 |---|---|---|
-| **V1** | by **2026-07-15**, **hard** | Deployed in office; client uses it to generate + review **SWE.3 only**; flowchart-in-DOCX fixed; data-dictionary/macros ingested correctly; function hide/unhide works; pre-V1 correctness batch (task 3.1–3.10) cleared. |
+| **V1** | by **2026-07-15**, **hard** (date slipped; correctness batch nearly done as of 2026-07-18) | Deployed in office; client uses it to generate + review **SWE.3 only**; flowchart-in-DOCX fixed ✅; data-dictionary/macros ingested correctly (⚠ per-layer macros still pending); function hide/unhide works; pre-V1 correctness batch (task 3.1–3.10) cleared (**3.1–3.7 ✅; 3.8/3.9 rendering polish; 3.10 blocked**). |
 | **V1.1 (next)** | right after V1 | **SWE.4** (Software Unit Verification — test *specifications*) doc generation. **Reprioritized ahead of SWE.2 — internal call, NOT client-demanded**: smaller/faster, reuses SWE.3 machinery, and one slice (dynamic-behaviour specs) is buildable today. |
 | **V1.2** | after V1.1 | **SWE.2** (Software Architectural Design) doc generation — the following doc type. |
 | **V1.x** | after V1 | Test framework + CI, real DB (Postgres), progress bar, config pages + settings UI, rerun-after-config, **optimizations (overall pipeline time + LLM calls)**, phase-model revisit. |
@@ -29,20 +29,30 @@ Parent tasks are numbered + bold with a rollup estimate; sub-tasks (↳) sit und
 | | ↳ serve web-app + API (reverse proxy, domain, persistent workspaces) | 1–1.5 | V1 | P0 | |
 | | ↳ auth/users (SSO stub disabled → simple accounts) | 1–2 | V1 | P0 | |
 | | ↳ end-to-end smoke test from a client machine | 1 | V1 | P0 | after the others |
-| 3 | **V1 fixes** | **~9–25** | V1 | P0 | rollup ↑: adds pre-V1 correctness batch (3.1–3.10) from review |
-| | ↳ flowcharts generated but missing from DOCX | 2–4 | V1 | P0 | `src/views/flowcharts.py` vs `src/docx_exporter.py` |
-| | ↳ data dictionary + macros not ingested properly | 1–3 | V1 | P0 | `config/macros.csv` path |
-| | **↳ Pre-V1 correctness batch (10 review findings; fix roots first, re-test dependents):** | **~6–18** | V1 | P0 | 3.3/3.4 are re-test-after-fix — may vanish once roots land |
+| 3 | **V1 fixes** | **~14–38** | V1 | P0 | rollup ↑: pre-V1 batch (3.1–3.10) + **second review batch (3.11–3.19, +~5–13d)**. **Status 2026-07-20: first batch essentially done (only 3.8/3.9 rendering + 3.10 blocked + per-layer macros); second batch — 3.15/3.17/3.18 landed on `v1-fixes-more` (3.17 interim, full spec pending), 3.14 approach agreed, rest needs-detail/blocked.** |
+| | ↳ flowcharts generated but missing from DOCX | 2–4 | V1 | P0 | ✅ **resolved** (verified 2026-07-18, on `poc-4`). Exporter now tries 4 candidate stems (`{unit_prefix\|unit_name}_{qualifiedName\|shortName}`) in `_append_flowchart_entries`/`_resolve_flowchart_pngs` — matches the engine's `{source_basename}_{qualifiedName}.png` (`views/flowcharts.py:1157`, `flowchart/output/writer.py`). Slice-aware (`{stem}_part_K_of_N.png`) + a diagnostic log before any mermaid-text fallback. |
+| | ↳ data dictionary + macros not ingested properly | 1–3 | V1 | P0 | ⚠ **partial.** Orphan-header `#define`/`enum`/`typedef` + multi-line `#define` values now surface in the unit-header table (PRs #44/#45, `fix/interface-tables-and-unit-diagrams` + `fix/orphan-header-file-scope-usage`). **Remaining gap:** `--macros` is a single **global** CSV applied to all layers; requirement is **per-layer macros** → still pending. |
+| | **↳ Pre-V1 correctness batch (10 review findings; fix roots first, re-test dependents):** | **~6–18** | V1 | P0 | **3.1–3.7 all done**; 3.8/3.9 = rendering polish, 3.10 = blocked (repro). 3.3/3.4 vanished once roots landed, as predicted. |
 | | ↳ 3.1 exclude emulator files from analysis/parse scope | 0.5–1.5 | V1 | P0 | root cause; likely resolves 3.3 |
 | | ↳ 3.2 parse header files (.h/.hpp), not just sources | 1–3 | V1 | P0 | root cause; likely resolves 3.4 |
 | | ↳ 3.3 some functions should not be visible | 0–1 | V1 | P0 | ✅ **resolved by 3.1** — emulator files excluded from parse scope, so their functions never enter the model (sample-verified). Non-emulator residual needs the client project. |
 | | ↳ 3.4 interface direction shows "Out" instead of "In" for some functions | 0–1 | V1 | P0 | ✅ **fixed 2026-07-15** (`fix/direction-transitive-writes`): re-derive direction from `writesGlobalIdsTransitive` in `model_deriver` (Phase 2) so transitive-only global writers show `In`. Header-defined globals handled (global-ID based). Root was direct-write-only in the parser, not headers. |
-| | ↳ 3.5 include same-component pairs as source/destination too | 0.5–1 | V1 | P0 | table currently drops same-component pairs |
+| | ↳ 3.5 include same-component pairs as source/destination too | 0.5–1 | V1 | P0 | ✅ **fixed** (on `poc-4`): interface-table Source/Destination now lists all non-self units incl. same-component pairs (REQ-IT-12). |
 | | ↳ 3.6 make interface-table direction consistent with static diagram | 1–2 | V1 | P0 | ✅ **fixed 2026-07-16** (`fix/unit-diagram-direction`): re-orient the **diagram** to the table's owner In/Out (In→towards owner, Out→away from owner), not the reverse. Only `Out` (getter) edges flip; diagram-only, no model change. Owner-relative so both units' diagrams agree (avoids `da5f07d`'s inversion). |
-| | ↳ 3.7 functions missing from DOCX due to access specifier | 0.5–1.5 | V1 | P0 | known issue |
-| | ↳ 3.8 if/else condition depiction in flowchart | 1–2 | V1 | P0 | |
-| | ↳ 3.9 overlapping / bending flowchart edges | 0.5–2 | V1 | P0 | **already ELK** (`engine/flowchart/mermaid/builder.py:51-93`). Diagnosed 2026-07-15 from a client DOCX flowchart (`GCN_RegisterDelayedBadFromBadInfo`). Two symptoms: (a) edges **bend** — loop back-edges (`feedbackEdges:true`) + long-span branches route around nodes in orthogonal channels, and `mergeEdges:false` leaves doubled parallel tracks; (b) edges meet **diamonds at a slanted angle** — decision rhombi expose no fixed ELK ports, so routes hit the box border on a sloped face (largely inherent). Levers: ↑`rankSpacing`/`nodeSpacing`, `mergeEdges:true`, explicit `elk.edgeRouting:ORTHOGONAL`. Back-edge detours are unavoidable with orthogonal routing — can widen, not straighten. Verify by A/B rendering one busy function before touching the builder. |
-| | ↳ 3.10 dynamic-behaviour issue | 1–3 | V1 | P0 | **needs detail** — scope/repro unclear |
+| | ↳ 3.7 functions missing from DOCX due to access specifier | 0.5–1.5 | V1 | P0 | ✅ **fixed** (on `poc-4`). |
+| | ↳ 3.8 if/else condition depiction in flowchart | 1–2 | V1 | P0 | ⏳ **pending — needs repro.** Builder already renders DECISION diamonds `{…}` + labeled branch edges (`builder.py`); the reported depiction issue is unfixed and under-specified. |
+| | ↳ 3.9 overlapping / bending flowchart edges | 0.5–2 | V1 | P0 | ⏳ **pending — tuning levers not yet applied** (`mergeEdges:true`, ↑spacing, explicit `edgeRouting:ORTHOGONAL`). **already ELK** (`engine/flowchart/mermaid/builder.py:51-93`). Diagnosed 2026-07-15 from a client DOCX flowchart (`GCN_RegisterDelayedBadFromBadInfo`). Two symptoms: (a) edges **bend** — loop back-edges (`feedbackEdges:true`) + long-span branches route around nodes in orthogonal channels, and `mergeEdges:false` leaves doubled parallel tracks; (b) edges meet **diamonds at a slanted angle** — decision rhombi expose no fixed ELK ports, so routes hit the box border on a sloped face (largely inherent). Levers: ↑`rankSpacing`/`nodeSpacing`, `mergeEdges:true`, explicit `elk.edgeRouting:ORTHOGONAL`. Back-edge detours are unavoidable with orthogonal routing — can widen, not straighten. Verify by A/B rendering one busy function before touching the builder. |
+| | ↳ 3.10 dynamic-behaviour issue | 1–3 | V1 | P0 | 🚧 **blocked — under-specified** (scope/repro unclear; possibly other team). Get a concrete definition before estimating. |
+| | **↳ Second correctness batch (3.11–3.19; from 2026-07-18/19 review — all ADDITIONS, nothing reversed):** | **~5–13** | V1 | P1 | User-confirmed 2026-07-19. Final priority/milestone TBD with manager. Verified against code where noted. |
+| | ↳ 3.11 BOOL32 return → **Output Name** shows literal `TRUE` instead of `TRUE/FALSE` | 0.5–1 | V1 | P1 | ⏳ **needs more checking** (user). Root cause found: `_enrich_behaviour_names` (`model_deriver.py:548-564`) derives Output Name from the return **expression's** first identifier, so a `return TRUE;` path yields `TRUE`. Fix direction: for boolean return (`BOOL`/`BOOL32`/`bool`) set Output Name = `TRUE/FALSE` (also fill Data Range — `get_range_for_type` has no bool case). |
+| | ↳ 3.12 VOID parameter → **Input Name** should show `VOID`, not a global var | 0.5–1 | V1 | P1 | 🚧 **pending manager discussion** (user). Confirmed: `model_deriver.py:539-546` falls back to first written/read global when param list is empty. Fix: empty param list → `in_label = "VOID"`, stop the global fallback. |
+| | ↳ 3.13 some `#define`s not surfaced in header | 1–3 | V1 | P1 | ⏳ **needs more checking / repro** (user). Likely the known edges gap (macro used only at file scope / macro-in-macro / enum-by-value); needs a concrete example (define + header + unit). |
+| | ↳ 3.14 exclude irrelevant domain words (audio/video) from descriptions | 0.5–1 | V1 | P1 | ✅ **implemented 2026-07-20** (`v1-fixes-more`). Both fixes land at the single choke point `llm_enrichment._call_llm` (all description builders route through it, `kind="description"`): (1) **blocklist stopgap** — `_scrub_blocklist` strips config `llm.descriptionBlocklist` (default `["audio","video"]`) as whole-words, case-insensitive, from generated descriptions (identifiers like `videoDecoderId` untouched); (2) **domain anchoring (root cause)** — `load_domain_context` reads a brief from `llm.domainContextPath` (default `config/domain.txt`; FTL/HIL/FIL flash-firmware brief) and appends it to the description **system** prompt so the model stops inventing unrelated vocabulary. `cacheVersion` bumped 1→2 to invalidate stale cached descriptions. 14 unit tests (`tests/unit/test_llm_scrub.py`). Blocklist stays as permanent backstop; per-layer briefs are a later option. |
+| | ↳ 3.15 Source/Destination + unit diagrams: keep **only callers**, drop callees | 1–2 | V1 | P1 | ✅ **committed** (`5e3be9b`, `v1-fixes-more`). Today both are shown: `unit_diagrams.py:130-135` draws `calledByIds` **and** `callsIds`; interface-table Source/Dest lists all non-self units. Change: keep only who **calls into** the unit (`calledBy`), drop `calls` edges/rows. Refines 3.5/3.6 edge/row set (treated as addition, not reversal). |
+| | ↳ 3.16 some Source/Dest missing — macro-wrapped call (SVC) | 1–2 | V1 | P1 | 🚧 **needs client project** (user). SVC = a unit inside the **service** component in the *client's* project (not in our sample), invoked via a macro the parser doesn't expand → callees missed. Keep as "check more"; overlaps macro-correctness / per-layer macros. |
+| | ↳ 3.17 In/Out direction — new priority order | 1–2 | V1 | P1 | ⏳ **interim landed — full spec coming** (`3ecb0f7`, `v1-fixes-more`; user will supply the complete precedence spec before final). Precedence in `model_deriver` finalize loop: (1) **name match** — whole-word `Set`→In (tested first: write dominates), `Get`→Out, via a camelCase/snake_case tokenizer (`_name_words`) so infix `coreSetResult`/`adcGetValue` match while `Setup`/`Settings`/`Setter`/`Reset`/`offset` don't; (2) else **non-void return → Out**; (3) else **global-access** (the 3.4 rule) write→In / read→Out / none→Out. Additive over 3.4; `directionReason` updated per branch. Known edge: `isSet`-style predicates match. Snapshots still to regenerate. |
+| | ↳ 3.18 Data Type column — include **variable name** alongside type | 0.5–1 | V1 | P1 | ✅ **committed** (`dcd2547`, `v1-fixes-more`). Today `docx_exporter.py:1002` shows param **type only**. Add the parameter name (e.g. `uint8_t signalId`); apply to the return line too. |
+| | ↳ 3.19 Unit-header type visibility rule | 1–2 | V1 | P1 | 📋 **look later** (user). Draft rule: same-component types used in functions → show; a type/variable from **another component** used here → show **only if not used in any other unit** (exclusive use). Refines orphan-header REQ-UH-01/02; confirm interpretation + whether "used" includes file-scope usage. |
 | 4 | **Function hide/unhide** → re-run Phases 3–4 in full (reuse 1–2) | 2–4 | V1 | P1 | `Function.is_visible` modeled; optimize later (task 13) |
 | 5 | **Release & client review** | **~3.5–6.5** | V1 | | |
 | | ↳ define V1 scope + deliverables list | 0.5 | V1 | P0 | |
@@ -133,10 +143,13 @@ tests/  docs/                              ✅ unchanged (scripts/ moved into to
 ```
 
 ## Open questions / TBD
-- **Pre-V1 batch dependencies (task 3):** 3.3 (extra visible functions) is *hypothesised* to be caused by
-  emulator files (3.1); 3.4 (wrong "Out" direction) by missing header parsing (3.2). Re-test both after the
-  root fixes land before scheduling separate work on them.
-- **task 3.10 "dynamic-behaviour issue"** — under-specified; get a concrete repro/definition before estimating.
+- **Pre-V1 batch (task 3) — RESOLVED as of 2026-07-18:** 3.3 (extra visible functions) vanished once
+  emulator files were excluded (3.1); 3.4 (wrong "Out" direction) was fixed via transitive-write re-derivation
+  (not header parsing as hypothesised). Both confirmed. Remaining task-3 work: 3.8/3.9 (flowchart rendering),
+  3.10 (blocked), and per-layer macros.
+- **task 3.10 "dynamic-behaviour issue"** — still under-specified; get a concrete repro/definition before estimating.
+- **Per-layer macros:** `--macros` today is a single global CSV; the client requirement is per-layer. Scope + UI
+  (task 11 "data dictionary + macros settings UI") not yet designed.
 - V1 auth model in office (simple accounts vs SSO)?
 - **SWE.4 discovery** — field-level derivability of the two spec tables, "Unit" vs function granularity,
   and the requirements source (SWE.1 not built). See `docs/planning/SWE4_PLAN.md`.
