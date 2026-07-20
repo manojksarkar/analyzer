@@ -309,8 +309,17 @@ def _build_unit_header_table(
                     continue
             else:
                 _qn = t.get("qualifiedName") or _type_name
-                if (_qn not in used_type_qns
-                        and _sym_name not in text_names and _qn not in text_names):
+                _hit = (_qn in used_type_qns
+                        or _sym_name in text_names or _qn in text_names)
+                # An enum can be used purely via its enumerators (e.g. `x = eNone`)
+                # without the enum type name ever appearing in source or edges —
+                # recover it when any enumerator name shows up in this unit's text.
+                if not _hit and kind == "enum":
+                    _hit = any(
+                        (e.get("name") or "") in text_names
+                        for e in (t.get("enumerators") or [])
+                    )
+                if not _hit:
                     continue
         line = int(loc.get("line") or 0)
         if kind == "typedef":

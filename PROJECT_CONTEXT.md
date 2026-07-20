@@ -21,8 +21,11 @@
 >   `class`/`struct` skip at `docx_exporter.py:251` was **deliberately left as-is** per user. **Usage =
 >   edges.json ∪ textual scan** of the unit's own source (comments/strings stripped) — the scan closes
 >   the edges gap for **file-scope** macro usage (array size / global initializer / macro-in-macro) that
->   `macroUsers` misses; residual gap only for an enumerator-value usage whose spelling never appears in
->   the unit's own text. Fixture:
+>   `macroUsers` misses. **Enumerator-only usage** (a unit references `eNone` but never the enum type
+>   `SomeEnum` — parser records no `typeUsers` edge for a bare enum-constant `DECL_REF_EXPR`, and the
+>   type name never appears in text) is now recovered by also matching an orphan enum when **any of its
+>   enumerator names** appears in the unit's own text (2026-07-20, `_build_unit_header_table` enum
+>   fallback). Fixture:
 >   `SampleCppProject/Layer1/Sample/Core/SharedDefs.h` (orphan; `SHARED_MAX/MIN/SCALE` + `enum
 >   SharedLevel : UINT8`) used by `coreLevelBudget` (Core: MAX+MIN+enum) and `libScaleShared` (Lib:
 >   SCALE), Util uses none. **NOTE:** the header must live in a **mapped component dir** or
