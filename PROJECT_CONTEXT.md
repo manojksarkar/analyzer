@@ -1521,6 +1521,38 @@ When `config.llm.descriptions: true`:
    `variableEnrichment=false`.
 4. A `ProgressReporter` reports `[idx/total]` progress for every pass.
 
+### Domain anchoring + description blocklist (task 3.14)
+
+Every description prompt — `get_description`, `get_global_description`,
+`get_unit_description`, `get_struct_description`, `get_rich_description` —
+routes through **`_call_llm(prompt, config, *, system, kind)`** in
+[engine/llm_enrichment.py](engine/llm_enrichment.py) with `kind="description"`.
+Two guards apply there, and **only** for `kind="description"` (behaviour-name
+and other calls are untouched):
+
+- **Domain anchoring (root-cause fix).** `load_domain_context(project_root,
+  config)` reads a free-text brief from `config.llm.domainContextPath` (default
+  `config/domain.txt`; `#` lines are comments) and `_call_llm` **appends it to
+  the `system` message** — so the model is told the codebase's real domain and
+  stops inventing unrelated vocabulary. The brief is memoized per path
+  (`_get_domain_context`, project root resolved via `core.paths`) so the file is
+  read once, not per description. It stacks on top of `get_rich_description`'s
+  own `_RICH_DESCRIPTION_SYSTEM`. The shipped `config/domain.txt` describes the
+  client's flash-storage firmware (FTL/HIL/FIL layers, explicitly *not*
+  audio/video). Per-layer briefs are a future option.
+- **Blocklist (deterministic backstop).** `_scrub_blocklist(text, config)`
+  strips `config.llm.descriptionBlocklist` words (default `["audio", "video"]`)
+  from the returned description — whole-word, case-insensitive, so identifiers
+  like `videoDecoderId` are left intact; it also tidies the leftover
+  whitespace/punctuation. Empty list = no-op. Stays on permanently even with
+  anchoring, as a safety net.
+
+Because both affect output, `llm.cacheVersion` was bumped **1→2** so
+previously-cached descriptions regenerate. Offline runs are unaffected —
+`_call_llm` returns `""` early when the client is `None`, before either guard.
+Tests: [tests/unit/test_llm_scrub.py](tests/unit/test_llm_scrub.py) (14 cases:
+scrubber, loader, and prompt-only anchoring assertions).
+
 ### `_enrich_with_hierarchy_summaries`
 
 Default-on (disabled by `--no-llm-summarize`). Uses the flowchart engine's

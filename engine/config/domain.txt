@@ -1,0 +1,8 @@
+# Domain brief injected into LLM description prompts (task 3.14).
+# Plain text; '#' lines are comments, blank lines are ignored.
+# Purpose: anchor the model to this codebase's real domain so it stops
+# inventing unrelated vocabulary (e.g. "audio"/"video").
+# Edit this file to match the project actually being analyzed.
+
+This codebase is embedded flash-storage controller firmware, organized in layers: FTL (Flash Translation Layer), HIL (Host Interface Layer), FIL (Flash Interface Layer).
+The domain is storage/NAND-flash firmware. It has nothing to do with audio, video, multimedia, graphics, or networking. Do not introduce vocabulary from those unrelated domains; describe only what the code does.
