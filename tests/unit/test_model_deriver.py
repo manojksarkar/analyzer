@@ -215,6 +215,32 @@ class TestEnrichBehaviourNames:
         assert f.get("behaviourInputName")
         assert f.get("behaviourOutputName")
 
+    def test_return_true_literal_output_is_true_false(self):
+        """`return TRUE;` must not leak the branch literal 'True' — show TRUE/FALSE."""
+        f = self._run({
+            "parameters": [{"name": "ready", "type": "int"}],
+            "returnType": "BOOL32", "returnExpr": "TRUE",
+            "qualifiedName": "isReady",
+        })
+        assert f["behaviourOutputName"] == "TRUE/FALSE"
+
+    def test_return_false_literal_output_is_true_false(self):
+        f = self._run({
+            "parameters": [{"name": "ok", "type": "int"}],
+            "returnType": "bool", "returnExpr": "FALSE",
+            "qualifiedName": "check",
+        })
+        assert f["behaviourOutputName"] == "TRUE/FALSE"
+
+    def test_non_boolean_return_literal_unchanged(self):
+        """A real return identifier must not be rewritten to TRUE/FALSE."""
+        f = self._run({
+            "parameters": [], "returnType": "int", "returnExpr": "status",
+            "qualifiedName": "getStatus",
+        })
+        assert f["behaviourOutputName"] != "TRUE/FALSE"
+        assert "Status" in f["behaviourOutputName"]
+
 
 # ---------------------------------------------------------------------------
 # _enrich_interfaces — interfaceId format

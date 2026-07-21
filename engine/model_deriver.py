@@ -595,6 +595,11 @@ def _enrich_behaviour_names(functions_data: dict, global_variables_data: dict, o
             if not out_label:
                 out_label = (base_fn + " result").strip() if base_fn else "Behaviour result"
 
+        # A boolean-ish return (`return TRUE;` / `return FALSE;`) collapses the Output Name
+        # to whichever literal one branch happened to return — surface the boolean fact.
+        if out_label.strip().lower() in ("true", "false"):
+            out_label = "TRUE/FALSE"
+
         f["behaviourInputName"] = in_label
         f["behaviourOutputName"] = out_label
 
@@ -1012,6 +1017,14 @@ def main():
     _enrich_behaviour_names(functions_data, global_variables_data, only_fids=only_fids)
     # LLM polish for poor static names (uses abbreviations)
     _enrich_behaviour_names_llm(base_path, functions_data, global_variables_data, config, only_fids=only_fids)
+    # Re-assert the boolean Output Name after the LLM step so a `TRUE`/`FALSE` literal
+    # cannot be reintroduced. behaviourOutputName is the single source for the behaviour
+    # table, the flowchart table's Output Name row, and the function output name.
+    for _fid, _f in functions_data.items():
+        if only_fids is not None and _fid not in only_fids:
+            continue
+        if (_f.get("behaviourOutputName") or "").strip().lower() in ("true", "false"):
+            _f["behaviourOutputName"] = "TRUE/FALSE"
 
     # LLM summarization (--llm-summarize only): phases + file/component/project hierarchy.
     # Runs before _enrich_from_llm so that phases are in functions_data when knowledge_base
