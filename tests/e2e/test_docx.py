@@ -22,7 +22,7 @@ except ImportError:
     pytest.skip("python-docx not installed", allow_module_level=True)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "Sample", "software_detailed_design_Sample.docx")
+DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "My-Sample", "software_detailed_design_My-Sample.docx")
 
 COL_IF_ID    = 0
 COL_IF_NAME  = 1
@@ -265,7 +265,7 @@ def test_appendix_heading_present(docx):
 # Dynamic Behaviour section
 # ---------------------------------------------------------------------------
 
-def test_dynamic_behaviour_sub_headings_for_core(docx):
+def test_dynamic_behaviour_sub_headings_for_core(docx, behaviour_diagram_on):
     """Core is called by external units (App/Main, Cross/Hub) outside the Sample group.
     The DOCX must contain level-3 headings of the form 'N.2.M Core - <func> (<caller>)'."""
     level3 = [p.text.strip() for p in docx.paragraphs if p.style.name == "Heading 3"]
@@ -276,7 +276,7 @@ def test_dynamic_behaviour_sub_headings_for_core(docx):
     )
 
 
-def test_behaviour_description_tables_present(docx):
+def test_behaviour_description_tables_present(docx, behaviour_diagram_on):
     """_add_behavior_description_table creates 5-row tables with 'Requirements','Risk','Capacity'."""
     row_labels = {
         row.cells[0].text.strip()

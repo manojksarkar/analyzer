@@ -44,11 +44,12 @@ class TestUnitPartId:
     def test_pipe_replaced_by_underscore(self):
         assert _unit_part_id("Mod|core") == "Mod_core"
 
-    def test_space_replaced_by_underscore(self):
-        assert _unit_part_id("My Module") == "My_Module"
+    def test_space_replaced_by_hyphen(self):
+        assert _unit_part_id("My Module") == "My-Module"
 
     def test_pipe_and_space_combined(self):
-        assert _unit_part_id("My|core unit") == "My_core_unit"
+        # pipe -> underscore, space -> hyphen
+        assert _unit_part_id("My|core unit") == "My_core-unit"
 
     def test_empty_string_returns_u(self):
         assert _unit_part_id("") == "u"
@@ -155,7 +156,7 @@ class TestBuildUnitDiagram:
     def test_subgraph_labelled_with_component_name(self):
         unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
-        assert "subgraph internal_mod[Mod]" in result
+        assert 'subgraph internal_mod["Mod"]' in result
 
     def test_unit_node_appears_in_diagram(self):
         unit_info, units_data, functions_data, fid_to_unit, unit_names = _make_minimal_context()
@@ -167,7 +168,9 @@ class TestBuildUnitDiagram:
         result = _build_unit_diagram("Mod|core", unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert "class Mod_core mainUnit" in result
 
-    def test_callee_edge_labeled_with_interface_id(self):
+    def test_owned_edge_labeled_with_interface_id(self):
+        # 3.15: a unit's diagram draws only its OWNED interfaces (functions called by
+        # others). The edge to an external callee is labeled with the OWNER's interfaceId.
         unit_key = "Mod|core"
         callee_key = "Ext|service"
         unit_info = {"fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}
@@ -178,21 +181,22 @@ class TestBuildUnitDiagram:
         functions_data = {
             "f1": {
                 "qualifiedName": "Mod::process",
-                "callsIds": ["f2"],
-                "calledByIds": [],
+                "callsIds": [],
+                "calledByIds": ["f2"],
                 "interfaceId": "IFC_001",
+                "direction": "Out",
             },
             "f2": {
                 "qualifiedName": "Ext::doWork",
-                "callsIds": [],
-                "calledByIds": ["f1"],
+                "callsIds": ["f1"],
+                "calledByIds": [],
                 "interfaceId": "IFC_002",
             },
         }
         fid_to_unit = {"f1": unit_key, "f2": callee_key}
         unit_names = {unit_key: "core", callee_key: "service"}
         result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
-        assert "IFC_002" in result
+        assert "IFC_001" in result
 
     def test_incoming_caller_edge_labeled_with_interface_id(self):
         unit_key = "Mod|core"
@@ -222,20 +226,22 @@ class TestBuildUnitDiagram:
         assert "IFC_001" in result
 
     def test_multiple_ifaces_on_same_edge_both_appear(self):
+        # Two owned interfaces to the same partner, same direction, merge onto one edge.
         unit_key = "Mod|core"
-        callee_key = "Ext|svc"
-        unit_info = {"fileName": "core.cpp", "functionIds": ["f1"], "globalVariableIds": []}
+        partner_key = "Ext|svc"
+        unit_info = {"fileName": "core.cpp", "functionIds": ["f2", "f3"], "globalVariableIds": []}
         units_data = {
             unit_key: unit_info,
-            callee_key: {"fileName": "svc.cpp", "functionIds": ["f2", "f3"], "globalVariableIds": []},
+            partner_key: {"fileName": "svc.cpp", "functionIds": ["g1", "g2"], "globalVariableIds": []},
         }
         functions_data = {
-            "f1": {"qualifiedName": "Mod::run", "callsIds": ["f2", "f3"], "calledByIds": [], "interfaceId": "IFC_A"},
-            "f2": {"qualifiedName": "Ext::alpha", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_B"},
-            "f3": {"qualifiedName": "Ext::beta", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_C"},
+            "f2": {"qualifiedName": "Mod::alpha", "callsIds": [], "calledByIds": ["g1"], "interfaceId": "IFC_B", "direction": "Out"},
+            "f3": {"qualifiedName": "Mod::beta", "callsIds": [], "calledByIds": ["g2"], "interfaceId": "IFC_C", "direction": "Out"},
+            "g1": {"qualifiedName": "Ext::g1", "callsIds": ["f2"], "calledByIds": []},
+            "g2": {"qualifiedName": "Ext::g2", "callsIds": ["f3"], "calledByIds": []},
         }
-        fid_to_unit = {"f1": unit_key, "f2": callee_key, "f3": callee_key}
-        unit_names = {unit_key: "core", callee_key: "svc"}
+        fid_to_unit = {"f2": unit_key, "f3": unit_key, "g1": partner_key, "g2": partner_key}
+        unit_names = {unit_key: "core", partner_key: "svc"}
         result = _build_unit_diagram(unit_key, unit_info, units_data, functions_data, fid_to_unit, unit_names)
         assert "IFC_B" in result
         assert "IFC_C" in result
@@ -283,8 +289,9 @@ class TestBuildUnitDiagram:
             callee_key: {"fileName": "svc.cpp", "functionIds": ["f2"], "globalVariableIds": []},
         }
         functions_data = {
-            "f1": {"qualifiedName": "Mod::run", "callsIds": ["f2"], "calledByIds": [], "interfaceId": "IFC_A"},
-            "f2": {"qualifiedName": "Ext::work", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_B"},
+            # core owns an Out interface (calledBy svc) => outbound arrow, svc on the right
+            "f1": {"qualifiedName": "Mod::run", "callsIds": [], "calledByIds": ["f2"], "interfaceId": "IFC_A", "direction": "Out"},
+            "f2": {"qualifiedName": "Ext::work", "callsIds": ["f1"], "calledByIds": [], "interfaceId": "IFC_B"},
         }
         fid_to_unit = {"f1": unit_key, "f2": callee_key}
         unit_names = {unit_key: "core", callee_key: "svc"}
@@ -302,8 +309,9 @@ class TestBuildUnitDiagram:
         peer_info = {"fileName": "peer.cpp", "functionIds": ["f2"], "globalVariableIds": []}
         units_data = {unit_key: unit_info, peer_key: peer_info}
         functions_data = {
-            "f1": {"qualifiedName": "Mod::run", "callsIds": ["f2"], "calledByIds": [], "interfaceId": "IFC_A"},
-            "f2": {"qualifiedName": "Mod::work", "callsIds": [], "calledByIds": ["f1"], "interfaceId": "IFC_B"},
+            # core owns an interface called by peer (same module) => peer drawn as internal caller
+            "f1": {"qualifiedName": "Mod::run", "callsIds": [], "calledByIds": ["f2"], "interfaceId": "IFC_A", "direction": "In"},
+            "f2": {"qualifiedName": "Mod::work", "callsIds": ["f1"], "calledByIds": [], "interfaceId": "IFC_B"},
         }
         fid_to_unit = {"f1": unit_key, "f2": peer_key}
         unit_names = {unit_key: "core", peer_key: "peer"}

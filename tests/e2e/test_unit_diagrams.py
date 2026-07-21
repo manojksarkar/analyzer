@@ -1,20 +1,20 @@
-"""Tests for the unitDiagrams view (output/unit_diagrams/*.mmd).
+"""Tests for the unitDiagrams view (output/<group>/unit_diagrams/*.mmd).
 
 Logical tests only — no snapshots. Checks:
 - Mermaid format and structure (flowchart LR, module subgraph, styling)
-- Call-graph topology: each cross-module edge appears in both the source and
-  target unit's diagram, with an interfaceId (IF_) label
-- Direction invariants: Util never calls out, Core has no incoming callers
+- Interface topology: each unit diagram shows the unit's interface *consumers*
+  (the units that call into it), split by direction, with an interfaceId (IF_)
+  label on every edge (3.6 / 3.15: keep callers, orient by owner direction)
 
-Call graph for the Sample group (from SampleCppProject source):
-  Core → Lib  (coreAdd→libAdd, coreOrchestrate→libAdd/libNormalize,
-               coreProcess→libNormalize)
-  Core → Util (coreOrchestrate→utilCompute/utilScale)
-  Lib  → Util (libNormalize→utilCompute)
-  Util → (nothing cross-component)
+Interface partners for the "My Sample" group (from SampleCppProject source),
+i.e. who consumes each unit's interfaces:
+  Core ← App/Main, Cross/Hub                     (external callers only)
+  Lib  ← Core, App/Main, Cross/Hub
+  Util ← Core, Lib, App/Main, Cross/Hub
 
-All three components belong to the Sample group, so every unit is "internal"
-— nodes and edges live inside the component subgraph, not outside it.
+Core, Lib and Util belong to the "My Sample" group; a partner drawn inside the
+component subgraph is "internal", one drawn outside it (App/Main, Cross/Hub) is
+external. Core is not called by Lib or Util, so neither appears in its diagram.
 """
 import os
 
@@ -23,27 +23,36 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-UNIT_DIAGRAMS_DIR = os.path.join(PROJECT_ROOT, "output", "Sample", "unit_diagrams")
+UNIT_DIAGRAMS_DIR = os.path.join(PROJECT_ROOT, "output", "My-Sample", "unit_diagrams")
 
-# unit_key "Core|Core"  →  safe_filename  →  "Core_Core"
+# short unit name  →  safe_filename (== the main-unit node id)
+#   unit_key "Sample Core|Core" → safe_filename → "Sample-Core_Core"
 UNITS = {
-    "Core": "Core_Core",
+    "Core": "Sample-Core_Core",
     "Lib":  "Lib_Lib",
     "Util": "Util_Util",
 }
 
-# Every cross-component edge × every diagram it must appear in.
-# Each graph edge appears twice: once in the source unit's diagram (as outgoing)
-# and once in the target unit's diagram (as incoming caller).
-CROSS_COMPONENT_EDGES = [
-    # (diagram,  src_node,    dst_node,    reason)
-    ("Core", "Core_Core", "Lib_Lib",   "coreAdd/coreOrchestrate→libAdd, coreProcess/coreOrchestrate→libNormalize"),
-    ("Core", "Core_Core", "Util_Util", "coreOrchestrate→utilCompute/utilScale"),
-    ("Lib",  "Core_Core", "Lib_Lib",   "Core is caller — must appear in Lib's diagram"),
-    ("Lib",  "Lib_Lib",   "Util_Util", "libNormalize→utilCompute"),
-    ("Util", "Core_Core", "Util_Util", "Core is caller — must appear in Util's diagram"),
-    ("Util", "Lib_Lib",   "Util_Util", "Lib is caller — must appear in Util's diagram"),
-]
+# subgraph label = the unit's component display name (config group component)
+SUBGRAPH_LABELS = {
+    "Core": "Sample Core",
+    "Lib":  "Lib",
+    "Util": "Util",
+}
+
+# Partner nodes that MUST appear in each unit's diagram (its interface consumers).
+EXPECTED_PARTNERS = {
+    "Core": {"App_Main", "Cross_Hub"},
+    "Lib":  {"Sample-Core_Core", "App_Main", "Cross_Hub"},
+    "Util": {"Sample-Core_Core", "Lib_Lib", "App_Main", "Cross_Hub"},
+}
+
+# Partner nodes that MUST NOT appear (units that do not consume the main unit).
+ABSENT_PARTNERS = {
+    "Core": {"Lib_Lib", "Util_Util"},   # Lib/Util never call Core
+    "Lib":  {"Util_Util"},              # Util does not call Lib's interface here
+    "Util": set(),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -98,9 +107,12 @@ def test_subgraph_present(mmd_files, unit):
 
 
 @pytest.mark.parametrize("unit", UNITS)
-def test_subgraph_label_matches_module(mmd_files, unit):
-    """The subgraph must be labelled with the unit's own module name."""
-    assert f"subgraph internal_mod[{unit}]" in mmd_files[unit]
+def test_subgraph_label_matches_component(mmd_files, unit):
+    """The subgraph is labelled with the unit's component display name."""
+    label = SUBGRAPH_LABELS[unit]
+    assert f'subgraph internal_mod["{label}"]' in mmd_files[unit], (
+        f"{unit} diagram: subgraph should be labelled '{label}'"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -115,55 +127,57 @@ def test_main_unit_has_main_unit_class(mmd_files, unit, node_id):
 
 
 @pytest.mark.parametrize("unit,peer_id", [
-    ("Core", "Lib_Lib"),
-    ("Core", "Util_Util"),
-    ("Lib",  "Core_Core"),
-    ("Lib",  "Util_Util"),
-    ("Util", "Core_Core"),
-    ("Util", "Lib_Lib"),
+    (unit, peer)
+    for unit, peers in EXPECTED_PARTNERS.items()
+    for peer in peers
 ])
 def test_peer_not_styled_as_main_unit(mmd_files, unit, peer_id):
-    """Peer nodes must not carry the mainUnit class."""
+    """Partner nodes must not carry the mainUnit class."""
     assert f"class {peer_id} mainUnit" not in mmd_files[unit], (
         f"{unit} diagram: peer '{peer_id}' should not be mainUnit"
     )
 
 
 # ---------------------------------------------------------------------------
-# Cross-module edges — topology and label format
-#
-# Each graph edge must appear in both the source and target unit's diagram,
-# labeled with an interfaceId (IF_ prefix).  Two assertions per case:
-#   1. The edge line exists (topology is correct)
-#   2. The label uses IF_ format (not a raw function name)
+# Interface topology — consumers present / non-consumers absent
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("diagram,src,dst,reason", CROSS_COMPONENT_EDGES)
-def test_cross_module_edge_with_if_label(mmd_files, diagram, src, dst, reason):
-    lines = mmd_files[diagram].splitlines()
-    edge_lines = [l for l in lines if src in l and dst in l and "-->" in l]
-    assert edge_lines, (
-        f"{diagram} diagram: missing edge {src} --> {dst}\n  ({reason})"
-    )
-    assert any("IF_" in l for l in edge_lines), (
-        f"{diagram} diagram: edge {src} --> {dst} must carry an IF_... interfaceId label"
+@pytest.mark.parametrize("unit,partner", [
+    (unit, partner)
+    for unit, partners in EXPECTED_PARTNERS.items()
+    for partner in partners
+])
+def test_expected_partner_present(mmd_files, unit, partner):
+    """Every interface consumer of the unit must appear as a node in its diagram."""
+    assert partner in mmd_files[unit], (
+        f"{unit} diagram: expected interface partner '{partner}' is missing"
     )
 
 
+@pytest.mark.parametrize("unit,partner", [
+    (unit, partner)
+    for unit, partners in ABSENT_PARTNERS.items()
+    for partner in partners
+])
+def test_non_consumer_absent(mmd_files, unit, partner):
+    """A unit that does not consume the main unit's interface must not be drawn."""
+    assert partner not in mmd_files[unit], (
+        f"{unit} diagram: '{partner}' does not consume {unit} and should be absent"
+    )
+
+
 # ---------------------------------------------------------------------------
-# Direction invariants (negative)
+# Every cross-unit edge carries an interfaceId (IF_) label
 # ---------------------------------------------------------------------------
 
-def test_util_never_initiates_cross_module_call(mmd_files):
-    """Util has no outgoing cross-module calls — Util_Util must never be an edge source."""
-    bad = [l.strip() for l in mmd_files["Util"].splitlines() if "Util_Util -->" in l]
-    assert not bad, f"Util_Util should not initiate calls, found: {bad}"
-
-
-def test_core_has_no_incoming_cross_module_callers(mmd_files):
-    """Nothing in the Sample group calls Core — Core_Core must never be an edge target."""
-    bad = [l.strip() for l in mmd_files["Core"].splitlines() if "--> Core_Core" in l]
-    assert not bad, f"Core_Core should have no incoming edges, found: {bad}"
+@pytest.mark.parametrize("unit", UNITS)
+def test_every_edge_has_if_label(mmd_files, unit):
+    edge_lines = [l for l in mmd_files[unit].splitlines() if "-->" in l]
+    assert edge_lines, f"{unit} diagram has no edges"
+    unlabelled = [l.strip() for l in edge_lines if "IF_" not in l]
+    assert not unlabelled, (
+        f"{unit} diagram: edges without an IF_... interfaceId label: {unlabelled}"
+    )
 
 
 # ---------------------------------------------------------------------------

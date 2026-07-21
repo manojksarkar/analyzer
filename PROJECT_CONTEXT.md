@@ -28,6 +28,22 @@
 >   macro is never lost). Branch follows the parse `-D` config → fully client-correct once per-layer
 >   macros lands. **Parser/model change → snapshots regenerate.** Verified A/B (SOMETHING undef→else,
 >   def→if). Test: `tests/unit/test_define_conditional.py` (libclang-guarded skip).
+> - **2026-07-21 — e2e test suite resurrected + snapshots regenerated (DONE, test-only):** the
+>   pipeline-backed e2e suite had been **dead since PR #19** (`2a1064f`), which renamed the fixture
+>   group `Sample`→`My Sample` (component `Core`→`Sample Core`) in `engine/config/config.json` but
+>   never updated the tests. Pipeline output now lives under `output/My-Sample/` (space→hyphen);
+>   view/model keys are `Sample-Core|Core` (unit name still `Core`), diagram node `Sample-Core_Core`,
+>   subgraph label `"Sample Core"`, interface ids `IF_LAYER1_*`. Fixed the harness group
+>   (`tests/conftest.py`), all `output/Sample`→`output/My-Sample` paths, and every `Core|Core`→
+>   `Sample-Core|Core` / `SAMPLE_COMPONENTS`→`{Sample-Core,Lib,Util}` key. **Rewrote the obsolete
+>   topology assertions** in `test_unit_diagrams.py` and the mock tests in `test_unit_diagrams_view.py`
+>   to the current 3.6/3.15 semantics: a unit diagram draws **only its OWNED (caller) edges** (built
+>   from each function's `calledByIds`, oriented by the owner's In/Out); **callee edges are dropped**
+>   (they render in the provider's own diagram). `_unit_part_id` now maps space→`-`, pipe→`_`. Added
+>   `behaviour_diagram_on` skip-guard (Dynamic Behaviour section is empty when `views.behaviourDiagram`
+>   is off) and relaxed the interface-id regex to allow the alphanumeric layer segment (`LAYER1`).
+>   Regenerated `tests/snapshots/Sample/{interface_tables,unit_diagrams}.json`. Full suite: **627
+>   passed, 4 skipped, 0 failed** (`pytest --skip-pipeline`). No engine code changed.
 > - **⚠ Merge state:** 3.1/3.2/3.4/3.5/3.6/3.7 landed on feature branches with **PRs
 >   pending into `poc-4`** (not merged); 3.14/3.15/3.17/3.18 are on `v1-fixes-more`. The
 >   detailed per-branch bullets below are retained as the record of where each fix lives
