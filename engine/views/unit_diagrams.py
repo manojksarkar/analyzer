@@ -315,6 +315,6 @@ def run(model, output_dir, model_dir, config):
         if render_png:
             png_path = os.path.join(out_dir, f"{safe}.png")
             # M-A: content-addressed cache -> unchanged unit diagrams skip mmdc.
-            render_mermaid_cached(project_root, mermaid, png_path, timeout=60)
+            render_mermaid_cached(project_root, mermaid, png_path, scale=2, timeout=60)
     _suffix = " regenerated (rest carried)" if affected is not None else ""
     progress.done(summary=f"output/unit_diagrams/ ({total} units{_suffix})")

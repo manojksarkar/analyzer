@@ -6,8 +6,8 @@
   "views": {
     "interfaceTables": true,
     "unitDiagrams": true,
-    "flowcharts": true,
-    "behaviourDiagram": true,
+    "flowcharts": false,
+    "behaviourDiagram": false,
     "componentStaticDiagram": true
   },
   "layers": {
