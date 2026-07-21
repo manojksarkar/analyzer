@@ -29,6 +29,24 @@ _COMMENT_STRING_RE = re.compile(
 )
 
 
+def _strip_comments(text: str) -> str:
+    """Remove // and /* */ comments from a code snippet, preserving string and
+    char literals (so a `//` inside a string is not mistaken for a comment).
+    Trailing whitespace and lines emptied by a removed comment are dropped;
+    newlines are otherwise kept so multi-line declarations keep their shape."""
+    if not text:
+        return text
+
+    def _repl(m):
+        tok = m.group(0)
+        return "" if tok.startswith(("//", "/*")) else tok
+
+    out = _COMMENT_STRING_RE.sub(_repl, text)
+    lines = [ln.rstrip() for ln in out.splitlines()]
+    lines = [ln for ln in lines if ln.strip()]
+    return "\n".join(lines).strip()
+
+
 def _readable_label(name: str) -> str:
     """Convert an identifier like 'g_readWrite' or 'sb_index' into a human label."""
     if not name:
@@ -268,7 +286,15 @@ def _build_unit_header_table(
         line = int(loc.get("line") or 0)
         abs_file = os.path.join(base_path, rel_file) if base_path and rel_file else ""
         decl = _read_decl_snippet(abs_file, line, kind="var")
-        info = g.get("value") or NA
+        # Value column = the initializer (right of the first '='). The snippet is
+        # brace-depth aware, so a multi-line array/struct initializer is captured
+        # in full here; the single-line parser value (g["value"]) is the fallback.
+        clean_decl = _strip_comments(decl)
+        if "=" in clean_decl:
+            rhs = clean_decl.split("=", 1)[1].strip().rstrip(";").strip()
+        else:
+            rhs = ""
+        info = rhs or g.get("value") or NA
         if (decl or "").strip() in ("", "-"):
             decl = g.get("qualifiedName") or g.get("name") or str(gid) or NA
         rows.append({"declaration": decl or NA, "information": info})
@@ -398,6 +424,13 @@ def _build_unit_header_table(
         if (decl or "").strip() in ("", "-"):
             decl = t.get("name") or _type_name or NA
         rows.append({"declaration": decl or NA, "information": info})
+
+    # Strip comments from both columns — a comment is never part of a declaration
+    # or a value (string/char literals are preserved). Done before dedup so rows
+    # that differ only by a comment collapse together.
+    for r in rows:
+        r["declaration"] = _strip_comments(r.get("declaration") or "") or NA
+        r["information"] = _strip_comments(r.get("information") or "") or NA
 
     # Deduplicate (same declaration can appear via enum + typedef entries)
     dedup = {}

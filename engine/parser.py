@@ -359,6 +359,9 @@ type_users = defaultdict(set)      # type qn        -> set(func_key) that refere
 function_tokens = {}               # func_key       -> set(identifier token spellings) for macro matching
 _type_keys = set()                 # project type qns that have a hash (filter target)
 _macro_keys = set()                # macro keys "name@relFile" (filled in _scan_defines)
+_active_macro_lines = {}           # (name, relFile) -> set of #define lines libclang's
+                                   # preprocessor actually took (active #if/#else branch);
+                                   # filled in parse_file, consumed by _scan_defines
 _func_key_to_fid = {}              # internal func_key -> model fid (filled in build_metadata)
 _visited_usage_keys = set()        # dedup for visit_usage across header includes
 call_graph = defaultdict(list)  # caller -> [callees]
@@ -1163,6 +1166,25 @@ def _capture_tu_includes(tu, path):
         print(f"include-closure capture failed for {path}: {e}")
 
 
+def _collect_macro_defs(tu_cursor):
+    """Record the source line(s) of each macro libclang's preprocessor actually
+    defined — i.e. the *active* #if/#else branch only (inactive branches are not
+    compiled, so they never appear here). _scan_defines uses this to drop
+    inactive-branch #define duplicates. Project files only; built-in/system
+    macros (location.file is None or non-project) are ignored."""
+    for cur in tu_cursor.get_children():
+        if cur.kind != cindex.CursorKind.MACRO_DEFINITION:
+            continue
+        f = cur.location.file
+        if f is None or not is_project_file(f.name):
+            continue
+        try:
+            rel = os.path.relpath(f.name, MODULE_BASE_PATH).replace("\\", "/")
+        except ValueError:
+            rel = f.name.replace("\\", "/")
+        _active_macro_lines.setdefault((cur.spelling, rel), set()).add(cur.location.line)
+
+
 def parse_file(path):
     try:
         tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
@@ -1170,6 +1192,7 @@ def parse_file(path):
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
         visit_usage(tu.cursor)  # incremental (M1.2b): type/macro usage on the same TU
+        _collect_macro_defs(tu.cursor)  # active #if/#else macro branch (for _scan_defines)
     except cindex.TranslationUnitLoadError as e:
         print(f"Failed: {path}: {e}")
 
@@ -1371,8 +1394,17 @@ def _collect_define_files():
 
 
 def _scan_defines():
-    """Populate data_dictionary with kind=define entries from #define lines."""
+    """Populate data_dictionary with kind=define entries from #define lines.
+
+    When one macro name is #defined more than once in a file (e.g. one per
+    #if/#else branch), the textual scan alone would emit *every* branch. Pass 2
+    keeps only the branch libclang's preprocessor actually took — the active
+    line(s) collected in `_active_macro_lines` during parse_file. On any
+    ambiguity (no libclang info for the name, or none of the textual lines match)
+    all definitions are kept, so a macro is never lost.
+    """
     files = _collect_define_files()
+    grouped = {}  # (name, rel_file) -> list of entry dicts, in declaration order
     for path in files:
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -1410,19 +1442,35 @@ def _scan_defines():
             parts = after.split(None, 1)
             name = parts[0]
             value = parts[1].strip() if len(parts) > 1 else ""
-            key = f"{name}@{rel_file}:{line_no}"
+            grouped.setdefault((name, rel_file), []).append(
+                {"line": line_no, "value": value, "full": full}
+            )
+
+    for (name, rel_file), entries in grouped.items():
+        chosen = entries
+        if len(entries) > 1:
+            # Same macro defined on multiple lines in one file = conditional
+            # (#if/#else) branches. Keep only the branch libclang compiled;
+            # fall back to all if libclang can't disambiguate (never drop all).
+            active = _active_macro_lines.get((name, rel_file))
+            if active:
+                matching = [e for e in entries if e["line"] in active]
+                if matching:
+                    chosen = matching
+        for e in chosen:
+            key = f"{name}@{rel_file}:{e['line']}"
             data_dictionary[key] = {
                 "kind": "define",
                 "name": name,
                 "qualifiedName": name,
-                "value": value,
-                "text": full,
-                "location": {"file": rel_file, "line": line_no},
+                "value": e["value"],
+                "text": e["full"],
+                "location": {"file": rel_file, "line": e["line"]},
             }
             # Incremental (M1.2): macro hash keyed by the line-stable `name@relFile`
             # (matches edges.json macroUsers; avoids false "changed" when a macro
             # shifts lines). Last definition of a name in a file wins.
-            entity_hashes[f"{name}@{rel_file}"] = hash_macro_text(full)
+            entity_hashes[f"{name}@{rel_file}"] = hash_macro_text(e["full"])
             _macro_keys.add(f"{name}@{rel_file}")  # M1.2b: known macro (edges.json)
             entity_files[f"{name}@{rel_file}"] = rel_file  # M4.3
 

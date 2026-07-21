@@ -31,7 +31,7 @@ PRIVATE_GLOBALS = {
 # ---------------------------------------------------------------------------
 
 def test_expected_units_present(interface_tables):
-    for key in ("Core|Core", "Lib|Lib", "Util|Util"):
+    for key in ("Sample-Core|Core", "Lib|Lib", "Util|Util"):
         assert key in interface_tables, f"Unit '{key}' missing from interface_tables"
 
 
@@ -40,7 +40,7 @@ def test_unit_names_present(interface_tables):
 
 
 def test_unit_names_map(interface_tables):
-    assert interface_tables["unitNames"]["Core|Core"] == "Core"
+    assert interface_tables["unitNames"]["Sample-Core|Core"] == "Core"
     assert interface_tables["unitNames"]["Lib|Lib"] == "Lib"
     assert interface_tables["unitNames"]["Util|Util"] == "Util"
 
@@ -152,7 +152,9 @@ def test_interface_ids_start_with_IF(all_entries):
 
 def test_interface_id_segments_uppercase(all_entries):
     import re
-    pattern = re.compile(r"^IF(_[A-Z]+)+_\d+$")
+    # Segments are uppercase alphanumeric (e.g. the layer segment 'LAYER1'),
+    # followed by a numeric index: IF_<SEG>_<SEG>..._<NN>.
+    pattern = re.compile(r"^IF(_[A-Z0-9]+)+_\d+$")
     for entry in all_entries:
         iid = entry["interfaceId"]
         assert pattern.match(iid), (

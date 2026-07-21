@@ -1,6 +1,53 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> **WORK STATUS / QUEUE — 2026-07-15 (read this first if picking up in a new chat).**
+> **WORK STATUS / QUEUE — 2026-07-20 (read this first if picking up in a new chat).**
+> - **DONE + removed from the active batch lists:** 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7,
+>   flowcharts-in-DOCX, orphan-header handling, 3.14, 3.15, 3.18. **Remaining open:**
+>   per-layer macros, function hide/unhide (Phase-3 JSON), 3.8, 3.9, 3.10, 3.11, 3.12,
+>   3.13, 3.16, 3.19; 3.17 interim-landed (full precedence spec still pending).
+> - **2026-07-20 — unit-header value-column batch (3.20–3.22):** all fixed in
+>   `docx_exporter._build_unit_header_table` (exporter-only; **no parser/model change**, so no
+>   snapshot/hash churn). New `_strip_comments()` helper (reuses `_COMMENT_STRING_RE`; removes
+>   `//` and `/* */` incl. multi-line, **preserves string/char literals**) is applied to BOTH
+>   columns before dedup → **3.20 done** (comments gone from declaration + value; Korean handled
+>   by removal, not translation, per user). The globals branch now takes the value column from
+>   the RHS of the brace-depth `_read_decl_snippet` (multi-line-safe) instead of the single-line
+>   `g["value"]` → **3.22 done** (arrays show `{ … }`, not a stray comment). **3.21 partial:**
+>   comment-strip makes the `#define` value clean (`(24)`), but value *evaluation* (`(1<<6)`→`64`)
+>   and the description fallback for value-less macros were **deliberately deferred** (eval/LLM
+>   risk). Tests: `tests/unit/test_unit_header_comments.py` (9 cases). 3.20/3.22 removed from the
+>   remaining list above.
+> - **2026-07-21 — 3.23 conditional `#define` shows both branches (DONE):** a macro `#define`d once
+>   per `#if/#else` branch appeared **twice** in the unit header (once per branch). Root: `_scan_defines`
+>   is a **textual** scan (`parser.py`) that keys by `name@file:line` and never evaluates `#if`, so it
+>   emitted every branch. Fix: libclang already parses with `PARSE_DETAILED_PROCESSING_RECORD` and its
+>   preprocessor keeps only the **active** branch — new `_collect_macro_defs` (called in `parse_file`)
+>   records active `MACRO_DEFINITION` lines per `(name, relFile)` into `_active_macro_lines`;
+>   `_scan_defines` is now two-pass and, for a name with >1 textual definition in a file, keeps only the
+>   line(s) libclang took (**fallback = keep all** when libclang has no info or no line matches, so a
+>   macro is never lost). Branch follows the parse `-D` config → fully client-correct once per-layer
+>   macros lands. **Parser/model change → snapshots regenerate.** Verified A/B (SOMETHING undef→else,
+>   def→if). Test: `tests/unit/test_define_conditional.py` (libclang-guarded skip).
+> - **2026-07-21 — e2e test suite resurrected + snapshots regenerated (DONE, test-only):** the
+>   pipeline-backed e2e suite had been **dead since PR #19** (`2a1064f`), which renamed the fixture
+>   group `Sample`→`My Sample` (component `Core`→`Sample Core`) in `engine/config/config.json` but
+>   never updated the tests. Pipeline output now lives under `output/My-Sample/` (space→hyphen);
+>   view/model keys are `Sample-Core|Core` (unit name still `Core`), diagram node `Sample-Core_Core`,
+>   subgraph label `"Sample Core"`, interface ids `IF_LAYER1_*`. Fixed the harness group
+>   (`tests/conftest.py`), all `output/Sample`→`output/My-Sample` paths, and every `Core|Core`→
+>   `Sample-Core|Core` / `SAMPLE_COMPONENTS`→`{Sample-Core,Lib,Util}` key. **Rewrote the obsolete
+>   topology assertions** in `test_unit_diagrams.py` and the mock tests in `test_unit_diagrams_view.py`
+>   to the current 3.6/3.15 semantics: a unit diagram draws **only its OWNED (caller) edges** (built
+>   from each function's `calledByIds`, oriented by the owner's In/Out); **callee edges are dropped**
+>   (they render in the provider's own diagram). `_unit_part_id` now maps space→`-`, pipe→`_`. Added
+>   `behaviour_diagram_on` skip-guard (Dynamic Behaviour section is empty when `views.behaviourDiagram`
+>   is off) and relaxed the interface-id regex to allow the alphanumeric layer segment (`LAYER1`).
+>   Regenerated `tests/snapshots/Sample/{interface_tables,unit_diagrams}.json`. Full suite: **627
+>   passed, 4 skipped, 0 failed** (`pytest --skip-pipeline`). No engine code changed.
+> - **⚠ Merge state:** 3.1/3.2/3.4/3.5/3.6/3.7 landed on feature branches with **PRs
+>   pending into `poc-4`** (not merged); 3.14/3.15/3.17/3.18 are on `v1-fixes-more`. The
+>   detailed per-branch bullets below are retained as the record of where each fix lives
+>   and what is not yet merged — they are history, not open work.
 > - **Landed on `poc-4`** (the current integration branch, origin/poc-4 = `61003f6`): flowchart-in-DOCX
 >   (3.7), 3.5 (interface-table Source/Destination lists all non-self units, REQ-IT-12), ELK renderer
 >   for unit + header-dependency diagrams.
@@ -2293,45 +2340,11 @@ auto-formatters have reverted this fix in the past. After any change to
 [engine/flowchart/ast_engine/cfg_builder.py](engine/flowchart/ast_engine/cfg_builder.py),
 re-run `python engine/flowchart/tests/diagnose_assert.py`.
 
-### Pre-V1 correctness batch (open — targets V1; see `docs/planning/ROADMAP.md` task 3.1–3.10)
+### Pre-V1 correctness batch — remaining (targets V1; see `docs/planning/ROADMAP.md` task 3.8–3.10)
 
-Ten correctness findings surfaced in pre-V1 review (2026-07-10). Several are
-interdependent — **fix the parsing roots first, then re-test the dependents**
-before doing separate work on them.
-
-**Parsing scope / ingestion (roots):**
-- **3.1 — emulator files in analysis scope.** Emulator/stub sources are being
-  parsed and should be excluded from the parse set (config module folders /
-  `parser.is_project_file`, §10). Suspected root cause of 3.3.
-- **3.2 — header files not parsed.** Declarations in `.h/.hpp` are skipped; only
-  source files are parsed (§10 Phase 1). Suspected root cause of 3.4 — a callee/
-  declaration only visible in a header can starve the analysis.
-
-**Dependent on the roots (re-test before fixing):**
-- **3.3 — some functions should not be visible.** Re-test after 3.1; most likely
-  the emulator files leaking into the model. Fix separately only if it persists.
-- **3.4 — direction shows "Out" instead of "In" for some functions.** Re-test
-  after 3.2. Direction is computed from global access + call relationships (see
-  §18 "Direction default was wrong" — no-global functions default to "Out", and
-  "`visit_global_access` used wrong visited-set"); a missing header can make a
-  function look global-free and default it to "Out".
-
-**Interface table ↔ static diagram consistency:**
-- **3.5 — same-component source/destination dropped.** The interface table omits
-  pairs where source and destination are in the same component; include them too
-  (§12 `views/interface_tables.py`).
-- **3.6 — direction logic inconsistent with the static diagram.** The interface
-  table factors **global-variable access** into direction, but the static diagram
-  is drawn from the **function-call relationship**. **DECISION: make the table
-  follow the function-call relationship (drop global-var access from direction)
-  so table ↔ diagram agree.** Touches the interface-table builder (§12) and the
-  direction fields written in Phases 1–2 (§10/§11). Confirm this is the intended
-  source of truth before implementing.
-
-**Export completeness:**
-- **3.7 — functions missing from DOCX due to access specifier.** Known issue:
-  functions are dropped from the DOCX by access specifier (e.g. private). Decide
-  the intended visibility rule and apply it in Phase 4 export (§14).
+Of the ten findings from pre-V1 review (2026-07-10), **3.1–3.7 are done and
+removed** (roots + interface direction/consistency + export; see WORK STATUS
+block at top). Remaining open items below.
 
 **Flowchart rendering (§13):**
 - **3.8 — if/else condition depiction.** Conditional branches are not rendered

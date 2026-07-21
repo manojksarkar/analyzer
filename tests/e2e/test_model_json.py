@@ -16,7 +16,7 @@ pytestmark = pytest.mark.e2e
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
 
-SAMPLE_COMPONENTS = {"Core", "Lib", "Util"}
+SAMPLE_COMPONENTS = {"Sample-Core", "Lib", "Util"}
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ def test_units_json_not_empty(units):
 
 
 def test_sample_units_present(units):
-    for expected in ("Core|Core", "Lib|Lib", "Util|Util"):
+    for expected in ("Sample-Core|Core", "Lib|Lib", "Util|Util"):
         assert expected in units, f"Expected unit {expected!r} missing from units.json"
 
 
@@ -167,7 +167,7 @@ def test_unit_function_ids_are_strings(units):
 
 def test_core_calls_lib_and_util(units):
     """Core unit must list Lib and Util as callees."""
-    core = units.get("Core|Core", {})
+    core = units.get("Sample-Core|Core", {})
     callees = set(core.get("calleesUnits", []))
     assert "Lib|Lib" in callees, "Core|Core should call Lib|Lib"
     assert "Util|Util" in callees, "Core|Core should call Util|Util"
