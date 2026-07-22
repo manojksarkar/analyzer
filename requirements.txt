@@ -2,3 +2,6 @@ libclang>=14.0
 requests>=2.28.0
 python-docx>=1.0
 tiktoken>=0.5.0  # optional: enables exact token counting (char fallback if missing)
+sqlalchemy>=2.0        # PostgreSQL ORM/Core (docs/production-redesign/07)
+alembic>=1.13          # schema migrations
+psycopg[binary]>=3.1   # PostgreSQL driver
