@@ -1197,18 +1197,24 @@ def parse_file(path):
         print(f"Failed: {path}: {e}")
 
 
-def parse_calls(path):
+def parse_calls_and_globals(path):
+    """Second (and final) parse of a TU: call edges + global read/write access.
+
+    Why this is a separate parse from parse_file(): both visitors resolve against the
+    *complete* definition registries — `visit_calls` drops an edge whose callee is not
+    yet in `functions`, and `visit_global_access` only records a var already in
+    `globals_data`. Those registries are only complete once parse_file() has run over
+    every file, so these visitors cannot move into the first pass without silently
+    losing cross-file call edges.
+
+    They do NOT depend on each other, though (separate registries, separate visited-key
+    sets), so they share ONE parse instead of taking one each — removing a third full
+    parse of every translation unit. Parsing dominates Phase 1 (~12s of 13s on the
+    19-file sample), so this is a ~1/3 cut that scales with the codebase.
+    """
     try:
         tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         visit_calls(tu.cursor)
-    except cindex.TranslationUnitLoadError:
-        pass
-
-
-def parse_global_access(path):
-    """Collect global read/write per function for direction (In/Out)."""
-    try:
-        tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         visit_global_access(tu.cursor)
     except cindex.TranslationUnitLoadError:
         pass
@@ -1600,19 +1606,13 @@ def main():
         parse_file(path)
     p1.done()
 
-    p2 = ProgressReporter("parser:calls", total=total, logger=plog)
-    p2.start(f"collecting calls ({total} files)")
+    # One parse serves both call edges and global access (see parse_calls_and_globals).
+    p2 = ProgressReporter("parser:calls+globals", total=total, logger=plog)
+    p2.start(f"collecting calls + global access ({total} files)")
     for path in source_files:
         p2.step()
-        parse_calls(path)
+        parse_calls_and_globals(path)
     p2.done()
-
-    p3 = ProgressReporter("parser:globals", total=total, logger=plog)
-    p3.start(f"collecting global access ({total} files)")
-    for path in source_files:
-        p3.step()
-        parse_global_access(path)
-    p3.done()
 
     metadata = build_metadata()
     model_dir = os.path.join(PROJECT_ROOT, "model")
