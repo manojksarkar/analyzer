@@ -29,12 +29,14 @@ In that mode the client treats the explicit `url` as the full endpoint URL
 use_openai_format.
 """
 
+import hashlib
+import json
 import logging
 import os
 import sys
 import threading
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import requests
 
@@ -114,6 +116,74 @@ def _trace_response(ordinal: int, response: Optional[str]) -> None:
         + "=" * 72 + "\n\n"
     )
     _safe_write(body)
+
+
+def _dump_dir() -> Optional[str]:
+    """Target directory for the prompt-parity corpus (`LLM_PROMPT_DUMP`), or None."""
+    return os.environ.get("LLM_PROMPT_DUMP", "").strip() or None
+
+
+def _dump_prompt(provider: str, model: str, parts: List[Dict], **params) -> None:
+    """Record an outgoing prompt for the L2 parity harness (docs/production-redesign/07 §2).
+
+    LLM output is non-deterministic, so accuracy cannot be verified by diffing
+    responses — we verify that the *input* never changed. This is the single
+    capture point: every call site in the codebase reaches the model through
+    ``LlmClient``, so hooking here is complete by construction (hooking the
+    individual builders is not — 12 call sites bypass ``_call_llm``).
+
+    Content-addressed on purpose: the filename is the digest of exactly what we
+    send, so the corpus is a *set* and comparison is independent of ordering and
+    of which process produced it (phases run as separate subprocesses, each with
+    its own trace counter). ``calls.jsonl`` keeps the per-call tally so a dropped
+    or duplicated call is still detectable.
+
+    Never raises: a dump failure must not abort a run.
+    """
+    directory = _dump_dir()
+    if not directory:
+        return
+    try:
+        payload = {"provider": provider, "model": model, "params": params, "parts": parts}
+        blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2)
+        digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, f"{digest}.json")
+        if not os.path.exists(path):
+            # Atomic: concurrent phases may legitimately produce the same digest.
+            tmp = f"{path}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(blob)
+            os.replace(tmp, path)
+        with open(os.path.join(directory, "calls.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"digest": digest, "pid": os.getpid()}) + "\n")
+    except Exception:                                    # pragma: no cover - never fail a run
+        pass
+
+
+def _fake_enabled() -> bool:
+    """True when `LLM_FAKE_RESPONSES` asks for deterministic stand-in replies."""
+    return os.environ.get("LLM_FAKE_RESPONSES", "").strip().lower() not in ("", "0", "false", "no")
+
+
+def _fake_response(*parts: str) -> str:
+    """Deterministic stand-in for a model reply (`LLM_FAKE_RESPONSES=1`).
+
+    Lets the L2 prompt-parity baseline be captured on a host with **no gateway**:
+    every call site still builds and dumps its prompt, and because the reply is
+    stable and non-empty, prompts that embed upstream output (e.g. the flowchart
+    context packet's "Purpose:" line) stay representative instead of collapsing
+    to empty strings — which is what happens if the calls simply fail.
+
+    Deterministic on purpose: the same prompt always yields the same reply, so a
+    before/after capture differs **only** where prompt construction changed.
+
+    Not a substitute for a real run: replies that callers expect to be JSON will
+    fail to parse, so those branches take their empty path — identically in the
+    before and after captures, which keeps the comparison valid.
+    """
+    digest = hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()[:12]
+    return f"FAKE_LLM_RESPONSE[{digest}]"
 
 
 # Process-wide serialisation for OpenAI calls. Class-level so every instance
@@ -201,6 +271,12 @@ class LlmClient:
         """
         trace_ord = _trace_request(self._provider, self._model, system_prompt, user_prompt) \
             if _trace_enabled() else 0
+        _dump_prompt(self._provider, self._model,
+                     [{"role": "system", "content": system_prompt},
+                      {"role": "user", "content": user_prompt}],
+                     num_ctx=self._num_ctx, temperature=getattr(self, "_temperature", None))
+        if _fake_enabled():          # deterministic baseline capture; prompt already dumped
+            return _fake_response(system_prompt, user_prompt)
         last_exc: Optional[BaseException] = None
         # max_retries=1 means: 1 initial attempt + 1 retry = 2 total tries.
         total_attempts = self._max_retries + 1
@@ -290,6 +366,10 @@ class LlmClient:
         temp = temperature if temperature is not None else self._temperature
         trace_ord = _trace_messages(self._provider, self._model, messages) \
             if _trace_enabled() else 0
+        _dump_prompt(self._provider, self._model, list(messages),
+                     num_ctx=self._num_ctx, temperature=temp)
+        if _fake_enabled():          # deterministic baseline capture; prompt already dumped
+            return _fake_response(*(str(m.get("content", "")) for m in messages))
         last_exc: Optional[BaseException] = None
         total_attempts = self._max_retries + 1
         for attempt in range(1, total_attempts + 1):

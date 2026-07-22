@@ -62,3 +62,6 @@ build/
 dist/
 *.egg-info/
 
+
+# LLM prompt-parity corpora (docs/production-redesign/07 §2)
+.parity/
