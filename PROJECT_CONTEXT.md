@@ -1,5 +1,9 @@
 # C++ Codebase Analyzer — Complete Project Context
 
+> **Audience: agents, not humans.** This file is read by Claude/other agents at the start of every session.
+> Optimize it for findability and completeness, not polish — no prose warm-up, no formatting for human readers.
+> A section outline is fine purely as an agent-navigation aid. Humans read the docs under `docs/` instead.
+
 > **WORK STATUS / QUEUE — 2026-07-20 (read this first if picking up in a new chat).**
 > - **DONE + removed from the active batch lists:** 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7,
 >   flowcharts-in-DOCX, orphan-header handling, 3.14, 3.15, 3.18. **Remaining open:**
@@ -102,6 +106,32 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-07-23 (**docs restructure + agent role-skills.** Introduced `.claude/skills/` role skills:
+> `docs-maintainer` (owns **all** docs repo-wide — audience/register/naming/outline conventions + the doc-gen
+> method) and `ui-dev` (frontend rules, replacing the deleted `web-app/CONVENTIONS.md`). Doc suite tidied:
+> this file marked **agent-facing** (top header); `docs/design/REDESIGN.md` deleted (v2-from-scratch,
+> superseded by `docs/production-redesign/`); `DOCX_generation_walkthrough.md` merged into
+> `docs/design/DESIGN.md`; `api/IMPLEMENTATION_PLAN.md` → `api/PLAN.md` (status refreshed: M0–M3 done, M4
+> remaining); new `web-app/PLAN.md`; ArtiFex name locked in `web-app/PROJECT_CONTEXT.md`; root README +
+> subsystem README doc-indexes filled. New convention: each subsystem may keep a `PLAN.md` (forward work only,
+> ≠ ROADMAP/BACKLOG).)
+
+> Updated: 2026-07-23 (**SWE.4 test-case generation methods scoped.** Client names **three** generation
+> methods — **Analysis of Requirements** (the unit's specified behaviour), **Equivalence Class Analysis**
+> (input/output partitioning), **Boundary Value Analysis** (input boundaries) — recorded in Table B's "Test
+> Case Generation Method" field (REQ-UT-09). **The first complete SWE.4 implementation emits `Analysis of
+> Requirements` only:** cases derived from the function signature + SWE.3 detailed design/description +
+> return/OUT, as functional cases with expected results (no systematic CFG/input partitioning yet).
+> **Equivalence Class + Boundary Value — and the branch-coverage-targeted input sizing (the old `function +
+> branch coverage` generation-method string, and REQ-TC-01…05) — are DEFERRED** to a follow-on method-pass;
+> the 24-function derivation spike (`tools/swe4-derivation-spike/`) validates that deferred pass, **not** the
+> first implementation. Model shape unchanged: one Table B / one Test Case ID per public function, though
+> Table A may carry multiple input sets; each set is attributed to a method and Table B lists the distinct
+> set. Config: `docx.swe4.generationMethod` becomes method attribution, not a fixed string. Contract:
+> `docs/spec/SWE4_SPEC.md` REQ-TC-08 + the scope banner over the derivation section; leadership: plan
+> Decisions 2026-07-23. NOTE this narrows the first build vs. the 2026-07-22 entry below, which assumed
+> branch-coverage sizing as the core work.)
 
 > Updated: 2026-07-22 (**SWE.4 unit-test-spec generation — discovery + design locked; implementation plan
 > approved.** Requirements + test-case derivation logic + limits: **`docs/spec/SWE4_SPEC.md`** (REQ-UT /
@@ -219,7 +249,7 @@
 
 > Updated: 2026-06-30 (feat/web-app-api: fix new-project wizard Step 4 "developers vanish after create" + team UI cleanup. Root cause: `api/routes/projects.py::create_project` added team members only `if user:` (silently dropping unmatched emails) and with `status="pending"` — pending members are excluded from `list_members` (active-only) and `team_count`, so selected developers didn't appear. Fix (single API edit): the team loop now adds every selected developer as an **active** member (`status="active"`, `joined_at=now`, mirroring the creator-add above), resolving `user_id` via `get_by_email` with a `pending_<email>` fallback so nothing is dropped — no pending/invite path. Frontend `web-app/src/pages/NewProjectPage.tsx` Step 4: removed the invite-by-email affordance (the `showInvite` "Send invite" dropdown row, `showInvite`/`EMAIL_RE`, "Add / Invite member"→"Add member", "type a full email to invite" copy) and the pending/invite concept (`Member.pending` field, "Invite pending"/"Invited" labels in member list + Step-5 review); Step 4 now only searches the org directory and adds existing users. UI: the add-member Role `<select>` was oversized (`inp w-[130px]`) vs the compact in-list role selects — restyled to match (`w-[120px]` + compact font/padding) and the results-dropdown offset adjusted `right-[140px]`→`right-[128px]`. `npm run build` clean (304 modules). The Team page's separate `/members/invite` flow is untouched.)
 > Updated: 2026-06-27 (feat/web-app-api: fix compare page rendering raw JSON — `api/services/compare_engine.py` `compute_document_sections_diff` was serialising raw `interface_tables.json` unit data via `json.dumps`, causing `ComparePage.tsx` `SectionBody` to display unparseable JSON text. Added `_itf_unit_to_markdown()` which converts the `entries` list into a GitHub-style pipe table; the existing `parseSectionBody` in `web-app/src/lib/markdown.ts` parses it correctly into rendered HTML tables. No frontend changes needed; see §19 / `api/PROJECT_CONTEXT.md §8`).
-> Updated: 2026-06-27 (feat/web-app-api-port: React app now lives in `web-app/` (was `frontend/app/`) and is wired to the live FastAPI API (§19) via typed mappers/hooks; **test framework added** — vitest Tier-1 unit tests (jsdom + MSW fixtures, `npm test`) + Tier-2 live-API contract validation (`npm run test:api`, ~46 endpoints vs zod schemas); commit `c888ae4`. Reference docs (not duplicated here): `web-app/TESTING.md`, `web-app/CONVENTIONS.md`, `web-app/INTEGRATION_NOTES.md`).
+> Updated: 2026-06-27 (feat/web-app-api-port: React app now lives in `web-app/` (was `frontend/app/`) and is wired to the live FastAPI API (§19) via typed mappers/hooks; **test framework added** — vitest Tier-1 unit tests (jsdom + MSW fixtures, `npm test`) + Tier-2 live-API contract validation (`npm run test:api`, ~46 endpoints vs zod schemas); commit `c888ae4`. Reference docs (not duplicated here): `web-app/TESTING.md`, `web-app/INTEGRATION_NOTES.md`, and the `ui-dev` skill (`.claude/skills/ui-dev/`, was `web-app/CONVENTIONS.md`)).
 > Updated: 2026-06-23 (feat/frontend-app: all five inner React pages — `ProjectDetailPage`, `DocumentsPage`, `ComparePage`, `VersionsPage`, `TeamPage` — rebuilt as faithful 1:1 ports of their design HTML (they were previously simplified sketches missing 50–80% of the design DOM: panels, KPI strips, sub-bars, state variants, detail rows); `Document`/`TeamMember` types + `data/mock.ts` extended to the design datasets (15 docs, 9 members incl. pending, `unchanged` doc status); `npm run build` clean (263 modules); commit `98af777`; see §24 React-app implementation table).
 > Updated: 2026-06-22 (feat/frontend-app branch created from `main`; `frontend/app/` (51 files, full React/Vite/TS/Tailwind v4 app) landed here; see §24 for frontend stack detail; branch supersedes `feat/product-ui-redesign`).
 > Previous update: 2026-06-18 (version4 — **Incremental Changes feature** design + foundations: backend **adapted** to main's `layers`/`component` schema; `engine/git_service.py` added (git ingestion — done); **P1 onboarding stub `engine/seed_workspace.py` — done** (seeds `workspaces/samplecpp/` from the `github.com/vishal9359/SampleCppProject` test repo; branches `main`+`feature1/2/3` built for nearest/far/divergent-ancestor tests); incremental design docs `docs/production-redesign/04` (approach, v2.1) + `05` (UI API spec); implementation plan M1–M3; **M1.1 `--config`/`ANALYZER_CONFIG` config-injection — done**; **M1.2 entity hashing + slim usage index — done** (`engine/incremental/{hashing,edges}.py`; `parser.py` writes `model/hashes.json` `{entityKey→token-sha256}` for functions/globals/types/macros **and** `model/edges.json` `{typeUsers, macroUsers}`; token-based, deterministic, edges cross-reference hashes); **M1 fully done** (`--config`/`ANALYZER_CONFIG`; entity hashing `model/hashes.json`; slim usage index `model/edges.json`; D9 stores `engine/incremental/stores.py` + fingerprints + version-producing full-gen `generate.py`; backend `POST …/generate` + `versions` APIs in `engine/main.py`; verified e2e on `samplecpp` → `versions/v2` + seeded `cache/index.json`); **M2 in progress** — **M2.1** baseline+preview (`git_ops.py`+`baseline.py`) **+ M2.2** classify+impact BFS (`impact.py`) **+ M2.3** the incremental engine (`engine.py::generate_incremental`) **done** (verified e2e on `samplecpp`: v1@C3→v2@HEAD, 3 new + 6 impact incl. transitive deleted-caller, 109 reused); **parse strategy = FULL-parse + selective-LLM-regen (D10)**; **M2 fully done** — **M2.4a** `mode:"auto"` dispatch + **M2.4b** file-level flowchart reuse (`views/flowcharts.py` gated on `model/incremental_plan.json`); **M1+M2 complete; M3.1 (precise flowchart reuse) + M3.2 (function-summary reuse) + M3.3 (full Phase-2 enrichment reuse — behaviour-names/descriptions/globals restricted to the impact set; file/component summary gating; PNG reuse; + documents-capture bug fix) done**. The LLM-on payoff is now real (behaviour-names were the hidden 417s cost — config has descriptions+behaviourNames on). Re-test LLM-on **with a real diff** (baseline at an earlier commit than the target). **M3.4 end-of-run report done** (`engine/incremental/report.py`: logged to `logs/run_<date>.log` + saved to `versions/<id>/report.txt`; inputs + change classification + reuse accounting %). Remaining M3: version-scoped reads (`?versionId=`), git_ops/git_service consolidation. **Full session summary + decisions + status in §23** — read it first when resuming incremental work).
@@ -3545,7 +3575,7 @@ hash / edge / reuse-index access goes through.
 
 Branch: `feat/frontend-app`. HTML design mockups in `frontend/designs/` are the reference specs; the working React app lives in `frontend/app/` (Vite + React + TS + Tailwind v4) and ports each design 1:1. Full UI context in `frontend/UI_CONTEXT.md`.
 
-> **On `feat/web-app-api-port` the app moved to `web-app/` and is wired to the live FastAPI API (§19), not mock data.** The detail below describes the earlier `frontend/app/` mock-data state. For the current app, read the web-app docs directly: **`web-app/CONVENTIONS.md`** (engineering rules), **`web-app/INTEGRATION_NOTES.md`** (API wiring, per-page gaps), **`web-app/TESTING.md`** (vitest unit + `npm run test:api` contract suite).
+> **On `feat/web-app-api-port` the app moved to `web-app/` and is wired to the live FastAPI API (§19), not mock data.** The detail below describes the earlier `frontend/app/` mock-data state. For the current app, read the web-app docs directly: the **`ui-dev` skill** (`.claude/skills/ui-dev/`, engineering rules — was `web-app/CONVENTIONS.md`), **`web-app/INTEGRATION_NOTES.md`** (API wiring, per-page gaps), **`web-app/TESTING.md`** (vitest unit + `npm run test:api` contract suite).
 
 **Team-facing doc:** `frontend/app/README.md` — stack, run commands, folder structure, and the core conventions (tokens-not-hex, read data through `hooks/`, thin pages, commit style). `UI_CONTEXT.md` covers the product/design *what & why*; the README covers the engineering *how*.
 

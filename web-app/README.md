@@ -31,11 +31,12 @@ src/
 ## Conventions
 
 Full rules — structure, the design-system primitives + token usage (no inline styles), and the
-hooks-only data flow — are in [CONVENTIONS.md](CONVENTIONS.md) (ESLint-enforced). In short:
+hooks-only data flow — live in the **`ui-dev` skill** (`.claude/skills/ui-dev/`, ESLint-enforced;
+auto-loads when working in `web-app/`). In short:
 
 - **Style with tokens + `ui/` primitives** (`Icon`, `Text`, `Card`, …) — never inline `style={{}}`.
 - **Read data through `hooks/`** — a component never imports `services/` at runtime.
 - **Keep pages thin** — big pages live in `pages/<Name>/`.
 - **Commits**: short and prefixed — `feat:`, `fix:`, `docs:`.
 
-Product & design context: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
+**Docs in this folder:** [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (product/design context) · [PLAN.md](PLAN.md) (forward work) · [INTEGRATION_NOTES.md](INTEGRATION_NOTES.md) (API wiring, per-page gaps) · [TESTING.md](TESTING.md) (unit + contract suite).

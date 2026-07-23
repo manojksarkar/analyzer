@@ -6,6 +6,8 @@ Built with **FastAPI** + **Python 3.12**, backed by either an in-memory store
 (`run.py`) for analysis jobs and reads its actual output for documents,
 functions, render, download, and compare.
 
+> **Docs in this folder:** [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) (scoped context) · [PLAN.md](PLAN.md) (forward work + design record).
+
 ---
 
 ## Quick start

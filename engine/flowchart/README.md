@@ -2,6 +2,8 @@
 
 Generates Mermaid flowcharts from C++ source code using libclang for static analysis and a local LLM (Ollama) for human-readable labels.
 
+> See also [FLOW.md](FLOW.md) — the complete end-to-end analyzer pipeline flow reference (`run.py` → phases → DOCX).
+
 Given a C++ function, it produces a flowchart like this:
 
 ```

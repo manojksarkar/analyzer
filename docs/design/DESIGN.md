@@ -1,6 +1,6 @@
 # Design
 
-> See also: [README](../../README.md) | [software_detailed_design.json](../spec/software_detailed_design.json) (output doc structure) | [DOCX generation walkthrough](DOCX_generation_walkthrough.md) | [REDESIGN.md](REDESIGN.md) (v2 redesign notes)
+> See also: [README](../../README.md) | [software_detailed_design.json](../spec/software_detailed_design.json) (output doc structure)
 
 ## Architecture
 
@@ -336,6 +336,41 @@ Reads all view outputs from `output/` and assembles `software_detailed_design.do
   tables), Dynamic Behaviour (flowcharts, behaviour diagrams per function)
 - Code Metrics, Coding Rule, Test Coverage
 - Appendix A: Design Guideline
+
+---
+
+## DOCX Export — Section-by-Section
+
+How `engine/docx_exporter.py` builds `output/software_detailed_design_<group>.docx`, and which files drive
+each part.
+
+**Inputs the exporter loads:**
+- `output/interface_tables.json` — module/unit/interface table content (also the source of module grouping)
+- `model/units.json` — unit metadata for the "unit header"
+- `model/dataDictionary.json` — type/enum/typedef snippets + range lookups for the unit header
+- `model/globalVariables.json` — unit-header table content
+- `model/functions.json` — behaviour-diagram input/output naming
+- `output/flowcharts/*.png` (optional) — per-interface flowchart images
+- `output/unit_diagrams/*.png` (optional) — inserted before each unit header
+- `output/behaviour_diagrams/_behaviour_pngs.json` (optional) — drives the Dynamic Behaviour sections
+
+**Config affecting DOCX content:** `views.moduleStaticDiagram.{enabled,renderPng,widthInches}`,
+`views.flowcharts.renderPng`, `export.docxPath`, `export.docxFontSize`.
+
+**Structure produced:**
+- **Title** + **1 Introduction** (`1.1 Purpose`, `1.2 Scope`, `1.3 Terms/Abbreviations/Definitions` — placeholder paragraphs).
+- **2..N Modules** — units grouped by module from `interface_tables.json` keys:
+  - **2.x Static Design** — module→units diagram (PNG); module index table `Component | Unit | Description | Note` (Description from interface descriptions, Note = `N/A`); then per unit: heading, unit-diagram PNG, unit header (globals + typedef/enum/define declarations), unit interface table, and one section per interface (ID in heading + matching flowchart PNG).
+  - **2.x Dynamic Behaviour** — reads rows from `_behaviour_pngs.json`; per function: subheader, a 2-column Inputs/Outputs table (from `functions.json` labels), and the behaviour-diagram PNG.
+- **3 Code Metrics / Coding Rule / Test Coverage** and **Appendix A. Design Guideline** — placeholders.
+
+**Unit interface-table `Data Type` / `Data Range`:**
+- Globals → `variableType` / `range`.
+- Functions → parameter-based: empty `parameters` ⇒ `Data Type = VOID`, `Data Range = NA`; otherwise join each `p.type` / `p.range`.
+- Other columns: `Information` = interface description, `Direction` = interface direction, `Source/Destination` = `sourceDest`, `Interface Type` = `type`.
+
+**Regenerate just the DOCX** (model + views already produced): `python engine/docx_exporter.py`
+(or `python engine/run.py --from-phase 4 <project_path>`).
 
 ---
 

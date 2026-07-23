@@ -5,7 +5,7 @@ import { repositoriesApi, usersApi } from '../services/api'
  * commands (test connection, browse the tree, upload a build-config file, search
  * the org directory) rather than cached reads, so they're exposed as plain async
  * functions — but routed through a hook so the page never imports the service
- * layer directly (see CONVENTIONS.md §3).
+ * layer directly (see the ui-dev skill, §3 Data & state).
  */
 export function useRepositoryWizard() {
   return {
