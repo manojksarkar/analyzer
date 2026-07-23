@@ -1,7 +1,8 @@
 # SYS.2 Planning — Working Notes
 
-> SYS.2 (System Requirements Analysis) is **V2 scope** (~end Aug 2026). This is an early parking file for
-> the section list captured during the 2026-07-06 SWE.2 discussion; flesh out when V2 discovery starts.
+> SYS.2 (System Requirements Analysis) is **V2 scope**. This is an early parking file for the section list
+> captured during the SWE.2 discussion; flesh out when V2 discovery starts. For the shared generation
+> approach, see [DOC_GENERATION_PLAYBOOK.md](DOC_GENERATION_PLAYBOOK.md).
 
 ## Section list (from team, with priority tags)
 Priority = automation priority (P0 highest). To be verified when V2 begins.

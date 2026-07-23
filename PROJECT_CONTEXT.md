@@ -103,6 +103,75 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-07-22 (**SWE.4 unit-test-spec generation — discovery + design locked; implementation plan
+> approved.** Plan file: `~/.claude/plans/now-plan-for-swe4-snug-pascal.md`.
+> **Architecture — doc type is a *dimension*, not a phase.** Phases 1–3 (parse→derive→views) stay a shared,
+> doc-type-agnostic substrate; only export diverges. New run param `--doc-type swe3|swe4|all` (default
+> `swe3`, back-compat); an `EXPORTER_REGISTRY` (mirrors `views/registry.py::VIEW_REGISTRY`) dispatches one
+> export sub-run per selected doc type in Phase 4 — so a SWE.4-only run emits **no** SWE.3 DOCX, and a
+> future SWE.2 = register one more exporter, no new phase. (Rejected the earlier "append Phase 5" idea for
+> this reason.) Phase 3 runs only the **union of views** each doc type needs (config-gated via
+> `views/__init__.py`): SWE.4 = `interfaceTables` + `behaviourDiagrams` + a new `testSpecs` view; **not**
+> `unitDiagrams`; the SWE.3-only container/header-dependency diagrams live inside `docx_exporter` so they
+> never run for SWE.4.
+> **Transform = new Phase-3 view `engine/views/test_specs.py`** (`@register("testSpecs")` →
+> `output/<group>/test_specs.json`), rendered by a new `engine/swe4_exporter.py`. Per public function,
+> derive cases from: interface ranges (`get_range`/`get_range_for_type`, `utils.py`) for
+> boundary/equivalence; the **re-materialized CFG** (`CFGBuilder`, `engine/flowchart/ast_engine/cfg_builder.py`
+> — only mermaid is persisted, the structured `ControlFlowGraph` is discarded, so we rebuild it) for branch
+> coverage + Test Steps; return/OUT ranges for Expected; and a new LLM kind `test_case` (via `_call_llm`,
+> cached through `EntityCache`/`cacheVersion`) for error/precondition cases + labels. Scope = full transform
+> (deterministic floor + CFG + LLM).
+> **Document = per group, mirrors the SWE.3 DOCX. TWO tables per function** (`2.N.X.Y`): **Table A =
+> HORIZONTAL, 1 header + 1 data row** = test content (Eval. Equipment Name · Precondition · Input · Test
+> Steps · Expected Results · Test Platform) — reuse `docx_exporter._add_interface_table`; **Table B =
+> VERTICAL form** = metadata (Test Case ID · Alias Test ID · Priority · Risk · Test Method · Test
+> Environment · Generation Method · Linked Work Items) — reuse the `_add_flowchart_table` label|value form.
+> Shared DOCX helpers to be extracted into `engine/docx_common.py` (both exporters import — avoids the
+> `docx_exporter.py`↔`api/services/doc_render.py` copy-paste drift). Multiple cases live **in-cell**
+> (Input/Expected/Steps enumerated, aligned), **one Test Case ID per function**.
+> **Client answers (2026-07-22 meeting) — Table A locked:** scope = every **public** function; Precondition
+> = mock callees as `name()` (empty parens for now) + all parameters + all consumed globals (**no locals** —
+> not in the model; the parser records only local VAR_DECL *types*, `parser.py:1142-1143`); Input = multiple
+> sets (a value **or** a range) sized for **100% function + 100% branch coverage** ⇒ CFG re-materialization
+> is **mandatory**, not optional; Test Steps = descriptive, **single-level** ("forget two levels"), follow
+> the flowchart, name the variables, cover all code; Expected = matching output set per input (return +
+> written globals `writesGlobalIds`); Eval. Equipment Name / Test Platform = **user input, default
+> "Emulator"**; Generation Method = "function + branch coverage". (A global carries a value only when its
+> declaration initializes one — `_get_var_init_value`, `parser.py:914/924`.)
+> **Delivery this pass = engine only** (writes the `.docx`); the API `doc_render.py` mirror + `process="SWE.4"`
+> tagging (`pipeline_runner.py::_make_documents/_make_sections`) + a web-app doc-type picker are a fast
+> follow-up. Config: a new `docx.swe4` block (env-field defaults, testCasePolicy, generationMethod) under
+> `docx` so the API config-forward whitelist `("clang","llm","views","docx")` passes it through unchanged.
+> **Macros (confirmed 2026-07-22):** SWE.3 & SWE.4 **share the same macros, per layer** — SWE.4 reuses the
+> same parse/model, so the pending **per-layer-macros** work (today `--macros` is one global CSV) serves
+> both docs. **Still open (take to client):** Table B metadata fields (Alias Test ID · Risk · Test Method ·
+> Test Environment · Linked Work Items — only Table A was covered); how private callees' branches get
+> covered when callees are mocked. `docs/planning/SWE4_PLAN.md` updated + kept leadership-facing.)
+
+> Updated: 2026-07-22 (**engineering backlog gets a home: `docs/BACKLOG.md`.** Single running list of
+> known issues / deferred fixes / needs-input (Type + Status tags, grouped SWE.3 · SWE.4 · SWE.2 · Shared)
+> — kept OUT of `docs/planning/` (leadership-facing) and out of this deep-context file. It's the Phase-2
+> burn-down list under the plan "implement all doc types to ~70–80% first, then improve." Each row's `Ref`
+> points back HERE (§16 / the `> Updated:` log) or the plan docs for the detail; the backlog itself stays
+> terse. Seeded from the still-open items: per-layer macros, flowchart 3.8/3.9, dynamic-behaviour 3.10,
+> SWE.4 Table B metadata + §3 metrics, SWE.2 feature-list + resource/config data, and the shared
+> requirements/Polarion source. (The 3.11–3.19 SWE.3 correctness items are deliberately NOT in the backlog
+> — tracked via git/PRs + §16.) `ROADMAP.md` "Remaining work" links to it.)
+
+> Updated: 2026-07-21 (**planning docs made leadership-facing + consolidated.** `docs/planning/` is now
+> shared with the director, so those files were slimmed to milestones / decisions / remaining work only —
+> no file paths, commit hashes, root-cause detail, or day-estimates (that depth stays HERE). Changes:
+> **ROADMAP.md** gutted from the ~165-line effort ledger (18 tasks + per-repo DB breakdown + day-estimates
+> + the resolved 3.1–3.19 write-ups) down to a one-page Milestones / Key decisions / Remaining-work doc;
+> new **DOC_GENERATION_PLAYBOOK.md** holds the shared method that SWE2_PLAN + SWE4_PLAN used to each repeat
+> (one-model consistency, code-anchored derivation, floor/gaps/optional inputs, draft-then-confirm, the
+> shared requirements/Polarion blocker); **SWE2_PLAN.md** / **SWE4_PLAN.md** trimmed to just their own
+> "what it is" + TOC + section-readiness + their one open crux (feature list / test-case sizing), pointing
+> at the playbook for the rest; **SYS2_PLAN.md** gained a playbook pointer. Nothing was lost — the resolved
+> 3.1–3.19 detail and estimates live in §16 + this `> Updated:` log. The §16 "Pre-V1 correctness batch"
+> heading no longer cites the removed roadmap task numbers.)
+
 > Updated: 2026-07-19 (**second V1 correctness batch logged (3.11–3.19) from client/office review — all ADDITIONS, nothing reversed** per user. In `docs/planning/ROADMAP.md` task 3. Verified against code where noted: **3.11** BOOL32 return shows literal `TRUE` not `TRUE/FALSE` in **Output Name** — root cause `model_deriver._enrich_behaviour_names` (`:548-564`) uses the return **expression's** first identifier; fix = boolean return → `TRUE/FALSE` (+ Data Range, `get_range_for_type` has no bool case) [needs more checking]. **3.12** void param → Input Name should be `VOID` not a global (`:539-546` falls back to first written/read global) [pending manager]. **3.13** some `#define`s missing from header [needs repro; likely file-scope/macro-in-macro edges gap]. **3.14** LLM descriptions contain irrelevant domain words (audio/video) → **blocklist now** (audio, video; extensible), root-cause dig later [approach agreed]. **3.15** Source/Dest + unit diagrams keep **only callers** (`calledBy`), drop callees (`calls`); refines 3.5/3.6 [**IMPLEMENTED 2026-07-19, uncommitted** on `v1-fixes-more`: `interface_tables.py` `sourceDest` = callers only; `unit_diagrams.py` callee loop deleted. Verified A/B (8 Sample rows drop `; <callees>`; provenance holds; diagram has no orphan nodes). **Sample snapshot regen DEFERRED to end of 3.11–3.19 batch** (per user 2026-07-19: regenerate all Sample snapshots once, after all fixes). The snapshot is *already* stale on this branch independent of 3.15 (vs 3.5/REQ-IT-12 + the return-type commits), so e2e `test_snapshot` stays red until the batch-end regen — expected, not a 3.15 regression]. **3.16** Source/Dest missing via macro-wrapped **SVC** call (a unit in the *service* component of the **client's** project, not our sample) [needs client project]. **3.17** In/Out new precedence: (1) Get/Set in name (Get→Out, Set→In), (2) returns value→Out, (3) void return → Set→In / Get→Out / both→In — supersedes current global-only logic (`:1016-1066`, the 3.4 rule) [confirmed, full spec coming]. **3.18** Data Type column add variable name alongside type (`docx_exporter.py:1002` shows type only) [confirmed]. **3.19** unit-header type visibility: same-component types used in functions shown; cross-component type shown only if not used in any other unit [look later]. Framed as additions, not reversals of 3.4/3.5/3.6.)
 
 > Updated: 2026-07-18 (**V1-fixes status reconciled + flowchart-in-DOCX verified resolved**. Traced the Phase-3→Phase-4 name-matching chain end to end: the flowchart engine writes PNGs as `{source_basename_stem}_{safe_filename(qualifiedName)}.png` (`views/flowcharts.py:1157`; JSON stem = source basename via `flowchart/output/writer.py:44`), and `docx_exporter._append_flowchart_entries`/`_resolve_flowchart_pngs` now try **4 candidate stems** (`{unit_prefix|unit_name_flowchart}_{func_qn|func_name}`, `docx_exporter.py:1611-1616`) — the 2nd matches the engine exactly. Slice-aware (`{stem}_part_K_of_N.png` from `_maybe_slice_tall_png`) with a diagnostic log emitted before the mermaid-text fallback (`docx_exporter.py:944-956`). All committed (predates the `backend/`→`engine/` rename; landed on `poc-4`). **`docs/planning/ROADMAP.md` synced:** task-3 top item "flowcharts missing from DOCX" ✅ resolved; 3.5 ✅ (REQ-IT-12, all non-self units), 3.7 ✅ (access specifier) marked done; 3.1–3.4/3.6 already done. **Remaining V1 fixes:** 3.8 (if/else depiction — needs repro), 3.9 (bending/overlapping edges — ELK tuning levers not yet applied), 3.10 (dynamic-behaviour — blocked/under-specified), and **per-layer macros** (`--macros` is still a single global CSV). Plus non-fix V1 work: deploy (task 2), function hide/unhide scope (task 4, TBD with user), release/client review (task 5).)
@@ -2340,7 +2409,23 @@ auto-formatters have reverted this fix in the past. After any change to
 [engine/flowchart/ast_engine/cfg_builder.py](engine/flowchart/ast_engine/cfg_builder.py),
 re-run `python engine/flowchart/tests/diagnose_assert.py`.
 
-### Pre-V1 correctness batch — remaining (targets V1; see `docs/planning/ROADMAP.md` task 3.8–3.10)
+### Risk 5 — header inline function appears in interface table but gets no flowchart (backlog X5)
+
+Unit keys strip the extension ([utils.py `_path_to_component_unit`](engine/utils.py#L238)), so
+`Foo.h` and `Foo.cpp` collapse into one unit; `_build_units_components`
+([model_deriver.py:252](engine/model_deriver.py#L252)) processes `.cpp` first (creates the unit with
+`fileName="Foo.cpp"`) then *appends* the header's `functionIds`. The interface table renders any
+`.cpp` unit's functions without checking each function's own file
+([interface_tables.py:43](engine/views/interface_tables.py#L43)), so a public inline function
+defined in `Foo.h` gets a row. But the flowchart engine drops every header-defined function
+([flowchart_engine.py:510](engine/flowchart/flowchart_engine.py#L510)) — result: an interface row
+with a description but no flowchart figure. Only bites header inline fns that have a same-named
+sibling `.cpp`; a standalone header (no sibling `.cpp`, e.g. `SignalInline.h`) is a pure-header unit
+skipped entirely by the interface table (consistent), and an `inline` fn defined in a `.cpp` gets
+both (consistent). Fix direction: either skip header-defined fns in the interface table, or emit a
+signature-only fallback flowchart for them.
+
+### Pre-V1 correctness batch (targets V1; numbered 3.1–3.19 internally — status in git/PR history + the `> Updated:` log above)
 
 Of the ten findings from pre-V1 review (2026-07-10), **3.1–3.7 are done and
 removed** (roots + interface direction/consistency + export; see WORK STATUS
