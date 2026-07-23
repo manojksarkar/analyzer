@@ -1,0 +1,432 @@
+"""The database schema — single source of truth (docs/production-redesign/07 §4).
+
+SQLAlchemy Core `Table` objects in one `metadata`. Design highlights:
+
+* **Manifest-of-pointers storage (D-9).** A version does NOT copy the model. Stable
+  identity lives in `entities`; each version contributes one thin row per entity in
+  `entity_versions`; the heavy/variable payload lives once in `content_blobs`,
+  content-addressed. Carry-forward is "point at the same content_hash" — no copying —
+  so storage grows with *distinct content*, not versions x entities.
+
+* **Three hashes, three jobs (D-15).** `source_hash` (did the code change? -> classify),
+  `fingerprint` (can I reuse the LLM output? -> reuse_index), `content_hash` (is this
+  payload byte-identical to one already stored? -> dedup).
+
+* **JSONB for nested/variable fields** (02 §4.1); typed columns only for what queries
+  filter on. `_JSONB` degrades to generic JSON off-postgres so the schema builds on
+  SQLite for structural tests without a live database.
+
+* **Version identity (D-3).** `versions.version` is UI-supplied and UNIQUE per project.
+
+Hashes are stored as hex `String` (not bytea): the codebase already produces hex
+digests, and text keys are debuggable and join cleanly.
+"""
+from __future__ import annotations
+
+from sqlalchemy import (
+    JSON, BigInteger, Boolean, Column, Date, DateTime, ForeignKey, Index,
+    Integer, MetaData, String, Table, Text, UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+
+metadata = MetaData()
+
+# JSONB on Postgres; plain JSON elsewhere (SQLite structural tests).
+_JSONB = JSON().with_variant(JSONB(), "postgresql")
+
+
+def _ts(name: str, **kw) -> Column:
+    """A timezone-aware timestamp column."""
+    return Column(name, DateTime(timezone=True), **kw)
+
+
+# ---------------------------------------------------------------------------
+# G1 — Access  (RBAC kept as-is per D-8; only `organizations` was dropped)
+# ---------------------------------------------------------------------------
+users = Table(
+    "users", metadata,
+    Column("id", String, primary_key=True),
+    Column("email", String, nullable=False, unique=True),
+    Column("name", String, nullable=False),
+    Column("initials", String),
+    Column("avatar_url", String),
+    Column("hashed_password", String, nullable=False),
+    _ts("created_at", nullable=False),
+)
+
+projects = Table(
+    "projects", metadata,
+    Column("id", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("client", String),
+    Column("compliance_standard", String),
+    Column("repo_url", String),
+    Column("repo_provider", String),
+    Column("default_branch", String),
+    Column("build_config", _JSONB),
+    Column("architecture_layers", _JSONB),
+    Column("status", String),
+    Column("created_by", String, ForeignKey("users.id")),
+    _ts("created_at", nullable=False),
+    _ts("updated_at"),
+    _ts("last_commit_sync_at"),
+)
+
+project_members = Table(
+    "project_members", metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", String, ForeignKey("users.id"), nullable=False),
+    Column("role", String),        # kept (D-8): migrate existing RBAC unchanged
+    Column("status", String),
+    Column("invited_by", String),
+    _ts("invited_at"),
+    _ts("joined_at"),
+    UniqueConstraint("project_id", "user_id", name="uq_member_project_user"),
+)
+
+access_requests = Table(
+    "access_requests", metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", String, ForeignKey("users.id"), nullable=False),
+    _ts("requested_at"),
+    Column("status", String),
+    Column("resolved_by", String),
+    _ts("resolved_at"),
+)
+
+# ---------------------------------------------------------------------------
+# G3 — Commits & Versions
+# ---------------------------------------------------------------------------
+commits = Table(
+    "commits", metadata,
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("sha", String, nullable=False),
+    Column("branch", String),
+    Column("message", Text),
+    Column("author_name", String),
+    Column("author_email", String),
+    _ts("committed_at"),
+    Column("has_version", Boolean, default=False),
+    Column("version_id", String),
+    Column("doc_status", String),
+    UniqueConstraint("project_id", "sha", name="pk_commits"),
+    Index("ix_commits_project", "project_id"),
+)
+
+versions = Table(
+    "versions", metadata,
+    Column("id", String, primary_key=True),                      # surrogate FK target
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("version", String, nullable=False),                   # D-3: UI-supplied identity
+    Column("commit_sha", String),
+    Column("branch", String),
+    Column("description", Text),
+    Column("status", String),                                    # review status: draft|in_review|approved
+    Column("pipeline_status", String),                           # D-17: parsing|deriving|...|complete|failed
+    Column("docs_count", Integer, default=0),
+    Column("created_by", String),
+    _ts("created_at", nullable=False),
+    Column("baseline_version_id", String, ForeignKey("versions.id")),   # incremental baseline (self-ref)
+    Column("decision", String),                                  # incremental|full
+    Column("regenerated", Integer),
+    Column("reused", Integer),
+    Column("base_path", String),                                 # was metadata.json
+    Column("project_name", String),
+    Column("parse_fingerprint", String),                         # clang-flag guard (narrowed parse)
+    Column("resolved_config", _JSONB),                           # was versions/<id>/config.json
+    Column("report", Text),                                      # was report.txt
+    UniqueConstraint("project_id", "version", name="uq_version_project_version"),
+)
+
+# ---------------------------------------------------------------------------
+# G2 — Operations
+# ---------------------------------------------------------------------------
+analysis_jobs = Table(
+    "analysis_jobs", metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("version_id", String, ForeignKey("versions.id")),
+    Column("commit_sha", String),
+    Column("branch", String),
+    Column("reference_version_id", String),
+    Column("status", String),
+    Column("pause_after_phase1", Boolean, default=False),
+    Column("layer_filter", String),
+    Column("phase", Integer),
+    Column("phase_pct", Integer),
+    Column("current_activity", String),
+    Column("activity_detail", Text),
+    Column("elapsed_seconds", Integer),
+    Column("eta_seconds", Integer),
+    Column("phases", _JSONB),                                    # list[AnalysisPhase]
+    _ts("started_at"),
+    _ts("completed_at"),
+    Column("error_message", Text),
+    Column("version_tag", String),                              # wire-compat alias of version
+    Column("mode", String),
+    Column("decision", String),
+    Column("baseline_commit", String),
+    Column("scope", _JSONB),
+    Column("no_llm", Boolean, default=False),
+    Column("data_dict_id", String),
+    Column("narrowed_parse", Boolean, default=False),
+    Column("regenerated", Integer),
+    Column("reused", Integer),
+    Index("ix_jobs_project", "project_id"),
+)
+
+notifications = Table(
+    "notifications", metadata,
+    Column("id", String, primary_key=True),
+    Column("user_id", String, ForeignKey("users.id"), nullable=False),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE")),
+    Column("type", String),
+    Column("message", Text),
+    _ts("read_at"),
+    _ts("created_at"),
+    Index("ix_notifications_user", "user_id"),
+)
+
+# ---------------------------------------------------------------------------
+# G4 — Documents
+# ---------------------------------------------------------------------------
+documents = Table(
+    "documents", metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("process", String),
+    Column("name", String),
+    Column("subtitle", String),
+    Column("layer", String),
+    Column("component", String),        # domain field is `group` (a SQL reserved word)
+    Column("status", String),
+    Column("due_date", Date),
+    Column("docx_path", String),        # artifact stays on disk; DB keeps the path
+    _ts("created_at"),
+    _ts("updated_at"),
+    Index("ix_documents_version", "version_id"),
+)
+
+document_sections = Table(
+    "document_sections", metadata,
+    Column("id", String, primary_key=True),
+    Column("document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False),
+    Column("section_key", String),
+    Column("title", String),
+    Column("ord", Integer),             # domain field is `order` (reserved)
+    Column("content", Text),
+    Column("review_state", String),
+    Column("reviewed_by", String),
+    _ts("reviewed_at"),
+)
+
+document_assignments = Table(
+    "document_assignments", metadata,
+    Column("id", String, primary_key=True),
+    Column("document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", String, ForeignKey("users.id"), nullable=False),
+    Column("assigned_by", String),
+    _ts("assigned_at"),
+)
+
+compare_results = Table(
+    "compare_results", metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("current_version_id", String, ForeignKey("versions.id")),
+    Column("baseline_version_id", String, ForeignKey("versions.id")),
+    Column("diff_summary", _JSONB),
+)
+
+document_diffs = Table(
+    "document_diffs", metadata,
+    Column("id", String, primary_key=True),
+    Column("compare_result_id", String, ForeignKey("compare_results.id", ondelete="CASCADE"), nullable=False),
+    Column("document_id", String, ForeignKey("documents.id")),
+    Column("diff_type", String),
+    Column("sections_changed", _JSONB),
+)
+
+# ---------------------------------------------------------------------------
+# G5 — Model (manifest of pointers, D-9)
+# ---------------------------------------------------------------------------
+content_blobs = Table(
+    "content_blobs", metadata,
+    Column("content_hash", String, primary_key=True),           # stored once, content-addressed
+    Column("kind", String),                                     # function|global|type|summary|mermaid
+    Column("payload", _JSONB, nullable=False),
+)
+
+entities = Table(
+    "entities", metadata,
+    Column("entity_id", BigInteger, primary_key=True, autoincrement=True),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("entity_key", String, nullable=False),               # Component|Unit|qname|params
+    Column("kind", String, nullable=False),                     # function|global|type|macro
+    Column("qualified_name", String),
+    UniqueConstraint("project_id", "entity_key", name="uq_entity_project_key"),
+)
+
+entity_versions = Table(
+    "entity_versions", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("entity_id", BigInteger, ForeignKey("entities.entity_id"), nullable=False),
+    # thin structural columns — what interface tables / diagrams filter on
+    Column("component", String),
+    Column("unit", String),
+    Column("file", String),
+    Column("line", Integer),
+    Column("end_line", Integer),
+    Column("direction", String),
+    Column("direction_reason", String),
+    Column("visibility", String),
+    Column("interface_id", String),
+    Column("is_visible", Boolean, default=True),                # hide/unhide; carries forward (D-18)
+    # the three hashes (D-15)
+    Column("source_hash", String),                             # code changed? -> classify
+    Column("fingerprint", String),                             # reuse LLM output? -> reuse_index
+    Column("content_hash", String, ForeignKey("content_blobs.content_hash")),   # payload pointer
+    UniqueConstraint("version_id", "entity_id", name="pk_entity_versions"),
+    Index("ix_ev_version", "version_id"),
+    Index("ix_ev_version_component", "version_id", "component"),
+)
+
+model_units = Table(
+    "model_units", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("unit_key", String, nullable=False),                 # Component|Unit
+    Column("component", String),
+    Column("name", String),
+    Column("path", String),
+    Column("file_name", String),
+    UniqueConstraint("version_id", "unit_key", name="pk_model_units"),
+    # function/global/caller/callee lists DROPPED (D-13) — derived from entity_versions / model_edges
+)
+
+model_components = Table(
+    "model_components", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("name", String, nullable=False),
+    Column("header_files", _JSONB),                             # used by the unit-header table
+    UniqueConstraint("version_id", "name", name="pk_model_components"),
+)
+
+model_summaries = Table(
+    "model_summaries", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("scope", String, nullable=False),                    # file|component|project
+    Column("key", String, nullable=False),
+    Column("text_hash", String, ForeignKey("content_blobs.content_hash")),   # deduped text
+    UniqueConstraint("version_id", "scope", "key", name="pk_model_summaries"),
+)
+
+# ---------------------------------------------------------------------------
+# G6 — Dependency graph (one table; reverse index = impact analysis)
+# ---------------------------------------------------------------------------
+model_edges = Table(
+    "model_edges", metadata,
+    Column("edge_id", BigInteger, primary_key=True, autoincrement=True),
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("kind", String, nullable=False),                     # call|global_access|type_use|macro_use|override
+    Column("src_key", String, nullable=False),
+    Column("dst_key", String, nullable=False),
+    Column("mode", String),                                     # read|write (global_access only)
+    Index("ix_edges_reverse", "version_id", "kind", "dst_key"),   # who depends on X (impact)
+    Index("ix_edges_forward", "version_id", "kind", "src_key"),
+)
+
+# ---------------------------------------------------------------------------
+# G7 — Change detection / reuse  (entity_hashes folded into entity_versions.source_hash)
+# ---------------------------------------------------------------------------
+reuse_index = Table(
+    "reuse_index", metadata,
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("fingerprint", String, nullable=False),
+    Column("version_id", String),
+    Column("entity_key", String),
+    UniqueConstraint("project_id", "fingerprint", name="pk_reuse_index"),
+)
+
+tu_includes = Table(
+    "tu_includes", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("tu_path", String, nullable=False),
+    Column("headers", _JSONB),                                  # narrowed-parse include closure
+    UniqueConstraint("version_id", "tu_path", name="pk_tu_includes"),
+)
+
+# ---------------------------------------------------------------------------
+# Project inputs (were CSV files)
+# ---------------------------------------------------------------------------
+data_dictionaries = Table(
+    "data_dictionaries", metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("name", String),
+    _ts("uploaded_at"),
+)
+
+data_dictionary_entries = Table(
+    "data_dictionary_entries", metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("data_dictionary_id", String, ForeignKey("data_dictionaries.id", ondelete="CASCADE"), nullable=False),
+    Column("payload", _JSONB, nullable=False),                  # one CSV row; shape refined at ingest
+)
+
+macro_definitions = Table(
+    "macro_definitions", metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("layer", String),                                    # per-layer macros (open V1 requirement)
+    Column("name", String, nullable=False),
+    Column("value", Text),
+)
+
+# ---------------------------------------------------------------------------
+# View outputs (were Phase-3 JSON/mmd; consumed by Phase 4 + the API)
+# ---------------------------------------------------------------------------
+view_interface_tables = Table(
+    "view_interface_tables", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("scope", String, nullable=False),
+    Column("payload", _JSONB, nullable=False),
+    UniqueConstraint("version_id", "scope", name="pk_view_interface_tables"),
+)
+
+view_behaviour_rows = Table(
+    "view_behaviour_rows", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("scope", String, nullable=False),
+    Column("payload", _JSONB, nullable=False),
+    UniqueConstraint("version_id", "scope", name="pk_view_behaviour_rows"),
+)
+
+model_unit_diagrams = Table(
+    "model_unit_diagrams", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("unit_key", String, nullable=False),
+    Column("mermaid_hash", String, ForeignKey("content_blobs.content_hash")),
+    UniqueConstraint("version_id", "unit_key", name="pk_model_unit_diagrams"),
+)
+
+model_flowcharts = Table(
+    "model_flowcharts", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("entity_id", BigInteger, ForeignKey("entities.entity_id"), nullable=False),
+    Column("mermaid_hash", String, ForeignKey("content_blobs.content_hash")),
+    Column("error", Text),
+    UniqueConstraint("version_id", "entity_id", name="pk_model_flowcharts"),
+)
+
+
+# Tables whose rows belong to one version — CASCADE-deleted with it. Used by the
+# retention/delete path and asserted in tests so a new per-version table can't be
+# added without a delete story.
+PER_VERSION_TABLES = frozenset({
+    "entity_versions", "model_units", "model_components", "model_summaries",
+    "model_edges", "tu_includes", "view_interface_tables", "view_behaviour_rows",
+    "model_unit_diagrams", "model_flowcharts", "documents",
+})
