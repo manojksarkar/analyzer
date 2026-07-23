@@ -8,16 +8,28 @@ Provides:
 """
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from api.main import app
 from api.db.in_memory import InMemoryDatabase
+from api.db.postgres.database import SqlDatabase
 from api.db.session import get_db
 
 
-@pytest.fixture(scope="session")
-def db():
-    """Fresh in-memory DB shared for the whole session (seed data only)."""
-    return InMemoryDatabase()
+def _sqlite_backed() -> SqlDatabase:
+    # StaticPool + one shared connection: an in-memory SQLite DB is otherwise
+    # per-connection, so TestClient's threadpool would each see an empty database.
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    return SqlDatabase(engine, create_schema=True).seed()
+
+
+@pytest.fixture(scope="session", params=["memory", "sql"])
+def db(request):
+    """The full API suite runs against BOTH backends (the PG-2 parity guarantee):
+    in-memory, and the SQL backend over SQLite with identical seed data."""
+    return InMemoryDatabase() if request.param == "memory" else _sqlite_backed()
 
 
 @pytest.fixture(scope="session")

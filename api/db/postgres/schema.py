@@ -57,6 +57,9 @@ users = Table(
 projects = Table(
     "projects", metadata,
     Column("id", String, primary_key=True),
+    # A free-text tenant tag. The `organizations` TABLE is dropped (D-8) but the
+    # column stays a plain string so the domain dataclass + routes are untouched.
+    Column("org_id", String),
     Column("name", String, nullable=False),
     Column("client", String),
     Column("compliance_standard", String),
@@ -66,7 +69,7 @@ projects = Table(
     Column("build_config", _JSONB),
     Column("architecture_layers", _JSONB),
     Column("status", String),
-    Column("created_by", String, ForeignKey("users.id")),
+    Column("created_by", String),       # actor id/label ("system" appears) - not a FK
     _ts("created_at", nullable=False),
     _ts("updated_at"),
     _ts("last_commit_sync_at"),
@@ -321,6 +324,27 @@ model_summaries = Table(
     Column("key", String, nullable=False),
     Column("text_hash", String, ForeignKey("content_blobs.content_hash")),   # deduped text
     UniqueConstraint("version_id", "scope", "key", name="pk_model_summaries"),
+)
+
+# The API's slim per-job function view (id/name/file/visibility/is_new/description),
+# written by the pipeline runner and read by the functions/hide-unhide endpoints.
+# Distinct from the rich model (entities/entity_versions): PG-5 may re-express this as
+# a view over entity_versions, but keeping it explicit now preserves current behaviour
+# exactly. `job_id` is a storage key, not a `Function` domain field.
+job_functions = Table(
+    "job_functions", metadata,
+    Column("id", String, primary_key=True),
+    Column("job_id", String, nullable=False),
+    Column("project_id", String),
+    Column("version_id", String),
+    Column("name", String),
+    Column("file_path", String),
+    Column("layer", String),
+    Column("component", String),        # domain field is `group` (reserved)
+    Column("is_visible", Boolean, default=True),
+    Column("is_new", Boolean, default=False),
+    Column("description", Text),
+    Index("ix_job_functions_job", "job_id"),
 )
 
 # ---------------------------------------------------------------------------

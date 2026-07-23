@@ -28,12 +28,34 @@ from .json_db import JsonDatabase
 # ---------------------------------------------------------------------------
 _backend = os.environ.get("API_DB_BACKEND", "memory").lower().strip()
 
-if _backend == "json":
-    _db: InMemoryDatabase | JsonDatabase = JsonDatabase()
+
+def _make_postgres():
+    """The SQL backend over the process Postgres engine (engine/core/db.py owns the DSN).
+
+    engine/ is added to sys.path so the API and the CLI resolve the same DSN. The
+    engine is created lazily, so importing this module never requires a live DB —
+    the fail-fast check belongs at app startup / first request, not import time.
+    """
+    import sys
+    _engine_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "engine")
+    if _engine_dir not in sys.path:
+        sys.path.insert(0, _engine_dir)
+    from .postgres.database import SqlDatabase
+    return SqlDatabase()
+
+
+# `memory` (default) and `json` remain for tests/dev; `postgres` is the production
+# backend. The default flips to `postgres` once validated against a live server
+# (kept opt-in here because it cannot be exercised without one).
+if _backend == "postgres":
+    _db = _make_postgres()
+elif _backend == "json":
+    _db = JsonDatabase()
 else:
     _db = InMemoryDatabase()
 
 
-def get_db() -> InMemoryDatabase | JsonDatabase:
+def get_db():
     """FastAPI dependency — injects the shared DB instance into route handlers."""
     return _db
