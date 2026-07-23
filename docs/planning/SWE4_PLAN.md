@@ -29,35 +29,49 @@
 Appendix A  Reference
 ```
 
-## Confirmed with client (2026-07-22)
+## Decisions
 
-- **Scope:** a spec for **every public function**.
+Confirmed with the client 2026-07-22:
+
+- **Scope:** a spec for **every public function** — one Table A + one Table B (single Test Case ID) per
+  function, with possibly multiple input sets under it.
 - **Precondition** = mock callees written as `name()` + all parameters + all consumed globals.
-- **Input** = multiple sets (a value or a range) sized to **target 100% function + branch coverage**;
-  **Expected Results** gives the matching output per set.
+- **Input** = multiple sets (a value or a range); **Expected Results** gives the matching output per set.
 - **Test Steps** = descriptive, following the flowchart and naming the variables (single level).
-- **Eval. Equipment Name / Test Platform** = user input (default **Emulator**); **Generation Method** =
-  "function + branch coverage".
+- **Eval. Equipment Name / Test Platform** = user input (default **Emulator**).
 - **Macros:** SWE.3 & SWE.4 share the same macros, **per layer**.
 
-**Readiness**
+Confirmed with the client 2026-07-23:
 
-| Group | Status | Logic (spec) |
-|---|---|---|
-| Introduction, Terms, per-component/unit scaffolding | Ready — reuse existing SWE.3 output | [structure](../spec/SWE4_SPEC.md#document-structure) |
-| Table A (Precondition, Input, Expected Results, Test Steps) + Dynamic-Behaviour specs | Derivable — the core new work | [derivation logic](../spec/SWE4_SPEC.md#test-case-derivation) · [limits](../spec/SWE4_SPEC.md#limitations) |
-| Table B metadata (Alias Test ID, Risk, Test Method, Test Environment, Linked Work Items) | **Open** — Alias Test ID / Linked Work Items **blocked** on a requirements source (Polarion / SWE.1) | [open items](../spec/SWE4_SPEC.md#open-items-client) |
-| §3 Code Metric / Coding Rule / Test Coverage | **Needs input** — not extracted today; coverage tooling parked | — |
+- **Three generation methods:** Analysis of Requirements · Equivalence Class Analysis · Boundary Value
+  Analysis (recorded in Table B's Generation Method field).
+- **First complete implementation emits `Analysis of Requirements` only** — cases from the unit's specified
+  behaviour (signature + SWE.3 design + return/OUT). Equivalence Class + Boundary Value analysis, and the
+  branch-coverage-targeted input sizing, are a **deferred** follow-on pass. See
+  [../spec/SWE4_SPEC.md](../spec/SWE4_SPEC.md) REQ-TC-08.
 
-## Test-case sizing — resolved by coverage
+## Section readiness
 
-The client set the target: **enough input sets to reach 100% function + branch coverage** (not a fixed
-per-function count). Boundary/equivalence partitioning + flowchart paths produce the input sets, the LLM
-adds error/precondition cases, and Expected is the matching output per set. Residual judgement: choosing
-concrete input values that hit each branch, and logic-dependent Expected values.
+| Group | Status |
+|---|---|
+| Introduction, Terms, per-component/unit scaffolding | Ready — reuse existing SWE.3 output |
+| Table A (Precondition, Input, Expected Results, Test Steps) + Dynamic-Behaviour specs | Derivable — the core new work |
+| Generation method | First implementation = **Analysis of Requirements**; Equivalence Class + Boundary Value analysis **deferred** |
+| Table B metadata (Alias Test ID, Risk, Test Method, Test Environment, Linked Work Items) | **Open** — Alias Test ID / Linked Work Items **blocked** on a requirements source (Polarion / SWE.1) |
+| §3 Code Metric / Coding Rule / Test Coverage | **Needs input** — not extracted today; coverage tooling parked |
+
+## Crux — deriving the right cases
+
+**First implementation (Analysis of Requirements):** cases come from the unit's specified behaviour — the
+judgement is picking the functional cases and their expected outputs from the signature + SWE.3 design.
+
+**Deferred (Equivalence/Boundary pass):** sizing input sets to reach 100% function + branch coverage —
+boundary/equivalence partitioning + flowchart paths, with the LLM adding error/precondition cases. Residual
+judgement: concrete branch-hitting values and logic-dependent Expected values.
 
 ## Open items
 
 - [ ] Table B metadata fields — Alias Test ID · Risk · Test Method · Test Environment · Linked Work Items (only Table A was confirmed).
 - [ ] Requirements/Linked Work Items source, given SWE.1 isn't built yet (shared with SWE.2).
 - [ ] §3 metrics/coverage source (coverage tooling parked).
+- [ ] Equivalence Class + Boundary Value analysis passes (deferred after the first implementation).

@@ -32,6 +32,10 @@ Appendix A  Reference
 Sections 2 and 3 are the **same template at two scopes** (software, then layer/component), so we build one
 set of scope-parameterised section-builders rather than two.
 
+## Decisions
+
+None yet — pending client discussion.
+
 ## Section readiness
 
 | Group | Status |
@@ -42,7 +46,7 @@ set of scope-parameterised section-builders rather than two.
 | Requirements table, Traceability | **Blocked** on a requirements source (Polarion / SWE.1) — shared dependency |
 | Architecture Evaluation | New — derived from the assembled architecture |
 
-## Open problem specific to SWE.2 — the feature list (§2.2.1)
+## Crux — the feature list (§2.2.1)
 
 The crux is collapsing the codebase (thousands of functions) into the product's **feature list**
 (Reset/Power, UFS boot, Patrol Read, Data Refresh, …). This is an abstraction problem, not a fixed lookup,

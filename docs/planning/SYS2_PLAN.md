@@ -1,11 +1,17 @@
-# SYS.2 Planning — Working Notes
+# SYS.2 Plan — System Requirements Analysis
 
-> SYS.2 (System Requirements Analysis) is **V2 scope**. This is an early parking file for the section list
-> captured during the SWE.2 discussion; flesh out when V2 discovery starts. For the shared generation
-> approach, see [DOC_GENERATION_PLAYBOOK.md](DOC_GENERATION_PLAYBOOK.md).
+> **V2 scope** — early parking file; the section list below was captured during the SWE.2 discussion.
+> Flesh out when V2 discovery starts. Method → [DOC_GENERATION_PLAYBOOK.md](DOC_GENERATION_PLAYBOOK.md).
+> Spec: TBD.
 
-## Section list (from team, with priority tags)
-Priority = automation priority (P0 highest). To be verified when V2 begins.
+## What it is
+
+- SYS.2 = **System Requirements Analysis** (system-level requirements, above SWE.1).
+- Not started — **V2**. Only the section list is captured so far.
+
+## Document structure
+
+Section list (from team; priority = automation priority, P0 highest). To be verified when V2 begins.
 
 | # | Section | Pri | Notes |
 |---|---|---|---|
@@ -21,6 +27,19 @@ Priority = automation priority (P0 highest). To be verified when V2 begins.
 | 10 | Traceability | P0 | |
 | 11 | Technical Review — Review Checklist | P0 | checklist filling automatable in Polarion |
 
-## Status
-- Not started — V2. Moved here from `docs/planning/SWE2_PLAN.md` (was mis-attributed to SWE.2 during discussion).
-- Full discovery (purpose, template, per-section content, sourcing) to happen when V2 begins.
+## Decisions
+
+None yet — V2 discovery not started.
+
+## Section readiness
+
+TBD — V2.
+
+## Crux
+
+TBD — V2 (likely: deriving system requirements from code + upstream product docs).
+
+## Open items
+
+- [ ] Full discovery when V2 begins: purpose, template, per-section content, sourcing.
+- [ ] Moved here from `SWE2_PLAN.md` (was mis-attributed to SWE.2 during discussion).

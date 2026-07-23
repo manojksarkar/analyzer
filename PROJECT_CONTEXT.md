@@ -128,7 +128,9 @@
 > the 24-function derivation spike (`tools/swe4-derivation-spike/`) validates that deferred pass, **not** the
 > first implementation. Model shape unchanged: one Table B / one Test Case ID per public function, though
 > Table A may carry multiple input sets; each set is attributed to a method and Table B lists the distinct
-> set. Config: `docx.swe4.generationMethod` becomes method attribution, not a fixed string. Contract:
+> set. **No `generationMethod` config key** — the method is a fixed code constant (`Analysis of Requirements`)
+for this build, not a user toggle (supersedes the `docx.swe4.generationMethod` mention in the 2026-07-22
+entry below). Contract:
 > `docs/spec/SWE4_SPEC.md` REQ-TC-08 + the scope banner over the derivation section; leadership: plan
 > Decisions 2026-07-23. NOTE this narrows the first build vs. the 2026-07-22 entry below, which assumed
 > branch-coverage sizing as the core work.)

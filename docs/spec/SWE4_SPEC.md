@@ -99,11 +99,14 @@ function writes them.
 
 ### REQ-UT-09 — Table B metadata
 
-Table B fields: **Test Case ID** (deterministic per function), **Test Case Generation Method**
-(`function + branch coverage`), **Priority** (config default), and the requirement-linked fields
-**Alias Test ID · Risk · Test Method · Test Environment · Linked Work Items**.
+Each public function has **one** Table B carrying a **single Test Case ID** (deterministic per function),
+even when its Table A holds **multiple input sets**. Fields: **Test Case ID**, **Test Case Generation
+Method** (the method(s) of REQ-TC-08 that produced the function's cases — **`Analysis of Requirements`** in
+the first implementation), **Priority** (config default), and the requirement-linked fields **Alias Test
+ID · Risk · Test Method · Test Environment · Linked Work Items**.
 
-**Verification:** Test Case ID and Generation Method present. (Requirement-linked fields — see Open items.)
+**Verification:** One Test Case ID per function; Generation Method names a REQ-TC-08 method (first
+implementation: `Analysis of Requirements`). (Requirement-linked fields — see Open items.)
 
 ---
 
@@ -120,6 +123,32 @@ consume the **same macros, per layer**.
 
 **Input consumed:** the re-materialized **CFG** (decision predicates + branch edges), **parameters**
 (name/type/range), **globals** read/written, **callees**, and **return expressions/ranges**.
+
+> **Scope of the first implementation:** only the **Analysis of Requirements** method (REQ-TC-08) is
+> emitted. The coverage-targeted, input-partitioning rules below (REQ-TC-01…05) belong to the **Equivalence
+> Class** and **Boundary Value** methods and are **deferred** — retained here as the agreed target for the
+> follow-on pass. REQ-TC-06/07 are method-agnostic and apply now.
+
+---
+
+### REQ-TC-08 — Generation methods
+
+Test cases are produced by one of three client-stated methods, recorded in Table B (REQ-UT-09):
+
+- **Analysis of Requirements** — cases derived from the unit's **specified behaviour**: the function
+  signature, the SWE.3 detailed design/description, and return/OUT parameters — functional cases with their
+  expected results. **This is the first implementation's sole method.**
+- **Equivalence Class Analysis** — cases from partitioning the unit's **inputs and outputs** into
+  equivalence classes, one representative per class (the partition/switch/default rules of REQ-TC-02).
+  **Deferred.**
+- **Boundary Value Analysis** — cases from the **boundary values** of the inputs (the boundary-pair rules
+  of REQ-TC-02, `get_range`/`get_range_for_type`). **Deferred.**
+
+Every input set is attributed to ≥1 method; Table B lists the distinct set applied to the function.
+
+**Verification:** Each input set carries a method attribution; Table B's Generation Method is that distinct
+set. In the first implementation every case is `Analysis of Requirements` and no partition/boundary-only
+cases are emitted.
 
 ---
 
@@ -202,6 +231,9 @@ Re-running generation on **unchanged input** yields **identical** test cases (ID
 
 ## Limitations
 
+- **First implementation = Analysis of Requirements only.** Equivalence Class and Boundary Value analysis
+  (REQ-TC-01…05) are deferred to a follow-on pass; until then coverage is requirement-driven, not
+  branch-systematic.
 - **No execution** → 100% coverage cannot be *verified* or *guaranteed* (coverage tooling is parked, §3).
   The tool produces coverage-*targeted* inputs; proving coverage needs a run.
 - Conditions on **globals / struct fields / mocked-callee returns / compound predicates** are not
@@ -226,5 +258,6 @@ Re-running generation on **unchanged input** yields **identical** test cases (ID
 
 ## Evidence
 
-Derivation logic validated by a spike over **24 sample functions** (0 `UNSOLVED`; only loop-counter parity
-needed the iteration heuristic). Reference implementation: `tools/swe4-derivation-spike/`.
+The boundary/equivalence derivation logic — i.e. the **deferred** Equivalence/Boundary pass, not the first
+implementation — was validated by a spike over **24 sample functions** (0 `UNSOLVED`; only loop-counter
+parity needed the iteration heuristic). Reference implementation: `tools/swe4-derivation-spike/`.
