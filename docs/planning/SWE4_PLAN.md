@@ -3,7 +3,8 @@
 > Unit test **specifications** — derived content only, no test execution or runnable code. Structure was
 > captured verbally (no client template yet). For the shared generation approach — how we derive, what's
 > buildable now vs. needs input, where human judgement is needed — see
-> [DOC_GENERATION_PLAYBOOK.md](DOC_GENERATION_PLAYBOOK.md).
+> [DOC_GENERATION_PLAYBOOK.md](DOC_GENERATION_PLAYBOOK.md). Engineering spec (requirements + test-case
+> derivation logic + limits): [docs/spec/SWE4_SPEC.md](../spec/SWE4_SPEC.md).
 
 ## What it is
 
@@ -32,8 +33,8 @@ Appendix A  Reference
 
 - **Scope:** a spec for **every public function**.
 - **Precondition** = mock callees written as `name()` + all parameters + all consumed globals.
-- **Input** = multiple sets (a value or a range) sized for **100% function + branch coverage**; **Expected
-  Results** gives the matching output per set.
+- **Input** = multiple sets (a value or a range) sized to **target 100% function + branch coverage**;
+  **Expected Results** gives the matching output per set.
 - **Test Steps** = descriptive, following the flowchart and naming the variables (single level).
 - **Eval. Equipment Name / Test Platform** = user input (default **Emulator**); **Generation Method** =
   "function + branch coverage".
@@ -41,12 +42,12 @@ Appendix A  Reference
 
 **Readiness**
 
-| Group | Status |
-|---|---|
-| Introduction, Terms, per-component/unit scaffolding | Ready — reuse existing SWE.3 output |
-| Table A (Precondition, Input, Expected Results, Test Steps) + Dynamic-Behaviour specs | Derivable — the core new work (coverage-driven cases + descriptive flowchart steps) |
-| Table B metadata (Alias Test ID, Risk, Test Method, Test Environment, Linked Work Items) | **Open** — not yet discussed; Alias Test ID / Linked Work Items also **blocked** on a requirements source (Polarion / SWE.1) |
-| §3 Code Metric / Coding Rule / Test Coverage | **Needs input** — not extracted today; coverage tooling parked |
+| Group | Status | Logic (spec) |
+|---|---|---|
+| Introduction, Terms, per-component/unit scaffolding | Ready — reuse existing SWE.3 output | [structure](../spec/SWE4_SPEC.md#document-structure) |
+| Table A (Precondition, Input, Expected Results, Test Steps) + Dynamic-Behaviour specs | Derivable — the core new work | [derivation logic](../spec/SWE4_SPEC.md#test-case-derivation) · [limits](../spec/SWE4_SPEC.md#limitations) |
+| Table B metadata (Alias Test ID, Risk, Test Method, Test Environment, Linked Work Items) | **Open** — Alias Test ID / Linked Work Items **blocked** on a requirements source (Polarion / SWE.1) | [open items](../spec/SWE4_SPEC.md#open-items-client) |
+| §3 Code Metric / Coding Rule / Test Coverage | **Needs input** — not extracted today; coverage tooling parked | — |
 
 ## Test-case sizing — resolved by coverage
 

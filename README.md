@@ -21,8 +21,9 @@ removed when the web app landed.)
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [docs/design/DESIGN.md](docs/design/DESIGN.md) | Architecture, model format, config, logic flow |
-| [docs/spec/software_detailed_design.json](docs/spec/software_detailed_design.json) | Document structure spec for the output DOCX |
-| [docs/design/images/architecture.drawio](docs/design/images/architecture.drawio) | Architecture diagram (edit in draw.io, export to PNG) |
+Deep engineering context (kept current, start here): **[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)**.
+
+- **Architecture** — [docs/design/DESIGN.md](docs/design/DESIGN.md) (model format, config, logic flow)
+- **Planning** (leadership) — [ROADMAP](docs/planning/ROADMAP.md) · [doc-gen method](docs/planning/DOC_GENERATION_PLAYBOOK.md) · plans: [SWE.4](docs/planning/SWE4_PLAN.md) / [SWE.2](docs/planning/SWE2_PLAN.md) / [SYS.2](docs/planning/SYS2_PLAN.md) · [backlog](docs/BACKLOG.md)
+- **Specs** (engineering, per doc-type) — [SWE3_SPEC](docs/spec/SWE3_SPEC.md) · [SWE4_SPEC](docs/spec/SWE4_SPEC.md) · [test inventory](docs/spec/TEST_INVENTORY.md)
+- **Subsystems** — [api/](api/README.md) · [web-app/](web-app/README.md) · [flowchart engine](engine/flowchart/README.md)
