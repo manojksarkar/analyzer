@@ -214,6 +214,25 @@
 > singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
 > [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
 
+> Updated: 2026-07-24 (**SWE.4 Task C — `swe4_exporter.py` + `docx_common.py` landed**; `--doc-type swe4` is
+> now runnable **end-to-end** (verified: `--use-model --doc-type swe4 --selected-group "My Sample"` →
+> `output/<group>/software_unit_test_specification_<group>.docx`). New `engine/docx_common.py` holds the
+> shared leaf helpers extracted from `docx_exporter.py` — `set_cell_font`, `add_para`, `add_horizontal_rule`,
+> `add_toc`, `build_cover_page` (now takes `subtitle_prefix`, default = the SWE.3 title), and the
+> `load_model_json`/`load_base_path`/`load_abbreviations` loaders; `docx_exporter.py` imports them aliased to
+> the old private names, so **SWE.3 output is unchanged** (smoke-tested: cover/TOC/intro/terms/component
+> tables all intact). New `engine/swe4_exporter.py` (`export_test_specs`, CLI mirrors `docx_exporter`) renders
+> per public function **Table A** (horizontal, 6 cols: Eval. Equipment · Precondition · Input · Test Steps ·
+> Expected · Test Platform) + **Table B** (vertical, 8 fields incl. Test Case ID, Generation Method =
+> `Analysis of Requirements`, env defaults). Doc skeleton = Introduction / §2 per component→unit→function /
+> §3 Code Metric (placeholder) / Appendix. `docx.swe4` config block extended: `evalEquipmentName` +
+> `testPlatform` + `testEnvironment` + `priorityDefault` (all `Emulator`/`Medium`; **no `generationMethod`
+> key** — fixed constant). LLM-only cells (input sets, expected values, test steps) show `[To be specified]`
+> until Task D fills them. Tests: `tests/unit/test_swe4_exporter.py` (cell rendering + Table A/B shape); also
+> **fixed a test-pollution bug** — `test_test_specs_view.py` now imports the real `views` package instead of
+> stubbing `sys.modules["views.registry"]` (the stub was shadowing `EXPORTER_REGISTRY` for later tests).
+> **Next: Task D** (LLM `kind="test_case"` enrichment to fill the placeholder input/expected/steps).)
+
 > Updated: 2026-07-24 (**SWE.4 Task B — `testSpecs` Phase-3 view landed** on `feat/swe4-unit-test-spec`.
 > New `engine/views/test_specs.py` (`@register("testSpecs")`, imported in `views/__init__.py`) →
 > `output/<group>/test_specs.json`. Reads the **model + `get_range` directly** — no sibling-view output — so

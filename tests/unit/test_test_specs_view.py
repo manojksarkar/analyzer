@@ -1,8 +1,6 @@
 """Unit tests for engine/views/test_specs.py — deterministic scaffold (SWE.4)."""
 import os
 import sys
-import types
-import importlib.util
 
 import pytest
 
@@ -11,28 +9,10 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
-# Stub the views package so the module's `from .registry import register`
-# resolves without triggering views/__init__ (which pulls heavy view modules).
-_views_pkg = types.ModuleType("views")
-_views_pkg.__path__ = [os.path.join(PROJECT_ROOT, "engine", "views")]
-_views_pkg.__package__ = "views"
-_registry_mod = types.ModuleType("views.registry")
-_registry_mod.register = lambda name: (lambda fn: fn)
-_views_pkg.registry = _registry_mod
-sys.modules.setdefault("views", _views_pkg)
-sys.modules.setdefault("views.registry", _registry_mod)
-
-_spec = importlib.util.spec_from_file_location(
-    "views.test_specs",
-    os.path.join(PROJECT_ROOT, "engine", "views", "test_specs.py"),
-    submodule_search_locations=[],
-)
-_mod = importlib.util.module_from_spec(_spec)
-_mod.__package__ = "views"
-_spec.loader.exec_module(_mod)
-
-_build_test_specs = _mod._build_test_specs
-GENERATION_METHOD = _mod.GENERATION_METHOD
+# The view modules are lightweight (utils + stdlib only), so import the real
+# package — stubbing sys.modules["views.registry"] here would shadow the real
+# registry (EXPORTER_REGISTRY etc.) for any other test in the session.
+from views.test_specs import _build_test_specs, GENERATION_METHOD
 
 
 def _model():
