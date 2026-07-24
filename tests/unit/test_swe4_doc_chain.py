@@ -108,3 +108,13 @@ class TestTables:
         b = [t for t in rendered_docx.tables
              if len(t.columns) == 2 and t.rows and t.rows[0].cells[0].text == "Test Case ID"]
         assert len(a) == 2 and len(b) == 2  # two public functions
+
+    def test_test_steps_column_is_populated_not_placeholder(self, rendered_docx):
+        # Regression: Test Steps must render deterministic content even with the
+        # LLM off, not the [To be specified] placeholder.
+        col = list(TABLE_A_COLS).index("Test Steps")
+        a = [t for t in rendered_docx.tables
+             if [c.text for c in t.rows[0].cells] == list(TABLE_A_COLS)]
+        for t in a:
+            steps = t.rows[1].cells[col].text
+            assert "Call" in steps and "[To be specified]" not in steps

@@ -214,6 +214,16 @@
 > singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
 > [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
 
+> Updated: 2026-07-24 (**SWE.4 fix — deterministic Test Steps floor** (`feat/swe4-unit-test-spec`).
+> Test Steps were blank (`[To be specified]`) whenever the LLM was off (`llm.summarize=false`, this env), since
+> steps were LLM-only. Now `_default_test_steps(spec)` in `views/test_specs.py` derives a single-level floor
+> from the scaffold facts — *"Set up preconditions: mock <callees>; set <globals>." → "Call <fn>(<params>) with
+> the input set." → "Verify <return> and <written globals> against the expected results."* — set in
+> `_build_test_specs` so `testSteps` is **never empty** and deterministic. `_enrich_with_llm` now only
+> **overwrites** the floor when the LLM actually returns steps (input/expected value sets stay LLM-only). Regen
+> confirmed real steps in the DOCX (e.g. "Call libMultiply(a, b) with the input set."). Tests: `TestDefaultTestSteps`
+> in `test_test_specs_view.py` + a doc-chain regression asserting the Test Steps column isn't the placeholder.)
+
 > Updated: 2026-07-24 (**SWE.4 Task D — LLM test-case enrichment landed** on `feat/swe4-unit-test-spec`.
 > New `get_test_cases(spec, config)` in `llm_enrichment.py` synthesises Analysis-of-Requirements cases —
 > concrete **input sets + index-aligned expected results + descriptive test steps** — grounded on the

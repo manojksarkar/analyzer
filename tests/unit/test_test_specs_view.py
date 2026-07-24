@@ -120,12 +120,33 @@ class TestDeterminism:
         assert a == b
 
 
+class TestDefaultTestSteps:
+    def test_steps_present_without_llm(self):
+        ts = _build_test_specs(*_model())
+        dw = next(s for s in ts["Comp|U"]["functions"] if s["name"] == "doWrite")
+        assert dw["testSteps"], "deterministic steps floor should never be empty"
+
+    def test_steps_name_call_precondition_and_verify(self):
+        ts = _build_test_specs(*_model())
+        dw = next(s for s in ts["Comp|U"]["functions"] if s["name"] == "doWrite")
+        joined = " ".join(dw["testSteps"])
+        assert "helper()" in joined and "g_count" in joined  # precondition setup
+        assert "Call doWrite(n)" in joined                    # invocation names the param
+        assert "Verify" in joined and "g_count" in joined     # verify written global
+
+    def test_void_no_param_call_rendered(self):
+        ts = _build_test_specs(*_model())
+        ro = next(s for s in ts["Comp|U"]["functions"] if s["name"] == "readOnly")
+        assert any("Call readOnly()" in s for s in ro["testSteps"])
+
+
 class TestLlmEnrichment:
-    def test_summarize_off_leaves_scaffold_empty(self):
+    def test_summarize_off_keeps_deterministic_floor(self):
         ts = _build_test_specs(*_model())
         ts_mod._enrich_with_llm(ts, {"llm": {"summarize": False}})
         dw = next(s for s in ts["Comp|U"]["functions"] if s["name"] == "doWrite")
-        assert dw["input"]["sets"] == [] and dw["testSteps"] == []
+        assert dw["input"]["sets"] == []      # value sets stay LLM-only
+        assert dw["testSteps"]                # but the steps floor remains
 
     def test_enrichment_fills_sets(self, monkeypatch):
         ts = _build_test_specs(*_model())

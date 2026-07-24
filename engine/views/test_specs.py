@@ -106,6 +106,49 @@ def _written_globals(func, global_variables_data, data_dict):
     return out
 
 
+def _default_test_steps(spec):
+    """Deterministic single-level test steps derived from the scaffold facts
+    (REQ-UT-07 floor): set up preconditions -> call the function -> verify the
+    outputs, naming the variables. Never empty; the LLM pass overwrites these
+    with control-flow-aware prose when enabled."""
+    pre = spec.get("precondition") or {}
+    steps = []
+
+    setup = []
+    mocks = pre.get("mockFunctions") or []
+    if mocks:
+        setup.append("mock " + ", ".join(mocks))
+    gset = []
+    for g in pre.get("globals") or []:
+        nm = g.get("name", "")
+        gset.append(f"{nm} = {g['value']}" if g.get("value") else nm)
+    if gset:
+        setup.append("set " + ", ".join(gset))
+    if setup:
+        steps.append("Set up preconditions: " + "; ".join(setup) + ".")
+
+    params = spec.get("parameters") or []
+    name = spec.get("name", "")
+    if params:
+        arglist = ", ".join(p.get("name", "") for p in params)
+        steps.append(f"Call {name}({arglist}) with the input set.")
+    else:
+        steps.append(f"Call {name}().")
+
+    verify = []
+    ret = (spec.get("returnType") or "").strip()
+    if ret and ret.lower() != "void":
+        verify.append("the return value")
+    writes = (spec.get("expected") or {}).get("writesGlobals") or []
+    if writes:
+        verify.append("the updated global(s) " + ", ".join(g.get("name", "") for g in writes))
+    if verify:
+        steps.append("Verify " + " and ".join(verify) + " against the expected results.")
+    else:
+        steps.append("Verify the function completes without error.")
+    return steps
+
+
 def _build_test_specs(units_data, functions_data, global_variables_data,
                       data_dictionary=None, *, allowed_components=None):
     dd = data_dictionary or {}
@@ -172,9 +215,11 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
                     "writesGlobals": _written_globals(f, global_variables_data, dd),
                     "sets": [],
                 },
-                # Test Steps (REQ-UT-07): descriptive prose, filled by enrichment.
+                # Test Steps (REQ-UT-07): deterministic floor from the facts —
+                # the LLM enrichment pass replaces these with richer prose.
                 "testSteps": [],
             }
+            spec["testSteps"] = _default_test_steps(spec)
             if f.get("description"):
                 spec["description"] = f["description"]
             specs.append(spec)
@@ -203,10 +248,13 @@ def _enrich_with_llm(test_specs, config):
                 cases = get_test_cases(spec, config)
             except Exception:  # never let enrichment break the view
                 continue
-            if cases.get("inputSets") or cases.get("testSteps"):
-                spec["input"]["sets"] = cases.get("inputSets", [])
+            if cases.get("inputSets"):
+                spec["input"]["sets"] = cases["inputSets"]
                 spec["expected"]["sets"] = cases.get("expectedSets", [])
-                spec["testSteps"] = cases.get("testSteps", [])
+            # Only replace the deterministic steps floor when the LLM produced steps.
+            if cases.get("testSteps"):
+                spec["testSteps"] = cases["testSteps"]
+            if cases.get("inputSets") or cases.get("testSteps"):
                 enriched += 1
     if enriched:
         log("enriched %d function spec(s) with LLM test cases" % enriched, component="testSpecs")
