@@ -214,6 +214,24 @@
 > singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
 > [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
 
+> Updated: 2026-07-23 (**SWE.4 Task A — doc-type registry plumbing landed** on `feat/swe4-unit-test-spec`.
+> Doc type is now a live pipeline dimension. New run flag **`--doc-type swe3|swe4|all`** (default `swe3`,
+> validated in `run.py`; `_SCRIPT_PHASE` now also maps `swe4_exporter.py`→phase 4 for `--to-phase`).
+> `views/registry.py` gains **`EXPORTER_REGISTRY`** (`swe3`→`docx_exporter.py`, `swe4`→`swe4_exporter.py`),
+> **`DOC_TYPE_VIEWS`** (`swe3`→None = every config-enabled view; `swe4`→`("testSpecs",)`), and
+> `concrete_doc_types()` (expands `all`). `views.run_views(...)` takes a `doc_type` arg: swe3/all keep the
+> config-gated set (**guard: a no-flag run is byte-for-byte SWE.3**), an explicit-set doc type (swe4) runs
+> **only** its views, bypassing config gating. `run_views.py` reads `--doc-type`; `group_planner.plan_runs`
+> + `_view_export_phases` thread `doc_type` → pass `--doc-type` to Phase 3 and emit **one Phase-4 export
+> sub-run per concrete doc type** via `EXPORTER_REGISTRY` (so swe4-only emits no SWE.3 DOCX; `all` emits
+> both). SWE.4 exporter args wired (`test_specs.json` + `software_unit_test_specification_<group>.docx`,
+> mirroring the docx_exporter CLI). **Not yet built (later tasks):** the `testSpecs` view (Task B) and
+> `swe4_exporter.py` (Task C) — so `--doc-type swe4/all` is plumbed but not yet runnable end-to-end.
+> **Supersedes the 2026-07-22 entry's** SWE.4 view-set claim (`interfaceTables`+`behaviourDiagrams`+
+> `testSpecs`): the implemented view-set is **`testSpecs` only** (the view reads the model + `get_range`
+> directly, no sibling-view output). Tests: 5 new `--doc-type` cases in
+> `tests/unit/test_core_group_planner.py`, all green.)
+
 > Updated: 2026-07-23 (**docs restructure + agent role-skills.** Introduced `.claude/skills/` role skills:
 > `docs-maintainer` (owns **all** docs repo-wide — audience/register/naming/outline conventions + the doc-gen
 > method) and `ui-dev` (frontend rules, replacing the deleted `web-app/CONVENTIONS.md`). Doc suite tidied:

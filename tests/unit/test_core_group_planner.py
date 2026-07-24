@@ -80,3 +80,36 @@ class TestPlanRuns:
     def test_filter_mode_forwarded_to_views(self):
         plans = _run({}, filter_mode="public")
         assert "--filter-mode" in plans[0].phases[2].args
+
+
+class TestDocType:
+    """--doc-type dispatch: view-set flag + per-doc-type exporter(s)."""
+
+    def _export_phases(self, plan):
+        return [ph for ph in plan.phases
+                if ph.script in ("docx_exporter.py", "swe4_exporter.py")]
+
+    def test_default_swe3_uses_docx_exporter_only(self):
+        # No flag: unchanged SWE.3 pipeline — single docx_exporter, no swe4.
+        exporters = self._export_phases(_run(_groups("Alpha"))[1])
+        assert [e.script for e in exporters] == ["docx_exporter.py"]
+
+    def test_default_passes_doc_type_swe3_to_views(self):
+        views = _run(_groups("Alpha"))[1].phases[0]
+        assert views.script == "run_views.py"
+        assert views.args[views.args.index("--doc-type") + 1] == "swe3"
+
+    def test_swe4_uses_swe4_exporter_and_view_flag(self):
+        plan = _run(_groups("Alpha"), doc_type="swe4")[1]
+        exporters = self._export_phases(plan)
+        assert [e.script for e in exporters] == ["swe4_exporter.py"]
+        views = plan.phases[0]
+        assert views.args[views.args.index("--doc-type") + 1] == "swe4"
+
+    def test_all_emits_both_exporters(self):
+        exporters = self._export_phases(_run(_groups("Alpha"), doc_type="all")[1])
+        assert [e.script for e in exporters] == ["docx_exporter.py", "swe4_exporter.py"]
+
+    def test_swe4_exporter_gets_test_specs_json(self):
+        exporters = self._export_phases(_run(_groups("Alpha"), doc_type="swe4")[1])
+        assert any(a.endswith("test_specs.json") for a in exporters[0].args)
