@@ -214,6 +214,22 @@
 > singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
 > [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
 
+> Updated: 2026-07-24 (**SWE.4 Task B — `testSpecs` Phase-3 view landed** on `feat/swe4-unit-test-spec`.
+> New `engine/views/test_specs.py` (`@register("testSpecs")`, imported in `views/__init__.py`) →
+> `output/<group>/test_specs.json`. Reads the **model + `get_range` directly** — no sibling-view output — so
+> it satisfies the view contract and is deterministic (REQ-TC-07, verified: two runs byte-identical). Emits
+> one **deterministic scaffold per public function** of each `.cpp` unit (private/header-only skipped,
+> REQ-UT-02), keyed like `interface_tables` (`{unitNames, <unit_key>: {name, functions:[...]}}`) so the Task-C
+> exporter can iterate the same shape. Per spec it carries: `precondition` (mock callees as `name()` +
+> params + consumed globals w/ direction + declared value, REQ-UT-05), `input` (`isVoid` for parameterless,
+> REQ-UT-06), `expected.writesGlobals` (REQ-UT-08), `returnRange`/param `range`, a deterministic per-function
+> `testCaseId` (from `interfaceId`, REQ-UT-09), and fixed `generationMethod="Analysis of Requirements"` (code
+> constant, no config key). **LLM-synthesised fields left as empty placeholders** (`input.sets`,
+> `expected.sets`, `testSteps`) for the Task-D `kind="test_case"` enrichment pass. Verified against the Sample
+> model: 20 units → 50 public specs; `--doc-type swe4` runs **only** `testSpecs` (no SWE.3 views). Tests: 12
+> new in `tests/unit/test_test_specs_view.py`. **Next: Task C** (`swe4_exporter.py` + `docx.swe4` config +
+> `docx_common.py`).)
+
 > Updated: 2026-07-23 (**SWE.4 Task A — doc-type registry plumbing landed** on `feat/swe4-unit-test-spec`.
 > Doc type is now a live pipeline dimension. New run flag **`--doc-type swe3|swe4|all`** (default `swe3`,
 > validated in `run.py`; `_SCRIPT_PHASE` now also maps `swe4_exporter.py`→phase 4 for `--to-phase`).
