@@ -52,13 +52,17 @@ Confirmed with the client 2026-07-23:
 
 ## Section readiness
 
+The engine now generates the document end-to-end: `--doc-type swe4` runs the `testSpecs` view + `swe4`
+exporter and writes `software_unit_test_specification_<group>.docx`.
+
 | Group | Status |
 |---|---|
-| Introduction, Terms, per-component/unit scaffolding | Ready — reuse existing SWE.3 output |
-| Table A (Precondition, Input, Expected Results, Test Steps) + Dynamic-Behaviour specs | Derivable — the core new work |
-| Generation method | First implementation = **Analysis of Requirements**; Equivalence Class + Boundary Value analysis **deferred** |
-| Table B metadata (Alias Test ID, Risk, Test Method, Test Environment, Linked Work Items) | **Open** — Alias Test ID / Linked Work Items **blocked** on a requirements source (Polarion / SWE.1) |
-| §3 Code Metric / Coding Rule / Test Coverage | **Needs input** — not extracted today; coverage tooling parked |
+| Introduction, Terms, per-component/unit/function scaffolding | ✅ Done (engine) |
+| Table A — Precondition, Input, Expected Results, Test Steps | ✅ Done (engine) — facts derived; Input/Expected/Steps filled by grounded, cached LLM (falls back to a placeholder when the LLM is off) |
+| Generation method | ✅ Done — **Analysis of Requirements** only; Equivalence Class + Boundary Value **deferred** |
+| Dynamic-Behaviour test specs | Pending — emitted only where a component has dynamic behaviour (not yet wired) |
+| Table B metadata (Alias Test ID, Risk, Test Method, Linked Work Items) | **Open** — requirement-linked fields **blocked** on a requirements source (Polarion / SWE.1); Test Case ID, Priority, Test Environment, Generation Method done |
+| §3 Code Metric / Coding Rule / Test Coverage | **Needs input** — heading emitted as a placeholder; not extracted today (coverage tooling parked) |
 
 ## Crux — deriving the right cases
 
@@ -71,7 +75,9 @@ judgement: concrete branch-hitting values and logic-dependent Expected values.
 
 ## Open items
 
-- [ ] Table B metadata fields — Alias Test ID · Risk · Test Method · Test Environment · Linked Work Items (only Table A was confirmed).
+- [ ] Table B requirement-linked fields — Alias Test ID · Risk · Test Method · Linked Work Items (blocked on a requirements source).
 - [ ] Requirements/Linked Work Items source, given SWE.1 isn't built yet (shared with SWE.2).
 - [ ] §3 metrics/coverage source (coverage tooling parked).
+- [ ] Dynamic-Behaviour test specs (per-component, where dynamic behaviour exists).
 - [ ] Equivalence Class + Boundary Value analysis passes (deferred after the first implementation).
+- [ ] API render mirror + `process="SWE.4"` tagging + web-app doc-type picker (engine-only so far).
