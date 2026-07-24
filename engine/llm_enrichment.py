@@ -255,7 +255,8 @@ def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "defau
     # Task 3.14: for description prompts, anchor the model to the project's real
     # domain so it stops inventing unrelated vocabulary. Appended to whatever
     # system prompt is already in play (get_rich_description supplies one).
-    if kind == "description":
+    # Test-case synthesis is grounded the same way so cases use real vocabulary.
+    if kind in ("description", "test_case"):
         domain = _get_domain_context(config)
         if domain:
             system = f"{system}\n\n{domain}".strip() if system else domain
@@ -499,6 +500,128 @@ One-line description:"""
         return _call_llm(prompt, config, kind="description")
 
     return _cached_desc(config, f"struct|{struct_name}|{fields_part}|{abbr_key}", _gen)
+
+
+# ---------------------------------------------------------------------------
+# SWE.4 unit-test-case synthesis (Analysis of Requirements).
+# Grounded LLM fill for the deterministic scaffold the testSpecs view produces:
+# concrete input sets + index-aligned expected results + descriptive test steps.
+# Cached content-addressed (same facts -> same cases) so reruns are deterministic.
+# ---------------------------------------------------------------------------
+_TEST_CASE_SYSTEM = (
+    "You are a software test engineer writing unit-test specifications. Derive test "
+    "cases from the unit's specified behaviour only — its signature, description, "
+    "consumed globals, and return/output — the Analysis-of-Requirements method. "
+    "Produce functional cases with concrete inputs and their matching expected "
+    "results. Never invent a return value for a computed/logic-dependent output — "
+    "state the expected relation or write 'tester to confirm'. Reply with JSON only."
+)
+
+
+def _test_case_facts(spec: dict) -> dict:
+    """The deterministic subset of a function spec that fully grounds its cases —
+    also the cache key material, so unrelated fields (location, ids) don't churn it."""
+    pre = spec.get("precondition") or {}
+    return {
+        "name": spec.get("name", ""),
+        "description": spec.get("description", ""),
+        "returnType": spec.get("returnType", ""),
+        "returnRange": spec.get("returnRange", ""),
+        "parameters": [{"name": p.get("name", ""), "type": p.get("type", ""),
+                        "range": p.get("range", "")} for p in (spec.get("parameters") or [])],
+        "globals": [{"name": g.get("name", ""), "type": g.get("type", ""),
+                     "direction": g.get("direction", ""), "value": g.get("value", "")}
+                    for g in (pre.get("globals") or [])],
+        "mockFunctions": pre.get("mockFunctions") or [],
+    }
+
+
+def _build_test_case_prompt(facts: dict, abbreviations: dict = None) -> str:
+    import json
+    abbrev_block = ""
+    if abbreviations:
+        formatted = _format_abbreviations(abbreviations)
+        if formatted:
+            abbrev_block = "\nConsider these abbreviations:\n\n" + formatted
+    params = facts.get("parameters") or []
+    param_desc = "; ".join(
+        f"{p['type']} {p['name']}" + (f" [range {p['range']}]" if p.get("range") else "")
+        for p in params) or "none (VOID)"
+    globs = facts.get("globals") or []
+    glob_desc = "; ".join(
+        f"{g['name']} ({g['direction']}, {g['type']}"
+        + (f", initial {g['value']}" if g.get("value") else "") + ")"
+        for g in globs) or "none"
+    mocks = ", ".join(facts.get("mockFunctions") or []) or "none"
+    ret = facts.get("returnType") or "void"
+    ret_range = facts.get("returnRange") or ""
+    return f"""Write unit test cases for this C++ function using the Analysis-of-Requirements method.{abbrev_block}
+
+Function: {facts.get('name','')}
+Description: {facts.get('description','') or '(none)'}
+Parameters: {param_desc}
+Return: {ret}{f' [range {ret_range}]' if ret_range else ''}
+Consumed globals: {glob_desc}
+Mocked callees: {mocks}
+
+Rules:
+- Cover the function's specified functional cases (typical, error/precondition where implied).
+- Each case: an "input" set (concrete values for every parameter; write "VOID" if none) and an
+  "expected" result (return value and/or updated globals). Input and expected align.
+- A pointer/reference parameter the function writes is an OUTPUT — put it in "expected", not "input".
+- For a computed/logic-dependent expected value, give the relation or "tester to confirm"; never guess a number.
+- "steps": 3-6 short descriptive steps that follow the control flow and name the variables (single level).
+
+Reply with JSON only, no prose:
+{{"cases": [{{"input": "...", "expected": "..."}}], "steps": ["...", "..."]}}"""
+
+
+def _parse_test_cases(raw: str) -> dict:
+    """Parse the model's JSON reply into {inputSets, expectedSets, testSteps}.
+
+    Defensive: extracts the first JSON object, tolerates missing keys, and keeps
+    inputSets/expectedSets index-aligned. Returns empties on any failure."""
+    import json
+    empty = {"inputSets": [], "expectedSets": [], "testSteps": []}
+    if not raw:
+        return empty
+    start, end = raw.find("{"), raw.rfind("}")
+    if start < 0 or end <= start:
+        return empty
+    try:
+        obj = json.loads(raw[start:end + 1])
+    except (ValueError, TypeError):
+        return empty
+    cases = obj.get("cases") if isinstance(obj, dict) else None
+    input_sets, expected_sets = [], []
+    for c in (cases or []):
+        if not isinstance(c, dict):
+            continue
+        input_sets.append(str(c.get("input", "")).strip())
+        expected_sets.append(str(c.get("expected", "")).strip())
+    steps = [str(s).strip() for s in (obj.get("steps") or []) if str(s).strip()] \
+        if isinstance(obj, dict) else []
+    return {"inputSets": input_sets, "expectedSets": expected_sets, "testSteps": steps}
+
+
+def get_test_cases(spec: dict, config: dict, *, abbreviations: dict = None) -> dict:
+    """Analysis-of-Requirements test cases for one function spec (cached).
+
+    Returns {"inputSets": [...], "expectedSets": [...], "testSteps": [...]} — the
+    first two index-aligned. Empty (no fill) when the LLM is unavailable, so the
+    deterministic scaffold degrades gracefully.
+    """
+    import json
+    facts = _test_case_facts(spec)
+    abbr_key = "".join(f"{k}={v};" for k, v in sorted((abbreviations or {}).items()) if k and v)
+    key_material = "testcase|" + json.dumps(facts, sort_keys=True) + "|" + abbr_key
+
+    def _gen() -> str:
+        prompt = _build_test_case_prompt(facts, abbreviations)
+        return _call_llm(prompt, config, system=_TEST_CASE_SYSTEM, kind="test_case")
+
+    raw = _cached_desc(config, key_material, _gen)
+    return _parse_test_cases(raw)
 
 
 def get_behaviour_names(

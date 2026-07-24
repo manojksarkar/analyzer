@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 # The view modules are lightweight (utils + stdlib only), so import the real
 # package — stubbing sys.modules["views.registry"] here would shadow the real
 # registry (EXPORTER_REGISTRY etc.) for any other test in the session.
+import views.test_specs as ts_mod
 from views.test_specs import _build_test_specs, GENERATION_METHOD
 
 
@@ -117,3 +118,38 @@ class TestDeterminism:
         a = json.dumps(_build_test_specs(*_model()), sort_keys=False)
         b = json.dumps(_build_test_specs(*_model()), sort_keys=False)
         assert a == b
+
+
+class TestLlmEnrichment:
+    def test_summarize_off_leaves_scaffold_empty(self):
+        ts = _build_test_specs(*_model())
+        ts_mod._enrich_with_llm(ts, {"llm": {"summarize": False}})
+        dw = next(s for s in ts["Comp|U"]["functions"] if s["name"] == "doWrite")
+        assert dw["input"]["sets"] == [] and dw["testSteps"] == []
+
+    def test_enrichment_fills_sets(self, monkeypatch):
+        ts = _build_test_specs(*_model())
+        monkeypatch.setattr(ts_mod, "get_test_cases", lambda spec, config: {
+            "inputSets": ["n = 5"], "expectedSets": ["g_count = 5"], "testSteps": ["set n", "call"],
+        }, raising=False)
+        # get_test_cases is imported inside _enrich_with_llm from llm_enrichment;
+        # patch there so the local import picks it up.
+        import llm_enrichment
+        monkeypatch.setattr(llm_enrichment, "get_test_cases", lambda spec, config: {
+            "inputSets": ["n = 5"], "expectedSets": ["g_count = 5"], "testSteps": ["set n", "call"],
+        })
+        ts_mod._enrich_with_llm(ts, {"llm": {"summarize": True}})
+        dw = next(s for s in ts["Comp|U"]["functions"] if s["name"] == "doWrite")
+        assert dw["input"]["sets"] == ["n = 5"]
+        assert dw["expected"]["sets"] == ["g_count = 5"]
+        assert dw["testSteps"] == ["set n", "call"]
+
+    def test_enrichment_failure_keeps_scaffold(self, monkeypatch):
+        ts = _build_test_specs(*_model())
+        def _boom(spec, config):
+            raise RuntimeError("llm down")
+        import llm_enrichment
+        monkeypatch.setattr(llm_enrichment, "get_test_cases", _boom)
+        ts_mod._enrich_with_llm(ts, {"llm": {"summarize": True}})  # must not raise
+        dw = next(s for s in ts["Comp|U"]["functions"] if s["name"] == "doWrite")
+        assert dw["input"]["sets"] == []

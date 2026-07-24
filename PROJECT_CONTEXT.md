@@ -214,6 +214,23 @@
 > singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
 > [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
 
+> Updated: 2026-07-24 (**SWE.4 Task D — LLM test-case enrichment landed** on `feat/swe4-unit-test-spec`.
+> New `get_test_cases(spec, config)` in `llm_enrichment.py` synthesises Analysis-of-Requirements cases —
+> concrete **input sets + index-aligned expected results + descriptive test steps** — grounded on the
+> deterministic scaffold facts (signature, ranges, SWE.3 description, consumed globals, mocked callees) via
+> `_call_llm(kind="test_case")` (now domain-grounded like `description`) and **cached content-addressed**
+> through `_cached_desc` (same facts → same cases; reruns deterministic, honours `llm.cacheVersion`). Helpers:
+> `_test_case_facts` (cache-key subset — excludes volatile ids/location so unrelated churn doesn't
+> re-generate), `_build_test_case_prompt` (JSON-only, AoR rules: pointer-writes are outputs, never fabricate
+> a computed value), `_parse_test_cases` (defensive JSON-substring extraction → `{inputSets, expectedSets,
+> testSteps}`, empties on any failure). **Wired into the `testSpecs` view** (`_enrich_with_llm`, Phase 3 — the
+> SWE.4-specific tier, per the deliberate decision **not** to put it in the doc-type-agnostic Phase-2 model):
+> fills `input.sets`/`expected.sets`/`testSteps`, **gated on `llm.summarize` + client reachability**, and
+> **best-effort** — any failure leaves the scaffold intact, so the exporter still emits `[To be specified]`.
+> Tests: `tests/unit/test_llm_test_cases.py` (facts/prompt/parse) + enrichment cases in
+> `test_test_specs_view.py` (gate-off, fill, failure-safe). **Next: Task E** — e2e (`--doc-type swe4` through
+> conftest) + docs; note the testSpecs snapshot must be generated with LLM off to stay deterministic in CI.)
+
 > Updated: 2026-07-24 (**SWE.4 Task C — `swe4_exporter.py` + `docx_common.py` landed**; `--doc-type swe4` is
 > now runnable **end-to-end** (verified: `--use-model --doc-type swe4 --selected-group "My Sample"` →
 > `output/<group>/software_unit_test_specification_<group>.docx`). New `engine/docx_common.py` holds the

@@ -183,6 +183,35 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
     return result
 
 
+def _enrich_with_llm(test_specs, config):
+    """Fill each spec's LLM-synthesised fields (input/expected sets, test steps)
+    with grounded, cached test cases. Best-effort: any failure leaves the
+    deterministic scaffold untouched, so the view still produces valid output.
+    Runs only when summarization is enabled and a client is reachable."""
+    if not (config or {}).get("llm", {}).get("summarize", True):
+        return
+    try:
+        from llm_enrichment import get_test_cases
+    except ImportError:
+        return
+    enriched = 0
+    for key, unit in test_specs.items():
+        if key == "unitNames" or not isinstance(unit, dict):
+            continue
+        for spec in unit.get("functions", []):
+            try:
+                cases = get_test_cases(spec, config)
+            except Exception:  # never let enrichment break the view
+                continue
+            if cases.get("inputSets") or cases.get("testSteps"):
+                spec["input"]["sets"] = cases.get("inputSets", [])
+                spec["expected"]["sets"] = cases.get("expectedSets", [])
+                spec["testSteps"] = cases.get("testSteps", [])
+                enriched += 1
+    if enriched:
+        log("enriched %d function spec(s) with LLM test cases" % enriched, component="testSpecs")
+
+
 @register("testSpecs")
 def run(model, output_dir, model_dir, config):
     units_data = model.get("units", {})
@@ -198,6 +227,7 @@ def run(model, output_dir, model_dir, config):
         data_dict,
         allowed_components=allowed_components,
     )
+    _enrich_with_llm(test_specs, config)
     out_path = os.path.join(output_dir, "test_specs.json")
     os.makedirs(output_dir, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
