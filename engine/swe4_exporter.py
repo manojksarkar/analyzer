@@ -58,8 +58,10 @@ def _precondition_text(pre: dict) -> str:
 
 
 def _input_text(inp: dict) -> str:
-    """Render the Input cell (REQ-UT-06). VOID when parameterless; input sets
-    are filled by the enrichment pass, so until then show the parameter template."""
+    """Render the Input cell (REQ-UT-06). VOID when parameterless; concrete input
+    sets come from the enrichment pass. Without them, fall back to the deterministic
+    input domain (each parameter with its range) — a valid 'range' input set, not a
+    placeholder."""
     if inp.get("isVoid"):
         return "VOID"
     sets = inp.get("sets") or []
@@ -67,28 +69,30 @@ def _input_text(inp: dict) -> str:
         return "\n".join(f"Set {i+1}: {s}" for i, s in enumerate(sets))
     params = inp.get("parameters") or []
     if params:
-        rng = {p.get("name"): p.get("range") for p in params}
         lines = []
         for p in params:
             r = f" [{p.get('range')}]" if p.get("range") else ""
             lines.append(f"{_param_label(p)}{r}")
-        return "\n".join(lines) + f"\n({TBS})"
-    return TBS
+        return "\n".join(lines)
+    return "VOID"
 
 
 def _expected_text(exp: dict) -> str:
-    """Render the Expected Results cell (REQ-UT-08): return + written globals."""
+    """Render the Expected Results cell (REQ-UT-08): return + written globals.
+    Concrete per-set values come from the enrichment pass; without them, state the
+    deterministic output shape and mark the value 'tester to confirm' (REQ-TC-06 —
+    never fabricate a computed value)."""
     sets = exp.get("sets") or []
     if sets:
         return "\n".join(f"Set {i+1}: {s}" for i, s in enumerate(sets))
     lines = []
     ret = (exp.get("returnType") or "").strip()
     if ret and ret.lower() != "void":
-        lines.append(f"Return ({ret}): {TBS}")
+        lines.append(f"Return value ({ret}) — tester to confirm")
     writes = exp.get("writesGlobals") or []
     if writes:
         lines.append("Globals updated: " + ", ".join(g.get("name", "") for g in writes))
-    return "\n".join(lines) if lines else TBS
+    return "\n".join(lines) if lines else "No return value; no global side effects"
 
 
 def _test_steps_text(spec: dict) -> str:

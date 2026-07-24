@@ -214,6 +214,25 @@
 > singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
 > [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
 
+> Updated: 2026-07-24 (**SWE.4 — LLM test-case path turned on + made robust** (`feat/swe4-unit-test-spec`).
+> Root cause the LLM fill was blank even with ollama up: `llama3.2` returns JSON with **hex literals**
+> (`0x7FFFFFFF`, invalid JSON) and **nested objects** for input/expected/steps, which the strict parser
+> rejected. Fixes in `llm_enrichment.py`: `_parse_test_cases` now sanitizes bare hex → decimal before
+> `json.loads` and flattens object/list values via `_tc_flatten` (input/expected → `"k = v, ..."`, step
+> objects → their `step`/`description`/`text` field); the prompt now demands JSON-safe **string** values
+> (decimal only, no hex/arithmetic/nesting) with a worked example. Test-case cache key bumped to `testcase-v2|`
+> so pre-fix entries regenerate. **New dedicated gate `llm.testCases`** (default false) — `_enrich_with_llm`
+> runs when `summarize` **or** `testCases` is set, so SWE.4 gets LLM cases **without** enabling the heavier
+> Phase-2 description enrichment (which stays off). **Enabled in `config.json` (`llm.testCases: true`).** Live
+> verified on `directionAdd` → 6 cases + steps (e.g. `a = 5, b = 5 -> returns 10; g_utilsCounter = 1`). Cost:
+> ~30-40s/function on llama3.2 first run, then cached (deterministic); the deterministic floor still backstops
+> any function the LLM fails to parse. Tests: hex/object/step-object parse cases + `testCases`-toggle gate.
+> Also removed the `[To be specified]` placeholders from the **Input/Expected** exporter fallbacks
+> (`swe4_exporter._input_text`/`_expected_text`): Input now shows the deterministic input **domain** (each
+> param + range — a valid 'range' input set), Expected shows the output shape with `tester to confirm` for the
+> value (REQ-TC-06, never fabricate). Verified end-to-end on the **Lib** component with the LLM on: all 6
+> functions filled (e.g. libAdd `Set 3: a = 5; b = 3 -> returns 8`), no placeholder text anywhere.)
+
 > Updated: 2026-07-24 (**SWE.4 fix — deterministic Test Steps floor** (`feat/swe4-unit-test-spec`).
 > Test Steps were blank (`[To be specified]`) whenever the LLM was off (`llm.summarize=false`, this env), since
 > steps were LLM-only. Now `_default_test_steps(spec)` in `views/test_specs.py` derives a single-level floor

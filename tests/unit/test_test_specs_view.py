@@ -148,6 +148,17 @@ class TestLlmEnrichment:
         assert dw["input"]["sets"] == []      # value sets stay LLM-only
         assert dw["testSteps"]                # but the steps floor remains
 
+    def test_testcases_toggle_enables_without_summarize(self, monkeypatch):
+        ts = _build_test_specs(*_model())
+        import llm_enrichment
+        monkeypatch.setattr(llm_enrichment, "get_test_cases", lambda spec, config: {
+            "inputSets": ["n = 1"], "expectedSets": ["g_count = 1"], "testSteps": ["s"],
+        })
+        # summarize off, testCases on -> enrichment still runs
+        ts_mod._enrich_with_llm(ts, {"llm": {"summarize": False, "testCases": True}})
+        dw = next(s for s in ts["Comp|U"]["functions"] if s["name"] == "doWrite")
+        assert dw["input"]["sets"] == ["n = 1"]
+
     def test_enrichment_fills_sets(self, monkeypatch):
         ts = _build_test_specs(*_model())
         monkeypatch.setattr(ts_mod, "get_test_cases", lambda spec, config: {

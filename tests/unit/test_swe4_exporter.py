@@ -36,14 +36,22 @@ class TestCellRendering:
         txt = se._input_text({"isVoid": False,
                               "parameters": [{"name": "n", "type": "int", "range": "0-9"}]})
         assert "int n" in txt and "0-9" in txt
+        assert "[To be specified]" not in txt  # deterministic domain, no placeholder
+
+    def test_input_renders_llm_sets_when_present(self):
+        txt = se._input_text({"isVoid": False, "parameters": [{"name": "n", "type": "int"}],
+                              "sets": ["n = 1", "n = 9"]})
+        assert "Set 1: n = 1" in txt and "Set 2: n = 9" in txt
 
     def test_expected_return_and_globals(self):
         txt = se._expected_text({"returnType": "int",
                                  "writesGlobals": [{"name": "g_count"}]})
-        assert "Return (int)" in txt and "g_count" in txt
+        assert "int" in txt and "tester to confirm" in txt and "g_count" in txt
+        assert "[To be specified]" not in txt
 
     def test_expected_void_no_return_line(self):
-        assert "Return" not in se._expected_text({"returnType": "void", "writesGlobals": []})
+        txt = se._expected_text({"returnType": "void", "writesGlobals": []})
+        assert "Return value" not in txt and "[To be specified]" not in txt
 
 
 class TestTableStructure:

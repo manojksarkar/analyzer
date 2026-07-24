@@ -232,8 +232,11 @@ def _enrich_with_llm(test_specs, config):
     """Fill each spec's LLM-synthesised fields (input/expected sets, test steps)
     with grounded, cached test cases. Best-effort: any failure leaves the
     deterministic scaffold untouched, so the view still produces valid output.
-    Runs only when summarization is enabled and a client is reachable."""
-    if not (config or {}).get("llm", {}).get("summarize", True):
+    Runs when the LLM is enabled — either the global `llm.summarize` or the
+    SWE.4-specific `llm.testCases` toggle (so the test-case pass can run without
+    turning on the heavier Phase-2 description enrichment)."""
+    llm_cfg = (config or {}).get("llm", {})
+    if not (llm_cfg.get("summarize", True) or llm_cfg.get("testCases", False)):
         return
     try:
         from llm_enrichment import get_test_cases

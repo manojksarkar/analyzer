@@ -79,3 +79,22 @@ class TestParse:
     @pytest.mark.parametrize("raw", ["", "not json", "{broken", "[]", "null"])
     def test_garbage_returns_empties(self, raw):
         assert _parse_test_cases(raw) == {"inputSets": [], "expectedSets": [], "testSteps": []}
+
+    def test_hex_literals_sanitized(self):
+        # Small models emit bare hex, which is invalid JSON; parser must recover.
+        raw = '{"cases":[{"input":"delta = 0x7FFFFFFF","expected":"returns 0x7FFFFFFF"}]}'
+        out = _parse_test_cases(raw)
+        assert out["inputSets"] == ["delta = 2147483647"]
+        assert out["expectedSets"] == ["returns 2147483647"]
+
+    def test_object_valued_input_expected_flattened(self):
+        # Model returns nested objects instead of strings -> render, don't drop.
+        raw = '{"cases":[{"input":{"delta":5},"expected":{"result":10,"g":1}}]}'
+        out = _parse_test_cases(raw)
+        assert out["inputSets"] == ["delta = 5"]
+        assert out["expectedSets"] == ["result = 10, g = 1"]
+
+    def test_step_objects_use_text_field(self):
+        raw = '{"steps":[{"step":"Call f(x)","input":{"x":1}},{"description":"Verify y"}]}'
+        out = _parse_test_cases(raw)
+        assert out["testSteps"] == ["Call f(x)", "Verify y"]

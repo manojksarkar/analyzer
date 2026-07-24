@@ -572,14 +572,35 @@ Rules:
 - For a computed/logic-dependent expected value, give the relation or "tester to confirm"; never guess a number.
 - "steps": 3-6 short descriptive steps that follow the control flow and name the variables (single level).
 
-Reply with JSON only, no prose:
-{{"cases": [{{"input": "...", "expected": "..."}}], "steps": ["...", "..."]}}"""
+Output format — reply with JSON ONLY, no prose. Every "input", "expected", and step is a single
+plain STRING (never a nested object or array). Use decimal integers only — no hex (0x...) and no
+arithmetic. Example for a function `f(int delta)` that updates global `g`:
+{{"cases": [{{"input": "delta = -2147483648", "expected": "returns -2147483648; g = 0"}},
+            {{"input": "delta = 5", "expected": "returns 5; g = 1"}}],
+  "steps": ["Set g = 0.", "Call f(delta) with the input value.", "Verify the return value and g."]}}"""
+
+
+def _tc_flatten(v) -> str:
+    """Coerce an input/expected/step value to a compact string. Small models
+    often return a nested object (`{"delta": 5}`) or list instead of the
+    requested string — render those to `k = v, ...` rather than dropping them."""
+    if isinstance(v, dict):
+        # a step object: prefer its text field
+        for k in ("step", "description", "text"):
+            if isinstance(v.get(k), str) and v[k].strip():
+                return v[k].strip()
+        return ", ".join(f"{k} = {val}" for k, val in v.items())
+    if isinstance(v, (list, tuple)):
+        return ", ".join(_tc_flatten(x) for x in v)
+    return str(v).strip()
 
 
 def _parse_test_cases(raw: str) -> dict:
     """Parse the model's JSON reply into {inputSets, expectedSets, testSteps}.
 
-    Defensive: extracts the first JSON object, tolerates missing keys, and keeps
+    Defensive against real small-model output: extracts the JSON object,
+    sanitizes hex literals (invalid JSON that llama-class models emit), and
+    accepts input/expected/steps as either strings or nested objects. Keeps
     inputSets/expectedSets index-aligned. Returns empties on any failure."""
     import json
     empty = {"inputSets": [], "expectedSets": [], "testSteps": []}
@@ -588,19 +609,27 @@ def _parse_test_cases(raw: str) -> dict:
     start, end = raw.find("{"), raw.rfind("}")
     if start < 0 or end <= start:
         return empty
+    blob = raw[start:end + 1]
+    # Models routinely emit bare hex (0x7FFFFFFF) — not valid JSON. Convert to
+    # decimal so json.loads succeeds; the prompt asks for decimals but backstop it.
+    blob = re.sub(r"0[xX][0-9A-Fa-f]+", lambda m: str(int(m.group(0), 16)), blob)
     try:
-        obj = json.loads(raw[start:end + 1])
+        obj = json.loads(blob)
     except (ValueError, TypeError):
         return empty
-    cases = obj.get("cases") if isinstance(obj, dict) else None
+    if not isinstance(obj, dict):
+        return empty
     input_sets, expected_sets = [], []
-    for c in (cases or []):
+    for c in (obj.get("cases") or []):
         if not isinstance(c, dict):
             continue
-        input_sets.append(str(c.get("input", "")).strip())
-        expected_sets.append(str(c.get("expected", "")).strip())
-    steps = [str(s).strip() for s in (obj.get("steps") or []) if str(s).strip()] \
-        if isinstance(obj, dict) else []
+        input_sets.append(_tc_flatten(c.get("input", "")))
+        expected_sets.append(_tc_flatten(c.get("expected", "")))
+    steps = []
+    for s in (obj.get("steps") or []):
+        txt = _tc_flatten(s)
+        if txt:
+            steps.append(txt)
     return {"inputSets": input_sets, "expectedSets": expected_sets, "testSteps": steps}
 
 
@@ -614,7 +643,9 @@ def get_test_cases(spec: dict, config: dict, *, abbreviations: dict = None) -> d
     import json
     facts = _test_case_facts(spec)
     abbr_key = "".join(f"{k}={v};" for k, v in sorted((abbreviations or {}).items()) if k and v)
-    key_material = "testcase|" + json.dumps(facts, sort_keys=True) + "|" + abbr_key
+    # v2: prompt hardened to force JSON-safe string values (bumps the cache key
+    # so entries from the earlier prompt regenerate).
+    key_material = "testcase-v2|" + json.dumps(facts, sort_keys=True) + "|" + abbr_key
 
     def _gen() -> str:
         prompt = _build_test_case_prompt(facts, abbreviations)
