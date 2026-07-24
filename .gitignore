@@ -46,8 +46,10 @@ backend/config/last_run.json
 tests/coverage_html/
 htmlcov/
 
-# Claude tooling
+# Claude tooling — commit .claude/skills/ (shared role skills); ignore local/transient bits
 .claude/settings.json
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
 sitecustomize.py
 
 # Node

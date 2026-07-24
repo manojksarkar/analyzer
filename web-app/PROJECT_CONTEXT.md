@@ -9,7 +9,7 @@
 
 ## What this product is
 
-**[PRODUCT NAME]** (name TBD) is an ASPICE compliance automation tool for automotive Tier 1 suppliers (Bosch, Continental, etc.). It takes a C++ firmware codebase, parses it, and auto-generates ASPICE-compliant engineering documents — starting with **SWE.3 Software Detailed Design**.
+**ArtiFex** ("Crafted from Code") is an ASPICE compliance automation tool for automotive Tier 1 suppliers (Bosch, Continental, etc.). It takes a C++ firmware codebase, parses it, and auto-generates ASPICE-compliant engineering documents — starting with **SWE.3 Software Detailed Design**.
 
 The goal: point it at a repo, configure your architecture layers, and get the full ASPICE documentation trail without manual effort.
 
@@ -96,7 +96,7 @@ The goal: point it at a repo, configure your architecture layers, and get the fu
 
 ## Stakeholder review feedback (must incorporate)
 
-1. **Product name** — not decided yet, use `[PRODUCT NAME]` as placeholder
+1. **Product name** — **ArtiFex** (tagline "Crafted from Code") — locked
 2. **Help icons** — add `?` icons on sections; use icon buttons instead of verbose text labels
 3. **Macro/Makefile upload** — support file upload (Makefile or CSV) instead of manual text entry
 4. **Rename "Clang Static Analysis Config"** → **"Build Configuration"**
@@ -142,7 +142,7 @@ All pages are designed as HTML mockups in `docs/ui-mockups/`. Build in React in 
 ## Navigation structure (from designs)
 
 **Global (no project selected):**
-- Top bar: `[⬡ PRODUCT NAME]` left; notifications · help · user avatar right
+- Top bar: `[⬡ ArtiFex]` left; notifications · help · user avatar right
 - `projects.html` — full-width, no sidebar; logo top-left links home
 
 **Project-scoped sidebar (220px expanded / 56px collapsed):**

@@ -1,7 +1,8 @@
 # API Server — Project Context
 
-> Updated: 2026-06-27  
-> Active branch: `feat/web-app-api`
+> Updated: 2026-06-27 · **partially stale** — predates the real-pipeline swap. For current state
+> (real `run.py`-backed worker, 70 routes, simulation→real) see [README.md](README.md) and
+> [PLAN.md](PLAN.md); a full refresh of this file is tracked in PLAN.md M4.
 >
 > **Contract safety-net:** the web-app's `npm run test:api` suite validates this server's
 > live responses against the zod schemas the UI expects (~46 endpoints). Run it against

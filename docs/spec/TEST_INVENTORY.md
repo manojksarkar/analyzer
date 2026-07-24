@@ -62,7 +62,7 @@ Marked `@pytest.mark.xfail` — define the contract the real generators must sat
 
 ---
 
-## Rule coverage (from DESIGN_SPEC.md)
+## Rule coverage (from SWE3_SPEC.md)
 
 ### Document Structure — `tests/e2e/test_docx.py`
 

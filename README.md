@@ -21,8 +21,11 @@ removed when the web app landed.)
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [docs/design/DESIGN.md](docs/design/DESIGN.md) | Architecture, model format, config, logic flow |
-| [docs/spec/software_detailed_design.json](docs/spec/software_detailed_design.json) | Document structure spec for the output DOCX |
-| [docs/design/images/architecture.drawio](docs/design/images/architecture.drawio) | Architecture diagram (edit in draw.io, export to PNG) |
+Deep engineering context (agent-facing, start here): **[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)**.
+
+- **Architecture** — [DESIGN.md](docs/design/DESIGN.md) (model format, config, logic flow, DOCX export)
+- **Planning** (leadership) — [ROADMAP](docs/planning/ROADMAP.md) · [doc-gen method](docs/planning/DOC_GENERATION_PLAYBOOK.md) · plans: [SWE.4](docs/planning/SWE4_PLAN.md) / [SWE.2](docs/planning/SWE2_PLAN.md) / [SYS.2](docs/planning/SYS2_PLAN.md) · [backlog](docs/BACKLOG.md)
+- **Specs** (engineering, per doc-type) — [SWE3_SPEC](docs/spec/SWE3_SPEC.md) · [SWE4_SPEC](docs/spec/SWE4_SPEC.md) · [test inventory](docs/spec/TEST_INVENTORY.md)
+- **Production redesign** (POC→production studies) — [01 tech](docs/production-redesign/01-technology-selection-study.md) · [02 database](docs/production-redesign/02-database-design-study.md) · [03 incremental](docs/production-redesign/03-incremental-changes-design.md) · [04 impl](docs/production-redesign/04-incremental-changes-implementation.md) · [05 API spec](docs/production-redesign/05-incremental-api-spec.md) · [06 runbook](docs/production-redesign/06-end-to-end-runbook.md)
+- **Subsystems** — [api/](api/README.md) (+ [PLAN](api/PLAN.md)) · [web-app/](web-app/README.md) (+ [PLAN](web-app/PLAN.md)) · [flowchart engine](engine/flowchart/README.md)
+- **Agent roles** (`.claude/skills/`) — `docs-maintainer` · `ui-dev`
