@@ -565,19 +565,24 @@ Consumed globals: {glob_desc}
 Mocked callees: {mocks}
 
 Rules:
-- Cover the function's specified functional cases (typical, error/precondition where implied).
+- Provide 4-6 input sets: nominal, boundary (min/max), and error/precondition cases where implied.
 - Each case: an "input" set (concrete values for every parameter; write "VOID" if none) and an
-  "expected" result (return value and/or updated globals). Input and expected align.
+  "expected" result (return value and/or updated globals). Input and expected align by position.
 - A pointer/reference parameter the function writes is an OUTPUT — put it in "expected", not "input".
 - For a computed/logic-dependent expected value, give the relation or "tester to confirm"; never guess a number.
-- "steps": 3-6 short descriptive steps that follow the control flow and name the variables (single level).
+- "steps": 5-8 detailed steps (single level, but thorough). In order: set each mocked callee's return
+  value; set each consumed global to a specific value; assign each parameter its value for a representative
+  case; call the function naming its arguments; then verify the return value and each written global in a
+  separate step. Name every variable.
 
 Output format — reply with JSON ONLY, no prose. Every "input", "expected", and step is a single
 plain STRING (never a nested object or array). Use decimal integers only — no hex (0x...) and no
-arithmetic. Example for a function `f(int delta)` that updates global `g`:
+arithmetic. Example for a function `f(int delta)` that calls `clamp()` and updates global `g`:
 {{"cases": [{{"input": "delta = -2147483648", "expected": "returns -2147483648; g = 0"}},
             {{"input": "delta = 5", "expected": "returns 5; g = 1"}}],
-  "steps": ["Set g = 0.", "Call f(delta) with the input value.", "Verify the return value and g."]}}"""
+  "steps": ["Stub clamp() to return its argument unchanged.", "Set global g = 0.",
+            "Assign parameter delta = 5.", "Call f(delta).", "Verify the return value equals 5.",
+            "Verify global g was updated to 1."]}}"""
 
 
 def _tc_flatten(v) -> str:
@@ -643,9 +648,9 @@ def get_test_cases(spec: dict, config: dict, *, abbreviations: dict = None) -> d
     import json
     facts = _test_case_facts(spec)
     abbr_key = "".join(f"{k}={v};" for k, v in sorted((abbreviations or {}).items()) if k and v)
-    # v2: prompt hardened to force JSON-safe string values (bumps the cache key
-    # so entries from the earlier prompt regenerate).
-    key_material = "testcase-v2|" + json.dumps(facts, sort_keys=True) + "|" + abbr_key
+    # v3: richer prompt (more input sets + detailed multi-step steps). Bumping the
+    # key regenerates entries produced by earlier prompt versions.
+    key_material = "testcase-v3|" + json.dumps(facts, sort_keys=True) + "|" + abbr_key
 
     def _gen() -> str:
         prompt = _build_test_case_prompt(facts, abbreviations)
