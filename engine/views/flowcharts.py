@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 from .registry import register
-from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type, render_mermaid_cached
+from utils import KEY_SEP, log, safe_filename, os_type, render_dot_cached
 
 
 # PNG slicing thresholds: split a flowchart PNG across Word pages when it is too tall to
@@ -1048,45 +1048,28 @@ def run(model, output_dir, model_dir, config):
 
     # Always render flowcharts to PNG
 
-    mmdc = mmdc_path(project_root)
+    # Flowcharts are rendered with Graphviz (viz-js -> SVG -> puppeteer PNG),
+    # which runs under Node.  Bail out early with a clear message if Node is
+    # unavailable rather than failing once per function below.
+    try:
+        node_check = subprocess.run(
+            ["node", "--version"],
+            capture_output=True,
+            timeout=10,
+            cwd=project_root,
+            shell=(os_type == "Windows"),
+        )
+        node_ok = node_check.returncode == 0
+    except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
+        node_ok = False
 
-    if not os.path.isfile(mmdc):
-        try:
-            if os_type == "Windows":
-                subprocess.run(
-                    [mmdc, "--help"],
-                    capture_output=True,
-                    timeout=5,
-                    cwd=project_root,
-                    shell=True,
-                )
-            else:
-                subprocess.run(
-                    [mmdc, "--help"],
-                    capture_output=True,
-                    timeout=5,
-                    cwd=project_root,
-                )
-
-        except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
-            log(
-                "mmdc not found. Run: npm install @mermaid-js/mermaid-cli",
-                component="flowcharts",
-                err=True,
-            )
-            return
-
-    puppeteer = os.path.join(
-        project_root,
-        "engine",
-        "config",
-        "puppeteer-config.json",
-    )
-
-    run_cmd_base = [mmdc]
-
-    if os.path.isfile(puppeteer):
-        run_cmd_base.extend(["-p", puppeteer])
+    if not node_ok:
+        log(
+            "node not found — cannot render Graphviz flowcharts. Install Node.js.",
+            component="flowcharts",
+            err=True,
+        )
+        return
 
     # Incremental PNG reuse: file-level carries whole non-impacted units;
     # function-level carries every function except the directly changed ones
@@ -1159,10 +1142,10 @@ def run(model, output_dir, model_dir, config):
 
         try:
             # M-A: content-addressed cache -> an identical flowchart (e.g. carried across
-            # a revert / shared between versions) skips mmdc entirely. scale=2 preserved;
-            # the Windows/non-Windows subprocess handling + the temp .mmd are inside
-            # utils._run_mmdc.
-            if render_mermaid_cached(
+            # a revert / shared between versions) skips the render entirely. scale=2
+            # preserved; the Windows/non-Windows subprocess handling + the temp .dot are
+            # inside utils._run_dot_render.
+            if render_dot_cached(
                 project_root, flowchart, png_path, scale=2, timeout=180
             ):
                 if os.path.isfile(png_path):
@@ -1174,7 +1157,7 @@ def run(model, output_dir, model_dir, config):
                 failed += 1
 
                 log(
-                    "mmdc failed for %s/%s" % (unit_name, func_name),
+                    "graphviz render failed for %s/%s" % (unit_name, func_name),
                     component="flowcharts",
                     err=True,
                 )

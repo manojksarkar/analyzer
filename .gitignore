@@ -42,6 +42,8 @@ backend/config/last_run.json
 **/.flowchart_cache/
 .mmdc_cache/
 **/.mmdc_cache/
+.dot_cache/
+**/.dot_cache/
 .pytest_cache/
 tests/coverage_html/
 htmlcov/

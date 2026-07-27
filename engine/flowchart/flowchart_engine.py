@@ -51,8 +51,8 @@ from config import EngineConfig
 from enrichment.enricher import NodeEnricher
 from llm_core.client import LlmClient
 from llm.generator import LabelGenerator
-from mermaid.builder import build_mermaid
-from mermaid.validator import validate_cfg, validate_mermaid
+from dot_builder import build_dot
+from mermaid.validator import validate_cfg
 from models import FileResult, FlowchartResult, FunctionEntry, ProjectMeta
 from output.writer import OutputWriter
 from pkb.builder import ProjectKnowledgeBase
@@ -298,19 +298,16 @@ def _process_function(
         elif cfg_validation.warnings:
             logger.debug("CFG validation warnings for '%s':\n%s", qn, cfg_validation)
 
-        # 8. Build Mermaid script
-        mermaid_script = build_mermaid(cfg)
-
-        # 9. Validate Mermaid script
-        mermaid_validation = validate_mermaid(mermaid_script)
-        if not mermaid_validation.is_valid:
-            logger.warning("Mermaid validation errors for '%s':\n%s",
-                           qn, mermaid_validation)
+        # 8. Build the flowchart script.  The pipeline renders flowcharts with
+        # Graphviz (loop-aware layout: Return/End at the bottom, no crossing
+        # back-edges).  The FlowchartResult field is still named mermaid_script
+        # for compatibility with the writer/schema, but now carries a DOT script.
+        flowchart_script = build_dot(cfg)
 
         return FlowchartResult(
             function_key=key,
             qualified_name=qn,
-            mermaid_script=mermaid_script,
+            mermaid_script=flowchart_script,
         )
 
     except Exception as exc:

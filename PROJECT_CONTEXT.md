@@ -48,6 +48,35 @@
 >   is off) and relaxed the interface-id regex to allow the alphanumeric layer segment (`LAYER1`).
 >   Regenerated `tests/snapshots/Sample/{interface_tables,unit_diagrams}.json`. Full suite: **627
 >   passed, 4 skipped, 0 failed** (`pytest --skip-pipeline`). No engine code changed.
+> - **2026-07-27 — flowcharts now render with Graphviz, not Mermaid (branch `fix/flowchart-issue`):**
+>   the Phase-3 flowchart engine emits a **Graphviz DOT** script instead of Mermaid.
+>   `engine/flowchart/dot_builder.py::build_dot(cfg)` replaces `build_mermaid(cfg)` at the
+>   `_process_function` step (`FlowchartResult.mermaid_script` field kept for schema compat but now
+>   holds DOT; `validate_mermaid` call dropped). Motivation: two client asks — **Return/End must sit at
+>   the bottom** and **no crossing back-edge lines**. `dot_builder` runs a loop-aware pass
+>   (`_analyze_loops`): **DFS-based back-edge detection** (NOT insertion order — the builder emits `End`
+>   as N2 early, so a source-order test mis-flags every `return→End`), natural-loop bodies via reverse
+>   reachability, then (a) invisible `tail→exit` push-down edges anchor Return/End below the loop body,
+>   (b) back-edges get `constraint=false,headport=e` and the loop-exit branch `tailport=w,headport=w` so
+>   the two run in separate lanes. Loop-free functions are a no-op. **Rendering:** new
+>   `engine/config/render_dot.mjs` (viz-js DOT→SVG + full `puppeteer` SVG→PNG, auto-locates Chromium) +
+>   `engine.utils.render_dot_cached` (content-addressed `.dot_cache`, mirrors `render_mermaid_cached`);
+>   `views/flowcharts.py` calls it instead of `mmdc` and now guards on `node` availability. **Scope =
+>   PNG/DOCX pipeline only** — behaviour/unit diagrams still use Mermaid (`render_mermaid_cached`/`mmdc`
+>   untouched); the **web-app still renders the `mermaid` string client-side, so its in-app flowchart
+>   view is NOT yet ported to DOT** (open follow-up). Verified e2e via the engine CLI on `SampleCppProject`
+>   (`--no-llm`): 123 ✓ / 1 ✗ (pre-existing `_SOME_FUNCTION` cursor-resolve failure in `VoidAsVar.cpp`),
+>   JSON carries `digraph`, PNGs render with Return/End at the bottom and no crossings.
+>   **Reproducibility fixes (same day):** `package.json` now declares `@viz-js/viz` + `puppeteer` as real
+>   `dependencies` (previously only transitive/manual → a fresh `npm ci` would miss viz-js and break the
+>   renderer); lockfile synced offline. New **`tools/doctor.py`** prerequisite checker: probes each dep
+>   **local→global in the pipeline's real resolution order** (python+pkgs, node, `@viz-js/viz`, puppeteer,
+>   the Chromium puppeteer launches, `mmdc`, libclang via `LIBCLANG_PATH`→`config.json`→pip-bundled),
+>   reports which location satisfied each, exits non-zero on missing REQUIRED. `run.py` calls
+>   `doctor.preflight(need_flowchart, need_mermaid)` before `plan_runs` — **view-gated** (parse-only runs
+>   aren't blocked by a missing browser/mmdc; flowchart views require viz+chromium, mermaid views require
+>   mmdc+chromium), wrapped so the check itself can never abort a run. **Offline:** render path is fully
+>   local at runtime (bundled viz-js WASM + already-cached Chromium); internet only at `npm ci`/install.
 > - **⚠ Merge state:** 3.1/3.2/3.4/3.5/3.6/3.7 landed on feature branches with **PRs
 >   pending into `poc-4`** (not merged); 3.14/3.15/3.17/3.18 are on `v1-fixes-more`. The
 >   detailed per-branch bullets below are retained as the record of where each fix lives

@@ -3,5 +3,9 @@
   "private": true,
   "devDependencies": {
     "@mermaid-js/mermaid-cli": "^10.6.1"
+  },
+  "dependencies": {
+    "@viz-js/viz": "^3.28.0",
+    "puppeteer": "^19.11.1"
   }
 }

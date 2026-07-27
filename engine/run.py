@@ -399,6 +399,32 @@ with open(_clang_paths_file, "w", encoding="utf-8") as _f:
     _json.dump(_layer_inc, _f, indent=2)
 log("Layer include paths collected.", component="run")
 
+# Prerequisite preflight: fail fast (before a long run) if a REQUIRED external
+# dependency for THIS run's enabled views is missing — a clear message beats a
+# cryptic subprocess error deep in a phase. View-gated so a parse-only run is not
+# blocked by a missing browser/mmdc. Wrapped so the check itself can never abort a
+# run; use `python tools/doctor.py` for the full report.
+try:
+    sys.path.insert(0, os.path.join(SCRIPT_DIR, "tools"))
+    import doctor as _doctor  # noqa: WPS433
+    _views = cfg.get("views") or {}
+    _blocking = _doctor.preflight(
+        need_flowchart=bool(_views.get("flowcharts")),
+        need_mermaid=bool(_views.get("behaviourDiagram") or _views.get("unitDiagrams")),
+    )
+    if _blocking:
+        log("Missing prerequisites for this run:", component="run", err=True)
+        for _c in _blocking:
+            log(f"  [FAIL] {_c.name}: {_c.detail}", component="run", err=True)
+            if _c.fix:
+                log(f"         -> {_c.fix}", component="run", err=True)
+        log("Run `python tools/doctor.py` for the full report.", component="run", err=True)
+        sys.exit(2)
+except SystemExit:
+    raise
+except Exception as _pf_err:  # noqa: BLE001
+    log(f"prerequisite preflight skipped ({_pf_err})", component="run")
+
 # Resolve and display the LLM config up-front so the user sees exactly which
 # provider, endpoint, model, and token budget the run will use. Fails loud
 # (LlmConfigError) if any required field is missing or invalid — better to
