@@ -13,9 +13,10 @@ Loop handling keeps two invariants the client asked for:
      the loop body.  Invisible constraint edges from every loop tail to each
      exit node push the exit (and its Return/End chain) below the whole body.
   2. No crossing lines.  Loop back-edges are drawn with `constraint=false` so
-     they stop distorting the rank assignment, and are routed into a lane
-     separate from the exit branch (back-edges enter the head from the east,
-     the exit branch leaves/arrives from the west).
+     they stop distorting the rank assignment.  Entry/exit sides are left to
+     Graphviz — forcing a compass port made `splines=ortho` route the edge
+     straight THROUGH the node to reach that port, so wide `nodesep`/`ranksep`
+     is relied on instead to keep the lanes clear.
 
 Shape mapping (classic flowchart):
   START / END                          -> ellipse
@@ -47,8 +48,8 @@ _ELLIPSE_TYPES = frozenset({
 _GRAPH_ATTRS = [
     "rankdir=TB",
     "splines=ortho",
-    "nodesep=0.5",
-    "ranksep=0.55",
+    "nodesep=1.5",
+    "ranksep=0.9",
 ]
 _NODE_ATTRS = 'fontname="Helvetica", fontsize=12, color="#8b7fd6", penwidth=1.4, style=filled, fillcolor="#eae6fb"'
 _EDGE_ATTRS = 'fontname="Helvetica", fontsize=11, color="#333333", penwidth=1.4'
@@ -91,7 +92,6 @@ class _LoopLayout:
 
     def __init__(self) -> None:
         self.back_edges: Set[Tuple[str, str]] = set()
-        self.exit_edges: Set[Tuple[str, str]] = set()
         self.push_down: List[Tuple[str, str]] = []
 
 
@@ -133,13 +133,13 @@ def _analyze_loops(cfg: ControlFlowGraph) -> _LoopLayout:
 
     back_sources = {src for src, _ in back_edges}
 
-    # Loop-exit edges: an edge out of a loop head to a node in no loop.
+    # Loop-exit edges (head -> node in no loop): used only to anchor Return/End
+    # below the loop body via push-down edges (no longer given a routing port).
     exits_by_head: Dict[str, List[str]] = defaultdict(list)
     for e in cfg.edges:
         key = (e.source, e.target)
         if (e.source in heads and key not in back_edges
                 and e.target not in loop_body):
-            layout.exit_edges.add(key)
             exits_by_head[e.source].append(e.target)
 
     # Anchor each exit below its loop: push down from every back-edge tail that
@@ -228,13 +228,12 @@ def _edge_def(edge: CfgEdge, layout: _LoopLayout) -> str:
 
     key = (edge.source, edge.target)
     if key in layout.back_edges:
-        # Free the rank solver and route back-edges up their own (east) lane.
+        # Free the rank solver so back-edges don't distort rank assignment. We do
+        # NOT force a compass headport here: under splines=ortho, pinning the edge
+        # to a specific node side makes the router cut the segment straight THROUGH
+        # the node to reach that port. Letting Graphviz choose the entry side keeps
+        # the edge outside the box.
         attrs.append("constraint=false")
-        attrs.append("headport=e")
-    elif key in layout.exit_edges:
-        # Keep the loop-exit branch in a lane separate from the back-edges.
-        attrs.append("tailport=w")
-        attrs.append("headport=w")
 
     if attrs:
         return f'{edge.source} -> {edge.target} [{", ".join(attrs)}];'
