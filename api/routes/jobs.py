@@ -14,7 +14,7 @@ from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User, AnalysisJob, AnalysisPhase
-from ..services.errors import not_found, conflict
+from ..services.errors import not_found, conflict, bad_request
 from ..services import pipeline_runner
 from ..schemas import (
     StartJobResponse, JobResponse, CurrentJobResponse,
@@ -106,15 +106,21 @@ def start_job(
     if not project:
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
+    # Version identity (D-3): the version is REQUIRED and UNIQUE within the project.
+    # No auto-generated name, no silent "-1" rename — a duplicate is rejected. Checked
+    # before the active-job guard so a malformed request fails as 400, deterministically.
+    version_name = (body.version_tag or "").strip()
+    if not version_name:
+        raise bad_request("A version name is required.")
+    if db.versions.get_by_tag(project_id, version_name):
+        raise conflict("VERSION_EXISTS",
+                       f"Version '{version_name}' already exists in this project.")
     # Prevent duplicate active jobs
     existing = db.jobs.get_current(project_id)
     if existing and existing.status in ("queued", "running", "paused"):
         raise conflict("JOB_ALREADY_RUNNING", "An analysis job is already active for this project.")
-    # Resolve version_id if tag provided
+    # The real Version row is created on completion; the job starts with no version_id.
     version_id = None
-    if body.version_tag:
-        ver = db.versions.get_by_tag(project_id, body.version_tag)
-        version_id = ver.id if ver else None
     # The branch comes from the chosen commit (falls back to the project default).
     commit = db.commits.get(project_id, body.commit_sha)
     branch = commit.branch if commit else (project.default_branch or "main")
@@ -139,7 +145,7 @@ def start_job(
             AnalysisPhase(4, "Export DOCX",  "pending", None),
         ],
         started_at=now, completed_at=None, error_message=None,
-        branch=branch, version_tag=(body.version_tag or None),
+        branch=branch, version_tag=version_name,
         mode=(body.mode or "auto"),
         scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=body.data_dict_id,
         narrowed_parse=bool(body.narrowed_parse),

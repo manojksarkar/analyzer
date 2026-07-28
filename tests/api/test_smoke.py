@@ -240,7 +240,7 @@ def test_start_job_mocked(client, auth_header):
 
         r2 = client.post(
             "/api/v1/projects/p1/jobs",
-            json={"commit_sha": sha},
+            json={"commit_sha": sha, "version_tag": "pg3-smoke-unique"},
             headers=auth_header,
         )
         # Either 202 (new job) or 409 (job already active)
@@ -248,6 +248,28 @@ def test_start_job_mocked(client, auth_header):
         if r2.status_code == 202:
             assert mock_start.called
             assert "job_id" in r2.json()
+
+
+def test_start_job_requires_version(client, auth_header):
+    """version is mandatory (D-3): a missing version is a 400, not an auto-name."""
+    r = client.post(
+        "/api/v1/projects/p1/jobs",
+        json={"commit_sha": "abc123def456789012345678"},   # no version_tag
+        headers=auth_header,
+    )
+    assert r.status_code == 400
+    assert "version" in r.text.lower()
+
+
+def test_start_job_rejects_duplicate_version(client, auth_header):
+    """A version name already used in the project is rejected (409), never renamed."""
+    r = client.post(
+        "/api/v1/projects/p1/jobs",
+        json={"commit_sha": "abc123def456789012345678", "version_tag": "v1.0.0"},  # seed ver1
+        headers=auth_header,
+    )
+    assert r.status_code == 409
+    assert "VERSION_EXISTS" in r.text
 
 
 def test_start_job_requires_admin(client, dev_header):

@@ -579,6 +579,7 @@ def _build_cmd(
     to_phase: Optional[int] = None,
     use_model: bool = False,
     arch_layers: list = (),
+    project_name: str = "",
 ) -> list[str]:
     cmd = [sys.executable, str(get_settings().repo_root / "engine" / "run.py")]
     cmd += ["--config", str(config_path)]
@@ -612,8 +613,11 @@ def _build_cmd(
                    / "datadict" / f"{ddid}.csv")
         if dd_path.is_file():
             cmd += ["--data-dictionary", str(dd_path)]
-    if getattr(job, "version_tag", None):
-        cmd += ["--project-name", job.version_tag]
+    # The DOCX project name comes from the PROJECT, not the version (D-3): a version is
+    # an identifier, so re-exporting a different version must not change the document
+    # title. (The main generate path already passes project.name — this aligns re-export.)
+    if project_name:
+        cmd += ["--project-name", project_name]
     # Extra include paths from architecture_layers.lib_paths (--include-path <layer> <abs_dir>)
     for layer in arch_layers:
         if not isinstance(layer, dict):
@@ -1003,13 +1007,10 @@ def _make_sections(db: Any, docs: list, now: datetime, output_dir: Path) -> None
 
 def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict = None) -> Version:
     manifest = manifest or {}
-    existing = db.versions.list_for_project(project.id) if project else []
-    taken = {v.tag for v in existing}
-    tag = (getattr(job, "version_tag", None) or "").strip() or f"v0.{len(existing) + 1}.0"
-    base, i = tag, 1
-    while tag in taken:
-        tag = f"{base}-{i}"
-        i += 1
+    # Version identity (D-3): use the caller-supplied version verbatim. It was validated
+    # required + unique at job start (400/409), so there is no fallback name and no
+    # silent "-1" rename here.
+    tag = (getattr(job, "version_tag", None) or "").strip()
     version = Version(
         id=f"ver{uuid.uuid4().hex[:8]}",
         project_id=project.id,
@@ -1217,7 +1218,8 @@ def _do_reexport(db: Any, job_id: str) -> None:
             shutil.copytree(src, dst)
 
     arch_layers = project.architecture_layers or []
-    cmd = _build_cmd(job, cdir, config_path, from_phase=4, use_model=True, arch_layers=arch_layers)
+    cmd = _build_cmd(job, cdir, config_path, from_phase=4, use_model=True,
+                     arch_layers=arch_layers, project_name=(getattr(project, "name", "") or ""))
     if _execute_subprocess(db, job_id, cmd, phase_start=4):
         out = root / "output"
         if out.is_dir():
