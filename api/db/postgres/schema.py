@@ -34,6 +34,11 @@ metadata = MetaData()
 # JSONB on Postgres; plain JSON elsewhere (SQLite structural tests).
 _JSONB = JSON().with_variant(JSONB(), "postgresql")
 
+# Auto-incrementing surrogate key. BIGINT on Postgres, but INTEGER on SQLite because
+# SQLite only makes an exact `INTEGER PRIMARY KEY` the auto-incrementing rowid alias
+# (a BIGINT PK would insert NULL). Lets the FK-strict SQLite tests exercise it.
+_BIGID = BigInteger().with_variant(Integer, "sqlite")
+
 
 def _ts(name: str, **kw) -> Column:
     """A timezone-aware timestamp column."""
@@ -265,7 +270,7 @@ content_blobs = Table(
 
 entities = Table(
     "entities", metadata,
-    Column("entity_id", BigInteger, primary_key=True, autoincrement=True),
+    Column("entity_id", _BIGID, primary_key=True, autoincrement=True),
     Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
     Column("entity_key", String, nullable=False),               # Component|Unit|qname|params
     Column("kind", String, nullable=False),                     # function|global|type|macro
@@ -352,7 +357,7 @@ job_functions = Table(
 # ---------------------------------------------------------------------------
 model_edges = Table(
     "model_edges", metadata,
-    Column("edge_id", BigInteger, primary_key=True, autoincrement=True),
+    Column("edge_id", _BIGID, primary_key=True, autoincrement=True),
     Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
     Column("kind", String, nullable=False),                     # call|global_access|type_use|macro_use|override
     Column("src_key", String, nullable=False),
@@ -395,14 +400,14 @@ data_dictionaries = Table(
 
 data_dictionary_entries = Table(
     "data_dictionary_entries", metadata,
-    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("id", _BIGID, primary_key=True, autoincrement=True),
     Column("data_dictionary_id", String, ForeignKey("data_dictionaries.id", ondelete="CASCADE"), nullable=False),
     Column("payload", _JSONB, nullable=False),                  # one CSV row; shape refined at ingest
 )
 
 macro_definitions = Table(
     "macro_definitions", metadata,
-    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("id", _BIGID, primary_key=True, autoincrement=True),
     Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
     Column("layer", String),                                    # per-layer macros (open V1 requirement)
     Column("name", String, nullable=False),
