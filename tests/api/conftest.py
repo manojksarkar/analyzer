@@ -8,7 +8,7 @@ Provides:
 """
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.pool import StaticPool
 
 from api.main import app
@@ -22,6 +22,13 @@ def _sqlite_backed() -> SqlDatabase:
     # per-connection, so TestClient's threadpool would each see an empty database.
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
                            poolclass=StaticPool)
+
+    # SQLite leaves FK enforcement OFF by default; Postgres does not. Turn it ON so a
+    # seed/insert-ordering bug fails HERE instead of on the office Postgres box.
+    @event.listens_for(engine, "connect")
+    def _fk_on(dbapi_conn, _rec):
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
+
     return SqlDatabase(engine, create_schema=True).seed()
 
 
