@@ -90,6 +90,51 @@ def test_functions_roundtrip_real_model():
         assert _norm(l["writesGlobalIds"]) == _norm(o.get("writesGlobalIds")), f"writes {fid}"
 
 
+def _load(name):
+    p = os.path.join(MODEL_DIR, name)
+    return json.load(open(p, encoding="utf-8")) if os.path.isfile(p) else {}
+
+
+@pytest.mark.skipif(not _HAS_MODEL, reason="needs a parsed model/")
+def test_full_model_roundtrip_and_classify_input():
+    """Persist the whole model; globals/types round-trip, edges round-trip, and
+    load_hashes reproduces hashes.json exactly (the input classify diffs)."""
+    functions = _load("functions.json")
+    globals_ = _load("globalVariables.json")
+    datadict = _load("dataDictionary.json")
+    edges = _load("edges.json")
+    hashes = _load("hashes.json")
+
+    engine = _fk_engine()
+    with engine.begin() as cx:
+        model_store.persist_model(cx, PID, VID, functions=functions, globals=globals_,
+                                  datadict=datadict, edges=edges, hashes=hashes)
+    with engine.connect() as cx:
+        lg = model_store.load_globals(cx, VID)
+        lt = model_store.load_types(cx, VID)
+        le = model_store.load_edges(cx, VID)
+        lh = model_store.load_hashes(cx, VID)
+
+    # globals: exact per-entry
+    assert set(lg) == set(globals_)
+    for k, o in globals_.items():
+        assert lg[k] == o, f"global {k} changed across round-trip"
+
+    # types/macros: exact per-entry (struct fields + macro value/text survive via payload)
+    assert set(lt) == set(datadict)
+    for k, o in datadict.items():
+        assert lt[k] == o, f"type {k} changed across round-trip"
+
+    # edges: type/macro user lists (semantic sets)
+    for group in ("typeUsers", "macroUsers"):
+        assert set(le[group]) == set(edges.get(group) or {})
+        for key, users in (edges.get(group) or {}).items():
+            assert set(le[group][key]) == set(users), f"{group}[{key}]"
+
+    # THE classify input: hashes reconstructed from the DB == hashes.json, byte-for-byte
+    assert lh == hashes, "load_hashes must reproduce hashes.json for DB-based classify"
+
+
 @pytest.mark.skipif(not _HAS_MODEL, reason="needs model/functions.json")
 def test_identical_payloads_dedup_to_one_blob():
     """Two functions with the same payload store the content once (D-9)."""
