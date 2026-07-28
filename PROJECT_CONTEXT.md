@@ -77,6 +77,19 @@
 >   aren't blocked by a missing browser/mmdc; flowchart views require viz+chromium, mermaid views require
 >   mmdc+chromium), wrapped so the check itself can never abort a run. **Offline:** render path is fully
 >   local at runtime (bundled viz-js WASM + already-cached Chromium); internet only at `npm ci`/install.
+> - **2026-07-28 — flowchart engine console output cleaned up (branch `fix/flowchart-issue`):**
+>   `flowchart_engine.py` now prints a **global `[idx/total] Processing: <name>` progress counter**
+>   (running across all source files, denominator = `non_header`) so a run's progress is visible like the
+>   PNG renderer's `[x/n]` (`tools/render_flowchart_pngs.py`). **Duplicate-log + stray-DEBUG bug fixed:**
+>   the module-top `logging.basicConfig(...)` installed a second, level-less root handler that both
+>   double-printed every line and leaked DEBUG to the console once `configure_logging` lowered the root
+>   level to DEBUG; removed it (single config point = `core.logging_setup.configure_logging`, with a
+>   `basicConfig` fallback moved **inside** the `except` branch for when the import fails). **Levels
+>   right-sized:** startup banner/paths, LLM config banner, `Project:`/`Loaded N`, `── File:` headers,
+>   no-llm/knowledge/budget notes, and per-function `✓ OK: N chars` are now **DEBUG (file-only)**; console
+>   keeps the `Processing N function(s)` summary (now also counted from `non_header`, so it matches the
+>   `[x/n]` denominator), the progress counter, and the final `Done. ✓ N ✗ N` line. Full detail still lands
+>   in `logs/run_YYYYMMDD.log`. Log-output only — no CFG/structure change, determinism tests unaffected.
 > - **⚠ Merge state:** 3.1/3.2/3.4/3.5/3.6/3.7 landed on feature branches with **PRs
 >   pending into `poc-4`** (not merged); 3.14/3.15/3.17/3.18 are on `v1-fixes-more`. The
 >   detailed per-branch bullets below are retained as the record of where each fix lives

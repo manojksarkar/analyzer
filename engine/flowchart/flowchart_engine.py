@@ -63,11 +63,11 @@ from pkb.knowledge import ProjectKnowledge, load_knowledge
 # Logging setup
 # ---------------------------------------------------------------------------
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-    datefmt="%H:%M:%S",
-)
+# Logging is configured once via core.logging_setup.configure_logging() in
+# _parse_args (stderr→INFO, file→DEBUG). Do NOT call logging.basicConfig here:
+# it would install a second, level-less root handler that both duplicates every
+# line and leaks DEBUG to the console once configure_logging lowers the root
+# level to DEBUG. get_logger()/configure_logging is the single config point.
 logger = logging.getLogger("flowchart_engine")
 
 
@@ -153,8 +153,14 @@ def _parse_args() -> EngineConfig:
         from core.logging_setup import configure_logging
         configure_logging(quiet=args.quiet, verbose=args.verbose)
     except Exception:
-        if args.verbose:
-            logging.getLogger().setLevel(logging.DEBUG)
+        # Last-resort fallback when core.logging_setup is unavailable: install a
+        # single basic handler so logs still appear (no duplicate-handler risk
+        # here — configure_logging never ran).
+        logging.basicConfig(
+            level=logging.DEBUG if args.verbose else logging.INFO,
+            format="[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+            datefmt="%H:%M:%S",
+        )
 
     return EngineConfig(
         functions_json_path=args.interface_json,
@@ -430,16 +436,16 @@ def _configure_libclang() -> None:
 
 def run(config: EngineConfig) -> None:
     _configure_libclang()
-    logger.info("=" * 60)
-    logger.info("flowchart_engine starting")
-    logger.info("  functions.json : %s", config.functions_json_path)
-    logger.info("  metadata.json  : %s", config.metadata_json_path)
-    logger.info("  out-dir        : %s", config.out_dir)
+    logger.debug("=" * 60)
+    logger.debug("flowchart_engine starting")
+    logger.debug("  functions.json : %s", config.functions_json_path)
+    logger.debug("  metadata.json  : %s", config.metadata_json_path)
+    logger.debug("  out-dir        : %s", config.out_dir)
     if config.knowledge_json_path:
-        logger.info("  knowledge-json : %s", config.knowledge_json_path)
+        logger.debug("  knowledge-json : %s", config.knowledge_json_path)
     if config.function_key:
-        logger.info("  filter key     : %s", config.function_key)
-    logger.info("=" * 60)
+        logger.debug("  filter key     : %s", config.function_key)
+    logger.debug("=" * 60)
 
     # Resolve and display the LLM config the subprocess is actually going to
     # use. Any missing/invalid required field surfaces here as LlmConfigError,
@@ -452,18 +458,18 @@ def run(config: EngineConfig) -> None:
         sys.exit(2)
     if llm_cfg_resolved is not None:
         for _line in format_llm_config_banner(llm_cfg_resolved).splitlines():
-            logger.info(_line)
+            logger.debug(_line)
     else:
-        logger.info("LLM (legacy standalone): %s  model=%s",
-                    config.llm_url, config.llm_model)
+        logger.debug("LLM (legacy standalone): %s  model=%s",
+                     config.llm_url, config.llm_model)
 
     # Load inputs
     meta = _load_project_meta(config.metadata_json_path)
     functions_data = _load_functions(config.functions_json_path)
     base_path = meta.base_path
 
-    logger.info("Project: %s  |  base_path: %s", meta.project_name, base_path)
-    logger.info("Loaded %d functions from functions.json", len(functions_data))
+    logger.debug("Project: %s  |  base_path: %s", meta.project_name, base_path)
+    logger.debug("Loaded %d functions from functions.json", len(functions_data))
 
     # Load project knowledge (optional — built by project_scanner.py)
     project_knowledge: Optional[ProjectKnowledge] = None
@@ -472,7 +478,7 @@ def run(config: EngineConfig) -> None:
         if project_knowledge is None:
             logger.warning("--knowledge-json file not loaded; continuing without it")
     else:
-        logger.info("No --knowledge-json provided; running without project knowledge")
+        logger.debug("No --knowledge-json provided; running without project knowledge")
 
     # Build PKB
     pkb = _build_pkb(functions_data, config)
@@ -488,7 +494,7 @@ def run(config: EngineConfig) -> None:
                          config.function_key)
             sys.exit(1)
         target_keys = [config.function_key]
-        logger.info("Filtered to 1 function: %s", config.function_key)
+        logger.debug("Filtered to 1 function: %s", config.function_key)
     else:
         target_keys = list(functions_data.keys())
 
@@ -516,13 +522,13 @@ def run(config: EngineConfig) -> None:
         by_file[entry.file].append(entry)
 
     logger.info("Processing %d function(s) across %d source file(s)",
-                len(target_entries), len(by_file))
+                len(non_header), len(by_file))
 
     # Initialise shared infrastructure
     source_extractor = SourceExtractor(base_path)
     tu_parser = TranslationUnitParser(config.std, config.clang_args)
     if config.no_llm:
-        logger.info("--no-llm: skipping the LLM; emitting fallback node labels")
+        logger.debug("--no-llm: skipping the LLM; emitting fallback node labels")
         llm_client = _NullLlmClient()
     else:
         llm_client = _build_llm_client(config, llm_cfg_resolved)
@@ -536,8 +542,8 @@ def run(config: EngineConfig) -> None:
         from llm_core.budget import resolve_max_tokens  # noqa: WPS433
         enrichment_cfg = llm_cfg_resolved.get("enrichment") or {}
         max_context_tokens = resolve_max_tokens(llm_cfg_resolved)
-        logger.info("Coherence/simplify budget = %d tokens (provider=%s)",
-                    max_context_tokens, llm_cfg_resolved.get("provider"))
+        logger.debug("Coherence/simplify budget = %d tokens (provider=%s)",
+                     max_context_tokens, llm_cfg_resolved.get("provider"))
 
     label_generator = LabelGenerator(
         client=llm_client,
@@ -553,13 +559,17 @@ def run(config: EngineConfig) -> None:
     file_results: List[FileResult] = []
     total_ok = 0
     total_err = 0
+    total_funcs = len(non_header)   # global denominator (functions actually processed)
+    processed = 0                   # global running counter across all files
 
     for source_file, entries in sorted(by_file.items()):
-        logger.info("── File: %s  (%d function(s))", source_file, len(entries))
+        logger.debug("── File: %s  (%d function(s))", source_file, len(entries))
         fr = FileResult(source_file=source_file)
 
         for entry in entries:
-            logger.info("   Processing: %s", entry.qualified_name)
+            processed += 1
+            logger.info("[%d/%d] Processing: %s",
+                        processed, total_funcs, entry.qualified_name)
             result = _process_function(
                 func_entry=entry,
                 pkb=pkb,
@@ -576,8 +586,8 @@ def run(config: EngineConfig) -> None:
                 logger.warning("   ✗ Error: %s", result.error)
             else:
                 total_ok += 1
-                logger.info("   ✓ OK: %d chars of Mermaid",
-                            len(result.mermaid_script))
+                logger.debug("   ✓ OK: %d chars of Mermaid",
+                             len(result.mermaid_script))
 
         file_results.append(fr)
 
@@ -585,11 +595,11 @@ def run(config: EngineConfig) -> None:
     written = writer.write_all(file_results)
     writer.write_summary(file_results, total_ok + total_err, total_err)
 
-    logger.info("=" * 60)
+    logger.debug("=" * 60)
     logger.info("Done.  ✓ %d  ✗ %d  |  %d file(s) written",
                 total_ok, total_err, len(written))
     logger.info("Output: %s", config.out_dir)
-    logger.info("=" * 60)
+    logger.debug("=" * 60)
 
 
 # ---------------------------------------------------------------------------
