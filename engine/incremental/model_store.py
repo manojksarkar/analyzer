@@ -26,7 +26,7 @@ import os
 import sys
 from typing import Any, Dict, Optional
 
-from sqlalchemy import insert, select
+from sqlalchemy import delete, insert, select
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
@@ -276,6 +276,30 @@ def persist_bare_entities(conn, project_id, version_id, key_hashes: Dict[str, st
             for k, h in key_hashes.items()]
     if rows:
         conn.execute(insert(s.entity_versions), rows)
+
+
+def clear_version(conn, version_id) -> None:
+    """Remove a version's per-version rows so a re-persist is idempotent. Shared
+    `entities` and `content_blobs` are left alone (other versions may reference them)."""
+    for t in (s.entity_versions, s.model_edges):
+        conn.execute(delete(t).where(t.c.version_id == version_id))
+
+
+def persist_model_from_dir(conn, project_id, version_id, model_dir) -> None:
+    """Read a generation's model/*.json and persist it for `version_id` (idempotent).
+    The bridge the pipeline runner uses to sync a completed run into the DB."""
+    def _load(name):
+        p = os.path.join(model_dir, name)
+        try:
+            with open(p, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return {}
+    clear_version(conn, version_id)
+    persist_model(conn, project_id, version_id,
+                  functions=_load("functions.json"), globals=_load("globalVariables.json"),
+                  datadict=_load("dataDictionary.json"), edges=_load("edges.json"),
+                  hashes=_load("hashes.json"))
 
 
 def persist_model(conn, project_id, version_id, *, functions, globals, datadict, edges, hashes=None):

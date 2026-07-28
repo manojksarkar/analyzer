@@ -135,6 +135,33 @@ def test_full_model_roundtrip_and_classify_input():
     assert lh == hashes, "load_hashes must reproduce hashes.json for DB-based classify"
 
 
+@pytest.mark.skipif(not _HAS_MODEL, reason="needs a parsed model/")
+def test_persist_from_dir_is_idempotent():
+    """The runner's DB sync reads model/ and can re-run without doubling rows."""
+    from sqlalchemy import func, select as _select
+    engine = _fk_engine()
+
+    def _counts():
+        with engine.connect() as cx:
+            ev = cx.execute(_select(func.count()).select_from(s.entity_versions)
+                            .where(s.entity_versions.c.version_id == VID)).scalar_one()
+            eg = cx.execute(_select(func.count()).select_from(s.model_edges)
+                            .where(s.model_edges.c.version_id == VID)).scalar_one()
+        return ev, eg
+
+    with engine.begin() as cx:
+        model_store.persist_model_from_dir(cx, PID, VID, MODEL_DIR)
+    first = _counts()
+    with engine.begin() as cx:
+        model_store.persist_model_from_dir(cx, PID, VID, MODEL_DIR)   # sync again
+    assert _counts() == first, "re-sync must be idempotent (clear_version before persist)"
+    assert first[0] > 0 and first[1] > 0
+
+    # and the hashes still reconstruct hashes.json after a re-sync
+    with engine.connect() as cx:
+        assert model_store.load_hashes(cx, VID) == _load("hashes.json")
+
+
 @pytest.mark.skipif(not _HAS_MODEL, reason="needs model/functions.json")
 def test_identical_payloads_dedup_to_one_blob():
     """Two functions with the same payload store the content once (D-9)."""

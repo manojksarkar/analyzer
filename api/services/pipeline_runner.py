@@ -891,6 +891,33 @@ def _read_engine_manifest(project_id: str, commit_sha: str) -> dict:
         return {}
 
 
+def _sync_model_to_db(db: Any, job: Any, version_id: str) -> None:
+    """Persist the completed generation's model into the DB, keyed by the version.
+
+    Gated on the SQL backend (only `SqlDatabase` exposes `_engine`), so the in-memory /
+    JSON flows are completely unaffected. Best-effort during the migration: a sync
+    failure logs but never fails the job (the file model remains authoritative until the
+    DB-native cutover). Once Phase 1/2 write the DB directly this bridge goes away.
+    """
+    engine = getattr(db, "_engine", None)
+    if engine is None:
+        return
+    try:
+        import sys
+        eng_dir = os.path.join(str(get_settings().repo_root), "engine")
+        if eng_dir not in sys.path:
+            sys.path.insert(0, eng_dir)
+        from incremental.model_store import persist_model_from_dir
+        model_dir = _commit_dir(job.project_id, job.commit_sha) / "model"
+        if not model_dir.is_dir():
+            return
+        with engine.begin() as cx:
+            persist_model_from_dir(cx, job.project_id, version_id, str(model_dir))
+        _append_log(job.id, "Model synced to the database.")
+    except Exception as exc:                                      # best-effort (transition)
+        _append_log(job.id, f"DB model sync skipped: {exc}")
+
+
 def _complete(db: Any, job_id: str) -> None:
     job = db.jobs.get(job_id)
     if not job or job.status in ("cancelled", "failed"):
@@ -909,6 +936,7 @@ def _complete(db: Any, job_id: str) -> None:
     db.versions.update(version)
 
     _load_and_register_functions(db, job, version.id)
+    _sync_model_to_db(db, job, version.id)
 
     job.status = "complete"
     job.phase = 4
