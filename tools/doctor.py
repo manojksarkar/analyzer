@@ -49,11 +49,11 @@ class Check:
         self.category = category
 
 
-def _run(cmd, cwd=ROOT, timeout=20):
+def _run(cmd, cwd=ROOT, timeout=20, env=None):
     """Run a command, return (rc, stdout, stderr); ('', '') on failure."""
     try:
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                           timeout=timeout, shell=IS_WIN)
+                           timeout=timeout, shell=IS_WIN, env=env)
         return p.returncode, (p.stdout or "").strip(), (p.stderr or "").strip()
     except (OSError, subprocess.SubprocessError):
         return 127, "", ""
@@ -167,21 +167,69 @@ def check_mmdc():
                  "npm install @mermaid-js/mermaid-cli", category="mermaid")
 
 
+def _configured_browser_path():
+    """The explicit browser render_dot.mjs would use, mirroring its resolution:
+    env PUPPETEER_EXECUTABLE_PATH / CHROME_PATH, then puppeteer-config.json
+    'executablePath'. Returns (path, source) or (None, None) when nothing is set."""
+    env = os.environ.get("PUPPETEER_EXECUTABLE_PATH") or os.environ.get("CHROME_PATH")
+    if env:
+        return env, "env"
+    cfg_path = os.path.join(ROOT, "engine", "config", "puppeteer-config.json")
+    try:
+        with open(cfg_path, encoding="utf-8") as f:
+            exe = json.load(f).get("executablePath")
+        if exe:
+            return exe, "puppeteer-config.json"
+    except (OSError, ValueError):
+        pass
+    return None, None
+
+
 def check_chromium():
-    """Resolve the browser puppeteer would launch to rasterize SVG->PNG."""
+    """Resolve the browser the renderer will launch to rasterize SVG->PNG, the
+    SAME way render_dot.mjs does: an explicit executablePath (env or
+    puppeteer-config.json) wins, else puppeteer's bundled Chromium."""
+    # 1. Explicit path (offline servers point this at a standalone Chrome).
+    exe, source = _configured_browser_path()
+    if exe:
+        if os.path.isfile(exe):
+            return Check("chromium", OK, f"{exe} ({source}: executablePath)",
+                         category="render")
+        # render_dot.mjs falls back to bundled when the path is missing, so this
+        # is only fatal if the bundled browser is also absent (checked below).
+        cfg_missing = f"configured executablePath missing: {exe} ({source})"
+    else:
+        cfg_missing = ""
+
+    # 2. Bundled Chromium via puppeteer. Strip the explicit-path env vars so
+    # puppeteer.executablePath() reports its TRUE bundled browser, not the (bad)
+    # configured path — render_dot.mjs falls back to bundled in exactly this case.
     if shutil.which("node") is None:
         return Check("chromium", FAIL, "node unavailable - cannot resolve puppeteer",
                      "Install Node.js, then npm install puppeteer", category="render")
+    bundled_env = {k: v for k, v in os.environ.items()
+                   if k not in ("PUPPETEER_EXECUTABLE_PATH", "CHROME_PATH")}
     rc, out, err = _run(
         ["node", "-e",
          "try{process.stdout.write(require('puppeteer').executablePath())}"
-         "catch(e){process.stdout.write('ERR:'+e.message)}"])
+         "catch(e){process.stdout.write('ERR:'+e.message)}"],
+        env=bundled_env)
     if rc != 0 or not out or out.startswith("ERR:"):
-        return Check("chromium", FAIL,
-                     "puppeteer not resolvable" + (f" ({out[4:]})" if out.startswith("ERR:") else ""),
-                     "npm install puppeteer  (downloads Chromium)", category="render")
+        detail = "puppeteer not resolvable" + (f" ({out[4:]})" if out.startswith("ERR:") else "")
+        if cfg_missing:
+            detail = cfg_missing + "; and " + detail
+        return Check("chromium", FAIL, detail,
+                     "Fix executablePath in engine/config/puppeteer-config.json, "
+                     "or npm install puppeteer (downloads Chromium)", category="render")
     if os.path.isfile(out):
-        return Check("chromium", OK, out, category="render")
+        detail = out + " (bundled)"
+        if cfg_missing:
+            # Works, but the configured path is broken — warn so it's fixed before
+            # deploying to a server that lacks the bundled browser.
+            return Check("chromium", WARN, f"{cfg_missing}; using bundled: {out}",
+                         "Fix executablePath in engine/config/puppeteer-config.json",
+                         required=False, category="render")
+        return Check("chromium", OK, detail, category="render")
     return Check("chromium", FAIL, f"puppeteer points at missing browser: {out}",
                  "npx puppeteer browsers install chrome", category="render")
 

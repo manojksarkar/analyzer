@@ -31,9 +31,34 @@ import sys
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _ENGINE_DIR = os.path.join(_REPO_ROOT, "engine")
 _FLOWCHART_ENGINE = os.path.join(_ENGINE_DIR, "flowchart", "flowchart_engine.py")
+_RENDER_MJS = os.path.join(_ENGINE_DIR, "config", "render_dot.mjs")
+_IS_WINDOWS = os.name == "nt"
 
 sys.path.insert(0, _ENGINE_DIR)
 from utils import render_dot_cached, safe_filename  # noqa: E402
+
+
+def _debug_render(dot, scale):
+    """Run render_dot.mjs directly on `dot` and return (rc, stdout, stderr).
+    Used to surface the REAL Node error when render_dot_cached returns False."""
+    import tempfile
+    fd, dot_path = tempfile.mkstemp(suffix=".dot", dir=_REPO_ROOT)
+    png_path = dot_path[:-4] + ".png"
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(dot or "")
+        r = subprocess.run(["node", _RENDER_MJS, dot_path, png_path, str(scale)],
+                           capture_output=True, text=True, timeout=60,
+                           cwd=_REPO_ROOT, shell=_IS_WINDOWS)
+        return r.returncode, r.stdout, r.stderr
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return -1, "", f"{type(exc).__name__}: {exc}"
+    finally:
+        for p in (dot_path, png_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
 
 def _run_engine(functions_json, metadata_json, out_dir, use_llm):
@@ -77,9 +102,11 @@ def _iter_flowcharts(out_dir):
 def _render(out_dir, scale, timeout):
     items = list(_iter_flowcharts(out_dir))
     if not items:
-        print("No flowcharts found in", out_dir)
+        print("No flowcharts found in", out_dir,
+              "(engine produced no DOT — check the flowchart_engine log above for parse errors)")
         return 0
     ok = failed = 0
+    shown_error = False
     for i, (unit_name, func_name, dot) in enumerate(items, 1):
         png_name = f"{unit_name}_{safe_filename(func_name)}.png"
         png_path = os.path.abspath(os.path.join(out_dir, png_name))
@@ -90,6 +117,16 @@ def _render(out_dir, scale, timeout):
         else:
             failed += 1
             print(f"  render failed: {unit_name}/{func_name}", file=sys.stderr)
+            # Surface the REAL Node error the first time (once — same cause repeats).
+            if not shown_error:
+                shown_error = True
+                rc, out, err = _debug_render(dot, scale)
+                print(f"  ── node exit {rc} ──", file=sys.stderr)
+                for line in (err or out or "(no output)").splitlines():
+                    print(f"  | {line}", file=sys.stderr)
+                print("  ────────────────────", file=sys.stderr)
+                print("  For a full prerequisite check run: python tools/doctor.py",
+                      file=sys.stderr)
     print(f"Done. {ok} PNG(s){f', {failed} failed' if failed else ''} -> {out_dir}")
     return 1 if failed else 0
 
