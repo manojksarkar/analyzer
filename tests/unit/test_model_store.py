@@ -136,6 +136,49 @@ def test_full_model_roundtrip_and_classify_input():
 
 
 @pytest.mark.skipif(not _HAS_MODEL, reason="needs a parsed model/")
+def test_units_components_summaries_roundtrip():
+    """units/components/summaries survive persist->load. Derived relations (functionIds,
+    caller/callee units, component units) are compared as SETS; stored fields exact."""
+    functions = _load("functions.json")
+    globals_ = _load("globalVariables.json")
+    datadict = _load("dataDictionary.json")
+    edges = _load("edges.json")
+    hashes = _load("hashes.json")
+    units = _load("units.json")
+    components = _load("components.json")
+    summaries = _load("summaries.json")
+    if not units:
+        pytest.skip("no units.json in this model")
+
+    engine = _fk_engine()
+    with engine.begin() as cx:
+        model_store.persist_model(cx, PID, VID, functions=functions, globals=globals_,
+                                  datadict=datadict, edges=edges, hashes=hashes,
+                                  units=units, components=components, summaries=summaries)
+    with engine.connect() as cx:
+        lu = model_store.load_units(cx, VID)
+        lc = model_store.load_components(cx, VID)
+        ls = model_store.load_summaries(cx, VID)
+
+    assert set(lu) == set(units)
+    for uk, o in units.items():
+        l = lu[uk]
+        assert (l["name"], l["path"], l["fileName"]) == (o["name"], o["path"], o["fileName"])
+        assert l["includedHeaders"] == o.get("includedHeaders", [])          # stored exact
+        for field in ("functionIds", "globalVariableIds", "callerUnits", "calleesUnits"):
+            assert set(l[field]) == set(o.get(field) or []), f"{uk}.{field}"  # derived
+
+    assert set(lc) == set(components)
+    for name, o in components.items():
+        assert set(lc[name]["units"]) == set(o.get("units") or [])
+        assert set(lc[name]["headerFiles"]) == set(o.get("headerFiles") or [])
+
+    assert ls["project"] == summaries.get("project", "")
+    assert ls["components"] == (summaries.get("components") or {})
+    assert ls["files"] == (summaries.get("files") or {})
+
+
+@pytest.mark.skipif(not _HAS_MODEL, reason="needs a parsed model/")
 def test_persist_from_dir_is_idempotent():
     """The runner's DB sync reads model/ and can re-run without doubling rows."""
     from sqlalchemy import func, select as _select

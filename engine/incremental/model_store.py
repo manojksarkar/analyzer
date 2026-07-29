@@ -257,6 +257,111 @@ def load_hashes(conn, version_id) -> Dict[str, str]:
         .where((ev.c.version_id == version_id) & ev.c.source_hash.isnot(None)))}
 
 
+# ---------------------------------------------------------------------------
+# units / components / summaries  (D-13: relationship lists are DERIVED, not stored)
+# ---------------------------------------------------------------------------
+def persist_units(conn, version_id, units):
+    rows = [{"version_id": version_id, "unit_key": uk, "component": _split_key(uk)[0],
+             "name": u.get("name"), "path": u.get("path"), "file_name": u.get("fileName"),
+             "included_headers": u.get("includedHeaders")}
+            for uk, u in units.items()]
+    if rows:
+        conn.execute(insert(s.model_units), rows)
+
+
+def _unit_of(fid: str) -> Optional[str]:
+    p = fid.split("|")
+    return f"{p[0]}|{p[1]}" if len(p) >= 2 else None
+
+
+def load_units(conn, version_id) -> Dict[str, dict]:
+    units: Dict[str, dict] = {}
+    for r in conn.execute(select(s.model_units).where(s.model_units.c.version_id == version_id)):
+        units[r.unit_key] = {"name": r.name, "path": r.path, "fileName": r.file_name,
+                             "functionIds": [], "globalVariableIds": [],
+                             "callerUnits": [], "calleesUnits": [],
+                             "includedHeaders": r.included_headers or []}
+    # functionIds / globalVariableIds: entities that live in each unit
+    ev, ent = s.entity_versions, s.entities
+    for r in conn.execute(select(ent.c.entity_key, ent.c.kind, ev.c.component, ev.c.unit)
+                          .select_from(ev.join(ent, ent.c.entity_id == ev.c.entity_id))
+                          .where(ev.c.version_id == version_id)):
+        uk = f"{r.component}|{r.unit}"
+        if uk in units:
+            if r.kind == "function":
+                units[uk]["functionIds"].append(r.entity_key)
+            elif r.kind == "global":
+                units[uk]["globalVariableIds"].append(r.entity_key)
+    # caller/callee units: from the call graph (cross-unit edges only)
+    from collections import defaultdict
+    caller, callee = defaultdict(set), defaultdict(set)
+    me = s.model_edges
+    for r in conn.execute(select(me.c.src_key, me.c.dst_key)
+                          .where((me.c.version_id == version_id) & (me.c.kind == "call"))):
+        us, ud = _unit_of(r.src_key), _unit_of(r.dst_key)
+        if us and ud and us != ud:
+            callee[us].add(ud)
+            caller[ud].add(us)
+    for uk, u in units.items():
+        u["callerUnits"] = sorted(caller.get(uk, ()))
+        u["calleesUnits"] = sorted(callee.get(uk, ()))
+    return units
+
+
+def persist_components(conn, version_id, components):
+    rows = [{"version_id": version_id, "name": name, "header_files": c.get("headerFiles")}
+            for name, c in components.items()]
+    if rows:
+        conn.execute(insert(s.model_components), rows)
+
+
+def load_components(conn, version_id) -> Dict[str, dict]:
+    comps: Dict[str, dict] = {}
+    for r in conn.execute(select(s.model_components).where(s.model_components.c.version_id == version_id)):
+        comps[r.name] = {"units": [], "headerFiles": r.header_files or []}
+    for r in conn.execute(select(s.model_units.c.component, s.model_units.c.unit_key)
+                          .where(s.model_units.c.version_id == version_id)):
+        if r.component in comps:
+            comps[r.component]["units"].append(r.unit_key)
+    return comps
+
+
+def persist_summaries(conn, version_id, summaries):
+    blobs: Dict[str, tuple] = {}
+    rows = []
+
+    def add(scope, key, text):
+        ch = _content_hash({"text": text})
+        blobs[ch] = ("summary", {"text": text})
+        rows.append({"version_id": version_id, "scope": scope, "key": key, "text_hash": ch})
+
+    if summaries.get("project"):
+        add("project", "", summaries["project"])
+    for k, t in (summaries.get("components") or {}).items():
+        add("component", k, t)
+    for k, t in (summaries.get("files") or {}).items():
+        add("file", k, t)
+    _insert_blobs(conn, blobs)
+    if rows:
+        conn.execute(insert(s.model_summaries), rows)
+
+
+def load_summaries(conn, version_id) -> Dict[str, Any]:
+    ms, cb = s.model_summaries, s.content_blobs
+    out: Dict[str, Any] = {"project": "", "components": {}, "files": {}}
+    for r in conn.execute(select(ms.c.scope, ms.c.key, cb.c.payload)
+                          .select_from(ms.outerjoin(cb, cb.c.content_hash == ms.c.text_hash))
+                          .where(ms.c.version_id == version_id)):
+        text = (r.payload or {}).get("text", "")
+        if r.scope == "project":
+            out["project"] = text
+        elif r.scope == "component":
+            out["components"][r.key] = text
+        elif r.scope == "file":
+            out["files"][r.key] = text
+    return out
+
+
 def _entity_kind(key: str) -> str:
     """Classify an entity key by shape (mirrors engine._entity_kind)."""
     if "@" in key and "|" not in key:
@@ -281,7 +386,8 @@ def persist_bare_entities(conn, project_id, version_id, key_hashes: Dict[str, st
 def clear_version(conn, version_id) -> None:
     """Remove a version's per-version rows so a re-persist is idempotent. Shared
     `entities` and `content_blobs` are left alone (other versions may reference them)."""
-    for t in (s.entity_versions, s.model_edges):
+    for t in (s.entity_versions, s.model_edges, s.model_units, s.model_components,
+              s.model_summaries):
         conn.execute(delete(t).where(t.c.version_id == version_id))
 
 
@@ -299,16 +405,24 @@ def persist_model_from_dir(conn, project_id, version_id, model_dir) -> None:
     persist_model(conn, project_id, version_id,
                   functions=_load("functions.json"), globals=_load("globalVariables.json"),
                   datadict=_load("dataDictionary.json"), edges=_load("edges.json"),
-                  hashes=_load("hashes.json"))
+                  hashes=_load("hashes.json"), units=_load("units.json"),
+                  components=_load("components.json"), summaries=_load("summaries.json"))
 
 
-def persist_model(conn, project_id, version_id, *, functions, globals, datadict, edges, hashes=None):
+def persist_model(conn, project_id, version_id, *, functions, globals, datadict, edges,
+                  hashes=None, units=None, components=None, summaries=None):
     """Persist a whole parsed model for one version."""
     hashes = hashes or {}
     persist_functions(conn, project_id, version_id, functions, hashes)
     persist_globals(conn, project_id, version_id, globals, hashes)
     persist_types(conn, project_id, version_id, datadict, hashes)
     persist_edges(conn, version_id, edges)
+    if units:
+        persist_units(conn, version_id, units)
+    if components:
+        persist_components(conn, version_id, components)
+    if summaries:
+        persist_summaries(conn, version_id, summaries)
     # Any hashed entity not covered above (file-scope macros) still needs its hash row,
     # so load_hashes() reproduces hashes.json exactly (the classify input).
     covered = set(functions) | set(globals) | set(datadict)

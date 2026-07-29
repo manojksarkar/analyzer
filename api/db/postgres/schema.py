@@ -310,6 +310,7 @@ model_units = Table(
     Column("name", String),
     Column("path", String),
     Column("file_name", String),
+    Column("included_headers", _JSONB),   # parser-specific (direct includes) - not derivable
     UniqueConstraint("version_id", "unit_key", name="pk_model_units"),
     # function/global/caller/callee lists DROPPED (D-13) — derived from entity_versions / model_edges
 )
