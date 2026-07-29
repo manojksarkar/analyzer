@@ -106,7 +106,13 @@
 >   "corner-routed / no crossing back-edges" client ask; the loop-anchor machinery (`constraint=false`
 >   back-edges + invisible push-down edges) is kept and still works. Stale ortho comments in `dot_builder`
 >   updated. `nodesep=1.5`/`ranksep=0.9` retained (could be lowered now that ortho no longer cuts through
->   nodes).
+>   nodes). **Docs synced to the DOT reality** (were still Mermaid-framed from before the 2026-07-27 switch):
+>   `engine/flowchart/README.md` + `FLOW.md` (render step, module map, examples, testing section) and the
+>   `engine-flowchart` SKILL. **Two debt items filed** (`docs/BACKLOG.md` S3-6/S3-7): the flowchart **Layer-2
+>   test is stale** — `_count_mermaid_shapes` (`tests/unit/test_cfg_topo.py`) parses Mermaid syntax but the
+>   persisted `flowchart` is DOT; it's opt-in via `--out-dir` so **dormant in CI** (Layer-1 CFG/topo still
+>   runs); and the `mermaid/` package is now **legacy** (`build_mermaid`/`validate_mermaid` dead;
+>   `validate_cfg` + `normalize_edge_label` still used by `dot_builder`).
 > - **⚠ Merge state:** 3.1/3.2/3.4/3.5/3.6/3.7 landed on feature branches with **PRs
 >   pending into `poc-4`** (not merged); 3.14/3.15/3.17/3.18 are on `v1-fixes-more`. The
 >   detailed per-branch bullets below are retained as the record of where each fix lives
