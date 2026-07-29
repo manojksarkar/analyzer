@@ -4,8 +4,11 @@ Graphviz DOT builder (graphviz-normal).
 Converts a labeled ControlFlowGraph into a Graphviz `dot` script.  Graphviz is
 used instead of Mermaid because its dagre-style hierarchical layout keeps nodes
 in SOURCE ORDER (a statement written earlier in the function renders above one
-written later — e.g. a loop body sits below its loop head) while still giving
-clean, corner-routed orthogonal edges.
+written later — e.g. a loop body sits below its loop head).
+
+Edge routing uses Graphviz's default curved splines (no `splines=ortho`): edges
+run diagonally/curved rather than in right angles, which keeps the layout more
+compact and lets loop back-edges curve naturally back to their head.
 
 Loop handling keeps two invariants the client asked for:
   1. Return/End sink to the BOTTOM.  A loop head's exit branch would otherwise
@@ -14,9 +17,7 @@ Loop handling keeps two invariants the client asked for:
      exit node push the exit (and its Return/End chain) below the whole body.
   2. No crossing lines.  Loop back-edges are drawn with `constraint=false` so
      they stop distorting the rank assignment.  Entry/exit sides are left to
-     Graphviz — forcing a compass port made `splines=ortho` route the edge
-     straight THROUGH the node to reach that port, so wide `nodesep`/`ranksep`
-     is relied on instead to keep the lanes clear.
+     Graphviz; wide `nodesep`/`ranksep` keep the lanes clear.
 
 Shape mapping (classic flowchart):
   START / END                          -> ellipse
@@ -47,12 +48,17 @@ _ELLIPSE_TYPES = frozenset({
 # Graph/appearance defaults (match the flowchart-preview/graphviz look).
 _GRAPH_ATTRS = [
     "rankdir=TB",
-    "splines=ortho",
     "nodesep=1.5",
     "ranksep=0.9",
 ]
 _NODE_ATTRS = 'fontname="Helvetica", fontsize=12, color="#8b7fd6", penwidth=1.4, style=filled, fillcolor="#eae6fb"'
 _EDGE_ATTRS = 'fontname="Helvetica", fontsize=11, color="#333333", penwidth=1.4'
+
+# Graphviz sizes a node to fit its label as a single line, so a long one-line
+# label (esp. a condition) makes a very wide node while the height stays fixed —
+# diamonds, which inscribe their text, sprawl the worst. We wrap the label onto
+# multiple lines so wide nodes grow DOWN instead of OUT.
+_LABEL_WRAP_WIDTH = 26  # target max chars per label line
 
 
 def build_dot(cfg: ControlFlowGraph) -> str:
@@ -214,9 +220,34 @@ def _shape(node: CfgNode) -> str:
     return "box"
 
 
+def _wrap_label(text: str, width: int = _LABEL_WRAP_WIDTH) -> str:
+    """Greedy word-wrap to <= width chars/line, breaking ONLY at spaces.
+
+    Identifiers are never split: a single token longer than width keeps its own
+    (over-wide) line rather than being cut mid-word — a hard cut would misread as
+    a different name. Only newlines are inserted; original spacing is otherwise
+    preserved. Long LLM phrases (spaced) wrap cleanly; the no-LLM raw-identifier
+    fallback degrades gracefully (lone long token stays whole)."""
+    if not text:
+        return text
+    lines: List[str] = []
+    line = ""
+    for word in text.split():
+        if not line:
+            line = word
+        elif len(line) + 1 + len(word) <= width:
+            line += " " + word
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _node_def(node: CfgNode) -> str:
     label = node.label or node.raw_code[:60] or node.node_id
-    return f'{node.node_id} [shape={_shape(node)}, label="{_escape(label)}"];'
+    return f'{node.node_id} [shape={_shape(node)}, label="{_escape(_wrap_label(label))}"];'
 
 
 def _edge_def(edge: CfgEdge, layout: _LoopLayout) -> str:
@@ -228,11 +259,8 @@ def _edge_def(edge: CfgEdge, layout: _LoopLayout) -> str:
 
     key = (edge.source, edge.target)
     if key in layout.back_edges:
-        # Free the rank solver so back-edges don't distort rank assignment. We do
-        # NOT force a compass headport here: under splines=ortho, pinning the edge
-        # to a specific node side makes the router cut the segment straight THROUGH
-        # the node to reach that port. Letting Graphviz choose the entry side keeps
-        # the edge outside the box.
+        # Free the rank solver so back-edges don't distort rank assignment.
+        # Entry/exit sides are left to Graphviz (no forced compass port).
         attrs.append("constraint=false")
 
     if attrs:

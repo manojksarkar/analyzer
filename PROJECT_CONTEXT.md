@@ -90,6 +90,23 @@
 >   keeps the `Processing N function(s)` summary (now also counted from `non_header`, so it matches the
 >   `[x/n]` denominator), the progress counter, and the final `Done. ✓ N ✗ N` line. Full detail still lands
 >   in `logs/run_YYYYMMDD.log`. Log-output only — no CFG/structure change, determinism tests unaffected.
+> - **2026-07-29 — flowchart node labels are word-wrapped (branch `fix/flowchart-issue`):** long
+>   single-line labels made Graphviz size nodes very **wide** (height fixed) — DECISION diamonds, which
+>   inscribe their text, sprawled worst. New `dot_builder._wrap_label(text, width=26)` greedily wraps a
+>   label to ≤ `_LABEL_WRAP_WIDTH` chars/line, **breaking ONLY at spaces** (per user pref) and inserting
+>   only newlines — identifiers are **never** split mid-word (a lone token longer than width keeps its own
+>   over-wide line rather than a misleading hard cut). Applied in `_node_def` before `_escape`. Long **LLM
+>   phrases** (spaced) wrap cleanly; the **no-LLM raw-identifier fallback** degrades gracefully (a 50-char
+>   identifier with no space stays whole → that node is still wide, but 2 lines tall not 1). Label-only,
+>   pure string transform — no node/edge/shape change, CFG/topo + shape-count determinism tests unaffected
+>   (17 unit tests pass; no test asserts on label text). Width `26` is the tunable knob. Verified via a
+>   long-identifier fixture render. **Also removed `splines=ortho`** from `_GRAPH_ATTRS` (same session, per
+>   user): edges now use Graphviz's default **curved splines** (diagonal/curved) instead of right-angle
+>   orthogonal routing — more compact, loop back-edges curve naturally. This **reverses** the 2026-07-27
+>   "corner-routed / no crossing back-edges" client ask; the loop-anchor machinery (`constraint=false`
+>   back-edges + invisible push-down edges) is kept and still works. Stale ortho comments in `dot_builder`
+>   updated. `nodesep=1.5`/`ranksep=0.9` retained (could be lowered now that ortho no longer cuts through
+>   nodes).
 > - **⚠ Merge state:** 3.1/3.2/3.4/3.5/3.6/3.7 landed on feature branches with **PRs
 >   pending into `poc-4`** (not merged); 3.14/3.15/3.17/3.18 are on `v1-fixes-more`. The
 >   detailed per-branch bullets below are retained as the record of where each fix lives
