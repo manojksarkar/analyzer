@@ -108,11 +108,12 @@
 >   updated. `nodesep=1.5`/`ranksep=0.9` retained (could be lowered now that ortho no longer cuts through
 >   nodes). **Docs synced to the DOT reality** (were still Mermaid-framed from before the 2026-07-27 switch):
 >   `engine/flowchart/README.md` + `FLOW.md` (render step, module map, examples, testing section) and the
->   `engine-flowchart` SKILL. **Two debt items filed** (`docs/BACKLOG.md` S3-6/S3-7): the flowchart **Layer-2
+>   `engine-flowchart` SKILL. **One debt item filed** (`docs/BACKLOG.md` S3-6): the flowchart **Layer-2
 >   test is stale** — `_count_mermaid_shapes` (`tests/unit/test_cfg_topo.py`) parses Mermaid syntax but the
 >   persisted `flowchart` is DOT; it's opt-in via `--out-dir` so **dormant in CI** (Layer-1 CFG/topo still
->   runs); and the `mermaid/` package is now **legacy** (`build_mermaid`/`validate_mermaid` dead;
->   `validate_cfg` + `normalize_edge_label` still used by `dot_builder`).
+>   runs). Also noted (not backlogged — cosmetic only): the flowchart `mermaid/` package is now **partly
+>   legacy** (`build_mermaid`/`validate_mermaid` dead; `validate_cfg` + `normalize_edge_label` still used by
+>   `dot_builder`). Project-wide Mermaid is unaffected — behaviour + unit/header diagrams still render via Mermaid/mmdc.
 > - **⚠ Merge state:** 3.1/3.2/3.4/3.5/3.6/3.7 landed on feature branches with **PRs
 >   pending into `poc-4`** (not merged); 3.14/3.15/3.17/3.18 are on `v1-fixes-more`. The
 >   detailed per-branch bullets below are retained as the record of where each fix lives
@@ -2499,21 +2500,28 @@ auto-formatters have reverted this fix in the past. After any change to
 [engine/flowchart/ast_engine/cfg_builder.py](engine/flowchart/ast_engine/cfg_builder.py),
 re-run `python engine/flowchart/tests/diagnose_assert.py`.
 
-### Risk 5 — header inline function appears in interface table but gets no flowchart (backlog X5)
+### Risk 5 — header inline function appears in interface table but gets no flowchart — RESOLVED 2026-07-29
 
-Unit keys strip the extension ([utils.py `_path_to_component_unit`](engine/utils.py#L238)), so
-`Foo.h` and `Foo.cpp` collapse into one unit; `_build_units_components`
-([model_deriver.py:252](engine/model_deriver.py#L252)) processes `.cpp` first (creates the unit with
-`fileName="Foo.cpp"`) then *appends* the header's `functionIds`. The interface table renders any
-`.cpp` unit's functions without checking each function's own file
-([interface_tables.py:43](engine/views/interface_tables.py#L43)), so a public inline function
-defined in `Foo.h` gets a row. But the flowchart engine drops every header-defined function
-([flowchart_engine.py:510](engine/flowchart/flowchart_engine.py#L510)) — result: an interface row
-with a description but no flowchart figure. Only bites header inline fns that have a same-named
-sibling `.cpp`; a standalone header (no sibling `.cpp`, e.g. `SignalInline.h`) is a pure-header unit
-skipped entirely by the interface table (consistent), and an `inline` fn defined in a `.cpp` gets
-both (consistent). Fix direction: either skip header-defined fns in the interface table, or emit a
-signature-only fallback flowchart for them.
+**Symptom:** a public inline function defined in a header (e.g. `Foo.h`) showed an interface row /
+section header with a description but **no flowchart figure** ("header but no table"). Unit keys
+strip the extension ([utils.py `_path_to_component_unit`](engine/utils.py#L238)) so `Foo.h`+`Foo.cpp`
+collapse into one unit and the interface table renders the header fn's row
+([interface_tables.py:43](engine/views/interface_tables.py#L43)), but the flowchart engine
+**dropped every header-defined function** via a blanket file-extension filter (`_is_header_file`).
+
+**Root cause + fix (flowchart engine only):** the drop keyed on the wrong thing — file extension.
+The correct criterion is "has a body." `functions.json` only ever holds **definitions** (parser's
+`visit_definitions` is guarded by `cursor.is_definition()`, so the `declarationOnly` branch at
+[parser.py:873](engine/parser.py#L873) is **dead code — never emitted**; verified 0 across all
+functions), *plus* one no-body category: `syntheticFromVarDecl` (var-decls parsed as pseudo-functions,
+e.g. a macro-obscured `UNIT _f(arg);`). Fix: `FunctionEntry` gained `synthetic_from_var_decl` (plumbed
+through `pkb/builder.py` build/to_dict/from_dict); `flowchart_engine.run()` now skips only
+`synthetic_from_var_decl` entries and processes everything else — **including header-defined inline
+functions**, which libclang parses fine as their own TUs (3.2 already parses headers as TUs). Verified:
+`signalGain` (`SignalInline.h`) now emits a real CFG/DOT; `_SOME_FUNCTION` (synthetic) is cleanly
+skipped (previously an empty/error entry); `.cpp` inline fns unchanged (the old filter never touched
+them). **Follow-up (engine-dev):** the dead `declarationOnly` branch in `parser.py` can be removed or
+its guard relaxed — out of the flowchart engine's scope.
 
 ### Pre-V1 correctness batch (targets V1; numbered 3.1–3.19 internally — status in git/PR history + the `> Updated:` log above)
 
