@@ -1524,8 +1524,9 @@ configured folder prefixes (case-insensitive after `os.path.normcase`).
 
 ### Function collection (`visit_definitions`)
 
-- Cursor kinds: `FUNCTION_DECL`, `CXX_METHOD`. Forward decls are kept with
-  `declarationOnly: True`.
+- Cursor kinds: `FUNCTION_DECL`, `CXX_METHOD`. **Definitions only** — the guard
+  requires `cursor.is_definition()`, so a forward-decl-only function (declared but
+  never defined in the parse) is not collected (no body → nothing to document).
 - Internal key during collection: mangled name, or `qualified@file:line`.
 - Captures `parameters` via `cursor.get_arguments()`, records `extent.end.line`
   as `endLine`.
@@ -2511,17 +2512,18 @@ collapse into one unit and the interface table renders the header fn's row
 
 **Root cause + fix (flowchart engine only):** the drop keyed on the wrong thing — file extension.
 The correct criterion is "has a body." `functions.json` only ever holds **definitions** (parser's
-`visit_definitions` is guarded by `cursor.is_definition()`, so the `declarationOnly` branch at
-[parser.py:873](engine/parser.py#L873) is **dead code — never emitted**; verified 0 across all
-functions), *plus* one no-body category: `syntheticFromVarDecl` (var-decls parsed as pseudo-functions,
+`visit_definitions` is guarded by `cursor.is_definition()`; a later commit added that guard, which had
+silently killed the old `declarationOnly` forward-decl branch — **now removed** as dead code, no
+behaviour change), *plus* one no-body category: `syntheticFromVarDecl` (var-decls parsed as pseudo-functions,
 e.g. a macro-obscured `UNIT _f(arg);`). Fix: `FunctionEntry` gained `synthetic_from_var_decl` (plumbed
 through `pkb/builder.py` build/to_dict/from_dict); `flowchart_engine.run()` now skips only
 `synthetic_from_var_decl` entries and processes everything else — **including header-defined inline
 functions**, which libclang parses fine as their own TUs (3.2 already parses headers as TUs). Verified:
 `signalGain` (`SignalInline.h`) now emits a real CFG/DOT; `_SOME_FUNCTION` (synthetic) is cleanly
 skipped (previously an empty/error entry); `.cpp` inline fns unchanged (the old filter never touched
-them). **Follow-up (engine-dev):** the dead `declarationOnly` branch in `parser.py` can be removed or
-its guard relaxed — out of the flowchart engine's scope.
+them). **Follow-up done (engine-dev, 2026-07-29):** the dead `declarationOnly` branch + its propagation
+were removed from `parser.py` and the schema note corrected (§ Function collection) — pure dead-code
+cleanup, no output change.
 
 ### Pre-V1 correctness batch (targets V1; numbered 3.1–3.19 internally — status in git/PR history + the `> Updated:` log above)
 
