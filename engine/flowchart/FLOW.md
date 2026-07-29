@@ -332,10 +332,10 @@ flowcharts.run(model, output_dir, model_dir, config)
 
   if config.views.flowcharts.renderPng:
       for each .json in output/flowcharts/:
-          for each {name, flowchart} entry:
-              write flowchart string to temp .mmd file
-              mmdc -i <file.mmd> -o <unit_func.png>
-              delete temp .mmd file
+          for each {name, flowchart} entry:   # flowchart = DOT script
+              render_dot_cached(repo, dot, <unit_func>.png)
+                  → engine/config/render_dot.mjs (viz-js DOT→SVG → puppeteer PNG)
+                  → content-addressed .dot_cache reuse
       logs: "N PNGs rendered"
 ```
 
@@ -578,35 +578,34 @@ validate_cfg(cfg)
     checks: no empty labels on non-sentinel nodes
     _reachable(cfg) BFS from entry → warns on unreachable nodes
 
-━━━ STEP 8: Build Mermaid Script ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-build_mermaid(cfg)
-    "flowchart TD"
-    _topo_order(cfg): BFS from entry_node_id
-    for each node:
+━━━ STEP 8: Build DOT Script  (dot_builder.py — switched from Mermaid 2026-07-27) ━━
+build_dot(cfg)
+    "digraph G {"  + graph attrs (rankdir=TB, nodesep, ranksep; NO splines=ortho
+                     → default curved edges)
+    _analyze_loops(cfg): DFS back-edges, natural-loop bodies, Return/End push-down
+    for each node (CFG insertion order ≈ source order):
         _node_def(node)
-            _enforce_line_length(label, max_chars=40)
-                splits <br/>-separated segments, word-wraps long ones
-            _escape_label(label)
-                single-pass _NODE_LABEL_RE.sub()
-                → #40; #41; #60; #91; #93; etc. (no double-encoding)
+            _wrap_label(label): word-wrap at spaces only, <= _LABEL_WRAP_WIDTH
+                                (never splits an identifier)
+            _escape(label): backslash/quote escaped; <br/> + newlines → \n
             shape:
-                START/END        → nodeId([label])   stadium
+                START/END        → shape=ellipse
                 DECISION/
                 LOOP_HEAD/
-                SWITCH_HEAD      → nodeId{label}      diamond
-                CATCH            → nodeId[[label]]    subroutine
-                all others       → nodeId[label]      rectangle
+                SWITCH_HEAD      → shape=diamond
+                all others       → shape=box
     for each edge:
         _edge_def(edge)
-            normalize_edge_label(): Yes/No standardisation
-            "source -->|label| target"  or  "source --> target"
+            normalize_edge_label(): Yes/No standardisation → taillabel="..."
+            back-edges get constraint=false (don't distort ranks)
+    invisible push-down edges anchor Return/End at the bottom
 
-━━━ STEP 9: Validate Mermaid ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-validate_mermaid(mermaid_script)
-    checks: starts with "flowchart"
-    checks: no unmatched double-quotes per line
+━━━ STEP 9: Validate CFG ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+validate_cfg(cfg)  (structure only; the old validate_mermaid string check was
+                    dropped in the DOT switch and is now dead code)
 
-Returns FlowchartResult(function_key, qualified_name, mermaid_script)
+Returns FlowchartResult(function_key, qualified_name, mermaid_script=<DOT>)
+    (the field is still named mermaid_script for schema compat but holds DOT)
 On any exception → FlowchartResult(error=str(exc))
 ```
 
@@ -790,7 +789,7 @@ docx_exporter.py
     reads model/functions.json
     reads model/units.json
     reads model/modules.json
-    reads output/flowcharts/<stem>.json  (Mermaid scripts)
+    reads output/flowcharts/<stem>.json  (Graphviz DOT scripts)
     reads output/flowcharts/<stem>_<func>.png  (rendered PNGs)
     assembles software_detailed_design_{group}.docx
     writes output/software_detailed_design_{group}.docx
@@ -851,13 +850,13 @@ model/knowledge_base.json                   ← THE KEY BRIDGE
                 → injected into every LLM prompt as context
 
 output/flowcharts/<stem>.json
-    [{functionKey, name, flowchart:"flowchart TD\n..."}]
+    [{functionKey, name, flowchart:"digraph G {\n...\n}"}]   # DOT, not Mermaid
     written by: flowchart_engine OutputWriter
     read by:    flowcharts.run() for PNG rendering
                 docx_exporter.py for DOCX assembly
 
 output/flowcharts/<stem>_<func>.png
-    rendered by: mmdc (Mermaid CLI)
+    rendered by: render_dot.mjs (viz-js DOT→SVG → puppeteer PNG)
     read by:    docx_exporter.py
 
 output/flowcharts/_summary.json
@@ -977,10 +976,13 @@ analyzer/                          ← project root
         prompts.py                 SYSTEM_PROMPT, build_user_prompt(),
                                    _build_node_list()
 
-      mermaid/
-        builder.py                 build_mermaid(): CFG → Mermaid TD text
-        normalizer.py              normalize_condition(), normalize_edge_label()
-        validator.py               validate_cfg(), validate_mermaid()
+      dot_builder.py               build_dot(): CFG → Graphviz DOT (active renderer);
+                                   _wrap_label word-wrap, curved edges, loop anchoring
+
+      mermaid/                     LEGACY after the DOT switch (2026-07-27)
+        normalizer.py              normalize_edge_label() — still used by dot_builder
+        validator.py               validate_cfg() — used; validate_mermaid() — dead
+        builder.py                 build_mermaid() — dead code (superseded)
 
       pkb/
         builder.py                 ProjectKnowledgeBase: context packet construction,
