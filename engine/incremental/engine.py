@@ -417,11 +417,11 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     base_functions = _read(base_model_dir, "functions.json")
     base_globals = _read(base_model_dir, "globalVariables.json")
 
-    # PG-4 Path B (opt-in via ANALYZER_DB_BASELINE): read the baseline from the DB
-    # (populated by the prior run's model sync) instead of the captured files. Best-effort
-    # - any miss (baseline not in the DB, no DATABASE_URL, error) falls back to the files
-    # above, so the file-based flow is unchanged when the flag is off.
-    if os.environ.get("ANALYZER_DB_BASELINE"):
+    # PG-4 Path B: when a DB is configured (DATABASE_URL - a Postgres deployment), read the
+    # baseline from the DB (populated by the prior run's model sync) instead of the captured
+    # files. Same signal that makes project_db read the DB. Best-effort - any miss (baseline
+    # not in the DB, error) falls back to the file reads above, so file-based dev is unchanged.
+    if os.environ.get("DATABASE_URL"):
         from core.logging_setup import get_logger as _glog
         try:
             from core.db import get_engine

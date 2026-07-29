@@ -53,17 +53,17 @@ def _redact(dsn: str) -> str:
 def get_engine(dsn: Optional[str] = None):
     """Process-wide SQLAlchemy Engine (created on first use)."""
     global _ENGINE
-    # pool_pre_ping: phases are long-lived and a container restart would otherwise
-    # hand out a dead connection mid-run.
-    # connect_timeout: bound the failure so an unreachable DB reports in seconds.
-    kwargs = dict(pool_pre_ping=True, future=True,
-                  connect_args={"connect_timeout": CONNECT_TIMEOUT_SEC})
+    url = dsn if dsn is not None else database_url()
+    # pool_pre_ping: phases are long-lived; a container restart would otherwise hand out a
+    # dead connection mid-run. connect_timeout bounds an unreachable-DB failure to seconds -
+    # but it is a libpq option, so only pass it to Postgres (SQLite would reject it).
+    connect_args = {"connect_timeout": CONNECT_TIMEOUT_SEC} if url.startswith("postgres") else {}
+    kwargs = dict(pool_pre_ping=True, future=True, connect_args=connect_args)
+    from sqlalchemy import create_engine
     if dsn is not None:                       # explicit DSN -> caller-owned engine (tests)
-        from sqlalchemy import create_engine
         return create_engine(dsn, **kwargs)
     if _ENGINE is None:
-        from sqlalchemy import create_engine
-        _ENGINE = create_engine(database_url(), **kwargs)
+        _ENGINE = create_engine(url, **kwargs)
     return _ENGINE
 
 

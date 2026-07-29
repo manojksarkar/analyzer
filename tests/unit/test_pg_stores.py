@@ -118,6 +118,37 @@ class TestProjectReads:
             _version(cx, "v2", "bbbbbbbb2222", pipeline_status=None)     # legacy -> treated complete
             _version(cx, "v3", "cccccccc3333", pipeline_status="parsing")  # in-flight -> excluded
             _version(cx, "v4", "")                                       # no commit -> excluded
-        got = {v["versionId"]: v["commit"] for v in pg_stores.list_versions(eng, PID)}
-        assert set(got) == {"v1", "v2"}
-        assert got["v1"] == "aaaaaaaa1111"
+        # versionId is commit[:16] (drop-in for the engine's per-commit dir), not the DB id
+        got = {v["commit"]: v["versionId"] for v in pg_stores.list_versions(eng, PID)}
+        assert set(got) == {"aaaaaaaa1111", "bbbbbbbb2222"}    # v3 in-flight, v4 no-commit excluded
+        assert got["aaaaaaaa1111"] == "aaaaaaaa1111"[:16]
+
+
+class TestProjectDbDbAware:
+    """project_db reads Postgres when DATABASE_URL is set, else the JSON files."""
+
+    def test_get_project_and_list_versions_via_database_url(self, tmp_path, monkeypatch):
+        import core.db as coredb
+        import incremental.project_db as project_db
+        dbfile = tmp_path / "pd.db"
+        url = f"sqlite:///{dbfile}"
+        # seed the file DB directly (schema + a project + a completed version)
+        seed = coredb.get_engine(url)
+        s.metadata.create_all(seed)
+        with seed.begin() as cx:
+            cx.execute(insert(s.projects), {
+                "id": PID, "name": "P", "repo_url": "https://git/x.git", "default_branch": "main",
+                "build_config": {"repo_access_token": "tok"},
+                "created_at": datetime.datetime.now(UTC)})
+            _version(cx, "v1", "abcdef123456")
+
+        monkeypatch.setenv("DATABASE_URL", url)
+        coredb.reset_engine()
+        try:
+            assert project_db.get_project(PID)["repo_url"] == "https://git/x.git"
+            assert project_db.resolve_project_repo(PID) == ("https://git/x.git", "main", "tok")
+            vs = project_db.list_versions(PID)
+            assert vs and vs[0]["commit"] == "abcdef123456"
+            assert vs[0]["versionId"] == "abcdef123456"[:16]     # drop-in commit[:16]
+        finally:
+            coredb.reset_engine()

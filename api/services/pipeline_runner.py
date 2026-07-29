@@ -287,7 +287,7 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
         cmd.append("--narrowed-parse")
     _append_log(job_id, f"Generating ({'full' if mode == 'full' else 'auto'}) via {script}…")
 
-    ok = _execute_subprocess(db, job_id, cmd, phase_start=1)
+    ok = _execute_subprocess(db, job_id, cmd, phase_start=1, extra_env=_engine_db_env(db))
     if ok:
         _complete(db, job_id)
 
@@ -694,17 +694,37 @@ def preview_baseline(db: Any, project_id: str, commit: str,
 # Subprocess execution + output tailing
 # ---------------------------------------------------------------------------
 
+def _engine_db_env(db: Any) -> dict:
+    """DATABASE_URL for the engine subprocess when the API is on the SQL backend, so the
+    engine reads its project/version/baseline metadata from the same DB (project_db and
+    the incremental baseline read gate on DATABASE_URL). Empty otherwise, so file-based
+    dev is unchanged. Resolves the DSN via core.db so it matches the default when unset."""
+    if getattr(db, "_engine", None) is None:
+        return {}
+    try:
+        import sys
+        eng_dir = os.path.join(str(get_settings().repo_root), "engine")
+        if eng_dir not in sys.path:
+            sys.path.insert(0, eng_dir)
+        from core.db import database_url
+        return {"DATABASE_URL": database_url()}
+    except Exception:
+        return {}
+
+
 def _execute_subprocess(
     db: Any,
     job_id: str,
     cmd: list[str],
     phase_start: int = 1,
+    extra_env: Optional[dict] = None,
 ) -> bool:
     """Run cmd, tail its output, update job progress. Returns True on success."""
     cfg = get_settings()
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     if cfg.libclang_path:
         env["LIBCLANG_PATH"] = cfg.libclang_path
+    env.update(extra_env or {})
 
     try:
         proc = subprocess.Popen(

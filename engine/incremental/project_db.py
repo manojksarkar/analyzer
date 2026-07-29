@@ -37,9 +37,26 @@ def _records(store: Any) -> List[dict]:
     return []
 
 
+def _db_engine():
+    """The Postgres engine when a DATABASE_URL is configured, else None. On a Postgres
+    deployment there are no api/db/data/*.json files, so the engine reads project/version
+    metadata from the DB; in file-based dev (no DATABASE_URL) it reads the JSON as before."""
+    if not os.environ.get("DATABASE_URL"):
+        return None
+    try:
+        from core.db import get_engine
+        return get_engine()
+    except Exception:
+        return None
+
+
 def get_project(project_id: str, *, project_root: Optional[str] = None) -> Dict[str, Any]:
     """The project's DB record (repo_url, default_branch, build_config, architecture_layers),
-    or {} if not found. Replaces the old workspaces/<pid>/project.json."""
+    or {} if not found. Reads Postgres when DATABASE_URL is set, else api/db/data/projects.json."""
+    eng = _db_engine()
+    if eng is not None:
+        from incremental.pg_stores import read_project
+        return read_project(eng, project_id)
     for p in _records(_load("projects.json", project_root)):
         if p.get("id") == project_id:
             return p
@@ -67,9 +84,13 @@ def list_versions(project_id: str, *, project_root: Optional[str] = None) -> Lis
     """Completed versions for the project, shaped for ``baseline.select_baseline``:
     ``[{versionId: commit[:16], commit: <full sha>, branch, status: "complete"}]``.
 
-    Reads ``api/db/data/versions.json`` — the SAME list the API uses for baselines. A DB
-    Version exists only once a generation finished, so every record is a 'complete' candidate
-    (its review status draft/in_review/approved is a separate concern, mapped to 'complete')."""
+    Reads Postgres when DATABASE_URL is set (real version ids, only completed versions),
+    else api/db/data/versions.json. A DB Version exists once a generation finished, so every
+    record is a 'complete' baseline candidate."""
+    eng = _db_engine()
+    if eng is not None:
+        from incremental.pg_stores import list_versions as _pg_list_versions
+        return _pg_list_versions(eng, project_id)
     out: List[Dict[str, Any]] = []
     for v in _records(_load("versions.json", project_root)):
         if v.get("project_id") != project_id:
