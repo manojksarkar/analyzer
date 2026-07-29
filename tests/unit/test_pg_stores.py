@@ -92,6 +92,25 @@ class TestProjectReads:
     def test_read_missing_project_is_empty(self):
         assert pg_stores.read_project(_engine(), "nope") == {}
 
+    def test_read_baseline_model_by_commit(self):
+        """The engine reads its baseline (hashes/functions/globals) from the DB by commit."""
+        import json as _json
+        model_dir = os.path.join(PROJECT_ROOT, "model")
+        if not os.path.isfile(os.path.join(model_dir, "functions.json")):
+            pytest.skip("needs a parsed model/")
+        from incremental import model_store
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "base", "cafebabe0000")
+            model_store.persist_model_from_dir(cx, PID, "base", model_dir)
+
+        got = pg_stores.read_baseline_model(eng, PID, "cafebabe0000")
+        assert got is not None
+        assert got["hashes"] == _json.load(open(os.path.join(model_dir, "hashes.json"), encoding="utf-8"))
+        assert set(got["functions"]) == set(
+            _json.load(open(os.path.join(model_dir, "functions.json"), encoding="utf-8")))
+        assert pg_stores.read_baseline_model(eng, PID, "no-such-commit") is None
+
     def test_list_versions_only_completed(self):
         eng = _engine()
         with eng.begin() as cx:

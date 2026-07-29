@@ -417,6 +417,23 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     base_functions = _read(base_model_dir, "functions.json")
     base_globals = _read(base_model_dir, "globalVariables.json")
 
+    # PG-4 Path B (opt-in via ANALYZER_DB_BASELINE): read the baseline from the DB
+    # (populated by the prior run's model sync) instead of the captured files. Best-effort
+    # - any miss (baseline not in the DB, no DATABASE_URL, error) falls back to the files
+    # above, so the file-based flow is unchanged when the flag is off.
+    if os.environ.get("ANALYZER_DB_BASELINE"):
+        from core.logging_setup import get_logger as _glog
+        try:
+            from core.db import get_engine
+            from incremental.pg_stores import read_baseline_model
+            _b = read_baseline_model(get_engine(), project_id, decision.get("chosenBaseCommit") or "")
+            if _b and _b.get("hashes"):
+                base_hashes, base_functions, base_globals = _b["hashes"], _b["functions"], _b["globals"]
+                _glog("incremental").info(
+                    "baseline read from DB (%d hashes) instead of files", len(base_hashes))
+        except Exception as _exc:                                # noqa: BLE001 - best effort
+            _glog("incremental").info("DB baseline read skipped (%s); using files", _exc)
+
     # Precise impact (classify + reverse-BFS over the fresh model) drives ALL reuse:
     # function descriptions/behaviour-names/summaries (Phase 2) AND flowcharts (Phase 3).
     plan = plan_incremental(base_hashes, target_hashes, target_functions, target_edges, base_functions)

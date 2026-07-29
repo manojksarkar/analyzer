@@ -104,6 +104,22 @@ def resolve_project_repo(engine, project_id: str) -> tuple[str, str, str]:
     return (p.get("repo_url") or "", p.get("default_branch") or "main", token)
 
 
+def read_baseline_model(engine, project_id: str, base_commit: str) -> Optional[Dict[str, Any]]:
+    """The baseline parts the incremental engine needs (hashes/functions/globals), read
+    from the DB by the baseline's commit. None when the baseline isn't in the DB yet -
+    the engine then falls back to the captured files. (PG-4 Path B.)"""
+    from . import model_store
+    with engine.connect() as cx:
+        r = cx.execute(select(s.versions.c.id).where(
+            (s.versions.c.project_id == project_id) & (s.versions.c.commit_sha == base_commit))).first()
+        if not r:
+            return None
+        vid = r.id
+        return {"hashes": model_store.load_hashes(cx, vid),
+                "functions": model_store.load_functions(cx, vid),
+                "globals": model_store.load_globals(cx, vid)}
+
+
 def list_versions(engine, project_id: str) -> List[Dict[str, Any]]:
     """Completed versions for baseline selection: [{versionId, commit, branch, status}].
 
