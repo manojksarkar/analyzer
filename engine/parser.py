@@ -863,15 +863,12 @@ def visit_definitions(cursor):
         }
         # Incremental (M1.2): token hash of the body + doc comment, for output reuse.
         entry["_sourceHash"] = hash_cursor(cursor, comment=entry["description"])
-        if cursor.is_definition():
-            functions[fk] = entry
-            if fk not in function_to_component:
-                component_functions[component_name].append(fk)
-                function_to_component[fk] = component_name
-        elif fk not in functions:
-            # Forward declaration only (e.g. "VOID _f(VOID);" with no body in this TU)
-            entry["declarationOnly"] = True
-            functions[fk] = entry
+        # The outer guard already requires cursor.is_definition(): functions.json
+        # models definitions only. A forward-decl-only function (declared but never
+        # defined in the parse) has no body to document, so it is intentionally not
+        # collected.
+        functions[fk] = entry
+        if fk not in function_to_component:
             component_functions[component_name].append(fk)
             function_to_component[fk] = component_name
 
@@ -1256,8 +1253,6 @@ def build_metadata():
         functions_dict[fid]["visibility"] = f.get("visibility", "default")
         if f.get("syntheticFromVarDecl"):
             functions_dict[fid]["syntheticFromVarDecl"] = True
-        if f.get("declarationOnly"):
-            functions_dict[fid]["declarationOnly"] = True
         # Attach first return expression text if available (for behaviour output naming)
         ret_expr = function_return_expr.get(func_key)
         if ret_expr:
