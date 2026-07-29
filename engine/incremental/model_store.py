@@ -431,6 +431,41 @@ def persist_model(conn, project_id, version_id, *, functions, globals, datadict,
         persist_bare_entities(conn, project_id, version_id, leftover)
 
 
+def load_model(conn, version_id) -> Dict[str, Any]:
+    """The complete model for a version, in the same dict shapes model/*.json has.
+    The read side used by version-scoped API reads and (via dump_model_to_dir) by the
+    DB-native pipeline."""
+    return {
+        "functions": load_functions(conn, version_id),
+        "globals": load_globals(conn, version_id),
+        "datadict": load_types(conn, version_id),
+        "edges": load_edges(conn, version_id),
+        "units": load_units(conn, version_id),
+        "components": load_components(conn, version_id),
+        "summaries": load_summaries(conn, version_id),
+        "hashes": load_hashes(conn, version_id),
+    }
+
+
+# model dict key -> the file the pipeline subprocesses expect
+_DUMP_FILES = {
+    "functions": "functions.json", "globals": "globalVariables.json",
+    "datadict": "dataDictionary.json", "edges": "edges.json", "units": "units.json",
+    "components": "components.json", "summaries": "summaries.json", "hashes": "hashes.json",
+}
+
+
+def dump_model_to_dir(conn, version_id, out_dir) -> None:
+    """Materialize a version's DB model back to model/*.json. The bridge for tools that
+    still take file paths (the flowchart engine / scanner subprocesses) until they read
+    the DB directly - the model stays sourced from Postgres, the file is a hand-off."""
+    os.makedirs(out_dir, exist_ok=True)
+    model = load_model(conn, version_id)
+    for key, fname in _DUMP_FILES.items():
+        with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as fh:
+            json.dump(model[key], fh, indent=2, ensure_ascii=False)
+
+
 def _entity_rows(conn, version_id, kind):
     """entity_versions joined to entities + content_blobs, filtered to a kind (or kinds)."""
     ev, ent, cb = s.entity_versions, s.entities, s.content_blobs

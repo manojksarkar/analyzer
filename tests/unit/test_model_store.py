@@ -205,6 +205,30 @@ def test_persist_from_dir_is_idempotent():
         assert model_store.load_hashes(cx, VID) == _load("hashes.json")
 
 
+@pytest.mark.skipif(not _HAS_MODEL, reason="needs a parsed model/")
+def test_load_model_and_dump_to_dir_roundtrip(tmp_path):
+    """files -> DB -> load_model gives every part back; dump_model_to_dir reproduces a
+    usable model/ (the pipeline hand-off)."""
+    engine = _fk_engine()
+    with engine.begin() as cx:
+        model_store.persist_model_from_dir(cx, PID, VID, MODEL_DIR)
+    with engine.connect() as cx:
+        model = model_store.load_model(cx, VID)
+        model_store.dump_model_to_dir(cx, VID, str(tmp_path))
+
+    # load_model returns all parts, non-empty
+    assert set(model) == {"functions", "globals", "datadict", "edges", "units",
+                          "components", "summaries", "hashes"}
+    assert model["functions"] and model["hashes"]
+
+    # dumped hashes.json byte-identical to the original (the classify input survives)
+    dumped = json.load(open(tmp_path / "hashes.json", encoding="utf-8"))
+    assert dumped == _load("hashes.json")
+    # dumped functions cover the same set
+    assert set(json.load(open(tmp_path / "functions.json", encoding="utf-8"))) \
+        == set(_load("functions.json"))
+
+
 @pytest.mark.skipif(not _HAS_MODEL, reason="needs model/functions.json")
 def test_identical_payloads_dedup_to_one_blob():
     """Two functions with the same payload store the content once (D-9)."""
