@@ -214,6 +214,21 @@
 > singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
 > [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
 
+> Updated: 2026-07-29 (**SWE.4 mock scope — same-unit private helpers no longer mocked** (`feat/swe4-unit-test-spec`).
+> Coverage rule: `_mock_functions` in `views/test_specs.py` now mocks a callee **only when it's outside the
+> unit under test** — a different unit (any visibility) or a same-unit **public/protected** callee (own spec).
+> A **same-unit private helper is inlined, not mocked**, so its branches are exercised under the public caller's
+> test — previously they were mocked and their branches were covered **nowhere** (blocking 100% coverage).
+> Needed a `fid → unitKey` reverse index (functions carry no unit membership) — reuses the `behaviour_diagram.py:40`
+> idiom, built once in `_build_test_specs` and threaded into `_mock_functions(func, functions_data, fid_to_unit, caller_unit)`.
+> Downstream (exporter Precondition cell, LLM test-case facts, `_default_test_steps` "mock …" line) reflect the
+> new list automatically. Sample model: **34 same-unit private helpers now inlined, 0 violations**; cross-unit
+> callees still mocked. Spec reconciled: `SWE4_SPEC.md` REQ-UT-05 (mock-scope rule + verification) + REQ-TC-01,
+> and the meeting **doubts** consolidated into its **Open items** (mock boundary, protected scope, unreachable
+> privates, transitive mocks, mock-return convention, non-drivable conditions, targeted-vs-verified 100%).
+> Tests: `test_test_specs_view.py` fixture gained a cross-unit callee; asserts same-unit private **absent** /
+> cross-unit **present**. **Open (meeting):** the boundary is a working assumption — see SWE4_SPEC Open items.)
+
 > Updated: 2026-07-24 (**SWE.4 — LLM test-case path turned on + made robust** (`feat/swe4-unit-test-spec`).
 > Root cause the LLM fill was blank even with ollama up: `llama3.2` returns JSON with **hex literals**
 > (`0x7FFFFFFF`, invalid JSON) and **nested objects** for input/expected/steps, which the strict parser

@@ -18,12 +18,13 @@ from views.test_specs import _build_test_specs, GENERATION_METHOD
 
 def _model():
     """Small synthetic model: one .cpp unit with a public writer that calls a
-    helper and consumes a global, plus a private function, plus a header unit."""
+    same-unit private helper (inlined, not mocked), a cross-unit callee (mocked),
+    and consumes a global; plus a private function and a header unit."""
     functions = {
         "Comp|U|doWrite|int": {
             "qualifiedName": "doWrite", "interfaceId": "IF_01", "visibility": "public",
             "returnType": "void", "parameters": [{"name": "n", "type": "int"}],
-            "location": {"line": 10}, "callsIds": ["Comp|U|helper|"],
+            "location": {"line": 10}, "callsIds": ["Comp|U|helper|", "Comp|V|ext|"],
             "writesGlobalIds": ["Comp|U|g_count"], "readsGlobalIds": ["Comp|U|g_count"],
         },
         "Comp|U|readOnly|": {
@@ -35,6 +36,11 @@ def _model():
             "qualifiedName": "helper", "interfaceId": "IF_03", "visibility": "private",
             "returnType": "void", "parameters": [], "location": {"line": 30},
         },
+        # A callee in a DIFFERENT unit — outside the unit under test, so mocked.
+        "Comp|V|ext|": {
+            "qualifiedName": "ext", "interfaceId": "IF_04", "visibility": "public",
+            "returnType": "void", "parameters": [], "location": {"line": 5},
+        },
     }
     globals_ = {
         "Comp|U|g_count": {"qualifiedName": "g_count", "type": "int", "value": "0"},
@@ -43,6 +49,7 @@ def _model():
     units = {
         "Comp|U": {"name": "U", "fileName": "U.cpp",
                    "functionIds": ["Comp|U|doWrite|int", "Comp|U|readOnly|", "Comp|U|helper|"]},
+        "Comp|V": {"name": "V", "fileName": "V.cpp", "functionIds": ["Comp|V|ext|"]},
         "Comp|H": {"name": "H", "fileName": "H.h", "functionIds": []},
     }
     return units, functions, globals_
@@ -64,8 +71,10 @@ class TestPrecondition:
         ts = _build_test_specs(*_model())
         return next(s for s in ts["Comp|U"]["functions"] if s["name"] == name)
 
-    def test_callees_listed_as_mock_calls(self):
-        assert self._spec()["precondition"]["mockFunctions"] == ["helper()"]
+    def test_cross_unit_callee_mocked_same_unit_private_helper_not(self):
+        # ext() is in another unit -> mocked; helper() is a same-unit private
+        # helper -> inlined under the caller's test, so NOT mocked (coverage rule).
+        assert self._spec()["precondition"]["mockFunctions"] == ["ext()"]
 
     def test_parameters_listed(self):
         params = self._spec()["precondition"]["parameters"]
@@ -130,7 +139,7 @@ class TestDefaultTestSteps:
         ts = _build_test_specs(*_model())
         dw = next(s for s in ts["Comp|U"]["functions"] if s["name"] == "doWrite")
         joined = " ".join(dw["testSteps"])
-        assert "helper()" in joined and "g_count" in joined  # precondition setup
+        assert "ext()" in joined and "g_count" in joined     # precondition setup (mocked callee)
         assert "Call doWrite(n)" in joined                    # invocation names the param
         assert "Verify" in joined and "g_count" in joined     # verify written global
 

@@ -44,13 +44,26 @@ def _test_case_id(func):
     return f"TC_{safe}"
 
 
-def _mock_functions(func, functions_data):
-    """Callees written as `name()` (REQ-UT-05). Only model-resolvable callees;
-    external/library calls we cannot name are omitted. Sorted + de-duplicated."""
+def _mock_functions(func, functions_data, fid_to_unit, caller_unit):
+    """Callees written as `name()` (REQ-UT-05), restricted to the callees a unit
+    test should actually mock.
+
+    A callee is mocked when it lies *outside the unit under test* — a different
+    unit (any visibility), or a **same-unit public/protected** callee (which
+    carries its own spec, so its branches are covered there). A **same-unit
+    private helper** is NOT mocked: it has no spec of its own, so it must run
+    inline under this caller's test or its branches are never exercised anywhere
+    (100%-coverage rule; see docs/spec/SWE4_SPEC.md REQ-UT-05). Only
+    model-resolvable callees are considered; external/library calls we cannot
+    name are omitted. Sorted + de-duplicated."""
     names = set()
     for cid in func.get("callsIds") or []:
         callee = functions_data.get(cid)
         if not callee:
+            continue
+        # Same-unit private helper -> inline under test, do not mock.
+        if (fid_to_unit.get(cid) == caller_unit
+                and (callee.get("visibility") or "").lower() == "private"):
             continue
         nm = short_name(callee.get("qualifiedName", "")) or ""
         if nm:
@@ -152,6 +165,10 @@ def _default_test_steps(spec):
 def _build_test_specs(units_data, functions_data, global_variables_data,
                       data_dictionary=None, *, allowed_components=None):
     dd = data_dictionary or {}
+    # Reverse index so a callee's owning unit is resolvable (functions carry no
+    # unit membership themselves) — drives the same-unit-private mock exclusion.
+    fid_to_unit = {fid: uk for uk, u in units_data.items()
+                   for fid in u.get("functionIds", []) or []}
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                   for uk, u in units_data.items()}
 
@@ -197,7 +214,7 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
                 "generationMethod": GENERATION_METHOD,
                 # Precondition (REQ-UT-05): mock callees + all params + consumed globals.
                 "precondition": {
-                    "mockFunctions": _mock_functions(f, functions_data),
+                    "mockFunctions": _mock_functions(f, functions_data, fid_to_unit, unit_key),
                     "parameters": params,
                     "globals": _consumed_globals(f, global_variables_data, dd),
                 },

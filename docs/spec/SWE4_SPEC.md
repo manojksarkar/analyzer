@@ -56,12 +56,19 @@ Platform**.
 
 ### REQ-UT-05 — Precondition
 
-The Precondition cell lists: **mock functions** — the unit's callees, written as `name()`; **all
+The Precondition cell lists: **mock functions** — the callees to stub, written as `name()`; **all
 parameters**; **all consumed globals** (read or written), with the declared initial value where one exists.
 Local variables are not listed.
 
-**Verification:** Callees appear as `name()`; parameters and read/written globals appear; a global with a
-declared initializer shows its value; locals absent.
+**Mock scope (coverage rule).** A callee is mocked only when it lies *outside the unit under test* — a
+different unit (any visibility), or a same-unit **public/protected** callee (which carries its own spec, so
+its branches are covered there). A **same-unit private helper is NOT mocked**: it has no spec of its own, so
+it runs inline under the caller's test — otherwise its branches are exercised nowhere and unit coverage can
+never reach 100%. External/library callees we cannot name are omitted.
+
+**Verification:** a same-unit private callee is **absent** from the `name()` list; a cross-unit callee is
+**present**; parameters and read/written globals appear; a global with a declared initializer shows its
+value; locals absent.
 
 ---
 
@@ -155,8 +162,9 @@ cases are emitted.
 ### REQ-TC-01 — Coverage target
 
 Input sets are **branch-targeted**: they aim to exercise **every branch edge at least once** (branch
-coverage) — **not** every path (path coverage explodes combinatorially). Callees are mocked; a public
-callee's own branches are covered by its own spec. Coverage is *targeted*, **not verified** (see
+coverage) — **not** every path (path coverage explodes combinatorially). Cross-unit and same-unit public
+callees are mocked (a public callee's own branches are covered by its own spec); a same-unit private helper
+is inlined, so its branches are covered here (REQ-UT-05). Coverage is *targeted*, **not verified** (see
 Limitations).
 
 **Verification:** Every branch edge has ≥1 input set intended to exercise it; case count is ~O(branches).
@@ -245,14 +253,26 @@ Re-running generation on **unchanged input** yields **identical** test cases (ID
 
 ---
 
-## Open items (client)
+## Open items (client / meeting)
 
-- How **100% coverage** is demonstrated given no coverage tool.
-- The **mock-return value** convention (drives both branch-taking and Expected).
+Mock scope is **partially decided in code** — same-unit private helpers are inlined, not mocked (REQ-UT-05),
+which is what lets their branches reach coverage. The rest are pending a review meeting; all bear on 100%.
+
+- **Mock boundary** — confirm *same-unit + private* (current) vs *any same-unit* callee left un-mocked.
+- **Protected functions** — the view specs protected today (only `private` is excluded from scope); if
+  protected keep their own spec they stay mocked, otherwise they inline. Settle protected's scope.
+- **Unreachable private helpers** — a private not called by any public function is neither specced nor
+  inlined ⇒ uncoverable. Emit a direct spec for it, accept <100% with a flag, or other?
+- **Transitive mocks** — an inlined same-unit private helper's *own* cross-unit callees are not hoisted into
+  the caller's Precondition (mocks are direct-callee only). Walk transitively?
+- **Mock-return convention** — to drive a branch gated on a mocked callee's return, the mock must return a
+  chosen value (also drives Expected).
+- **Non-drivable conditions** — branches gated on globals / struct fields / compound `&&`/`||` predicates
+  carry draft/review markers; accept manual review, or extend the derivation?
+- **Demonstrating 100%** — no coverage tool / no execution (§3 parked): coverage is *targeted*, not
+  *verified*. Stand up a coverage/execution step, or accept targeted for the deliverable?
 - **Table B** requirement-linked fields — Alias Test ID · Risk · Test Method · Test Environment · Linked
   Work Items (blocked on a requirements source: Polarion / SWE.1).
-- **Scope** — only **public** functions, or **also private** helpers? Where branching logic lives in
-  private functions, public-only + mocking covers little of the actual code.
 
 ---
 
