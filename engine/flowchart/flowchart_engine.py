@@ -72,6 +72,24 @@ logger = logging.getLogger("flowchart_engine")
 
 
 # ---------------------------------------------------------------------------
+# Header-file detection and stub generation
+# ---------------------------------------------------------------------------
+
+# All recognised C/C++ header extensions (both cases for case-sensitive FSes).
+_HEADER_SUFFIXES = frozenset({
+    '.h', '.hpp', '.hxx', '.hh',
+    '.H', '.HPP', '.HXX', '.HH',
+})
+
+
+def _is_header_file(path: str) -> bool:
+    """Return True if path is a C/C++ header file based on its extension."""
+    return Path(path).suffix in _HEADER_SUFFIXES
+
+
+
+
+# ---------------------------------------------------------------------------
 # CLI argument parsing
 # ---------------------------------------------------------------------------
 
@@ -489,24 +507,22 @@ def run(config: EngineConfig) -> None:
         else:
             logger.warning("Key not in PKB (skipping): %s", key)
 
-    # Drop synthetic pseudo-functions (var-decls recorded as functions — e.g. a
-    # macro-obscured "UNIT _f(arg);" parsed as a VAR_DECL). They have no body, so
-    # there is no CFG to build. Every other functions.json entry is a real
-    # definition — INCLUDING public inline functions defined in headers, which
-    # are parsed as their own TUs and flow through here.
-    processable = [e for e in target_entries if not e.synthetic_from_var_decl]
-    skipped = len(target_entries) - len(processable)
-    if skipped:
-        logger.info("Skipping %d synthetic (no-body) function(s) (no output generated)",
-                    skipped)
+    # Drop functions defined in header files — they cannot be parsed as
+    # standalone TUs and their bodies are not worth analysing.  They already
+    # appear as ACTION nodes in their callers' flowcharts.
+    non_header = [e for e in target_entries if not _is_header_file(e.file)]
+    skipped_headers = len(target_entries) - len(non_header)
+    if skipped_headers:
+        logger.info("Skipping %d header-defined function(s) (no output generated)",
+                    skipped_headers)
 
     # Group by source file (deterministic order)
     by_file: Dict[str, List[FunctionEntry]] = defaultdict(list)
-    for entry in processable:
+    for entry in non_header:
         by_file[entry.file].append(entry)
 
     logger.info("Processing %d function(s) across %d source file(s)",
-                len(processable), len(by_file))
+                len(non_header), len(by_file))
 
     # Initialise shared infrastructure
     source_extractor = SourceExtractor(base_path)
@@ -543,7 +559,7 @@ def run(config: EngineConfig) -> None:
     file_results: List[FileResult] = []
     total_ok = 0
     total_err = 0
-    total_funcs = len(processable)  # global denominator (functions actually processed)
+    total_funcs = len(non_header)   # global denominator (functions actually processed)
     processed = 0                   # global running counter across all files
 
     for source_file, entries in sorted(by_file.items()):

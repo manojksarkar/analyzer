@@ -82,7 +82,6 @@ class ProjectKnowledgeBase:
                 called_by_ids=data.get("calledByIds", []),
                 interface_id=data.get("interfaceId", ""),
                 description=data.get("description", ""),
-                synthetic_from_var_decl=bool(data.get("syntheticFromVarDecl", False)),
             )
             self._functions[key] = entry
             self._by_qualified_name.setdefault(entry.qualified_name, []).append(key)
@@ -102,7 +101,6 @@ class ProjectKnowledgeBase:
                 "calledByIds": e.called_by_ids,
                 "interfaceId": e.interface_id,
                 "description": e.description,
-                "syntheticFromVarDecl": e.synthetic_from_var_decl,
             }
             for key, e in self._functions.items()
         }
@@ -121,7 +119,6 @@ class ProjectKnowledgeBase:
                 called_by_ids=d.get("calledByIds", []),
                 interface_id=d.get("interfaceId", ""),
                 description=d.get("description", ""),
-                synthetic_from_var_decl=bool(d.get("syntheticFromVarDecl", False)),
             )
             self._functions[key] = entry
             self._by_qualified_name.setdefault(entry.qualified_name, []).append(key)

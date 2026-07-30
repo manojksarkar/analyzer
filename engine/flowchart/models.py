@@ -64,10 +64,6 @@ class FunctionEntry:
     called_by_ids: List[str] = field(default_factory=list)
     interface_id: str = ""
     description: str = ""
-    # Var-decls recorded as pseudo-functions (e.g. a macro-obscured
-    # "UNIT _f(arg);" parsed as a VAR_DECL). These have no body, so no CFG can
-    # be built — the engine skips them. Every other entry is a real definition.
-    synthetic_from_var_decl: bool = False
 
 
 @dataclass
