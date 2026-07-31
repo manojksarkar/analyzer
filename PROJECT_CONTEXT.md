@@ -2500,7 +2500,7 @@ auto-formatters have reverted this fix in the past. After any change to
 [engine/flowchart/ast_engine/cfg_builder.py](engine/flowchart/ast_engine/cfg_builder.py),
 re-run `python engine/flowchart/tests/diagnose_assert.py`.
 
-### Risk 5 — header inline function appears in interface table but gets no flowchart — RESOLVED 2026-07-29
+### Risk 5 — header inline function appears in interface table but gets no flowchart — RESOLVED 2026-07-31 (first attempt reverted; see "Why the first fix was reverted")
 
 **Symptom:** a public inline function defined in a header (e.g. `Foo.h`) showed an interface row /
 section header with a description but **no flowchart figure** ("header but no table"). Unit keys
@@ -2522,6 +2522,31 @@ functions**, which libclang parses fine as their own TUs (3.2 already parses hea
 skipped (previously an empty/error entry); `.cpp` inline fns unchanged (the old filter never touched
 them). **Follow-up (engine-dev):** the dead `declarationOnly` branch in `parser.py` can be removed or
 its guard relaxed — out of the flowchart engine's scope.
+
+#### Why the first fix was reverted — output-filename collision (2026-07-30 → re-fixed 2026-07-31)
+
+`fa42e6b` (drop the header filter) was reverted by `1a59190` because it made **functions declared
+`extern` in a header and defined in the `.cpp` disappear** from the document. Root cause is NOT the
+header filter — it is [output/writer.py:44-45](engine/flowchart/output/writer.py#L44-L45), which names
+each output `Path(source_file).stem + ".json"` with the **extension stripped**, while `run()` grouped
+by full path. `Foo.h` and `Foo.cpp` therefore became two `FileResult`s that both wrote `Foo.json`, and
+`sorted(by_file.items())` puts `.h` last (`'c' < 'h'`) → **the header write clobbered every `.cpp`
+flowchart in that unit**. Invisible while headers were filtered out; guaranteed the moment they weren't.
+
+**Fix (2026-07-31, flowchart engine only):** keep the `synthetic_from_var_decl` filter from `fa42e6b`
+*and* group by **output stem** rather than path, so `Foo.h` + `Foo.cpp` merge into one `FileResult` →
+one `Foo.json` holding both. `FileResult.source_file` = first non-header path in the group (`.cpp`
+still named in `_summary.json`); entries sorted by `(file, line)` for determinism. Stem grouping also
+matches the rest of the pipeline, which already collapses `Foo.h`+`Foo.cpp` into one unit
+([utils.py `_path_to_component_unit`](engine/utils.py#L238)) and whose incremental path
+([views/flowcharts.py `_apply_incremental_plan`](engine/views/flowcharts.py#L150)) already assumes one
+JSON per stem. Side benefit: two same-stem `.cpp`s in different components now merge instead of one
+silently overwriting the other.
+
+**A/B verified** on a two-function fixture (`Foo.h` = `extern int fooMain(int);` + inline `fooInline`;
+`Foo.cpp` = `fooMain`): path-grouping wrote `Foo.json` twice and left only `fooInline`; stem-grouping
+writes once with **both** `fooMain` and `fooInline`. Full sample run: 124 ✓ / 1 ✗ across 21 units with
+`SignalInline.json` (`signalGain`, header-only) now emitted. `pytest --skip-pipeline`: 631 passed, 0 failed.
 
 ### Pre-V1 correctness batch (targets V1; numbered 3.1–3.19 internally — status in git/PR history + the `> Updated:` log above)
 

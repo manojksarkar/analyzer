@@ -380,7 +380,7 @@ flowchart_engine.py  run(config)
           for each function entry:
               FunctionEntry(key, qualified_name, file, line, end_line,
                             params, calls_ids, called_by_ids,
-                            interface_id, description)
+                            interface_id, description, synthetic_from_var_decl)
               stored in pkb._functions[key]
               also indexed in pkb._by_qualified_name[qname]
 
@@ -390,14 +390,24 @@ flowchart_engine.py  run(config)
           qname.split("::")[-1] → FunctionKnowledge
           enables O(1) short-name lookup in targeted callee context
 
-  Header file filter:
-      _is_header_file(func_entry.file)
-          Path(file).suffix in {'.h','.hpp','.hxx','.hh', ...}
+  No-body filter:
+      entry.synthetic_from_var_decl   (functions.json "syntheticFromVarDecl")
+          set for var-decls recorded as pseudo-functions (e.g. a macro-obscured
+          "UNIT _f(arg);" parsed as a VAR_DECL) — there is no body / no CFG.
       → True:  skip entirely, never enter pipeline, no output written
-               INFO: "Skipping N header-defined function(s)"
+               INFO: "Skipping N synthetic (no-body) function(s)"
       → False: proceed to processing
+      NOTE: functions defined in HEADERS (public inline functions, header-only
+            units) are NOT filtered — they are real definitions, parsed as their
+            own TUs, and produce flowcharts like any .cpp definition.
 
-  Group remaining functions by source file (by_file dict)
+  Group remaining functions by OUTPUT STEM (by_stem → by_file dict)
+      key = Path(entry.file).stem, because OutputWriter names each output
+      "<stem>.json" (extension stripped). Foo.h + Foo.cpp therefore share ONE
+      output file and must be ONE FileResult — grouping by path would write
+      Foo.json twice and the second write would silently overwrite the first.
+      FileResult.source_file = first non-header path in the group (else first),
+      so _summary.json still names the .cpp for a merged unit.
 
   Instantiate shared infrastructure (once per run):
       SourceExtractor(base_path)

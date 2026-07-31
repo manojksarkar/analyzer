@@ -72,8 +72,11 @@ logger = logging.getLogger("flowchart_engine")
 
 
 # ---------------------------------------------------------------------------
-# Header-file detection and stub generation
+# Header-file detection
 # ---------------------------------------------------------------------------
+# Headers are NOT excluded from flowchart generation (a public inline function
+# defined in a header is a real definition and needs its own flowchart). This is
+# only used to pick which path represents a merged .h + .cpp unit in the summary.
 
 # All recognised C/C++ header extensions (both cases for case-sensitive FSes).
 _HEADER_SUFFIXES = frozenset({
@@ -507,22 +510,39 @@ def run(config: EngineConfig) -> None:
         else:
             logger.warning("Key not in PKB (skipping): %s", key)
 
-    # Drop functions defined in header files — they cannot be parsed as
-    # standalone TUs and their bodies are not worth analysing.  They already
-    # appear as ACTION nodes in their callers' flowcharts.
-    non_header = [e for e in target_entries if not _is_header_file(e.file)]
-    skipped_headers = len(target_entries) - len(non_header)
-    if skipped_headers:
-        logger.info("Skipping %d header-defined function(s) (no output generated)",
-                    skipped_headers)
+    # Drop synthetic pseudo-functions (var-decls recorded as functions — e.g. a
+    # macro-obscured "UNIT _f(arg);" parsed as a VAR_DECL). They have no body, so
+    # there is no CFG to build. Every other functions.json entry is a real
+    # definition — INCLUDING public inline functions defined in headers, which
+    # libclang parses fine as their own TUs (-x c++) and which the document needs
+    # a flowchart for.
+    processable = [e for e in target_entries if not e.synthetic_from_var_decl]
+    skipped = len(target_entries) - len(processable)
+    if skipped:
+        logger.info("Skipping %d synthetic (no-body) function(s) (no output generated)",
+                    skipped)
 
-    # Group by source file (deterministic order)
-    by_file: Dict[str, List[FunctionEntry]] = defaultdict(list)
-    for entry in non_header:
-        by_file[entry.file].append(entry)
+    # Group by OUTPUT STEM, not by path: OutputWriter names each file
+    # "<stem>.json" with the extension stripped, so Foo.h and Foo.cpp share one
+    # output file. Grouping by path would emit two FileResults for that stem and
+    # the second write would silently overwrite the first (losing every .cpp
+    # flowchart in the unit). Merging here also matches the rest of the pipeline,
+    # which collapses Foo.h + Foo.cpp into a single unit (utils
+    # _path_to_component_unit) and looks flowcharts up per unit.
+    by_stem: Dict[str, List[FunctionEntry]] = defaultdict(list)
+    for entry in processable:
+        by_stem[Path(entry.file).stem].append(entry)
+
+    # One group -> one FileResult. Prefer a non-header path as the reported
+    # source_file (_summary.json) so a merged unit still names its .cpp.
+    by_file: Dict[str, List[FunctionEntry]] = {}
+    for _stem, group in by_stem.items():
+        paths = sorted({e.file for e in group})
+        representative = next((p for p in paths if not _is_header_file(p)), paths[0])
+        by_file[representative] = sorted(group, key=lambda e: (e.file, e.line))
 
     logger.info("Processing %d function(s) across %d source file(s)",
-                len(non_header), len(by_file))
+                len(processable), len(by_file))
 
     # Initialise shared infrastructure
     source_extractor = SourceExtractor(base_path)
@@ -559,7 +579,7 @@ def run(config: EngineConfig) -> None:
     file_results: List[FileResult] = []
     total_ok = 0
     total_err = 0
-    total_funcs = len(non_header)   # global denominator (functions actually processed)
+    total_funcs = len(processable)  # global denominator (functions actually processed)
     processed = 0                   # global running counter across all files
 
     for source_file, entries in sorted(by_file.items()):
