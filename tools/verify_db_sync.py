@@ -56,15 +56,20 @@ def main() -> int:
         for kind, n in cx.execute(
                 select(s.entities.c.kind, func.count()).group_by(s.entities.c.kind)):
             print(f"    {kind:10} {n}")
-        ev = cx.execute(select(func.count()).select_from(s.entity_versions)
-                        .where(s.entity_versions.c.version_id == VID)).scalar_one()
-        me = cx.execute(select(func.count()).select_from(s.model_edges)
-                        .where(s.model_edges.c.version_id == VID)).scalar_one()
-        cb = cx.execute(select(func.count()).select_from(s.content_blobs)).scalar_one()
-        print(f"\n  entity_versions : {ev}")
-        print(f"  model_edges     : {me}")
-        print(f"  content_blobs   : {cb}")
-        loaded = model_store.load_hashes(cx, VID)
+        def _count(table):
+            return cx.execute(select(func.count()).select_from(table)
+                              .where(table.c.version_id == VID)).scalar_one()
+        print(f"\n  entity_versions : {_count(s.entity_versions)}")
+        print(f"  model_edges     : {_count(s.model_edges)}")
+        print(f"  model_units     : {_count(s.model_units)}")
+        print(f"  model_components: {_count(s.model_components)}")
+        print(f"  model_summaries : {_count(s.model_summaries)}")
+        print(f"  content_blobs   : "
+              f"{cx.execute(select(func.count()).select_from(s.content_blobs)).scalar_one()}")
+        # full read side: load the whole model back and spot-check it
+        model = model_store.load_model(cx, VID)
+        print(f"\n  load_model parts: {', '.join(f'{k}={len(v)}' for k, v in model.items())}")
+        loaded = model["hashes"]
 
     hp = os.path.join(MODEL_DIR, "hashes.json")
     hashes = json.load(open(hp, encoding="utf-8")) if os.path.isfile(hp) else {}
