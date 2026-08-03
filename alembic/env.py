@@ -35,6 +35,15 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # Diagnostic: a `NoSuchModuleError: postgresql.psycopg` here means the SQLAlchemy
+    # alembic runs lacks the psycopg dialect - almost always a DIFFERENT interpreter than
+    # your `python`. These lines make alembic's actual environment visible so it can be
+    # compared with `python tools/db_setup.py`.
+    import sqlalchemy as _sa
+    sys.stderr.write(f"[alembic] python     = {sys.executable}\n")
+    sys.stderr.write(f"[alembic] sqlalchemy = {_sa.__version__} @ {os.path.dirname(_sa.__file__)}\n")
+    sys.stderr.write(f"[alembic] url        = {_URL}\n")
+    sys.stderr.flush()
     cfg = context.config.get_section(context.config.config_ini_section) or {}
     cfg["sqlalchemy.url"] = _URL
     connectable = engine_from_config(cfg, prefix="sqlalchemy.", poolclass=pool.NullPool)
