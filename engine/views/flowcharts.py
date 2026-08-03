@@ -983,6 +983,14 @@ def run(model, output_dir, model_dir, config):
     if os.path.isfile(kb_path):
         cmd.extend(["--knowledge-json", kb_path])
 
+    # tu_includes.json (Phase 1): lets the engine resolve a function defined in a
+    # header that does not parse standalone by retrying inside a .cpp that
+    # includes it. Written to the run's model dir, so it follows layer scoping.
+    tu_includes_path = os.path.join(model_dir_abs, "tu_includes.json")
+
+    if os.path.isfile(tu_includes_path):
+        cmd.extend(["--tu-includes", tu_includes_path])
+
     # M-D: when the analyzer disables LLM (--no-llm sets llm.descriptions=False),
     # tell the flowchart engine to skip the LLM too (fallback node labels)
     # for an LLM-free pipeline.

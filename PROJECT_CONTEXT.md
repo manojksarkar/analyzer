@@ -2543,6 +2543,26 @@ matches the rest of the pipeline, which already collapses `Foo.h`+`Foo.cpp` into
 JSON per stem. Side benefit: two same-stem `.cpp`s in different components now merge instead of one
 silently overwriting the other.
 
+#### Follow-up — "Could not resolve cursor" for header-defined functions (2026-08-02)
+
+Once headers stopped being skipped, real projects surfaced a second failure:
+`Could not resolve cursor for '<fn>' in <path>.h:<line>`. Cause: `_process_function` parses the
+function's **own file** as the TU ([flowchart_engine.py:270-271](engine/flowchart/flowchart_engine.py#L270-L271)),
+so a header that is **not self-contained** (macros/types supplied by an include the `.cpp` pulls in
+first — `#include "cfg.h"` then `#include "foo.h"`) is a syntax error when parsed alone and yields no
+cursor. Phase 1 is immune because it captures the function from the **`.cpp` TU**; headers-as-TUs is
+only its additive fallback.
+
+**Fix:** on resolution failure, retry inside a TU that **includes** the header. Phase 1 already writes
+`model/tu_includes.json` (TU → included project headers); `_build_including_tus` reverses it (same-stem
+`.cpp` first, then sorted — deterministic), `views/flowcharts.py` passes `--tu-includes`, and
+`EngineConfig.tu_includes_json_path` carries it. `abs_path` stays the header — only the TU changes,
+since the cursor still reports the header as its location. Purely additive: self-contained headers
+still resolve on the first try. Failure messages now append the real clang diagnostics
+(`_parse_error_hint`). Repro'd + verified on a `SIG_API`/`SIG_VAL`-macro header fixture: before =
+`✗ 1` with the cursor error, after = `Resolved 'clampSignal' via including TU …/SignalDriver.cpp`,
+`✓ 5 ✗ 0`, CFG identical to the self-contained case.
+
 **A/B verified** on a two-function fixture (`Foo.h` = `extern int fooMain(int);` + inline `fooInline`;
 `Foo.cpp` = `fooMain`): path-grouping wrote `Foo.json` twice and left only `fooInline`; stem-grouping
 writes once with **both** `fooMain` and `fooInline`. Full sample run: 124 ✓ / 1 ✗ across 21 units with

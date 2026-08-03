@@ -455,6 +455,19 @@ tu_parser.get_tu_full(abs_path)
 ━━━ STEP 3: Resolve Function Cursor ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 find_function_cursor(tu, func_entry, abs_path)
 
+    Including-TU fallback (headers that do not parse standalone):
+        cursor is None AND func_entry.file is a header
+        → retry find_function_cursor(alt_tu, func_entry, abs_path) for each TU
+          that INCLUDES the header, from --tu-includes (model/tu_includes.json,
+          reversed by _build_including_tus; same-stem .cpp tried first).
+          abs_path stays the HEADER — only the TU changes, because the cursor
+          still reports the header as its location.
+        WHY: a header whose macros/types come from an include the .cpp pulls in
+          first (e.g. cfg.h then foo.h) is a syntax error when parsed alone, so
+          no cursor exists. Phase 1 never hits this — it captures the function
+          from the .cpp TU. Failure message appends the real clang diagnostics
+          (_parse_error_hint) so the cause is visible, not just "no cursor".
+
     Strategy 1 — Direct position lookup (fast path):
         _position_lookup(tu, abs_path, target_line, target_end, simple_name)
         try filenames: [tu.spelling, abs_path]

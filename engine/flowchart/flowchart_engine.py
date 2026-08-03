@@ -123,6 +123,11 @@ def _parse_args() -> EngineConfig:
     p.add_argument("--knowledge-json", default=None,
                    dest="knowledge_json",
                    help="Path to project_knowledge.json built by project_scanner.py")
+    p.add_argument("--tu-includes", default=None,
+                   dest="tu_includes",
+                   help="Path to model/tu_includes.json. Lets a function defined in a "
+                        "header that does not parse standalone be resolved inside a "
+                        "translation unit that includes that header.")
     p.add_argument("--no-cache", action="store_true",
                    help="Rebuild PKB from scratch (ignore disk cache)")
     p.add_argument("--cache-dir", default=".flowchart_cache",
@@ -175,6 +180,7 @@ def _parse_args() -> EngineConfig:
         llm_model=args.llm_model,
         function_key=args.function_key,
         knowledge_json_path=args.knowledge_json,
+        tu_includes_json_path=args.tu_includes,
         use_cache=not args.no_cache,
         cache_dir=args.cache_dir,
         llm_timeout=args.llm_timeout,
@@ -190,6 +196,46 @@ def _parse_args() -> EngineConfig:
 # ---------------------------------------------------------------------------
 # I/O loaders
 # ---------------------------------------------------------------------------
+
+def _parse_error_hint(tu, limit: int = 2) -> str:
+    """First few libclang errors for a TU, appended to a resolution failure.
+
+    A header that cannot be resolved almost always failed to PARSE first; showing
+    the actual diagnostic turns "could not resolve cursor" into an actionable
+    message (missing include, unknown macro, …)."""
+    try:
+        import clang.cindex as _ci
+        errs = [d for d in tu.diagnostics if d.severity >= _ci.Diagnostic.Error]
+    except Exception:
+        return ""
+    if not errs:
+        return ""
+    shown = "; ".join(f"{d.spelling} ({d.location.file}:{d.location.line})"
+                      for d in errs[:limit])
+    more = f" (+{len(errs) - limit} more)" if len(errs) > limit else ""
+    return f" — parse errors: {shown}{more}"
+
+
+def _build_including_tus(tu_includes: Dict) -> Dict[str, List[str]]:
+    """Reverse model/tu_includes.json into {header: [TUs that include it]}.
+
+    Same-stem TUs come first (Foo.h → Foo.cpp is the most likely place a header's
+    inline definitions actually compile), then the rest in sorted order so the
+    choice is deterministic.
+    """
+    reverse: Dict[str, List[str]] = defaultdict(list)
+    for tu_path, headers in (tu_includes or {}).items():
+        if _is_header_file(tu_path):
+            continue                      # only real TUs (.cpp) are useful here
+        for header in headers or []:
+            reverse[header].append(tu_path)
+
+    for header, tus in reverse.items():
+        stem = Path(header).stem
+        reverse[header] = sorted(set(tus),
+                                 key=lambda p: (Path(p).stem != stem, p))
+    return dict(reverse)
+
 
 def _load_json(path: str, label: str) -> Dict:
     p = Path(path)
@@ -251,6 +297,7 @@ def _process_function(
     config: EngineConfig,
     base_path: str,
     project_knowledge: Optional[ProjectKnowledge] = None,
+    including_tus: Optional[Dict[str, List[str]]] = None,
 ) -> FlowchartResult:
     """
     Process a single function end-to-end.
@@ -274,9 +321,35 @@ def _process_function(
         # Pass abs_path so the resolver can use Strategy 1 (direct position
         # lookup) and can match loc.file.name against the exact parsed path.
         func_cursor = find_function_cursor(tu, func_entry, abs_path)
+
+        # Fallback for functions DEFINED in a header that does not parse
+        # standalone — its macros/types come from an include the .cpp pulls in
+        # first (e.g. "#include cfg.h" then "#include foo.h", where foo.h uses a
+        # macro from cfg.h). Parsed alone the definition is a syntax error and
+        # yields no cursor. Phase 1 never hits this because it captures the
+        # function from the .cpp TU. So retry inside each TU that INCLUDES this
+        # header, keeping abs_path (the header) as the resolution target: the
+        # cursor still reports the header as its location.
+        if func_cursor is None:
+            for including_tu in (including_tus or {}).get(func_entry.file, []):
+                try:
+                    alt_tu = tu_parser.get_tu_full(
+                        source_extractor.abs_path(including_tu)
+                    )
+                except Exception as exc:          # unreadable/missing TU — try next
+                    logger.debug("including TU %s unusable: %s", including_tu, exc)
+                    continue
+                func_cursor = find_function_cursor(alt_tu, func_entry, abs_path)
+                if func_cursor is not None:
+                    logger.info("Resolved '%s' via including TU %s "
+                                "(header does not parse standalone)",
+                                qn, including_tu)
+                    break
+
         if func_cursor is None:
             raise RuntimeError(
                 f"Could not resolve cursor for '{qn}' in {func_entry.file}:{func_entry.line}"
+                + _parse_error_hint(tu)
             )
 
         # 4. Build CFG
@@ -483,6 +556,20 @@ def run(config: EngineConfig) -> None:
     else:
         logger.debug("No --knowledge-json provided; running without project knowledge")
 
+    # Reverse include map (optional — written by Phase 1 as model/tu_includes.json).
+    # Lets a header-defined function be resolved inside a TU that includes the
+    # header when the header does not parse standalone.
+    including_tus: Dict[str, List[str]] = {}
+    if config.tu_includes_json_path and Path(config.tu_includes_json_path).is_file():
+        try:
+            with open(config.tu_includes_json_path, "r", encoding="utf-8") as f:
+                including_tus = _build_including_tus(json.load(f))
+            logger.debug("Include map: %d header(s) reachable from a .cpp TU",
+                         len(including_tus))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("--tu-includes not loaded (%s); header-defined functions "
+                           "that need an including TU may fail to resolve", exc)
+
     # Build PKB
     pkb = _build_pkb(functions_data, config)
 
@@ -599,6 +686,7 @@ def run(config: EngineConfig) -> None:
                 config=config,
                 base_path=base_path,
                 project_knowledge=project_knowledge,
+                including_tus=including_tus,
             )
             fr.flowcharts.append(result)
             if result.error:
