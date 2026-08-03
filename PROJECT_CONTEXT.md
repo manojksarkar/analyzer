@@ -2596,6 +2596,26 @@ after it** — chosen deliberately to minimise churn on IDs that may already be 
 (`writeGlobal` keeps `_01`). Duplicates 1 → 0. A unit living in one file numbers exactly as before,
 because bucketing by unit then equals bucketing by file and the sort collapses to `line`.
 
+**Follow-on — table row ORDER (same root shape, different file):** the interface table sorted rows by
+source **line** ([interface_tables.py](engine/views/interface_tables.py)) while numbering sorts by
+`(file, line)`. Those agree only while a unit's interfaces live in ONE file, so once a unit spans
+`.h`+`.cpp` the table rendered IDs shuffled — reproduced as `02 clampSignal / 01 normalize / 03 SIG_VAL`
+when the header function sits at a lower line than the `.cpp` ones. Verified this was NOT a
+pre-existing defect: the pre-change artifact had 0 of 3 unit tables out of order. **Fix:** sort rows by
+the interface ID's trailing index (`_iface_order`, numeric so `_99` precedes `_100`), rather than
+re-deriving the numbering's sort key in a second place — the table now tracks the numbering by
+construction. Also fixes the per-function section order (`2.1.1.3`, `2.1.1.4`, …), which follows the
+same list.
+
+**Still open — cross-unit collisions (latent, NOT fixed):** `_id_seg` keeps only letters, so units whose
+names differ solely by digits/underscores collapse to one ID stem (`Signal2` → `SIGNAL`, `Timer_1` →
+`TIMER`) and each restarts at 01 — e.g. `IF_LAYER1_PLATFORM_UART_01` issued in both `Uart1` and `Uart2`.
+The layer segment is immune (`_id_seg_layer` keeps digits); group + unit segments were never given the
+same treatment. Sample project is clean (0 shared stems), but digit-suffixed unit names are everyday
+firmware naming. Fix = keep digits in the unit/group segments; deferred because it renames IDs for
+every unit with a digit in its name (far larger churn than the 1-of-139 above, and IDs may already be
+in delivered documents).
+
 **Regression tests:** `tests/unit/test_model_deriver.py::TestInterfaceIndexUnitKeyed` — uniqueness
 across `.h`+`.cpp`, header-numbered-after-cpp, header-global vs cpp-function collision (the original
 defect), and single-file numbering unchanged (the churn guard). Verified meaningful: 3 of the 4 fail
