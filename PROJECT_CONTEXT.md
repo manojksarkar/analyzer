@@ -173,6 +173,20 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-03c (**data ranges now measured by libclang instead of guessed from type names.**
+> `parser._range_from_clang_type` (canonical kind + `get_size()`) supplies typedef and struct-field
+> ranges; `_register_builtin_range` records every parameter/return/global/field builtin under its
+> CANONICAL spelling, so the dictionary answers exactly for the builtins a project actually uses.
+> `PRIMITIVES` seeding switched from assignment to `setdefault` — it was overwriting measured values
+> with a portable guess (`long` hardcoded 32-bit). `get_range_for_type` is now the last-resort fallback
+> only, is CASE-SENSITIVE (lowercasing made `Size_t` match `size_t` and gave a two-int struct a 64-bit
+> range), matches `size_t` by exact name rather than substring, and returns `0-1` for `bool` to match
+> `PRIMITIVES` (the test pinning `NA` was wrong and was updated). Ranges are deliberately NOT stored per
+> parameter in `functions.json`: parameters are collected before the CSV merge, so baking them would
+> break `--data-dictionary` override — see [§9 Where a data range comes from](#where-a-data-range-comes-from-precedence-2026-08-03).
+> Full suite incl. pipeline: 698 passed / 3 skipped, snapshot unchanged. SH-4 closed; only the array
+> case (`int[6]` → `NA`) remains open.)
+
 > Updated: 2026-08-03b (**root cause of the `NA` Data Range column: typedefs never recorded what they
 > alias.** `parser.visit_type_definitions` read `cursor.type.spelling` on a `TYPEDEF_DECL`, which is the
 > typedef type *itself* — so `typedef int UNIT;` stored `underlyingType: "UNIT"` and every typedef came
@@ -1632,6 +1646,33 @@ elaborated `"enum Mode_t"` would miss.
 `get_range_for_type(qn)` — its `underlyingType` is the type's own *name*, so deriving a
 range from it reads a range out of a type name (`"size_t" in "Size_t"` stamped
 `0-0xFFFFFFFFFFFFFFFF` on a `{int width; int height;}` struct).
+
+### Where a data range comes from (precedence, 2026-08-03)
+
+Highest wins. The order is enforced by *when* each source runs in Phase 1, not by
+branching logic:
+
+1. **External CSV** — merged last (`_merge_external_data_dictionary`), so it overrides
+   everything. This is why ranges must NOT be frozen onto each parameter in
+   `functions.json`: parameters are collected before the merge, and a baked parameter
+   range would make `--data-dictionary` unable to override anything.
+2. **libclang** — `_range_from_clang_type(ctype)`: `get_canonical()` walks the typedef
+   chain to the real builtin, `get_size()` gives its width **for the parsed target**
+   (`long` = 4 bytes on Windows, 8 on Linux — the table below cannot express that).
+   `VOID` for void, `0-1` for bool, `NA` for structs/enums/pointers/floats.
+   `_register_builtin_range(ctype)` runs for every parameter / return type / global /
+   field and records the range under the type's **canonical** spelling
+   (`unsigned char`, `long`) — never the written spelling, which would let a `UINT8`
+   parameter overwrite the `UINT8` *typedef* entry with a primitive one and lose the
+   location the unit header table needs. It also refuses to shadow a non-primitive.
+3. **`PRIMITIVES` table** — seeded with `setdefault` (not assignment), so it fills gaps
+   without overwriting a measured value.
+4. **`get_range_for_type(name)`** — last resort for CSV-authored or unparsed types.
+5. `NA`.
+
+Consequence: the **dataDictionary is the single registry**; views keep resolving by type
+name (`get_range(p["type"], dd)`) and need no libclang, no schema change, and no
+`functions.json` churn.
 
 Tests: `tests/unit/test_typedef_underlying.py`.
 - Special pattern: `_maybe_add_typedef_for_struct` adds a typedef entry when

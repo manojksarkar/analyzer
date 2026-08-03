@@ -10,7 +10,7 @@
 | SH-1 | Requirements / Linked Work Items source (Polarion / SWE.1) | input | blocked | SWE2 + SWE4 |
 | SH-2 | Same group/component name reused across layers collides (needs layer-qualified identity) | issue | open | — |
 | SH-3 | Gate updated data dictionary + integrate for correctness | enhance | open | engine/config/data_dictionary.csv |
-| SH-4 | Derive primitive ranges from libclang (`type.get_canonical()` kind + `get_size()`) instead of the hand-kept name table in `get_range_for_type`; the table hardcodes `long` as 32-bit and cannot see the target triple. Needs the range stored per parameter/return/global at parse time, since views have no libclang | enhance | open | engine/utils.py, engine/parser.py |
+| SH-4 | Array data range: an `int[6]` global reports `NA` (an array's range is not one interval — needs a rule, e.g. element range + length) | enhance | open | engine/utils.py |
 
 ## SWE.3 — detailed design
 | ID | Item | Type | Status | Ref |
