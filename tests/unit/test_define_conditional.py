@@ -34,8 +34,14 @@ def parser_mod():
         shutil.rmtree(base, ignore_errors=True)
         sys.argv = old_argv
         pytest.skip(f"parser/libclang unavailable: {e}")
+    # argv is only read on the FIRST import; if another test module imported parser
+    # first, MODULE_BASE_PATH still points at that module's base and `_scan_defines`
+    # would walk the wrong tree. Pin it (and restore it) so the order doesn't matter.
+    saved_base = P.MODULE_BASE_PATH
+    P.MODULE_BASE_PATH = base
     P._TEST_BASE = base
     yield P
+    P.MODULE_BASE_PATH = saved_base
     sys.argv = old_argv
     shutil.rmtree(base, ignore_errors=True)
 

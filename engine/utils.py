@@ -505,18 +505,44 @@ def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
     entry = dd.get(base) or dd.get(base_lower)
     if entry:
         r = entry.get("range")
-        if r:
+        if r and r != "NA":
             return r
+        # A typedef's own `range` is baked at parse time by get_range_for_type(), which
+        # never sees the data dictionary — so an alias of a project type is stored as
+        # "NA" even when the underlying type has a range (e.g. supplied later by the
+        # external CSV). Treat that "NA" as "unknown, keep looking" and resolve the
+        # alias chain here, at lookup time, when the dictionary is complete.
         if entry.get("kind") == "typedef" and _depth < 10:
             underlying = entry.get("underlyingType", "")
-            return get_range(underlying, dd, _depth + 1) if underlying else "NA"
-    # Search by qualifiedName
+            # `underlying == base` is the self-referential alias the parser emits for
+            # `typedef struct { ... } Name;` (underlyingType is the type's own name);
+            # recursing on it only burns depth.
+            if underlying and underlying != base:
+                resolved = get_range(underlying, dd, _depth + 1)
+                if resolved and resolved != "NA":
+                    return resolved
+        # Nothing better found: the entry's own "NA" is the answer. Falling through to
+        # the qualifiedName scan here would let a *sibling* entry sharing this
+        # qualifiedName win (parser emits both `Name` and `typedef@Name:file:line`),
+        # which can surface a wrong range for the type actually asked about.
+        if r:
+            return r
+    # Search by qualifiedName — same precedence as the direct lookup above: a usable
+    # range wins, else resolve the alias, else fall back to this entry's own "NA"
+    # (first match still wins, so which entry answers does not change).
     for ent in dd.values():
         if ent.get("qualifiedName") == base or ent.get("qualifiedName", "").lower() == base_lower:
             r = ent.get("range")
-            if r:
+            if r and r != "NA":
                 return r
             if ent.get("kind") == "typedef" and _depth < 10:
                 underlying = ent.get("underlyingType", "")
-                return get_range(underlying, dd, _depth + 1) if underlying else "NA"
+                if underlying and underlying != base:
+                    resolved = get_range(underlying, dd, _depth + 1)
+                    if resolved and resolved != "NA":
+                        return resolved
+                return r if r else "NA"
+            if r:
+                return r
+            # No usable range on this match: keep scanning (a later entry may carry one).
     return get_range_for_type(type_str)

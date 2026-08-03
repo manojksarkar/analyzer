@@ -295,3 +295,102 @@ class TestGetRange:
 
     def test_unknown_type_not_in_dict_returns_na(self):
         assert get_range("SomeUnknownType", {"Other": {"range": "0-1"}}) == "NA"
+
+
+class TestGetRangeBakedNA:
+    """A typedef's own `range` is computed at parse time by get_range_for_type(), which
+    never consults the data dictionary — so an alias of a project type is stored as
+    "NA". These lock in that a baked "NA" does not block alias resolution, while an
+    entry that really has no better answer still reports "NA"."""
+
+    def test_baked_na_typedef_resolves_to_underlying(self):
+        """The external-CSV case: the alias was parsed as NA, the base type got a range
+        from the CSV — the alias must pick it up."""
+        dd = {
+            "MotorSpeed_t": {"kind": "typedef", "underlyingType": "Foo_t", "range": "NA"},
+            "Foo_t": {"kind": "typedef", "underlyingType": "", "range": "0-3000"},
+        }
+        assert get_range("MotorSpeed_t", dd) == "0-3000"
+
+    def test_baked_na_chain_resolves_through_two_aliases(self):
+        dd = {
+            "Outer": {"kind": "typedef", "underlyingType": "Inner", "range": "NA"},
+            "Inner": {"kind": "typedef", "underlyingType": "uint16_t", "range": "NA"},
+        }
+        assert get_range("Outer", dd) == "0-0xFFFF"
+
+    def test_real_range_still_wins_over_underlying(self):
+        dd = {
+            "MyType": {"kind": "typedef", "underlyingType": "uint8_t", "range": "0-10"},
+        }
+        assert get_range("MyType", dd) == "0-10"
+
+    def test_unresolvable_alias_still_reports_na(self):
+        dd = {"MyType": {"kind": "typedef", "underlyingType": "Mystery", "range": "NA"}}
+        assert get_range("MyType", dd) == "NA"
+
+    def test_self_referential_typedef_returns_na(self):
+        """`typedef struct { ... } Name;` makes the parser store underlyingType == the
+        type's own name. Resolving it must terminate, not recurse."""
+        dd = {"UINT8": {"kind": "typedef", "name": "UINT8", "qualifiedName": "UINT8",
+                        "underlyingType": "UINT8", "range": "NA"}}
+        assert get_range("UINT8", dd) == "NA"
+
+    def test_self_referential_typedef_uses_no_depth(self):
+        """The self-reference guard must not consume the depth budget, or a legitimate
+        alias pointing at a self-referential type would stop resolving."""
+        dd = {
+            "Alias": {"kind": "typedef", "underlyingType": "Self", "range": "NA"},
+            "Self": {"kind": "typedef", "qualifiedName": "Self",
+                     "underlyingType": "Self", "range": "NA"},
+        }
+        assert get_range("Alias", dd) == "NA"
+
+    def test_struct_na_not_overridden_by_sibling_alias_entry(self):
+        """Regression (Sample `Size_t`): the parser emits both `Name` (the struct) and
+        `typedef@Name:file:line`, which share a qualifiedName. The sibling's range is
+        baked by a fuzzy get_range_for_type() substring match ("size_t" in "Size_t"),
+        so it must never override the struct actually asked about."""
+        dd = {
+            "Size_t": {"kind": "struct", "name": "Size_t", "qualifiedName": "Size_t",
+                       "range": "NA"},
+            "typedef@Size_t:Layer1/Types/PointRect.h:16": {
+                "kind": "typedef", "name": "Size_t", "qualifiedName": "Size_t",
+                "underlyingType": "Size_t", "range": "0-0xFFFFFFFFFFFFFFFF"},
+        }
+        assert get_range("Size_t", dd) == "NA"
+
+    def test_struct_with_csv_supplied_range_wins(self):
+        """External CSV setting a real range on a struct is still honoured."""
+        dd = {"GG": {"kind": "struct", "qualifiedName": "GG", "range": "0-100"}}
+        assert get_range("GG", dd) == "0-100"
+
+    def test_missing_range_key_still_resolves_underlying(self):
+        """Entries written before ranges were baked have no `range` key at all."""
+        dd = {
+            "Legacy_t": {"kind": "typedef", "underlyingType": "uint32_t"},
+        }
+        assert get_range("Legacy_t", dd) == "0-0xFFFFFFFF"
+
+    def test_define_entry_without_range_falls_back_to_primitive_table(self):
+        """`kind=define` entries carry no `range` key; a type sharing that name must
+        still fall through to the built-in table."""
+        dd = {"uint8_t": {"kind": "define", "name": "uint8_t", "value": "1"}}
+        assert get_range("uint8_t", dd) == "0-0xFF"
+
+    def test_void_primitive_entry_preserved(self):
+        dd = {"void": {"kind": "primitive", "range": "VOID"}}
+        assert get_range("void", dd) == "VOID"
+
+    def test_pointer_to_na_alias_resolves_via_underlying(self):
+        dd = {
+            "Handle_t": {"kind": "typedef", "underlyingType": "uint32_t", "range": "NA"},
+        }
+        assert get_range("Handle_t *", dd) == "0-0xFFFFFFFF"
+
+    def test_qualified_name_alias_with_baked_na(self):
+        dd = {
+            "k1": {"kind": "typedef", "qualifiedName": "Mod::Speed_t",
+                   "underlyingType": "uint16_t", "range": "NA"},
+        }
+        assert get_range("Mod::Speed_t", dd) == "0-0xFFFF"
