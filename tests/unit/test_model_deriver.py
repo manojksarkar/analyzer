@@ -304,3 +304,84 @@ class TestEnrichInterfaces:
         assert "123" not in iid
         # Project segment is "MYPROJECT" (underscores and digits stripped by _id_seg)
         assert "MYPROJECT" in iid
+
+
+# ---------------------------------------------------------------------------
+# _build_interface_index — numbering is keyed by UNIT, not by file
+# ---------------------------------------------------------------------------
+
+class TestInterfaceIndexUnitKeyed:
+    """A unit collapses core.h + core.cpp (make_unit_key strips the extension) and
+    the interface ID carries the UNIT name. Numbering therefore has to be per unit:
+    per-file numbering restarted at 01 in each half and emitted duplicate IDs."""
+
+    def setup_method(self):
+        init_component_mapping({
+            "layers": {
+                "Layer1": {"path": "Layer1", "groups": {"Sample": {"Core": "Sample/Core"}}}
+            }
+        })
+
+    def teardown_method(self):
+        init_component_mapping(utils._CONFIG_CACHE)
+
+    def _fn(self, rel_file, line, called_by=None):
+        return {
+            "location": {"file": rel_file, "line": line},
+            "params": [],
+            "parameters": [],
+            "returnType": "int",
+            "calledByIds": called_by or [],
+        }
+
+    def _split_unit(self):
+        """Two public functions in one unit: one in core.cpp, one inline in core.h.
+        Each is called from another file, so both are public (IF_)."""
+        cpp = "Layer1/Sample/Core/core.cpp"
+        hdr = "Layer1/Sample/Core/core.h"
+        ext = "Layer1/Sample/Core/other.cpp"
+        return {
+            "Core|core|fromCpp|": self._fn(cpp, 10, ["Core|other|caller|"]),
+            "Core|core|fromHdr|": self._fn(hdr, 20, ["Core|other|caller|"]),
+            "Core|other|caller|": self._fn(ext, 5),
+        }
+
+    def test_ids_unique_across_h_and_cpp_of_one_unit(self):
+        fns = self._split_unit()
+        idx = _build_interface_index("", fns, {})
+        _enrich_interfaces("", "Proj", fns, {}, idx)
+        ids = [f["interfaceId"] for f in fns.values()]
+        assert len(ids) == len(set(ids)), f"duplicate interfaceId: {ids}"
+
+    def test_header_entity_numbered_after_cpp(self):
+        # Deterministic order is (file, line): core.cpp sorts before core.h, so the
+        # .cpp keeps 01 and the header entry appends after it.
+        fns = self._split_unit()
+        idx = _build_interface_index("", fns, {})
+        assert idx["Core|core|fromCpp|"] == 1
+        assert idx["Core|core|fromHdr|"] == 2
+
+    def test_global_in_header_does_not_collide_with_cpp_function(self):
+        # The original defect: PIF_..._01 shared by a .cpp function and a header global.
+        fns = {"Core|core|helper|": self._fn("Layer1/Sample/Core/core.cpp", 10)}
+        glbs = {
+            "Core|core|g_hdr|": {
+                "location": {"file": "Layer1/Sample/Core/core.h", "line": 3},
+                "visibility": "private",
+            }
+        }
+        idx = _build_interface_index("", fns, glbs)
+        _enrich_interfaces("", "Proj", fns, glbs, idx)
+        assert fns["Core|core|helper|"]["interfaceId"] != glbs["Core|core|g_hdr|"]["interfaceId"]
+
+    def test_single_file_unit_numbering_unchanged(self):
+        # Guard the blast radius: a unit living in one file must number exactly as
+        # before (1..N by line), so existing IDs do not churn.
+        cpp = "Layer1/Sample/Core/core.cpp"
+        fns = {
+            "Core|core|c|": self._fn(cpp, 30),
+            "Core|core|a|": self._fn(cpp, 10),
+            "Core|core|b|": self._fn(cpp, 20),
+        }
+        idx = _build_interface_index("", fns, {})
+        assert (idx["Core|core|a|"], idx["Core|core|b|"], idx["Core|core|c|"]) == (1, 2, 3)

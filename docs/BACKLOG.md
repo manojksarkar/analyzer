@@ -19,6 +19,7 @@
 | S3-3 | Flowchart: bending / overlapping edges | issue | open | 3.9 |
 | S3-4 | Dynamic-behaviour issue | issue | blocked | 3.10 (repro) |
 | S3-5 | Header inline fn (sibling `.cpp` exists) shows in interface table but gets no flowchart | issue | open | PROJECT_CONTEXT.md |
+| S3-6 | Flowchart Layer-2 test stale: `_count_mermaid_shapes` counts Mermaid syntax but output is DOT; dormant (opt-in `--out-dir`) → port to count DOT `shape=` | debt | open | tests/unit/test_cfg_topo.py |
 
 ## SWE.4 — unit test spec
 | ID | Item | Type | Status | Ref |

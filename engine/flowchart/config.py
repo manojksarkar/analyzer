@@ -31,6 +31,12 @@ class EngineConfig:
     # Optional: path to project_knowledge.json built by project_scanner.py
     knowledge_json_path: Optional[str] = None
 
+    # Optional: path to model/tu_includes.json (TU -> included project headers).
+    # Used to resolve functions DEFINED in a header that does not parse
+    # standalone (its macros/types come from an include the .cpp pulls in
+    # first): the engine retries cursor resolution inside a TU that includes it.
+    tu_includes_json_path: Optional[str] = None
+
     # LLM call settings
     llm_timeout: int = 120
     llm_max_retries: int = 2

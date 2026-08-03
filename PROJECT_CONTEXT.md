@@ -48,6 +48,72 @@
 >   is off) and relaxed the interface-id regex to allow the alphanumeric layer segment (`LAYER1`).
 >   Regenerated `tests/snapshots/Sample/{interface_tables,unit_diagrams}.json`. Full suite: **627
 >   passed, 4 skipped, 0 failed** (`pytest --skip-pipeline`). No engine code changed.
+> - **2026-07-27 — flowcharts now render with Graphviz, not Mermaid (branch `fix/flowchart-issue`):**
+>   the Phase-3 flowchart engine emits a **Graphviz DOT** script instead of Mermaid.
+>   `engine/flowchart/dot_builder.py::build_dot(cfg)` replaces `build_mermaid(cfg)` at the
+>   `_process_function` step (`FlowchartResult.mermaid_script` field kept for schema compat but now
+>   holds DOT; `validate_mermaid` call dropped). Motivation: two client asks — **Return/End must sit at
+>   the bottom** and **no crossing back-edge lines**. `dot_builder` runs a loop-aware pass
+>   (`_analyze_loops`): **DFS-based back-edge detection** (NOT insertion order — the builder emits `End`
+>   as N2 early, so a source-order test mis-flags every `return→End`), natural-loop bodies via reverse
+>   reachability, then (a) invisible `tail→exit` push-down edges anchor Return/End below the loop body,
+>   (b) back-edges get `constraint=false,headport=e` and the loop-exit branch `tailport=w,headport=w` so
+>   the two run in separate lanes. Loop-free functions are a no-op. **Rendering:** new
+>   `engine/config/render_dot.mjs` (viz-js DOT→SVG + full `puppeteer` SVG→PNG, auto-locates Chromium) +
+>   `engine.utils.render_dot_cached` (content-addressed `.dot_cache`, mirrors `render_mermaid_cached`);
+>   `views/flowcharts.py` calls it instead of `mmdc` and now guards on `node` availability. **Scope =
+>   PNG/DOCX pipeline only** — behaviour/unit diagrams still use Mermaid (`render_mermaid_cached`/`mmdc`
+>   untouched); the **web-app still renders the `mermaid` string client-side, so its in-app flowchart
+>   view is NOT yet ported to DOT** (open follow-up). Verified e2e via the engine CLI on `SampleCppProject`
+>   (`--no-llm`): 123 ✓ / 1 ✗ (pre-existing `_SOME_FUNCTION` cursor-resolve failure in `VoidAsVar.cpp`),
+>   JSON carries `digraph`, PNGs render with Return/End at the bottom and no crossings.
+>   **Reproducibility fixes (same day):** `package.json` now declares `@viz-js/viz` + `puppeteer` as real
+>   `dependencies` (previously only transitive/manual → a fresh `npm ci` would miss viz-js and break the
+>   renderer); lockfile synced offline. New **`tools/doctor.py`** prerequisite checker: probes each dep
+>   **local→global in the pipeline's real resolution order** (python+pkgs, node, `@viz-js/viz`, puppeteer,
+>   the Chromium puppeteer launches, `mmdc`, libclang via `LIBCLANG_PATH`→`config.json`→pip-bundled),
+>   reports which location satisfied each, exits non-zero on missing REQUIRED. `run.py` calls
+>   `doctor.preflight(need_flowchart, need_mermaid)` before `plan_runs` — **view-gated** (parse-only runs
+>   aren't blocked by a missing browser/mmdc; flowchart views require viz+chromium, mermaid views require
+>   mmdc+chromium), wrapped so the check itself can never abort a run. **Offline:** render path is fully
+>   local at runtime (bundled viz-js WASM + already-cached Chromium); internet only at `npm ci`/install.
+> - **2026-07-28 — flowchart engine console output cleaned up (branch `fix/flowchart-issue`):**
+>   `flowchart_engine.py` now prints a **global `[idx/total] Processing: <name>` progress counter**
+>   (running across all source files, denominator = `non_header`) so a run's progress is visible like the
+>   PNG renderer's `[x/n]` (`tools/render_flowchart_pngs.py`). **Duplicate-log + stray-DEBUG bug fixed:**
+>   the module-top `logging.basicConfig(...)` installed a second, level-less root handler that both
+>   double-printed every line and leaked DEBUG to the console once `configure_logging` lowered the root
+>   level to DEBUG; removed it (single config point = `core.logging_setup.configure_logging`, with a
+>   `basicConfig` fallback moved **inside** the `except` branch for when the import fails). **Levels
+>   right-sized:** startup banner/paths, LLM config banner, `Project:`/`Loaded N`, `── File:` headers,
+>   no-llm/knowledge/budget notes, and per-function `✓ OK: N chars` are now **DEBUG (file-only)**; console
+>   keeps the `Processing N function(s)` summary (now also counted from `non_header`, so it matches the
+>   `[x/n]` denominator), the progress counter, and the final `Done. ✓ N ✗ N` line. Full detail still lands
+>   in `logs/run_YYYYMMDD.log`. Log-output only — no CFG/structure change, determinism tests unaffected.
+> - **2026-07-29 — flowchart node labels are word-wrapped (branch `fix/flowchart-issue`):** long
+>   single-line labels made Graphviz size nodes very **wide** (height fixed) — DECISION diamonds, which
+>   inscribe their text, sprawled worst. New `dot_builder._wrap_label(text, width=26)` greedily wraps a
+>   label to ≤ `_LABEL_WRAP_WIDTH` chars/line, **breaking ONLY at spaces** (per user pref) and inserting
+>   only newlines — identifiers are **never** split mid-word (a lone token longer than width keeps its own
+>   over-wide line rather than a misleading hard cut). Applied in `_node_def` before `_escape`. Long **LLM
+>   phrases** (spaced) wrap cleanly; the **no-LLM raw-identifier fallback** degrades gracefully (a 50-char
+>   identifier with no space stays whole → that node is still wide, but 2 lines tall not 1). Label-only,
+>   pure string transform — no node/edge/shape change, CFG/topo + shape-count determinism tests unaffected
+>   (17 unit tests pass; no test asserts on label text). Width `26` is the tunable knob. Verified via a
+>   long-identifier fixture render. **Also removed `splines=ortho`** from `_GRAPH_ATTRS` (same session, per
+>   user): edges now use Graphviz's default **curved splines** (diagonal/curved) instead of right-angle
+>   orthogonal routing — more compact, loop back-edges curve naturally. This **reverses** the 2026-07-27
+>   "corner-routed / no crossing back-edges" client ask; the loop-anchor machinery (`constraint=false`
+>   back-edges + invisible push-down edges) is kept and still works. Stale ortho comments in `dot_builder`
+>   updated. `nodesep=1.5`/`ranksep=0.9` retained (could be lowered now that ortho no longer cuts through
+>   nodes). **Docs synced to the DOT reality** (were still Mermaid-framed from before the 2026-07-27 switch):
+>   `engine/flowchart/README.md` + `FLOW.md` (render step, module map, examples, testing section) and the
+>   `engine-flowchart` SKILL. **One debt item filed** (`docs/BACKLOG.md` S3-6): the flowchart **Layer-2
+>   test is stale** — `_count_mermaid_shapes` (`tests/unit/test_cfg_topo.py`) parses Mermaid syntax but the
+>   persisted `flowchart` is DOT; it's opt-in via `--out-dir` so **dormant in CI** (Layer-1 CFG/topo still
+>   runs). Also noted (not backlogged — cosmetic only): the flowchart `mermaid/` package is now **partly
+>   legacy** (`build_mermaid`/`validate_mermaid` dead; `validate_cfg` + `normalize_edge_label` still used by
+>   `dot_builder`). Project-wide Mermaid is unaffected — behaviour + unit/header diagrams still render via Mermaid/mmdc.
 > - **⚠ Merge state:** 3.1/3.2/3.4/3.5/3.6/3.7 landed on feature branches with **PRs
 >   pending into `poc-4`** (not merged); 3.14/3.15/3.17/3.18 are on `v1-fixes-more`. The
 >   detailed per-branch bullets below are retained as the record of where each fix lives
@@ -2434,21 +2500,106 @@ auto-formatters have reverted this fix in the past. After any change to
 [engine/flowchart/ast_engine/cfg_builder.py](engine/flowchart/ast_engine/cfg_builder.py),
 re-run `python engine/flowchart/tests/diagnose_assert.py`.
 
-### Risk 5 — header inline function appears in interface table but gets no flowchart (backlog X5)
+### Risk 5 — header inline function appears in interface table but gets no flowchart — RESOLVED 2026-07-31 (first attempt reverted; see "Why the first fix was reverted")
 
-Unit keys strip the extension ([utils.py `_path_to_component_unit`](engine/utils.py#L238)), so
-`Foo.h` and `Foo.cpp` collapse into one unit; `_build_units_components`
-([model_deriver.py:252](engine/model_deriver.py#L252)) processes `.cpp` first (creates the unit with
-`fileName="Foo.cpp"`) then *appends* the header's `functionIds`. The interface table renders any
-`.cpp` unit's functions without checking each function's own file
-([interface_tables.py:43](engine/views/interface_tables.py#L43)), so a public inline function
-defined in `Foo.h` gets a row. But the flowchart engine drops every header-defined function
-([flowchart_engine.py:510](engine/flowchart/flowchart_engine.py#L510)) — result: an interface row
-with a description but no flowchart figure. Only bites header inline fns that have a same-named
-sibling `.cpp`; a standalone header (no sibling `.cpp`, e.g. `SignalInline.h`) is a pure-header unit
-skipped entirely by the interface table (consistent), and an `inline` fn defined in a `.cpp` gets
-both (consistent). Fix direction: either skip header-defined fns in the interface table, or emit a
-signature-only fallback flowchart for them.
+**Symptom:** a public inline function defined in a header (e.g. `Foo.h`) showed an interface row /
+section header with a description but **no flowchart figure** ("header but no table"). Unit keys
+strip the extension ([utils.py `_path_to_component_unit`](engine/utils.py#L238)) so `Foo.h`+`Foo.cpp`
+collapse into one unit and the interface table renders the header fn's row
+([interface_tables.py:43](engine/views/interface_tables.py#L43)), but the flowchart engine
+**dropped every header-defined function** via a blanket file-extension filter (`_is_header_file`).
+
+**Root cause + fix (flowchart engine only):** the drop keyed on the wrong thing — file extension.
+The correct criterion is "has a body." `functions.json` only ever holds **definitions** (parser's
+`visit_definitions` is guarded by `cursor.is_definition()`, so the `declarationOnly` branch at
+[parser.py:873](engine/parser.py#L873) is **dead code — never emitted**; verified 0 across all
+functions), *plus* one no-body category: `syntheticFromVarDecl` (var-decls parsed as pseudo-functions,
+e.g. a macro-obscured `UNIT _f(arg);`). Fix: `FunctionEntry` gained `synthetic_from_var_decl` (plumbed
+through `pkb/builder.py` build/to_dict/from_dict); `flowchart_engine.run()` now skips only
+`synthetic_from_var_decl` entries and processes everything else — **including header-defined inline
+functions**, which libclang parses fine as their own TUs (3.2 already parses headers as TUs). Verified:
+`signalGain` (`SignalInline.h`) now emits a real CFG/DOT; `_SOME_FUNCTION` (synthetic) is cleanly
+skipped (previously an empty/error entry); `.cpp` inline fns unchanged (the old filter never touched
+them). **Follow-up (engine-dev):** the dead `declarationOnly` branch in `parser.py` can be removed or
+its guard relaxed — out of the flowchart engine's scope.
+
+#### Why the first fix was reverted — output-filename collision (2026-07-30 → re-fixed 2026-07-31)
+
+`fa42e6b` (drop the header filter) was reverted by `1a59190` because it made **functions declared
+`extern` in a header and defined in the `.cpp` disappear** from the document. Root cause is NOT the
+header filter — it is [output/writer.py:44-45](engine/flowchart/output/writer.py#L44-L45), which names
+each output `Path(source_file).stem + ".json"` with the **extension stripped**, while `run()` grouped
+by full path. `Foo.h` and `Foo.cpp` therefore became two `FileResult`s that both wrote `Foo.json`, and
+`sorted(by_file.items())` puts `.h` last (`'c' < 'h'`) → **the header write clobbered every `.cpp`
+flowchart in that unit**. Invisible while headers were filtered out; guaranteed the moment they weren't.
+
+**Fix (2026-07-31, flowchart engine only):** keep the `synthetic_from_var_decl` filter from `fa42e6b`
+*and* group by **output stem** rather than path, so `Foo.h` + `Foo.cpp` merge into one `FileResult` →
+one `Foo.json` holding both. `FileResult.source_file` = first non-header path in the group (`.cpp`
+still named in `_summary.json`); entries sorted by `(file, line)` for determinism. Stem grouping also
+matches the rest of the pipeline, which already collapses `Foo.h`+`Foo.cpp` into one unit
+([utils.py `_path_to_component_unit`](engine/utils.py#L238)) and whose incremental path
+([views/flowcharts.py `_apply_incremental_plan`](engine/views/flowcharts.py#L150)) already assumes one
+JSON per stem. Side benefit: two same-stem `.cpp`s in different components now merge instead of one
+silently overwriting the other.
+
+#### Follow-up — "Could not resolve cursor" for header-defined functions (2026-08-02)
+
+Once headers stopped being skipped, real projects surfaced a second failure:
+`Could not resolve cursor for '<fn>' in <path>.h:<line>`. Cause: `_process_function` parses the
+function's **own file** as the TU ([flowchart_engine.py:270-271](engine/flowchart/flowchart_engine.py#L270-L271)),
+so a header that is **not self-contained** (macros/types supplied by an include the `.cpp` pulls in
+first — `#include "cfg.h"` then `#include "foo.h"`) is a syntax error when parsed alone and yields no
+cursor. Phase 1 is immune because it captures the function from the **`.cpp` TU**; headers-as-TUs is
+only its additive fallback.
+
+**Fix:** on resolution failure, retry inside a TU that **includes** the header. Phase 1 already writes
+`model/tu_includes.json` (TU → included project headers); `_build_including_tus` reverses it (same-stem
+`.cpp` first, then sorted — deterministic), `views/flowcharts.py` passes `--tu-includes`, and
+`EngineConfig.tu_includes_json_path` carries it. `abs_path` stays the header — only the TU changes,
+since the cursor still reports the header as its location. Purely additive: self-contained headers
+still resolve on the first try. Failure messages now append the real clang diagnostics
+(`_parse_error_hint`). Repro'd + verified on a `SIG_API`/`SIG_VAL`-macro header fixture: before =
+`✗ 1` with the cursor error, after = `Resolved 'clampSignal' via including TU …/SignalDriver.cpp`,
+`✓ 5 ✗ 0`, CFG identical to the self-contained case.
+
+**A/B verified** on a two-function fixture (`Foo.h` = `extern int fooMain(int);` + inline `fooInline`;
+`Foo.cpp` = `fooMain`): path-grouping wrote `Foo.json` twice and left only `fooInline`; stem-grouping
+writes once with **both** `fooMain` and `fooInline`. Full sample run: 124 ✓ / 1 ✗ across 21 units with
+`SignalInline.json` (`signalGain`, header-only) now emitted. `pytest --skip-pipeline`: 631 passed, 0 failed.
+
+### Risk 6 — duplicate interfaceId when a unit spans .h and .cpp — RESOLVED 2026-08-03
+
+**Symptom:** two different public interfaces in one unit carry the **same** interface ID, e.g.
+`IF_LAYER1_SIGNAL_SIGNAL_01` on both `normalize` (`Signal.cpp`) and `clampSignal` (`Signal.h`).
+Duplicate IDs break traceability in an ASPICE deliverable.
+
+**Root cause:** mismatch between what the ID *encodes* and what the counter is *keyed by*. The ID
+string carries the **unit** — `make_unit_key(rel)` strips the extension, so `Foo.h` and `Foo.cpp`
+collapse to one unit ([model_deriver.py:385-387](engine/model_deriver.py#L385-L387)) — but
+`_build_interface_index` bucketed **by file** and restarted `idx = 1` for each, so both halves of a
+`.h`+`.cpp` unit numbered from 01.
+
+**Pre-existing, not caused by the header-flowchart work** (Risk 5): the pristine sample model already
+carried one — `PIF_LAYER1_FULL_READWRITE_01` shared by `writeGlobal` (`ReadWrite.cpp`) and
+`g_hdrGlobal` (`ReadWrite.h`). Header-defined *functions* simply never reached the document before, so
+the collision was rare; once they did, it became routine.
+
+**Fix:** bucket by unit, not by file. `_unit_of(data, base_path)` derives the same `component|unit`
+key the ID uses; `_iface_sort_key` orders within a bucket by `(file, line)` since a bucket can now
+span two files. Buckets renamed `*_by_file` → `*_by_unit`, `all_files` → `all_units`. `.cpp` sorts
+before `.h` (`'c' < 'h'`), so **existing `.cpp` numbering is preserved and header entries append
+after it** — chosen deliberately to minimise churn on IDs that may already be in delivered documents.
+
+**Blast radius measured, not assumed:** re-deriving the sample changed **1 interfaceId out of 139** —
+`g_hdrGlobal` `PIF_..._01` → `PIF_..._06`, exactly the colliding entity. Every other ID byte-identical
+(`writeGlobal` keeps `_01`). Duplicates 1 → 0. A unit living in one file numbers exactly as before,
+because bucketing by unit then equals bucketing by file and the sort collapses to `line`.
+
+**Regression tests:** `tests/unit/test_model_deriver.py::TestInterfaceIndexUnitKeyed` — uniqueness
+across `.h`+`.cpp`, header-numbered-after-cpp, header-global vs cpp-function collision (the original
+defect), and single-file numbering unchanged (the churn guard). Verified meaningful: 3 of the 4 fail
+against the pre-fix code; the churn guard passes on both by design.
 
 ### Pre-V1 correctness batch (targets V1; numbered 3.1–3.19 internally — status in git/PR history + the `> Updated:` log above)
 

@@ -153,6 +153,80 @@ def safe_filename(s: str) -> str:
     return re.sub(r'[<>:"/\\|?*,&;]', "_", (s or "").replace(" ", "-"))
 
 
+# Content-addressed Graphviz(DOT)->PNG cache. Flowcharts are rendered with
+# Graphviz (viz-js -> SVG -> puppeteer PNG) instead of Mermaid; the render is the
+# slow primitive, so identical diagrams are rendered once and reused.
+_DOT_CACHE_DIR = ".dot_cache"
+
+
+def dot_cache_key(dot: str, *, scale=None) -> str:
+    import hashlib
+    src = f"{dot or ''}|scale={scale}"
+    return hashlib.sha256(src.encode("utf-8")).hexdigest()
+
+
+def _run_dot_render(project_root: str, dot: str, png_path: str, *,
+                    scale=2, timeout: int = 90) -> bool:
+    """Invoke engine/config/render_dot.mjs on `dot` -> png_path (writes a temp
+    .dot it cleans up). Returns True iff png_path exists afterward. The single
+    place that shells out to the Node DOT renderer."""
+    import subprocess
+    import tempfile
+    script = os.path.join(project_root, "engine", "config", "render_dot.mjs")
+    if not os.path.isfile(script):
+        return False
+    out_dir = os.path.dirname(png_path) or "."
+    os.makedirs(out_dir, exist_ok=True)
+    fd, dot_path = tempfile.mkstemp(suffix=".dot", dir=out_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(dot or "")
+        cmd = ["node", script, dot_path, png_path, str(scale)]
+        try:
+            if os_type == "Windows":
+                r = subprocess.run(cmd, capture_output=True, text=True,
+                                   timeout=timeout, check=False, shell=True)
+            else:
+                r = subprocess.run(cmd, capture_output=True, text=True,
+                                   timeout=timeout, check=False)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return False
+        return r.returncode == 0 and os.path.isfile(png_path)
+    finally:
+        try:
+            os.remove(dot_path)
+        except OSError:
+            pass
+
+
+def render_dot_cached(project_root: str, dot: str, png_path: str, *,
+                      scale=2, timeout: int = 90) -> bool:
+    """Render a Graphviz DOT script to png_path, reusing a content-addressed PNG
+    cache so an identical diagram is only ever rendered once. Returns True iff
+    png_path exists afterward. Any cache error degrades gracefully to a direct
+    render (never breaks a build)."""
+    import shutil
+    cache_dir = os.path.join(project_root, _DOT_CACHE_DIR)
+    cache_png = os.path.join(cache_dir, dot_cache_key(dot, scale=scale) + ".png")
+    os.makedirs(os.path.dirname(png_path) or ".", exist_ok=True)
+    if os.path.isfile(cache_png):                     # hit -> copy out, no render
+        try:
+            shutil.copyfile(cache_png, png_path)
+            return True
+        except OSError:
+            pass                                       # fall through to a real render
+    ok = _run_dot_render(project_root, dot, png_path, scale=scale, timeout=timeout)
+    if ok:                                             # populate the cache (best-effort, atomic)
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+            tmp = cache_png + ".tmp"
+            shutil.copyfile(png_path, tmp)
+            os.replace(tmp, cache_png)
+        except OSError:
+            pass
+    return ok
+
+
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)

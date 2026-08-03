@@ -1,23 +1,23 @@
 # Flowchart Engine
 
-Generates Mermaid flowcharts from C++ source code using libclang for static analysis and a local LLM (Ollama) for human-readable labels.
+Generates Graphviz **DOT** flowcharts from C++ source code using libclang for static analysis and a local LLM (Ollama) for human-readable labels.
 
 > See also [FLOW.md](FLOW.md) — the complete end-to-end analyzer pipeline flow reference (`run.py` → phases → DOCX).
 
-Given a C++ function, it produces a flowchart like this:
+Given a C++ function, it produces a DOT flowchart like this:
 
 ```
-int classify(int x) {        flowchart TD
-    if (x > 0)                   START([Start: classify])
-        return 1;                START --> DECISION
-    else                         DECISION{Is x positive?}
-        return -1;               DECISION -->|Yes| RET1
-}                                DECISION -->|No|  RET2
-                                 RET1[Return positive result]
-                                 RET2[Return negative result]
-                                 RET1 --> END
-                                 RET2 --> END
-                                 END([End])
+int classify(int x) {        digraph G {
+    if (x > 0)                   N0 [shape=ellipse, label="Start: classify"];
+        return 1;                N1 [shape=diamond, label="Is x positive?"];
+    else                         N2 [shape=box, label="Return positive result"];
+        return -1;               N3 [shape=box, label="Return negative result"];
+}                                N4 [shape=ellipse, label="End"];
+                                 N0 -> N1;
+                                 N1 -> N2 [taillabel="Yes"];
+                                 N1 -> N3 [taillabel="No"];
+                                 N2 -> N4;  N3 -> N4;
+                                 }
 ```
 
 ---
@@ -60,10 +60,11 @@ functions.json          metadata.json         project_knowledge.json
  │       - Data-flow shared variables across the batch         │
  │     A coherence pass normalises labels across all batches   │
  │                          |                                  │
- │  5. Mermaid Render   (mermaid/)                             │
- │     Labeled CFG → Mermaid flowchart TD script               │
- │     Node shapes: oval=START/END  diamond=DECISION           │
- │                  rectangle=ACTION  subroutine=CATCH         │
+ │  5. DOT Build        (dot_builder.py)                       │
+ │     Labeled CFG → Graphviz DOT script                       │
+ │     Node shapes: ellipse=START/END  diamond=DECISION        │
+ │                  box=everything else                        │
+ │     Long labels word-wrapped; curved edges (no ortho)       │
  │                          |                                  │
  │  6. Output           (output/)                              │
  │     One JSON file per source file written to --out-dir      │
@@ -94,10 +95,15 @@ llm/
   prompts.py            System and user prompt templates
   client.py             Ollama HTTP client with auto-retry and auto-split
 
-mermaid/
-  builder.py            Converts a labeled CFG to a Mermaid TD script
-  validator.py          Validates Mermaid script structure
-  normalizer.py         Normalises edge labels (Yes/No, case values)
+dot_builder.py          Converts a labeled CFG to a Graphviz DOT script
+                        (build_dot); word-wraps long labels, curved edges,
+                        loop-anchor push-down for Return/End at the bottom.
+                        Rendered to PNG by engine.utils.render_dot_cached.
+
+mermaid/                LEGACY after the DOT switch (2026-07-27):
+  validator.py          validate_cfg() still used; validate_mermaid() is dead
+  normalizer.py         normalize_edge_label() still used by dot_builder
+  builder.py            build_mermaid() — dead code (superseded by dot_builder)
 
 pkb/
   builder.py            ProjectKnowledgeBase — caller/callee index + context packets
@@ -253,18 +259,20 @@ Each JSON file is an array:
   {
     "functionKey":   "src|myfile|MyClass::myMethod|int,bool",
     "name":          "MyClass::myMethod",
-    "flowchart":     "flowchart TD\n    N0([Start: myMethod])\n    ..."
+    "flowchart":     "digraph G {\n  N0 [shape=ellipse, label=\"Start: myMethod\"];\n  ...\n}"
   },
   {
     "functionKey":   "src|myfile|MyClass::otherMethod|void",
     "name":          "MyClass::otherMethod",
-    "flowchart":     "flowchart TD\n    ...",
+    "flowchart":     "digraph G {\n  ...\n}",
     "error":         null
   }
 ]
 ```
 
-Paste the `flowchart` value into [mermaid.live](https://mermaid.live) to visualise.
+The `flowchart` field holds a **Graphviz DOT** script (the `FlowchartResult`/schema field is still named
+`mermaid_script` for back-compat, but its content is DOT). Render it with the project renderer
+(`engine.utils.render_dot_cached`) or paste it into any Graphviz viewer (e.g. [dreampuf.github.io/GraphvizOnline](https://dreampuf.github.io/GraphvizOnline)).
 
 ---
 
@@ -337,26 +345,26 @@ N4 → "Return negative (-1)"
 N5 → "Return zero"
 ```
 
-**Step 5 — Mermaid Output**
+**Step 5 — DOT Output**
 
 ```
-flowchart TD
-    N0([Start: classify])
-    N1{Is x greater than zero?}
-    N2[Return positive 1]
-    N3{Is x less than zero?}
-    N4[Return negative -1]
-    N5[Return zero]
-    N6([End])
+digraph G {
+  rankdir=TB; nodesep=1.5; ranksep=0.9;
+  N0 [shape=ellipse, label="Start: classify"];
+  N1 [shape=diamond, label="Is x greater than zero?"];
+  N2 [shape=box,     label="Return positive 1"];
+  N3 [shape=diamond, label="Is x less than zero?"];
+  N4 [shape=box,     label="Return negative -1"];
+  N5 [shape=box,     label="Return zero"];
+  N6 [shape=ellipse, label="End"];
 
-    N0 --> N1
-    N1 -->|Yes| N2
-    N1 -->|No| N3
-    N3 -->|Yes| N4
-    N3 -->|No| N5
-    N2 --> N6
-    N4 --> N6
-    N5 --> N6
+  N0 -> N1;
+  N1 -> N2 [taillabel="Yes"];
+  N1 -> N3 [taillabel="No"];
+  N3 -> N4 [taillabel="Yes"];
+  N3 -> N5 [taillabel="No"];
+  N2 -> N6;  N4 -> N6;  N5 -> N6;
+}
 ```
 
 ---
@@ -410,29 +418,15 @@ Topological sort invariants:
   - Every back-edge (loop) points from a later node to an earlier one
 ```
 
-### Layer 2 — CFG node-type counts vs Mermaid shape counts
+### Layer 2 — CFG node-type counts vs rendered shape counts (⚠ STALE — dormant)
 
-Requires previously-generated output from `flowchart_engine.py`:
-
-```bash
-python tests/test_cfg_topo.py \
-    --interface-json functions.json \
-    --metadata-json  metadata.json  \
-    --out-dir        output/
-```
-
-Additional checks:
-
-```
-  - Count of DECISION+LOOP_HEAD+SWITCH_HEAD in CFG
-      == count of diamond {..} shapes in Mermaid
-  - Count of START+END in CFG
-      == count of oval ([..]) shapes in Mermaid
-  - Count of ACTION+RETURN+BREAK+... in CFG
-      == count of rectangle [..] shapes in Mermaid
-  - Count of CATCH in CFG
-      == count of subroutine [[..]] shapes in Mermaid
-```
+Cross-checks that the number of each CFG node-type equals the number of matching shapes in the persisted
+diagram (opt-in via `--out-dir`). **This layer is currently stale:** `_count_mermaid_shapes` still parses
+**Mermaid** syntax (`([`, `{`, `[[`, `[`), but the persisted `flowchart` field is now **Graphviz DOT**
+(`shape=diamond`/`ellipse`/`box`). Because it only runs when `--out-dir` is passed, it is dormant in normal
+CI and was not caught by the 2026-07-27 DOT switch. **TODO:** port `_count_mermaid_shapes` to count DOT
+`shape=` attributes (tracked in `docs/BACKLOG.md`). Until then, rely on Layer 1 (CFG + topo invariants),
+which is format-independent and always runs.
 
 ### Test a single function
 
@@ -456,7 +450,6 @@ python tests/test_cfg_topo.py \
 
 ```
 Testing 42 function(s) from functions.json
-Layer-2 (CFG vs Mermaid) enabled — reading from: output/
 base_path=/home/user/myproject  std=c++14
 ============================================================
 
@@ -472,20 +465,9 @@ base_path=/home/user/myproject  std=c++14
      OK  topo.entry_node_is_first: first='N0' entry='N0'
      OK  topo.forward_edges_respect_order: all forward edges ordered correctly
      OK  topo.back_edges_are_backward: 0 back-edge(s) all valid
-     OK  mermaid.oval_count_matches_cfg: CFG=2  Mermaid=2  OK
-     OK  mermaid.diamond_count_matches_cfg: CFG=3  Mermaid=3  OK
-     OK  mermaid.rectangle_count_matches_cfg: CFG=7  Mermaid=7  OK
-     OK  mermaid.subroutine_count_matches_cfg: CFG=0  Mermaid=0  OK
-
-[FAIL] MyClass::handleError
-       key: src|myfile|MyClass::handleError|void
-   FAIL  mermaid.diamond_count_matches_cfg
-           → CFG=2  Mermaid=1  MISMATCH
 
 ============================================================
-FAILED  1/42 functions  (1 check(s) failed)
-
-Failed functions:
-  MyClass::handleError
-    - mermaid.diamond_count_matches_cfg: CFG=2  Mermaid=1  MISMATCH
+PASSED  42/42 functions
 ```
+
+(Layer-1 only; the Layer-2 shape cross-check is dormant — see above.)

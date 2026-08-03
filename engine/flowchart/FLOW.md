@@ -332,10 +332,10 @@ flowcharts.run(model, output_dir, model_dir, config)
 
   if config.views.flowcharts.renderPng:
       for each .json in output/flowcharts/:
-          for each {name, flowchart} entry:
-              write flowchart string to temp .mmd file
-              mmdc -i <file.mmd> -o <unit_func.png>
-              delete temp .mmd file
+          for each {name, flowchart} entry:   # flowchart = DOT script
+              render_dot_cached(repo, dot, <unit_func>.png)
+                  → engine/config/render_dot.mjs (viz-js DOT→SVG → puppeteer PNG)
+                  → content-addressed .dot_cache reuse
       logs: "N PNGs rendered"
 ```
 
@@ -380,7 +380,7 @@ flowchart_engine.py  run(config)
           for each function entry:
               FunctionEntry(key, qualified_name, file, line, end_line,
                             params, calls_ids, called_by_ids,
-                            interface_id, description)
+                            interface_id, description, synthetic_from_var_decl)
               stored in pkb._functions[key]
               also indexed in pkb._by_qualified_name[qname]
 
@@ -390,14 +390,24 @@ flowchart_engine.py  run(config)
           qname.split("::")[-1] → FunctionKnowledge
           enables O(1) short-name lookup in targeted callee context
 
-  Header file filter:
-      _is_header_file(func_entry.file)
-          Path(file).suffix in {'.h','.hpp','.hxx','.hh', ...}
+  No-body filter:
+      entry.synthetic_from_var_decl   (functions.json "syntheticFromVarDecl")
+          set for var-decls recorded as pseudo-functions (e.g. a macro-obscured
+          "UNIT _f(arg);" parsed as a VAR_DECL) — there is no body / no CFG.
       → True:  skip entirely, never enter pipeline, no output written
-               INFO: "Skipping N header-defined function(s)"
+               INFO: "Skipping N synthetic (no-body) function(s)"
       → False: proceed to processing
+      NOTE: functions defined in HEADERS (public inline functions, header-only
+            units) are NOT filtered — they are real definitions, parsed as their
+            own TUs, and produce flowcharts like any .cpp definition.
 
-  Group remaining functions by source file (by_file dict)
+  Group remaining functions by OUTPUT STEM (by_stem → by_file dict)
+      key = Path(entry.file).stem, because OutputWriter names each output
+      "<stem>.json" (extension stripped). Foo.h + Foo.cpp therefore share ONE
+      output file and must be ONE FileResult — grouping by path would write
+      Foo.json twice and the second write would silently overwrite the first.
+      FileResult.source_file = first non-header path in the group (else first),
+      so _summary.json still names the .cpp for a merged unit.
 
   Instantiate shared infrastructure (once per run):
       SourceExtractor(base_path)
@@ -444,6 +454,19 @@ tu_parser.get_tu_full(abs_path)
 
 ━━━ STEP 3: Resolve Function Cursor ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 find_function_cursor(tu, func_entry, abs_path)
+
+    Including-TU fallback (headers that do not parse standalone):
+        cursor is None AND func_entry.file is a header
+        → retry find_function_cursor(alt_tu, func_entry, abs_path) for each TU
+          that INCLUDES the header, from --tu-includes (model/tu_includes.json,
+          reversed by _build_including_tus; same-stem .cpp tried first).
+          abs_path stays the HEADER — only the TU changes, because the cursor
+          still reports the header as its location.
+        WHY: a header whose macros/types come from an include the .cpp pulls in
+          first (e.g. cfg.h then foo.h) is a syntax error when parsed alone, so
+          no cursor exists. Phase 1 never hits this — it captures the function
+          from the .cpp TU. Failure message appends the real clang diagnostics
+          (_parse_error_hint) so the cause is visible, not just "no cursor".
 
     Strategy 1 — Direct position lookup (fast path):
         _position_lookup(tu, abs_path, target_line, target_end, simple_name)
@@ -578,35 +601,34 @@ validate_cfg(cfg)
     checks: no empty labels on non-sentinel nodes
     _reachable(cfg) BFS from entry → warns on unreachable nodes
 
-━━━ STEP 8: Build Mermaid Script ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-build_mermaid(cfg)
-    "flowchart TD"
-    _topo_order(cfg): BFS from entry_node_id
-    for each node:
+━━━ STEP 8: Build DOT Script  (dot_builder.py — switched from Mermaid 2026-07-27) ━━
+build_dot(cfg)
+    "digraph G {"  + graph attrs (rankdir=TB, nodesep, ranksep; NO splines=ortho
+                     → default curved edges)
+    _analyze_loops(cfg): DFS back-edges, natural-loop bodies, Return/End push-down
+    for each node (CFG insertion order ≈ source order):
         _node_def(node)
-            _enforce_line_length(label, max_chars=40)
-                splits <br/>-separated segments, word-wraps long ones
-            _escape_label(label)
-                single-pass _NODE_LABEL_RE.sub()
-                → #40; #41; #60; #91; #93; etc. (no double-encoding)
+            _wrap_label(label): word-wrap at spaces only, <= _LABEL_WRAP_WIDTH
+                                (never splits an identifier)
+            _escape(label): backslash/quote escaped; <br/> + newlines → \n
             shape:
-                START/END        → nodeId([label])   stadium
+                START/END        → shape=ellipse
                 DECISION/
                 LOOP_HEAD/
-                SWITCH_HEAD      → nodeId{label}      diamond
-                CATCH            → nodeId[[label]]    subroutine
-                all others       → nodeId[label]      rectangle
+                SWITCH_HEAD      → shape=diamond
+                all others       → shape=box
     for each edge:
         _edge_def(edge)
-            normalize_edge_label(): Yes/No standardisation
-            "source -->|label| target"  or  "source --> target"
+            normalize_edge_label(): Yes/No standardisation → taillabel="..."
+            back-edges get constraint=false (don't distort ranks)
+    invisible push-down edges anchor Return/End at the bottom
 
-━━━ STEP 9: Validate Mermaid ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-validate_mermaid(mermaid_script)
-    checks: starts with "flowchart"
-    checks: no unmatched double-quotes per line
+━━━ STEP 9: Validate CFG ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+validate_cfg(cfg)  (structure only; the old validate_mermaid string check was
+                    dropped in the DOT switch and is now dead code)
 
-Returns FlowchartResult(function_key, qualified_name, mermaid_script)
+Returns FlowchartResult(function_key, qualified_name, mermaid_script=<DOT>)
+    (the field is still named mermaid_script for schema compat but holds DOT)
 On any exception → FlowchartResult(error=str(exc))
 ```
 
@@ -790,7 +812,7 @@ docx_exporter.py
     reads model/functions.json
     reads model/units.json
     reads model/modules.json
-    reads output/flowcharts/<stem>.json  (Mermaid scripts)
+    reads output/flowcharts/<stem>.json  (Graphviz DOT scripts)
     reads output/flowcharts/<stem>_<func>.png  (rendered PNGs)
     assembles software_detailed_design_{group}.docx
     writes output/software_detailed_design_{group}.docx
@@ -851,13 +873,13 @@ model/knowledge_base.json                   ← THE KEY BRIDGE
                 → injected into every LLM prompt as context
 
 output/flowcharts/<stem>.json
-    [{functionKey, name, flowchart:"flowchart TD\n..."}]
+    [{functionKey, name, flowchart:"digraph G {\n...\n}"}]   # DOT, not Mermaid
     written by: flowchart_engine OutputWriter
     read by:    flowcharts.run() for PNG rendering
                 docx_exporter.py for DOCX assembly
 
 output/flowcharts/<stem>_<func>.png
-    rendered by: mmdc (Mermaid CLI)
+    rendered by: render_dot.mjs (viz-js DOT→SVG → puppeteer PNG)
     read by:    docx_exporter.py
 
 output/flowcharts/_summary.json
@@ -977,10 +999,13 @@ analyzer/                          ← project root
         prompts.py                 SYSTEM_PROMPT, build_user_prompt(),
                                    _build_node_list()
 
-      mermaid/
-        builder.py                 build_mermaid(): CFG → Mermaid TD text
-        normalizer.py              normalize_condition(), normalize_edge_label()
-        validator.py               validate_cfg(), validate_mermaid()
+      dot_builder.py               build_dot(): CFG → Graphviz DOT (active renderer);
+                                   _wrap_label word-wrap, curved edges, loop anchoring
+
+      mermaid/                     LEGACY after the DOT switch (2026-07-27)
+        normalizer.py              normalize_edge_label() — still used by dot_builder
+        validator.py               validate_cfg() — used; validate_mermaid() — dead
+        builder.py                 build_mermaid() — dead code (superseded)
 
       pkb/
         builder.py                 ProjectKnowledgeBase: context packet construction,
