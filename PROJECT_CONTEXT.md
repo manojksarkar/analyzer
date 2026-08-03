@@ -1474,7 +1474,7 @@ So legacy `from utils import load_config` still works.
 | `resolve_group(component)` | Component name → group name (from `_GROUP_MAP` built at import) |
 | `norm_path(path, base_path)` | Resolve relative paths against `base_path` |
 | `PRIMITIVES` dict | C++ primitive types → range string |
-| `get_range_for_type(type_str)` | Map type to range; falls back to `NA` |
+| `get_range_for_type(type_str)` | Map a **known primitive** to a range; anything else `NA`. **Case-sensitive** (2026-08-03) — lowercasing made `Size_t` match `size_t`; `size_t` is matched by exact name, not substring |
 | `get_range(type_str, data_dictionary)` | Range lookup with typedef recursion (depth 10). **`"NA"` on a dd entry means "unknown", not an answer** — see below |
 
 Note: `init_component_mapping` runs at import time using the on-disk config, so

@@ -176,6 +176,8 @@ class TestGetRangeForType:
         ("float",          "NA"),   # float falls through to NA in fast-path
         ("std::uint8_t",   "0-0xFF"),
         ("size_t",         "0-0xFFFFFFFFFFFFFFFF"),
+        ("std::size_t",    "0-0xFFFFFFFFFFFFFFFF"),
+        ("param_size_t",   "0-0xFFFFFFFFFFFFFFFF"),
         ("SomeStruct*",    "NA"),
         ("",               "NA"),
     ])
@@ -187,6 +189,24 @@ class TestGetRangeForType:
 
     def test_void_pointer_is_not_void(self):
         assert get_range_for_type("void*") != "VOID"
+
+    @pytest.mark.parametrize("type_str", [
+        "Size_t",        # Sample: a {int width; int height;} struct
+        "BufSize_t",
+        "PageSize_t",
+        "my_size_type",
+        "size_t *",      # a pointer is not the integer
+    ])
+    def test_name_containing_size_t_is_not_treated_as_size_t(self, type_str):
+        """This maps known primitives — it must not infer a type from its spelling.
+        Anything unrecognised is "NA" and gets answered from the data dictionary."""
+        assert get_range_for_type(type_str) == "NA"
+
+    @pytest.mark.parametrize("type_str", ["UINT8_T", "Int", "UInt32_t", "VOID"])
+    def test_matching_is_case_sensitive(self, type_str):
+        """C++ is case-sensitive; a project typedef that only resembles a primitive
+        resolves through the data dictionary, not by spelling."""
+        assert get_range_for_type(type_str) == "NA"
 
 
 # ---------------------------------------------------------------------------

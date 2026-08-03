@@ -10,7 +10,7 @@
 | SH-1 | Requirements / Linked Work Items source (Polarion / SWE.1) | input | blocked | SWE2 + SWE4 |
 | SH-2 | Same group/component name reused across layers collides (needs layer-qualified identity) | issue | open | — |
 | SH-3 | Gate updated data dictionary + integrate for correctness | enhance | open | engine/config/data_dictionary.csv |
-| SH-4 | `get_range_for_type` matches `"size_t" in base` (substring) — mis-ranges any type whose name contains it. The path that surfaced it (typedef-of-struct entries deriving a range from the type's own name) is closed; the loose rule itself still stands | issue | open | engine/utils.py |
+| SH-4 | Derive primitive ranges from libclang (`type.get_canonical()` kind + `get_size()`) instead of the hand-kept name table in `get_range_for_type`; the table hardcodes `long` as 32-bit and cannot see the target triple. Needs the range stored per parameter/return/global at parse time, since views have no libclang | enhance | open | engine/utils.py, engine/parser.py |
 
 ## SWE.3 — detailed design
 | ID | Item | Type | Status | Ref |

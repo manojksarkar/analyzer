@@ -441,11 +441,17 @@ PRIMITIVES = {
 
 
 def get_range_for_type(type_str: str) -> str:
-    """Map C++ type to range string for interface tables (VOID, 0-0xFF, NA, etc.)."""
-    t = (type_str or "").strip().lower()
+    """Map C++ type to range string for interface tables (VOID, 0-0xFF, NA, etc.).
+
+    Matching is CASE-SENSITIVE, because C++ is: lowercasing made `Size_t` (a
+    `{int width; int height;}` struct) indistinguishable from `size_t` and gave it a
+    64-bit integer range. A project type that merely resembles a primitive is "NA"
+    here and gets answered from the data dictionary instead.
+    """
+    t = (type_str or "").strip()
     if t == "void" or (t.startswith("void ") and "*" not in t):
         return "VOID"
-    base = t.replace("const ", "").replace("volatile ", "").strip().lower()
+    base = t.replace("const ", "").replace("volatile ", "").strip()
     if base in ("uint8_t", "std::uint8_t", "param_uint8_t"):
         return "0-0xFF"
     if base in ("uint16_t", "std::uint16_t", "param_uint16_t"):
@@ -483,7 +489,11 @@ def get_range_for_type(type_str: str) -> str:
         return "0-0xFFFFFFFF"
     if base == "unsigned long long":
         return "0-0xFFFFFFFFFFFFFFFF"
-    if "size_t" in base and "*" not in base or base == "param_size_t":
+    # Exact names only. A substring test here ("size_t" in base) answers for any type
+    # whose NAME merely contains it — `Size_t`, `BufSize_t`, `PageSize_t` — declaring a
+    # `{int width; int height;}` struct to be a 64-bit integer. This function maps known
+    # primitives; anything else is "NA" and gets answered from the data dictionary.
+    if base in ("size_t", "std::size_t", "param_size_t") or base.endswith("::size_t"):
         return "0-0xFFFFFFFFFFFFFFFF"
     return "NA"
 
