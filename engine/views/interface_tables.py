@@ -1,9 +1,26 @@
 """Interface tables view: model -> output/interface_tables.json."""
 import json
 import os
+import re
 
 from .registry import register
 from utils import get_range, log, short_name, KEY_SEP
+
+
+def _iface_order(entry):
+    """Sort rows by the interface ID's trailing index.
+
+    The table must read 01, 02, 03… Sorting by source line instead only agreed
+    with the numbering while a unit's interfaces all lived in ONE file; once a
+    unit spans Foo.h + Foo.cpp (public inline header functions) the two orders
+    diverge and IDs appear shuffled. Ordering by the ID itself keeps the table in
+    step with the numbering by construction, whatever the numbering is derived
+    from. Compared numerically, not lexically, so _99 sorts before _100.
+    IDs are assigned functions-then-globals within a unit, so that grouping is
+    preserved; an entry with no parseable index sorts last, insertion order kept.
+    """
+    m = re.search(r"(\d+)$", entry.get("interfaceId") or "")
+    return (0, int(m.group(1))) if m else (1, 0)
 
 
 def _strip_ext(name):
@@ -138,6 +155,7 @@ def _build_interface_tables(
             if g.get("description"):
                 ge["description"] = g["description"]
             entries.append(ge)
+        entries.sort(key=_iface_order)
         result[unit_key] = {"name": unit_name_display, "entries": entries}
     result["unitNames"] = {k: unit_names[k] for k in result if k != "unitNames" and k in unit_names}
     return result
