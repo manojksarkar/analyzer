@@ -10,6 +10,7 @@
 | SH-1 | Requirements / Linked Work Items source (Polarion / SWE.1) | input | blocked | SWE2 + SWE4 |
 | SH-2 | Same group/component name reused across layers collides (needs layer-qualified identity) | issue | open | — |
 | SH-3 | Gate updated data dictionary + integrate for correctness | enhance | open | engine/config/data_dictionary.csv |
+| SH-4 | `get_range_for_type` matches `"size_t" in base` (substring) — mis-ranges any type whose name contains it. The path that surfaced it (typedef-of-struct entries deriving a range from the type's own name) is closed; the loose rule itself still stands | issue | open | engine/utils.py |
 
 ## SWE.3 — detailed design
 | ID | Item | Type | Status | Ref |
