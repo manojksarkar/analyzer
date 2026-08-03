@@ -520,6 +520,78 @@ def _get_type_key(cursor):
 
 _ELABORATED_RE = re.compile(r"^(?:struct|enum|union|class)\s+")
 
+_SIGNED_INT_KINDS = {
+    cindex.TypeKind.SCHAR, cindex.TypeKind.CHAR_S, cindex.TypeKind.SHORT,
+    cindex.TypeKind.INT, cindex.TypeKind.LONG, cindex.TypeKind.LONGLONG,
+    cindex.TypeKind.INT128,
+}
+_UNSIGNED_INT_KINDS = {
+    cindex.TypeKind.UCHAR, cindex.TypeKind.CHAR_U, cindex.TypeKind.USHORT,
+    cindex.TypeKind.UINT, cindex.TypeKind.ULONG, cindex.TypeKind.ULONGLONG,
+    cindex.TypeKind.UINT128, cindex.TypeKind.CHAR16, cindex.TypeKind.CHAR32,
+}
+
+
+def _range_from_clang_type(ctype) -> str:
+    """Data range computed from the type itself, rather than guessed from its name.
+
+    `get_canonical()` walks the typedef chain down to the real builtin and
+    `get_size()` reports its width **for the target being parsed** — so `long` is
+    4 bytes on Windows and 8 on Linux, which the hardcoded PRIMITIVES table cannot
+    express. Returns "NA" for anything that is not a builtin (structs, enums,
+    pointers, floats); those are answered from their own dictionary entries.
+    """
+    if ctype is None:
+        return "NA"
+    try:
+        canon = ctype.get_canonical()
+        kind = canon.kind
+        if kind == cindex.TypeKind.VOID:
+            return "VOID"
+        if kind == cindex.TypeKind.BOOL:
+            return "0-1"
+        if kind in _SIGNED_INT_KINDS or kind in _UNSIGNED_INT_KINDS:
+            size = canon.get_size()
+            if size and size > 0:
+                bits = size * 8
+                if kind in _UNSIGNED_INT_KINDS:
+                    return f"0-0x{(1 << bits) - 1:X}"
+                return f"-0x{1 << (bits - 1):X}-0x{(1 << (bits - 1)) - 1:X}"
+    except Exception:
+        pass
+    return "NA"
+
+
+def _register_builtin_range(ctype) -> None:
+    """Record a builtin's target-correct range under its canonical name.
+
+    Called for every parameter / return type / global / field encountered, so the
+    dictionary answers for the builtins this project actually uses with a measured
+    width instead of the portable guess in PRIMITIVES (which is seeded afterwards
+    with setdefault, and so no longer overwrites this).
+
+    Only the CANONICAL spelling is registered ("unsigned char", "long"). Registering
+    the written spelling would let a parameter typed `UINT8` overwrite the UINT8
+    *typedef* entry with a primitive one, losing the location the unit header table
+    needs.
+    """
+    if ctype is None:
+        return
+    try:
+        canon = ctype.get_canonical()
+        name = (canon.spelling or "").strip()
+    except Exception:
+        return
+    if not name:
+        return
+    rng = _range_from_clang_type(canon)
+    if rng == "NA":
+        return
+    existing = data_dictionary.get(name)
+    if existing is not None and existing.get("kind") != "primitive":
+        return  # never shadow a project type that happens to share the name
+    data_dictionary[name] = {"kind": "primitive", "range": rng}
+
 
 def _typedef_underlying(cursor) -> str:
     """What a `typedef` actually aliases.
@@ -611,10 +683,14 @@ def visit_type_definitions(cursor):
             fields = []
             for c in cursor.get_children():
                 if c.kind == cindex.CursorKind.FIELD_DECL and c.spelling:
+                    _register_builtin_range(c.type)
+                    _field_range = _range_from_clang_type(c.type)
+                    if _field_range == "NA":
+                        _field_range = get_range_for_type(c.type.spelling if c.type else "")
                     field_entry = {
                         "name": c.spelling,
                         "type": c.type.spelling if c.type else "",
-                        "range": get_range_for_type(c.type.spelling if c.type else ""),
+                        "range": _field_range,
                     }
                     cmt = _inline_comment(c)
                     if cmt:
@@ -687,12 +763,18 @@ def visit_type_definitions(cursor):
             key = qn
             if qn in data_dictionary and data_dictionary[qn].get("kind") == "enum":
                 key = f"typedef@{qn}:{rel_file}:{loc.get('line', '')}"
+            # Range from the canonical type (exact, target-aware); the name table is
+            # only consulted when libclang has no answer — e.g. a typedef of a struct.
+            _td_range = _range_from_clang_type(cursor.underlying_typedef_type)
+            if _td_range == "NA":
+                _td_range = get_range_for_type(underlying or "")
+            _register_builtin_range(cursor.underlying_typedef_type)
             typedef_dict: dict = {
                 "kind": "typedef",
                 "name": cursor.spelling,
                 "qualifiedName": qn,
                 "underlyingType": underlying or "(opaque)",
-                "range": get_range_for_type(underlying or ""),
+                "range": _td_range,
                 "location": loc,
             }
             cmt = _preceding_comment(cursor)
@@ -870,7 +952,14 @@ def visit_definitions(cursor):
         params = []
         try:
             for arg in cursor.get_arguments():
+                # Seed the dictionary with this builtin's measured range, so the view's
+                # name lookup resolves it exactly (see _register_builtin_range).
+                _register_builtin_range(arg.type)
                 params.append({"name": arg.spelling or "", "type": arg.type.spelling if arg.type else ""})
+        except Exception:
+            pass
+        try:
+            _register_builtin_range(cursor.result_type)
         except Exception:
             pass
 
@@ -948,6 +1037,7 @@ def visit_definitions(cursor):
         else:
             var_id = f"{cursor.location.file.name}:{cursor.location.line}"
             value_str = _get_var_init_value(cursor)
+            _register_builtin_range(cursor.type)
             globals_data[var_id] = {
                 "variableId": var_id,
                 "variableName": cursor.spelling,
@@ -1671,9 +1761,11 @@ def main():
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
-    # Add primitives (name as key)
+    # Add primitives (name as key). setdefault, NOT assignment: ranges measured from
+    # libclang during the parse (_register_builtin_range) are facts about the target
+    # and outrank this portable table, which e.g. hardcodes `long` as 32-bit.
     for name, info in PRIMITIVES.items():
-        data_dictionary[name] = {"kind": "primitive", "range": info["range"]}
+        data_dictionary.setdefault(name, {"kind": "primitive", "range": info["range"]})
     # Add defines (kind=define)
     _scan_defines()
     # Merge user-supplied data dictionary CSV (external entries win on conflict).

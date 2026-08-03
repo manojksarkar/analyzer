@@ -452,6 +452,8 @@ def get_range_for_type(type_str: str) -> str:
     if t == "void" or (t.startswith("void ") and "*" not in t):
         return "VOID"
     base = t.replace("const ", "").replace("volatile ", "").strip()
+    if base == "bool":
+        return "0-1"
     if base in ("uint8_t", "std::uint8_t", "param_uint8_t"):
         return "0-0xFF"
     if base in ("uint16_t", "std::uint16_t", "param_uint16_t"):

@@ -129,6 +129,107 @@ class TestUnderlyingReachesTheRangeColumn:
         assert get_range("Mode_t", dd) == "0-2"
 
 
+def _canonical_of(parser_mod, tmp_path, source, typedef_name):
+    """Return the clang Type a typedef aliases, for range computation."""
+    from clang import cindex
+
+    src = tmp_path / "r.h"
+    src.write_text(source, encoding="utf-8")
+    tu = cindex.Index.create().parse(str(src), args=["-x", "c++"])
+    found = {}
+
+    def walk(c):
+        if c.kind == cindex.CursorKind.TYPEDEF_DECL and c.spelling:
+            found[c.spelling] = c.underlying_typedef_type
+        for ch in c.get_children():
+            walk(ch)
+
+    walk(tu.cursor)
+    return found[typedef_name]
+
+
+class TestRangeFromClangType:
+    """Ranges measured from the type, not guessed from its name."""
+
+    @pytest.mark.parametrize("decl,name,expected", [
+        ("typedef unsigned char U8;",          "U8",  "0-0xFF"),
+        ("typedef unsigned short U16;",        "U16", "0-0xFFFF"),
+        ("typedef unsigned int U32;",          "U32", "0-0xFFFFFFFF"),
+        ("typedef unsigned long long U64;",    "U64", "0-0xFFFFFFFFFFFFFFFF"),
+        ("typedef signed char S8;",            "S8",  "-0x80-0x7F"),
+        ("typedef short S16;",                 "S16", "-0x8000-0x7FFF"),
+        ("typedef int S32;",                   "S32", "-0x80000000-0x7FFFFFFF"),
+        ("typedef long long S64;", "S64", "-0x8000000000000000-0x7FFFFFFFFFFFFFFF"),
+        ("typedef bool B;",                    "B",   "0-1"),
+    ])
+    def test_builtin_ranges(self, parser_mod, tmp_path, decl, name, expected):
+        ctype = _canonical_of(parser_mod, tmp_path, decl + "\n", name)
+        assert parser_mod._range_from_clang_type(ctype) == expected
+
+    def test_resolves_through_a_typedef_chain(self, parser_mod, tmp_path):
+        """get_canonical() walks the whole chain, so no name lookup is needed."""
+        ctype = _canonical_of(
+            parser_mod, tmp_path,
+            "typedef unsigned short Inner;\ntypedef Inner Middle;\ntypedef Middle Outer;\n",
+            "Outer")
+        assert parser_mod._range_from_clang_type(ctype) == "0-0xFFFF"
+
+    @pytest.mark.parametrize("decl,name", [
+        ("typedef struct { int a; } S;",       "S"),
+        ("typedef enum { A_ = 0 } E;",         "E"),
+        ("typedef int * P;",                   "P"),
+        ("typedef float F;",                   "F"),
+    ])
+    def test_non_builtin_is_na(self, parser_mod, tmp_path, decl, name):
+        """Structs/enums/pointers/floats are answered by their own entries, not here."""
+        ctype = _canonical_of(parser_mod, tmp_path, decl + "\n", name)
+        assert parser_mod._range_from_clang_type(ctype) == "NA"
+
+    def test_none_is_na(self, parser_mod):
+        assert parser_mod._range_from_clang_type(None) == "NA"
+
+
+class TestRegisterBuiltinRange:
+    """Seeding the dictionary with measured builtin ranges."""
+
+    def test_registers_under_the_canonical_name(self, parser_mod, tmp_path):
+        ctype = _canonical_of(parser_mod, tmp_path, "typedef unsigned char U8;\n", "U8")
+        saved = dict(parser_mod.data_dictionary)
+        parser_mod.data_dictionary.clear()
+        try:
+            parser_mod._register_builtin_range(ctype)
+            assert parser_mod.data_dictionary["unsigned char"] == {
+                "kind": "primitive", "range": "0-0xFF"}
+            # NOT under the written alias — that would shadow the U8 typedef entry.
+            assert "U8" not in parser_mod.data_dictionary
+        finally:
+            parser_mod.data_dictionary.clear()
+            parser_mod.data_dictionary.update(saved)
+
+    def test_never_shadows_a_project_type(self, parser_mod, tmp_path):
+        ctype = _canonical_of(parser_mod, tmp_path, "typedef int Mine;\n", "Mine")
+        saved = dict(parser_mod.data_dictionary)
+        parser_mod.data_dictionary.clear()
+        parser_mod.data_dictionary["int"] = {"kind": "struct", "qualifiedName": "int"}
+        try:
+            parser_mod._register_builtin_range(ctype)
+            assert parser_mod.data_dictionary["int"]["kind"] == "struct"
+        finally:
+            parser_mod.data_dictionary.clear()
+            parser_mod.data_dictionary.update(saved)
+
+    def test_non_builtin_registers_nothing(self, parser_mod, tmp_path):
+        ctype = _canonical_of(parser_mod, tmp_path, "typedef struct { int a; } S;\n", "S")
+        saved = dict(parser_mod.data_dictionary)
+        parser_mod.data_dictionary.clear()
+        try:
+            parser_mod._register_builtin_range(ctype)
+            assert parser_mod.data_dictionary == {}
+        finally:
+            parser_mod.data_dictionary.clear()
+            parser_mod.data_dictionary.update(saved)
+
+
 class TestStructTypedefRangeIsNotDerivedFromTheName:
     """`_maybe_add_typedef_for_struct` names the struct itself as underlyingType, so
     deriving a range from it reads a range out of a type NAME: get_range_for_type

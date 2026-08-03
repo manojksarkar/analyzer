@@ -164,7 +164,7 @@ class TestShortName:
 class TestGetRangeForType:
     @pytest.mark.parametrize("type_str,expected", [
         ("void",           "VOID"),
-        ("bool",           "NA"),   # bool falls through to NA (not in primitives fast-path)
+        ("bool",           "0-1"),  # matches the PRIMITIVES table (was NA — inconsistent)
         ("int",            "-0x80000000-0x7FFFFFFF"),
         ("unsigned int",   "0-0xFFFFFFFF"),
         ("uint8_t",        "0-0xFF"),
