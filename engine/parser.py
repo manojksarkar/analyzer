@@ -518,6 +518,34 @@ def _get_type_key(cursor):
     return get_qualified_name(cursor)
 
 
+_ELABORATED_RE = re.compile(r"^(?:struct|enum|union|class)\s+")
+
+
+def _typedef_underlying(cursor) -> str:
+    """What a `typedef` actually aliases.
+
+    `cursor.type` on a TYPEDEF_DECL is the typedef type ITSELF, so its spelling is
+    the alias's own name ("UINT8"), never what it points at — which left every
+    typedef self-referential and its range "NA". `underlying_typedef_type` is the
+    accessor that answers the question (`typedef unsigned char UINT8;` -> "unsigned
+    char", `typedef int UNIT;` -> "int").
+
+    Elaborated spellings ("enum Mode_t", "struct Widget_t") are reduced to the bare
+    name so the result is usable as a dataDictionary key — that also keeps the
+    typedef-of-anonymous-enum/struct forms self-referential, which is what the unit
+    header table relies on to print the enumerator list.
+    """
+    underlying = ""
+    try:
+        u = cursor.underlying_typedef_type
+        underlying = (u.spelling or "").strip() if u is not None else ""
+    except Exception:
+        underlying = ""
+    if not underlying:
+        underlying = (cursor.type.spelling or "").strip() if cursor.type else ""
+    return _ELABORATED_RE.sub("", underlying).strip()
+
+
 def _maybe_add_typedef_for_struct(name: str, qn: str, loc: dict, rel_file: str):
     """If this struct comes from a 'typedef struct { ... } Name;' pattern, add a typedef entry."""
     if not name or not rel_file or not loc:
@@ -553,7 +581,12 @@ def _maybe_add_typedef_for_struct(name: str, qn: str, loc: dict, rel_file: str):
         "name": name,
         "qualifiedName": qn,
         "underlyingType": underlying or "(opaque)",
-        "range": get_range_for_type(underlying or ""),
+        # underlyingType is the type's OWN name here (the alias names the struct it
+        # follows), so deriving a range from it would be reading a range out of a
+        # type name: get_range_for_type("Size_t") matches its "size_t" substring rule
+        # and stamps a 64-bit integer range on a {int width; int height;} struct.
+        # The struct entry under `qn` carries the real answer; leave this one unknown.
+        "range": "NA",
         "location": {"file": rel_file, "line": typedef_line},
     }
 
@@ -648,7 +681,7 @@ def visit_type_definitions(cursor):
     elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
         if cursor.spelling:
             qn = get_qualified_name(cursor)
-            underlying = cursor.type.spelling if cursor.type else ""
+            underlying = _typedef_underlying(cursor)
             # If an enum already exists with the same name, keep it (enum has range),
             # but ALSO store the typedef as a separate entry (unique key) so it can appear in views.
             key = qn
