@@ -2568,6 +2568,39 @@ still resolve on the first try. Failure messages now append the real clang diagn
 writes once with **both** `fooMain` and `fooInline`. Full sample run: 124 ✓ / 1 ✗ across 21 units with
 `SignalInline.json` (`signalGain`, header-only) now emitted. `pytest --skip-pipeline`: 631 passed, 0 failed.
 
+### Risk 6 — duplicate interfaceId when a unit spans .h and .cpp — RESOLVED 2026-08-03
+
+**Symptom:** two different public interfaces in one unit carry the **same** interface ID, e.g.
+`IF_LAYER1_SIGNAL_SIGNAL_01` on both `normalize` (`Signal.cpp`) and `clampSignal` (`Signal.h`).
+Duplicate IDs break traceability in an ASPICE deliverable.
+
+**Root cause:** mismatch between what the ID *encodes* and what the counter is *keyed by*. The ID
+string carries the **unit** — `make_unit_key(rel)` strips the extension, so `Foo.h` and `Foo.cpp`
+collapse to one unit ([model_deriver.py:385-387](engine/model_deriver.py#L385-L387)) — but
+`_build_interface_index` bucketed **by file** and restarted `idx = 1` for each, so both halves of a
+`.h`+`.cpp` unit numbered from 01.
+
+**Pre-existing, not caused by the header-flowchart work** (Risk 5): the pristine sample model already
+carried one — `PIF_LAYER1_FULL_READWRITE_01` shared by `writeGlobal` (`ReadWrite.cpp`) and
+`g_hdrGlobal` (`ReadWrite.h`). Header-defined *functions* simply never reached the document before, so
+the collision was rare; once they did, it became routine.
+
+**Fix:** bucket by unit, not by file. `_unit_of(data, base_path)` derives the same `component|unit`
+key the ID uses; `_iface_sort_key` orders within a bucket by `(file, line)` since a bucket can now
+span two files. Buckets renamed `*_by_file` → `*_by_unit`, `all_files` → `all_units`. `.cpp` sorts
+before `.h` (`'c' < 'h'`), so **existing `.cpp` numbering is preserved and header entries append
+after it** — chosen deliberately to minimise churn on IDs that may already be in delivered documents.
+
+**Blast radius measured, not assumed:** re-deriving the sample changed **1 interfaceId out of 139** —
+`g_hdrGlobal` `PIF_..._01` → `PIF_..._06`, exactly the colliding entity. Every other ID byte-identical
+(`writeGlobal` keeps `_01`). Duplicates 1 → 0. A unit living in one file numbers exactly as before,
+because bucketing by unit then equals bucketing by file and the sort collapses to `line`.
+
+**Regression tests:** `tests/unit/test_model_deriver.py::TestInterfaceIndexUnitKeyed` — uniqueness
+across `.h`+`.cpp`, header-numbered-after-cpp, header-global vs cpp-function collision (the original
+defect), and single-file numbering unchanged (the churn guard). Verified meaningful: 3 of the 4 fail
+against the pre-fix code; the churn guard passes on both by design.
+
 ### Pre-V1 correctness batch (targets V1; numbered 3.1–3.19 internally — status in git/PR history + the `> Updated:` log above)
 
 Of the ten findings from pre-V1 review (2026-07-10), **3.1–3.7 are done and

@@ -62,6 +62,33 @@ def _file_path(data: dict, base_path: str) -> str:
     return norm_path((data.get("location") or {}).get("file", ""), base_path)
 
 
+def _unit_of(data: dict, base_path: str) -> str:
+    """Unit key (component|unit) that the interface ID encodes.
+
+    make_unit_key strips the extension, so Foo.h and Foo.cpp collapse to one unit.
+    Interface numbering must be keyed by THIS, not by file: the ID string carries
+    the unit name, so numbering per file restarts at 01 in both halves of a
+    .h + .cpp unit and emits duplicate IDs.
+    """
+    fp = (data.get("location") or {}).get("file", "")
+    if not fp:
+        return ""
+    try:
+        rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/")
+    except ValueError:
+        rel = fp
+    return make_unit_key(rel)
+
+
+def _iface_sort_key(item):
+    """Order within a unit: by file, then line. A unit can now span two files
+    (.h + .cpp), so line alone is not a deterministic order. Sorting by file name
+    keeps .cpp before .h ('c' < 'h'), so existing .cpp numbering is unchanged and
+    header entries append after it."""
+    loc = (item[1].get("location") or {})
+    return ((loc.get("file") or ""), loc.get("line", 0))
+
+
 def _defined_macros_from_config() -> set:
     """Extract macro names defined via -D flags in config clang.clangArgs."""
     cfg = load_config(SCRIPT_DIR)
@@ -334,32 +361,35 @@ def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
 
 
 def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict):
-    public_fns_by_file = {}
-    private_fns_by_file = {}
-    public_glbs_by_file = {}
-    private_glbs_by_file = {}
+    # Buckets are keyed by UNIT (component|unit), matching what the interface ID
+    # encodes — see _unit_of. Keying by file restarts numbering at 01 in each half
+    # of a .h + .cpp unit and produces duplicate IDs.
+    public_fns_by_unit = {}
+    private_fns_by_unit = {}
+    public_glbs_by_unit = {}
+    private_glbs_by_unit = {}
     for fid, f in functions_data.items():
-        fp = _file_path(f, base_path)
-        if not fp:
+        unit = _unit_of(f, base_path)
+        if not unit:
             continue
-        bucket = private_fns_by_file if _fn_is_private(f, functions_data, base_path) else public_fns_by_file
-        bucket.setdefault(fp, []).append((fid, f))
+        bucket = private_fns_by_unit if _fn_is_private(f, functions_data, base_path) else public_fns_by_unit
+        bucket.setdefault(unit, []).append((fid, f))
     for vid, g in global_variables_data.items():
-        fp = _file_path(g, base_path)
-        if not fp:
+        unit = _unit_of(g, base_path)
+        if not unit:
             continue
-        bucket = private_glbs_by_file if (g.get("visibility") or "").lower() == "private" else public_glbs_by_file
-        bucket.setdefault(fp, []).append((vid, g))
+        bucket = private_glbs_by_unit if (g.get("visibility") or "").lower() == "private" else public_glbs_by_unit
+        bucket.setdefault(unit, []).append((vid, g))
 
     idx_by_id = {}
-    all_files = sorted(set(public_fns_by_file) | set(public_glbs_by_file) | set(private_fns_by_file) | set(private_glbs_by_file))
-    for fns_by_file, glbs_by_file in ((public_fns_by_file, public_glbs_by_file), (private_fns_by_file, private_glbs_by_file)):
-        for fp in all_files:
+    all_units = sorted(set(public_fns_by_unit) | set(public_glbs_by_unit) | set(private_fns_by_unit) | set(private_glbs_by_unit))
+    for fns_by_unit, glbs_by_unit in ((public_fns_by_unit, public_glbs_by_unit), (private_fns_by_unit, private_glbs_by_unit)):
+        for unit in all_units:
             idx = 1
-            for iid, data in sorted(fns_by_file.get(fp, []), key=lambda x: (x[1].get("location") or {}).get("line", 0)):
+            for iid, data in sorted(fns_by_unit.get(unit, []), key=_iface_sort_key):
                 idx_by_id[iid] = idx
                 idx += 1
-            for iid, data in sorted(glbs_by_file.get(fp, []), key=lambda x: (x[1].get("location") or {}).get("line", 0)):
+            for iid, data in sorted(glbs_by_unit.get(unit, []), key=_iface_sort_key):
                 idx_by_id[iid] = idx
                 idx += 1
     return idx_by_id
