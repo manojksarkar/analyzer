@@ -59,7 +59,8 @@ def main() -> int:
         def _count(table):
             return cx.execute(select(func.count()).select_from(table)
                               .where(table.c.version_id == VID)).scalar_one()
-        print(f"\n  entity_versions : {_count(s.entity_versions)}")
+        ev = _count(s.entity_versions)                 # captured for the final check below
+        print(f"\n  entity_versions : {ev}")
         print(f"  model_edges     : {_count(s.model_edges)}")
         print(f"  model_units     : {_count(s.model_units)}")
         print(f"  model_components: {_count(s.model_components)}")
