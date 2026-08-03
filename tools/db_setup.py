@@ -4,9 +4,10 @@ A Postgres SERVER hosts many named DATABASES; you can only connect to one that e
 This connects to the always-present `postgres` maintenance database, creates the target
 database if missing, then creates the schema in it. Idempotent.
 
-It also prints exactly which Python / SQLAlchemy / driver is in use, which is what we need
-to explain the alembic `NoSuchModuleError` (that error means the SQLAlchemy alembic runs
-lacks the psycopg dialect - i.e. a different environment than this script).
+IMPORTANT (learned the hard way on SQLAlchemy 2.0.51): pass **string** DSNs to
+create_engine, never a make_url() URL object - on some SQLAlchemy builds a URL object
+fails to resolve the `postgresql+psycopg` dialect (NoSuchModuleError) while the exact same
+DSN as a string resolves fine. So every create_engine here gets a string.
 
     $env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/analyzer"
     python tools/db_setup.py
@@ -31,15 +32,17 @@ def _diagnostic() -> None:
         print(f"  psycopg    : {psycopg.__version__}   ({os.path.dirname(psycopg.__file__)})")
     except Exception as exc:                        # noqa: BLE001
         print(f"  psycopg    : NOT IMPORTABLE -> {type(exc).__name__}: {exc}")
-    # Reproduce alembic's engine_from_config to see if THIS env has the dialect.
-    from sqlalchemy import engine_from_config, pool
-    try:
-        engine_from_config({"sqlalchemy.url": "postgresql+psycopg://u:p@h:5432/d"},
-                           prefix="sqlalchemy.", poolclass=pool.NullPool)
-        print("  psycopg dialect (engine_from_config): OK")
-    except Exception as exc:                        # noqa: BLE001
-        print(f"  psycopg dialect (engine_from_config): FAILED -> {type(exc).__name__}: {exc}")
     print("=" * 60)
+
+
+def _maint_dsn(raw: str) -> tuple[str, str]:
+    """(maintenance DSN string -> the 'postgres' db, target database name). Uses make_url
+    only to REBUILD strings - the strings, not the URL object, are what we hand out."""
+    from sqlalchemy.engine import make_url
+    url = make_url(raw)
+    target_db = url.database or ""
+    maint = url.set(database="postgres").render_as_string(hide_password=False)
+    return maint, target_db
 
 
 def main() -> int:
@@ -52,43 +55,41 @@ def main() -> int:
         return 1
 
     from sqlalchemy import create_engine, text
-    from sqlalchemy.engine import make_url
-    url = make_url(raw)
-    print(f"\ntarget: {url.render_as_string(hide_password=True)}")
-
-    if "<" in (url.database or "") or ">" in (url.database or ""):
-        print(f"\n!! The database name is still a placeholder: {url.database!r}")
-        print("   Put your REAL database name in DATABASE_URL (e.g. .../analyzer).")
-        return 1
-
     from api.db.postgres.schema import metadata
 
-    if url.get_backend_name() == "postgresql":
+    is_pg = raw.startswith("postgres")
+    ca = {"connect_timeout": 5} if is_pg else {}
+
+    if is_pg:
+        maint_dsn, target_db = _maint_dsn(raw)
+        if "<" in target_db or ">" in target_db:
+            print(f"\n!! The database name is still a placeholder: {target_db!r}")
+            print("   Put your REAL database name in DATABASE_URL (e.g. .../analyzer).")
+            return 1
+        print(f"\ntarget database: {target_db!r}")
         # 1. ensure the target database exists (via the maintenance 'postgres' db)
-        maint = url.set(database="postgres")
         try:
-            meng = create_engine(maint, connect_args={"connect_timeout": 5},
-                                 isolation_level="AUTOCOMMIT")
+            meng = create_engine(maint_dsn, connect_args=ca)          # STRING dsn
             with meng.connect() as cx:
+                cx = cx.execution_options(isolation_level="AUTOCOMMIT")  # CREATE DATABASE needs it
                 existing = [r[0] for r in cx.execute(
                     text("SELECT datname FROM pg_database WHERE datistemplate = false"))]
                 print(f"databases on server: {existing}")
-                if url.database not in existing:
-                    cx.exec_driver_sql(f'CREATE DATABASE "{url.database}"')
-                    print(f"created database: {url.database!r}")
+                if target_db not in existing:
+                    cx.exec_driver_sql(f'CREATE DATABASE "{target_db}"')
+                    print(f"created database: {target_db!r}")
                 else:
-                    print(f"database already exists: {url.database!r}")
+                    print(f"database already exists: {target_db!r}")
         except Exception as exc:                    # noqa: BLE001
             print(f"\nCould not reach the server / create the database: "
                   f"{type(exc).__name__}: {exc}")
-            print("  - is the db user allowed to connect to 'postgres' and CREATE DATABASE?")
+            print("  - can this user connect to 'postgres' and CREATE DATABASE?")
             return 1
 
-    # 2. create the schema in the target database
-    eng = create_engine(url, connect_args=({"connect_timeout": 5}
-                                           if url.get_backend_name() == "postgresql" else {}))
+    # 2. create the schema in the target database (STRING dsn = the raw DATABASE_URL)
+    eng = create_engine(raw, connect_args=ca)
     metadata.create_all(eng)
-    print(f"\nschema created: {len(metadata.tables)} tables in {url.database!r}")
+    print(f"\nschema created: {len(metadata.tables)} tables")
     print("\nOK - now run:  python tools\\verify_db_sync.py")
     return 0
 

@@ -7,7 +7,7 @@ import os
 import sys
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
 
 # Repo root on the path so `api.*` and `engine/core` import regardless of CWD.
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,9 +44,11 @@ def run_migrations_online() -> None:
     sys.stderr.write(f"[alembic] sqlalchemy = {_sa.__version__} @ {os.path.dirname(_sa.__file__)}\n")
     sys.stderr.write(f"[alembic] url        = {_URL}\n")
     sys.stderr.flush()
-    cfg = context.config.get_section(context.config.config_ini_section) or {}
-    cfg["sqlalchemy.url"] = _URL
-    connectable = engine_from_config(cfg, prefix="sqlalchemy.", poolclass=pool.NullPool)
+    # Pass the DSN as a STRING (not a URL object): on SQLAlchemy 2.0.51 a URL object can
+    # fail to resolve postgresql+psycopg (NoSuchModuleError) where the identical string
+    # resolves fine. create_engine(<string>) is the proven path; engine_from_config could
+    # re-wrap it into a URL object internally.
+    connectable = create_engine(_URL, poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata,
                           compare_type=True)
