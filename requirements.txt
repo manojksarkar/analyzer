@@ -1,7 +1,35 @@
-libclang>=14.0
-requests>=2.28.0
-python-docx>=1.0
-tiktoken>=0.5.0  # optional: enables exact token counting (char fallback if missing)
-sqlalchemy>=2.0        # PostgreSQL ORM/Core (docs/production-redesign/07)
-alembic>=1.13          # schema migrations
-psycopg[binary]>=3.1   # PostgreSQL driver
+# Python dependencies for the C++ Codebase Analyzer (ArtiFex).
+#
+# Single-file install to run the engine + the API + the test suite:
+#     pip install -r requirements.txt
+#
+# (api/requirements.txt and engine/flowchart/requirements.txt are component subsets of
+#  this file, kept for installing just one part; this root file is the complete set.)
+
+# --- engine: C++ parsing + analysis + export ---
+libclang>=16.0.0            # clang.cindex — libclang bindings for the AST/CFG
+requests>=2.28.0            # LLM HTTP client (OpenAI / Ollama)
+python-docx>=1.0            # DOCX export
+Pillow>=10.0.0             # flowchart image rendering (PIL)
+numpy>=1.24.0              # flowchart layout math
+tiktoken>=0.5.0            # exact token counting (char-count fallback if absent)
+
+# --- database (docs/production-redesign/07) ---
+SQLAlchemy>=2.0            # Core (no ORM) over PostgreSQL
+alembic>=1.13             # schema migrations
+psycopg[binary]>=3.1      # PostgreSQL driver (psycopg 3; [binary] bundles libpq)
+
+# --- API (FastAPI service) ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0  # ASGI server (to run the app)
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-jose[cryptography]>=3.3.0   # JWT create/verify
+passlib[bcrypt]>=1.7.4             # password hashing
+bcrypt>=3.2.0,<4.0.0               # passlib's bcrypt backend (passlib 1.7.x breaks on bcrypt 4+)
+python-multipart>=0.0.9           # form / file parsing for FastAPI
+sse-starlette>=2.1.0              # Server-Sent Events (analysis-job streaming)
+httpx>=0.27.0                     # required by starlette's TestClient; also used for HTTP
+
+# --- testing ---
+pytest>=8.0
