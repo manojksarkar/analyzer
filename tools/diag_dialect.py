@@ -60,6 +60,45 @@ def main() -> int:
     from sqlalchemy.engine import make_url
     _ = make_url(DSN).set(database="postgres").render_as_string(hide_password=False)
     probe("6 after make_url(...).set(...).render_as_string()")
+
+    # ---- REAL-DSN probe: test the EXACT strings db_setup hands to create_engine ----
+    # The step-probes above pass a clean hardcoded string; db_setup passes the
+    # render_as_string() output of make_url(raw).set(database="postgres"). This section
+    # tests that actual value. Passwords are masked in every printed line.
+    raw = os.environ.get("DATABASE_URL", "").strip()
+    print("=" * 60)
+    print("REAL-DSN PROBE (uses your DATABASE_URL)")
+    if not raw:
+        print("    DATABASE_URL not set - set it and re-run to test the real path:")
+        print('    $env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/analyzer"')
+        return 0
+
+    from sqlalchemy import create_engine
+
+    def mask(s: str) -> str:
+        try:
+            return make_url(s).render_as_string(hide_password=True)
+        except Exception as exc:                    # noqa: BLE001
+            return f"<make_url FAILED: {type(exc).__name__}: {exc}>"
+
+    def try_ce(label: str, arg, **kw) -> None:
+        try:
+            create_engine(arg, **kw)
+            print(f"    create_engine({label}) -> OK")
+        except Exception as exc:                     # noqa: BLE001
+            print(f"    create_engine({label}) -> {type(exc).__name__}: {exc}")
+
+    u = make_url(raw)
+    maint = u.set(database="postgres").render_as_string(hide_password=False)
+    print(f"    raw   drivername      : {u.drivername!r}")     # repr exposes hidden chars
+    print(f"    raw   (masked)        : {mask(raw)}")
+    print(f"    maint drivername      : {make_url(maint).drivername!r}")
+    print(f"    maint (masked)        : {mask(maint)}")
+    print()
+    try_ce("raw string", raw)
+    try_ce("maint rendered string", maint)
+    try_ce("maint rendered + connect_args", maint, connect_args={"connect_timeout": 5})
+    try_ce("URL object .set(db=postgres)", u.set(database="postgres"))
     return 0
 
 
