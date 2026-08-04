@@ -119,8 +119,10 @@ def start_job(
     existing = db.jobs.get_current(project_id)
     if existing and existing.status in ("queued", "running", "paused"):
         raise conflict("JOB_ALREADY_RUNNING", "An analysis job is already active for this project.")
-    # The real Version row is created on completion; the job starts with no version_id.
-    version_id = None
+    # Version identity (D-3 / PG-3): reserve the real `ver…` id NOW so it can be handed to
+    # the engine as its version identity (`--version`). The Version *row* is still created at
+    # completion under this same id, so a failed run leaves no orphan row.
+    version_id = f"ver{uuid.uuid4().hex[:8]}"
     # The branch comes from the chosen commit (falls back to the project default).
     commit = db.commits.get(project_id, body.commit_sha)
     branch = commit.branch if commit else (project.default_branch or "main")

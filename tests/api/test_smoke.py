@@ -230,7 +230,7 @@ def test_get_current_job(client, auth_header):
     assert r.status_code in (200, 404)
 
 
-def test_start_job_mocked(client, auth_header):
+def test_start_job_mocked(client, auth_header, db):
     """Start a job with the real pipeline stubbed out."""
     with patch("api.services.pipeline_runner.start") as mock_start:
         # Use a seeded commit SHA from p1
@@ -248,6 +248,10 @@ def test_start_job_mocked(client, auth_header):
         if r2.status_code == 202:
             assert mock_start.called
             assert "job_id" in r2.json()
+            # PG-3: the real `ver…` id is reserved at job start (so the engine runs under it),
+            # not deferred to completion.
+            job = db.jobs.get(r2.json()["job_id"])
+            assert (job.version_id or "").startswith("ver"), job.version_id
 
 
 def test_start_job_requires_version(client, auth_header):

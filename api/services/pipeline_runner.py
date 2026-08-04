@@ -1060,7 +1060,9 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
     # silent "-1" rename here.
     tag = (getattr(job, "version_tag", None) or "").strip()
     version = Version(
-        id=f"ver{uuid.uuid4().hex[:8]}",
+        # Use the id reserved at job start (PG-3) so the row matches the identity the engine
+        # ran under; fall back to a fresh id only for callers that didn't reserve one.
+        id=(getattr(job, "version_id", None) or f"ver{uuid.uuid4().hex[:8]}"),
         project_id=project.id,
         tag=tag,
         commit_sha=job.commit_sha,
