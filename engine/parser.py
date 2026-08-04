@@ -1722,9 +1722,15 @@ def _merge_external_data_dictionary(path: str) -> None:
         print(f"[parser] ERROR: failed to parse data dictionary CSV {path}: {exc}", file=sys.stderr)
         sys.exit(2)
 
-    print(f"  data dictionary: merged {merged} entries from {os.path.basename(path)}")
+    # Through the logger, not print(): this is the record of whether a client's CSV
+    # actually applied, so it has to survive in logs/run_<date>.log rather than
+    # scrolling past on the console. (The other Phase 1 summary lines are still
+    # print-only.)
+    from core.logging_setup import get_logger
+    _plog = get_logger("parser")
+    _plog.info(f"data dictionary: merged {merged} entries from {os.path.basename(path)}")
     for line in _format_csv_merge_report(matched_names, new_names, orphan_children):
-        print(line)
+        _plog.info(line.strip())
 
 
 def main():
