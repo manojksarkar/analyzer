@@ -1598,6 +1598,27 @@ def _scan_defines():
             entity_files[f"{name}@{rel_file}"] = rel_file  # M4.3
 
 
+def _format_csv_merge_report(matched_names, new_names, orphan_children, *, limit=10):
+    """Lines telling the CSV author which rows actually landed on a parsed type.
+
+    "new, not found in source" is the one that matters: a typo'd or renamed type is
+    silently added as its own entry, so without this it looks exactly like a
+    successful override while the real type keeps its old range.
+    """
+    def _names(names):
+        shown = ", ".join(names[:limit])
+        return shown + (f", +{len(names) - limit} more" if len(names) > limit else "")
+
+    lines = []
+    if matched_names:
+        lines.append(f"    {len(matched_names)} matched a parsed type: {_names(matched_names)}")
+    if new_names:
+        lines.append(f"    {len(new_names)} new, not found in source: {_names(new_names)}")
+    if orphan_children:
+        lines.append(f"    {orphan_children} child row(s) skipped: no parent Name above them")
+    return lines
+
+
 def _merge_external_data_dictionary(path: str) -> None:
     """Merge a user-authored CSV into the component-level data_dictionary (external wins).
 
@@ -1628,6 +1649,13 @@ def _merge_external_data_dictionary(path: str) -> None:
 
             parent_key: str | None = None
             merged = 0
+            # Which rows actually landed on something the parse found. A row naming a
+            # type that does not exist (typo, or a type renamed in the code) is added as
+            # a brand-new entry and would otherwise look identical to a successful
+            # override — the author would believe it applied.
+            matched_names: list = []
+            new_names: list = []
+            orphan_children = 0
 
             for row in reader:
                 name     = (row.get("Name")      or "").strip()
@@ -1639,9 +1667,11 @@ def _merge_external_data_dictionary(path: str) -> None:
                 # Child rows: enumerator or field — attach to current parent.
                 if not name and kind in ("enumerator", "field"):
                     if parent_key is None or not entry_nm:
+                        orphan_children += 1
                         continue
                     entry = data_dictionary.get(parent_key)
                     if entry is None:
+                        orphan_children += 1
                         continue
                     if kind == "enumerator":
                         entry.setdefault("enumerators", [])
@@ -1672,6 +1702,7 @@ def _merge_external_data_dictionary(path: str) -> None:
 
                 # Start from existing entry so unspecified sub-lists are preserved.
                 existing = data_dictionary.get(name, {})
+                (matched_names if existing else new_names).append(name)
                 entry: dict = dict(existing)
                 entry["kind"] = kind
                 if range_v:
@@ -1692,6 +1723,8 @@ def _merge_external_data_dictionary(path: str) -> None:
         sys.exit(2)
 
     print(f"  data dictionary: merged {merged} entries from {os.path.basename(path)}")
+    for line in _format_csv_merge_report(matched_names, new_names, orphan_children):
+        print(line)
 
 
 def main():

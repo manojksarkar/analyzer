@@ -1751,6 +1751,12 @@ After `_scan_defines()` and before writing `dataDictionary.json`, if `--data-dic
 - External entries win on conflict. New entries (not in parsed source) are added as-is.
 - `location` and other auto-parsed fields are preserved on updated entries via `dict(existing)` copy.
 - A range set here reaches the interface tables through `utils.get_range`, including via an alias whose own range was baked `"NA"` — see [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03). `fields[].range` inside a struct entry stays as parsed (nothing downstream reads it).
+- **Merge report** (`_format_csv_merge_report`): after the count, the parser prints which rows landed on a parsed type and which were **new, not found in source**. A typo'd or renamed type name is otherwise silently added as its own entry and looks identical to a successful override. Orphan child rows (no `Name` above them) are counted too.
+  ```
+  data dictionary: merged 6 entries from data_dictionary.csv
+      4 matched a parsed type: DB_TYPE, Status, Color, GG
+      2 new, not found in source: MotorSpeed_t, Voltage_t
+  ```
 
 ### Outputs
 

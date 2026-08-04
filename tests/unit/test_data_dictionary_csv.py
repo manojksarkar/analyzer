@@ -163,3 +163,43 @@ class TestCsvRangeReachesLookup:
                               "GG,struct,,NA,Position data\n")
         parser_mod._merge_external_data_dictionary(path)
         assert get_range("GG", dd) == "NA"
+
+
+class TestMergeReport:
+    """The lines telling the author whether their CSV rows landed on a parsed type."""
+
+    def test_matched_and_new_are_separated(self, parser_mod, dd, tmp_path):
+        dd["DB_TYPE"] = {"kind": "enum", "range": "0-9"}
+        path = _csv(tmp_path, "Name,Kind,EntryName,Range,Comment\n"
+                              "DB_TYPE,enum,,0-2,\n"
+                              "MotorSpeed_t,typedef,,0-3000,\n")
+        parser_mod._merge_external_data_dictionary(path)
+        assert dd["DB_TYPE"]["range"] == "0-2"
+        assert dd["MotorSpeed_t"]["range"] == "0-3000"
+
+    def test_typo_is_reported_as_new(self, parser_mod):
+        """The failure this exists to catch: DB_TYP silently becomes its own entry."""
+        lines = parser_mod._format_csv_merge_report(["Status"], ["DB_TYP"], 0)
+        assert any("1 matched a parsed type: Status" in ln for ln in lines)
+        assert any("1 new, not found in source: DB_TYP" in ln for ln in lines)
+
+    def test_orphan_child_rows_reported(self, parser_mod, dd, tmp_path):
+        path = _csv(tmp_path, "Name,Kind,EntryName,Range,Comment\n"
+                              ",enumerator,DB_NONE,0,\n"
+                              ",enumerator,DB_MAIN,1,\n")
+        parser_mod._merge_external_data_dictionary(path)
+        assert dd == {}
+        lines = parser_mod._format_csv_merge_report([], [], 2)
+        assert any("2 child row(s) skipped" in ln for ln in lines)
+
+    def test_all_matched_omits_the_new_line(self, parser_mod):
+        lines = parser_mod._format_csv_merge_report(["A", "B"], [], 0)
+        assert len(lines) == 1
+        assert "matched a parsed type: A, B" in lines[0]
+
+    def test_nothing_to_report_is_silent(self, parser_mod):
+        assert parser_mod._format_csv_merge_report([], [], 0) == []
+
+    def test_long_lists_truncate(self, parser_mod):
+        lines = parser_mod._format_csv_merge_report([f"T{i}" for i in range(14)], [], 0, limit=3)
+        assert "T0, T1, T2, +11 more" in lines[0]
