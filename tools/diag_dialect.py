@@ -99,6 +99,42 @@ def main() -> int:
     try_ce("maint rendered string", maint)
     try_ce("maint rendered + connect_args", maint, connect_args={"connect_timeout": 5})
     try_ce("URL object .set(db=postgres)", u.set(database="postgres"))
+
+    # ---- DEEP DUMP: unmask the ImportError that auto_fn swallows into NoSuchModuleError ----
+    print()
+    print("=" * 60)
+    print("DEEP DUMP (why postgresql.psycopg won't load)")
+    import importlib
+    import traceback
+    from sqlalchemy.dialects import registry as reg
+
+    print(f"    id(registry)                         : {id(reg)}")
+    print(f"    'postgresql.psycopg' in registry.impls: {'postgresql.psycopg' in reg.impls}")
+    dup = [m for m in sys.modules if m == 'sqlalchemy' or m == 'sqlalchemy.dialects'
+           or m == 'sqlalchemy.dialects.postgresql']
+    for name in dup:
+        mod = sys.modules.get(name)
+        print(f"    sys.modules[{name!r}] @ {getattr(mod, '__file__', '?')}")
+    pg = sys.modules.get("sqlalchemy.dialects.postgresql")
+    print(f"    hasattr(dialects.postgresql, 'psycopg'): {hasattr(pg, 'psycopg') if pg else 'pkg not imported'}")
+    print(f"    'sqlalchemy.dialects.postgresql.psycopg' in sys.modules: "
+          f"{'sqlalchemy.dialects.postgresql.psycopg' in sys.modules}")
+
+    print("\n    -- import sqlalchemy.dialects.postgresql.psycopg (the dialect module) --")
+    try:
+        importlib.import_module("sqlalchemy.dialects.postgresql.psycopg")
+        print("    dialect module import -> OK")
+    except BaseException as exc:                     # noqa: BLE001  (see the REAL error)
+        print(f"    dialect module import -> {type(exc).__name__}: {exc}")
+        traceback.print_exc()
+
+    print("\n    -- import psycopg (the driver) --")
+    try:
+        import psycopg
+        print(f"    psycopg driver import -> OK  {psycopg.__version__} @ {psycopg.__file__}")
+    except BaseException as exc:                     # noqa: BLE001
+        print(f"    psycopg driver import -> {type(exc).__name__}: {exc}")
+        traceback.print_exc()
     return 0
 
 
