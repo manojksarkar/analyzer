@@ -129,8 +129,26 @@ def _emit_token_report() -> None:
     try:
         from llm_core import tokens as _tok
         report = _tok.format_report()
-        if report and report.strip():
+        if not (report and report.strip()):
+            return
+        # Shutdown-ordering hazard: by the time this atexit hook runs, the stream a
+        # StreamHandler captured may already be closed - pytest closes its captured stderr at
+        # end of session, and the interpreter tears streams down at exit. Writing a record to
+        # it makes logging.Handler.handleError() spew "--- Logging error --- ValueError: I/O
+        # operation on closed file" (our try/except can't catch it - logging swallows the write
+        # error internally). Drop any handler whose stream is closed, and silence handleError
+        # as a belt-and-braces guard, before emitting the best-effort report.
+        root = logging.getLogger()
+        for h in list(root.handlers):
+            stream = getattr(h, "stream", None)
+            if stream is not None and getattr(stream, "closed", False):
+                root.removeHandler(h)
+        prev_raise = logging.raiseExceptions
+        logging.raiseExceptions = False
+        try:
             logging.getLogger("tokens").info(report)
+        finally:
+            logging.raiseExceptions = prev_raise
     except Exception:
         pass
 
