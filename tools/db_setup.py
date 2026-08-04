@@ -55,11 +55,14 @@ def main() -> int:
         return 1
 
     from sqlalchemy import create_engine, text
-    from api.db.postgres.schema import metadata
 
     is_pg = raw.startswith("postgres")
     ca = {"connect_timeout": 5} if is_pg else {}
 
+    # Build every engine BEFORE importing api.* / schema: on SQLAlchemy 2.0.51 something in
+    # that import chain makes a later create_engine raise NoSuchModuleError for
+    # postgresql.psycopg (see tools/diag_dialect.py). An engine resolves + caches its dialect
+    # at creation, so create_all() below is unaffected once the engine exists.
     if is_pg:
         maint_dsn, target_db = _maint_dsn(raw)
         if "<" in target_db or ">" in target_db:
@@ -86,8 +89,10 @@ def main() -> int:
             print("  - can this user connect to 'postgres' and CREATE DATABASE?")
             return 1
 
-    # 2. create the schema in the target database (STRING dsn = the raw DATABASE_URL)
-    eng = create_engine(raw, connect_args=ca)
+    eng = create_engine(raw, connect_args=ca)       # target engine - dialect resolved here
+
+    # 2. import the schema only NOW (engine already built) and create the tables
+    from api.db.postgres.schema import metadata
     metadata.create_all(eng)
     print(f"\nschema created: {len(metadata.tables)} tables")
     print("\nOK - now run:  python tools\\verify_db_sync.py")
