@@ -46,16 +46,27 @@ branch drivers. (See [SWE4_SPEC REQ-UT-05](spec/SWE4_SPEC.md).)
 
 ---
 
-## 4. Input = the values you vary
+## 4. Input = the ranges you vary
 
-One or more **input sets**, each a concrete value or a range, chosen so every branch edge gets ≥1 set
-(~O(branches), not O(2^branches)). `VOID` when parameterless. Each set is index-aligned with one Expected
-entry. A pointer/ref parameter the function **writes** is an **output** → it belongs in Expected, not Input.
+One or more **input sets**, each expressed as a **range or constraint** — *not* a sampled concrete value.
+The aim is **covering every branch**, not verifying one particular value, so a set states the condition that
+reaches its branch (`a > 0`, `idx ≥ gTableSize`) and leaves the tester free to pick any member. A range
+collapses to a point only when the predicate itself does (`b == 5` → `b = 5`).
+
+Why ranges rather than values: a concrete `a = 1` implies the tool chose that number for a reason. It did
+not — any positive `a` covers the same edge. Stating the range says exactly what is known, and nothing more
+([SWE4_SPEC REQ-TC-06](spec/SWE4_SPEC.md) — never invent a value).
+
+`VOID` when parameterless. Each set is index-aligned with one Expected entry. A pointer/ref parameter the
+function **writes** is an **output** → it belongs in Expected, not Input.
 
 Branch-hitting rules (the deferred Equivalence/Boundary pass):
-- comparison vs literal → boundary pair (`p < K` → `K-1` / `K`)
-- `switch(param)` → one input per case + a non-matching default
-- loop bound → not-taken (`n=0`) and taken (`n≥1`)
+- comparison vs literal → the two partitions either side of it (`p < K` → `p < K` / `p ≥ K`)
+- `switch(param)` → one set per case label + a non-matching default
+- loop bound → not-taken (`n = 0`) and taken (`n ≥ 1`)
+
+**Boundary Value Analysis narrows these ranges to their edges** (`p < K` → `K-1` / `K`) when that pass
+lands — the range is the general form, the boundary pair is a sharpening of it, not a different answer.
 
 **Input sets are "ragged":** set count varies per function (branch-driven), set width varies per function
 (input surface), and even across sets of the *same* function the width can differ — a set lists only the
@@ -116,6 +127,16 @@ fields are user-supplied (default **Emulator**); the examples show `Eval. Equipm
 no globals) are simply omitted. Multiple input sets are stacked within the single Input/Expected cells,
 index-aligned.
 
+**Test Steps are generic** — a **plain-English** numbered transcription of the function's flowchart, written
+**once per function** and independent of the input sets. Every step is **imperative** — *issue · check ·
+expect · set · return* — never "the function returns …". Steps avoid code syntax: a condition reads *"check
+whether `a` is greater than 0"*, not `a > 0`. A mocked callee reads *"expect mock function `loadEntry`"* at
+the point the function reaches it. Decisions nest (`2.` → `2.1` **True case** / `2.2` **False case**, deeper for
+nested decisions), so the step list reads as the control-flow graph. Steps **end at the function's exit** —
+there is no trailing "verify the result" step, because checking the outcome is exactly what the Expected
+Results column is for. Which set drives which leg is *not* recorded here either; that is what the
+index-aligned Input / Expected Results pair carries.
+
 ### 1 — pure parameter, ragged sets
 
 ```c
@@ -133,11 +154,11 @@ int f(int a, int b) {
 
 | Eval. Equipment Name | Precondition | Input | Test Steps | Expected Results | Test Platform |
 |---|---|---|---|---|---|
-| Emulator | **Parameters:** `a (int)`, `b (int)` | **Set 1:** `a=1, b=5`<br>**Set 2:** `a=1, b=4`<br>**Set 3:** `a=-1` | 1. Call `f(a, b)` with the input set.<br>2. Branch on `a > 0`; when taken, branch on `b == 5`.<br>3. Verify the return value. | **Set 1:** `1`<br>**Set 2:** `2`<br>**Set 3:** `3` | Target Board |
+| Emulator | **Parameters:** `a (int)`, `b (int)` | **Set 1:** `a > 0`, `b = 5`<br>**Set 2:** `a > 0`, `b ≠ 5`<br>**Set 3:** `a ≤ 0` | 1. Issue function `f` with input `a`, `b`.<br>2. Check whether `a` is greater than 0.<br>&nbsp;&nbsp;2.1 True case: check whether `b` is equal to 5.<br>&nbsp;&nbsp;&nbsp;&nbsp;2.1.1 True case: return 1.<br>&nbsp;&nbsp;&nbsp;&nbsp;2.1.2 False case: return 2.<br>&nbsp;&nbsp;2.2 False case: return 3. | **Set 1:** `1`<br>**Set 2:** `2`<br>**Set 3:** `3` | Target Board |
 
-*Set widths 2, 2, 1 — `b` drops out on the `a<=0` path.*
+*Set widths 2, 2, 1 — `b` drops out on the `a ≤ 0` path.*
 
-### 2 — parameter + read global (boundary)
+### 2 — parameter + read global (range partitions)
 
 ```c
 static uint16_t gMaxSpeed = 120;              // read global
@@ -149,7 +170,7 @@ bool overLimit(uint16_t speed) {
 
 | Eval. Equipment Name | Precondition | Input | Test Steps | Expected Results | Test Platform |
 |---|---|---|---|---|---|
-| Emulator | **Parameters:** `speed (uint16_t)`<br>**Globals:** `gMaxSpeed (read, = 120)` | **Set 1:** `speed = 120`<br>**Set 2:** `speed = 121` | 1. Set `gMaxSpeed = 120`.<br>2. Call `overLimit(speed)`.<br>3. Evaluate `speed > gMaxSpeed`.<br>4. Verify the return value. | **Set 1:** `false`<br>**Set 2:** `true` | Target Board |
+| Emulator | **Parameters:** `speed (uint16_t)`<br>**Globals:** `gMaxSpeed (read, = 120)` | **Set 1:** `speed ≤ gMaxSpeed`<br>**Set 2:** `speed > gMaxSpeed` | 1. Issue function `overLimit` with input `speed`.<br>2. Check whether `speed` is greater than `gMaxSpeed`.<br>&nbsp;&nbsp;2.1 True case: return true.<br>&nbsp;&nbsp;2.2 False case: return false. | **Set 1:** `false`<br>**Set 2:** `true` | Target Board |
 
 ### 3 — VOID function, driven by global + mock return (draft cases)
 
@@ -172,7 +193,7 @@ void updateAlarm(void) {
 
 | Eval. Equipment Name | Precondition | Input | Test Steps | Expected Results | Test Platform |
 |---|---|---|---|---|---|
-| Emulator | **Mocks:** `readSensor()`<br>**Parameters:** *VOID*<br>**Globals:** `gMode (read)`, `gAlarm (write, = 0)` | *VOID* on params — sets vary the driving state:<br>**Set 1:** `gMode=ACTIVE`, `readSensor()→90`<br>**Set 2:** `gMode=ACTIVE`, `readSensor()→10`<br>**Set 3:** `gMode=INACTIVE` | 1. Set `gMode` and stub `readSensor()` per the set.<br>2. Call `updateAlarm()`.<br>3. Branch on `gMode == ACTIVE`, then on `readSensor() > THRESHOLD`.<br>4. Verify `gAlarm`. | **Set 1:** `gAlarm = 1`; `readSensor()` called *(draft — review)*<br>**Set 2:** `gAlarm = 0`; `readSensor()` called *(draft)*<br>**Set 3:** `gAlarm` unchanged (= 0); `readSensor()` not called | Target Board |
+| Emulator | **Mocks:** `readSensor()`<br>**Parameters:** *VOID*<br>**Globals:** `gMode (read)`, `gAlarm (write, = 0)` | *VOID* on params — sets vary the driving state:<br>**Set 1:** `gMode = ACTIVE`, mock `readSensor` returns `> THRESHOLD`<br>**Set 2:** `gMode = ACTIVE`, mock `readSensor` returns `≤ THRESHOLD`<br>**Set 3:** `gMode ≠ ACTIVE` | 1. Issue function `updateAlarm` with input *VOID*.<br>2. Check whether `gMode` is ACTIVE.<br>&nbsp;&nbsp;2.1 True case: expect mock function `readSensor` and check whether its returned value is greater than THRESHOLD.<br>&nbsp;&nbsp;&nbsp;&nbsp;2.1.1 True case: set `gAlarm` to 1.<br>&nbsp;&nbsp;&nbsp;&nbsp;2.1.2 False case: set `gAlarm` to 0.<br>&nbsp;&nbsp;2.2 False case: leave `gAlarm` unchanged. | **Set 1:** `gAlarm = 1`; mock function `readSensor` called *(draft — review)*<br>**Set 2:** `gAlarm = 0`; mock function `readSensor` called *(draft)*<br>**Set 3:** `gAlarm` unchanged (= 0); mock function `readSensor` not called | Target Board |
 
 *Branches driven entirely from the Precondition; non-deterministic → marked draft.*
 
@@ -193,12 +214,15 @@ int readEntry(uint8_t idx, Entry* out) {
 
 | Eval. Equipment Name | Precondition | Input | Test Steps | Expected Results | Test Platform |
 |---|---|---|---|---|---|
-| Emulator | **Mocks:** `loadEntry()`<br>**Parameters:** `idx (uint8_t)`, `out (Entry*)`<br>**Globals:** `gTableSize (read, = 8)` | **Set 1:** `idx = 0`, `loadEntry()→{id:0,val:7}`<br>**Set 2:** `idx = 8` *(boundary = gTableSize, out of range)*<br>*`out` is written, so it is not an input* | 1. Set `gTableSize = 8`, stub `loadEntry()`.<br>2. Call `readEntry(idx, out)`.<br>3. Branch on `idx < gTableSize`; when valid, copy loaded entry into `*out`.<br>4. Verify the return value and `*out`. | **Set 1:** returns `0`; `*out = {id:0,val:7}`; `loadEntry()` called<br>**Set 2:** returns `-1`; `*out` untouched; `loadEntry()` not called | Target Board |
+| Emulator | **Mocks:** `loadEntry()`<br>**Parameters:** `idx (uint8_t)`, `out (Entry*)`<br>**Globals:** `gTableSize (read, = 8)` | **Set 1:** `idx < gTableSize`, mock `loadEntry` returns any valid `Entry`<br>**Set 2:** `idx ≥ gTableSize` *(out of range)*<br>*`out` is written, so it is not an input* | 1. Issue function `readEntry` with input `idx` and output buffer `out`.<br>2. Check whether `idx` is less than `gTableSize`.<br>&nbsp;&nbsp;2.1 True case:<br>&nbsp;&nbsp;&nbsp;&nbsp;2.1.1 Expect mock function `loadEntry` with input `idx`; store its returned value in `out`.<br>&nbsp;&nbsp;&nbsp;&nbsp;2.1.2 Return 0.<br>&nbsp;&nbsp;2.2 False case: return -1. | **Set 1:** returns `0`; `*out` = the `Entry` returned by the mock; mock function `loadEntry` called<br>**Set 2:** returns `-1`; `*out` untouched; mock function `loadEntry` not called | Target Board |
 
 *`out` is a written pointer → appears in Expected Results, never in Input.*
 
 ---
 
 Across the four: set counts vary (3 / 2 / 3 / 2), set widths vary, some are param-driven, some
-state-driven, and out-params / mock-calls land in Expected — the shapes the SWE.4 engine produces, in the
-actual Table A layout.
+state-driven, and out-params / mock-calls land in Expected — the shapes Table A has to carry.
+
+> **Target, not current output.** The engine does **not** emit this yet: the `testSpecs` view produces flat
+> single-level steps and LLM-chosen concrete values. §8 is the agreed shape;
+> [SWE4_SPEC.md](spec/SWE4_SPEC.md) and the view still have to be moved to it.
