@@ -1674,6 +1674,14 @@ Consequence: the **dataDictionary is the single registry**; views keep resolving
 name (`get_range(p["type"], dd)`) and need no libclang, no schema change, and no
 `functions.json` churn.
 
+**Coverage log.** `interface_tables.run()` logs one line per group —
+`data ranges: 64/65 resolved, 1 NA (int[6] x1)` — via the pure helpers
+`_range_coverage` / `_format_range_coverage`. Deliberately a log, **not** a per-entry
+`rangeSource` field: nothing renders `directionReason` into the DOCX either, so a
+provenance field would ride on every row and churn the snapshot for an audit aid with no
+reader. To trace one type, see the precedence above or query `model/dataDictionary.json`
+directly.
+
 Tests: `tests/unit/test_typedef_underlying.py`.
 - Special pattern: `_maybe_add_typedef_for_struct` adds a typedef entry when
   the source uses `typedef struct { ... } Name;`
