@@ -46,6 +46,10 @@ def _maint_dsn(raw: str) -> tuple[str, str]:
 
 
 def main() -> int:
+    try:  # keep a homoglyph/non-ASCII DSN from crashing prints on a cp1252 console
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     _diagnostic()
 
     raw = os.environ.get("DATABASE_URL", "").strip()
@@ -54,15 +58,25 @@ def main() -> int:
         print('    $env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/analyzer"')
         return 1
 
+    # Sanitize the DSN: a pasted DATABASE_URL often carries an invisible/look-alike character
+    # (a zero-width space, or a homoglyph such as a Cyrillic 'о' for ASCII 'o') that makes
+    # SQLAlchemy fail with a baffling NoSuchModuleError: postgresql.psycopg. sanitize_dsn drops
+    # invisibles and, for an unrepairable non-ASCII scheme, raises a clear "re-type it" error.
+    try:
+        from core.db import sanitize_dsn
+        raw = sanitize_dsn(raw)
+    except Exception as exc:                         # DatabaseUnavailable (bad scheme) etc.
+        print(f"\n{exc}")
+        return 1
+
     from sqlalchemy import create_engine, text
 
     is_pg = raw.startswith("postgres")
     ca = {"connect_timeout": 5} if is_pg else {}
 
-    # Build every engine BEFORE importing api.* / schema: on SQLAlchemy 2.0.51 something in
-    # that import chain makes a later create_engine raise NoSuchModuleError for
-    # postgresql.psycopg (see tools/diag_dialect.py). An engine resolves + caches its dialect
-    # at creation, so create_all() below is unaffected once the engine exists.
+    # Build the engines BEFORE importing api.* / schema (a defensive ordering: an engine
+    # resolves and caches its dialect at creation, so create_all() below is unaffected by
+    # whatever the import chain does afterwards).
     if is_pg:
         maint_dsn, target_db = _maint_dsn(raw)
         if "<" in target_db or ">" in target_db:

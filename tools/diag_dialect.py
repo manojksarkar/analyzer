@@ -39,6 +39,10 @@ def probe(label: str) -> None:
 
 
 def main() -> int:
+    try:  # a homoglyph/non-ASCII DSN would otherwise crash printing on a cp1252 console
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     probe("0 fresh - nothing imported from the repo")
 
     sys.path[:0] = [_ROOT, os.path.join(_ROOT, "engine")]
@@ -88,14 +92,36 @@ def main() -> int:
         except Exception as exc:                     # noqa: BLE001
             print(f"    create_engine({label}) -> {type(exc).__name__}: {exc}")
 
+    # ---- ROOT-CAUSE SCAN (runs FIRST, independent of make_url) ----
+    # create_engine derives the dialect name from the scheme via drivername.replace("+", ".").
+    # If ANY scheme char is not plain ASCII - a zero-width space, or a Unicode homoglyph such as
+    # a Cyrillic 'о' that looks identical to ASCII 'o' (both common in copy-pasted DSNs) - the
+    # computed name is not "postgresql.psycopg", so lookup fails, even though repr() and the
+    # masked URL look perfectly normal. Codepoints (hex) survive copy-paste; glyphs do not.
+    suspicious = [(i, hex(ord(c))) for i, c in enumerate(raw) if ord(c) < 32 or ord(c) > 126]
+    cleaned = "".join(c for c in raw if 32 <= ord(c) <= 126)
+    print(f"    DATABASE_URL length              : {len(raw)}")
+    print(f"    scheme codepoints (before '://') : {[hex(ord(c)) for c in raw.split('://', 1)[0]]}")
+    print(f"    suspicious chars (pos, codepoint): {suspicious if suspicious else 'NONE - clean ASCII'}")
+    print(f"    raw (masked)                     : {mask(raw)}")
+    try_ce("raw string", raw)
+
+    if suspicious:
+        print(f"\n    >>> ROOT CAUSE: DATABASE_URL has {len(suspicious)} non-ASCII/non-printable "
+              f"char(s) at position(s) {[p for p, _ in suspicious]} - invisible in normal display.")
+        print(f"    cleaned (masked)                 : {mask(cleaned)}")
+        try_ce("CLEANED dsn (suspicious chars stripped)", cleaned)
+        print("    >>> FIX: DELETE and RE-TYPE DATABASE_URL by hand (do NOT paste the DSN).")
+        print("    >>>      A homoglyph cannot be auto-stripped correctly - retyping is the cure.")
+        return 0
+
+    print("    DATABASE_URL scheme is clean ASCII.")
     u = make_url(raw)
     maint = u.set(database="postgres").render_as_string(hide_password=False)
     print(f"    raw   drivername      : {u.drivername!r}")     # repr exposes hidden chars
-    print(f"    raw   (masked)        : {mask(raw)}")
     print(f"    maint drivername      : {make_url(maint).drivername!r}")
     print(f"    maint (masked)        : {mask(maint)}")
     print()
-    try_ce("raw string", raw)
     try_ce("maint rendered string", maint)
     try_ce("maint rendered + connect_args", maint, connect_args={"connect_timeout": 5})
     try_ce("URL object .set(db=postgres)", u.set(database="postgres"))
@@ -135,6 +161,28 @@ def main() -> int:
     except BaseException as exc:                     # noqa: BLE001
         print(f"    psycopg driver import -> {type(exc).__name__}: {exc}")
         traceback.print_exc()
+
+    # ---- ROOT-CAUSE CHECK: hidden / non-ASCII chars in DATABASE_URL ----
+    # create_engine computes the dialect name as drivername.replace("+", "."). If ANY char in
+    # the scheme is not plain ASCII (a zero-width space, a look-alike '+', a stray control
+    # char - common when a DSN is copy-pasted), the name is not "postgresql.psycopg" and
+    # lookup fails. Such chars are invisible in repr/paste, so we print CODEPOINTS (hex),
+    # which survive copy-paste, and test a cleaned DSN to confirm.
+    print("\n    -- non-ASCII / hidden character scan of DATABASE_URL --")
+    suspicious = [(i, hex(ord(c))) for i, c in enumerate(raw) if ord(c) < 32 or ord(c) > 126]
+    name = u.drivername.replace("+", ".")
+    print(f"    DATABASE_URL length            : {len(raw)}")
+    print(f"    suspicious chars (pos,codepoint): {suspicious if suspicious else 'NONE - clean ASCII'}")
+    print(f"    computed dialect name codepoints: {[hex(ord(c)) for c in name]}")
+    print(f"    name == 'postgresql.psycopg'    : {name == 'postgresql.psycopg'}")
+    cleaned = "".join(c for c in raw if 32 <= ord(c) <= 126)
+    if cleaned != raw:
+        print(f"\n    >>> ROOT CAUSE: DATABASE_URL has {len(raw) - len(cleaned)} "
+              f"non-printable/non-ASCII char(s). Testing a cleaned copy:")
+        try_ce("CLEANED dsn (suspicious chars stripped)", cleaned)
+        print("    >>> FIX: re-type DATABASE_URL by hand (do not copy-paste the DSN).")
+    else:
+        print("    DATABASE_URL is clean ASCII - hidden-character theory ruled out.")
     return 0
 
 
