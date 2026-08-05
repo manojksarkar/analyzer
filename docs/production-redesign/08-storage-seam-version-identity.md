@@ -77,11 +77,21 @@ rendered output to content-blobs is a later follow-up, not part of this cluster.
 
 ## 5. Increments — each behind a test
 
-**1 — Lock current behaviour with a DB-less two-version e2e (the gate, on today's code first).**
-A tiny C++ fixture + `tools/verify_incremental.py`: baseline run → change one function → second run,
-asserting the unchanged function is **reused** and the changed one **regenerated**, all through the
-`FileStore` (no database). This is the safety net every later step runs behind — and today
-`run_incremental`'s dir/identity path has **no** unit coverage.
+**1 — Lock current behaviour with a DB-less two-version e2e (the gate). ✅ built.**
+`tools/verify_incremental.py`: a throwaway C++ git fixture (two functions), baseline → change
+`add` → second run, all DB-less/LLM-off. It asserts the version-identity-critical behaviour —
+`decision == "incremental"` (baseline identity resolved via `list_versions` + selection) and
+`reused >= 1` (the baseline model was **read back** and carried forward) — the exact store paths
+the wiring changes. `run_incremental`'s dir/identity path had **no** unit coverage; this is the
+safety net every later step runs behind. *(Regeneration count is LLM-gated, so `--no-llm` leaves
+it 0 — not what this gate guards.)*
+
+Enabler discovered building it: `core.paths` conflated code and data roots, and the pipeline
+runs as a **subprocess** that re-detects the root — so a run couldn't be isolated and would
+overwrite the repo's own `model/output`. Fixed with an **`ANALYZER_DATA_ROOT`** override (env, so
+the subprocess inherits it) that relocates `model/output/logs/cache/api-db-data` independently of
+the code root; unset (production) it equals the project root, so nothing changes. This is itself a
+down-payment on the decoupling this milestone is about.
 
 **2 — Break the weld; thread the real id (`FileStore`).**
 - `Workspace.version_dir(ver…) → versions/<ver…>/`; keep `commit_dir(commit)` for the checkout.

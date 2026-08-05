@@ -14,6 +14,12 @@ Usage:
 Override the project root once (typically in run.py before any other import):
     from core.paths import set_project_root
     set_project_root("/some/abs/path")
+
+Generated **data** (model/ output/ logs/ .flowchart_cache/ and the JSON DB under api/db/data)
+can be relocated *independently* of the code root via the ``ANALYZER_DATA_ROOT`` env var (or
+``set_data_root``). Defaults to the project root, so production is unchanged; a test / isolated
+run points it at a scratch dir so a pipeline run never touches the repo's model/output. The env
+var (not just the in-process override) is what an analyzer **subprocess** inherits.
 """
 
 from __future__ import annotations
@@ -26,7 +32,8 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class ProjectPaths:
-    project_root: str
+    project_root: str         # CODE root — contains engine/ + config/
+    data_root: str            # DATA root — holds model/ output/ logs/ cache/ + api/db/data
     src_dir: str              # engine source dir (== <root>/engine); field name kept for compat
     config_dir: str
     config_path: str          # engine/config/config.json
@@ -39,6 +46,7 @@ class ProjectPaths:
 
 _LOCK = threading.Lock()
 _OVERRIDE_ROOT: Optional[str] = None
+_OVERRIDE_DATA_ROOT: Optional[str] = None
 _CACHED: Optional[ProjectPaths] = None
 
 
@@ -54,10 +62,19 @@ def _detect_project_root() -> str:
 
 
 def set_project_root(path: str) -> None:
-    """Override the auto-detected project root. Clears the cache."""
+    """Override the auto-detected CODE root. Clears the cache."""
     global _OVERRIDE_ROOT, _CACHED
     with _LOCK:
         _OVERRIDE_ROOT = os.path.abspath(path)
+        _CACHED = None
+
+
+def set_data_root(path: str) -> None:
+    """Override the DATA root (model/output/logs/cache/api-db-data). Clears the cache. Prefer
+    the ``ANALYZER_DATA_ROOT`` env var when an analyzer subprocess must inherit the override."""
+    global _OVERRIDE_DATA_ROOT, _CACHED
+    with _LOCK:
+        _OVERRIDE_DATA_ROOT = os.path.abspath(path)
         _CACHED = None
 
 
@@ -70,17 +87,20 @@ def paths() -> ProjectPaths:
         if _CACHED is not None:
             return _CACHED
         root = _OVERRIDE_ROOT or _detect_project_root()
-        engine = os.path.join(root, "engine")
+        # Data may live apart from the code (env var so a subprocess inherits it); default = root.
+        data_root = _OVERRIDE_DATA_ROOT or os.environ.get("ANALYZER_DATA_ROOT") or root
+        data_root = os.path.abspath(data_root)
         cfg_dir = os.path.join(root, "engine", "config")
         _CACHED = ProjectPaths(
             project_root=root,
-            src_dir=engine,
+            data_root=data_root,
+            src_dir=os.path.join(root, "engine"),
             config_dir=cfg_dir,
             config_path=os.path.join(cfg_dir, "config.json"),
             config_local_path=os.path.join(cfg_dir, "config.local.json"),
-            model_dir=os.path.join(root, "model"),
-            output_dir=os.path.join(root, "output"),
-            logs_dir=os.path.join(root, "logs"),
-            cache_dir=os.path.join(root, ".flowchart_cache"),
+            model_dir=os.path.join(data_root, "model"),
+            output_dir=os.path.join(data_root, "output"),
+            logs_dir=os.path.join(data_root, "logs"),
+            cache_dir=os.path.join(data_root, ".flowchart_cache"),
         )
         return _CACHED

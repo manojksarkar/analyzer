@@ -16,7 +16,9 @@ from core.paths import paths as _paths
 
 
 def _data_dir(project_root: Optional[str]) -> str:
-    return os.path.join(project_root or _paths().project_root, "api", "db", "data")
+    # The JSON DB is generated/instance data -> the DATA root (== project_root in production,
+    # a scratch dir under ANALYZER_DATA_ROOT for an isolated run).
+    return os.path.join(project_root or _paths().data_root, "api", "db", "data")
 
 
 def _load(name: str, project_root: Optional[str]) -> Any:
