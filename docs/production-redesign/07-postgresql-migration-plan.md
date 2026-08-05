@@ -234,6 +234,9 @@ The blocker isn't `subprocess`, it's that `engine/flowchart/llm/` **shadows** `l
 4. **Gate: L2 prompt parity** (identical prompts) + L3.
 
 ### D — PostgreSQL migration
+
+> **Detailed runbook for PG-3 → PG-5:** [08-storage-seam-version-identity.md](08-storage-seam-version-identity.md) — the correct-architecture approach (honour the `stores.py` seam; real `ver…` id; `FileStore`/`PgStore`).
+
 | Step | Deliverable |
 |---|---|
 | **PG-0** | docker-compose Postgres 16; deps; `DATABASE_URL`; Alembic scaffold; `db.py` in API + engine |
