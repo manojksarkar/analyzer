@@ -1114,7 +1114,7 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
         db.documents.update(doc)
         docs.append(doc)
 
-    out_root = commit_output_root(version.project_id, version.commit_sha)
+    out_root = commit_output_root(version.project_id, version.commit_sha, version.id)
     if out_root is None:
         return docs
 

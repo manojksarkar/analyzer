@@ -45,15 +45,18 @@ def resolve_snapshot_asset(project_id: str, version_id: str, group: str,
                            asset_path: str) -> Optional[Path]:
     """Resolve ``<snapshot>/output/<group>/<asset_path>`` safely, or None.
 
-    ``version_id`` here is the snapshot dir key (commit[:16]); snapshots live under
-    ``workspaces/<pid>/<commit[:16]>/output/<group>`` (there is no ``versions/`` tree)."""
-    base = (_REPO_ROOT / "workspaces" / project_id / version_id
-            / "output" / group).resolve()
-    if not base.is_dir():
-        return None
-    target = (base / asset_path).resolve()
-    if target.is_file() and base in target.parents:
-        return target
+    ``version_id`` is the real ver id (08 step 3): snapshots live under
+    ``workspaces/<pid>/versions/<ver…>/output/<group>``. Also tries the legacy commit-addressed
+    ``workspaces/<pid>/<version_id[:16]>/output`` so old (commit-keyed) asset URLs still resolve."""
+    ws = _REPO_ROOT / "workspaces" / project_id
+    for base_dir in (ws / "versions" / version_id / "output" / group,
+                     ws / (version_id or "")[:16] / "output" / group):
+        base = base_dir.resolve()
+        if not base.is_dir():
+            continue
+        target = (base / asset_path).resolve()
+        if target.is_file() and base in target.parents:
+            return target
     return None
 
 
@@ -70,9 +73,9 @@ def _version_render(db: Any, project: Any, doc: Any, version: Any,
     if not group_dir.is_dir():
         return None
     model_root = snap / "model"
-    # Asset URLs must key by the snapshot dir (commit[:16]), not the API Version.id —
-    # resolve_snapshot_asset resolves workspaces/<pid>/<commit[:16]>/output/<group>.
-    snap_key = (version.commit_sha or "")[:16]
+    # Asset URLs key by the real ver id (08 step 3); resolve_snapshot_asset resolves
+    # workspaces/<pid>/versions/<ver…>/output/<group> (legacy commit-keyed dirs still fall back).
+    snap_key = version.id or (version.commit_sha or "")[:16]
     asset_base = f"projects/{project_id}/compare/assets/{snap_key}/{doc.group}"
     try:
         return doc_render.build_render(

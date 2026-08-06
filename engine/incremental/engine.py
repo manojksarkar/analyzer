@@ -540,6 +540,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Structured model (+ hashes + edges) -> store, keyed by the real ver id; this is what the
     # NEXT run reads as its baseline. Commit-dir copy (capture above) stays for the API/readers.
     store.write_model(version_id, model_dir)
+    store.capture_output(version_id, _paths().output_dir)   # output -> versions/<ver id>/ (readers, step 3)
     llm = cfg.get("llm") or {}
     # Content-only reuse key (recipe intentionally not folded in — approved outputs are
     # reused regardless of which model/prompt produced them). Reuse the fingerprints

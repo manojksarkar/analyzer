@@ -36,15 +36,25 @@ _INCLUDE_GUARD_RE = _re.compile(r"^_*[A-Z][A-Z0-9_]*(?:_H|_HPP)_*$")
 
 # ── output dir lookup (path-traversal safe) ──────────────────────────────────
 
-def commit_output_root(project_id: Optional[str], commit_sha: Optional[str]) -> Optional[Path]:
-    """A specific version's output dir: ``workspaces/<pid>/<commit[:16]>/output`` (the
-    commit-addressed layout). None when project/commit is missing or the dir is absent. Pass
+def commit_output_root(project_id: Optional[str], commit_sha: Optional[str],
+                       version_id: Optional[str] = None) -> Optional[Path]:
+    """A specific version's output dir. Prefers the version-keyed layout
+    ``workspaces/<pid>/versions/<ver…>/output`` (08 step 3); falls back to the commit-addressed
+    ``workspaces/<pid>/<commit[:16]>/output`` for pre-migration snapshots. None when absent. Pass
     the result to output_group_dir/resolve_asset/find_docx so a VERSION renders, not the
     latest shared run."""
-    if not (project_id and commit_sha):
+    if not project_id:
         return None
-    d = _REPO_ROOT / "workspaces" / project_id / commit_sha[:16] / "output"
-    return d if d.is_dir() else None
+    ws = _REPO_ROOT / "workspaces" / project_id
+    if version_id:
+        d = ws / "versions" / version_id / "output"
+        if d.is_dir():
+            return d
+    if commit_sha:
+        d = ws / commit_sha[:16] / "output"
+        if d.is_dir():
+            return d
+    return None
 
 
 def output_group_dir(group: Optional[str], output_root: Optional[Path] = None) -> Optional[Path]:

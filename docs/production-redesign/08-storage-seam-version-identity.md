@@ -114,9 +114,14 @@ LLM-regen + flowchart-reuse + reader paths are NOT covered by the gate (flowchar
 Also fixed here: `generate_*` computed `model/output` from the *code* root; routed through
 `paths().model_dir/output_dir` so the `ANALYZER_DATA_ROOT` split (step 1) actually reaches them.
 
-**3 — Resolve readers by version id.** `compare_engine`, `compare_render`, `doc_render`,
-`documents.py` resolve a version's artifacts through the store (by `ver…`), not
-`workspaces/<pid>/<commit[:16]>`. The commit-sha-prefix fallbacks retire.
+**3 — Resolve readers by version id. ✅ done.** The engine now also captures rendered output to
+the store (`store.capture_output` → `versions/<ver…>/output`). `doc_render.commit_output_root`,
+`compare_engine._snap`, and `compare_render.resolve_snapshot_asset` **prefer** the version-keyed
+`workspaces/<pid>/versions/<ver…>/` and **fall back** to `<commit[:16]>/` for pre-migration
+snapshots; their callers (`documents.py`, `pipeline_runner`, `compare.py`) pass `version.id`, and
+compare asset URLs key by the real id. API suite + gate green. *(Fallback keeps old commit-keyed
+snapshots renderable; a re-run writes version-keyed. Full validation of compare/doc rendering is
+the office box, LLM+flowcharts on.)*
 
 **4 — `PgStore`.** Wrap `model_store.py` + `PgReuseIndex` behind the store interface; the engine
 selects `PgStore` when `DATABASE_URL` is set, else `FileStore`. Structured artifacts now live in

@@ -247,6 +247,7 @@ def generate_full(
     # the NEXT run reads as its baseline (store.read_hashes/functions), replacing the on-disk
     # HashStore/EdgeStore. The commit-dir copy (capture above) stays for the API/readers.
     store.write_model(version_id, model_dir)
+    store.capture_output(version_id, output_dir)   # rendered output -> versions/<ver id>/ (readers, step 3)
     import json
     hashes = json.load(open(os.path.join(model_dir, "hashes.json"), encoding="utf-8"))
     edges = json.load(open(os.path.join(model_dir, "edges.json"), encoding="utf-8"))
