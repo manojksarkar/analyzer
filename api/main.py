@@ -45,6 +45,26 @@ app = FastAPI(
 )
 
 
+def _ensure_default_admin(db) -> None:
+    """Guarantee a login exists: create ``admin@aspice.dev`` / ``admin`` when that user is absent,
+    so a brand-new database (e.g. a freshly created remote Postgres) is never left with no way to
+    sign in. Idempotent — a no-op once the user exists. Change the password after first login."""
+    import datetime
+    import sys
+    try:
+        if db.users.get_by_email("admin@aspice.dev"):
+            return
+        from .models.domain import User
+        from .middleware.auth import hash_password
+        db.users.create(User(
+            id="admin", email="admin@aspice.dev", name="Administrator", initials="AD",
+            avatar_url=None, hashed_password=hash_password("admin"),
+            created_at=datetime.datetime.now(datetime.timezone.utc)))
+        print("[api] created default admin — sign in: admin@aspice.dev / admin", file=sys.stderr)
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"[api] could not ensure default admin: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+
 @app.on_event("startup")
 async def _db_startup_check() -> None:
     """When the SQL backend is active, log which database the API is bound to (password
@@ -67,6 +87,7 @@ async def _db_startup_check() -> None:
         with engine.connect() as cx:
             cx.execute(text("SELECT 1"))
         print("[api] database reachable ✓", file=sys.stderr)
+        _ensure_default_admin(_db)          # never leave a fresh DB with no way to sign in
     except Exception as exc:                                  # noqa: BLE001
         print(f"[api] *** DATABASE UNREACHABLE *** {type(exc).__name__}: {exc}\n"
               f"      The API is bound to {_redact(dsn)} (source: {src}). If that is 'localhost'\n"
