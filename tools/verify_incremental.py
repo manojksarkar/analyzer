@@ -110,7 +110,7 @@ def main() -> int:
 
     print(f"\n=== run 1 (FULL) commit {sha1[:10]} ===")
     m1 = generate_full(PID, "main", sha1, {"type": "project"},
-                       workspaces_root=ws_root, no_llm=True, repo_url=repo)
+                       workspaces_root=ws_root, no_llm=True, repo_url=repo, version_id="ver1")
     print(f"   version {m1.get('versionId')}: {m1.get('decision')} / {m1.get('status')}")
 
     # record version 1 so list_versions (JSON mode) offers it as the baseline for run 2
@@ -121,7 +121,7 @@ def main() -> int:
     sha2 = _commit_file(repo, CPP_V2, "v2")
     print(f"\n=== run 2 (INCREMENTAL) commit {sha2[:10]} ===")
     m2 = generate_incremental(PID, "main", sha2, scope={"type": "project"},
-                              workspaces_root=ws_root, no_llm=True, repo_url=repo)
+                              workspaces_root=ws_root, no_llm=True, repo_url=repo, version_id="ver2")
 
     decision = m2.get("decision")
     reused = int(m2.get("reused") or 0)
@@ -129,15 +129,15 @@ def main() -> int:
     print(f"\nresult: decision={decision}  reused={reused}  regenerated={regen}")
 
     # The gate for the version-identity work: `incremental` proves list_versions + baseline
-    # selection resolved the identity, and reused>=1 proves the baseline model was READ back
-    # (carry-forward) — exactly the store paths the ArtifactStore wiring will change. Any
-    # regeneration is a bonus signal (change detection), not what this gate guards.
-    ok = decision == "incremental" and reused >= 1
+    # selection resolved the identity; reused>=1 proves the baseline model was READ back through
+    # the store (carry-forward); regenerated>=1 proves the changed function was detected against
+    # that baseline. All three are the exact store/identity paths the ArtifactStore wiring owns.
+    ok = decision == "incremental" and reused >= 1 and regen >= 1
     if ok:
-        print("\nOK — incremental run: baseline resolved and its model reused (>=1).")
+        print("\nOK — incremental: baseline resolved + its model reused, changed fn regenerated.")
     else:
-        print("\nFAILED — expected an incremental run with reused>=1 "
-              "(baseline identity resolved + model read).")
+        print("\nFAILED — expected an incremental run with reused>=1 and regenerated>=1 "
+              "(baseline identity resolved + model read + change detected).")
     print(f"(workspace kept for inspection: {tmp})" if not ok else "")
     if ok:
         import shutil

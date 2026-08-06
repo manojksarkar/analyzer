@@ -123,20 +123,19 @@ def read_baseline_model(engine, project_id: str, base_commit: str) -> Optional[D
 def list_versions(engine, project_id: str) -> List[Dict[str, Any]]:
     """Completed versions for baseline selection: [{versionId, commit, branch, status}].
 
-    `versionId` is `commit[:16]` (NOT the real DB id) so this is a drop-in replacement for
-    the file-based project_db.list_versions - the engine uses versionId as its per-commit
-    dir name. (read_baseline_model maps a commit to the real DB id internally.) A version
+    `versionId` is the **real DB version id** (08): the engine runs under it and the store keys
+    artifacts by it; `commit` is carried alongside for resolving the checkout dir. A version
     qualifies as a baseline once its generation finished (pipeline_status 'complete'); rows
     written before the lifecycle change have a null pipeline_status and are treated so."""
     v = s.versions
     out: List[Dict[str, Any]] = []
     with engine.connect() as cx:
-        for r in cx.execute(select(v.c.commit_sha, v.c.branch, v.c.pipeline_status)
+        for r in cx.execute(select(v.c.id, v.c.commit_sha, v.c.branch, v.c.pipeline_status)
                             .where(v.c.project_id == project_id)):
             if not r.commit_sha:
                 continue
             if r.pipeline_status not in (None, "complete"):
                 continue
-            out.append({"versionId": r.commit_sha[:16], "commit": r.commit_sha,
+            out.append({"versionId": r.id, "commit": r.commit_sha,
                         "branch": r.branch or "", "status": "complete"})
     return out

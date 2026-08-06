@@ -100,6 +100,6 @@ def list_versions(project_id: str, *, project_root: Optional[str] = None) -> Lis
         commit = v.get("commit_sha") or ""
         if not commit:
             continue
-        out.append({"versionId": commit[:16], "commit": commit,
+        out.append({"versionId": v.get("id") or commit[:16], "commit": commit,
                     "branch": v.get("branch") or "", "status": "complete"})
     return out

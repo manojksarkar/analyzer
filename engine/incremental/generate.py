@@ -174,11 +174,17 @@ def generate_full(
         repo_url, _rb, repo_token = resolve_project_repo(project_id)
     ensure_commit_checkout(repo_dir, repo_url or "", branch, commit, token=(repo_token or ""))
     actual_commit = git_ops.current_commit(repo_dir)
-    version_id = os.path.basename(repo_dir)  # the version id IS the checkout dir name (commit[:16])
+    # Version identity (08): the checkout DIR stays commit-keyed (commit_key); the version
+    # IDENTITY is the real `ver…` id supplied by the backend (`--version`), falling back to
+    # commit[:16] for standalone CLI use. The store keys artifacts by version_id.
+    from incremental.store import make_store
+    commit_key = os.path.basename(repo_dir)
+    version_id = version_id or commit_key
+    store = make_store(project_id, workspaces_root)
 
-    # 2. resolved config -> <commit[:16]>/config.json + a "running" manifest so the
+    # 2. resolved config -> <commit_key>/config.json + a "running" manifest so the
     #    version is queryable immediately (status flips to complete/failed below).
-    vdir = vstore.create_dir(version_id)     # == repo_dir; ensured, never wiped
+    vdir = vstore.create_dir(commit_key)     # == repo_dir; ensured, never wiped
     # Config is PER-PROJECT: workspaces/<pid>/config.json (the API writes it from the
     # project's architecture_layers + build_config). Use it as-is (or an explicit --config).
     # Only when --no-llm must rewrite it, or no per-project config exists, do we materialize
@@ -190,15 +196,15 @@ def generate_full(
     if config_path and not no_llm:
         vcfg_path = config_path                       # run.py uses the per-project config as-is
     else:
-        vstore.write_config(version_id, cfg)
+        vstore.write_config(commit_key, cfg)
         vcfg_path = os.path.join(vdir, "config.json")
-    vstore.write_manifest(version_id, _manifest(
+    vstore.write_manifest(commit_key, _manifest(
         version_id, branch, actual_commit, scope, data_dict_id,
         decision="full", regenerated=0, reused=0, status="running", warnings=[]))
 
     # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited).
     # Clean output/ first so the version captures only its own documents.
-    _rmtree_force(os.path.join(project_root, "output"))
+    _rmtree_force(_paths().output_dir)
     base_cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path]
     base_cmd += scope_to_args(scope)
     base_cmd += per_component_docx_args(scope)
@@ -213,10 +219,10 @@ def generate_full(
         if os.path.isfile(dd):
             base_cmd += ["--data-dictionary", dd]
 
-    model_dir = os.path.join(project_root, "model")
+    model_dir = _paths().model_dir
 
     def _fail_full(rc):
-        vstore.write_manifest(version_id, _manifest(
+        vstore.write_manifest(commit_key, _manifest(
             version_id, branch, actual_commit, scope, data_dict_id,
             decision="full", regenerated=0, reused=0, status="failed",
             warnings=[f"analyzer exited {rc}"]))
@@ -235,14 +241,16 @@ def generate_full(
         _fail_full(rc)
 
     # 4. capture artifacts (model/output/documents) + hashes/edges snapshots
-    output_dir = os.path.join(project_root, "output")
-    documents = vstore.capture_artifacts(version_id, model_dir=model_dir, output_dir=output_dir)
+    output_dir = _paths().output_dir
+    documents = vstore.capture_artifacts(commit_key, model_dir=model_dir, output_dir=output_dir)
+    # Structured model (+ hashes + edges) -> the store, keyed by the real ver id. This is what
+    # the NEXT run reads as its baseline (store.read_hashes/functions), replacing the on-disk
+    # HashStore/EdgeStore. The commit-dir copy (capture above) stays for the API/readers.
+    store.write_model(version_id, model_dir)
     import json
     hashes = json.load(open(os.path.join(model_dir, "hashes.json"), encoding="utf-8"))
     edges = json.load(open(os.path.join(model_dir, "edges.json"), encoding="utf-8"))
     functions = json.load(open(os.path.join(model_dir, "functions.json"), encoding="utf-8"))
-    hstore.write(version_id, hashes)
-    estore.write(version_id, edges)
 
     # 5. fingerprints -> seed reuse index (content-only key; recipe is intentionally
     #    not folded in — an approved doc is reused regardless of model/prompt).
@@ -257,7 +265,7 @@ def generate_full(
                          decision="full",
                          regenerated=len(fps), reused=0, status="complete", warnings=[])
     manifest["documents"] = documents
-    vstore.write_manifest(version_id, manifest)
+    vstore.write_manifest(commit_key, manifest)
 
     # End-of-run report (M3.4): a full generation regenerates everything (it becomes
     # the baseline future incrementals diff against).
@@ -278,7 +286,7 @@ def generate_full(
         "flowcharts": {"total": len(functions), "regenerated": len(functions), "carried": 0},
         "files": {"total": files_total, "regenerated": files_total, "carried": 0},
         "documents": documents, "warnings": [],
-    }), version_dir=vstore.version_dir(version_id))
+    }), version_dir=vdir)
     return manifest
 
 

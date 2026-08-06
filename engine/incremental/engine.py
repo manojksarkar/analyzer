@@ -321,21 +321,29 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     if not target:
         raise ValueError(f"commit {commit!r} not found in repo")
 
-    decision = select_baseline(repo_dir, list_versions(project_id), target, base_version_id)
+    _versions = list_versions(project_id)
+    _ver_commit = {v["versionId"]: v["commit"] for v in _versions}   # real ver id -> commit (dir)
+    decision = select_baseline(repo_dir, _versions, target, base_version_id)
     if decision["decision"] == "full":
         return generate_full(project_id, branch, commit, scope,
                              workspaces_root=workspaces_root, data_dict_id=data_dict_id,
                              no_llm=no_llm, version_id=version_id, force=force,
                              repo_url=repo_url, repo_token=repo_token, config_path=config_path)
 
-    base_vid = decision["chosenBaseVersionId"]
+    base_vid = decision["chosenBaseVersionId"]           # real ver… id (from list_versions)
+    base_commit = decision["chosenBaseCommit"]            # resolves the baseline's checkout dir
     project = get_project(project_id)        # api/db/data/projects.json (no project.json)
     project_name = (project.get("name") or "").strip() or None
+    from incremental.store import make_store
     hstore, estore, ridx = HashStore(vstore), EdgeStore(vstore), ReuseIndex(ws)
-    version_id = os.path.basename(repo_dir)  # the version id IS the checkout dir name (commit[:16])
+    store = make_store(project_id, workspaces_root)
+    # Version identity (08): the checkout DIR stays commit-keyed; version_id is the real ver…
+    # id (--version) supplied by the backend, else commit[:16] for standalone CLI use.
+    commit_key = os.path.basename(repo_dir)
+    version_id = version_id or commit_key
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
-    vdir = vstore.create_dir(version_id)  # == repo_dir (already checked out); never wiped
+    vdir = vstore.create_dir(commit_key)  # == repo_dir (already checked out); never wiped
     # Config is PER-PROJECT: workspaces/<pid>/config.json (written by the API). Use it as-is
     # (or an explicit --config); only when --no-llm rewrites it, or none exists, write a copy.
     if not config_path:
@@ -345,21 +353,21 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     if config_path and not no_llm:
         vcfg_path = config_path
     else:
-        vstore.write_config(version_id, cfg)
+        vstore.write_config(commit_key, cfg)
         vcfg_path = os.path.join(vdir, "config.json")
-    vstore.write_manifest(version_id, _manifest(
+    vstore.write_manifest(commit_key, _manifest(
         version_id, branch, target, scope, data_dict_id,
         decision="incremental", regenerated=0, reused=0, status="running", warnings=decision["warnings"]))
 
     dd_path = ws.datadict_path(data_dict_id) if data_dict_id and os.path.isfile(
         ws.datadict_path(data_dict_id)) else None
-    model_dir = os.path.join(project_root, "model")
+    model_dir = _paths().model_dir
     # Clean the shared output/ so this version captures only its own documents
     # (the flowchart-reuse step re-seeds output/<scope>/flowcharts from the baseline).
-    _rmtree_force(os.path.join(project_root, "output"))
+    _rmtree_force(_paths().output_dir)
 
     def _fail(stage: str, rc: int):
-        vstore.write_manifest(version_id, _manifest(
+        vstore.write_manifest(commit_key, _manifest(
             version_id, branch, target, scope, data_dict_id,
             decision="incremental", regenerated=0, reused=0, status="failed",
             warnings=decision["warnings"] + [f"{stage} exited {rc}"]))
@@ -377,7 +385,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
             project_name=project_name,
             target=target, base_commit=decision["chosenBaseCommit"],
-            base_parse_dir=os.path.join(vstore.version_dir(base_vid), "parse"))
+            base_parse_dir=os.path.join(vstore.version_dir(base_commit), "parse"))
     if used_narrowed and verify_parse:
         # M4.5 self-check: shadow-validate the narrowed model against a FULL parse, then use
         # the full parse as the source of truth (a verify run is slow but always safe).
@@ -408,31 +416,16 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Snapshot THIS version's blank skeleton for future narrowed parses (M4.4).
     snapshot_parse_model(model_dir, vdir)
 
-    base_model_dir = os.path.join(vstore.version_dir(base_vid), "model")
     target_hashes = _read(model_dir, "hashes.json")
     target_functions = _read(model_dir, "functions.json")
     target_edges = _read(model_dir, "edges.json")
     target_globals = _read(model_dir, "globalVariables.json")
-    base_hashes = hstore.read(base_vid)
-    base_functions = _read(base_model_dir, "functions.json")
-    base_globals = _read(base_model_dir, "globalVariables.json")
-
-    # PG-4 Path B: when a DB is configured (DATABASE_URL - a Postgres deployment), read the
-    # baseline from the DB (populated by the prior run's model sync) instead of the captured
-    # files. Same signal that makes project_db read the DB. Best-effort - any miss (baseline
-    # not in the DB, error) falls back to the file reads above, so file-based dev is unchanged.
-    if os.environ.get("DATABASE_URL"):
-        from core.logging_setup import get_logger as _glog
-        try:
-            from core.db import get_engine
-            from incremental.pg_stores import read_baseline_model
-            _b = read_baseline_model(get_engine(), project_id, decision.get("chosenBaseCommit") or "")
-            if _b and _b.get("hashes"):
-                base_hashes, base_functions, base_globals = _b["hashes"], _b["functions"], _b["globals"]
-                _glog("incremental").info(
-                    "baseline read from DB (%d hashes) instead of files", len(base_hashes))
-        except Exception as _exc:                                # noqa: BLE001 - best effort
-            _glog("incremental").info("DB baseline read skipped (%s); using files", _exc)
+    # Baseline read from the store by the real ver id (FileStore -> versions/<ver>/model,
+    # PgStore -> Postgres). Replaces the on-disk HashStore read, the commit-dir model read, and
+    # the separate DATABASE_URL branch — the store resolves file-vs-DB by construction.
+    base_hashes = store.read_hashes(base_vid)
+    base_functions = store.read_functions(base_vid)
+    base_globals = store.read_globals(base_vid)
 
     # Precise impact (classify + reverse-BFS over the fresh model) drives ALL reuse:
     # function descriptions/behaviour-names/summaries (Phase 2) AND flowcharts (Phase 3).
@@ -464,12 +457,12 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     def _src_funcs(vid: str) -> dict:
         if vid not in _func_cache:
-            _func_cache[vid] = _read(os.path.join(vstore.version_dir(vid), "model"), "functions.json")
+            _func_cache[vid] = store.read_functions(vid)   # by real ver id
         return _func_cache[vid]
 
     def _src_globs(vid: str) -> dict:
         if vid not in _glob_cache:
-            _glob_cache[vid] = _read(os.path.join(vstore.version_dir(vid), "model"), "globalVariables.json")
+            _glob_cache[vid] = store.read_globals(vid)
         return _glob_cache[vid]
 
     index_reused = carry_forward_from_index(plan["impact"], target_fps, target_functions,
@@ -510,7 +503,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # SAME flowchart as its source version, so don't regenerate it. The view splices its
     # flowchart in from the source version instead (and falls back to regenerating if that
     # version has no flowchart for it). The rest of direct_fns regenerate as before (M3.6).
-    xver_flowcharts = {fid: vstore.version_dir(index_reused[fid])
+    # index_reused[fid] is a real ver id; the flowchart view needs that version's checkout DIR,
+    # so map it back to its commit (fall back to the id for a commit-keyed CLI run).
+    xver_flowcharts = {fid: vstore.version_dir(_ver_commit.get(index_reused[fid], index_reused[fid]))
                        for fid in direct_fns if fid in index_reused}
     flowchart_fids_regen = sorted(direct_fns - set(xver_flowcharts))
     # flowchartFids (for FUNCTION-LEVEL flowchart reuse, M3.6) = the directly changed/
@@ -524,7 +519,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                    "flowchartFiles": flowchart_files,
                    "flowchartFids": flowchart_fids_regen,
                    "crossVersionFlowcharts": xver_flowcharts,
-                   "baselineVersionDir": vstore.version_dir(base_vid)}, fh, indent=2)
+                   "baselineVersionDir": vstore.version_dir(base_commit)}, fh, indent=2)
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
@@ -540,10 +535,11 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         pass
 
     # Capture artifacts + snapshots, seed the reuse index, finalize the manifest.
-    documents = vstore.capture_artifacts(version_id, model_dir=model_dir,
-                                         output_dir=os.path.join(project_root, "output"))
-    hstore.write(version_id, target_hashes)
-    estore.write(version_id, target_edges)
+    documents = vstore.capture_artifacts(commit_key, model_dir=model_dir,
+                                         output_dir=_paths().output_dir)
+    # Structured model (+ hashes + edges) -> store, keyed by the real ver id; this is what the
+    # NEXT run reads as its baseline. Commit-dir copy (capture above) stays for the API/readers.
+    store.write_model(version_id, model_dir)
     llm = cfg.get("llm") or {}
     # Content-only reuse key (recipe intentionally not folded in — approved outputs are
     # reused regardless of which model/prompt produced them). Reuse the fingerprints
@@ -561,7 +557,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     manifest["documents"] = documents
     manifest["carriedForward"] = n_carried
     manifest["crossVersionReused"] = len(index_reused) + len(index_reused_g)
-    vstore.write_manifest(version_id, manifest)
+    vstore.write_manifest(commit_key, manifest)
 
     # End-of-run report (M3.4): inputs + change classification + reuse accounting.
     cls = plan["classify"]

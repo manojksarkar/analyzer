@@ -118,10 +118,10 @@ class TestProjectReads:
             _version(cx, "v2", "bbbbbbbb2222", pipeline_status=None)     # legacy -> treated complete
             _version(cx, "v3", "cccccccc3333", pipeline_status="parsing")  # in-flight -> excluded
             _version(cx, "v4", "")                                       # no commit -> excluded
-        # versionId is commit[:16] (drop-in for the engine's per-commit dir), not the DB id
+        # versionId is the real DB id now (08), not commit[:16]; commit is carried alongside
         got = {v["commit"]: v["versionId"] for v in pg_stores.list_versions(eng, PID)}
         assert set(got) == {"aaaaaaaa1111", "bbbbbbbb2222"}    # v3 in-flight, v4 no-commit excluded
-        assert got["aaaaaaaa1111"] == "aaaaaaaa1111"[:16]
+        assert got["aaaaaaaa1111"] == "v1"
 
 
 class TestProjectDbDbAware:
@@ -149,6 +149,6 @@ class TestProjectDbDbAware:
             assert project_db.resolve_project_repo(PID) == ("https://git/x.git", "main", "tok")
             vs = project_db.list_versions(PID)
             assert vs and vs[0]["commit"] == "abcdef123456"
-            assert vs[0]["versionId"] == "abcdef123456"[:16]     # drop-in commit[:16]
+            assert vs[0]["versionId"] == "v1"                    # the real DB id (08)
         finally:
             coredb.reset_engine()

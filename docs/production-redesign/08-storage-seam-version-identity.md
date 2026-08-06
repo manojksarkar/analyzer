@@ -93,14 +93,26 @@ the subprocess inherits it) that relocates `model/output/logs/cache/api-db-data`
 the code root; unset (production) it equals the project root, so nothing changes. This is itself a
 down-payment on the decoupling this milestone is about.
 
-**2 — Break the weld; thread the real id (`FileStore`).**
-- `Workspace.version_dir(ver…) → versions/<ver…>/`; keep `commit_dir(commit)` for the checkout.
-- Engine takes `(commit, version_id)`: `commit` → checkout, `version_id` → every artifact call.
-  Baseline reads use `chosenBaseVersionId`; `select_baseline` already returns `chosenBaseCommit` for
-  any checkout need.
-- `project_db.list_versions` → real `ver…` ids (keep `commit` for reference). *(Flips the two
-  `test_pg_stores` assertions that pin `commit[:16]`.)*
-- Gate: the step-1 e2e still passes, now under real `ver…` ids.
+**2 — Break the weld; thread the real id. ✅ done.**
+`generate_full`/`generate_incremental` take `(commit, version_id)`: the **checkout dir** stays
+commit-keyed (`commit_key`), while the engine's **model/hashes/edges/reuse** go through the store
+keyed by the real `version_id` (`store.write_model`, `store.read_hashes/functions/globals`).
+Baseline reads resolve via the store by `chosenBaseVersionId`; directory needs (narrowed-parse
+snapshot, cross-version-flowchart splice, baseline dir) resolve via `chosenBaseCommit` / a
+ver→commit map from `list_versions`. `project_db.list_versions` + `pg_stores.list_versions` now
+return real `ver…` ids (flipping the two `test_pg_stores` assertions). `pipeline_runner` passes
+`--version-id` (the reserved id) and the real `--base-version-id`. Model is **dual-written**
+(commit dir via `capture` for the API/readers, store by ver id for the engine) — readers stay
+untouched until step 3.
+
+*Mixed transition, deliberately:* only the engine-internal data moved to the store; the
+reader-facing manifest/output/config stay commit-keyed. Gate green under real ids
+(`decision=incremental`, `reused=1`, `regenerated=1`); full unit+api suite green. **The
+LLM-regen + flowchart-reuse + reader paths are NOT covered by the gate (flowcharts off, --no-llm)
+— validate with a real two-version run on the office box.**
+
+Also fixed here: `generate_*` computed `model/output` from the *code* root; routed through
+`paths().model_dir/output_dir` so the `ANALYZER_DATA_ROOT` split (step 1) actually reaches them.
 
 **3 — Resolve readers by version id.** `compare_engine`, `compare_render`, `doc_render`,
 `documents.py` resolve a version's artifacts through the store (by `ver…`), not

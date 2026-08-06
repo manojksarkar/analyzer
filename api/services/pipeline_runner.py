@@ -273,12 +273,13 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
            "--project-id", job.project_id, "--branch", job.branch,
            "--commit", job.commit_sha, "--scope", _scope_to_cli(scope),
            "--config", str(config_path)]
+    if getattr(job, "version_id", None):
+        # Run under the real `ver…` id reserved at job start (08), so the engine's identity,
+        # reuse index and DB records all match the API/DB — no more commit[:16] namespace.
+        cmd += ["--version-id", job.version_id]
     if mode != "full" and getattr(job, "reference_version_id", None):
-        # The engine's version namespace is commit[:16], not the API's 'ver…' ids —
-        # translate; fall back to the raw id so a deleted base still warns "not found".
-        _raw_ref = job.reference_version_id
-        _ref_commit = _resolve_ref_commit(db, _raw_ref)
-        cmd += ["--base-version-id", _ref_commit[:16] if _ref_commit else _raw_ref]
+        # list_versions returns real ver ids now, so the baseline override IS the real id.
+        cmd += ["--base-version-id", job.reference_version_id]
     if getattr(job, "data_dict_id", None):
         cmd += ["--data-dict-id", job.data_dict_id]
     if getattr(job, "no_llm", False):

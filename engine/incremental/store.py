@@ -24,6 +24,15 @@ from typing import Any, Dict, List, Optional
 
 from incremental.stores import _read_json, _write_json, default_workspaces_root
 
+
+def make_store(project_id: str, workspaces_root: Optional[str] = None) -> "ArtifactStore":
+    """The production store for a run: `PgStore` when a Postgres `DATABASE_URL` is configured
+    (artifacts in the DB, keyed by the real ver id), else the DB-less `FileStore`."""
+    if os.environ.get("DATABASE_URL"):
+        from core.db import get_engine
+        return PgStore(project_id, get_engine(), workspaces_root=workspaces_root)
+    return FileStore(project_id, workspaces_root=workspaces_root)
+
 # model dict key -> the file name the pipeline produces / reads
 _MODEL_FILES = {
     "functions": "functions.json", "globals": "globalVariables.json",
