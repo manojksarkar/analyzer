@@ -1,0 +1,17 @@
+{
+  // Local config overrides + secrets. Copy this file to `config.local.json` (same folder) and
+  // fill in real values. `config.local.json` is gitignored, so credentials never get committed.
+  // It is merged over `config.json`; keep only the keys you want to override here.
+  //
+  // Database connection. Used by the API server and the db tools when DATABASE_URL is NOT set
+  // in the environment (env var still wins if present). Resolution order:
+  //   DATABASE_URL env  ->  this `db` section  ->  the compose default (localhost).
+  "db": {
+    "driver": "postgresql+psycopg",
+    "host": "127.0.0.1",
+    "port": 5432,
+    "user": "analyzer",
+    "password": "analyzer",
+    "database": "analyzer"
+  }
+}

@@ -67,9 +67,44 @@ def sanitize_dsn(raw: str) -> str:
     return s
 
 
+def _dsn_from_config() -> Optional[str]:
+    """Build a DSN from the ``db`` section of the merged engine config (``config.json`` +
+    ``config.local.json``), so the connection can be configured in a file instead of the
+    ``DATABASE_URL`` env var. Returns ``None`` when there is no ``db.host``.
+
+        "db": { "driver": "postgresql+psycopg", "host": "10.0.0.5", "port": 5432,
+                "user": "analyzer", "password": "secret", "database": "analyzer" }
+
+    Put credentials in ``engine/config/config.local.json`` (gitignored), not ``config.json``.
+    Skipped inside an engine phase subprocess (``ANALYZER_CONFIG`` set to a per-project config
+    that carries no ``db`` section) — those inherit ``DATABASE_URL`` from the API instead."""
+    try:
+        from core.config import load_config
+        from core.paths import paths
+        db = load_config(paths().src_dir).get("db") or {}
+    except Exception:                                    # config missing/unreadable -> no DSN
+        return None
+    host = db.get("host")
+    if not host:
+        return None
+    from urllib.parse import quote
+    driver = db.get("driver") or "postgresql+psycopg"
+    user = quote(str(db.get("user", "")), safe="")
+    pw = quote(str(db.get("password", "")), safe="")
+    cred = f"{user}:{pw}@" if (user or pw) else ""
+    port = db.get("port", 5432)
+    name = db.get("database") or db.get("dbname") or "analyzer"
+    return f"{driver}://{cred}{host}:{port}/{name}"
+
+
 def database_url() -> str:
-    """The DSN from ``DATABASE_URL``, else the compose default (sanitized)."""
-    return sanitize_dsn(os.environ.get("DATABASE_URL", "").strip() or DEFAULT_DSN)
+    """The DSN, resolved in priority order and sanitized:
+    ``DATABASE_URL`` env var → the config ``db`` section → the compose default."""
+    env = os.environ.get("DATABASE_URL", "").strip()
+    if env:
+        return sanitize_dsn(env)
+    from_cfg = _dsn_from_config()
+    return sanitize_dsn(from_cfg or DEFAULT_DSN)
 
 
 def _redact(dsn: str) -> str:

@@ -52,22 +52,15 @@ def main() -> int:
         pass
     _diagnostic()
 
-    raw = os.environ.get("DATABASE_URL", "").strip()
-    if not raw:
-        print("\nDATABASE_URL is not set. Set it, e.g.:")
-        print('    $env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/analyzer"')
-        return 1
-
-    # Sanitize the DSN: a pasted DATABASE_URL often carries an invisible/look-alike character
-    # (a zero-width space, or a homoglyph such as a Cyrillic 'о' for ASCII 'o') that makes
-    # SQLAlchemy fail with a baffling NoSuchModuleError: postgresql.psycopg. sanitize_dsn drops
-    # invisibles and, for an unrepairable non-ASCII scheme, raises a clear "re-type it" error.
+    # Resolve the DSN: DATABASE_URL env -> the config `db` section -> the compose default.
+    # database_url() also sanitizes (strips invisible/homoglyph chars; raises on a bad scheme).
+    from core.db import database_url, _redact, DatabaseUnavailable
     try:
-        from core.db import sanitize_dsn
-        raw = sanitize_dsn(raw)
-    except Exception as exc:                         # DatabaseUnavailable (bad scheme) etc.
+        raw = database_url()
+    except DatabaseUnavailable as exc:               # e.g. a non-ASCII scheme
         print(f"\n{exc}")
         return 1
+    print(f"using DSN: {_redact(raw)}   (set DATABASE_URL or engine/config/config.local.json 'db')")
 
     from sqlalchemy import create_engine, text
 

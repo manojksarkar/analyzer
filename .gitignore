@@ -35,6 +35,7 @@ logs
 
 # Local config overrides (optional)
 backend/config/config.local.json
+engine/config/config.local.json
 backend/config/last_run.json
 
 # Cache

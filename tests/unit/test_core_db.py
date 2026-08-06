@@ -24,6 +24,7 @@ UNREACHABLE = "postgresql+psycopg://analyzer:secret@127.0.0.1:59999/analyzer"
 class TestDsnResolution:
     def test_defaults_to_compose_dsn(self, monkeypatch):
         monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setattr("core.db._dsn_from_config", lambda: None)   # no config db section
         assert database_url() == DEFAULT_DSN
 
     def test_env_overrides(self, monkeypatch):
@@ -32,7 +33,18 @@ class TestDsnResolution:
 
     def test_blank_env_falls_back(self, monkeypatch):
         monkeypatch.setenv("DATABASE_URL", "   ")
+        monkeypatch.setattr("core.db._dsn_from_config", lambda: None)
         assert database_url() == DEFAULT_DSN
+
+    def test_config_db_section_used_when_env_unset(self, monkeypatch):
+        # DATABASE_URL unset -> the config `db` section (built into a DSN by _dsn_from_config) wins
+        # over the default; env still overrides config when present.
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setattr("core.db._dsn_from_config",
+                            lambda: "postgresql+psycopg://cu:cp@confhost:5432/cdb")
+        assert database_url() == "postgresql+psycopg://cu:cp@confhost:5432/cdb"
+        monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://eu:ep@envhost:5432/edb")
+        assert database_url() == "postgresql+psycopg://eu:ep@envhost:5432/edb"
 
 
 class TestRedaction:

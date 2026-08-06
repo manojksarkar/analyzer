@@ -53,16 +53,14 @@ def main() -> int:
     except Exception:
         pass
 
-    from core.db import sanitize_dsn, DatabaseUnavailable, get_engine
-    raw = os.environ.get("DATABASE_URL", "").strip()
-    if not raw:
-        print("Set DATABASE_URL first (a Postgres DSN).")
-        return 1
+    # DSN from DATABASE_URL env, else the config `db` section, else the default.
+    from core.db import database_url, DatabaseUnavailable, get_engine, _redact
     try:
-        raw = sanitize_dsn(raw)
+        raw = database_url()
     except DatabaseUnavailable as exc:
         print(exc)
         return 1
+    print(f"using DSN: {_redact(raw)}")
 
     from sqlalchemy import create_engine
     from sqlalchemy.engine import make_url

@@ -61,18 +61,17 @@ async def _db_startup_check() -> None:
     from core.db import _redact
     from sqlalchemy import text
     dsn = str(engine.url)
-    env_set = "set" if os.environ.get("DATABASE_URL", "").strip() else "NOT SET"
-    print(f"[api] SQL backend — database: {_redact(dsn)}  (DATABASE_URL is {env_set})",
-          file=sys.stderr)
+    src = "DATABASE_URL env" if os.environ.get("DATABASE_URL", "").strip() else "config db section / default"
+    print(f"[api] SQL backend — database: {_redact(dsn)}  (source: {src})", file=sys.stderr)
     try:
         with engine.connect() as cx:
             cx.execute(text("SELECT 1"))
         print("[api] database reachable ✓", file=sys.stderr)
     except Exception as exc:                                  # noqa: BLE001
         print(f"[api] *** DATABASE UNREACHABLE *** {type(exc).__name__}: {exc}\n"
-              f"      The API is bound to {_redact(dsn)}. If that is 'localhost' but you meant a\n"
-              f"      remote server, set DATABASE_URL *before* starting uvicorn (it is {env_set}).",
-              file=sys.stderr)
+              f"      The API is bound to {_redact(dsn)} (source: {src}). If that is 'localhost'\n"
+              f"      but you meant a remote server, set DATABASE_URL before starting uvicorn, or\n"
+              f"      add a `db` section to engine/config/config.local.json.", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Self-hosted API docs — Swagger UI / ReDoc assets are served from api/static/

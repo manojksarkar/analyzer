@@ -24,14 +24,11 @@ def main() -> int:
     except Exception:
         pass
 
+    # DSN from DATABASE_URL env, else the config `db` section, else the default.
     from core.db import database_url, get_engine, require_database, DatabaseUnavailable, _redact
-    if not os.environ.get("DATABASE_URL", "").strip():
-        print("DATABASE_URL is not set. Set it to your remote Postgres first, e.g.:")
-        print('    $env:DATABASE_URL = "postgresql+psycopg://user:pass@host:5432/analyzer"')
-        return 1
-
-    print(f"target database: {_redact(database_url())}")
     try:
+        print(f"target database: {_redact(database_url())}   "
+              f"(set DATABASE_URL or engine/config/config.local.json 'db')")
         require_database()                         # clear message if unreachable
     except DatabaseUnavailable as exc:
         print(f"\n{exc}")
