@@ -162,6 +162,22 @@ def _cleanup_state(job_id: str) -> None:
         # Keep logs so SSE can drain remaining lines after completion
 
 
+def _reserve_version(db: Any, job: Any, project: Any) -> None:
+    """Create the version row at run start (status 'draft') so the engine — when it writes to
+    Postgres via PgStore — can insert its per-version rows under the ``versions`` FK *during* the
+    run (PG-3/08). ``_make_version`` finalizes it at completion; ``_mark_failed`` deletes it on
+    failure so the name is free to retry. No-op if there's no reserved id or the row already exists."""
+    vid = getattr(job, "version_id", None)
+    if not vid or db.versions.get(vid):
+        return
+    db.versions.create(Version(
+        id=vid, project_id=job.project_id,
+        tag=(getattr(job, "version_tag", None) or "").strip(),
+        commit_sha=job.commit_sha, branch=job.branch,
+        description="Generating…", status="draft", docs_count=0,
+        created_by=(project.created_by if project else "system"), created_at=_now()))
+
+
 def _mark_failed(db: Any, job_id: str, message: str) -> None:
     job = db.jobs.get(job_id)
     if job and job.status not in ("cancelled", "complete", "failed"):
@@ -169,6 +185,15 @@ def _mark_failed(db: Any, job_id: str, message: str) -> None:
         job.error_message = message[:4000]
         job.completed_at = _now()
         db.jobs.update(job)
+        # drop the reserved (still-draft) version so its name is free for a retry
+        vid = getattr(job, "version_id", None)
+        if vid:
+            v = db.versions.get(vid)
+            if v is not None and getattr(v, "status", None) == "draft":
+                try:
+                    db.versions.delete(vid)
+                except Exception:               # best-effort cleanup
+                    pass
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +251,7 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     job.status = "running"
     job.current_activity = "Preparing workspace…"
     db.jobs.update(job)
+    _reserve_version(db, job, project)     # version row must exist before the engine (PgStore FK)
     _append_log(job_id, "Starting analysis pipeline…")
 
     root = get_settings().repo_root
@@ -1060,10 +1086,12 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
     # required + unique at job start (400/409), so there is no fallback name and no
     # silent "-1" rename here.
     tag = (getattr(job, "version_tag", None) or "").strip()
+    # Use the id reserved at job start (PG-3) so the row matches the identity the engine ran
+    # under; fall back to a fresh id only for callers that didn't reserve one.
+    vid = getattr(job, "version_id", None) or f"ver{uuid.uuid4().hex[:8]}"
+    reserved = db.versions.get(vid) if getattr(job, "version_id", None) else None
     version = Version(
-        # Use the id reserved at job start (PG-3) so the row matches the identity the engine
-        # ran under; fall back to a fresh id only for callers that didn't reserve one.
-        id=(getattr(job, "version_id", None) or f"ver{uuid.uuid4().hex[:8]}"),
+        id=vid,
         project_id=project.id,
         tag=tag,
         commit_sha=job.commit_sha,
@@ -1072,15 +1100,19 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
         status="in_review",
         docs_count=0,
         created_by=(project.created_by if project else "system"),
-        created_at=now,
-        # Incremental accounting comes from the engine's manifest (baselineVersionId is the
-        # baseline commit[:16]; resolvable by compare as a commit-sha prefix).
+        created_at=(reserved.created_at if reserved else now),
+        # Incremental accounting comes from the engine's manifest (baselineVersionId is now the
+        # baseline's real ver id — 08 step 2b).
         baseline_version_id=manifest.get("baselineVersionId"),
         decision=manifest.get("decision") or getattr(job, "decision", None),
         regenerated=manifest.get("regenerated"),
         reused=manifest.get("reused"),
     )
-    db.versions.create(version)
+    # Finalize the row reserved at job start; create it if this flow didn't reserve one.
+    if reserved is not None:
+        db.versions.update(version)
+    else:
+        db.versions.create(version)
     return version
 
 

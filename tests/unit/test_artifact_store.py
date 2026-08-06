@@ -120,6 +120,22 @@ def test_same_commit_two_versions_distinct(tmp_path):
 # Real-model round-trip + FileStore/PgStore parity
 # ---------------------------------------------------------------------------
 
+def test_make_store_selects_backend(tmp_path, monkeypatch):
+    """make_store -> PgStore when DATABASE_URL is set (create_engine is lazy, no connect), else
+    FileStore. This is how the engine picks its store at runtime (08 step 4)."""
+    from incremental.store import make_store
+    import core.db as coredb
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    coredb.reset_engine()
+    assert isinstance(make_store(PID, workspaces_root=str(tmp_path / "fs")), FileStore)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    coredb.reset_engine()
+    try:
+        assert isinstance(make_store(PID, workspaces_root=str(tmp_path / "pg")), PgStore)
+    finally:
+        coredb.reset_engine()
+
+
 @pytest.mark.skipif(not HAS_MODEL, reason="needs model/ (run the pipeline once)")
 def test_real_model_roundtrip_and_parity(tmp_path):
     orig_hashes = json.load(open(os.path.join(MODEL_DIR, "hashes.json"), encoding="utf-8"))

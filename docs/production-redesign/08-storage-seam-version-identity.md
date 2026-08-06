@@ -123,9 +123,15 @@ compare asset URLs key by the real id. API suite + gate green. *(Fallback keeps 
 snapshots renderable; a re-run writes version-keyed. Full validation of compare/doc rendering is
 the office box, LLM+flowcharts on.)*
 
-**4 — `PgStore`.** Wrap `model_store.py` + `PgReuseIndex` behind the store interface; the engine
-selects `PgStore` when `DATABASE_URL` is set, else `FileStore`. Structured artifacts now live in
-Postgres keyed by `ver…`. Gate: run the step-1 e2e against remote Postgres (the pending "Phase 5").
+**4 — `PgStore`. ✅ done.** `make_store` (2b) returns `PgStore` when `DATABASE_URL` is set, else
+`FileStore`, so the engine writes structured artifacts straight to Postgres keyed by `ver…`.
+Required piece landed here: **reserve the version row at job start** (`pipeline_runner._reserve_version`,
+status `draft`) so the engine's `PgStore.write_model` inserts `entity_versions`/… under the
+`versions` FK *during* the run; `_make_version` now **finalizes** that row (update, not create) at
+completion, and `_mark_failed` **deletes** the still-draft row so the name is free to retry.
+`make_store` backend-selection unit-tested. Gate (FileStore) + full suite green. *(The
+`_sync_model_to_db` post-hoc API sync is now redundant with the engine's `PgStore` — removed in
+step 5. End-to-end `PgStore`-in-engine is office-box validation against remote Postgres.)*
 
 **5 — Cutover.** Drop the commit-dir artifact layout; `FileStore` becomes dev/test only, Postgres the
 prod source of truth. Folds into 07's PG-7.
