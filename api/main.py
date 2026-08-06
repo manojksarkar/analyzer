@@ -44,6 +44,36 @@ app = FastAPI(
     redoc_url=None,
 )
 
+
+@app.on_event("startup")
+async def _db_startup_check() -> None:
+    """When the SQL backend is active, log which database the API is bound to (password
+    redacted) and whether it's reachable — so a missing/wrong DATABASE_URL surfaces HERE, not
+    as a cryptic 500 on the first request. Does not abort startup (the DB may come up shortly)."""
+    import os
+    import sys
+    from .db.session import _db
+    engine = getattr(_db, "_engine", None)
+    if engine is None:
+        print("[api] backend: in-memory/json (no external database).", file=sys.stderr)
+        return
+    sys.path.insert(0, str(Path(__file__).parent.parent / "engine"))
+    from core.db import _redact
+    from sqlalchemy import text
+    dsn = str(engine.url)
+    env_set = "set" if os.environ.get("DATABASE_URL", "").strip() else "NOT SET"
+    print(f"[api] SQL backend — database: {_redact(dsn)}  (DATABASE_URL is {env_set})",
+          file=sys.stderr)
+    try:
+        with engine.connect() as cx:
+            cx.execute(text("SELECT 1"))
+        print("[api] database reachable ✓", file=sys.stderr)
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"[api] *** DATABASE UNREACHABLE *** {type(exc).__name__}: {exc}\n"
+              f"      The API is bound to {_redact(dsn)}. If that is 'localhost' but you meant a\n"
+              f"      remote server, set DATABASE_URL *before* starting uvicorn (it is {env_set}).",
+              file=sys.stderr)
+
 # ---------------------------------------------------------------------------
 # Self-hosted API docs — Swagger UI / ReDoc assets are served from api/static/
 # instead of a public CDN, so /docs and /redoc work on networks (e.g. office
