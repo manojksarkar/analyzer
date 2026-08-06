@@ -24,9 +24,33 @@ from .json_db import JsonDatabase
 
 # ---------------------------------------------------------------------------
 # Instantiate the database.
-# Change API_DB_BACKEND env var (or replace this block) to switch backends.
+# Backend selection: API_DB_BACKEND env var wins ("memory" | "json" | "postgres"). When it is
+# unset, use Postgres if a database is configured — DATABASE_URL env OR a `db` section in
+# engine/config/config.local.json — else in-memory (dev/tests). So configuring the DB in the
+# file is enough; no separate API_DB_BACKEND is required.
 # ---------------------------------------------------------------------------
-_backend = os.environ.get("API_DB_BACKEND", "memory").lower().strip()
+def _engine_on_path() -> None:
+    import sys
+    _eng = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "engine")
+    if _eng not in sys.path:
+        sys.path.insert(0, _eng)
+
+
+def _db_configured() -> bool:
+    if os.environ.get("DATABASE_URL", "").strip():
+        return True
+    try:
+        _engine_on_path()
+        from core.db import _dsn_from_config
+        return bool(_dsn_from_config())
+    except Exception:
+        return False
+
+
+_backend = os.environ.get("API_DB_BACKEND", "").lower().strip()
+if not _backend:
+    _backend = "postgres" if _db_configured() else "memory"
 
 
 def _make_postgres():
