@@ -115,6 +115,18 @@ def _strip_trailing_commas(text: str) -> str:
 # load_config / load_llm_config (formerly in utils.py)
 # ---------------------------------------------------------------------------
 
+def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merge ``over`` into ``base``: nested dicts merge, scalars/lists replace. So
+    config.local.json can override a single nested key (e.g. ``llm.customHeaders`` or
+    ``llm.baseUrl``) without restating the whole ``llm`` block."""
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge(base[k], v)
+        else:
+            base[k] = v
+    return base
+
+
 def load_config(project_root: str) -> Dict[str, Any]:
     """Load config from <project_root>/config/config.json, then config.local.json overrides.
 
@@ -153,7 +165,7 @@ def load_config(project_root: str) -> Dict[str, Any]:
                     raw = f.read()
                     stripped = _strip_json_comments(raw)
                     stripped = _strip_trailing_commas(stripped)
-                    config.update(json.loads(stripped))
+                    _deep_merge(config, json.loads(stripped))   # local overrides per nested key
             except (json.JSONDecodeError, IOError):
                 pass
     return config

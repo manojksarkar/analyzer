@@ -13,5 +13,17 @@
     "user": "analyzer",
     "password": "analyzer",
     "database": "analyzer"
+  },
+
+  // LLM endpoint + credentials. Keep these here (gitignored), NOT in tracked config.json.
+  // Deep-merged over config.json's `llm`, so list ONLY the keys you want to override — e.g. the
+  // gateway URL and the auth-header token; provider/model/timeouts stay as set in config.json.
+  // Applies to both `python engine/run.py` runs and API-driven jobs.
+  "llm": {
+    "baseUrl": "https://your-llm-gateway/v1",
+    "customHeaders": {
+      "x-dep-ticket": "credential:YOUR_TOKEN_HERE",
+      "User-Id": "your-user-id"
+    }
   }
 }
