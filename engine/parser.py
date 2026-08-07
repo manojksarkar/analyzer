@@ -518,6 +518,106 @@ def _get_type_key(cursor):
     return get_qualified_name(cursor)
 
 
+_ELABORATED_RE = re.compile(r"^(?:struct|enum|union|class)\s+")
+
+_SIGNED_INT_KINDS = {
+    cindex.TypeKind.SCHAR, cindex.TypeKind.CHAR_S, cindex.TypeKind.SHORT,
+    cindex.TypeKind.INT, cindex.TypeKind.LONG, cindex.TypeKind.LONGLONG,
+    cindex.TypeKind.INT128,
+}
+_UNSIGNED_INT_KINDS = {
+    cindex.TypeKind.UCHAR, cindex.TypeKind.CHAR_U, cindex.TypeKind.USHORT,
+    cindex.TypeKind.UINT, cindex.TypeKind.ULONG, cindex.TypeKind.ULONGLONG,
+    cindex.TypeKind.UINT128, cindex.TypeKind.CHAR16, cindex.TypeKind.CHAR32,
+}
+
+
+def _range_from_clang_type(ctype) -> str:
+    """Data range computed from the type itself, rather than guessed from its name.
+
+    `get_canonical()` walks the typedef chain down to the real builtin and
+    `get_size()` reports its width **for the target being parsed** — so `long` is
+    4 bytes on Windows and 8 on Linux, which the hardcoded PRIMITIVES table cannot
+    express. Returns "NA" for anything that is not a builtin (structs, enums,
+    pointers, floats); those are answered from their own dictionary entries.
+    """
+    if ctype is None:
+        return "NA"
+    try:
+        canon = ctype.get_canonical()
+        kind = canon.kind
+        if kind == cindex.TypeKind.VOID:
+            return "VOID"
+        if kind == cindex.TypeKind.BOOL:
+            return "0-1"
+        if kind in _SIGNED_INT_KINDS or kind in _UNSIGNED_INT_KINDS:
+            size = canon.get_size()
+            if size and size > 0:
+                bits = size * 8
+                if kind in _UNSIGNED_INT_KINDS:
+                    return f"0-0x{(1 << bits) - 1:X}"
+                return f"-0x{1 << (bits - 1):X}-0x{(1 << (bits - 1)) - 1:X}"
+    except Exception:
+        pass
+    return "NA"
+
+
+def _register_builtin_range(ctype) -> None:
+    """Record a builtin's target-correct range under its canonical name.
+
+    Called for every parameter / return type / global / field encountered, so the
+    dictionary answers for the builtins this project actually uses with a measured
+    width instead of the portable guess in PRIMITIVES (which is seeded afterwards
+    with setdefault, and so no longer overwrites this).
+
+    Only the CANONICAL spelling is registered ("unsigned char", "long"). Registering
+    the written spelling would let a parameter typed `UINT8` overwrite the UINT8
+    *typedef* entry with a primitive one, losing the location the unit header table
+    needs.
+    """
+    if ctype is None:
+        return
+    try:
+        canon = ctype.get_canonical()
+        name = (canon.spelling or "").strip()
+    except Exception:
+        return
+    if not name:
+        return
+    rng = _range_from_clang_type(canon)
+    if rng == "NA":
+        return
+    existing = data_dictionary.get(name)
+    if existing is not None and existing.get("kind") != "primitive":
+        return  # never shadow a project type that happens to share the name
+    data_dictionary[name] = {"kind": "primitive", "range": rng}
+
+
+def _typedef_underlying(cursor) -> str:
+    """What a `typedef` actually aliases.
+
+    `cursor.type` on a TYPEDEF_DECL is the typedef type ITSELF, so its spelling is
+    the alias's own name ("UINT8"), never what it points at — which left every
+    typedef self-referential and its range "NA". `underlying_typedef_type` is the
+    accessor that answers the question (`typedef unsigned char UINT8;` -> "unsigned
+    char", `typedef int UNIT;` -> "int").
+
+    Elaborated spellings ("enum Mode_t", "struct Widget_t") are reduced to the bare
+    name so the result is usable as a dataDictionary key — that also keeps the
+    typedef-of-anonymous-enum/struct forms self-referential, which is what the unit
+    header table relies on to print the enumerator list.
+    """
+    underlying = ""
+    try:
+        u = cursor.underlying_typedef_type
+        underlying = (u.spelling or "").strip() if u is not None else ""
+    except Exception:
+        underlying = ""
+    if not underlying:
+        underlying = (cursor.type.spelling or "").strip() if cursor.type else ""
+    return _ELABORATED_RE.sub("", underlying).strip()
+
+
 def _maybe_add_typedef_for_struct(name: str, qn: str, loc: dict, rel_file: str):
     """If this struct comes from a 'typedef struct { ... } Name;' pattern, add a typedef entry."""
     if not name or not rel_file or not loc:
@@ -553,7 +653,12 @@ def _maybe_add_typedef_for_struct(name: str, qn: str, loc: dict, rel_file: str):
         "name": name,
         "qualifiedName": qn,
         "underlyingType": underlying or "(opaque)",
-        "range": get_range_for_type(underlying or ""),
+        # underlyingType is the type's OWN name here (the alias names the struct it
+        # follows), so deriving a range from it would be reading a range out of a
+        # type name: get_range_for_type("Size_t") matches its "size_t" substring rule
+        # and stamps a 64-bit integer range on a {int width; int height;} struct.
+        # The struct entry under `qn` carries the real answer; leave this one unknown.
+        "range": "NA",
         "location": {"file": rel_file, "line": typedef_line},
     }
 
@@ -578,10 +683,14 @@ def visit_type_definitions(cursor):
             fields = []
             for c in cursor.get_children():
                 if c.kind == cindex.CursorKind.FIELD_DECL and c.spelling:
+                    _register_builtin_range(c.type)
+                    _field_range = _range_from_clang_type(c.type)
+                    if _field_range == "NA":
+                        _field_range = get_range_for_type(c.type.spelling if c.type else "")
                     field_entry = {
                         "name": c.spelling,
                         "type": c.type.spelling if c.type else "",
-                        "range": get_range_for_type(c.type.spelling if c.type else ""),
+                        "range": _field_range,
                     }
                     cmt = _inline_comment(c)
                     if cmt:
@@ -648,18 +757,24 @@ def visit_type_definitions(cursor):
     elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
         if cursor.spelling:
             qn = get_qualified_name(cursor)
-            underlying = cursor.type.spelling if cursor.type else ""
+            underlying = _typedef_underlying(cursor)
             # If an enum already exists with the same name, keep it (enum has range),
             # but ALSO store the typedef as a separate entry (unique key) so it can appear in views.
             key = qn
             if qn in data_dictionary and data_dictionary[qn].get("kind") == "enum":
                 key = f"typedef@{qn}:{rel_file}:{loc.get('line', '')}"
+            # Range from the canonical type (exact, target-aware); the name table is
+            # only consulted when libclang has no answer — e.g. a typedef of a struct.
+            _td_range = _range_from_clang_type(cursor.underlying_typedef_type)
+            if _td_range == "NA":
+                _td_range = get_range_for_type(underlying or "")
+            _register_builtin_range(cursor.underlying_typedef_type)
             typedef_dict: dict = {
                 "kind": "typedef",
                 "name": cursor.spelling,
                 "qualifiedName": qn,
                 "underlyingType": underlying or "(opaque)",
-                "range": get_range_for_type(underlying or ""),
+                "range": _td_range,
                 "location": loc,
             }
             cmt = _preceding_comment(cursor)
@@ -837,7 +952,14 @@ def visit_definitions(cursor):
         params = []
         try:
             for arg in cursor.get_arguments():
+                # Seed the dictionary with this builtin's measured range, so the view's
+                # name lookup resolves it exactly (see _register_builtin_range).
+                _register_builtin_range(arg.type)
                 params.append({"name": arg.spelling or "", "type": arg.type.spelling if arg.type else ""})
+        except Exception:
+            pass
+        try:
+            _register_builtin_range(cursor.result_type)
         except Exception:
             pass
 
@@ -915,6 +1037,7 @@ def visit_definitions(cursor):
         else:
             var_id = f"{cursor.location.file.name}:{cursor.location.line}"
             value_str = _get_var_init_value(cursor)
+            _register_builtin_range(cursor.type)
             globals_data[var_id] = {
                 "variableId": var_id,
                 "variableName": cursor.spelling,
@@ -1475,6 +1598,27 @@ def _scan_defines():
             entity_files[f"{name}@{rel_file}"] = rel_file  # M4.3
 
 
+def _format_csv_merge_report(matched_names, new_names, orphan_children, *, limit=10):
+    """Lines telling the CSV author which rows actually landed on a parsed type.
+
+    "new, not found in source" is the one that matters: a typo'd or renamed type is
+    silently added as its own entry, so without this it looks exactly like a
+    successful override while the real type keeps its old range.
+    """
+    def _names(names):
+        shown = ", ".join(names[:limit])
+        return shown + (f", +{len(names) - limit} more" if len(names) > limit else "")
+
+    lines = []
+    if matched_names:
+        lines.append(f"    {len(matched_names)} matched a parsed type: {_names(matched_names)}")
+    if new_names:
+        lines.append(f"    {len(new_names)} new, not found in source: {_names(new_names)}")
+    if orphan_children:
+        lines.append(f"    {orphan_children} child row(s) skipped: no parent Name above them")
+    return lines
+
+
 def _merge_external_data_dictionary(path: str) -> None:
     """Merge a user-authored CSV into the component-level data_dictionary (external wins).
 
@@ -1505,6 +1649,13 @@ def _merge_external_data_dictionary(path: str) -> None:
 
             parent_key: str | None = None
             merged = 0
+            # Which rows actually landed on something the parse found. A row naming a
+            # type that does not exist (typo, or a type renamed in the code) is added as
+            # a brand-new entry and would otherwise look identical to a successful
+            # override — the author would believe it applied.
+            matched_names: list = []
+            new_names: list = []
+            orphan_children = 0
 
             for row in reader:
                 name     = (row.get("Name")      or "").strip()
@@ -1516,9 +1667,11 @@ def _merge_external_data_dictionary(path: str) -> None:
                 # Child rows: enumerator or field — attach to current parent.
                 if not name and kind in ("enumerator", "field"):
                     if parent_key is None or not entry_nm:
+                        orphan_children += 1
                         continue
                     entry = data_dictionary.get(parent_key)
                     if entry is None:
+                        orphan_children += 1
                         continue
                     if kind == "enumerator":
                         entry.setdefault("enumerators", [])
@@ -1549,6 +1702,7 @@ def _merge_external_data_dictionary(path: str) -> None:
 
                 # Start from existing entry so unspecified sub-lists are preserved.
                 existing = data_dictionary.get(name, {})
+                (matched_names if existing else new_names).append(name)
                 entry: dict = dict(existing)
                 entry["kind"] = kind
                 if range_v:
@@ -1568,7 +1722,15 @@ def _merge_external_data_dictionary(path: str) -> None:
         print(f"[parser] ERROR: failed to parse data dictionary CSV {path}: {exc}", file=sys.stderr)
         sys.exit(2)
 
-    print(f"  data dictionary: merged {merged} entries from {os.path.basename(path)}")
+    # Through the logger, not print(): this is the record of whether a client's CSV
+    # actually applied, so it has to survive in logs/run_<date>.log rather than
+    # scrolling past on the console. (The other Phase 1 summary lines are still
+    # print-only.)
+    from core.logging_setup import get_logger
+    _plog = get_logger("parser")
+    _plog.info(f"data dictionary: merged {merged} entries from {os.path.basename(path)}")
+    for line in _format_csv_merge_report(matched_names, new_names, orphan_children):
+        _plog.info(line.strip())
 
 
 def main():
@@ -1638,9 +1800,11 @@ def main():
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
-    # Add primitives (name as key)
+    # Add primitives (name as key). setdefault, NOT assignment: ranges measured from
+    # libclang during the parse (_register_builtin_range) are facts about the target
+    # and outrank this portable table, which e.g. hardcodes `long` as 32-bit.
     for name, info in PRIMITIVES.items():
-        data_dictionary[name] = {"kind": "primitive", "range": info["range"]}
+        data_dictionary.setdefault(name, {"kind": "primitive", "range": info["range"]})
     # Add defines (kind=define)
     _scan_defines()
     # Merge user-supplied data dictionary CSV (external entries win on conflict).

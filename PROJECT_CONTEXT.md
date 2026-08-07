@@ -173,6 +173,47 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-03c (**data ranges now measured by libclang instead of guessed from type names.**
+> `parser._range_from_clang_type` (canonical kind + `get_size()`) supplies typedef and struct-field
+> ranges; `_register_builtin_range` records every parameter/return/global/field builtin under its
+> CANONICAL spelling, so the dictionary answers exactly for the builtins a project actually uses.
+> `PRIMITIVES` seeding switched from assignment to `setdefault` — it was overwriting measured values
+> with a portable guess (`long` hardcoded 32-bit). `get_range_for_type` is now the last-resort fallback
+> only, is CASE-SENSITIVE (lowercasing made `Size_t` match `size_t` and gave a two-int struct a 64-bit
+> range), matches `size_t` by exact name rather than substring, and returns `0-1` for `bool` to match
+> `PRIMITIVES` (the test pinning `NA` was wrong and was updated). Ranges are deliberately NOT stored per
+> parameter in `functions.json`: parameters are collected before the CSV merge, so baking them would
+> break `--data-dictionary` override — see [§9 Where a data range comes from](#where-a-data-range-comes-from-precedence-2026-08-03).
+> Full suite incl. pipeline: 698 passed / 3 skipped, snapshot unchanged. SH-4 closed; only the array
+> case (`int[6]` → `NA`) remains open.)
+
+> Updated: 2026-08-03b (**root cause of the `NA` Data Range column: typedefs never recorded what they
+> alias.** `parser.visit_type_definitions` read `cursor.type.spelling` on a `TYPEDEF_DECL`, which is the
+> typedef type *itself* — so `typedef int UNIT;` stored `underlyingType: "UNIT"` and every typedef came
+> out self-referential with `range: "NA"`. New `parser._typedef_underlying` uses
+> `underlying_typedef_type` + strips elaborated keywords; anonymous enum/struct forms stay
+> self-referential deliberately (the unit header table resolves the enumerator list through that name).
+> `_maybe_add_typedef_for_struct` now stores `"NA"` instead of a range derived from the type's own name.
+> Full-project parse: `UNIT` → `int` → `-0x80000000-0x7FFFFFFF`, `UINT8` → `unsigned char` → `0-0xFF`
+> (via the dictionary, which only works because of the `get_range` fix below), `Size_t` poison gone.
+> **Sample snapshot unchanged** (`My Sample` group has no typedef'd signatures) — full suite incl.
+> pipeline: 669 passed / 3 skipped, generated `interface_tables.json` == committed snapshot. Tests:
+> `test_typedef_underlying.py`. Detail in [§10 Type collection](#type-collection-visit_type_definitions).)
+
+> Updated: 2026-08-03 (**data-dictionary range lookup: `"NA"` now means "unknown", not an answer**
+> — branch `fix/data-dictionary-range-lookup`. Phase 1 bakes a typedef's `range` with
+> `get_range_for_type()`, which never sees the dictionary, so an alias of a project type is stored
+> `"NA"` and a range supplied later by the external CSV never reached the interface tables.
+> `utils.get_range` now treats a `"NA"` direct hit as "keep looking" and resolves the alias chain, with
+> a `underlying != base` self-reference guard; it deliberately does **not** fall through to the
+> qualifiedName scan, because sibling `typedef@Name:file:line` entries can carry a garbage baked range
+> (Sample `Size_t` → `0-0xFFFFFFFFFFFFFFFF`, from a `"size_t" in base` substring match now logged as
+> backlog **SH-4**). Verified **0 diffs** across all 21 Sample signature types → no snapshot regen, no
+> SampleCppProject change. New tests: `test_utils.py::TestGetRangeBakedNA`, `test_data_dictionary_csv.py`
+> (also pinned `MODULE_BASE_PATH` in `test_define_conditional.py`'s fixture — `parser` is a module-level
+> singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
+> [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
+
 > Updated: 2026-07-23 (**docs restructure + agent role-skills.** Introduced `.claude/skills/` role skills:
 > `docs-maintainer` (owns **all** docs repo-wide — audience/register/naming/outline conventions + the doc-gen
 > method) and `ui-dev` (frontend rules, replacing the deleted `web-app/CONVENTIONS.md`). Doc suite tidied:
@@ -1447,13 +1488,47 @@ So legacy `from utils import load_config` still works.
 | `resolve_group(component)` | Component name → group name (from `_GROUP_MAP` built at import) |
 | `norm_path(path, base_path)` | Resolve relative paths against `base_path` |
 | `PRIMITIVES` dict | C++ primitive types → range string |
-| `get_range_for_type(type_str)` | Map type to range; falls back to `NA` |
-| `get_range(type_str, data_dictionary)` | Range lookup with typedef recursion (depth 10) |
+| `get_range_for_type(type_str)` | Map a **known primitive** to a range; anything else `NA`. **Case-sensitive** (2026-08-03) — lowercasing made `Size_t` match `size_t`; `size_t` is matched by exact name, not substring |
+| `get_range(type_str, data_dictionary)` | Range lookup with typedef recursion (depth 10). **`"NA"` on a dd entry means "unknown", not an answer** — see below |
 
 Note: `init_component_mapping` runs at import time using the on-disk config, so
 `make_*_key` works immediately. `parser.py` builds its own folder list from
 the same config via `get_flat_groups` (kept separate to avoid the analyzer's
 import order constraints).
+
+### `get_range` resolution order (2026-08-03)
+
+Ranges reaching the interface tables are resolved **lazily here**, not in Phase 1 —
+`interface_tables` is the only caller (parameters, `returnRange`, globals). Phase 1
+*bakes* a `range` into typedef/struct-field entries with `get_range_for_type()`, which
+never sees the dictionary, so an alias of a project type is stored as `"NA"` even when
+the underlying type has a range (e.g. one supplied later by the external CSV).
+
+Order, for the direct key hit (`dd[base]` / `dd[base.lower()]`):
+1. `range` present and ≠ `"NA"` → return it.
+2. `kind == "typedef"`, `underlyingType` set **and ≠ the entry's own name** → recurse
+   (depth 10); return the result only if it is not `"NA"`.
+3. Otherwise return the entry's own `"NA"` — **do not** fall through to the
+   qualifiedName scan.
+
+The qualifiedName scan (reached only when no key matches) applies the same precedence,
+and first-match still wins.
+
+Two traps this encodes:
+- **Self-referential aliases.** `_maybe_add_typedef_for_struct` stores
+  `underlyingType == the type's own name` (`UINT8 → UINT8`), so recursion needs the
+  `underlying != base` guard or it burns the depth budget doing O(n) scans.
+- **qualifiedName collisions.** The parser emits both `Name` and
+  `typedef@Name:file:line` for the same type (Sample: `GG`×4, `Size_t`, `Rect`,
+  `Widget_t`, `Mode_t`, `DB_TYPE`, `PUBLIC`). Letting a `"NA"` direct hit fall through
+  to the scan lets a *sibling* answer — and the sibling's baked range can be garbage:
+  `get_range_for_type` matches `"size_t" in base` on the lowercased name, so the struct
+  `Size_t {int width; int height;}` has a sibling carrying `0-0xFFFFFFFFFFFFFFFF`.
+  That substring rule is still in `get_range_for_type` (baked into parser output, so
+  fixing it needs a re-parse) — see `docs/BACKLOG.md`.
+
+Tests: `tests/unit/test_utils.py::TestGetRangeBakedNA`,
+`tests/unit/test_data_dictionary_csv.py`.
 
 ---
 
@@ -1545,7 +1620,69 @@ The initializer value is extracted by scanning the source line for `=`.
 Builds `data_dictionary`:
 - `STRUCT_DECL` / `CLASS_DECL` with field list
 - `ENUM_DECL` with enumerators and computed range
-- `TYPEDEF_DECL` with underlying type and range lookup
+- `TYPEDEF_DECL` with underlying type (`_typedef_underlying`) and range lookup
+
+**`_typedef_underlying(cursor)` (2026-08-03).** `cursor.type` on a `TYPEDEF_DECL` is
+the typedef type *itself*, so its spelling is the alias's own name — never what it
+aliases. Reading it (the pre-2026-08-03 behaviour) made **every** typedef
+self-referential with `range: "NA"`, so every typedef'd parameter printed `NA` in the
+Data Range column. Now uses `cursor.underlying_typedef_type`, then strips elaborated
+keywords (`struct `/`enum `/`union `/`class `) via `_ELABORATED_RE` so the value works
+as a dataDictionary key:
+
+| source | before | after |
+|---|---|---|
+| `typedef unsigned char UINT8;` | `UINT8` | `unsigned char` |
+| `typedef int UNIT;` | `UNIT` | `int` |
+| `typedef enum {…} Mode_t;` | `Mode_t` | `Mode_t` (from `enum Mode_t`) |
+| `typedef struct {…} Widget_t;` | `Widget_t` | `Widget_t` (from `struct Widget_t`) |
+
+The anonymous enum/struct forms stay self-referential **on purpose** — the unit header
+table looks `underlyingType` up in the dictionary to print the enumerator list
+(`docx_exporter._build_unit_header_table`, `api/services/doc_render.py:281`), and an
+elaborated `"enum Mode_t"` would miss.
+
+`_maybe_add_typedef_for_struct` stores `range: "NA"` rather than
+`get_range_for_type(qn)` — its `underlyingType` is the type's own *name*, so deriving a
+range from it reads a range out of a type name (`"size_t" in "Size_t"` stamped
+`0-0xFFFFFFFFFFFFFFFF` on a `{int width; int height;}` struct).
+
+### Where a data range comes from (precedence, 2026-08-03)
+
+Highest wins. The order is enforced by *when* each source runs in Phase 1, not by
+branching logic:
+
+1. **External CSV** — merged last (`_merge_external_data_dictionary`), so it overrides
+   everything. This is why ranges must NOT be frozen onto each parameter in
+   `functions.json`: parameters are collected before the merge, and a baked parameter
+   range would make `--data-dictionary` unable to override anything.
+2. **libclang** — `_range_from_clang_type(ctype)`: `get_canonical()` walks the typedef
+   chain to the real builtin, `get_size()` gives its width **for the parsed target**
+   (`long` = 4 bytes on Windows, 8 on Linux — the table below cannot express that).
+   `VOID` for void, `0-1` for bool, `NA` for structs/enums/pointers/floats.
+   `_register_builtin_range(ctype)` runs for every parameter / return type / global /
+   field and records the range under the type's **canonical** spelling
+   (`unsigned char`, `long`) — never the written spelling, which would let a `UINT8`
+   parameter overwrite the `UINT8` *typedef* entry with a primitive one and lose the
+   location the unit header table needs. It also refuses to shadow a non-primitive.
+3. **`PRIMITIVES` table** — seeded with `setdefault` (not assignment), so it fills gaps
+   without overwriting a measured value.
+4. **`get_range_for_type(name)`** — last resort for CSV-authored or unparsed types.
+5. `NA`.
+
+Consequence: the **dataDictionary is the single registry**; views keep resolving by type
+name (`get_range(p["type"], dd)`) and need no libclang, no schema change, and no
+`functions.json` churn.
+
+**Coverage log.** `interface_tables.run()` logs one line per group —
+`data ranges: 64/65 resolved, 1 NA (int[6] x1)` — via the pure helpers
+`_range_coverage` / `_format_range_coverage`. Deliberately a log, **not** a per-entry
+`rangeSource` field: nothing renders `directionReason` into the DOCX either, so a
+provenance field would ride on every row and churn the snapshot for an audit aid with no
+reader. To trace one type, see the precedence above or query `model/dataDictionary.json`
+directly.
+
+Tests: `tests/unit/test_typedef_underlying.py`.
 - Special pattern: `_maybe_add_typedef_for_struct` adds a typedef entry when
   the source uses `typedef struct { ... } Name;`
 
@@ -1606,13 +1743,20 @@ Final model key: `component|unit|qualifiedName|paramTypes`.
 
 ### External data dictionary merge
 
-After `_scan_defines()` and before writing `dataDictionary.json`, if `--data-dictionary <path>` was passed (or `dataDictionaryPath` is set in config), `_merge_external_data_dictionary(path)` is called:
+After `_scan_defines()` and before writing `dataDictionary.json`, if `--data-dictionary <path>` was passed, `_merge_external_data_dictionary(path)` is called. **There is no config key for this** — the path comes from the CLI (`run.py` → `group_planner` → `parser` argv) or, in the API/incremental path, from `currentDataDictId` → `ws.datadict_path(...)`. Because the merge happens inside Phase 1, `--data-dictionary` is a **silent no-op with `--from-phase 2+` or `--use-model`**; changing the CSV requires a re-parse.
 
 - Reads a CSV with columns: `Name, Kind, EntryName, Range, Comment`.
 - **Top-level rows** (non-empty `Name`): copy existing auto-parsed entry, overwrite `kind`/`range`/`comment` from CSV, reset `enumerators`/`fields` list if the kind uses them.
 - **Child rows** (empty `Name`, Kind=`enumerator` or `field`): carry forward the last non-empty `Name` as parent key and append `{name: EntryName, value/range, comment}` to the parent's list. Empty `Name` matches Excel merged-cell CSV exports.
 - External entries win on conflict. New entries (not in parsed source) are added as-is.
 - `location` and other auto-parsed fields are preserved on updated entries via `dict(existing)` copy.
+- A range set here reaches the interface tables through `utils.get_range`, including via an alias whose own range was baked `"NA"` — see [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03). `fields[].range` inside a struct entry stays as parsed (nothing downstream reads it).
+- **Merge report** (`_format_csv_merge_report`): after the count, the parser prints which rows landed on a parsed type and which were **new, not found in source**. A typo'd or renamed type name is otherwise silently added as its own entry and looks identical to a successful override. Orphan child rows (no `Name` above them) are counted too.
+  ```
+  data dictionary: merged 6 entries from data_dictionary.csv
+      4 matched a parsed type: DB_TYPE, Status, Color, GG
+      2 new, not found in source: MotorSpeed_t, Voltage_t
+  ```
 
 ### Outputs
 

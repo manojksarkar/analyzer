@@ -10,6 +10,7 @@
 | SH-1 | Requirements / Linked Work Items source (Polarion / SWE.1) | input | blocked | SWE2 + SWE4 |
 | SH-2 | Same group/component name reused across layers collides (needs layer-qualified identity) | issue | open | — |
 | SH-3 | Gate updated data dictionary + integrate for correctness | enhance | open | engine/config/data_dictionary.csv |
+| SH-4 | Array data range: an `int[6]` global reports `NA` (an array's range is not one interval — needs a rule, e.g. element range + length) | enhance | open | engine/utils.py |
 
 ## SWE.3 — detailed design
 | ID | Item | Type | Status | Ref |

@@ -441,11 +441,19 @@ PRIMITIVES = {
 
 
 def get_range_for_type(type_str: str) -> str:
-    """Map C++ type to range string for interface tables (VOID, 0-0xFF, NA, etc.)."""
-    t = (type_str or "").strip().lower()
+    """Map C++ type to range string for interface tables (VOID, 0-0xFF, NA, etc.).
+
+    Matching is CASE-SENSITIVE, because C++ is: lowercasing made `Size_t` (a
+    `{int width; int height;}` struct) indistinguishable from `size_t` and gave it a
+    64-bit integer range. A project type that merely resembles a primitive is "NA"
+    here and gets answered from the data dictionary instead.
+    """
+    t = (type_str or "").strip()
     if t == "void" or (t.startswith("void ") and "*" not in t):
         return "VOID"
-    base = t.replace("const ", "").replace("volatile ", "").strip().lower()
+    base = t.replace("const ", "").replace("volatile ", "").strip()
+    if base == "bool":
+        return "0-1"
     if base in ("uint8_t", "std::uint8_t", "param_uint8_t"):
         return "0-0xFF"
     if base in ("uint16_t", "std::uint16_t", "param_uint16_t"):
@@ -483,7 +491,11 @@ def get_range_for_type(type_str: str) -> str:
         return "0-0xFFFFFFFF"
     if base == "unsigned long long":
         return "0-0xFFFFFFFFFFFFFFFF"
-    if "size_t" in base and "*" not in base or base == "param_size_t":
+    # Exact names only. A substring test here ("size_t" in base) answers for any type
+    # whose NAME merely contains it — `Size_t`, `BufSize_t`, `PageSize_t` — declaring a
+    # `{int width; int height;}` struct to be a 64-bit integer. This function maps known
+    # primitives; anything else is "NA" and gets answered from the data dictionary.
+    if base in ("size_t", "std::size_t", "param_size_t") or base.endswith("::size_t"):
         return "0-0xFFFFFFFFFFFFFFFF"
     return "NA"
 
@@ -505,18 +517,44 @@ def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
     entry = dd.get(base) or dd.get(base_lower)
     if entry:
         r = entry.get("range")
-        if r:
+        if r and r != "NA":
             return r
+        # A typedef's own `range` is baked at parse time by get_range_for_type(), which
+        # never sees the data dictionary — so an alias of a project type is stored as
+        # "NA" even when the underlying type has a range (e.g. supplied later by the
+        # external CSV). Treat that "NA" as "unknown, keep looking" and resolve the
+        # alias chain here, at lookup time, when the dictionary is complete.
         if entry.get("kind") == "typedef" and _depth < 10:
             underlying = entry.get("underlyingType", "")
-            return get_range(underlying, dd, _depth + 1) if underlying else "NA"
-    # Search by qualifiedName
+            # `underlying == base` is the self-referential alias the parser emits for
+            # `typedef struct { ... } Name;` (underlyingType is the type's own name);
+            # recursing on it only burns depth.
+            if underlying and underlying != base:
+                resolved = get_range(underlying, dd, _depth + 1)
+                if resolved and resolved != "NA":
+                    return resolved
+        # Nothing better found: the entry's own "NA" is the answer. Falling through to
+        # the qualifiedName scan here would let a *sibling* entry sharing this
+        # qualifiedName win (parser emits both `Name` and `typedef@Name:file:line`),
+        # which can surface a wrong range for the type actually asked about.
+        if r:
+            return r
+    # Search by qualifiedName — same precedence as the direct lookup above: a usable
+    # range wins, else resolve the alias, else fall back to this entry's own "NA"
+    # (first match still wins, so which entry answers does not change).
     for ent in dd.values():
         if ent.get("qualifiedName") == base or ent.get("qualifiedName", "").lower() == base_lower:
             r = ent.get("range")
-            if r:
+            if r and r != "NA":
                 return r
             if ent.get("kind") == "typedef" and _depth < 10:
                 underlying = ent.get("underlyingType", "")
-                return get_range(underlying, dd, _depth + 1) if underlying else "NA"
+                if underlying and underlying != base:
+                    resolved = get_range(underlying, dd, _depth + 1)
+                    if resolved and resolved != "NA":
+                        return resolved
+                return r if r else "NA"
+            if r:
+                return r
+            # No usable range on this match: keep scanning (a later entry may carry one).
     return get_range_for_type(type_str)

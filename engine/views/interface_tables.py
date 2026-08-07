@@ -161,6 +161,46 @@ def _build_interface_tables(
     return result
 
 
+def _range_coverage(interface_tables):
+    """How many Data Range cells got a real answer -> (resolved, total, {type: count}).
+
+    Reported as a single line rather than stored on each entry: the provenance has no
+    reader in the DOCX (nothing renders `directionReason` either), and a per-cell field
+    would ride on every row and churn the snapshot for an audit aid.
+    """
+    resolved = 0
+    total = 0
+    unresolved: dict = {}
+    for key, unit in interface_tables.items():
+        if key == "unitNames" or not isinstance(unit, dict):
+            continue
+        for e in unit.get("entries", []) or []:
+            cells = [(p.get("type", ""), p.get("range", ""))
+                     for p in (e.get("parameters") or [])]
+            if e.get("type") == "Global Variable":
+                cells.append((e.get("variableType", ""), e.get("range", "")))
+            else:
+                cells.append((e.get("returnType", ""), e.get("returnRange", "")))
+            for type_name, rng in cells:
+                total += 1
+                if rng and rng != "NA":
+                    resolved += 1
+                elif type_name:
+                    unresolved[type_name] = unresolved.get(type_name, 0) + 1
+    return resolved, total, unresolved
+
+
+def _format_range_coverage(resolved, total, unresolved, *, limit=8):
+    worst = sorted(unresolved.items(), key=lambda kv: (-kv[1], kv[0]))
+    shown = ", ".join(f"{t} x{n}" for t, n in worst[:limit])
+    if len(worst) > limit:
+        shown += f", +{len(worst) - limit} more"
+    msg = f"data ranges: {resolved}/{total} resolved"
+    if worst:
+        msg += f", {total - resolved} NA ({shown})"
+    return msg
+
+
 @register("interfaceTables")
 def run(model, output_dir, model_dir, config):
     units_data = model.get("units", {})
@@ -184,3 +224,7 @@ def run(model, output_dir, model_dir, config):
     log("%s (%d units, %d functions, %d globals)" % (
         out_path, unit_count, len(functions_data), len(global_variables_data)
     ), component="interfaceTables")
+    _resolved, _total, _unresolved = _range_coverage(interface_tables)
+    if _total:
+        log(_format_range_coverage(_resolved, _total, _unresolved),
+            component="interfaceTables")
