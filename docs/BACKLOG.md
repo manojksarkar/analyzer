@@ -15,7 +15,7 @@
 ## SWE.3 — detailed design
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|
-| S3-1 | Per-layer macros (`--macros` is one global CSV) | issue | open | §16 |
+| S3-1 | Per-layer macros + JSON macro input | issue | done 2026-08-07 | §16 |
 | S3-2 | Flowchart: if/else depiction | issue | open | 3.8 (repro) |
 | S3-3 | Flowchart: bending / overlapping edges | issue | open | 3.9 |
 | S3-4 | Dynamic-behaviour issue | issue | blocked | 3.10 (repro) |

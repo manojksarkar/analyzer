@@ -6,8 +6,8 @@
 
 > **WORK STATUS / QUEUE — 2026-07-20 (read this first if picking up in a new chat).**
 > - **DONE + removed from the active batch lists:** 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7,
->   flowcharts-in-DOCX, orphan-header handling, 3.14, 3.15, 3.18. **Remaining open:**
->   per-layer macros, function hide/unhide (Phase-3 JSON), 3.8, 3.9, 3.10, 3.11, 3.12,
+>   flowcharts-in-DOCX, orphan-header handling, 3.14, 3.15, 3.18, macro ingestion (2026-08-07).
+>   **Remaining open:** function hide/unhide (Phase-3 JSON), 3.8, 3.9, 3.10, 3.11, 3.12,
 >   3.13, 3.16, 3.19; 3.17 interim-landed (full precedence spec still pending).
 > - **2026-07-20 — unit-header value-column batch (3.20–3.22):** all fixed in
 >   `docx_exporter._build_unit_header_table` (exporter-only; **no parser/model change**, so no
@@ -159,10 +159,9 @@
 >   (`In` → arrow *towards* owner, `Out` → *away*); one interface = one arrow; mutual pairs = two arrows
 >   with the box drawn once. Diagram-only, no model change. See dated note below.
 > - **Pending — partial machinery exists in code, but the issues are NOT fixed** (audited 2026-07-15,
->   status corrected with user — do not read "code exists" as "done"): **macros ingestion** — `--macros`
->   is today a single **global** CSV applied to *all* layers (`run.py` → `-D` for Phase 1 +
->   `clang_macros.json` for the Phase-3 flowchart engine); the requirement is **per-layer macros**, which
->   is not yet supported → **pending**. **Function hide/unhide (task 4)** — `docx_exporter.py:1282-1568`
+>   status corrected with user — do not read "code exists" as "done"): ~~**macros ingestion**~~ →
+>   **DONE 2026-08-07**, see the dated note below (JSON + per-layer + API/UI wiring).
+>   **Function hide/unhide (task 4)** — `docx_exporter.py:1282-1568`
 >   already drops functions flagged `f["hidden"]` from the DOCX (interface-table rows, call edges, unit
 >   flowcharts); Phase-3 view JSON does NOT filter `hidden` (only Phase 4 does); exact pending scope still
 >   **TBD with user** → **pending**. **3.8 if/else** — the flowchart builder already renders DECISION
@@ -172,6 +171,71 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-08-07 (**macro ingestion: JSON input + per-layer scoping + the API/UI path that was
+> silently dropping defines.** Branch `feat/macros-json-per-layer` off `poc-4`. Closes backlog **S3-1**.
+> **(1) One reader — `engine/core/macro_input.py`.** `--macros` took a 2-column CSV only; the client hands
+> over an armclang/`fromelf` dump: `{"metadata": {toolchain, macro_source, total_macros, fully_resolved},
+> "macros_by_cu": {"<cu>": {"<NAME>": {name, raw_value, expanded_value, computed_value|null,
+> is_fully_resolved, dependency_chain[], note|null}}}}` (schema confirmed with the user; one CU key in all
+> observed files). The module detects shape by **content, not extension** and reads: legacy CSV ·
+> toolchain dump · `{"NAME":"VALUE"}` map · `["NAME=VALUE"]` list (what the web wizard stores) ·
+> `{"Layer1": {…}}` scoped · a bare name→entry table. **Value precedence per macro:** resolved
+> `computed_value` (a plain number — cannot half-resolve) → `expanded_value` → `raw_value` → bare `-DNAME`.
+> **Unresolved macros are passed through as text, deliberately** (their `dependency_chain` names are often
+> defined by the project's own headers, which libclang *does* see; dropping the define would silently flip
+> an `#ifdef` branch) — counted + named in the load report. `ne` skip and empty→bare carry over from CSV;
+> **function-like names (`MAX(a,b)`) are skipped + logged**. A dump's `metadata.total_macros` is
+> cross-checked against what was read (mismatch ⇒ warning: we misread the file).
+> **(2) Scope is an opaque key, not "layer".** Defs are `{scope: {NAME: value}}` with `"*"` = all layers.
+> Today one list per layer; the user flagged that a layer may later need **several** macro sets (build
+> variants), so only scope *resolution* has to change when that lands. **Same-name collisions across lists
+> are reported, never silently reconciled** (`find_conflicts`) — the precedence strategy across lists is an
+> open question the user deferred.
+> **(3) Per-TU clang args (the actual S3-1 fix).** `CLANG_ARGS` was one module-level global for every TU, so
+> layer scoping only ever restricted *which files* got parsed. New `parser.clang_args_for(path)` resolves
+> file → component (`_FILE_COMPONENT_MAP`) → layer (`get_component_layer_name`) and appends global then
+> layer defines — Clang honours the **last** `-D`, so the layer overrides the global by position. Used at
+> both `index.parse` sites. `model/clang_macros.json` is now **scope-keyed** (`{"*": [...], "Layer1": [...]}`);
+> a flat list (pre-change shape) still loads as global via `normalize_scoped_args`. It is also written
+> **when empty** — a previous run's file used to survive a later macro-less run and keep feeding Phase 3.
+> `views/flowcharts.py` picks `"*"` + its group's layer via the new `_resolve_layer_name` (extracted from
+> `_resolve_layer_dirs`).
+> **(4) CLI:** `--macros <path>` unchanged (global); new repeatable **`--macros-layer <layer> <path>`**,
+> mirroring `--include-path`'s two-arg validation (unknown layer → exit 1, missing file → exit 2). A second
+> flag rather than overloading `--macros` arity, which would have to guess layer-vs-path.
+> **(5) Config-driven sources — `clang.macrosFile` / `clang.macrosByLayer` / `clang.macroScopes`**
+> (CU→layer map for a multi-CU dump). Read by `parser.py` **before** the CLI flags, so a flag wins. This is
+> why the API needs no new flag plumbing: the real job path runs `engine/incremental/{generate,engine}.py`,
+> not `run.py` (only re-export uses `_build_cmd`), and every entry point already passes `--config`.
+> **(6) API/UI, previously broken end-to-end:** `build_config.preprocessor_definitions` never reached Clang
+> at all — `_write_project_config` forwards only `("clang","llm","views","docx")`. It now materializes them
+> (`_materialize_macros`: manual list → `workspaces/<pid>/macros.json`; upload → the stored file) and sets
+> `clang.macrosFile`. Uploads are **written to `workspaces/uploads/<id>/`** instead of a process-local dict
+> that lost them on restart (`resolve_upload` falls back to the directory), and `/repositories/uploads` now
+> validates extensions per kind (`.csv`/`.json` for defs). Wizard accepts `.csv,.json`; its "Drop Makefile
+> or CSV" copy promised a Makefile parser that **does not exist anywhere in the repo** — now "CSV or JSON".
+> **Verified** on `SampleCppProject` Phase 1: `Layer1/Diag/PreprocIfFunction.cpp` is gated on `SOME_THING`,
+> and `--macros-layer Layer2 <dump>` leaves it on the `#else` branch while `--macros-layer Layer1 <dump>`
+> takes the `#if` branch. Note that in the `#if` branch its symbol collides with `MultilineOvlyinit.cpp`'s
+> `_SOME_FUNCTION(GG *)` and is dropped by the **pre-existing** cross-TU dedupe on mangled name
+> (`get_function_key`, `parser.py:554`) — a fixture artifact (two files defining one symbol would not link),
+> not a regression.
+> **Sample lists (client schema, committed):** `engine/config/macros.layer1.example.json` (cu `fcore`) and
+> `macros.layer2.example.json` (cu `hil`) — two files, the real per-target setup, covering every macro type:
+> int/hex/shift/suffixed/big/negative/**zero**, value-less, unresolved (single + multi dep), string literal
+> with spaces, empty string, float, identifier value, function-like (skipped), `ne` (skipped). They share
+> `BUFFER_SIZE` at different values, which is the deferred cross-list collision case.
+> **Gotcha found while verifying:** `views.flowcharts` is **false** in the shipped config, so a plain full run
+> never exercises the Phase-3 macro consumer — enable it (`--config` with `views.flowcharts: true`) or the
+> check passes vacuously. With it on, the response file `model/.flowcharts_clang_args.txt` carries all 12
+> flags verbatim (argparse `fromfile_prefix_chars` reads one arg per line, so spaces and quotes survive), and
+> a `Layer2`-scoped set correctly reaches **zero** args for a `Layer1` group.
+> Tests: `tests/unit/test_macro_input.py` (27), `tests/unit/test_flowcharts_macro_scope.py` (12, Phase-3
+> scope selection), `tests/api/test_materialize_macros.py` (11, the wizard→file path). Full suite green;
+> plus a 40-check manual matrix (every shape, per-layer A/B, collisions, error exit codes, back-compat,
+> config-driven, full pipeline → DOCX + flowcharts). **No model-schema change** beyond `clang_macros.json`'s
+> shape → no snapshot regeneration.)
 
 > Updated: 2026-08-03c (**data ranges now measured by libclang instead of guessed from type names.**
 > `parser._range_from_clang_type` (canonical kind + `get_size()`) supplies typedef and struct-field
@@ -276,8 +340,7 @@ entry below). Contract:
 > follow-up. Config: a new `docx.swe4` block (env-field defaults, testCasePolicy, generationMethod) under
 > `docx` so the API config-forward whitelist `("clang","llm","views","docx")` passes it through unchanged.
 > **Macros (confirmed 2026-07-22):** SWE.3 & SWE.4 **share the same macros, per layer** — SWE.4 reuses the
-> same parse/model, so the pending **per-layer-macros** work (today `--macros` is one global CSV) serves
-> both docs. **Still open (take to client):** Table B metadata fields (Alias Test ID · Risk · Test Method ·
+> same parse/model, so the per-layer-macros work (landed 2026-08-07, see the newest entry) serves both docs. **Still open (take to client):** Table B metadata fields (Alias Test ID · Risk · Test Method ·
 > Test Environment · Linked Work Items — only Table A was covered); how private callees' branches get
 > covered when callees are mocked. `docs/planning/SWE4_PLAN.md` updated + kept leadership-facing.)
 
@@ -432,6 +495,8 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
       abbreviations.txt       Abbreviation expansions for LLM prompts
       data_dictionary.csv     Sample data-dictionary CSV (--data-dictionary <path>)
       macros.csv              Sample macros CSV (--macros <path>)
+      macros.layer1.example.json   Sample toolchain macro list, client schema (cu "fcore")
+      macros.layer2.example.json   Second sample list (cu "hil") — the per-layer / two-file case
       puppeteer-config.json   Optional headless-chrome args for mmdc
     few_shot_examples/        Few-shot pools (descriptions / behaviour_names / globals)
     assets/                   DOCX cover assets (bottom_arc.png, copyright.png)
@@ -925,7 +990,8 @@ python engine/run.py [options] <project_path>
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
 | `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `engine/config/data_dictionary.csv` for format. |
 | `--project-name <name>` | Override the project name written into `model/metadata.json` as `projectName`. Default: `os.path.basename(project_path)`. Propagates to `model_deriver` (interfaceId fallback segment, LLM knowledge base), flowchart engine, and LLM prompts. |
-| `--macros <path>` | CSV file (columns: `Name`, `Value`; first row is header) passed as `-D` flags to Clang in Phase 1. Rows where `Value` is `"ne"` (case-insensitive) are skipped. Empty `Value` → `-DNAME`; non-empty → `-DNAME=VALUE`. Macros are also written to `model/clang_macros.json` so the Phase 3 flowchart engine picks them up. Sample: `engine/config/macros.csv`. |
+| `--macros <path>` | Macro file passed as `-D` flags to Clang in Phase 1, applied to **every** layer. CSV (`Name`, `Value`; header row) **or** JSON — toolchain dump (`macros_by_cu`), `{"NAME":"VALUE"}` map, `["NAME=VALUE"]` list, or `{"Layer1": {…}}`; shape is detected by content, not extension (`core/macro_input.py`). `Value` `"ne"` (any case) skips the entry; empty → `-DNAME`; function-like names are skipped + logged. Written to `model/clang_macros.json` (scope-keyed) so the Phase 3 flowchart engine picks them up. Sample: `engine/config/macros.csv`. |
+| `--macros-layer <layer> <path>` | Same formats, applied to the named layer only. Repeatable — once per layer. Unknown layer → exit 1, missing file → exit 2. Clang honours the last `-D`, so a layer value overrides a `--macros` global one. Config equivalents: `clang.macrosFile` / `clang.macrosByLayer`; `clang.macroScopes` maps a multi-CU dump's compilation units to layers. |
 | `--include-path <layer> <dir>` | Add an extra `-I` include directory for the named layer. Repeatable — use once per directory. The directory is merged into `model/clang_include_paths.json` under the named layer key before Phase 1 runs, so Phase 1 and Phase 3 (`_resolve_layer_dirs`) pick it up automatically via existing layer-scoping. Unknown layer → exit 1. Missing directory → exit 1. |
 | `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`) |
 | `--trace-prompts` | Print full LLM prompts (system + user) to stdout. Sets `LLM_TRACE_PROMPTS=1` env var. **Warning**: large runs emit tens of MB. |
@@ -1553,11 +1619,14 @@ Tests: `tests/unit/test_utils.py::TestGetRangeBakedNA`,
     directory across all layers. No manual listing in `clang.clangArgs` needed
     for directories already declared in `layers` config.
   - Any extras from `config.clang.clangArgs`.
-  - **User macros** (when `--macros <path>` is set) — reads the 2-column CSV,
-    appends `-DNAME=VALUE` (or `-DNAME` for empty value) for each non-`ne` row,
-    then writes the list to `model/clang_macros.json` so `flowcharts.py` can
-    apply the same flags to the Phase 3 flowchart engine re-parser. Sample:
-    `engine/config/macros.csv` (`VOID,void`).
+  - **User macros** (`--macros <path>` global, `--macros-layer <layer> <path>` per
+    layer, or `clang.macrosFile` / `clang.macrosByLayer` in config) — read by
+    `core/macro_input.py` from CSV or any accepted JSON shape, then written to
+    `model/clang_macros.json` **scope-keyed** (`{"*": [...], "Layer1": [...]}`) so
+    `flowcharts.py` applies the same flags to the Phase 3 re-parser. Args are
+    resolved **per TU** by `clang_args_for(path)` (file → component → layer), not
+    baked into the global `CLANG_ARGS`. Sample: `engine/config/macros.csv`
+    (`VOID,void`).
 
 ### Visibility detection (`_detect_visibility`)
 
