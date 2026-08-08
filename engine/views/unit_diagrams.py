@@ -89,6 +89,23 @@ def _escape_label(text):
     return t
 
 
+# One arrow carries every interface id for a unit pair (REQ-UD-05), so a busy edge stacks
+# 10+ ids in a single label. Joined with a bare <br/> they render as contiguous rows of text
+# with no leading, which is the reported "no space between the lines/labels".
+#
+# The separator is a blank line \u2014 spacing lives in the GRAPH TEXT, not in layout hints,
+# because mermaid 10.9.5 silently ignores the ELK spacing options: rendering
+# Sample-Core_Core with elk.spacing.edgeEdge / edgeLabel / edgeNode / nodeNode +
+# layered.spacing.* produced a byte-identical 1374x700 PNG. The blank-line join takes the
+# same diagram to 1374x1270 with each id clearly separated.
+_LABEL_SEP = "<br/> <br/>"
+
+
+def _edge_label(ifaces):
+    """Interface ids for one edge, one per line, blank-line separated."""
+    return _escape_label(_LABEL_SEP.join(sorted(ifaces)))
+
+
 def _build_unit_diagram(
     unit_key,
     unit_info,
@@ -166,6 +183,12 @@ def _build_unit_diagram(
     internal_callees = sorted(callee_ids & internal_set)
     external_callees = sorted(callee_ids - internal_set)
 
+    # Blank <br/> lines padding the main node's label make it taller, which spreads its edge
+    # PORTS apart. Kept keyed to edge COUNT on purpose: re-keying it to label height was
+    # tried and rejected — for Sample-Core_Core (edges of 1/10/7 ids) padding of 10 and 18
+    # lines both rendered byte-identically to no padding at all, because once labels are tall
+    # the label column, not the node, sets the height. Only an absurd 36 lines moved it, and
+    # that renders the unit as a grotesque tall bar. Row spacing is handled by _LABEL_SEP.
     n_edges = len(edges)
     n_extra_lines = min(max(2, n_edges), 12)
     pad = "   "
@@ -216,7 +239,7 @@ config:
         partner = fr if to == this_id else to
         if partner not in internal_set:
             continue
-        label = _escape_label("<br/>".join(sorted(ifaces)))
+        label = _edge_label(ifaces)
         src, dst = (fr, to) if to == this_id else (fr, _callee_node_id(to))
         lines.append(f"    {src} -->|{label}| {dst}")
     lines.append("")
@@ -237,7 +260,7 @@ config:
         partner = fr if to == this_id else to
         if partner in internal_set:
             continue
-        label = _escape_label("<br/>".join(sorted(ifaces)))
+        label = _edge_label(ifaces)
         src, dst = (fr, to) if to == this_id else (fr, _callee_node_id(to))
         lines.append(f"  {src} -->|{label}| {dst}")
 

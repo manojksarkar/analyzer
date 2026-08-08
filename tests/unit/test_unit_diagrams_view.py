@@ -32,6 +32,7 @@ _spec.loader.exec_module(_mod)
 
 _unit_part_id = _mod._unit_part_id
 _escape_label = _mod._escape_label
+_edge_label = _mod._edge_label
 _fid_to_unit = _mod._fid_to_unit
 _build_unit_diagram = _mod._build_unit_diagram
 
@@ -82,6 +83,46 @@ class TestEscapeLabel:
         assert '"' not in result
         assert "|" not in result
         assert "\n" not in result
+
+
+# ---------------------------------------------------------------------------
+# _edge_label — readability of a many-interface edge
+# ---------------------------------------------------------------------------
+
+class TestEdgeLabel:
+    """One arrow carries every interface id for a unit pair (REQ-UD-05), so a busy edge
+    stacks 10+ ids in ONE label. Joined with a bare <br/> they render as contiguous rows
+    with no leading — the reported "no space between the lines/labels". The separator is a
+    blank line because mermaid 10.9.5 silently ignores the ELK spacing options (verified:
+    adding elk.spacing.edgeEdge/edgeLabel/edgeNode/nodeNode produced a byte-identical PNG).
+    """
+
+    def test_ids_are_blank_line_separated(self):
+        assert _edge_label(["IF_A", "IF_B"]) == "IF_A<br/> <br/>IF_B"
+
+    def test_no_bare_br_between_ids(self):
+        """A bare <br/> between two ids is the tight stacking this fixes."""
+        out = _edge_label(["IF_A", "IF_B", "IF_C"])
+        assert "IF_A<br/>IF_B" not in out
+        assert out.count("<br/> <br/>") == 2
+
+    def test_ids_are_sorted(self):
+        assert _edge_label(["IF_C", "IF_A", "IF_B"]).startswith("IF_A")
+
+    def test_single_id_has_no_separator(self):
+        assert _edge_label(["IF_ONLY"]) == "IF_ONLY"
+
+    def test_empty_yields_empty(self):
+        assert _edge_label([]) == ""
+
+    def test_every_id_survives(self):
+        ids = [f"IF_LAYER1_CORE_{n:02d}" for n in range(1, 12)]
+        out = _edge_label(ids)
+        assert all(i in out for i in ids), "labels must stay complete — no capping"
+
+    def test_escaping_still_applied(self):
+        out = _edge_label(["A|B", "C"])
+        assert "|" not in out
 
     def test_empty_string(self):
         assert _escape_label("") == ""

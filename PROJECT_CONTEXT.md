@@ -2217,13 +2217,52 @@ Full logic and layout rules: `docs/spec/SWE3_SPEC.md` — Unit Diagrams (REQ-UD-
   once model-wide. 3.6 owner-orientation is unchanged; it now operates over the reduced
   (caller-only) edge set.
 - The main unit is **blue with a thick border** (`mainUnit` class); sibling units in the module subgraph are blue thin (`internal` class).
-- Edges labelled with `interfaceId` values, `<br/>`-separated for multi-edge.
+- Edges labelled with `interfaceId` values, **blank-line separated** for multi-edge
+  (`_edge_label` / `_LABEL_SEP` — see "Edge-label spacing" below).
 - Self-calls (callee in the same unit) produce no edge.
+- Functions published by a function-pointer table (`addressTakenByUnits`) also draw an
+  edge to the registering/consuming unit — they have no caller function, so without it
+  the relationship would never be drawn.
 - Project root resolved from `dirname(model_dir)` (NOT `output_dir`) so
   grouped output paths work.
 - PNG rendered by `mmdc` (mermaid-cli). 60s timeout per diagram.
 - Header uses the **ELK renderer** (`%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%`).
   See **"ELK renderer everywhere"** below for the rationale and the version caveats.
+
+#### Edge-label spacing — the ELK options are a no-op here (2026-08-08)
+
+Reported: *"function mapping is difficult to read in the Static Diagram, there is less
+space between the lines/labels."* REQ-UD-05 puts every interface id for a unit pair on ONE
+arrow, so a busy edge stacks 10+ ids in a single label; joined with a bare `<br/>` they
+render as contiguous rows with no leading.
+
+**Measured, do not re-litigate.** Rendering `Sample-Core_Core` (edges of 1 / 10 / 7 ids)
+through the pinned mermaid **10.9.5**:
+
+| variant | PNG |
+|---|---|
+| baseline | 1374 × 700 |
+| `elk.spacing.edgeEdge` + `edgeLabel` + `edgeNode` + `nodeNode` + `layered.spacing.*` | **1374 × 700 — byte-identical** |
+| blank-line label separator (text only) | 1374 × 1270 |
+| both | 1374 × 1270 |
+
+Mermaid 10.9.5 **silently ignores** the `elk.*` spacing options, so no config block was
+added — it would be dead weight that reads as if it does something. Spacing lives in the
+**graph text**: `_LABEL_SEP = "<br/> <br/>"` via `_edge_label(ifaces)`.
+
+The blank-line node-padding hack (`n_extra_lines`) was deliberately **left keyed to edge
+count**. Re-keying it to label height was tried and rejected: padding of 10 and 18 lines
+both rendered byte-identically to none, because once labels are tall the label column —
+not the node — sets the height. Only an absurd 36 lines moved it, and that draws the unit
+as a grotesque tall bar.
+
+Not changed, per the user: no label splitting (REQ-UD-05 mandates the shared arrow), no id
+capping (the diagram stays complete), no DOCX width change, and diagram height is
+explicitly not a concern. Residual: with tall labels, two adjacent edges' label blocks can
+abut — the rows within each are now clearly separated, which was the complaint.
+
+`render_mermaid_cached` is content-addressed on the Mermaid text, so changed text
+re-renders automatically; no cache wipe needed.
 
 #### ELK renderer everywhere (2026-07-14)
 
