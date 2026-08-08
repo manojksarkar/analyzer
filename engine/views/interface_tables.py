@@ -97,7 +97,15 @@ def _build_interface_tables(
             # documented once, from the provider (callee unit)'s perspective; a function's own
             # callee side is surfaced in those partner units' rows instead. callee_units is still
             # computed and emitted as the calleesUnits field below for completeness.
-            callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _keep_unit(u)))
+            # A function reached only through a file-scope table has no caller to list, so
+            # name the unit(s) that register it — otherwise the cell reads "-" even though
+            # the relationship is real. In-body address-takes need nothing here: they became
+            # ordinary call edges and are already in caller_units.
+            registrar_units = {u for u in (f.get("addressTakenByUnits") or []) if u}
+            callers_fmt = sorted(set(
+                u.replace(KEY_SEP, "/")
+                for u in (caller_units | registrar_units) if _keep_unit(u)
+            ))
             source_dest = ', '.join(callers_fmt) if callers_fmt else "-"
             raw_params = f.get("parameters", [])
             params = [{**p, "range": get_range(p.get("type", ""), dd)} for p in raw_params]

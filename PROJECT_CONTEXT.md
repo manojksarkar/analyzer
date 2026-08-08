@@ -1860,6 +1860,68 @@ three now key on the fid or `qualifiedName`. Behaviour rows carry `currentFuncti
 `currentFunctionDisplay` for this, with the old short-name path kept as a fallback for
 artifacts written before those fields existed.
 
+### Address-taken functions are public (2026-08-08)
+
+`_fn_is_private` (`model_deriver.py`) equates "public" with "has a caller in another file".
+A layered-firmware entry point reached only through a registration table has
+`calledByIds == []`, so it was relabelled `visibility: "private"`, given a `PIF_` id, and
+dropped from the interface table (`views/interface_tables.py`) and behaviour diagrams —
+missing from the very ASPICE artifact it belongs in. The parser detected **no** address-of-
+function usage at all.
+
+**Rule: a function named in a file-scope array/struct initializer is public.**
+
+```c
+static const fp_t table[] = { fn1, fn2 };   // detection point
+table[0]();                                 // the reason — NOT resolved
+```
+
+Which entry `table[0]()` reaches is statically unknowable and is deliberately not resolved
+(the long-standing documented limitation stands). Membership in the table is sufficient
+evidence on its own.
+
+The rule is by **shape, not by file**: a file-scope initializer counts even when the table
+sits in the same `.c` as the function — the canonical firmware pattern, which a cross-file
+rule would have missed entirely. An **in-body** take (`p = &helper;`) is different: it
+becomes an ordinary `call_graph` edge, so the existing cross-file caller rule applies
+unchanged and a locally-used comparator stays private.
+
+- `parser._walk_address_taken(cursor, on_hit, in_callee=False)` — a bare function name used
+  as a value is a take; the same name in **callee position** is not. clang wraps a call's
+  callee as `CALL_EXPR → UNEXPOSED_EXPR → DECL_REF_EXPR`, so the suppression flag propagates
+  through `_CALLEE_WRAPPER_KINDS`. **If it ever stops propagating, every direct call reads
+  as an address-take.** The exposure is the file-scope path (which ignores the file rule):
+  `static int g = compute();` would wrongly publish `compute`. Guarded by a fixture and a
+  test; only *resolved* `referenced` cursors count — never the spelling-match fallback used
+  for calls, or any identifier sharing a function's name would qualify.
+- Hooked in `visit_definitions` (both the file-scope `VAR_DECL` branch and each function
+  body) rather than `visit_calls`, so the rule lives in one place and the call visitor's hot
+  loop is untouched. `_get_var_init_value` only slices one declaration line, so a multi-line
+  table is invisible to it — the AST walk is what actually sees these.
+- `addressTakenByUnits` on the function = the registering unit **plus the units that read
+  the table**. The consumers matter more: the table usually lives in the same unit as the
+  function it publishes, and `_keep_unit` filters the own unit out of Source/Destination.
+  Readers are matched by the global's **qualified name**, not var id, so an `extern`
+  redeclaration in the consuming file (its own cursor, its own var id) still resolves.
+- `_fn_is_private` gains a third escape clause, ranked **below** the explicit `PRIVATE`
+  annotation — a source-level marking stays authoritative.
+- Consumed by `interface_tables` (Source/Destination) and `unit_diagrams` (edge).
+- Persisted to `model/address_taken.json` (`ADDRESS_TAKEN`, not in `ALL_MODEL_NAMES`) and
+  replayed by `incremental/parse_merge._merge_address_taken` + `_apply_address_taken`,
+  mirroring `override_pairs`. **Also added to `_PARSE_ARTIFACTS` (`incremental/engine.py`)
+  and `_PARSE_SNAPSHOT_FILES` (`incremental/generate.py`)** — miss either and a narrowed
+  parse silently demotes the function back to private, so the same source produces a
+  different document run to run.
+
+**Known consequence:** `_build_interface_index` numbers public and private separately, so
+each function flipped private→public shifts `IF_*_NN` for the rest of its unit. Client docs
+cite those IDs; a version diff will show the renumbering.
+
+Fixture: `SampleCppProject/Layer1/Poly/OpsTable.cpp` (table + ops, deliberately plain
+`static` not `PRIVATE`, plus an `opsSeed()` call-in-initializer false-positive guard) and
+`OpsClient.cpp` (a different unit consuming the table via `extern`). Verified: `opsAdd`/
+`opsSub` get `IF_` ids with Source/Destination `Cross/OpsClient`; `opsSeed` stays private.
+
 ### External data dictionary merge
 
 After `_scan_defines()` and before writing `dataDictionary.json`, if `--data-dictionary <path>` was passed, `_merge_external_data_dictionary(path)` is called. **There is no config key for this** — the path comes from the CLI (`run.py` → `group_planner` → `parser` argv) or, in the API/incremental path, from `currentDataDictId` → `ws.datadict_path(...)`. Because the merge happens inside Phase 1, `--data-dictionary` is a **silent no-op with `--from-phase 2+` or `--use-model`**; changing the CSV requires a re-parse.

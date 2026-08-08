@@ -85,6 +85,8 @@ from utils import (
     load_config,
     make_function_key,
     make_global_key,
+    make_unit_key,
+    KEY_SEP,
     PRIMITIVES,
 )
 
@@ -439,6 +441,22 @@ entity_files = {}
 # a narrowed (--only-files) parse so calls to functions defined in UN-parsed files still
 # resolve to a call edge. Empty for a full parse (so behaviour is unchanged).
 _baseline_func_keys = {}
+# Address-of-function detections. A function whose address is taken is reachable even
+# though no CALL_EXPR names it, so `_fn_is_private` (which equates "public" with "has a
+# cross-file caller") would otherwise bury it. Split by SHAPE, not by file:
+#   _address_taken_at_file_scope: func_key -> {rel_file of the initializer}
+#       `static const fp_t table[] = { fn1, fn2 };` — a registration table IS the published
+#       interface, so this counts even when the table sits in the same .c as the function
+#       (the canonical firmware pattern).
+#   _address_taken_in_body: (taker_func_key, target_func_key)
+#       `pFunc = &helper;` — becomes a normal call edge. Only confers publicness when the
+#       taking site is in a different file, which keeps a locally-used comparator private.
+_address_taken_at_file_scope = defaultdict(set)
+_address_taken_in_body = set()
+# [[target_fid, registering_unit_key], …] — built in build_metadata and written to
+# model/address_taken.json so a narrowed parse (which may not re-parse the file holding the
+# table) can replay the registrations instead of silently demoting the function to private.
+_address_taken_fid = []
 component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
@@ -1003,6 +1021,51 @@ def _var_decl_should_record_as_function_not_global(cursor):
     return _var_decl_init_args_are_only_decl_refs(cursor)
 
 
+# A call's callee is its FIRST child, but clang wraps it: CALL_EXPR -> UNEXPOSED_EXPR ->
+# DECL_REF_EXPR. The "this is a callee, not an address-take" flag must therefore propagate
+# THROUGH these wrapper kinds — stopping one level down would read every direct call as an
+# address-take and turn the whole codebase public.
+_CALLEE_WRAPPER_KINDS = (
+    cindex.CursorKind.UNEXPOSED_EXPR,
+    cindex.CursorKind.PAREN_EXPR,
+)
+
+
+def _walk_address_taken(cursor, on_hit, in_callee=False):
+    """Call on_hit(func_key) for each project function whose ADDRESS is taken in this subtree.
+
+    A bare function name used as a value (`{ fn1, fn2 }`, `&fn`, `p = fn`) is an
+    address-take; the same name in callee position (`fn()`) is not.
+    """
+    kind = cursor.kind
+
+    if kind == cindex.CursorKind.DECL_REF_EXPR:
+        if not in_callee:
+            try:
+                ref = cursor.referenced
+                if (ref is not None
+                        and ref.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
+                        and ref.location.file
+                        and is_project_file(ref.location.file.name)):
+                    # Resolved cursors only — never the spelling-match fallback used for
+                    # calls, or any identifier sharing a function's name would count.
+                    on_hit(get_function_key(ref))
+            except Exception:
+                pass
+        return
+
+    children = list(cursor.get_children())
+    if kind == cindex.CursorKind.CALL_EXPR and children:
+        _walk_address_taken(children[0], on_hit, in_callee=True)
+        for child in children[1:]:
+            _walk_address_taken(child, on_hit, in_callee=False)
+        return
+
+    still_callee = in_callee and kind in _CALLEE_WRAPPER_KINDS
+    for child in children:
+        _walk_address_taken(child, on_hit, still_callee)
+
+
 def visit_definitions(cursor):
     is_function = cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
     is_global_var = (
@@ -1024,6 +1087,12 @@ def visit_definitions(cursor):
 
         # Mark as visited
         _visited_function_keys.add(func_key)
+        # In-body address-takes (`pFunc = &helper;`). Walked here rather than in visit_calls
+        # so the whole address-taken rule lives in one place and the call visitor's hot loop
+        # is untouched; _visited_function_keys already makes this once-per-function.
+        _walk_address_taken(
+            cursor, lambda target, _t=func_key: _address_taken_in_body.add((_t, target))
+        )
         # Record virtual override -> base relations for the D7 virtual-dispatch
         # over-approximation (build_metadata spreads caller edges across the family).
         # Queried via the C API on the canonical decl (out-of-line defs report none).
@@ -1087,6 +1156,26 @@ def visit_definitions(cursor):
             function_to_component[fk] = component_name
 
     elif is_global_var and cursor.spelling and cursor.location.file:
+        # File-scope initializer tables: `static const fp_t table[] = { fn1, fn2 };`.
+        # Nothing calls fn1 by name, but the table publishes it — so membership alone makes
+        # it public, regardless of which file the table is in. No attempt is made to resolve
+        # which function `table[0]()` reaches; that is statically unknowable.
+        # _get_var_init_value only slices ONE declaration line, so a multi-line table is
+        # invisible to it — the AST walk is what actually sees these.
+        try:
+            _rel_init = os.path.relpath(cursor.location.file.name, MODULE_BASE_PATH).replace("\\", "/")
+        except ValueError:
+            _rel_init = cursor.location.file.name.replace("\\", "/")
+        # Keep the table's NAME too: the units that read the table are its real consumers,
+        # and in the canonical case the table sits in the SAME unit as the function it
+        # publishes — where the registering unit alone is filtered out as self. Matched by
+        # qualified name, not var id, so an `extern` redeclaration in the consuming file
+        # (its own cursor, its own var id) still resolves to the same table.
+        _tbl_qn = get_qualified_name(cursor)
+        _walk_address_taken(
+            cursor,
+            lambda target, _f=_rel_init, _n=_tbl_qn: _address_taken_at_file_scope[target].add((_f, _n)),
+        )
         if _var_decl_should_record_as_function_not_global(cursor):
             func_id = f"{cursor.location.file.name}:{cursor.location.line}"
             component_name = get_component_name(cursor.location.file.name)
@@ -1429,6 +1518,21 @@ def parse_global_access(path):
 
 def build_metadata():
     base_path = os.path.abspath(MODULE_BASE_PATH)
+    # In-body address-takes become ordinary call edges (`pFunc = &helper` => taker -> helper),
+    # so calledByIds, Source/Destination, unit diagrams and behaviour diagrams all pick the
+    # relationship up with no further change. Same over-approximation shape as D7 below.
+    # Must run BEFORE spread_virtual_families and the call_graph -> ids mapping.
+    _n_addr_edges = 0
+    for _taker, _target in sorted(_address_taken_in_body):
+        if _taker not in functions or _target not in functions or _taker == _target:
+            continue
+        if _target not in call_graph[_taker]:
+            call_graph[_taker].append(_target)
+            _n_addr_edges += 1
+        if _taker not in reverse_call_graph[_target]:
+            reverse_call_graph[_target].append(_taker)
+    if _n_addr_edges:
+        print(f"  address-taken: linked {_n_addr_edges} in-body address-of-function edge(s)")
     # D7 virtual-dispatch over-approximation: link callers of any virtual-family member
     # to ALL members, so a call that may dynamically dispatch to any override impacts the
     # whole family (never stale) and calledByIds is accurate. Must run before the
@@ -1508,6 +1612,45 @@ def build_metadata():
     for _bk, _bfid in _baseline_func_keys.items():
         func_key_to_fid.setdefault(_bk, _bfid)
         _func_key_to_fid.setdefault(_bk, _bfid)
+
+    # File-scope address-takes have no caller FUNCTION — the taker is a table. Record the
+    # units that publish each function so `_fn_is_private` can keep it public and the
+    # interface table / unit diagram can name the registering unit.
+    # unit_key of every function that READS a global of a given qualified name — for a
+    # registration table, those units are its actual consumers.
+    _readers_by_global_name = defaultdict(set)
+    for _fk, _read_vars in global_access_reads.items():
+        _reader_fid = func_key_to_fid.get(_fk)
+        if not _reader_fid:
+            continue
+        _rp = _reader_fid.split(KEY_SEP)
+        if len(_rp) < 2:
+            continue
+        _reader_unit = KEY_SEP.join(_rp[:2])
+        for _v in _read_vars:
+            _g = globals_data.get(_v)
+            if _g and _g.get("qualifiedName"):
+                _readers_by_global_name[_g["qualifiedName"]].add(_reader_unit)
+
+    _address_taken_fid.clear()
+    for _target_key, _sites in _address_taken_at_file_scope.items():
+        _target_fid = func_key_to_fid.get(_target_key)
+        if not _target_fid or _target_fid not in functions_dict:
+            continue
+        _units = {make_unit_key(rf) for rf, _ in _sites if rf}
+        # The consuming units matter more than the registering one for Source/Destination:
+        # the table usually lives in the SAME unit as the function it publishes.
+        for _, _tbl_name in _sites:
+            _units |= _readers_by_global_name.get(_tbl_name, set())
+        _units = sorted(u for u in _units if u)
+        if not _units:
+            continue
+        functions_dict[_target_fid]["addressTakenByUnits"] = _units
+        for _u in _units:
+            _address_taken_fid.append([_target_fid, _u])
+    if _address_taken_fid:
+        print(f"  address-taken: {len(_address_taken_fid)} function/unit registration(s) "
+              f"from file-scope initializers")
 
     # M4.6: fid-level override->base pairs for the narrowed-parse virtual re-spread. base is
     # its fid when defined, else its (stable) mangled key as a grouping token.
@@ -1890,7 +2033,8 @@ def main():
         _toolchain = ""
     meta_header["parseFingerprint"] = parse_fingerprint(CLANG_ARGS, std="", toolchain=str(_toolchain))
     from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
-                               HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS)
+                               HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS,
+                               ADDRESS_TAKEN)
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -1931,6 +2075,11 @@ def main():
     # Incremental (M4.6): fid-level override->base pairs -> model/override_pairs.json, for
     # the narrowed-parse virtual-dispatch re-spread across affected + un-parsed files.
     write_model_file(OVERRIDE_PAIRS, sorted(_override_pairs_fid))
+
+    # Address-taken registrations -> model/address_taken.json, so a narrowed parse that does
+    # not re-parse the table's file can replay them (otherwise the function flips back to
+    # private and the same source produces a different document run to run).
+    write_model_file(ADDRESS_TAKEN, sorted(_address_taken_fid))
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])

@@ -357,6 +357,12 @@ def _has_external_caller(f: dict, functions_data: dict, base_path: str) -> bool:
 def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
     if (f.get("visibility") or "").lower() == "private":
         return True
+    # A function published by a file-scope initializer table (`static const fp_t table[] =
+    # { fn1, … };`) is reachable through that table even though no CALL_EXPR names it, so
+    # the cross-file-caller rule below would wrongly bury it. Ranked BELOW the explicit
+    # PRIVATE annotation: a source-level marking stays authoritative.
+    if f.get("addressTakenByUnits"):
+        return False
     return not _has_external_caller(f, functions_data, base_path)
 
 

@@ -132,6 +132,11 @@ def _build_unit_diagram(
         # appears exactly once across the model, from the provider's perspective.
         for caller_fid in f.get("calledByIds", []) or []:
             _add_edge(unit_key, fid_to_unit.get(caller_fid), f.get("interfaceId", ""), _dir_of(f))
+        # A function published by a file-scope table has no caller function, so its
+        # relationship to the registering unit would otherwise never be drawn. In-body
+        # address-takes are already ordinary call edges above.
+        for registrar_unit in f.get("addressTakenByUnits", []) or []:
+            _add_edge(unit_key, registrar_unit, f.get("interfaceId", ""), _dir_of(f))
 
     caller_ids = {fr for (fr, to) in edges if to == this_id}
     callee_ids = {to for (fr, to) in edges if fr == this_id}
