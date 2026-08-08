@@ -4,7 +4,7 @@ import os
 import re
 
 from .registry import register
-from utils import get_range, log, short_name, KEY_SEP
+from utils import get_range, log, scoped_name, short_name, KEY_SEP
 
 
 def _iface_order(entry):
@@ -69,11 +69,15 @@ def _build_interface_tables(
             if (f.get("visibility") or "").lower() == "private":
                 continue
             qn = f.get("qualifiedName", "")
+            # `name` stays SHORT — downstream code uses it as a lookup key (flowchart stems,
+            # behaviour rows), not only for display. `interfaceName` carries the class-qualified
+            # display form so two same-named methods in one unit (AddOperation::apply vs
+            # MultiplyOperation::apply) are distinguishable wherever a name is rendered.
             name = short_name(qn)
             loc = dict(f.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            interface_name = name or ""
+            interface_name = scoped_name(qn, f.get("className", ""))
             caller_units = {
                 u for cid in f.get("calledByIds", []) or []
                 for u in fid_to_unit.get(cid, []) if u
@@ -131,7 +135,7 @@ def _build_interface_tables(
             loc = dict(g.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            interface_name = name or ""
+            interface_name = scoped_name(qn, g.get("className", ""))
             ge = {
                 "interfaceId": g.get("interfaceId", ""),
                 "globalId": vid,

@@ -555,6 +555,36 @@ def get_qualified_name(cursor):
     return "::".join(parts) if parts else cursor.spelling
 
 
+_CLASS_PARENT_KINDS = (
+    cindex.CursorKind.CLASS_DECL,
+    cindex.CursorKind.STRUCT_DECL,
+    cindex.CursorKind.CLASS_TEMPLATE,
+    cindex.CursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,
+)
+
+
+def get_class_scope(cursor):
+    """Enclosing class/struct chain, namespaces dropped (e.g. 'Outer::Inner', '' for free functions).
+
+    Deliberately separate from get_qualified_name rather than derived from it: a
+    qualifiedName string can't be split back into namespace vs class parts, and
+    get_qualified_name must not change — make_function_key builds every fid from it,
+    so touching it re-keys the whole model.
+
+    CLASS_TEMPLATE is included here even though get_qualified_name omits it, so methods
+    of template classes get a class too. Template arguments aren't in the spelling, so
+    Foo<int>::run and Foo<char>::run both read 'Foo::run'; mangled names still keep them
+    apart in the model.
+    """
+    parts = []
+    parent = cursor.semantic_parent
+    while parent:
+        if parent.kind in _CLASS_PARENT_KINDS and parent.spelling:
+            parts.insert(0, parent.spelling)
+        parent = parent.semantic_parent
+    return "::".join(parts)
+
+
 def get_function_key(cursor):
     # Mangled disambiguates overloads; fallback to qualified@file:line for templates/extern C
     mangled = cursor.mangled_name
@@ -1033,6 +1063,7 @@ def visit_definitions(cursor):
             "functionId": func_id,
             "functionName": cursor.spelling,
             "qualifiedName": get_qualified_name(cursor),
+            "className": get_class_scope(cursor),
             "mangledName": cursor.mangled_name or "",
             "componentName": component_name,
             "parameters": params,
@@ -1100,6 +1131,7 @@ def visit_definitions(cursor):
                 "variableId": var_id,
                 "variableName": cursor.spelling,
                 "qualifiedName": get_qualified_name(cursor),
+                "className": get_class_scope(cursor),
                 "componentName": get_component_name(cursor.location.file.name),
                 "type": cursor.type.spelling if cursor.type else "",
                 "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
@@ -1435,6 +1467,8 @@ def build_metadata():
             "description": f.get("description", ""),
         }
         functions_dict[fid]["visibility"] = f.get("visibility", "default")
+        if f.get("className"):
+            functions_dict[fid]["className"] = f["className"]
         if f.get("syntheticFromVarDecl"):
             functions_dict[fid]["syntheticFromVarDecl"] = True
         if f.get("declarationOnly"):
@@ -1464,6 +1498,8 @@ def build_metadata():
         if g.get("value"):
             g_entry["value"] = g["value"]
         g_entry["visibility"] = g.get("visibility", "default")
+        if g.get("className"):
+            g_entry["className"] = g["className"]
         global_variables_dict[vid] = g_entry
 
     # M4.4 narrowed parse: cross-TU callees live in files we did NOT re-parse, so they

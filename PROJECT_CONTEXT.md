@@ -1810,6 +1810,56 @@ Final model key: `component|unit|qualifiedName|paramTypes`.
 - `qualifiedName` includes namespace + class.
 - `paramTypes` is the comma-joined list of normalised parameter type strings.
 
+> **Never change `get_qualified_name`.** Every fid is built from it, so any change re-keys
+> the whole model — breaking interface IDs, the fid-keyed hidden-function rows in
+> `api/db/json_db.py`, and every incremental baseline. To surface more of a symbol's scope,
+> add a separate field (see `className` below), never widen `qualifiedName`.
+
+### `className` — class scope for display (2026-08-08)
+
+Interface tables built every Name cell with `short_name()`, which keeps only the last `::`
+segment. `AddOperation::apply` and `MultiplyOperation::apply` — two real methods in unit
+`Cross|Dispatch` of SampleCppProject — both rendered as `apply`, indistinguishable.
+
+The class *is* in `qualifiedName`, but that string cannot be split back into namespace vs
+class parts (`pos::QosEventManager::_RateLimit` — is `pos` a namespace or an outer class?).
+So the class is captured separately at parse time, where the cursor's `semantic_parent`
+kinds are still known:
+
+- `parser.get_class_scope(cursor)` — walks `semantic_parent` keeping only `CLASS_DECL`,
+  `STRUCT_DECL`, `CLASS_TEMPLATE` and its partial specialization. Namespaces and
+  empty-spelling parents are dropped. Nested classes join as `Outer::Inner`; `""` for free
+  functions. Stored as `className` on functions and globals.
+- `utils.scoped_name(qualifiedName, className)` — the display form, `ClassName::foo`.
+  Falls back to `short_name()` when `className` is absent, so models parsed before this
+  existed render as they did rather than half-qualified.
+
+**`CLASS_TEMPLATE` is matched here but not by `get_qualified_name`** — a template class's
+method therefore has a *bare* `qualifiedName` (`run`, not `Foo::run`), with the class
+already lost upstream. `get_class_scope` recovers it, so the rendered name is still
+`Foo::run`. Template arguments are not in the spelling, so `Foo<int>::run` and
+`Foo<char>::run` both read `Foo::run`; mangled names still keep them apart in the model.
+
+**Where it shows:** interface-table cells, DOCX per-function headings, flowchart table
+titles + signatures, behaviour subheaders, and the API's `class_name` field for the hide
+list. **Where it does not:** flowchart diagram nodes and behaviour message arrows stay
+short — qualifying every arrow re-creates the label crowding the static diagram already
+suffers from.
+
+**`name` vs `interfaceName`.** Interface-table entries keep `name` **short**, because
+downstream code uses it as a lookup key (flowchart stems, behaviour rows); `interfaceName`
+carries the qualified display form. Don't collapse the two.
+
+Three genuine short-name collisions were fixed alongside (wrong-function bugs, not
+cosmetics): `doc_render` looked flowcharts up by short name although they are keyed by
+`qualifiedName`, so **class methods silently got no flowchart in the web preview**;
+behaviour Input/Output labels were resolved by first short-name match within a unit, so
+both `apply` sections got the first one's labels; and hiding was matched against a
+short-name-per-unit set, so hiding one `apply` suppressed every `apply` in the unit. All
+three now key on the fid or `qualifiedName`. Behaviour rows carry `currentFunctionId` and
+`currentFunctionDisplay` for this, with the old short-name path kept as a fallback for
+artifacts written before those fields existed.
+
 ### External data dictionary merge
 
 After `_scan_defines()` and before writing `dataDictionary.json`, if `--data-dictionary <path>` was passed, `_merge_external_data_dictionary(path)` is called. **There is no config key for this** — the path comes from the CLI (`run.py` → `group_planner` → `parser` argv) or, in the API/incremental path, from `currentDataDictId` → `ws.datadict_path(...)`. Because the merge happens inside Phase 1, `--data-dictionary` is a **silent no-op with `--from-phase 2+` or `--use-model`**; changing the CSV requires a re-parse.

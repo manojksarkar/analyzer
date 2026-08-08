@@ -14,6 +14,7 @@ from core.config import _strip_json_comments, _strip_trailing_commas
 from utils import (
     safe_filename,
     short_name,
+    scoped_name,
     get_range_for_type,
     get_range,
     init_component_mapping,
@@ -155,6 +156,52 @@ class TestShortName:
 
     def test_none(self):
         assert short_name(None) == ""
+
+
+# ---------------------------------------------------------------------------
+# scoped_name
+# ---------------------------------------------------------------------------
+
+class TestScopedName:
+    def test_class_is_prefixed(self):
+        assert scoped_name("MyClass::getValue", "MyClass") == "MyClass::getValue"
+
+    def test_namespace_is_dropped(self):
+        # The namespace only lengthens the cell; the CLASS is what disambiguates.
+        assert scoped_name("pos::MyClass::getValue", "MyClass") == "MyClass::getValue"
+
+    def test_nested_class_kept_whole(self):
+        assert scoped_name("Outer::Inner::run", "Outer::Inner") == "Outer::Inner::run"
+
+    def test_free_function_stays_bare(self):
+        assert scoped_name("add", "") == "add"
+
+    def test_namespaced_free_function_stays_bare(self):
+        assert scoped_name("pos::add", "") == "add"
+
+    def test_missing_class_falls_back_to_short_name(self):
+        # Models parsed before className existed must render as they did before,
+        # not half-qualified.
+        assert scoped_name("MyClass::getValue") == "getValue"
+
+    def test_same_short_name_different_classes_are_distinguishable(self):
+        a = scoped_name("AddOperation::apply", "AddOperation")
+        m = scoped_name("MultiplyOperation::apply", "MultiplyOperation")
+        assert a == "AddOperation::apply"
+        assert m == "MultiplyOperation::apply"
+        assert a != m
+
+    def test_empty(self):
+        assert scoped_name("", "") == ""
+
+    def test_none(self):
+        assert scoped_name(None, None) == ""
+
+    def test_class_without_base_does_not_dangle(self):
+        assert scoped_name("", "MyClass") == ""
+
+    def test_whitespace_class_treated_as_absent(self):
+        assert scoped_name("MyClass::getValue", "   ") == "getValue"
 
 
 # ---------------------------------------------------------------------------

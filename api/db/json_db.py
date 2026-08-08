@@ -439,6 +439,7 @@ def _function_to_dict(f: Function) -> dict:
         "layer": f.layer, "group": f.group,
         "is_visible": f.is_visible, "is_new": f.is_new,
         "description": f.description,
+        "class_name": f.class_name,
     }
 
 
@@ -450,6 +451,7 @@ def _function_from_dict(d: dict) -> Function:
         is_visible=d.get("is_visible", True),
         is_new=d.get("is_new", False),
         description=d.get("description", ""),
+        class_name=d.get("class_name", ""),
     )
 
 
@@ -547,6 +549,7 @@ def _load_pipeline_functions(
         if not isinstance(fn_data, dict):
             continue
         fn_name = fn_data.get("name") or fn_key.split("::")[-1]
+        class_name = fn_data.get("className", fn_data.get("class_name", ""))
         file_path = fn_data.get("file", fn_data.get("filePath", ""))
         layer = fn_data.get("layer", fn_data.get("layerName", ""))
         group = fn_data.get("componentName", fn_data.get("group", ""))
@@ -565,6 +568,7 @@ def _load_pipeline_functions(
             is_visible=bool(is_visible),
             is_new=False,
             description=description,
+            class_name=class_name,
         ))
 
     return {job_id: functions}

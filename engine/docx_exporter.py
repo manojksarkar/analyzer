@@ -5,7 +5,7 @@ import sys
 import json
 import subprocess
 from typing import Optional, Tuple, List, Dict, Any
-from utils import os_type
+from utils import os_type, scoped_name
 from core.paths import paths as _paths
 
 _p = _paths()
@@ -1638,10 +1638,13 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                 (i for i in interfaces if i.get("type") != "Global Variable"), start=3
             ):
                 func_name = iface.get("name", "")
+                # Class-qualified for anything the reader sees; func_name stays short because
+                # it is also a lookup key for flowchart stems below.
+                func_display = iface.get("interfaceName", "") or func_name
                 # Flowchart JSON + PNGs are keyed by qualifiedName (flowchart/output/writer.py),
                 # so look up by qualifiedName; fall back to the short name for un-namespaced funcs.
                 func_qn = iface.get("qualifiedName", "") or func_name
-                doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{func_name}", level=4)
+                doc.add_heading(f"{sec_num}.1.{unit_idx}.{iface_idx} {unit_name_display}-{func_display}", level=4)
                 unit_prefix = unit_key.replace(KEY_SEP, "_").replace(" ", "_")
                 flowchart = (
                     flowcharts_map.get(unit_prefix, {}).get(func_qn)
@@ -1657,7 +1660,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         for p in (iface.get("parameters") or [])
                     )
                     iface_return = iface.get("returnType", "") or ""
-                    iface_signature = f"{iface_return} {func_name}({iface_params})".strip()
+                    iface_signature = f"{iface_return} {func_display}({iface_params})".strip()
                     # Slice-aware: prefer {stem}_part_K_of_N.png (a tall flowchart split by
                     # views/flowcharts.py), else the single {stem}.png, else mermaid text.
                     base_stems = [
@@ -1686,6 +1689,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         callee_func_name = callee_qn.split("::")[-1] if callee_qn else ""
                         if not callee_func_name:
                             continue
+                        callee_display = scoped_name(callee_qn, callee.get("className", ""))
                         # Keyed by qualifiedName (writer.py); short-name fallback for un-namespaced.
                         callee_flowchart = (
                             flowcharts_map.get(callee_unit_prefix, {}).get(callee_qn)
@@ -1703,7 +1707,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                             for p in (callee.get("params") or callee.get("parameters") or [])
                         )
                         callee_return = callee.get("returnType", "")
-                        callee_signature = f"{callee_return} {callee_func_name}({callee_params})".strip()
+                        callee_signature = f"{callee_return} {callee_display}({callee_params})".strip()
                         callee_stems = [
                             f"{callee_unit_prefix}_{safe_filename(callee_qn)}",
                             f"{callee_unit_name}_{safe_filename(callee_qn)}",
@@ -1719,7 +1723,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
                         (_readable_label(func_name) + " input").strip() if func_name else ""
                     output_label = (functions_data.get(iface.get("functionId")) or {}).get("behaviourOutputName") or \
                         (_readable_label(func_name) + " result").strip() if func_name else ""
-                    _add_flowchart_table(doc, func_name, iface.get("description", ""),
+                    _add_flowchart_table(doc, func_display, iface.get("description", ""),
                         input_label, output_label, flowcharts_list, font_small)
                 else:
                     _add_para(doc, iface.get("description", "") or "-")
@@ -1738,32 +1742,46 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         for unit_name, entries in sorted((docx_rows.get(component_name) or {}).items()):
             for row in entries:
                 current_fn = row.get("currentFunctionName", "") or ""
-                if current_fn in _hidden_by_mod_unit.get((component_name, unit_name), set()):
-                    continue
+                # Hide by fid. The old short-name-per-unit set suppressed EVERY same-named
+                # method in the unit when only one of them was hidden.
+                current_fid = row.get("currentFunctionId", "") or ""
+                if current_fid:
+                    if current_fid in _hidden_fids:
+                        continue
+                elif current_fn in _hidden_by_mod_unit.get((component_name, unit_name), set()):
+                    continue  # pre-currentFunctionId artifacts: fall back to the short-name set
                 beh_idx += 1
                 ext = row.get("externalUnitFunction", "")
-                subheader = f"{unit_name} - {current_fn}"
+                current_display = row.get("currentFunctionDisplay", "") or current_fn
+                subheader = f"{unit_name} - {current_display}"
                 if ext:
                     subheader += f" ({ext})"
                 doc.add_heading(f"{sec_num}.2.{beh_idx} {subheader}", level=3)
-                # Prefer precomputed behaviourInputName / behaviourOutputName from model_deriver
+                # Prefer precomputed behaviourInputName / behaviourOutputName from model_deriver.
+                # Resolve by fid — matching on the short name within the unit returns the FIRST
+                # function that happens to share it, so two same-named methods both got the
+                # first one's labels.
                 input_label = ""
                 output_label = ""
                 try:
-                    for fid, f in (functions_data or {}).items():
-                        parts = fid.split("|")
-                        if len(parts) < 3:
-                            continue
-                        mod, unit, _ = parts[0], parts[1], parts[2]
-                        if mod != component_name or unit != unit_name:
-                            continue
-                        qn = f.get("qualifiedName", "") or ""
-                        base_name = qn.split("::")[-1] if qn else ""
-                        if base_name != current_fn:
-                            continue
-                        input_label = (f.get("behaviourInputName") or "").strip()
-                        output_label = (f.get("behaviourOutputName") or "").strip()
-                        break
+                    _beh_f = (functions_data or {}).get(current_fid) if current_fid else None
+                    if _beh_f is None:
+                        for fid, f in (functions_data or {}).items():
+                            parts = fid.split("|")
+                            if len(parts) < 3:
+                                continue
+                            mod, unit, _ = parts[0], parts[1], parts[2]
+                            if mod != component_name or unit != unit_name:
+                                continue
+                            qn = f.get("qualifiedName", "") or ""
+                            base_name = qn.split("::")[-1] if qn else ""
+                            if base_name != current_fn:
+                                continue
+                            _beh_f = f
+                            break
+                    if _beh_f is not None:
+                        input_label = (_beh_f.get("behaviourInputName") or "").strip()
+                        output_label = (_beh_f.get("behaviourOutputName") or "").strip()
                 except Exception:
                     input_label = input_label or ""
                     output_label = output_label or ""
