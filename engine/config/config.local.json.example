@@ -1,7 +1,7 @@
 {
   // Local config overrides + secrets. Copy this file to `config.local.json` (same folder) and
   // fill in real values. `config.local.json` is gitignored, so credentials never get committed.
-  // It is merged over `config.json`; keep only the keys you want to override here.
+  // It is merged over `config.defaults.json`; keep only the keys you want to override here.
   //
   // Database connection. Used by the API server and the db tools when DATABASE_URL is NOT set
   // in the environment (env var still wins if present). Resolution order:
@@ -15,8 +15,8 @@
     "database": "analyzer"
   },
 
-  // LLM endpoint + credentials. Keep these here (gitignored), NOT in tracked config.json.
-  // Deep-merged over config.json's `llm`, so list ONLY the keys you want to override — e.g. the
+  // LLM endpoint + credentials. Keep these here (gitignored), NOT in tracked config.defaults.json.
+  // Deep-merged over config.defaults.json's `llm`, so list ONLY the keys you want to override — e.g. the
   // gateway URL and the auth-header token; provider/model/timeouts stay as set in config.json.
   // Applies to both `python engine/run.py` runs and API-driven jobs.
   "llm": {

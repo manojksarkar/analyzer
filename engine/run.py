@@ -5,7 +5,7 @@ Options:
   --clean              Delete output/ and model/ before running
   --selected-group <name>
                        Export only the named modulesGroup
-  --config <path>      Use this config file instead of engine/config/config.json
+  --config <path>      Use this config file instead of engine/config/config.defaults.json
                        (a per-project/per-version config carrying the project's
                        `layers`). Exported as ANALYZER_CONFIG so every phase
                        subprocess honors it. config.local.json is NOT merged on

@@ -128,7 +128,7 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def load_config(project_root: str) -> Dict[str, Any]:
-    """Load config from <project_root>/config/config.json, then config.local.json overrides.
+    """Load config from <project_root>/config/config.defaults.json, then config.local.json overrides.
 
     Callers pass the directory that *contains* ``config/``. Since the config now
     lives under ``engine/config/``, engine callers pass the engine dir
@@ -155,7 +155,7 @@ def load_config(project_root: str) -> Dict[str, Any]:
 
     config: Dict[str, Any] = {}
     config_dir = os.path.join(project_root, "config")
-    for name in ("config.json", "config.local.json"):
+    for name in ("config.defaults.json", "config.local.json"):
         path = os.path.join(config_dir, name)
         if not os.path.isfile(path):
             path = os.path.join(project_root, name)
@@ -176,7 +176,7 @@ class LlmConfigError(ValueError):
 
     Strict validation: rather than falling back to silent defaults, the
     analyzer surfaces the exact field that is wrong so the user can fix
-    config.json (or the matching env var) and re-run.
+    the config (config.defaults.json / config.local.json) or the matching env var and re-run.
     """
 
 
@@ -219,11 +219,11 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         If a required field is missing, empty, or not parseable.
     """
     if not config or not isinstance(config, dict):
-        raise LlmConfigError("config.json is empty or not a JSON object")
+        raise LlmConfigError("config is empty or not a JSON object")
 
     llm = config.get("llm")
     if not isinstance(llm, dict) or not llm:
-        raise LlmConfigError("config.json has no 'llm' block")
+        raise LlmConfigError("config has no 'llm' block")
 
     def _env_or(key: str, fallback):
         v = os.environ.get(key)
@@ -233,7 +233,7 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         raw = _env_or(env_var, llm.get(field))
         if raw is None or str(raw).strip() == "":
             raise LlmConfigError(
-                f"Missing required llm.{field} (or env {env_var}) in config.json"
+                f"Missing required llm.{field} (or env {env_var}) in the llm config"
             )
         return str(raw).strip()
 
@@ -241,7 +241,7 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         raw = _env_or(env_var, llm.get(field))
         if raw is None or raw == "":
             raise LlmConfigError(
-                f"Missing required llm.{field} (or env {env_var}) in config.json"
+                f"Missing required llm.{field} (or env {env_var}) in the llm config"
             )
         try:
             val = int(raw)
@@ -271,7 +271,7 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
     retries_raw = _env_or("LLM_RETRIES", llm.get("retries"))
     if retries_raw is None or retries_raw == "":
         raise LlmConfigError(
-            "Missing required llm.retries (or env LLM_RETRIES) in config.json"
+            "Missing required llm.retries (or env LLM_RETRIES) in the llm config"
         )
     try:
         retries = int(retries_raw)
@@ -463,17 +463,17 @@ def llm_config() -> Dict[str, Any]:
 
 
 def views_config() -> Dict[str, Any]:
-    """Return the `views` block from config.json (or {} if absent)."""
+    """Return the `views` block from the merged config (or {} if absent)."""
     return app_config().get("views") or {}
 
 
 def exporter_config() -> Dict[str, Any]:
-    """Return the `export` block from config.json (or {} if absent)."""
+    """Return the `export` block from the merged config (or {} if absent)."""
     return app_config().get("export") or {}
 
 
 def clang_config() -> Dict[str, Any]:
-    """Return the `clang` block from config.json (or {} if absent)."""
+    """Return the `clang` block from the merged config (or {} if absent)."""
     return app_config().get("clang") or {}
 
 
@@ -491,7 +491,7 @@ def clang_config() -> Dict[str, Any]:
 #
 # Defining the macros here (rather than in two separate parser files) keeps
 # the two libclang entry points in lock-step. Override locally by passing
-# `-UPUBLIC` etc. via `clang.clangArgs` in config.json.
+# `-UPUBLIC` etc. via `clang.clangArgs` in config.defaults.json.
 
 DEFAULT_VISIBILITY_MACROS = ("PRIVATE", "PROTECTED", "PUBLIC", "__OVLYINIT")
 

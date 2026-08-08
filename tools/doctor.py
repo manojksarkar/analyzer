@@ -15,7 +15,7 @@ What it verifies:
   - Node.js runtime
   - npm packages used by rendering: @viz-js/viz + puppeteer (flowcharts), @mermaid-js/mermaid-cli (mmdc)
   - Chromium that puppeteer will launch to rasterize SVG->PNG
-  - libclang DLL (CFG parsing): LIBCLANG_PATH -> engine/config/config.json -> pip-bundled fallback
+  - libclang DLL (CFG parsing): LIBCLANG_PATH -> engine/config/config.defaults.json -> pip-bundled fallback
 """
 from __future__ import annotations
 
@@ -235,7 +235,7 @@ def check_chromium():
 
 
 # ---------------------------------------------------------------------------
-# libclang (env -> config.json -> pip-bundled) — mirrors _configure_libclang
+# libclang (env -> config.defaults.json -> pip-bundled) — mirrors _configure_libclang
 # ---------------------------------------------------------------------------
 
 def check_libclang():
@@ -243,7 +243,7 @@ def check_libclang():
     if env and os.path.isfile(env):
         return Check("libclang", OK, f"{env} (env: LIBCLANG_PATH)")
 
-    cfg_path = os.path.join(ROOT, "engine", "config", "config.json")
+    cfg_path = os.path.join(ROOT, "engine", "config", "config.defaults.json")
     cfg_lib = ""
     if os.path.isfile(cfg_path):
         try:
@@ -253,7 +253,7 @@ def check_libclang():
         except (OSError, ValueError):
             cfg_lib = ""
     if cfg_lib and os.path.isfile(cfg_lib):
-        return Check("libclang", OK, f"{cfg_lib} (config: engine/config/config.json)")
+        return Check("libclang", OK, f"{cfg_lib} (config: engine/config/config.defaults.json)")
 
     # pip `libclang` bundles a native library that clang.cindex can discover.
     if importlib.util.find_spec("clang.cindex") is not None:
@@ -261,12 +261,12 @@ def check_libclang():
         if cfg_lib:
             detail += f"; NOTE config path missing: {cfg_lib}"
         return Check("libclang", WARN, detail,
-                     "Set a valid engine/config/config.json clang.llvmLibPath or "
+                     "Set a valid engine/config/config.defaults.json clang.llvmLibPath or "
                      "$LIBCLANG_PATH to pin the DLL explicitly", required=False)
 
     return Check("libclang", FAIL,
-                 "not resolvable via $LIBCLANG_PATH, config.json, or pip 'libclang'",
-                 "pip install libclang  (or install LLVM and set config.json clang.llvmLibPath)")
+                 "not resolvable via $LIBCLANG_PATH, config.defaults.json, or pip 'libclang'",
+                 "pip install libclang  (or install LLVM and set config.defaults.json clang.llvmLibPath)")
 
 
 # ---------------------------------------------------------------------------

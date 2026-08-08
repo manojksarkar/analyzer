@@ -452,7 +452,7 @@ def _strip_jsonc(text: str) -> str:
 
 
 def _load_base_config(base_path: Path) -> dict:
-    """Parse the base config/config.json as JSONC (comments + trailing commas allowed).
+    """Parse the base config/config.defaults.json as JSONC (comments + trailing commas allowed).
     Returns {} on any read/parse failure, matching the prior json.load fallback."""
     try:
         with open(base_path, "r", encoding="utf-8") as f:
@@ -463,17 +463,17 @@ def _load_base_config(base_path: Path) -> dict:
 
 def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> Path:
     """Write a per-project config.json by merging the base config with project settings."""
-    base_path = get_settings().repo_root / "engine" / "config" / "config.json"
+    base_path = get_settings().repo_root / "engine" / "config" / "config.defaults.json"
     cfg = _load_base_config(base_path)
     # Also apply engine/config/config.local.json (gitignored) so LLM credentials / URL and other
-    # secrets live there — with the DB config — instead of tracked config.json. Deep-merged so a
-    # partial `llm` block (e.g. just customHeaders) overrides without restating the whole block.
+    # secrets live there — with the DB config — instead of tracked config.defaults.json. Deep-merged
+    # so a partial `llm` block (e.g. just customHeaders) overrides without restating the whole block.
     local_path = base_path.parent / "config.local.json"
     if local_path.is_file():
         try:
             from core.config import _deep_merge
             _deep_merge(cfg, _load_base_config(local_path))
-        except Exception:                            # best-effort: fall back to config.json only
+        except Exception:                            # best-effort: fall back to defaults only
             pass
 
     # Apply explicit section overrides from build_config

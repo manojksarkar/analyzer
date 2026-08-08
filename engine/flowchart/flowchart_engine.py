@@ -410,17 +410,17 @@ def _load_analyzer_llm_config() -> Optional[Dict]:
     """Return the resolved llm config block, walking up from cwd.
 
     flowchart_engine is launched with cwd=project_root by views/flowcharts.py,
-    so the first hit is the analyzer config. Returns None if no config.json
+    so the first hit is the analyzer config. Returns None if no config.defaults.json
     is reachable (e.g. standalone CLI invocation from another directory).
 
-    Raises LlmConfigError (from core.config) if the config.json IS reachable
+    Raises LlmConfigError (from core.config) if the config.defaults.json IS reachable
     but has missing/invalid required fields — that is a user-facing error,
     not a silent fallback.
     """
     from utils import load_config, load_llm_config  # noqa: WPS433
     cwd = os.path.abspath(os.getcwd())
     for candidate in (cwd, os.path.dirname(cwd)):
-        cfg_path = os.path.join(candidate, "engine", "config", "config.json")
+        cfg_path = os.path.join(candidate, "engine", "config", "config.defaults.json")
         if os.path.isfile(cfg_path):
             cfg = load_config(os.path.join(candidate, "engine"))
             return load_llm_config(cfg)
@@ -449,7 +449,7 @@ def _build_llm_client(config: EngineConfig, llm_cfg: Optional[Dict]):
     if llm_cfg is not None:
         from llm_core.client import from_config  # noqa: WPS433
         # CLI args still win for num_ctx if explicitly larger — lets a
-        # standalone caller bump the window without editing config.json.
+        # standalone caller bump the window without editing config.defaults.json.
         if config.llm_num_ctx and config.llm_num_ctx > llm_cfg["numCtx"]:
             llm_cfg["numCtx"] = config.llm_num_ctx
         return from_config(llm_cfg)
@@ -483,7 +483,7 @@ def _configure_libclang() -> None:
             from utils import load_config  # noqa: WPS433
             cwd = os.path.abspath(os.getcwd())
             for candidate in (cwd, os.path.dirname(cwd)):
-                if os.path.isfile(os.path.join(candidate, "engine", "config", "config.json")):
+                if os.path.isfile(os.path.join(candidate, "engine", "config", "config.defaults.json")):
                     cfg = load_config(os.path.join(candidate, "engine")) or {}
                     clang_cfg = cfg.get("clang") or {}
                     lib = clang_cfg.get("llvmLibPath") or cfg.get("llvmLibPath") or ""

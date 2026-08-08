@@ -68,7 +68,7 @@ def sanitize_dsn(raw: str) -> str:
 
 
 def _dsn_from_config() -> Optional[str]:
-    """Build a DSN from the ``db`` section of the merged engine config (``config.json`` +
+    """Build a DSN from the ``db`` section of the merged engine config (``config.defaults.json`` +
     ``config.local.json``), so the connection can be configured in a file instead of the
     ``DATABASE_URL`` env var. Returns ``None`` when there is no ``db.host``.
 

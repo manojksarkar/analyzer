@@ -36,7 +36,7 @@ class ProjectPaths:
     data_root: str            # DATA root — holds model/ output/ logs/ cache/ + api/db/data
     src_dir: str              # engine source dir (== <root>/engine); field name kept for compat
     config_dir: str
-    config_path: str          # engine/config/config.json
+    config_path: str          # engine/config/config.defaults.json
     config_local_path: str    # config/config.local.json (may not exist)
     model_dir: str
     output_dir: str
@@ -96,7 +96,7 @@ def paths() -> ProjectPaths:
             data_root=data_root,
             src_dir=os.path.join(root, "engine"),
             config_dir=cfg_dir,
-            config_path=os.path.join(cfg_dir, "config.json"),
+            config_path=os.path.join(cfg_dir, "config.defaults.json"),
             config_local_path=os.path.join(cfg_dir, "config.local.json"),
             model_dir=os.path.join(data_root, "model"),
             output_dir=os.path.join(data_root, "output"),
