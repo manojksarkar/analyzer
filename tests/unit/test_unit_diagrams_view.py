@@ -92,60 +92,36 @@ class TestEscapeLabel:
 class TestEdgeLabel:
     """One arrow carries every interface id for a unit pair (REQ-UD-05), so a busy edge
     stacks 10+ ids in ONE label. Joined with a bare <br/> they render as contiguous rows
-    with no leading — the reported "no space between the lines/labels" — and two adjacent
-    edges' blocks ABUT, so a reader cannot tell which arrow a block belongs to.
-
-    Spacing lives in the graph text: mermaid 10.9.5 silently ignores the ELK spacing
-    options (adding elk.spacing.edgeEdge/edgeLabel/edgeNode/nodeNode rendered a
-    byte-identical PNG). Blank-line rows + two ids per row + a "to <partner>" header.
+    with no leading — the reported "no space between the lines/labels". The separator is a
+    blank line because mermaid 10.9.5 silently ignores the ELK spacing options (verified:
+    adding elk.spacing.edgeEdge/edgeLabel/edgeNode/nodeNode produced a byte-identical PNG).
     """
 
     def test_ids_are_blank_line_separated(self):
-        out = _edge_label(["IF_A", "IF_B", "IF_C"], "")
-        assert "<br/> <br/>" in out
+        assert _edge_label(["IF_A", "IF_B"]) == "IF_A<br/> <br/>IF_B"
 
-    def test_no_bare_br_between_rows(self):
-        """A bare <br/> between rows is the tight stacking this fixes."""
-        out = _edge_label([f"IF_{n}" for n in range(6)], "")
-        assert "<br/>" in out
-        assert "<br/><br/>" not in out
-        assert out.replace("<br/> <br/>", "") .count("<br/>") == 0
-
-    def test_two_ids_per_row(self):
-        out = _edge_label(["IF_A", "IF_B", "IF_C", "IF_D"], "")
-        assert out == "IF_A, IF_B<br/> <br/>IF_C, IF_D"
-
-    def test_header_names_the_destination(self):
-        out = _edge_label(["IF_A", "IF_B"], "App/Main")
-        assert out.startswith("to App/Main<br/> <br/>")
-
-    def test_single_id_gets_no_header(self):
-        """A lone id needs no disambiguation — a header would just be clutter."""
-        assert _edge_label(["IF_ONLY"], "App/Main") == "IF_ONLY"
-
-    def test_header_strips_parens_and_pipes(self):
-        """Parentheses in an edge label break the Mermaid parse (mmdc exits non-zero)."""
-        out = _edge_label(["IF_A", "IF_B"], "Mod (v2)|x")
-        assert "(" not in out and ")" not in out and "|" not in out
-
-    def test_header_collapses_padded_box_text(self):
-        """The main unit's box label carries <br/> padding — it must not leak into a header."""
-        out = _edge_label(["IF_A", "IF_B"], "   Core   <br/>    <br/>    ")
-        assert out.startswith("to Core<br/> <br/>")
+    def test_no_bare_br_between_ids(self):
+        """A bare <br/> between two ids is the tight stacking this fixes."""
+        out = _edge_label(["IF_A", "IF_B", "IF_C"])
+        assert "IF_A<br/>IF_B" not in out
+        assert out.count("<br/> <br/>") == 2
 
     def test_ids_are_sorted(self):
-        assert _edge_label(["IF_C", "IF_A", "IF_B"], "").startswith("IF_A")
+        assert _edge_label(["IF_C", "IF_A", "IF_B"]).startswith("IF_A")
+
+    def test_single_id_has_no_separator(self):
+        assert _edge_label(["IF_ONLY"]) == "IF_ONLY"
 
     def test_empty_yields_empty(self):
-        assert _edge_label([], "App/Main") == ""
+        assert _edge_label([]) == ""
 
     def test_every_id_survives(self):
         ids = [f"IF_LAYER1_CORE_{n:02d}" for n in range(1, 12)]
-        out = _edge_label(ids, "App/Main")
+        out = _edge_label(ids)
         assert all(i in out for i in ids), "labels must stay complete — no capping"
 
     def test_escaping_still_applied(self):
-        out = _edge_label(["A|B", "C"], "")
+        out = _edge_label(["A|B", "C"])
         assert "|" not in out
 
     def test_empty_string(self):

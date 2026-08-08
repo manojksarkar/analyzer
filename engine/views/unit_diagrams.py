@@ -1,7 +1,6 @@
 """Unit diagram view: one Mermaid flowchart per unit (boxes for units, edges = interfaceIds)."""
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -92,50 +91,19 @@ def _escape_label(text):
 
 # One arrow carries every interface id for a unit pair (REQ-UD-05), so a busy edge stacks
 # 10+ ids in a single label. Joined with a bare <br/> they render as contiguous rows of text
-# with no leading \u2014 the reported "no space between the lines/labels".
+# with no leading, which is the reported "no space between the lines/labels".
 #
-# Spacing lives in the GRAPH TEXT, not in layout hints: mermaid 10.9.5 silently IGNORES the
-# ELK spacing options. Rendering Sample-Core_Core with elk.spacing.edgeEdge / edgeLabel /
-# edgeNode / nodeNode + layered.spacing.* produced a byte-identical 1374x700 PNG, so no ELK
-# block is emitted \u2014 it would be dead config that reads as if it works.
-#
-# Three text levers, measured on that diagram (edges of 1 / 10 / 7 ids):
-#   blank line between rows   1374x700 -> 1374x1270, rows legible but the column is very tall
-#   + two ids per row         -> 1568x618, compact
-#   + a "to <partner>" header -> 1568x760, and the block finally says which arrow it belongs to
-# Without the header the label blocks of two adjacent edges ABUT, and a reader cannot tell
-# where one ends \u2014 the ids sit in a column of their own, not on their arrow.
-#
-# Rejected: one arrow per id (fixes association outright but needs a REQ-UD-05 spec change,
-# and a unit with 30 interfaces to one partner fans into 30 arrows) and capping ids per
-# label (the diagram must stay complete).
+# The separator is a blank line \u2014 spacing lives in the GRAPH TEXT, not in layout hints,
+# because mermaid 10.9.5 silently ignores the ELK spacing options: rendering
+# Sample-Core_Core with elk.spacing.edgeEdge / edgeLabel / edgeNode / nodeNode +
+# layered.spacing.* produced a byte-identical 1374x700 PNG. The blank-line join takes the
+# same diagram to 1374x1270 with each id clearly separated.
 _LABEL_SEP = "<br/> <br/>"
-_IDS_PER_ROW = 2
 
 
-def _label_header(dest_name):
-    """'to <partner>' \u2014 sanitised. Parentheses and pipes break the Mermaid edge-label parse."""
-    t = re.sub(r"(?:<br/>|\s)+", " ", dest_name or "").strip()
-    t = re.sub(r"[()|\[\]]", "", t)
-    return f"to {t}" if t else ""
-
-
-def _edge_label(ifaces, dest_name=""):
-    """Interface ids for one edge: an optional destination header, then rows of ids.
-
-    The header is only added for a multi-id edge \u2014 a single id needs no disambiguation and
-    the header would just be clutter.
-    """
-    ids = sorted(ifaces)
-    if not ids:
-        return ""
-    if len(ids) == 1:
-        return _escape_label(ids[0])
-    rows = [", ".join(ids[i:i + _IDS_PER_ROW]) for i in range(0, len(ids), _IDS_PER_ROW)]
-    header = _label_header(dest_name)
-    if header:
-        rows.insert(0, header)
-    return _escape_label(_LABEL_SEP.join(rows))
+def _edge_label(ifaces):
+    """Interface ids for one edge, one per line, blank-line separated."""
+    return _escape_label(_LABEL_SEP.join(sorted(ifaces)))
 
 
 def _build_unit_diagram(
@@ -225,17 +193,6 @@ def _build_unit_diagram(
     n_extra_lines = min(max(2, n_edges), 12)
     pad = "   "
 
-    def _display_name(pid):
-        """Human name for a node id — for the edge-label header. Strips the callee-side
-        `__out` suffix and never returns the main unit's <br/>-padded box text."""
-        base_pid = pid[:-len("__out")] if pid.endswith("__out") else pid
-        for uk in units_data:
-            if _unit_part_id(uk) == base_pid:
-                if base_pid == this_id:
-                    return unit_names.get(uk, uk)
-                return uk.replace(KEY_SEP, "/").replace("-", " ")
-        return ""
-
     def _node_line(node_id, base_pid=None):
         base_pid = base_pid if base_pid is not None else node_id
         for uk in units_data:
@@ -282,8 +239,8 @@ config:
         partner = fr if to == this_id else to
         if partner not in internal_set:
             continue
+        label = _edge_label(ifaces)
         src, dst = (fr, to) if to == this_id else (fr, _callee_node_id(to))
-        label = _edge_label(ifaces, _display_name(dst))
         lines.append(f"    {src} -->|{label}| {dst}")
     lines.append("")
     lines.append(f"    class {this_id} mainUnit")
@@ -303,8 +260,8 @@ config:
         partner = fr if to == this_id else to
         if partner in internal_set:
             continue
+        label = _edge_label(ifaces)
         src, dst = (fr, to) if to == this_id else (fr, _callee_node_id(to))
-        label = _edge_label(ifaces, _display_name(dst))
         lines.append(f"  {src} -->|{label}| {dst}")
 
     return "\n".join(lines) if len(lines) > 1 else None
