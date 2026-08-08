@@ -2236,19 +2236,29 @@ space between the lines/labels."* REQ-UD-05 puts every interface id for a unit p
 arrow, so a busy edge stacks 10+ ids in a single label; joined with a bare `<br/>` they
 render as contiguous rows with no leading.
 
+There were really **two** defects: rows with no leading, and — because two adjacent edges'
+label blocks abut in one column — no way to tell which arrow a block belongs to.
+
 **Measured, do not re-litigate.** Rendering `Sample-Core_Core` (edges of 1 / 10 / 7 ids)
 through the pinned mermaid **10.9.5**:
 
-| variant | PNG |
-|---|---|
-| baseline | 1374 × 700 |
-| `elk.spacing.edgeEdge` + `edgeLabel` + `edgeNode` + `nodeNode` + `layered.spacing.*` | **1374 × 700 — byte-identical** |
-| blank-line label separator (text only) | 1374 × 1270 |
-| both | 1374 × 1270 |
+| variant | PNG | verdict |
+|---|---|---|
+| baseline | 1374 × 700 | rows touch; blocks abut |
+| `elk.spacing.edgeEdge` + `edgeLabel` + `edgeNode` + `nodeNode` + `layered.spacing.*` | **1374 × 700 — byte-identical** | **silently ignored** |
+| blank-line row separator | 1374 × 1270 | rows legible, column very tall, blocks still abut |
+| + two ids per row | 1568 × 618 | compact |
+| **+ `to <partner>` header** | **1568 × 760** | **shipped** — the block names its own arrow |
+| one arrow per id | 1568 × 842 | rejected — needs a REQ-UD-05 change, and 30 interfaces ⇒ 30 arrows |
 
 Mermaid 10.9.5 **silently ignores** the `elk.*` spacing options, so no config block was
-added — it would be dead weight that reads as if it does something. Spacing lives in the
-**graph text**: `_LABEL_SEP = "<br/> <br/>"` via `_edge_label(ifaces)`.
+added — it would be dead weight that reads as if it does something. Everything lives in the
+**graph text**, in `_edge_label(ifaces, dest_name)`: `_LABEL_SEP = "<br/> <br/>"`,
+`_IDS_PER_ROW = 2`, and a `to <partner>` header. The header is added **only for a multi-id
+edge** — a lone id needs no disambiguation. `_label_header` strips `()`/`|`/`[]`:
+**parentheses in an edge label break the Mermaid parse** and `mmdc` exits non-zero.
+`_display_name(pid)` resolves the header text, stripping the callee-side `__out` suffix and
+never returning the main unit's `<br/>`-padded box text.
 
 The blank-line node-padding hack (`n_extra_lines`) was deliberately **left keyed to edge
 count**. Re-keying it to label height was tried and rejected: padding of 10 and 18 lines
@@ -2256,10 +2266,9 @@ both rendered byte-identically to none, because once labels are tall the label c
 not the node — sets the height. Only an absurd 36 lines moved it, and that draws the unit
 as a grotesque tall bar.
 
-Not changed, per the user: no label splitting (REQ-UD-05 mandates the shared arrow), no id
-capping (the diagram stays complete), no DOCX width change, and diagram height is
-explicitly not a concern. Residual: with tall labels, two adjacent edges' label blocks can
-abut — the rows within each are now clearly separated, which was the complaint.
+Not changed, per the user: **one arrow per unit pair (REQ-UD-05 stands)**, no id capping
+(the diagram stays complete), no DOCX width change, and diagram height is explicitly not a
+concern.
 
 `render_mermaid_cached` is content-addressed on the Mermaid text, so changed text
 re-renders automatically; no cache wipe needed.
