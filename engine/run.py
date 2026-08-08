@@ -23,8 +23,16 @@ Options:
   --project-name <name>
                        Override the project name used in metadata and
                        interfaceIds (default: basename of project_path).
-  --macros <path>      CSV file (Name, Value) passed as -D flags to Clang. Rows
-                       with Value="ne" are skipped. Empty Value → -DMACRONAME.
+  --macros <path>      Macro file passed as -D flags to Clang, for every layer.
+                       CSV (Name, Value) or JSON (toolchain dump, {"NAME":"VAL"}
+                       map, ["NAME=VAL"] list, or {"Layer": {...}}). Rows with
+                       Value="ne" are skipped. Empty Value → -DMACRONAME.
+  --macros-layer <layer> <path>
+                       Same file formats, but applied to the named layer only.
+                       Repeatable — use once per layer. Overrides --macros for
+                       that layer's parse. Samples in engine/config/. Example:
+                         --macros-layer Layer1 engine/config/macros.layer1.example.json \
+                         --macros-layer Layer2 engine/config/macros.layer2.example.json
   --include-emulator   Parse emulator/stub files too. By default files whose
                        basename matches config `excludeNamePatterns` (default
                        ["emul"]) are skipped from the parse scope (3.1).
@@ -124,6 +132,7 @@ component_per_docx      = False
 filter_mode_arg         = None
 data_dictionary_arg     = None
 macros_arg              = None
+macros_layer_args       = []   # list of (layer_name, path) tuples
 project_name_arg        = None
 output_name_arg         = None
 only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
@@ -183,6 +192,12 @@ while i < len(sys.argv):
             log("--macros requires a file path", component="run", err=True)
             sys.exit(1)
         macros_arg = sys.argv[i]
+    elif a == "--macros-layer":
+        if i + 2 >= len(sys.argv):
+            log("--macros-layer requires two arguments: <layer> <path>", component="run", err=True)
+            sys.exit(1)
+        macros_layer_args.append((sys.argv[i + 1], sys.argv[i + 2]))
+        i += 2
     elif a == "--only-files":
         i += 1
         if i >= len(sys.argv):
@@ -319,6 +334,15 @@ if macros_path:
         sys.exit(2)
     macros_path = _m_abs
 
+# Layer names are validated further down, once the config is loaded.
+macros_layer_paths = []
+for _ml_layer, _ml_path in macros_layer_args:
+    _ml_abs = _ml_path if os.path.isabs(_ml_path) else os.path.join(SCRIPT_DIR, _ml_path)
+    if not os.path.isfile(_ml_abs):
+        log(f"--macros-layer file not found: {_ml_abs}", component="run", err=True)
+        sys.exit(2)
+    macros_layer_paths.append((_ml_layer, _ml_abs))
+
 
 # ---------------------------------------------------------------------------
 # Collect layer include paths before any phase runs.
@@ -382,6 +406,10 @@ for _lname, _layer in (cfg.get("layers") or {}).items():
 
 # Validate and merge --include-path <layer> <dir> entries.
 _known_layers = set((cfg.get("layers") or {}).keys())
+for _ml_layer, _ in macros_layer_paths:
+    if _ml_layer not in _known_layers:
+        log(f"--macros-layer: unknown layer {_ml_layer!r}. Valid layers: {', '.join(sorted(_known_layers))}", component="run", err=True)
+        sys.exit(1)
 for _ip_layer, _ip_dir in include_path_args:
     if _ip_layer not in _known_layers:
         log(f"--include-path: unknown layer {_ip_layer!r}. Valid layers: {', '.join(sorted(_known_layers))}", component="run", err=True)
@@ -452,6 +480,7 @@ try:
         filter_mode=filter_mode_arg,
         data_dictionary_path=data_dictionary_path,
         macros_path=macros_path,
+        macros_layer=macros_layer_paths,
         project_name=project_name_arg,
         output_name=output_name_arg,
         only_files=only_files_arg,

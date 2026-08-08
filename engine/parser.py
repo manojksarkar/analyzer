@@ -17,6 +17,14 @@ from core.config import (
     clang_config as _clang_config,
     default_clang_macro_defs,
 )
+from core.macro_input import (
+    MacroInputError,
+    args_for_scope as _args_for_scope,
+    find_conflicts as _find_macro_conflicts,
+    load_macro_defs as _load_macro_defs,
+    merge_macro_defs as _merge_macro_defs,
+    scoped_args as _scoped_macro_args,
+)
 from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
@@ -34,6 +42,7 @@ MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.
 # Scan for optional flags passed by group_planner.
 _data_dict_path: str | None = None
 _macros_path: str | None = None
+_macros_layer_args: list = []   # (layer, path) pairs from --macros-layer, repeatable
 _selected_group: str | None = None
 _selected_layer: str | None = None
 _project_name_override: str | None = None
@@ -50,6 +59,9 @@ while _i < len(sys.argv):
     elif sys.argv[_i] == "--macros" and _i + 1 < len(sys.argv):
         _macros_path = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--macros-layer" and _i + 2 < len(sys.argv):
+        _macros_layer_args.append((sys.argv[_i + 1], sys.argv[_i + 2]))
+        _i += 3
     elif sys.argv[_i] == "--selected-group" and _i + 1 < len(sys.argv):
         _selected_group = sys.argv[_i + 1]
         _i += 2
@@ -93,7 +105,7 @@ if _llvm and os.path.isfile(_llvm):
             os.environ["PATH"] = _llvm_bin_dir + os.pathsep + os.environ.get("PATH", "")
     cindex.Config.set_library_file(_llvm)
 
-from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups
+from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups, get_component_layer_name as _get_component_layer_name
 if _selected_layer:
     _components_groups = _get_layer_flat_groups(_config, _selected_layer)
 elif _selected_group:
@@ -233,39 +245,60 @@ if _extra:
     CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
 
 
-def _load_macros_as_clang_args(path: str) -> list:
-    """Read 2-column CSV (Name, Value) and return -D flags for Clang.
-
-    Rows where Value is 'ne' (case-insensitive) are skipped entirely.
-    Rows where Value is empty produce -DNAME (defined as 1).
-    Rows where Value is present produce -DNAME=VALUE.
-    """
-    args = []
-    with open(path, newline="", encoding="utf-8-sig") as _f:
-        reader = csv.DictReader(_f)
-        for row in reader:
-            name = (row.get("Name") or "").strip()
-            value = (row.get("Value") or "").strip()
-            if not name:
-                continue
-            if value.lower() == "ne":
-                continue
-            args.append(f"-D{name}={value}" if value else f"-D{name}")
-    return args
-
-
+# Macro -D flags, scope-keyed ("*" = every layer). The file may be a CSV or any
+# of the JSON shapes core.macro_input accepts; --macros is global and
+# --macros-layer pins a file to one layer. The resolved set is written to
+# model/clang_macros.json so the Phase 3 flowchart engine defines exactly what
+# Phase 1 did.
+# Sources are config first, CLI second, so a flag overrides the config and the
+# later file wins on a name collision. Config carries them because every entry
+# point (run.py, incremental generate/engine) passes --config, while only run.py
+# takes the flags: the API writes clang.macrosFile / clang.macrosByLayer into the
+# per-project config instead of threading a path through each script.
+_macro_sources: list = []
+_cfg_macros_file = _clang.get("macrosFile")
+if isinstance(_cfg_macros_file, str) and _cfg_macros_file.strip():
+    _macro_sources.append((None, _cfg_macros_file.strip()))
+for _cfg_layer, _cfg_path in (_clang.get("macrosByLayer") or {}).items():
+    if isinstance(_cfg_path, str) and _cfg_path.strip():
+        _macro_sources.append((_cfg_layer, _cfg_path.strip()))
 if _macros_path:
-    _macro_args = _load_macros_as_clang_args(_macros_path)
-    _macro_args_seen = set(CLANG_ARGS)
-    for _ma in _macro_args:
-        if _ma not in _macro_args_seen:
-            _macro_args_seen.add(_ma)
-            CLANG_ARGS.append(_ma)
+    _macro_sources.append((None, _macros_path))
+_macro_sources += _macros_layer_args
+
+_MACRO_ARGS_BY_SCOPE: dict = {}
+if _macro_sources:
     import logging as _logging
-    _logging.getLogger("parser").info("Loaded %d macro -D flag(s) from %s", len(_macro_args), _macros_path)
-    _macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
+    _macro_log = _logging.getLogger("parser")
+    _macro_defs: dict = {}
+    for _scope, _path in _macro_sources:
+        try:
+            _defs, _report = _load_macro_defs(
+                _path,
+                scope_map=(_clang.get("macroScopes") or {}),
+                default_scope=_scope,
+            )
+        except MacroInputError as _exc:
+            print(f"ERROR: {_exc}")
+            sys.exit(2)
+        for _line in _report.lines():
+            _macro_log.info("%s", _line)
+        # A name defined by two lists is reported, never silently reconciled —
+        # the precedence strategy across macro lists is still an open question.
+        for _c_scope, _c_name, _c_old, _c_new in _find_macro_conflicts(_macro_defs, _defs):
+            _macro_log.warning(
+                "macro %s redefined in scope %s: %s -> %s (last one wins)",
+                _c_name, _c_scope, _c_old, _c_new,
+            )
+        _macro_defs = _merge_macro_defs(_macro_defs, _defs)
+    _MACRO_ARGS_BY_SCOPE = _scoped_macro_args(_macro_defs)
+
+_macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
+if _MACRO_ARGS_BY_SCOPE or os.path.isfile(_macros_json):
+    # Written even when empty: otherwise a previous run's file survives and
+    # Phase 3 keeps defining macros this parse did not use.
     with open(_macros_json, "w", encoding="utf-8") as _mf:
-        json.dump(_macro_args, _mf, indent=2)
+        json.dump(_MACRO_ARGS_BY_SCOPE, _mf, indent=2)
 
 
 
@@ -304,6 +337,31 @@ def get_component_name(file_path: str) -> str:
     except ValueError:
         return "unknown"
     return _FILE_COMPONENT_MAP.get(rel, "unknown")
+
+
+_LAYER_ARGS_CACHE: dict = {}
+
+
+def clang_args_for(file_path: str) -> list:
+    """CLANG_ARGS plus the macro defines in scope for this file's layer.
+
+    Args are resolved per TU because one run can span layers: the global ("*")
+    defines come first, then the layer's own, and Clang honours the *last* -D for
+    a name — so a layer value overrides the global one by position. A file
+    outside every configured component (an orphan header, say) resolves to no
+    layer and is parsed with the global set only.
+    """
+    if not _MACRO_ARGS_BY_SCOPE:
+        return CLANG_ARGS
+    component = get_component_name(file_path)
+    layer = (_get_component_layer_name(_config, component)
+             if component and component != "unknown" else None)
+    cached = _LAYER_ARGS_CACHE.get(layer)
+    if cached is None:
+        cached = CLANG_ARGS + _args_for_scope(_MACRO_ARGS_BY_SCOPE, layer)
+        _LAYER_ARGS_CACHE[layer] = cached
+    return cached
+
 
 index = cindex.Index.create()
 
@@ -1310,7 +1368,7 @@ def _collect_macro_defs(tu_cursor):
 
 def parse_file(path):
     try:
-        tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
@@ -1322,7 +1380,7 @@ def parse_file(path):
 
 def parse_calls(path):
     try:
-        tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         visit_calls(tu.cursor)
     except cindex.TranslationUnitLoadError:
         pass

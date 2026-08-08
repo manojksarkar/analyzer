@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 from .registry import register
+from core.macro_input import args_for_scope, normalize_scoped_args
 from utils import KEY_SEP, log, safe_filename, os_type, render_dot_cached
 
 
@@ -701,6 +702,19 @@ def _maybe_slice_tall_png(png_path: str) -> int:
 
     return n_parts
 
+def _resolve_layer_name(config, group_name):
+    """Return the layer that owns group_name (case-insensitive), or None."""
+    if not group_name:
+        return None
+
+    for layer_name, layer in ((config or {}).get("layers") or {}).items():
+        groups = layer.get("groups") or {}
+        if group_name.lower() in [g.lower() for g in groups]:
+            return layer_name
+
+    return None
+
+
 def _resolve_layer_dirs(config, group_name, layer_paths):
     """
     Return the include dirs for the layer that owns group_name.
@@ -710,12 +724,10 @@ def _resolve_layer_dirs(config, group_name, layer_paths):
     all dirs across all layers when no group is selected or the group is not
     found in the config.
     """
-    if group_name:
-        layers_cfg = (config or {}).get("layers") or {}
-        for layer_name, layer in layers_cfg.items():
-            groups = layer.get("groups") or {}
-            if group_name.lower() in [g.lower() for g in groups]:
-                return layer_paths.get(layer_name) or []
+    layer_name = _resolve_layer_name(config, group_name)
+
+    if layer_name:
+        return layer_paths.get(layer_name) or []
 
     all_dirs: list = []
     seen: set = set()
@@ -851,9 +863,16 @@ def run(model, output_dir, model_dir, config):
     if os.path.isfile(clang_macros_file):
         try:
             with open(clang_macros_file, "r", encoding="utf-8") as f:
-                macro_args = json.load(f) or []
+                stored_macros = json.load(f)
 
-            for arg in macro_args:
+            # Scope-keyed since macros became per-layer; a flat list is the
+            # pre-scope shape and loads as global. Global defines first, then
+            # this group's layer — the order Phase 1 parsed with, and the one
+            # Clang needs (it honours the last -D for a name).
+            for arg in args_for_scope(
+                normalize_scoped_args(stored_macros),
+                _resolve_layer_name(config, group_name),
+            ):
                 if arg and arg not in clang_args:
                     clang_args.append(arg)
 
