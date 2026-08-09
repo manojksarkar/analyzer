@@ -74,8 +74,8 @@
     }
   },
   "llm": {
-    "descriptions": false,
-    "behaviourNames": false,
+    "descriptions": true,
+    "behaviourNames": true,
     "summarize": false,
     "provider": "ollama",
     "baseUrl": "http://localhost:11434",
