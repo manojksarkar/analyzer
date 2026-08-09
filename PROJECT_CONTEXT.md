@@ -34,7 +34,7 @@
 >   def→if). Test: `tests/unit/test_define_conditional.py` (libclang-guarded skip).
 > - **2026-07-21 — e2e test suite resurrected + snapshots regenerated (DONE, test-only):** the
 >   pipeline-backed e2e suite had been **dead since PR #19** (`2a1064f`), which renamed the fixture
->   group `Sample`→`My Sample` (component `Core`→`Sample Core`) in `engine/config/config.json` but
+>   group `Sample`→`My Sample` (component `Core`→`Sample Core`) in `engine/config/config.defaults.json` but
 >   never updated the tests. Pipeline output now lives under `output/My-Sample/` (space→hyphen);
 >   view/model keys are `Sample-Core|Core` (unit name still `Core`), diagram node `Sample-Core_Core`,
 >   subgraph label `"Sample Core"`, interface ids `IF_LAYER1_*`. Fixed the harness group
@@ -71,7 +71,7 @@
 >   `dependencies` (previously only transitive/manual → a fresh `npm ci` would miss viz-js and break the
 >   renderer); lockfile synced offline. New **`tools/doctor.py`** prerequisite checker: probes each dep
 >   **local→global in the pipeline's real resolution order** (python+pkgs, node, `@viz-js/viz`, puppeteer,
->   the Chromium puppeteer launches, `mmdc`, libclang via `LIBCLANG_PATH`→`config.json`→pip-bundled),
+>   the Chromium puppeteer launches, `mmdc`, libclang via `LIBCLANG_PATH`→`config.defaults.json`→pip-bundled),
 >   reports which location satisfied each, exits non-zero on missing REQUIRED. `run.py` calls
 >   `doctor.preflight(need_flowchart, need_mermaid)` before `plan_runs` — **view-gated** (parse-only runs
 >   aren't blocked by a missing browser/mmdc; flowchart views require viz+chromium, mermaid views require
@@ -172,6 +172,29 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-08-09 (`db-with-increment-changes`: **config redesign — three sources, three roles** (see §6).
+> Problem: `config.json` + `config.local.json` overlapped (both could hold any key), and per-version analysis
+> config had no home. Fix, two commits: **(1)** renamed the base `engine/config/config.json` →
+> **`config.defaults.json`** (pure rename, every BASE reference updated — loader, `core/paths.py`,
+> `flowchart_engine` libclang/llm probes, `pipeline_runner` base_path, `run.py --config`, `doctor.py`, two e2e
+> tests, `test_utils` fixtures; the per-project **workspace** `config.json` under `workspaces/<pid>/` is a
+> different file, left untouched). Now the name pairs self-document: `config.defaults.json` (tracked defaults)
+> vs `config.local.json` (gitignored **secrets** — `db` + `llm` creds, the one file an operator edits).
+> **(2)** wired the long-dormant **`versions.resolved_config`** JSONB column: `Version.resolved_config`
+> (`Optional[dict]`, auto-mapped by the field-generic `to_row`/`from_row`; json_db round-trips it too).
+> `pipeline_runner._write_project_config` now returns `(workspace_path, analysis_cfg)` and splits two configs
+> **by design** — `analysis_cfg` = `config.defaults.json` + project `build_config` + `layers` (+ `no_llm`),
+> **non-secret**, deep-copied *before* any secret overlay → stored per version via `_store_resolved_config` on
+> the row reserved at job start; the materialized workspace `config.json` the engine reads = `analysis_cfg`
+> with `config.local.json`'s `llm` secrets overlaid but the **`db` section stripped** (engine reaches PG via
+> `DATABASE_URL`, so the password is never written to a workspace file). `_make_version` carries
+> `resolved_config` through finalize (the repo's `_put` replaces the whole row). The engine never writes the
+> `versions` row (store.py owns only model artifacts under the FK), so the API is the sole writer — nothing
+> clobbers it mid-run. `load_config` now **deep**-merges (nested keys, not shallow), so `config.local.json` can
+> override just `llm.baseUrl` / one `customHeaders` entry. Tests: `tests/api/test_project_config.py` (secret
+> split), `test_utils` nested-merge case; full api+unit suite green (166), `verify_incremental` gate green.
+> Deferred: the `versions.config` per-version schema was already present as `resolved_config` — no migration.)
 
 > Updated: 2026-07-23 (**docs restructure + agent role-skills.** Introduced `.claude/skills/` role skills:
 > `docs-maintainer` (owns **all** docs repo-wide — audience/register/naming/outline conventions + the doc-gen
@@ -386,7 +409,8 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
     flowchart/                Real C++ → Mermaid CFG flowchart engine
     behaviour_diagram/        Sequence/behaviour diagram generator package (SequenceDiagramGenerator)
     config/
-      config.json             Main config (JSONC: // and /* */ comments allowed)
+      config.defaults.json    Base defaults (JSONC: // and /* */ comments allowed)
+      config.local.json       Secrets (gitignored): db + llm creds; deep-merged over defaults
       config.local.json       Local overrides (gitignored)
       abbreviations.txt       Abbreviation expansions for LLM prompts
       data_dictionary.csv     Sample data-dictionary CSV (--data-dictionary <path>)
@@ -496,7 +520,7 @@ reusable helpers in `engine/llm_core/`.
 
 | Phase | Delivered | Key files |
 |---|---|---|
-| **P1 — Foundation** | TokenCounter (tiktoken + char fallback), ContextBudget with `TASK_RATIOS`, `LlmClient.call()` multi-message API, config additions (`maxContextTokens`, `enrichment.*`, `fewShotExamplesDir`, `cacheVersion`) | `llm_core/token_counter.py`, `llm_core/budget.py`, `llm_core/client.py`, `core/config.py`, `engine/config/config.json` |
+| **P1 — Foundation** | TokenCounter (tiktoken + char fallback), ContextBudget with `TASK_RATIOS`, `LlmClient.call()` multi-message API, config additions (`maxContextTokens`, `enrichment.*`, `fewShotExamplesDir`, `cacheVersion`) | `llm_core/token_counter.py`, `llm_core/budget.py`, `llm_core/client.py`, `core/config.py`, `engine/config/config.defaults.json` |
 | **P2 — Context quality** | Degradation ladder (`ContextBuilder`), scoped `RepoMap` (neighborhood → file → module → project tiers), `get_rich_description()` with callees / callers / types / globals / siblings / repo-map, `get_rich_global_description()` for variables | `llm_core/context_builder.py`, `llm_core/repo_map.py`, `llm_enrichment.py` |
 | **P3 — Two-pass + few-shot** | Two-pass descriptions (Pass 1 bottom-up, Pass 2 refines with caller context), `FewShotPool` with keyword-overlap ranking, seed example directories (`few_shot_examples/{descriptions,labels,globals,behaviour_names}`) | `llm_core/few_shot.py`, `llm_enrichment.py`, `few_shot_examples/` |
 | **P4 — Cache + structured output** | `EntityCache` with composite hash keys (source + sorted callee hashes + version), `extract_and_validate()` (strip fences → extract JSON → repair → validate keys), `parse_label_response()` for flowchart batches | `llm_core/cache.py`, `llm_core/structured_output.py` |
@@ -625,7 +649,7 @@ the fix above.
 ### 2. `llm.summarize` config flag
 
 `run.py` now respects a new optional `llm.summarize` boolean in
-`config.json`. When `false`, it sets `no_llm_summarize = True` before calling
+`config.defaults.json`. When `false`, it sets `no_llm_summarize = True` before calling
 `plan_runs`, suppressing Phase 2 hierarchy summarization. This mirrors what
 `--no-llm-summarize` does on the CLI, but can be committed in `config.local.json`
 for a permanent local preference.
@@ -669,7 +693,7 @@ renamed to "component". Specific impacts:
 
 ### New `layers` config schema
 
-`config.json` now uses a two-level `layers` structure instead of the flat
+`config.defaults.json` now uses a two-level `layers` structure instead of the flat
 `modulesGroups`. Format:
 
 ```jsonc
@@ -749,7 +773,7 @@ SampleCppProject/
                    Timer, Uart  (each with 3-5 sub-files)
 ```
 
-`config.json` defines two layers pointing at these directories. The old
+`config.defaults.json` defines two layers pointing at these directories. The old
 `test_cpp_project/` fixture is **no longer used** (replaced by
 `SampleCppProject/`).
 
@@ -954,13 +978,42 @@ apply the same-layer model filter (see §4d).
 
 ---
 
-## 6. Config — `engine/config/config.json`
+## 6. Config — `engine/config/config.defaults.json`
 
 JSONC: `//`, `/* */`, and trailing commas are tolerated by
-`core.config._strip_json_comments` + `_strip_trailing_commas`. A sibling
-`config.local.json` is merged on top if present.
+`core.config._strip_json_comments` + `_strip_trailing_commas`.
 
-### Current schema
+### Where each setting lives (three sources, three roles)
+
+Config is split by **role**, not scattered — each source has one job:
+
+| Source | Role | Holds | Tracked | Scope |
+|---|---|---|---|---|
+| `engine/config/config.defaults.json` | built-in **defaults** | the schema below (views/clang/llm-non-secret/layers/docx) | yes | shared |
+| `engine/config/config.local.json` | **secrets / infra** | `db` connection + `llm` credentials (baseUrl, customHeaders/token) | **gitignored** | per machine |
+| `versions.resolved_config` (Postgres) | **per-version** analysis config | defaults + project `build_config` + `layers` (+ `no_llm`) — **non-secret** | in DB | per version |
+
+Resolution:
+- **`load_config(engine_dir)`** deep-merges `config.defaults.json` then `config.local.json`
+  (`core.config._deep_merge` — nested dicts merge per key, scalars/lists replace; so
+  `config.local.json` can override just `llm.baseUrl` or one `llm.customHeaders` entry without
+  restating the block). Used by standalone `python engine/run.py` and by the CLI/db tools.
+- **`ANALYZER_CONFIG=<file>`** (set by `run.py --config`) loads that one file *instead* — no merge.
+  This is how a per-project/per-version config is injected into the analyzer and every phase
+  subprocess (they inherit the env var).
+- **API-driven jobs**: `pipeline_runner._write_project_config` builds the per-version **non-secret**
+  analysis config (`config.defaults.json` + `build_config` + `layers`), stores it in
+  `versions.resolved_config` (via `_store_resolved_config`, on the version row reserved at job
+  start), and **materializes** the workspace `config.json` the engine runs with = that config with
+  `config.local.json`'s secrets overlaid (llm creds), **`db` section stripped** (the engine reaches
+  Postgres via `DATABASE_URL`, so the password is never written to a workspace file). The engine
+  reads the workspace file via `ANALYZER_CONFIG`. `_make_version` carries `resolved_config` through
+  finalize (the repo's `_put` replaces the whole row).
+
+**Secrets never enter `config.defaults.json` (tracked) or `versions.resolved_config` (per-version).**
+Copy `config.local.json.example` → `config.local.json` and fill in `db` + `llm` credentials.
+
+### Current schema (`config.defaults.json` — non-secret defaults)
 
 ```jsonc
 {
@@ -988,6 +1041,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     "descriptions":      false,           // enable LLM function descriptions (Phase 2)
     "behaviourNames":    false,           // enable LLM behaviour input/output names
     "summarize":         false,           // false = suppress Phase 2 hierarchy summarization
+    // SECRETS below → put in config.local.json (gitignored), NOT here. baseUrl also if private.
     "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY
     "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
 
@@ -2117,7 +2171,7 @@ propagates automatically into the flowchart engine subprocess.
 
 At the top of `run()`, [engine/flowchart/flowchart_engine.py](engine/flowchart/flowchart_engine.py)
 calls `_load_analyzer_llm_config()` which walks `cwd` and one parent for
-`engine/config/config.json`, loads it with `utils.load_config`, then resolves it
+`engine/config/config.defaults.json`, loads it with `utils.load_config`, then resolves it
 strictly with `utils.load_llm_config` (raising `LlmConfigError` with the
 specific failing field on any invalid input). The resolved llm_cfg is
 displayed via `format_llm_config_banner()` before any real work begins, so
@@ -2386,7 +2440,7 @@ for a manual incremental-UI demo, onboard the analyzer repo's own URL (a shallow
 branch clone) rather than maintaining a separate sample repo.
 
 The old `test_cpp_project/` fixture is superseded. Current fixture (matches
-`config.json` `layers`):
+`config.defaults.json` `layers`):
 
 ```
 SampleCppProject/
@@ -2425,7 +2479,7 @@ SampleCppProject/
       Uart/ Uart{Buf,Clock,Debug,Dma,Error,Fifo,Flow,Init,Irq,Mode,...}/ — UART
 ```
 
-`config.json`'s `layers` maps these to:
+`config.defaults.json`'s `layers` maps these to:
 - **Layer1**: groups `Sample` (Core/Lib/Util), `Full` (Iface/Cross), `Support`
   (Math/App/Outer), `Access`, `Diag`
 - **Layer2**: group `Platform` (all 15 platform components)
@@ -2801,7 +2855,7 @@ implementation.
 ### Configs with `core` / `support` / `tests` vs current group names
 
 Earlier docs referenced `InterfaceTables`, `Flowcharts`, `BehaviourDiagram`,
-… as group names, then `core`, `support`, `tests`. The current `config.json`
+… as group names, then `core`, `support`, `tests`. The current `config.defaults.json`
 uses `Sample`, `Full`, `Support`, `Access`, `Diag`, `Platform` (matching the
 `SampleCppProject` fixture). When validating CLI behaviour, always check
 which config is active before quoting group names.
@@ -3068,7 +3122,7 @@ have 2 phases, others 4). To give the UI a stable progress bar:
 ### Config editing: surgical JSONC splice
 
 `POST /api/v1/config` updates only the `modulesGroups` key inside
-`engine/config/config.json` while preserving every comment and every other
+`engine/config/config.defaults.json` while preserving every comment and every other
 key in the file. The implementation (`_find_modules_groups_key_pos`)
 is a small JSONC-aware state machine that tracks strings, line
 comments, block comments, and brace nesting depth — a regex or a
@@ -3360,7 +3414,7 @@ workspaces/<projectId>/
     exports `ANALYZER_CONFIG` **before** importing `utils` (which loads config at import time), so this process
     and every phase subprocess (env inherited) honor it. `core/config.py load_config()` reads `ANALYZER_CONFIG`
     first: if set it loads that file **as-is** (JSONC) — **no `config.local.json` merge**, for reproducibility —
-    and **fails loud** (`FileNotFoundError`) on a set-but-missing path; unset → existing `config.json`+local
+    and **fails loud** (`FileNotFoundError`) on a set-but-missing path; unset → existing `config.defaults.json`+local
     behavior. Tests: `tests/unit/test_core_config.py::TestLoadConfigAnalyzerConfigOverride` (5).
   - **M1.2a entity hashing — ✅ done.** New `engine/incremental/hashing.py` (token-based full SHA-256;
     formatting-insensitive, comment-inclusive — folds in the preceding doc comment; visibility macros expand

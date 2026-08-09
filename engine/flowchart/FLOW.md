@@ -17,7 +17,7 @@ run.py  main block
     --no-llm-summarize   → skip LLM phase/hierarchy summarization
     --from-phase N       → skip phases before N
 
-  load_config(PROJECT_ROOT)          reads engine/config/config.json
+  load_config(PROJECT_ROOT)          reads engine/config/config.defaults.json (+ config.local.json)
                                      merges config.local.json if present
 
   if --all-groups:
@@ -958,7 +958,7 @@ USER PROMPT per batch:
 ```
 analyzer/                          ← project root
   run.py                           pipeline entry point (4 phases)
-  engine/config/config.json               llm, clang, views, modulesGroups settings
+  engine/config/config.defaults.json      llm, clang, views, modulesGroups settings
   engine/config/abbreviations.txt         domain abbreviations for LLM behaviour names
 
   src/
