@@ -119,9 +119,8 @@ def start_job(
     existing = db.jobs.get_current(project_id)
     if existing and existing.status in ("queued", "running", "paused"):
         raise conflict("JOB_ALREADY_RUNNING", "An analysis job is already active for this project.")
-    # Version identity (D-3 / PG-3): reserve the real `ver…` id NOW so it can be handed to
-    # the engine as its version identity (`--version`). The Version *row* is still created at
-    # completion under this same id, so a failed run leaves no orphan row.
+    # Version identity (D-3 / PG-3): claim the real `ver…` id NOW so it is the engine's version
+    # identity (`--version`) for the whole run.
     version_id = f"ver{uuid.uuid4().hex[:8]}"
     # The branch comes from the chosen commit (falls back to the project default).
     commit = db.commits.get(project_id, body.commit_sha)
@@ -152,7 +151,22 @@ def start_job(
         scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=body.data_dict_id,
         narrowed_parse=bool(body.narrowed_parse),
     )
-    db.jobs.create(job)
+    # Reserve the version row (status 'draft') BEFORE inserting the job: analysis_jobs.version_id
+    # is a FK to versions.id, so the job may only reference a version that already exists. The
+    # engine writes its per-version rows under this same id, _make_version finalizes it at
+    # completion, and _mark_failed deletes the draft on failure — so a failed run leaves no orphan.
+    pipeline_runner._reserve_version(db, job, project)
+    try:
+        db.jobs.create(job)
+    except Exception:
+        # Roll back the just-reserved draft so a failed job insert doesn't strand the version name.
+        _v = db.versions.get(version_id)
+        if _v is not None and getattr(_v, "status", None) == "draft":
+            try:
+                db.versions.delete(version_id)
+            except Exception:                              # best-effort cleanup
+                pass
+        raise
     pipeline_runner.start(db, job.id)
     return {"job_id": job.id, "status": job.status}
 

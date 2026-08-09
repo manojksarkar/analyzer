@@ -276,6 +276,27 @@ def test_start_job_rejects_duplicate_version(client, auth_header):
     assert "VERSION_EXISTS" in r.text
 
 
+def test_start_job_reserves_version_row_before_insert(client, auth_header, db):
+    """Regression (PG FK ordering): analysis_jobs.version_id is a FK to versions.id, so the
+    version row must EXIST before the job row is inserted. Uses p2 (seed job2 is complete → no
+    active job) so this actually reaches db.jobs.create against BOTH backends — incl. SQLite with
+    FK enforcement ON, which is where a not-yet-reserved version would raise IntegrityError."""
+    import uuid as _uuid
+    with patch("api.services.pipeline_runner.start"):
+        tag = f"pg-fk-{_uuid.uuid4().hex[:8]}"
+        r = client.post(
+            "/api/v1/projects/p2/jobs",
+            json={"commit_sha": "d9c8b7a", "version_tag": tag},
+            headers=auth_header,
+        )
+        assert r.status_code == 202, r.text
+        job = db.jobs.get(r.json()["job_id"])
+        assert job is not None and (job.version_id or "").startswith("ver")
+        # The reserved draft version row exists under the job's id → the FK is satisfiable.
+        v = db.versions.get(job.version_id)
+        assert v is not None and v.status == "draft", (job.version_id, v)
+
+
 def test_start_job_requires_admin(client, dev_header):
     """Developer role cannot start a job."""
     with patch("api.services.pipeline_runner.start"):

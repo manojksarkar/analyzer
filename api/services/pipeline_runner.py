@@ -164,10 +164,12 @@ def _cleanup_state(job_id: str) -> None:
 
 
 def _reserve_version(db: Any, job: Any, project: Any) -> None:
-    """Create the version row at run start (status 'draft') so the engine — when it writes to
-    Postgres via PgStore — can insert its per-version rows under the ``versions`` FK *during* the
-    run (PG-3/08). ``_make_version`` finalizes it at completion; ``_mark_failed`` deletes it on
-    failure so the name is free to retry. No-op if there's no reserved id or the row already exists."""
+    """Create the version row (status 'draft') for a job. Called at **job creation** (jobs route,
+    before the job INSERT — ``analysis_jobs.version_id`` is a FK to ``versions.id``) and again at
+    run start as an **idempotent safety net** (so the engine — writing to Postgres via PgStore —
+    can insert its per-version rows under the ``versions`` FK *during* the run, PG-3/08).
+    ``_make_version`` finalizes it at completion; ``_mark_failed`` deletes it on failure so the
+    name is free to retry. No-op if there's no reserved id or the row already exists."""
     vid = getattr(job, "version_id", None)
     if not vid or db.versions.get(vid):
         return
