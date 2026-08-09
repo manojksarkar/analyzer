@@ -148,6 +148,18 @@ versions = Table(
     UniqueConstraint("project_id", "version", name="uq_version_project_version"),
 )
 
+# Phase-3 VIEW outputs (PG-5a) — the text/JSON files under versions/<ver…>/output/: interface
+# tables, flowchart + unit-diagram mermaid, behaviour rows. Persisted so the API (doc render +
+# compare) can read the views from Postgres instead of on-disk snapshots. PNG/DOCX binaries stay
+# as files (D-14). One row per output file; composite PK (version_id, rel_path).
+version_output_files = Table(
+    "version_output_files", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True),
+    Column("rel_path", String, primary_key=True),   # POSIX path under output/ (e.g. "My-Sample/interface_tables.json")
+    Column("content", Text, nullable=False),         # the text/JSON file content
+    Column("group_name", String),                    # top-level output subdir (component group) for filtered reads
+)
+
 # ---------------------------------------------------------------------------
 # G2 — Operations
 # ---------------------------------------------------------------------------

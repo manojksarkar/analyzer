@@ -208,6 +208,20 @@ class PgStore(ArtifactStore):
         os.makedirs(self.proj_root, exist_ok=True)
         self._reuse = PgReuseIndex(engine, project_id)
 
+    def capture_output(self, version_id: str, output_dir: str) -> List[str]:
+        """Capture rendered output to the version's disk area (base behaviour — readers/DOCX still
+        use files) AND persist the text/JSON view files to Postgres (PG-5a), so the API can read
+        interface tables / flowchart + unit mermaid / behaviour rows from the DB. PNG/DOCX stay as
+        files. The DB write is best-effort — a hiccup must not fail a run that already has its docs."""
+        captured = super().capture_output(version_id, output_dir)
+        try:
+            from incremental.model_store import persist_output_files
+            with self.engine.begin() as cx:
+                persist_output_files(cx, version_id, output_dir)
+        except Exception:                                    # best-effort: disk output is intact
+            pass
+        return captured
+
     def write_model(self, version_id: str, model_dir: str) -> None:
         from incremental.model_store import persist_model_from_dir
         with self.engine.begin() as cx:

@@ -1,0 +1,91 @@
+"""PG-5a — model_store.persist_output_files / load_output_files round-trip.
+
+The Phase-3 view outputs (interface tables, flowchart + unit-diagram mermaid, behaviour rows)
+are stored in the version_output_files table so the API can read the views from Postgres instead
+of an on-disk snapshot. Text/JSON files are stored; PNG/DOCX binaries are skipped (they stay as
+files, D-14). Validated on SQLite — the shared schema builds there, same as the API parity tests.
+"""
+import os
+import sys
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
+
+# engine/ on path so `incremental.model_store` and `api.db.postgres.schema` resolve.
+_ENGINE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "engine")
+if _ENGINE_DIR not in sys.path:
+    sys.path.insert(0, _ENGINE_DIR)
+
+from incremental import model_store as ms          # noqa: E402
+from api.db.postgres import schema as s            # noqa: E402
+
+pytestmark = pytest.mark.unit
+
+
+def _fresh_engine():
+    eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                        poolclass=StaticPool)
+    s.metadata.create_all(eng)
+    return eng
+
+
+def _write(base: str, rel: str, content) -> None:
+    p = os.path.join(base, *rel.split("/"))
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "wb" if isinstance(content, bytes) else "w",
+              **({} if isinstance(content, bytes) else {"encoding": "utf-8"})) as f:
+        f.write(content)
+
+
+def test_persist_and_load_round_trip(tmp_path):
+    out = str(tmp_path / "output")
+    _write(out, "My-Sample/interface_tables.json", '{"unitNames": ["Core"]}')
+    _write(out, "My-Sample/flowcharts/Core.json", '{"mermaid": "flowchart TD"}')
+    _write(out, "My-Sample/unit_diagrams/Core.mmd", "sequenceDiagram")
+    _write(out, "My-Sample/flowcharts/Core.png", b"\x89PNG\r\n\x1a\n")   # binary → skipped
+
+    eng = _fresh_engine()
+    with eng.begin() as cx:
+        n = ms.persist_output_files(cx, "ver1", out)
+    assert n == 3                                              # 3 text files; the PNG is skipped
+
+    with eng.connect() as cx:
+        files = ms.load_output_files(cx, "ver1")
+        assert set(files) == {
+            "My-Sample/interface_tables.json",
+            "My-Sample/flowcharts/Core.json",
+            "My-Sample/unit_diagrams/Core.mmd",
+        }
+        assert "unitNames" in files["My-Sample/interface_tables.json"]
+        assert ms.load_output_file(cx, "ver1", "My-Sample/unit_diagrams/Core.mmd") == "sequenceDiagram"
+        assert ms.load_output_file(cx, "ver1", "does/not/exist.json") is None
+
+
+def test_persist_is_idempotent_and_replaces(tmp_path):
+    out = str(tmp_path / "output")
+    _write(out, "G/interface_tables.json", '{"v": 1}')
+    eng = _fresh_engine()
+    with eng.begin() as cx:
+        ms.persist_output_files(cx, "ver1", out)
+
+    # Re-persist with changed content + an added file: the prior rows for this version are replaced.
+    _write(out, "G/interface_tables.json", '{"v": 2}')
+    _write(out, "G/extra.json", "{}")
+    with eng.begin() as cx:
+        n = ms.persist_output_files(cx, "ver1", out)
+    assert n == 2
+
+    with eng.connect() as cx:
+        files = ms.load_output_files(cx, "ver1")
+        assert files["G/interface_tables.json"] == '{"v": 2}'
+        assert "G/extra.json" in files
+
+
+def test_missing_output_dir_is_noop(tmp_path):
+    eng = _fresh_engine()
+    with eng.begin() as cx:
+        assert ms.persist_output_files(cx, "ver1", str(tmp_path / "nope")) == 0
+    with eng.connect() as cx:
+        assert ms.load_output_files(cx, "ver1") == {}

@@ -246,6 +246,57 @@ def load_edges(conn, version_id) -> Dict[str, dict]:
 
 
 # ---------------------------------------------------------------------------
+# view outputs (PG-5a) — the text/JSON files under output/ (interface tables,
+# flowchart + unit-diagram mermaid, behaviour rows). Binaries (PNG/DOCX) stay on disk.
+# ---------------------------------------------------------------------------
+_OUTPUT_TEXT_EXTS = (".json", ".mmd", ".txt", ".md", ".csv", ".dot", ".svg", ".html")
+
+
+def persist_output_files(conn, version_id, output_dir) -> int:
+    """Store every TEXT file under `output_dir` as one `version_output_files` row, so the API can
+    read the Phase-3 views (interface tables / flowchart + unit mermaid / behaviour rows) from
+    Postgres instead of a disk snapshot. Binary artifacts (PNG/DOCX) are skipped — they stay as
+    files (D-14). Idempotent: replaces any rows already stored for this version. Returns the count."""
+    conn.execute(delete(s.version_output_files)
+                 .where(s.version_output_files.c.version_id == version_id))
+    if not output_dir or not os.path.isdir(output_dir):
+        return 0
+    rows = []
+    for root, _, files in os.walk(output_dir):
+        for fn in files:
+            if not fn.lower().endswith(_OUTPUT_TEXT_EXTS):
+                continue
+            abspath = os.path.join(root, fn)
+            rel = os.path.relpath(abspath, output_dir).replace(os.sep, "/")
+            try:
+                with open(abspath, encoding="utf-8") as fh:
+                    content = fh.read()
+            except (OSError, UnicodeDecodeError):                # unreadable / not really text
+                continue
+            rows.append({"version_id": version_id, "rel_path": rel, "content": content,
+                         "group_name": rel.split("/", 1)[0] if "/" in rel else None})
+    if rows:
+        conn.execute(insert(s.version_output_files), rows)
+    return len(rows)
+
+
+def load_output_files(conn, version_id) -> Dict[str, str]:
+    """{rel_path -> content} for every persisted output file of a version."""
+    vof = s.version_output_files
+    return {r.rel_path: r.content
+            for r in conn.execute(select(vof.c.rel_path, vof.c.content)
+                                  .where(vof.c.version_id == version_id))}
+
+
+def load_output_file(conn, version_id, rel_path) -> Optional[str]:
+    """The content of one persisted output file (POSIX rel path under output/), or None."""
+    vof = s.version_output_files
+    r = conn.execute(select(vof.c.content).where(
+        (vof.c.version_id == version_id) & (vof.c.rel_path == rel_path))).first()
+    return r.content if r else None
+
+
+# ---------------------------------------------------------------------------
 # hashes  (the classify input) + orchestration
 # ---------------------------------------------------------------------------
 def load_hashes(conn, version_id) -> Dict[str, str]:
