@@ -1,0 +1,84 @@
+{
+  "metadata": {
+    "fully_resolved": 5,
+    "macro_source": "fromelf_text",
+    "toolchain": "armclang",
+    "total_macros": 8
+  },
+  "macros_by_cu": {
+    "hil": {
+      "PLATFORM_EMBEDDED": {
+        "name": "PLATFORM_EMBEDDED",
+        "raw_value": "(1)",
+        "expanded_value": "(1)",
+        "computed_value": 1,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "BUFFER_SIZE": {
+        "name": "BUFFER_SIZE",
+        "raw_value": "(1 << SECTOR_SHIFT)",
+        "expanded_value": "(1 << 13)",
+        "computed_value": 8192,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "HIL_QUEUE_DEPTH": {
+        "name": "HIL_QUEUE_DEPTH",
+        "raw_value": "(1 << 5)",
+        "expanded_value": "(1 << 5)",
+        "computed_value": 32,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "HIL_TIMEOUT_MS": {
+        "name": "HIL_TIMEOUT_MS",
+        "raw_value": "(5000)",
+        "expanded_value": "(5000)",
+        "computed_value": 5000,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "FLOAT_SCALE": {
+        "name": "FLOAT_SCALE",
+        "raw_value": "(1.5)",
+        "expanded_value": "(1.5)",
+        "computed_value": 1.5,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "LOG_LEVEL": {
+        "name": "LOG_LEVEL",
+        "raw_value": "(VERBOSE_BASE + 2)",
+        "expanded_value": "(VERBOSE_BASE + 2)",
+        "computed_value": null,
+        "is_fully_resolved": false,
+        "dependency_chain": ["VERBOSE_BASE"],
+        "note": null
+      },
+      "HIL_NAME": {
+        "name": "HIL_NAME",
+        "raw_value": "\"host interface layer\"",
+        "expanded_value": "\"host interface layer\"",
+        "computed_value": null,
+        "is_fully_resolved": false,
+        "dependency_chain": [],
+        "note": null
+      },
+      "EMPTY_STRING": {
+        "name": "EMPTY_STRING",
+        "raw_value": "\"\"",
+        "expanded_value": "\"\"",
+        "computed_value": null,
+        "is_fully_resolved": false,
+        "dependency_chain": [],
+        "note": null
+      }
+    }
+  }
+}

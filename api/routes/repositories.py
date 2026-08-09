@@ -9,10 +9,13 @@ Backs the new-project wizard's repository step:
 Branch lists and the source tree are produced by api.services.repo_git, which
 shells out to real git (`git ls-remote` for the connection test, a cached
 depth-1 clone + `git ls-tree` for browsing) via engine/git_service.py.
-Uploaded files are kept in a process-local store (resets on restart).
+Uploaded files are written under workspaces/uploads/<id>/ and indexed in a
+process-local map; the bytes survive a restart so a job started later can still
+resolve the file it was configured with.
 """
 from __future__ import annotations
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
@@ -22,16 +25,47 @@ from ..middleware.auth import get_current_user
 from ..models.domain import User
 from ..services import repo_git
 from ..services.errors import bad_request
+from ..services.settings import get_settings
 from ..schemas import TestConnectionResponse, BrowseResponse, UploadResponse
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
-# Process-local upload store: upload_id -> metadata (+ bytes). Resets on restart.
+# upload_id -> metadata. The bytes live on disk (see _upload_dir), not in here.
 _UPLOADS: dict[str, dict[str, Any]] = {}
 
 # Upload guard rails.
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024   # 5 MB — defs / data-dictionary files are small
 _ALLOWED_KINDS = {"preprocessor_definitions", "data_dictionary"}
+
+# Extensions each kind can actually be read from. Definitions accept CSV plus the
+# JSON shapes engine/core/macro_input.py understands (toolchain dump, map, list).
+_ALLOWED_EXTS = {
+    "preprocessor_definitions": {".csv", ".json"},
+    "data_dictionary": {".csv", ".xlsx", ".xls"},
+}
+
+
+def _upload_dir(upload_id: str) -> Path:
+    return get_settings().repo_root / "workspaces" / "uploads" / upload_id
+
+
+def resolve_upload(upload_id: str) -> Optional[Path]:
+    """Return the stored file for an upload id, or None if it is unknown.
+
+    Falls back to the directory listing so an id kept in a project's build_config
+    still resolves after an API restart, when `_UPLOADS` is empty.
+    """
+    if not upload_id:
+        return None
+    meta = _UPLOADS.get(upload_id)
+    if meta and Path(meta["path"]).is_file():
+        return Path(meta["path"])
+    stored = _upload_dir(upload_id)
+    if stored.is_dir():
+        for child in sorted(stored.iterdir()):
+            if child.is_file():
+                return child
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -88,19 +122,32 @@ async def upload_file(
     """
     if kind not in _ALLOWED_KINDS:
         raise bad_request(f"Unknown upload kind '{kind}'.")
+    file_name = file.filename or "upload"
+    allowed_exts = _ALLOWED_EXTS[kind]
+    if Path(file_name).suffix.lower() not in allowed_exts:
+        raise bad_request(
+            f"'{file_name}' is not a supported {kind.replace('_', ' ')} file. "
+            f"Expected: {', '.join(sorted(allowed_exts))}."
+        )
     data = await file.read()
     if len(data) > _MAX_UPLOAD_BYTES:
         raise bad_request("File exceeds the 5 MB upload limit.")
 
     upload_id = f"up_{uuid.uuid4().hex[:12]}"
+    # On disk, not in memory: the wizard stores the id in build_config and a job
+    # may only run days later, in a different API process.
+    stored_dir = _upload_dir(upload_id)
+    stored_dir.mkdir(parents=True, exist_ok=True)
+    stored_path = stored_dir / Path(file_name).name
+    stored_path.write_bytes(data)
     _UPLOADS[upload_id] = {
         "id": upload_id,
-        "file_name": file.filename or "upload",
+        "file_name": file_name,
         "content_type": file.content_type,
         "size": len(data),
         "kind": kind,
         "uploaded_by": current_user.id,
-        "data": data,
+        "path": str(stored_path),
     }
     return {
         "id": upload_id,

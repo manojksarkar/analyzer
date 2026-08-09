@@ -17,6 +17,14 @@ from core.config import (
     clang_config as _clang_config,
     default_clang_macro_defs,
 )
+from core.macro_input import (
+    MacroInputError,
+    args_for_scope as _args_for_scope,
+    find_conflicts as _find_macro_conflicts,
+    load_macro_defs as _load_macro_defs,
+    merge_macro_defs as _merge_macro_defs,
+    scoped_args as _scoped_macro_args,
+)
 from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
@@ -34,6 +42,7 @@ MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.
 # Scan for optional flags passed by group_planner.
 _data_dict_path: str | None = None
 _macros_path: str | None = None
+_macros_layer_args: list = []   # (layer, path) pairs from --macros-layer, repeatable
 _selected_group: str | None = None
 _selected_layer: str | None = None
 _project_name_override: str | None = None
@@ -50,6 +59,9 @@ while _i < len(sys.argv):
     elif sys.argv[_i] == "--macros" and _i + 1 < len(sys.argv):
         _macros_path = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--macros-layer" and _i + 2 < len(sys.argv):
+        _macros_layer_args.append((sys.argv[_i + 1], sys.argv[_i + 2]))
+        _i += 3
     elif sys.argv[_i] == "--selected-group" and _i + 1 < len(sys.argv):
         _selected_group = sys.argv[_i + 1]
         _i += 2
@@ -73,6 +85,8 @@ from utils import (
     load_config,
     make_function_key,
     make_global_key,
+    make_unit_key,
+    KEY_SEP,
     PRIMITIVES,
 )
 
@@ -93,7 +107,7 @@ if _llvm and os.path.isfile(_llvm):
             os.environ["PATH"] = _llvm_bin_dir + os.pathsep + os.environ.get("PATH", "")
     cindex.Config.set_library_file(_llvm)
 
-from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups
+from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups, get_component_layer_name as _get_component_layer_name
 if _selected_layer:
     _components_groups = _get_layer_flat_groups(_config, _selected_layer)
 elif _selected_group:
@@ -233,39 +247,60 @@ if _extra:
     CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
 
 
-def _load_macros_as_clang_args(path: str) -> list:
-    """Read 2-column CSV (Name, Value) and return -D flags for Clang.
-
-    Rows where Value is 'ne' (case-insensitive) are skipped entirely.
-    Rows where Value is empty produce -DNAME (defined as 1).
-    Rows where Value is present produce -DNAME=VALUE.
-    """
-    args = []
-    with open(path, newline="", encoding="utf-8-sig") as _f:
-        reader = csv.DictReader(_f)
-        for row in reader:
-            name = (row.get("Name") or "").strip()
-            value = (row.get("Value") or "").strip()
-            if not name:
-                continue
-            if value.lower() == "ne":
-                continue
-            args.append(f"-D{name}={value}" if value else f"-D{name}")
-    return args
-
-
+# Macro -D flags, scope-keyed ("*" = every layer). The file may be a CSV or any
+# of the JSON shapes core.macro_input accepts; --macros is global and
+# --macros-layer pins a file to one layer. The resolved set is written to
+# model/clang_macros.json so the Phase 3 flowchart engine defines exactly what
+# Phase 1 did.
+# Sources are config first, CLI second, so a flag overrides the config and the
+# later file wins on a name collision. Config carries them because every entry
+# point (run.py, incremental generate/engine) passes --config, while only run.py
+# takes the flags: the API writes clang.macrosFile / clang.macrosByLayer into the
+# per-project config instead of threading a path through each script.
+_macro_sources: list = []
+_cfg_macros_file = _clang.get("macrosFile")
+if isinstance(_cfg_macros_file, str) and _cfg_macros_file.strip():
+    _macro_sources.append((None, _cfg_macros_file.strip()))
+for _cfg_layer, _cfg_path in (_clang.get("macrosByLayer") or {}).items():
+    if isinstance(_cfg_path, str) and _cfg_path.strip():
+        _macro_sources.append((_cfg_layer, _cfg_path.strip()))
 if _macros_path:
-    _macro_args = _load_macros_as_clang_args(_macros_path)
-    _macro_args_seen = set(CLANG_ARGS)
-    for _ma in _macro_args:
-        if _ma not in _macro_args_seen:
-            _macro_args_seen.add(_ma)
-            CLANG_ARGS.append(_ma)
+    _macro_sources.append((None, _macros_path))
+_macro_sources += _macros_layer_args
+
+_MACRO_ARGS_BY_SCOPE: dict = {}
+if _macro_sources:
     import logging as _logging
-    _logging.getLogger("parser").info("Loaded %d macro -D flag(s) from %s", len(_macro_args), _macros_path)
-    _macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
+    _macro_log = _logging.getLogger("parser")
+    _macro_defs: dict = {}
+    for _scope, _path in _macro_sources:
+        try:
+            _defs, _report = _load_macro_defs(
+                _path,
+                scope_map=(_clang.get("macroScopes") or {}),
+                default_scope=_scope,
+            )
+        except MacroInputError as _exc:
+            print(f"ERROR: {_exc}")
+            sys.exit(2)
+        for _line in _report.lines():
+            _macro_log.info("%s", _line)
+        # A name defined by two lists is reported, never silently reconciled —
+        # the precedence strategy across macro lists is still an open question.
+        for _c_scope, _c_name, _c_old, _c_new in _find_macro_conflicts(_macro_defs, _defs):
+            _macro_log.warning(
+                "macro %s redefined in scope %s: %s -> %s (last one wins)",
+                _c_name, _c_scope, _c_old, _c_new,
+            )
+        _macro_defs = _merge_macro_defs(_macro_defs, _defs)
+    _MACRO_ARGS_BY_SCOPE = _scoped_macro_args(_macro_defs)
+
+_macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
+if _MACRO_ARGS_BY_SCOPE or os.path.isfile(_macros_json):
+    # Written even when empty: otherwise a previous run's file survives and
+    # Phase 3 keeps defining macros this parse did not use.
     with open(_macros_json, "w", encoding="utf-8") as _mf:
-        json.dump(_macro_args, _mf, indent=2)
+        json.dump(_MACRO_ARGS_BY_SCOPE, _mf, indent=2)
 
 
 
@@ -304,6 +339,31 @@ def get_component_name(file_path: str) -> str:
     except ValueError:
         return "unknown"
     return _FILE_COMPONENT_MAP.get(rel, "unknown")
+
+
+_LAYER_ARGS_CACHE: dict = {}
+
+
+def clang_args_for(file_path: str) -> list:
+    """CLANG_ARGS plus the macro defines in scope for this file's layer.
+
+    Args are resolved per TU because one run can span layers: the global ("*")
+    defines come first, then the layer's own, and Clang honours the *last* -D for
+    a name — so a layer value overrides the global one by position. A file
+    outside every configured component (an orphan header, say) resolves to no
+    layer and is parsed with the global set only.
+    """
+    if not _MACRO_ARGS_BY_SCOPE:
+        return CLANG_ARGS
+    component = get_component_name(file_path)
+    layer = (_get_component_layer_name(_config, component)
+             if component and component != "unknown" else None)
+    cached = _LAYER_ARGS_CACHE.get(layer)
+    if cached is None:
+        cached = CLANG_ARGS + _args_for_scope(_MACRO_ARGS_BY_SCOPE, layer)
+        _LAYER_ARGS_CACHE[layer] = cached
+    return cached
+
 
 index = cindex.Index.create()
 
@@ -381,6 +441,22 @@ entity_files = {}
 # a narrowed (--only-files) parse so calls to functions defined in UN-parsed files still
 # resolve to a call edge. Empty for a full parse (so behaviour is unchanged).
 _baseline_func_keys = {}
+# Address-of-function detections. A function whose address is taken is reachable even
+# though no CALL_EXPR names it, so `_fn_is_private` (which equates "public" with "has a
+# cross-file caller") would otherwise bury it. Split by SHAPE, not by file:
+#   _address_taken_at_file_scope: func_key -> {rel_file of the initializer}
+#       `static const fp_t table[] = { fn1, fn2 };` — a registration table IS the published
+#       interface, so this counts even when the table sits in the same .c as the function
+#       (the canonical firmware pattern).
+#   _address_taken_in_body: (taker_func_key, target_func_key)
+#       `pFunc = &helper;` — becomes a normal call edge. Only confers publicness when the
+#       taking site is in a different file, which keeps a locally-used comparator private.
+_address_taken_at_file_scope = defaultdict(set)
+_address_taken_in_body = set()
+# [[target_fid, registering_unit_key], …] — built in build_metadata and written to
+# model/address_taken.json so a narrowed parse (which may not re-parse the file holding the
+# table) can replay the registrations instead of silently demoting the function to private.
+_address_taken_fid = []
 component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
@@ -495,6 +571,36 @@ def get_qualified_name(cursor):
         parent = parent.semantic_parent
     parts.append(cursor.spelling)
     return "::".join(parts) if parts else cursor.spelling
+
+
+_CLASS_PARENT_KINDS = (
+    cindex.CursorKind.CLASS_DECL,
+    cindex.CursorKind.STRUCT_DECL,
+    cindex.CursorKind.CLASS_TEMPLATE,
+    cindex.CursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,
+)
+
+
+def get_class_scope(cursor):
+    """Enclosing class/struct chain, namespaces dropped (e.g. 'Outer::Inner', '' for free functions).
+
+    Deliberately separate from get_qualified_name rather than derived from it: a
+    qualifiedName string can't be split back into namespace vs class parts, and
+    get_qualified_name must not change — make_function_key builds every fid from it,
+    so touching it re-keys the whole model.
+
+    CLASS_TEMPLATE is included here even though get_qualified_name omits it, so methods
+    of template classes get a class too. Template arguments aren't in the spelling, so
+    Foo<int>::run and Foo<char>::run both read 'Foo::run'; mangled names still keep them
+    apart in the model.
+    """
+    parts = []
+    parent = cursor.semantic_parent
+    while parent:
+        if parent.kind in _CLASS_PARENT_KINDS and parent.spelling:
+            parts.insert(0, parent.spelling)
+        parent = parent.semantic_parent
+    return "::".join(parts)
 
 
 def get_function_key(cursor):
@@ -915,6 +1021,51 @@ def _var_decl_should_record_as_function_not_global(cursor):
     return _var_decl_init_args_are_only_decl_refs(cursor)
 
 
+# A call's callee is its FIRST child, but clang wraps it: CALL_EXPR -> UNEXPOSED_EXPR ->
+# DECL_REF_EXPR. The "this is a callee, not an address-take" flag must therefore propagate
+# THROUGH these wrapper kinds — stopping one level down would read every direct call as an
+# address-take and turn the whole codebase public.
+_CALLEE_WRAPPER_KINDS = (
+    cindex.CursorKind.UNEXPOSED_EXPR,
+    cindex.CursorKind.PAREN_EXPR,
+)
+
+
+def _walk_address_taken(cursor, on_hit, in_callee=False):
+    """Call on_hit(func_key) for each project function whose ADDRESS is taken in this subtree.
+
+    A bare function name used as a value (`{ fn1, fn2 }`, `&fn`, `p = fn`) is an
+    address-take; the same name in callee position (`fn()`) is not.
+    """
+    kind = cursor.kind
+
+    if kind == cindex.CursorKind.DECL_REF_EXPR:
+        if not in_callee:
+            try:
+                ref = cursor.referenced
+                if (ref is not None
+                        and ref.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
+                        and ref.location.file
+                        and is_project_file(ref.location.file.name)):
+                    # Resolved cursors only — never the spelling-match fallback used for
+                    # calls, or any identifier sharing a function's name would count.
+                    on_hit(get_function_key(ref))
+            except Exception:
+                pass
+        return
+
+    children = list(cursor.get_children())
+    if kind == cindex.CursorKind.CALL_EXPR and children:
+        _walk_address_taken(children[0], on_hit, in_callee=True)
+        for child in children[1:]:
+            _walk_address_taken(child, on_hit, in_callee=False)
+        return
+
+    still_callee = in_callee and kind in _CALLEE_WRAPPER_KINDS
+    for child in children:
+        _walk_address_taken(child, on_hit, still_callee)
+
+
 def visit_definitions(cursor):
     is_function = cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
     is_global_var = (
@@ -936,6 +1087,12 @@ def visit_definitions(cursor):
 
         # Mark as visited
         _visited_function_keys.add(func_key)
+        # In-body address-takes (`pFunc = &helper;`). Walked here rather than in visit_calls
+        # so the whole address-taken rule lives in one place and the call visitor's hot loop
+        # is untouched; _visited_function_keys already makes this once-per-function.
+        _walk_address_taken(
+            cursor, lambda target, _t=func_key: _address_taken_in_body.add((_t, target))
+        )
         # Record virtual override -> base relations for the D7 virtual-dispatch
         # over-approximation (build_metadata spreads caller edges across the family).
         # Queried via the C API on the canonical decl (out-of-line defs report none).
@@ -975,6 +1132,7 @@ def visit_definitions(cursor):
             "functionId": func_id,
             "functionName": cursor.spelling,
             "qualifiedName": get_qualified_name(cursor),
+            "className": get_class_scope(cursor),
             "mangledName": cursor.mangled_name or "",
             "componentName": component_name,
             "parameters": params,
@@ -998,6 +1156,26 @@ def visit_definitions(cursor):
             function_to_component[fk] = component_name
 
     elif is_global_var and cursor.spelling and cursor.location.file:
+        # File-scope initializer tables: `static const fp_t table[] = { fn1, fn2 };`.
+        # Nothing calls fn1 by name, but the table publishes it — so membership alone makes
+        # it public, regardless of which file the table is in. No attempt is made to resolve
+        # which function `table[0]()` reaches; that is statically unknowable.
+        # _get_var_init_value only slices ONE declaration line, so a multi-line table is
+        # invisible to it — the AST walk is what actually sees these.
+        try:
+            _rel_init = os.path.relpath(cursor.location.file.name, MODULE_BASE_PATH).replace("\\", "/")
+        except ValueError:
+            _rel_init = cursor.location.file.name.replace("\\", "/")
+        # Keep the table's NAME too: the units that read the table are its real consumers,
+        # and in the canonical case the table sits in the SAME unit as the function it
+        # publishes — where the registering unit alone is filtered out as self. Matched by
+        # qualified name, not var id, so an `extern` redeclaration in the consuming file
+        # (its own cursor, its own var id) still resolves to the same table.
+        _tbl_qn = get_qualified_name(cursor)
+        _walk_address_taken(
+            cursor,
+            lambda target, _f=_rel_init, _n=_tbl_qn: _address_taken_at_file_scope[target].add((_f, _n)),
+        )
         if _var_decl_should_record_as_function_not_global(cursor):
             func_id = f"{cursor.location.file.name}:{cursor.location.line}"
             component_name = get_component_name(cursor.location.file.name)
@@ -1042,6 +1220,7 @@ def visit_definitions(cursor):
                 "variableId": var_id,
                 "variableName": cursor.spelling,
                 "qualifiedName": get_qualified_name(cursor),
+                "className": get_class_scope(cursor),
                 "componentName": get_component_name(cursor.location.file.name),
                 "type": cursor.type.spelling if cursor.type else "",
                 "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
@@ -1310,7 +1489,7 @@ def _collect_macro_defs(tu_cursor):
 
 def parse_file(path):
     try:
-        tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
@@ -1322,7 +1501,7 @@ def parse_file(path):
 
 def parse_calls(path):
     try:
-        tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         visit_calls(tu.cursor)
     except cindex.TranslationUnitLoadError:
         pass
@@ -1339,6 +1518,21 @@ def parse_global_access(path):
 
 def build_metadata():
     base_path = os.path.abspath(MODULE_BASE_PATH)
+    # In-body address-takes become ordinary call edges (`pFunc = &helper` => taker -> helper),
+    # so calledByIds, Source/Destination, unit diagrams and behaviour diagrams all pick the
+    # relationship up with no further change. Same over-approximation shape as D7 below.
+    # Must run BEFORE spread_virtual_families and the call_graph -> ids mapping.
+    _n_addr_edges = 0
+    for _taker, _target in sorted(_address_taken_in_body):
+        if _taker not in functions or _target not in functions or _taker == _target:
+            continue
+        if _target not in call_graph[_taker]:
+            call_graph[_taker].append(_target)
+            _n_addr_edges += 1
+        if _taker not in reverse_call_graph[_target]:
+            reverse_call_graph[_target].append(_taker)
+    if _n_addr_edges:
+        print(f"  address-taken: linked {_n_addr_edges} in-body address-of-function edge(s)")
     # D7 virtual-dispatch over-approximation: link callers of any virtual-family member
     # to ALL members, so a call that may dynamically dispatch to any override impacts the
     # whole family (never stale) and calledByIds is accurate. Must run before the
@@ -1377,6 +1571,8 @@ def build_metadata():
             "description": f.get("description", ""),
         }
         functions_dict[fid]["visibility"] = f.get("visibility", "default")
+        if f.get("className"):
+            functions_dict[fid]["className"] = f["className"]
         if f.get("syntheticFromVarDecl"):
             functions_dict[fid]["syntheticFromVarDecl"] = True
         if f.get("declarationOnly"):
@@ -1406,6 +1602,8 @@ def build_metadata():
         if g.get("value"):
             g_entry["value"] = g["value"]
         g_entry["visibility"] = g.get("visibility", "default")
+        if g.get("className"):
+            g_entry["className"] = g["className"]
         global_variables_dict[vid] = g_entry
 
     # M4.4 narrowed parse: cross-TU callees live in files we did NOT re-parse, so they
@@ -1414,6 +1612,45 @@ def build_metadata():
     for _bk, _bfid in _baseline_func_keys.items():
         func_key_to_fid.setdefault(_bk, _bfid)
         _func_key_to_fid.setdefault(_bk, _bfid)
+
+    # File-scope address-takes have no caller FUNCTION — the taker is a table. Record the
+    # units that publish each function so `_fn_is_private` can keep it public and the
+    # interface table / unit diagram can name the registering unit.
+    # unit_key of every function that READS a global of a given qualified name — for a
+    # registration table, those units are its actual consumers.
+    _readers_by_global_name = defaultdict(set)
+    for _fk, _read_vars in global_access_reads.items():
+        _reader_fid = func_key_to_fid.get(_fk)
+        if not _reader_fid:
+            continue
+        _rp = _reader_fid.split(KEY_SEP)
+        if len(_rp) < 2:
+            continue
+        _reader_unit = KEY_SEP.join(_rp[:2])
+        for _v in _read_vars:
+            _g = globals_data.get(_v)
+            if _g and _g.get("qualifiedName"):
+                _readers_by_global_name[_g["qualifiedName"]].add(_reader_unit)
+
+    _address_taken_fid.clear()
+    for _target_key, _sites in _address_taken_at_file_scope.items():
+        _target_fid = func_key_to_fid.get(_target_key)
+        if not _target_fid or _target_fid not in functions_dict:
+            continue
+        _units = {make_unit_key(rf) for rf, _ in _sites if rf}
+        # The consuming units matter more than the registering one for Source/Destination:
+        # the table usually lives in the SAME unit as the function it publishes.
+        for _, _tbl_name in _sites:
+            _units |= _readers_by_global_name.get(_tbl_name, set())
+        _units = sorted(u for u in _units if u)
+        if not _units:
+            continue
+        functions_dict[_target_fid]["addressTakenByUnits"] = _units
+        for _u in _units:
+            _address_taken_fid.append([_target_fid, _u])
+    if _address_taken_fid:
+        print(f"  address-taken: {len(_address_taken_fid)} function/unit registration(s) "
+              f"from file-scope initializers")
 
     # M4.6: fid-level override->base pairs for the narrowed-parse virtual re-spread. base is
     # its fid when defined, else its (stable) mangled key as a grouping token.
@@ -1796,7 +2033,8 @@ def main():
         _toolchain = ""
     meta_header["parseFingerprint"] = parse_fingerprint(CLANG_ARGS, std="", toolchain=str(_toolchain))
     from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
-                               HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS)
+                               HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS,
+                               ADDRESS_TAKEN)
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
@@ -1837,6 +2075,11 @@ def main():
     # Incremental (M4.6): fid-level override->base pairs -> model/override_pairs.json, for
     # the narrowed-parse virtual-dispatch re-spread across affected + un-parsed files.
     write_model_file(OVERRIDE_PAIRS, sorted(_override_pairs_fid))
+
+    # Address-taken registrations -> model/address_taken.json, so a narrowed parse that does
+    # not re-parse the table's file can replay them (otherwise the function flips back to
+    # private and the same source produces a different document run to run).
+    write_model_file(ADDRESS_TAKEN, sorted(_address_taken_fid))
 
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])

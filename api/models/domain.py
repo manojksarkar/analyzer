@@ -213,6 +213,9 @@ class Function:
     is_visible: bool
     is_new: bool
     description: str
+    # Enclosing class/struct, namespaces dropped ("" for free functions). Lets the hide
+    # list render ClassName::name so two same-named methods are distinguishable.
+    class_name: str = ""
 
 
 @dataclass

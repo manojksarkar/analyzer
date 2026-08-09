@@ -196,7 +196,8 @@ def _read(model_dir: str, name: str) -> dict:
 # Parser-level artifacts captured per version under versions/<id>/parse/ (the blank
 # skeleton a narrowed parse merges against). Keys match parse_merge / snapshot.
 _PARSE_ARTIFACTS = ("functions", "globalVariables", "dataDictionary", "hashes",
-                    "edges", "tu_includes", "entity_files", "override_pairs", "metadata")
+                    "edges", "tu_includes", "entity_files", "override_pairs",
+                    "address_taken", "metadata")
 
 
 def _load_parse_dir(d: str) -> Dict[str, Any]:

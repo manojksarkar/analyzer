@@ -587,10 +587,10 @@ function WizardView({
                         onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) uploadDef(f) }}
                       >
                         <Icon name="upload_file" size={28} className="text-on-surface-variant mb-2 block" />
-                        <p className="text-on-surface mb-1 font-mono text-xs font-medium">Drop Makefile or CSV here</p>
-                        <p className="text-on-surface-variant text-xs">Supported: <span className="font-mono text-caption">Makefile, .csv, .mk</span></p>
+                        <p className="text-on-surface mb-1 font-mono text-xs font-medium">Drop CSV or JSON here</p>
+                        <p className="text-on-surface-variant text-xs">Supported: <span className="font-mono text-caption">.csv, .json</span> · toolchain macro dumps included</p>
                       </div>
-                      <input ref={defInputRef} type="file" accept=".csv,.mk,Makefile,makefile" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDef(f) }} />
+                      <input ref={defInputRef} type="file" accept=".csv,.json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDef(f) }} />
                       {defFileName && (
                         <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg">
                           <Icon name="description" size={18} className="text-secondary" />

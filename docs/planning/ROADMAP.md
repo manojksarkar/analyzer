@@ -7,6 +7,21 @@
 Target scope = 6 processes: **SYS.1, SYS.2, SWE.1, SWE.2, SWE.3, SWE.4**. SWE.3 (detailed design) ships
 first; the rest follow in the order below.
 
+## Domain context
+
+**The codebase under analysis** is automotive firmware, forked from the **UFS** firmware codebase.
+Automotive delivery is what creates the documentation requirement: an ASPICE assessment expects specific
+process documents as audit evidence at a defined capability level (`ASPICE_L2` / `ASPICE_L3`, the API's
+`compliance_standard`). ArtiFex generates those documents from the source instead of having engineers
+author them by hand.
+
+**Delivered scope is SWE.3 only.** SWE.4 is in flight on `feat/swe4-unit-test-spec`; SWE.2, SYS.1, SYS.2
+and SWE.1 are roadmap. The 6-process target above is the destination, not the current state.
+
+> **ISO 26262 is not in scope.** It appears in the API description string and in seeded demo fixtures
+> (`api/db/in_memory.py` — "BMW", "VCU Engine Firmware", "ADAS Sensor Fusion" are placeholder rows).
+> Both are illustrative; no ISO 26262 work is implemented.
+
 ## Milestones
 
 | Milestone | Focus | Done when |
@@ -33,7 +48,8 @@ first; the rest follow in the order below.
 
 **V1**
 - [ ] Deploy in the office (server, runtime, web app + API, user accounts, end-to-end smoke test)
-- [ ] Complete data-dictionary / macro ingestion (including per-layer macros)
+- [x] Complete macro ingestion — toolchain JSON dumps, per-layer scoping, wired through the web app
+- [ ] Complete data-dictionary ingestion
 - [ ] Remaining flowchart-rendering polish
 - [ ] Function show/hide in the generated document
 - [ ] Release + client review of SWE.3, with a buffer for review fixes

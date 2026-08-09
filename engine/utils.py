@@ -354,6 +354,22 @@ def short_name(full_name: str) -> str:
     return ((full_name or "").split("::")[-1]).strip()
 
 
+def scoped_name(full_name: str, class_name: str = "") -> str:
+    """Class-qualified display name: MyClass::foo, or just foo for a free function.
+
+    Namespaces are dropped — the class is what distinguishes same-named methods in a
+    table, and the namespace only makes the cell longer. The class comes from the
+    model's `className` (parser.get_class_scope) rather than by splitting full_name,
+    which can't be split back into namespace vs class parts.
+
+    Falls back to short_name() when className is absent, so models parsed before
+    className existed keep rendering as they did rather than half-qualified.
+    """
+    base = short_name(full_name)
+    cls = (class_name or "").strip()
+    return f"{cls}::{base}" if cls and base else base
+
+
 def path_is_under(base_path: str, candidate_path: str) -> bool:
     """True if candidate_path resolves to the project root or a path inside it.
 

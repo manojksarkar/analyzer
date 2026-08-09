@@ -20,6 +20,7 @@ export type ApiJob = z.infer<typeof ApiJobSchema>
 export const ApiFunctionSchema = z.object({
   id: z.string(), name: z.string(), file_path: z.string(), layer: z.string(), group: z.string(),
   is_visible: z.boolean(), is_new: z.boolean(), description: z.string(),
+  class_name: z.string().optional().default(''),
 })
 export type ApiFunction = z.infer<typeof ApiFunctionSchema>
 
@@ -57,6 +58,7 @@ export function mapJobFunctions(
     functions: payload.functions.map((f) => ({
       id: f.id, name: f.name, filePath: f.file_path, layer: f.layer, group: f.group,
       isVisible: f.is_visible, isNew: f.is_new, description: f.description,
+      className: f.class_name,
     })),
     summary: {
       total: payload.summary.total,

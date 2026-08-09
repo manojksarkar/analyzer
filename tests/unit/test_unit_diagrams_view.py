@@ -32,6 +32,7 @@ _spec.loader.exec_module(_mod)
 
 _unit_part_id = _mod._unit_part_id
 _escape_label = _mod._escape_label
+_edge_label = _mod._edge_label
 _fid_to_unit = _mod._fid_to_unit
 _build_unit_diagram = _mod._build_unit_diagram
 
@@ -83,6 +84,56 @@ class TestEscapeLabel:
         assert "|" not in result
         assert "\n" not in result
 
+
+# ---------------------------------------------------------------------------
+# _edge_label — readability of a many-interface edge
+# ---------------------------------------------------------------------------
+
+class TestEdgeLabel:
+    """One arrow carries every interface id for a unit pair (REQ-UD-05), and ELK lays every
+    edge's label out in ONE column — so with a bare <br/> join the ids of two DIFFERENT
+    edges run together and you cannot see where one arrow's group ends.
+
+    The whitespace therefore goes BETWEEN groups, not between rows: same-target ids stay
+    tight, each label is padded above and below. Spacing lives in the graph text because
+    mermaid 10.9.5 silently ignores the ELK spacing options (verified: adding
+    elk.spacing.edgeEdge/edgeLabel/edgeNode/nodeNode produced a byte-identical PNG).
+    """
+
+    def test_ids_of_one_group_are_tight(self):
+        """No blank row between ids going to the SAME target."""
+        out = _edge_label(["IF_A", "IF_B"])
+        assert "IF_A<br/>IF_B" in out
+        assert "IF_A<br/> <br/>IF_B" not in out
+
+    def test_group_is_padded_above_and_below(self):
+        out = _edge_label(["IF_A"])
+        assert out.startswith(" <br/> <br/>")
+        assert out.endswith("<br/> <br/> ")
+
+    def test_padding_is_symmetric(self):
+        out = _edge_label(["IF_A", "IF_B"])
+        rows = out.split("<br/>")
+        lead = len(rows) - len([r for r in rows if r.strip()]) - 0
+        assert rows[:2] == [" ", " "]
+        assert rows[-2:] == [" ", " "]
+
+    def test_ids_are_sorted(self):
+        rows = [r for r in _edge_label(["IF_C", "IF_A", "IF_B"]).split("<br/>") if r.strip()]
+        assert rows == ["IF_A", "IF_B", "IF_C"]
+
+    def test_empty_yields_empty(self):
+        assert _edge_label([]) == ""
+
+    def test_every_id_survives(self):
+        ids = [f"IF_LAYER1_CORE_{n:02d}" for n in range(1, 12)]
+        out = _edge_label(ids)
+        assert all(i in out for i in ids), "labels must stay complete — no capping"
+
+    def test_escaping_still_applied(self):
+        out = _edge_label(["A|B", "C"])
+        assert "|" not in out
+
     def test_empty_string(self):
         assert _escape_label("") == ""
 
@@ -122,6 +173,21 @@ class TestFidToUnitDiagrams:
 # ---------------------------------------------------------------------------
 # _build_unit_diagram
 # ---------------------------------------------------------------------------
+
+def _has_edge(mermaid, src, dst, iface):
+    """True if `src -->|…iface…| dst` is present, whatever whitespace the label carries.
+
+    Edge labels are padded to separate one arrow's group of ids from the next, so asserting
+    the exact label string here would couple every topology test to that formatting.
+    """
+    import re as _re
+    for line in mermaid.splitlines():
+        m = _re.match(r"^\s*(\S+) -->\|(.*)\| (\S+)$", line)
+        if m and m.group(1) == src and m.group(3) == dst:
+            if iface in [t.strip() for t in m.group(2).split("<br/>")]:
+                return True
+    return False
+
 
 def _make_minimal_context(unit_key="Mod|core", filename="core.cpp"):
     unit_info = {"fileName": filename, "functionIds": [], "globalVariableIds": []}
@@ -349,9 +415,9 @@ class TestBuildUnitDiagram:
         # left (caller) box appears before subgraph end; right (callee) box after, with distinct id
         assert "Ext_svc[" in before
         assert "Ext_svc__out[" in after
-        # interface ids split by direction
-        assert "Ext_svc -->|IFC_IN| Mod_core" in result
-        assert "Mod_core -->|IFC_OUT| Ext_svc__out" in result
+        # interface ids split by direction (label formatting is asserted in TestEdgeLabel)
+        assert _has_edge(result, "Ext_svc", "Mod_core", "IFC_IN")
+        assert _has_edge(result, "Mod_core", "Ext_svc__out", "IFC_OUT")
 
     def test_mutual_internal_partner_split_within_module(self):
         # peer in the same module, mutual => two boxes inside the subgraph, distinct ids.
@@ -378,8 +444,8 @@ class TestBuildUnitDiagram:
         assert "Mod_peer__out[" in result
         assert "Mod_peer" in result and "Mod_peer__out" in result
         assert "class " in result and "internal" in result
-        assert "Mod_peer -->|IFC_IN| Mod_core" in result
-        assert "Mod_core -->|IFC_OUT| Mod_peer__out" in result
+        assert _has_edge(result, "Mod_peer", "Mod_core", "IFC_IN")
+        assert _has_edge(result, "Mod_core", "Mod_peer__out", "IFC_OUT")
 
     def test_allowed_components_marks_internal_units(self):
         unit_key = "Mod|core"

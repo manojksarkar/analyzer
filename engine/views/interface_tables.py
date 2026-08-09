@@ -4,7 +4,7 @@ import os
 import re
 
 from .registry import register
-from utils import get_range, log, short_name, KEY_SEP
+from utils import get_range, log, scoped_name, short_name, KEY_SEP
 
 
 def _iface_order(entry):
@@ -69,11 +69,15 @@ def _build_interface_tables(
             if (f.get("visibility") or "").lower() == "private":
                 continue
             qn = f.get("qualifiedName", "")
+            # `name` stays SHORT — downstream code uses it as a lookup key (flowchart stems,
+            # behaviour rows), not only for display. `interfaceName` carries the class-qualified
+            # display form so two same-named methods in one unit (AddOperation::apply vs
+            # MultiplyOperation::apply) are distinguishable wherever a name is rendered.
             name = short_name(qn)
             loc = dict(f.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            interface_name = name or ""
+            interface_name = scoped_name(qn, f.get("className", ""))
             caller_units = {
                 u for cid in f.get("calledByIds", []) or []
                 for u in fid_to_unit.get(cid, []) if u
@@ -93,7 +97,15 @@ def _build_interface_tables(
             # documented once, from the provider (callee unit)'s perspective; a function's own
             # callee side is surfaced in those partner units' rows instead. callee_units is still
             # computed and emitted as the calleesUnits field below for completeness.
-            callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _keep_unit(u)))
+            # A function reached only through a file-scope table has no caller to list, so
+            # name the unit(s) that register it — otherwise the cell reads "-" even though
+            # the relationship is real. In-body address-takes need nothing here: they became
+            # ordinary call edges and are already in caller_units.
+            registrar_units = {u for u in (f.get("addressTakenByUnits") or []) if u}
+            callers_fmt = sorted(set(
+                u.replace(KEY_SEP, "/")
+                for u in (caller_units | registrar_units) if _keep_unit(u)
+            ))
             source_dest = ', '.join(callers_fmt) if callers_fmt else "-"
             raw_params = f.get("parameters", [])
             params = [{**p, "range": get_range(p.get("type", ""), dd)} for p in raw_params]
@@ -131,7 +143,7 @@ def _build_interface_tables(
             loc = dict(g.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            interface_name = name or ""
+            interface_name = scoped_name(qn, g.get("className", ""))
             ge = {
                 "interfaceId": g.get("interfaceId", ""),
                 "globalId": vid,

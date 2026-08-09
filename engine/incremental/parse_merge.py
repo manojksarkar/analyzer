@@ -97,6 +97,40 @@ def _merge_override_pairs(baseline_pairs: Iterable, fresh_pairs: Iterable,
     return out
 
 
+def _merge_address_taken(baseline_recs, fresh_recs, entity_files, drop) -> List[list]:
+    """[[target_fid, registering_unit], …] — keep baseline records whose TARGET's file wasn't
+    re-parsed, then add fresh ones for targets in re-parsed files (dedup).
+
+    Without this a narrowed parse that doesn't touch the table's file loses the registration,
+    the function flips back to private, and the same source yields a different document.
+    """
+    out: List[list] = []
+    seen: Set[tuple] = set()
+    for rec in list(baseline_recs or []):
+        tgt = rec[0] if rec else None
+        if tgt and _file_of(tgt, entity_files) not in drop and tuple(rec) not in seen:
+            out.append(list(rec)); seen.add(tuple(rec))
+    for rec in list(fresh_recs or []):
+        tgt = rec[0] if rec else None
+        if tgt and _file_of(tgt, entity_files) in drop and tuple(rec) not in seen:
+            out.append(list(rec)); seen.add(tuple(rec))
+    return out
+
+
+def _apply_address_taken(functions: Dict[str, dict], records: List[list]) -> None:
+    """Re-attach addressTakenByUnits to the merged functions from the merged records."""
+    by_fid: Dict[str, Set[str]] = {}
+    for rec in records or []:
+        if len(rec) >= 2 and rec[0] in functions and rec[1]:
+            by_fid.setdefault(rec[0], set()).add(rec[1])
+    for fid, f in functions.items():
+        units = by_fid.get(fid)
+        if units:
+            f["addressTakenByUnits"] = sorted(units)
+        else:
+            f.pop("addressTakenByUnits", None)
+
+
 def _recompute_call_edges(functions: Dict[str, dict], override_pairs: List[list]) -> None:
     """Mutate `functions`: drop callsIds to entities no longer in the model, re-run the
     virtual-dispatch family spread (D7/M3.13), then recompute calledByIds by inverting
@@ -157,6 +191,10 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
         if _norm(tu) in drop:
             tu_includes[tu] = inc
 
+    address_taken = _merge_address_taken(baseline.get("address_taken"), fresh.get("address_taken"),
+                                         entity_files, drop)
+    _apply_address_taken(functions, address_taken)
+
     _recompute_call_edges(functions, override_pairs)
 
     return {
@@ -169,6 +207,7 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
         "tu_includes": dict(sorted(tu_includes.items())),
         "entity_files": merged_entity_files,
         "override_pairs": override_pairs,
+        "address_taken": address_taken,
     }
 
 

@@ -1,0 +1,138 @@
+{
+  "metadata": {
+    "fully_resolved": 8,
+    "macro_source": "fromelf_text",
+    "toolchain": "armclang",
+    "total_macros": 14
+  },
+  "macros_by_cu": {
+    "fcore": {
+      "SOME_THING": {
+        "name": "SOME_THING",
+        "raw_value": "(1)",
+        "expanded_value": "(1)",
+        "computed_value": 1,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "BUFFER_SIZE": {
+        "name": "BUFFER_SIZE",
+        "raw_value": "(1 << SECTOR_SHIFT)",
+        "expanded_value": "(1 << 12)",
+        "computed_value": 4096,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "MAX_LUN": {
+        "name": "MAX_LUN",
+        "raw_value": "(0x08)",
+        "expanded_value": "(0x08)",
+        "computed_value": 8,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "UNSIGNED_MASK": {
+        "name": "UNSIGNED_MASK",
+        "raw_value": "(0xFFU)",
+        "expanded_value": "(0xFFU)",
+        "computed_value": 255,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "SIGN_BIT": {
+        "name": "SIGN_BIT",
+        "raw_value": "(1UL << 31)",
+        "expanded_value": "(1UL << 31)",
+        "computed_value": 2147483648,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "NEG_ONE": {
+        "name": "NEG_ONE",
+        "raw_value": "(-1)",
+        "expanded_value": "(-1)",
+        "computed_value": -1,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "DISABLED": {
+        "name": "DISABLED",
+        "raw_value": "(0)",
+        "expanded_value": "(0)",
+        "computed_value": 0,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "ENABLE_DIAG": {
+        "name": "ENABLE_DIAG",
+        "raw_value": "",
+        "expanded_value": "",
+        "computed_value": null,
+        "is_fully_resolved": true,
+        "dependency_chain": [],
+        "note": null
+      },
+      "FTL_MAP_BASE": {
+        "name": "FTL_MAP_BASE",
+        "raw_value": "(DRAM_BASE + 0x1000)",
+        "expanded_value": "(DRAM_BASE + 0x1000)",
+        "computed_value": null,
+        "is_fully_resolved": false,
+        "dependency_chain": ["DRAM_BASE"],
+        "note": null
+      },
+      "FTL_PAGE_MASK": {
+        "name": "FTL_PAGE_MASK",
+        "raw_value": "(PAGE_SIZE * SECTORS_PER_PAGE - 1)",
+        "expanded_value": "(PAGE_SIZE * SECTORS_PER_PAGE - 1)",
+        "computed_value": null,
+        "is_fully_resolved": false,
+        "dependency_chain": ["PAGE_SIZE", "SECTORS_PER_PAGE"],
+        "note": null
+      },
+      "FW_VERSION": {
+        "name": "FW_VERSION",
+        "raw_value": "\"UFS 3.1\"",
+        "expanded_value": "\"UFS 3.1\"",
+        "computed_value": null,
+        "is_fully_resolved": false,
+        "dependency_chain": [],
+        "note": null
+      },
+      "ALIAS_UINT": {
+        "name": "ALIAS_UINT",
+        "raw_value": "unsigned int",
+        "expanded_value": "unsigned int",
+        "computed_value": null,
+        "is_fully_resolved": false,
+        "dependency_chain": [],
+        "note": null
+      },
+      "MIN(a,b)": {
+        "name": "MIN(a,b)",
+        "raw_value": "((a)<(b)?(a):(b))",
+        "expanded_value": "((a)<(b)?(a):(b))",
+        "computed_value": null,
+        "is_fully_resolved": false,
+        "dependency_chain": [],
+        "note": null
+      },
+      "NOT_EXPORTED": {
+        "name": "NOT_EXPORTED",
+        "raw_value": "ne",
+        "expanded_value": "ne",
+        "computed_value": null,
+        "is_fully_resolved": false,
+        "dependency_chain": [],
+        "note": null
+      }
+    }
+  }
+}

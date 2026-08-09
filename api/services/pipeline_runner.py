@@ -451,6 +451,14 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     if layers:
         cfg["layers"] = layers
 
+    # Preprocessor definitions -> a macro file the engine reads via clang.macrosFile.
+    # The wizard stores them as JSON (manual list or an upload reference); without
+    # this they never reached Clang at all.
+    macros_file = _materialize_macros(bc.get("preprocessor_definitions"), workspace_dir)
+    if macros_file:
+        cfg.setdefault("clang", {})
+        cfg["clang"]["macrosFile"] = str(macros_file)
+
     # noLlm — disable per-entity LLM (descriptions + behaviour names), mirroring
     # apply_no_llm. Phase summarization is disabled via --no-llm-summarize in _build_cmd.
     if no_llm:
@@ -462,6 +470,31 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     out_path = workspace_dir / "config.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
+    return out_path
+
+
+def _materialize_macros(defs: Any, workspace_dir: Path) -> Optional[Path]:
+    """Resolve build_config.preprocessor_definitions to a file on disk, or None.
+
+    `mode: "manual"` writes the wizard's ``["NAME=VALUE", ...]`` list next to the
+    per-project config; `mode: "upload"` returns the stored upload (CSV or any of
+    the JSON shapes engine/core/macro_input.py reads) as-is.
+    """
+    if not isinstance(defs, dict):
+        return None
+
+    mode = str(defs.get("mode") or "manual").lower()
+    if mode == "upload":
+        from ..routes.repositories import resolve_upload
+        return resolve_upload(str(defs.get("file_id") or ""))
+
+    entries = [str(d).strip() for d in (defs.get("defines") or []) if str(d).strip()]
+    if not entries:
+        return None
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    out_path = workspace_dir / "macros.json"
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(entries, f, indent=2)
     return out_path
 
 
