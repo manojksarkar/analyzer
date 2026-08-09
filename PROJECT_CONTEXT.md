@@ -2248,7 +2248,14 @@ through the pinned mermaid **10.9.5**:
 
 Mermaid 10.9.5 **silently ignores** the `elk.*` spacing options, so no config block was
 added — it would be dead weight that reads as if it does something. Spacing lives in the
-**graph text**: `_LABEL_SEP = "<br/> <br/>"` via `_edge_label(ifaces)`.
+**graph text**, in `_edge_label(ifaces)`.
+
+**The whitespace goes between GROUPS, not between rows.** ELK lays every edge's label out in
+one column, so a uniform blank line between rows still let two arrows' ids run together —
+the reader could see each id but not where one arrow's group ended. Ids on the SAME arrow
+stay tight (`_ROW_SEP = "<br/>"`) and each label is padded above and below
+(`_GROUP_PAD_ROWS = 2`), so Mermaid's grey label background reads as one block per arrow.
+Padding rows are a single space; an empty string renders as no row at all.
 
 The blank-line node-padding hack (`n_extra_lines`) was deliberately **left keyed to edge
 count**. Re-keying it to label height was tried and rejected: padding of 10 and 18 lines
@@ -2258,8 +2265,15 @@ as a grotesque tall bar.
 
 Not changed, per the user: no label splitting (REQ-UD-05 mandates the shared arrow), no id
 capping (the diagram stays complete), no DOCX width change, and diagram height is
-explicitly not a concern. Residual: with tall labels, two adjacent edges' label blocks can
-abut — the rows within each are now clearly separated, which was the complaint.
+explicitly not a concern. A `to <partner>` header on each block was tried and **reverted**
+(`76fa866` / `fb281cb`) — the ask was spacing, not relabelling.
+
+**Private functions are now skipped when building edges.** `interface_tables.py` skips
+`visibility == "private"`, but this view never did, so a function annotated `PRIVATE` in
+source that still has cross-unit callers (explicit annotation wins in `_fn_is_private`) drew
+an edge labelled with a `PIF_*` id that appears in no table — e.g. `PIF_LAYER1_FULL_
+READWRITE_01/02`, `PIF_LAYER1_FULL_POINTRECT_01`, `PIF_LAYER1_FULL_TYPES_01`, all called
+from `App|Main`. Table and diagram now agree.
 
 `render_mermaid_cached` is content-addressed on the Mermaid text, so changed text
 re-renders automatically; no cache wipe needed.
