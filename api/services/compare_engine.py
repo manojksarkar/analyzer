@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import compare_render, doc_render
+from .output_reader import OutputReader
 from .settings import get_settings as _get_settings
 _REPO_ROOT = _get_settings().repo_root
 
@@ -41,16 +42,27 @@ def _load_json(p: Path) -> Any:
         return None
 
 
-def _groups(snap: Path) -> set[str]:
-    output = snap / "output"
-    if not output.is_dir():
-        return set()
-    return {d.name for d in output.iterdir() if d.is_dir()}
+def _reader(db: Any, project_id: str, ver: Any) -> Optional[OutputReader]:
+    """A Postgres-first / disk-fallback reader for a version's view outputs (None when ver is None)."""
+    if not ver:
+        return None
+    snap = _snap(project_id, ver.commit_sha, ver.id)
+    return OutputReader(db, ver.id, snap)
 
 
-def _itf(snap: Path, group: str) -> dict:
-    """Load interface_tables.json for a group, or empty dict."""
-    return _load_json(snap / "output" / group / "interface_tables.json") or {}
+def _groups(reader: OutputReader) -> set[str]:
+    return reader.groups()
+
+
+def _itf(reader: OutputReader, group: str) -> dict:
+    """Load a group's interface_tables.json via the reader (Postgres-first), or empty dict."""
+    txt = reader.read_text(f"{group}/interface_tables.json")
+    if not txt:
+        return {}
+    try:
+        return json.loads(txt)
+    except (ValueError, TypeError):
+        return {}
 
 
 def _itf_fingerprint(data: dict) -> str:
@@ -177,19 +189,21 @@ def _db_fallback_compare(db: Any, project_id: str, cur_ver, base_ver,
 # ---------------------------------------------------------------------------
 
 def _group_changed(db: Any, project: Any, project_id: str, group: str,
-                   c_snap: Path, b_snap: Path, cur_ver: Any, base_ver: Any,
+                   c_reader: OutputReader, b_reader: OutputReader, cur_ver: Any, base_ver: Any,
                    c_doc: Any, b_doc: Any) -> bool:
     """A group is changed if its interface tables differ OR — when they match —
     any other rendered content (descriptions, diagrams, mermaid) differs."""
-    if _itf_fingerprint(_itf(c_snap, group)) != _itf_fingerprint(_itf(b_snap, group)):
+    if _itf_fingerprint(_itf(c_reader, group)) != _itf_fingerprint(_itf(b_reader, group)):
         return True
     # Interface tables identical — fall through to a full-render comparison so
-    # description / flowchart / behaviour / diagram changes are still detected.
+    # description / flowchart / behaviour / diagram changes are still detected. (The full render
+    # still reads the disk snapshot via _version_render — its Postgres migration is a later PG-5b
+    # slice; None snap_dir simply yields no render, i.e. "no further change detected".)
     if not project or not c_doc or not b_doc:
         return False
     try:
-        c_render = compare_render._version_render(db, project, c_doc, cur_ver, c_snap, project_id)
-        b_render = compare_render._version_render(db, project, b_doc, base_ver, b_snap, project_id)
+        c_render = compare_render._version_render(db, project, c_doc, cur_ver, c_reader.snap_dir, project_id)
+        b_render = compare_render._version_render(db, project, b_doc, base_ver, b_reader.snap_dir, project_id)
     except Exception:
         return False
     if c_render is None or b_render is None:
@@ -263,14 +277,15 @@ def compute_compare(db: Any, project_id: str, current_ref: str, baseline_ref: st
                 "summary": {"added": 0, "changed": 0, "removed": 0, "unchanged": 0},
                 "changed_documents": []}
 
-    c_snap = _snap(project_id, cur_ver.commit_sha, cur_ver.id)
-    b_snap = _snap(project_id, base_ver.commit_sha, base_ver.id)
+    # Read view outputs Postgres-first (PG-5a table), falling back to the on-disk snapshot.
+    c_reader = _reader(db, project_id, cur_ver)
+    b_reader = _reader(db, project_id, base_ver)
 
-    if not c_snap or not b_snap:
+    c_groups = _groups(c_reader)
+    b_groups = _groups(b_reader)
+    if not c_groups or not b_groups:
         return _db_fallback_compare(db, project_id, cur_ver, base_ver, c_info, b_info)
 
-    c_groups = _groups(c_snap)
-    b_groups = _groups(b_snap)
     added = c_groups - b_groups
     removed = b_groups - c_groups
     common = c_groups & b_groups
@@ -281,7 +296,7 @@ def compute_compare(db: Any, project_id: str, current_ref: str, baseline_ref: st
 
     changed = {g for g in common
                if _group_changed(db, project, project_id, g,
-                                  c_snap, b_snap, cur_ver, base_ver,
+                                  c_reader, b_reader, cur_ver, base_ver,
                                   c_by_group.get(g), b_by_group.get(g))}
     unchanged = common - changed
 
@@ -300,7 +315,7 @@ def compute_compare(db: Any, project_id: str, current_ref: str, baseline_ref: st
     for g in sorted(changed):
         d = c_by_group.get(g)
         if d:
-            secs = _diff_itf_sections(_itf(c_snap, g), _itf(b_snap, g))
+            secs = _diff_itf_sections(_itf(c_reader, g), _itf(b_reader, g))
             changed_docs.append({"document_id": d.id, "name": d.name,
                                   "process": d.process, "diff_type": "changed",
                                   "sections_changed": secs})
@@ -368,11 +383,13 @@ def compute_document_sections_diff(
     cur_ver = _resolve_ref(db, project_id, current_ref)
     base_ver = _resolve_ref(db, project_id, baseline_ref)
 
-    # Key snapshots by commit_sha (dir is workspaces/<pid>/<commit[:16]>), not Version.id.
-    c_snap = _snap(project_id, cur_ver.commit_sha, cur_ver.id) if cur_ver else None
-    b_snap = _snap(project_id, base_ver.commit_sha, base_ver.id) if base_ver else None
+    # Read view outputs Postgres-first (PG-5a), falling back to the on-disk snapshot.
+    c_reader = _reader(db, project_id, cur_ver)
+    b_reader = _reader(db, project_id, base_ver)
+    c_itf = _itf(c_reader, doc.group) if (c_reader and doc.group) else {}
+    b_itf = _itf(b_reader, doc.group) if (b_reader and doc.group) else {}
 
-    if not c_snap or not b_snap or not doc.group:
+    if not c_itf and not b_itf:
         # Fall back to DB-stored sections; mark changed if in the seeded diff set
         sections_stored = db.documents.list_sections(doc_id)
         cr = db.compare.get_or_create(project_id, current_ref, baseline_ref)
@@ -387,9 +404,6 @@ def compute_document_sections_diff(
                 "baseline_content": s.content if dt == "unchanged" else "[previous version content]",
             })
         return {"document_name": doc.name, "sections": result}
-
-    c_itf = _itf(c_snap, doc.group)
-    b_itf = _itf(b_snap, doc.group)
 
     unit_names: dict[str, str] = c_itf.get("unitNames") or b_itf.get("unitNames") or {}
     skip = {"unitNames"}
