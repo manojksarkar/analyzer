@@ -23,6 +23,7 @@ Public surface used by routes/jobs.py:
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -178,6 +179,22 @@ def _reserve_version(db: Any, job: Any, project: Any) -> None:
         created_by=(project.created_by if project else "system"), created_at=_now()))
 
 
+def _store_resolved_config(db: Any, job: Any, cfg: dict) -> None:
+    """Persist the per-version NON-SECRET analysis config onto the reserved version row
+    (versions.resolved_config). Best-effort: a storage hiccup must not fail the run — the
+    config is also materialized to the workspace file the engine actually reads."""
+    vid = getattr(job, "version_id", None)
+    if not vid:
+        return
+    try:
+        v = db.versions.get(vid)
+        if v is not None:
+            v.resolved_config = cfg
+            db.versions.update(v)
+    except Exception:                                # best-effort: don't fail the run on this
+        pass
+
+
 def _mark_failed(db: Any, job_id: str, message: str) -> None:
     job = db.jobs.get(job_id)
     if job and job.status not in ("cancelled", "complete", "failed"):
@@ -269,11 +286,12 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     # 2. Write per-project config
     workspace_dir = root / "workspaces" / job.project_id
     try:
-        config_path = _write_project_config(project, workspace_dir,
-                                            no_llm=bool(getattr(job, "no_llm", False)))
+        config_path, analysis_cfg = _write_project_config(
+            project, workspace_dir, no_llm=bool(getattr(job, "no_llm", False)))
     except Exception as exc:
         _mark_failed(db, job_id, f"Config generation failed: {exc}")
         return
+    _store_resolved_config(db, job, analysis_cfg)   # per-version config → versions.resolved_config
     _append_log(job_id, f"Config written to {config_path.name}")
 
     if _is_cancelled(db, job_id):
@@ -461,22 +479,24 @@ def _load_base_config(base_path: Path) -> dict:
         return {}
 
 
-def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> Path:
-    """Write a per-project config.json by merging the base config with project settings."""
+def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> tuple[Path, dict]:
+    """Materialize the workspace config.json the engine runs with, and return it alongside the
+    NON-SECRET analysis config that is stored per version (versions.resolved_config).
+
+    Two configs come out of here, by design:
+
+      * ``analysis_cfg`` — config.defaults.json + this project's build_config + layers (+ no_llm).
+        No secrets. This is the reproducible, self-describing per-version config → resolved_config.
+      * the workspace file — ``analysis_cfg`` overlaid with engine/config/config.local.json's
+        secrets (llm baseUrl/credentials, any machine-specific override) so the engine can reach
+        the LLM. The ``db`` section is deliberately NOT written to this on-disk file: the engine
+        talks to Postgres via the DATABASE_URL env, so the DB password has no business in it.
+    """
+    from core.config import _deep_merge
     base_path = get_settings().repo_root / "engine" / "config" / "config.defaults.json"
     cfg = _load_base_config(base_path)
-    # Also apply engine/config/config.local.json (gitignored) so LLM credentials / URL and other
-    # secrets live there — with the DB config — instead of tracked config.defaults.json. Deep-merged
-    # so a partial `llm` block (e.g. just customHeaders) overrides without restating the whole block.
-    local_path = base_path.parent / "config.local.json"
-    if local_path.is_file():
-        try:
-            from core.config import _deep_merge
-            _deep_merge(cfg, _load_base_config(local_path))
-        except Exception:                            # best-effort: fall back to defaults only
-            pass
 
-    # Apply explicit section overrides from build_config
+    # Apply explicit section overrides from build_config (per-project, from onboarding)
     bc = project.build_config or {}
     for key in ("clang", "llm", "views", "docx"):
         if key in bc and isinstance(bc[key], dict):
@@ -495,11 +515,28 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
         cfg["llm"]["descriptions"] = False
         cfg["llm"]["behaviourNames"] = False
 
+    # Snapshot the non-secret analysis config BEFORE overlaying secrets — this is what gets
+    # persisted per version. deepcopy so the secret overlay below can't leak back into it.
+    analysis_cfg = copy.deepcopy(cfg)
+
+    # Overlay secrets from config.local.json (gitignored) into the RUNTIME file only: llm creds/URL
+    # (and any machine-specific override) reach the engine, but never enter resolved_config. Drop
+    # `db` so the DB password is not written to a workspace file. Deep-merged per nested key, so a
+    # partial `llm` block (e.g. just customHeaders) overrides without restating the whole block.
+    local_path = base_path.parent / "config.local.json"
+    if local_path.is_file():
+        try:
+            local = _load_base_config(local_path)
+            local.pop("db", None)
+            _deep_merge(cfg, local)
+        except Exception:                            # best-effort: run with the non-secret config
+            pass
+
     workspace_dir.mkdir(parents=True, exist_ok=True)
     out_path = workspace_dir / "config.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
-    return out_path
+    return out_path, analysis_cfg
 
 
 def _convert_layers(arch_layers: list) -> dict:
@@ -1117,6 +1154,9 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
         decision=manifest.get("decision") or getattr(job, "decision", None),
         regenerated=manifest.get("regenerated"),
         reused=manifest.get("reused"),
+        # Carry the per-version config stored at job start through finalize — _put replaces the
+        # whole row, so rebuilding the Version without it would null versions.resolved_config.
+        resolved_config=(reserved.resolved_config if reserved else None),
     )
     # Finalize the row reserved at job start; create it if this flow didn't reserve one.
     if reserved is not None:
@@ -1296,7 +1336,7 @@ def _do_reexport(db: Any, job_id: str) -> None:
     config_path = workspace_dir / "config.json"
     if not config_path.is_file():
         try:
-            config_path = _write_project_config(project, workspace_dir)
+            config_path, _ = _write_project_config(project, workspace_dir)
         except Exception as exc:
             _mark_failed(db, job_id, f"Config generation failed: {exc}")
             return

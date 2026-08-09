@@ -106,6 +106,10 @@ class Version:
     decision: Optional[str] = None              # "incremental" | "full"
     regenerated: Optional[int] = None           # functions regenerated this run
     reused: Optional[int] = None                # functions reused (baseline + cross-version)
+    # Per-version NON-SECRET analysis config (defaults + build_config + layers), stored so a
+    # version is reproducible and self-describing. Secrets (db, llm credentials) are NEVER put
+    # here — they stay in engine/config/config.local.json. Maps to versions.resolved_config.
+    resolved_config: Optional[dict] = None
 
 
 @dataclass

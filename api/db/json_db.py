@@ -285,6 +285,7 @@ def _version_to_dict(v: Version) -> dict:
         "description": v.description, "status": v.status,
         "docs_count": v.docs_count, "created_by": v.created_by,
         "created_at": v.created_at,
+        "resolved_config": v.resolved_config,
     }
 
 
@@ -295,6 +296,7 @@ def _version_from_dict(d: dict) -> Version:
         description=d["description"], status=d["status"],
         docs_count=d["docs_count"], created_by=d["created_by"],
         created_at=_parse_dt(d["created_at"]),
+        resolved_config=d.get("resolved_config"),
     )
 
 
