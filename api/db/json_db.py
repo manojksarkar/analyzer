@@ -286,6 +286,8 @@ def _version_to_dict(v: Version) -> dict:
         "docs_count": v.docs_count, "created_by": v.created_by,
         "created_at": v.created_at,
         "resolved_config": v.resolved_config,
+        "base_path": v.base_path, "project_name": v.project_name,
+        "parse_fingerprint": v.parse_fingerprint,
     }
 
 
@@ -297,6 +299,8 @@ def _version_from_dict(d: dict) -> Version:
         docs_count=d["docs_count"], created_by=d["created_by"],
         created_at=_parse_dt(d["created_at"]),
         resolved_config=d.get("resolved_config"),
+        base_path=d.get("base_path"), project_name=d.get("project_name"),
+        parse_fingerprint=d.get("parse_fingerprint"),
     )
 
 

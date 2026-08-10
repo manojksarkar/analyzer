@@ -92,13 +92,22 @@ def test_no_sql_engine_uses_disk(tmp_path):
     assert r.load("missing-name") == {}
 
 
-def test_metadata_is_disk_only(tmp_path):
-    """metadata has no DB equivalent — always read from disk, even with a live PG model."""
-    db = _sql_db()
-    _seed_project_version(db)
-    with db._engine.begin() as cx:
-        ms.persist_functions(cx, "p1", "ver1", _FN)
+def test_metadata_comes_from_the_version_row(tmp_path):
+    """metadata is run metadata, so it lives on the versions row (base_path/project_name/
+    parse_fingerprint — 'was metadata.json'), rebuilt into the metadata.json shape."""
+    db = SimpleNamespace(versions=SimpleNamespace(get=lambda vid: SimpleNamespace(
+        base_path="C:/repo/SampleCppProject", project_name="SampleCppProject",
+        parse_fingerprint="abc123", created_at=None)))
     (tmp_path / "metadata.json").write_text('{"projectName": "FromDisk"}', encoding="utf-8")
-    r = ModelReader(db, "ver1", tmp_path)
-    assert r.load("metadata")["projectName"] == "FromDisk"
-    assert r.load("functions")                      # PG still serves the model
+    meta = ModelReader(db, "ver1", tmp_path).load("metadata")
+    assert meta["projectName"] == "SampleCppProject"        # DB wins over the stale disk file
+    assert meta["basePath"] == "C:/repo/SampleCppProject"
+    assert meta["parseFingerprint"] == "abc123"
+
+
+def test_metadata_falls_back_to_disk_when_unpopulated(tmp_path):
+    """Versions written before the metadata columns were populated still render from disk."""
+    db = SimpleNamespace(versions=SimpleNamespace(get=lambda vid: SimpleNamespace(
+        base_path=None, project_name=None, parse_fingerprint=None, created_at=None)))
+    (tmp_path / "metadata.json").write_text('{"projectName": "FromDisk"}', encoding="utf-8")
+    assert ModelReader(db, "ver1", tmp_path).load("metadata")["projectName"] == "FromDisk"

@@ -987,6 +987,16 @@ def _read_engine_manifest(project_id: str, commit_sha: str) -> dict:
         return {}
 
 
+def _read_run_metadata(project_id: str, commit_sha: str) -> dict:
+    """The run's model/metadata.json ({basePath, projectName, generatedAt, version,
+    parseFingerprint}), or {}. Its fields are stored on the version row (PG-5: the file goes away)."""
+    try:
+        p = _commit_dir(project_id, commit_sha) / "model" / "metadata.json"
+        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _sync_model_to_db(db: Any, job: Any, version_id: str) -> None:
     """Persist the completed generation's model into the DB, keyed by the version.
 
@@ -1139,6 +1149,7 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
     # under; fall back to a fresh id only for callers that didn't reserve one.
     vid = getattr(job, "version_id", None) or f"ver{uuid.uuid4().hex[:8]}"
     reserved = db.versions.get(vid) if getattr(job, "version_id", None) else None
+    _meta = _read_run_metadata(job.project_id, job.commit_sha)
     version = Version(
         id=vid,
         project_id=project.id,
@@ -1159,6 +1170,10 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
         # Carry the per-version config stored at job start through finalize — _put replaces the
         # whole row, so rebuilding the Version without it would null versions.resolved_config.
         resolved_config=(reserved.resolved_config if reserved else None),
+        # Run metadata onto the version row (was model/metadata.json).
+        base_path=_meta.get("basePath"),
+        project_name=_meta.get("projectName"),
+        parse_fingerprint=_meta.get("parseFingerprint"),
     )
     # Finalize the row reserved at job start; create it if this flow didn't reserve one.
     if reserved is not None:

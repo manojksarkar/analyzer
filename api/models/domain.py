@@ -110,6 +110,12 @@ class Version:
     # version is reproducible and self-describing. Secrets (db, llm credentials) are NEVER put
     # here — they stay in engine/config/config.local.json. Maps to versions.resolved_config.
     resolved_config: Optional[dict] = None
+    # Run metadata — was model/metadata.json (PG-5: that file goes away). basePath/projectName
+    # identify what was parsed; parse_fingerprint is the clang-flag guard the incremental
+    # narrowed-parse checks against a baseline.
+    base_path: Optional[str] = None
+    project_name: Optional[str] = None
+    parse_fingerprint: Optional[str] = None
 
 
 @dataclass

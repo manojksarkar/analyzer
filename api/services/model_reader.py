@@ -8,6 +8,10 @@ rather than a second implementation of the blob-join + edge-rebuild logic. Impor
 ``incremental.*`` from the API follows existing practice (``services/git_cli.py``,
 ``services/pipeline_runner.py``).
 
+``metadata`` is the exception: it is *run* metadata rather than model entities, so it lives on the
+``versions`` row (``base_path`` / ``project_name`` / ``parse_fingerprint`` — the columns annotated
+"was metadata.json") and is rebuilt into the metadata.json shape by ``_pg_metadata``.
+
 Falls back to reading ``model/*.json`` from a directory when Postgres has nothing for the version
 (in-memory/json backends, or versions generated before the model moved to the DB).
 
@@ -25,7 +29,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 # model dict name (as used by doc_render / model/*.json) -> model_store loader name.
-# "metadata" has no DB equivalent (it is run metadata, not model entities) — disk only.
+# "metadata" is NOT here: it is run metadata rather than model entities, so it lives on the
+# `versions` row (base_path / project_name / parse_fingerprint) and is rebuilt by _pg_metadata.
 _PG_LOADERS = {
     "functions": "load_functions",
     "units": "load_units",
@@ -53,7 +58,28 @@ class ModelReader:
         self._pg_ok: Optional[bool] = None      # None = not probed yet
 
     # -- Postgres --------------------------------------------------------------
+    def _pg_metadata(self) -> Optional[dict]:
+        """Rebuild the metadata dict from the version row (was model/metadata.json). Returns None
+        when the version isn't in the DB or the fields were never populated (older versions)."""
+        try:
+            v = self.db.versions.get(self.version_id)
+        except Exception:
+            return None
+        if v is None:
+            return None
+        meta = {"basePath": getattr(v, "base_path", None),
+                "projectName": getattr(v, "project_name", None),
+                "parseFingerprint": getattr(v, "parse_fingerprint", None)}
+        if not any(meta.values()):
+            return None                                  # nothing stored -> let disk answer
+        created = getattr(v, "created_at", None)
+        if created is not None:
+            meta["generatedAt"] = created.isoformat()
+        return {k: val for k, val in meta.items() if val is not None}
+
     def _pg_load(self, name: str) -> Optional[dict]:
+        if name == "metadata":
+            return self._pg_metadata() if self.version_id else None
         loader_name = _PG_LOADERS.get(name)
         engine = getattr(self.db, "_engine", None)
         if loader_name is None or engine is None or not self.version_id:
