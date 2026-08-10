@@ -64,7 +64,10 @@ def _check_version(cx, row) -> bool:
         if blocking and not ok:
             blocking_ok = False
     if not blocking_ok:
-        print("    -> this version would FALL BACK TO DISK; re-run it after tools/db_setup.py")
+        print("    -> falls back to disk for the [FAIL] item(s) above. A version generated BEFORE "
+              "that\n       field was wired stays this way until it is re-run — it is not fixed by "
+              "db_setup.\n       Missing run metadata alone is benign: the document render falls "
+              "back to the project name.")
     return blocking_ok
 
 

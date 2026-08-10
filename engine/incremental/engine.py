@@ -321,7 +321,10 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     if not target:
         raise ValueError(f"commit {commit!r} not found in repo")
 
-    _versions = list_versions(project_id)
+    # A version can never be its own baseline: the API reserves this run's version row before the
+    # engine starts, so it would otherwise be offered as a candidate at its own commit (nearest
+    # possible match) -> 0 changed files -> nothing regenerated.
+    _versions = [v for v in list_versions(project_id) if v.get("versionId") != version_id]
     _ver_commit = {v["versionId"]: v["commit"] for v in _versions}   # real ver id -> commit (dir)
     decision = select_baseline(repo_dir, _versions, target, base_version_id)
     if decision["decision"] == "full":

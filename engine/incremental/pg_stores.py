@@ -126,13 +126,21 @@ def list_versions(engine, project_id: str) -> List[Dict[str, Any]]:
     `versionId` is the **real DB version id** (08): the engine runs under it and the store keys
     artifacts by it; `commit` is carried alongside for resolving the checkout dir. A version
     qualifies as a baseline once its generation finished (pipeline_status 'complete'); rows
-    written before the lifecycle change have a null pipeline_status and are treated so."""
+    written before the lifecycle change have a null pipeline_status and are treated so.
+
+    Rows still in review-status 'draft' are EXCLUDED. The API reserves the version row at job
+    start (so the job + entity FKs resolve during the run) and only flips it to 'in_review' on
+    completion, while pipeline_status is never written — so without this filter a running job's
+    OWN row is a baseline candidate at its own commit (the nearest possible match), producing a
+    0-changed-file diff that regenerates nothing."""
     v = s.versions
     out: List[Dict[str, Any]] = []
     with engine.connect() as cx:
-        for r in cx.execute(select(v.c.id, v.c.commit_sha, v.c.branch, v.c.pipeline_status)
+        for r in cx.execute(select(v.c.id, v.c.commit_sha, v.c.branch, v.c.pipeline_status, v.c.status)
                             .where(v.c.project_id == project_id)):
             if not r.commit_sha:
+                continue
+            if r.status == "draft":                  # reserved at job start; not yet generated
                 continue
             if r.pipeline_status not in (None, "complete"):
                 continue
