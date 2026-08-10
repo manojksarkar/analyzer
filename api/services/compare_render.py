@@ -78,10 +78,15 @@ def _version_render(db: Any, project: Any, doc: Any, version: Any,
     snap_key = version.id or (version.commit_sha or "")[:16]
     asset_base = f"projects/{project_id}/compare/assets/{snap_key}/{doc.group}"
     try:
+        # PG-7a: model for THIS version from Postgres when present, else the snapshot's model/.
+        from .model_reader import ModelReader
+        reader = ModelReader(db, getattr(version, "id", None),
+                             model_root if model_root.is_dir() else None)
         return doc_render.build_render(
             doc, project, version, group_dir, project_id,
             model_root=model_root if model_root.is_dir() else None,
             asset_base=asset_base,
+            model_reader=reader,
         )
     except Exception:
         return None

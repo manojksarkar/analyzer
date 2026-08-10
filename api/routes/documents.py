@@ -16,6 +16,7 @@ from ..middleware.auth import get_current_user, require_project_admin, require_p
 from ..models.domain import User, DocumentAssignment
 from ..services.errors import not_found, forbidden
 from ..services import doc_render
+from ..services.model_reader import ModelReader
 from ..schemas import (
     DocStatsResponse, DocumentListResponse, RenderResponse,
     DocumentDetailResponse, DocumentResponse, AssigneesResponse,
@@ -300,8 +301,13 @@ def render_document(
             commit_model = out_root.parent / "model"
             if commit_model.is_dir():
                 model_root = commit_model
+        # PG-7a: serve the model for THIS version from Postgres when it's there, falling back to
+        # the disk dir resolved above (so behaviour is unchanged without a SQL backend).
+        reader = ModelReader(db, version.id if version else None,
+                             model_root or (doc_render._REPO_ROOT / "model"))
         return {"document": doc_render.build_render(
-            doc, project, version, group_dir, project_id, model_root=model_root)}
+            doc, project, version, group_dir, project_id, model_root=model_root,
+            model_reader=reader)}
 
     sections = db.documents.list_sections(doc_id)
     return {"document": _render_doc_dict(doc, sections, project, version)}

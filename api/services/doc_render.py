@@ -571,13 +571,18 @@ def intro_section_from_config(components: list[str], project_name: str) -> dict:
 
 def build_render(doc, project, version, group_dir: Path, project_id: str,
                  *, model_root: Optional[Path] = None,
-                 asset_base: Optional[str] = None) -> dict:
+                 asset_base: Optional[str] = None,
+                 model_reader: Optional[Any] = None) -> dict:
     """Build a rich {cover, toc, sections, meta} payload mirroring the DOCX structure.
 
     ``model_root`` overrides where model/*.json is read from (defaults to the live
     ``model/`` dir); ``asset_base`` overrides the URL prefix used for diagram assets
     (defaults to the live document-asset route). Both let the compare engine build
     a render from a per-version snapshot instead of the live working tree.
+
+    ``model_reader`` (PG-7a) is a ``services.model_reader.ModelReader`` that serves the model
+    from Postgres for THIS version, falling back to ``model_root``/the live dir. When omitted the
+    model is read from disk exactly as before.
     """
     group = doc.group
     if asset_base is None:
@@ -595,13 +600,16 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
     for uk in unit_names:
         comps.setdefault(uk.split(KEY_SEP, 1)[0], []).append(uk)
 
-    # Load model files
+    # Load model files — via the version-scoped reader (Postgres-first) when supplied,
+    # else straight from disk as before.
     model_dir = model_root or (_REPO_ROOT / "model")
-    units_data = _load_model_json(model_dir, "units")
-    dd_data = _load_model_json(model_dir, "dataDictionary")
-    globals_data = _load_model_json(model_dir, "globalVariables")
-    functions_data = _load_model_json(model_dir, "functions")
-    meta_data = _load_model_json(model_dir, "metadata")
+    _load = model_reader.load if model_reader is not None else (
+        lambda name: _load_model_json(model_dir, name))
+    units_data = _load("units")
+    dd_data = _load("dataDictionary")
+    globals_data = _load("globalVariables")
+    functions_data = _load("functions")
+    meta_data = _load("metadata")
     project_name = meta_data.get("projectName") or project.name
 
     # Load config + abbreviations
