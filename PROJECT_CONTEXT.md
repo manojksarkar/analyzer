@@ -173,6 +173,35 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-10 (`db-with-increment-changes`: **storage cutover, reader half — PG-5a/5b/7a.** The API no
+> longer depends on disk snapshots for the model or the Phase-3 views; disk remains as a fallback until the
+> dual-writes are removed (PG-7b). Three increments, each additive + gated:
+> **PG-5a** — new **`version_output_files`** table (composite PK `version_id`+`rel_path`, text `content`,
+> `group_name`); `model_store.persist_output_files` walks the run's `output/` and stores every TEXT file
+> (interface tables, flowchart + unit-diagram `.mmd`, behaviour rows), skipping binaries (PNG/DOCX stay files,
+> D-14); `PgStore.capture_output` overrides the base disk capture to also persist, best-effort.
+> **PG-5b** — new **`api/services/output_reader.py::OutputReader(db, version_id, snap_dir)`**: reads view text
+> files **Postgres-first** (queries `version_output_files` through `db._engine`, self-contained — no engine
+> import) with disk fallback. `compare_engine._groups/_itf` now take a reader; `compute_compare` +
+> `compute_document_sections_diff` build one per version; the gate flipped from "snapshot dir exists" to "the
+> reader yields groups", so a version whose views live only in PG compares correctly.
+> **PG-7a** — new **`api/services/model_reader.py::ModelReader(db, version_id, model_dir)`**: serves
+> functions/units/globals/dataDictionary from Postgres via the engine's `incremental.model_store` loaders
+> (delegation, not a second manifest-of-pointers implementation; API→`incremental.*` imports already exist in
+> `services/git_cli.py` + `pipeline_runner.py`), disk fallback. Wired through a new optional
+> `build_render(..., model_reader=)` kwarg (omitted → disk exactly as before) from the documents render route
+> and `compare_render._version_render`. **Fixed a staleness bug**: repo-backed projects passed
+> `model_root=None`, so `build_render` read the **shared repo `model/` dir** (whatever the LAST run left) — an
+> older version's document could render against a newer version's model; reads are now keyed by `version_id`.
+> **Field parity**: the DB carries `entity_versions.is_visible` (default True) as `isVisible` while the
+> renderers filter on `hidden` — ModelReader translates `isVisible=False → hidden=True` (behaviour-identical
+> today, since the on-disk model carries neither field); `metadata` has no DB equivalent and stays disk-only.
+> Tests: `tests/api/test_output_reader.py`, `tests/api/test_model_reader.py`, `tests/unit/test_output_files_store.py`.
+> Suite green (183) + `verify_incremental` gate green. **Remaining → PG-7b (destructive, after office
+> validation):** drop `_sync_model_to_db`, the model/output dual-writes, the commit-dir layout, `api/db/data`,
+> `JsonDatabase`; migrate the `functions` route + `compare_render`'s remaining disk asset paths.
+> **Ops note:** the new table is additive — re-run `tools/db_setup.py` (idempotent `create_all`) to create it.)
+
 > Updated: 2026-08-09 (`db-with-increment-changes`: **config redesign — three sources, three roles** (see §6).
 > Problem: `config.json` + `config.local.json` overlapped (both could hold any key), and per-version analysis
 > config had no home. Fix, two commits: **(1)** renamed the base `engine/config/config.json` →

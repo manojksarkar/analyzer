@@ -245,8 +245,11 @@ The blocker isn't `subprocess`, it's that `engine/flowchart/llm/` **shadows** `l
 | **PG-3** | **Version identity (D-3)**: required+unique version, 409, delete the `v0.N.0` fallback and `-1` loop ([pipeline_runner.py:1008-1011](api/services/pipeline_runner.py#L1008)), **decouple `--project-name`** from the version ([:615](api/services/pipeline_runner.py#L615)), **split checkout (per commit) from artifacts (per version)**, engine `--version` |
 | **PG-4** | Postgres `VersionStore/HashStore/EdgeStore/ReuseIndex`; `project_db` → Postgres; **engine writes directly** |
 | **PG-5** ⭐ | **Combined touch**: `ModelStore` (phases persist/read the model) **+ Workstream C** (in-process flowchart) **+ `fetch_context`** **+ delete `clang_include_paths.json`/`metadata.json`** and their 7 call sites |
-| **PG-6** | Incremental on Postgres (§E) |
-| **PG-7** | Cutover: remove `api/db/data`, fresh-start onboarding, docs |
+| **PG-5a** ✅ | View outputs → PG: `version_output_files` table + `model_store.persist_output_files` + `PgStore.capture_output` (disk write kept) |
+| **PG-5b** ✅ | `OutputReader` (PG-first, disk fallback); **compare** reads interface tables from PG |
+| **PG-7a** ✅ | `ModelReader` (PG-first via `model_store` loaders, disk fallback); **document render + compare render** read the model from PG, version-scoped |
+| **PG-6** | Incremental on Postgres (§E) — validate 2-commit reuse/regen + compare against a live PG |
+| **PG-7b** | Cutover (destructive): drop `_sync_model_to_db`, model/output dual-writes, commit-dir layout, `api/db/data`, `JsonDatabase`; migrate the `functions` route + remaining disk asset paths; fresh-start onboarding, docs |
 
 ### E — Incremental on Postgres
 Code is **complete** (M1–M4 + PERF caches, no TODOs). Remaining is storage + identity + validation:
