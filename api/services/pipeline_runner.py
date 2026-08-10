@@ -38,6 +38,7 @@ from typing import Any, Optional, Set
 
 from ..models.domain import Version, Document
 from . import git_cli
+from .model_reader import ModelReader
 from .settings import get_settings
 
 UTC = timezone.utc
@@ -1041,8 +1042,10 @@ def _complete(db: Any, job_id: str) -> None:
     version.docs_count = len(docs)
     db.versions.update(version)
 
-    _load_and_register_functions(db, job, version.id)
+    # Sync FIRST, then register: _load_and_register_functions reads the model Postgres-first, so
+    # the model has to be in the DB before it runs (it falls back to disk either way).
     _sync_model_to_db(db, job, version.id)
+    _load_and_register_functions(db, job, version.id)
 
     job.status = "complete"
     job.phase = 4
@@ -1266,40 +1269,33 @@ def _resolve_ref_commit(db: Any, version_id: Optional[str]) -> Optional[str]:
     return v.commit_sha if v else None
 
 
-def _baseline_fn_keys(project_id: str, reference_commit: str) -> Optional[Set[str]]:
-    """Return the set of function dict-keys from the baseline commit's model, or None."""
-    path = _commit_dir(project_id, reference_commit) / "model" / "functions.json"
-    if not path.exists():
-        return None
-    try:
-        with path.open(encoding="utf-8") as f:
-            raw = json.load(f)
-        return set(raw.keys()) if isinstance(raw, dict) else None
-    except Exception:
-        return None
+def _baseline_fn_keys(db: Any, project_id: str, reference_commit: Optional[str],
+                      reference_version_id: Optional[str] = None) -> Optional[Set[str]]:
+    """The set of function dict-keys from the baseline's model — Postgres-first (by version id),
+    falling back to the baseline commit dir's functions.json. None when neither has it."""
+    model_dir = (_commit_dir(project_id, reference_commit) / "model") if reference_commit else None
+    raw = ModelReader(db, reference_version_id, model_dir).load("functions")
+    return set(raw.keys()) if isinstance(raw, dict) and raw else None
 
 
 def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
-    """Read model/functions.json and register functions in the DB under the job's id."""
+    """Register this version's functions in the DB under the job's id.
+
+    The model is read Postgres-first for `version_id` (the run persisted it via PgStore /
+    _sync_model_to_db), falling back to the commit dir's model/functions.json."""
     from ..models.domain import Function
 
-    path = _commit_dir(job.project_id, job.commit_sha) / "model" / "functions.json"
-    if not path.exists():
-        return
-    try:
-        with path.open(encoding="utf-8") as f:
-            raw = json.load(f)
-    except Exception:
-        return
-    if not isinstance(raw, dict):
+    model_dir = _commit_dir(job.project_id, job.commit_sha) / "model"
+    raw = ModelReader(db, version_id, model_dir).load("functions")
+    if not isinstance(raw, dict) or not raw:
         return
 
     ref_keys: Optional[Set[str]] = None
     if getattr(job, "reference_version_id", None):
-        # reference_version_id is an API Version.id; _baseline_fn_keys/_commit_dir
-        # expect a commit sha. Translate (fall back to raw → resolves to None, as before).
-        ref_commit = _resolve_ref_commit(db, job.reference_version_id) or job.reference_version_id
-        ref_keys = _baseline_fn_keys(job.project_id, ref_commit)
+        # reference_version_id is an API Version.id; the disk fallback keys by commit sha, so
+        # translate for it while the DB path uses the version id directly.
+        ref_commit = _resolve_ref_commit(db, job.reference_version_id)
+        ref_keys = _baseline_fn_keys(db, job.project_id, ref_commit, job.reference_version_id)
 
     functions: list[Function] = []
     for fn_key, fn_data in raw.items():
