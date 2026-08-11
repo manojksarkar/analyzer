@@ -554,12 +554,11 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         pass
 
     # Capture artifacts + snapshots, seed the reuse index, finalize the manifest.
-    documents = vstore.capture_artifacts(commit_key, model_dir=model_dir,
-                                         output_dir=_paths().output_dir)
     # Structured model (+ hashes + edges) -> store, keyed by the real ver id; this is what the
-    # NEXT run reads as its baseline. Commit-dir copy (capture above) stays for the API/readers.
+    # NEXT run reads as its baseline (Postgres under PgStore, versions/<ver…>/model under FileStore).
     store.write_model(version_id, model_dir)
-    store.capture_output(version_id, _paths().output_dir)   # output -> versions/<ver id>/ (readers, step 3)
+    # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
+    documents = store.capture_output(version_id, _paths().output_dir)
     llm = cfg.get("llm") or {}
     # Content-only reuse key (recipe intentionally not folded in — approved outputs are
     # reused regardless of which model/prompt produced them). Reuse the fingerprints

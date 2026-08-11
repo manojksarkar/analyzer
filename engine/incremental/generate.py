@@ -242,12 +242,12 @@ def generate_full(
 
     # 4. capture artifacts (model/output/documents) + hashes/edges snapshots
     output_dir = _paths().output_dir
-    documents = vstore.capture_artifacts(commit_key, model_dir=model_dir, output_dir=output_dir)
     # Structured model (+ hashes + edges) -> the store, keyed by the real ver id. This is what
     # the NEXT run reads as its baseline (store.read_hashes/functions), replacing the on-disk
-    # HashStore/EdgeStore. The commit-dir copy (capture above) stays for the API/readers.
+    # HashStore/EdgeStore. Postgres under PgStore; versions/<ver…>/model under FileStore.
     store.write_model(version_id, model_dir)
-    store.capture_output(version_id, output_dir)   # rendered output -> versions/<ver id>/ (readers, step 3)
+    # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
+    documents = store.capture_output(version_id, output_dir)
     import json
     hashes = json.load(open(os.path.join(model_dir, "hashes.json"), encoding="utf-8"))
     edges = json.load(open(os.path.join(model_dir, "edges.json"), encoding="utf-8"))

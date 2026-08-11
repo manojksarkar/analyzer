@@ -38,6 +38,7 @@ from typing import Any, Optional, Set
 
 from ..models.domain import Version, Document
 from . import git_cli
+from . import doc_render
 from .model_reader import ModelReader
 from .settings import get_settings
 
@@ -973,9 +974,27 @@ def _is_cancelled(db: Any, job_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def _commit_dir(project_id: str, commit_sha: str) -> Path:
-    """The per-commit version dir workspaces/<pid>/<commit[:16]> — the git checkout PLUS the
-    model/ output/ manifest the incremental engine writes for that commit (== version)."""
+    """The per-commit dir workspaces/<pid>/<commit[:16]> — the git checkout, plus the manifest
+    the incremental engine writes for that commit."""
     return get_settings().repo_root / "workspaces" / project_id / (commit_sha or "")[:16]
+
+
+def _version_dir(project_id: str, version_id: Optional[str]) -> Optional[Path]:
+    """workspaces/<pid>/versions/<ver…> — where the run captures its artifacts (08 step 3)."""
+    if not version_id:
+        return None
+    return get_settings().repo_root / "workspaces" / project_id / "versions" / version_id
+
+
+def _version_model_dir(project_id: str, commit_sha: str, version_id: Optional[str]) -> Optional[Path]:
+    """The dir holding a version's model/*.json — the DISK fallback for ModelReader when the model
+    isn't in Postgres. Prefers versions/<ver…>/model (what FileStore.write_model writes), falling
+    back to the commit dir for versions produced under the older layout. None when neither exists."""
+    vdir = _version_dir(project_id, version_id)
+    if vdir is not None and (vdir / "model").is_dir():
+        return vdir / "model"
+    d = _commit_dir(project_id, commit_sha) / "model"
+    return d if d.is_dir() else None
 
 
 def _read_engine_manifest(project_id: str, commit_sha: str) -> dict:
@@ -1018,7 +1037,10 @@ def _complete(db: Any, job_id: str) -> None:
 
     version = _make_version(db, project, job, now, manifest)
     docs = _make_documents(db, project, version, now)
-    _make_sections(db, docs, now, _commit_dir(job.project_id, job.commit_sha) / "output")
+    # Section seeding reads this version's rendered output — the version-keyed dir when the run
+    # captured one, else the legacy commit dir (doc_render.commit_output_root resolves both).
+    _out_root = doc_render.commit_output_root(job.project_id, job.commit_sha, version.id)
+    _make_sections(db, docs, now, _out_root or (_commit_dir(job.project_id, job.commit_sha) / "output"))
     version.docs_count = len(docs)
     db.versions.update(version)
 
@@ -1251,8 +1273,8 @@ def _resolve_ref_commit(db: Any, version_id: Optional[str]) -> Optional[str]:
 def _baseline_fn_keys(db: Any, project_id: str, reference_commit: Optional[str],
                       reference_version_id: Optional[str] = None) -> Optional[Set[str]]:
     """The set of function dict-keys from the baseline's model — Postgres-first (by version id),
-    falling back to the baseline commit dir's functions.json. None when neither has it."""
-    model_dir = (_commit_dir(project_id, reference_commit) / "model") if reference_commit else None
+    falling back to the baseline's model/functions.json on disk. None when neither has it."""
+    model_dir = _version_model_dir(project_id, reference_commit or "", reference_version_id)
     raw = ModelReader(db, reference_version_id, model_dir).load("functions")
     return set(raw.keys()) if isinstance(raw, dict) and raw else None
 
@@ -1261,10 +1283,10 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
     """Register this version's functions in the DB under the job's id.
 
     The model is read Postgres-first for `version_id` (the run persisted it via PgStore /
-    PgStore.write_model during the run), falling back to the commit dir's model/functions.json."""
+    PgStore.write_model during the run), falling back to this version's model/functions.json."""
     from ..models.domain import Function
 
-    model_dir = _commit_dir(job.project_id, job.commit_sha) / "model"
+    model_dir = _version_model_dir(job.project_id, job.commit_sha, version_id)
     raw = ModelReader(db, version_id, model_dir).load("functions")
     if not isinstance(raw, dict) or not raw:
         return
@@ -1319,8 +1341,14 @@ def _do_reexport(db: Any, job_id: str) -> None:
         return
 
     root = get_settings().repo_root
-    cdir = _commit_dir(job.project_id, job.commit_sha)   # the version dir (model/output live here)
-    if not (cdir / "model").is_dir():
+    cdir = _commit_dir(job.project_id, job.commit_sha)   # the git CHECKOUT (run.py's project dir)
+    # This version's ARTIFACTS (model/output) — the version-keyed dir when the run captured one,
+    # else the legacy commit dir. Kept distinct from the checkout above: run.py parses source from
+    # the checkout, while model/output are per-version.
+    adir = _version_dir(job.project_id, getattr(job, "version_id", None))
+    if adir is None or not (adir / "model").is_dir():
+        adir = cdir
+    if not (adir / "model").is_dir():
         _mark_failed(db, job_id, "Version model not found — generate this version first.")
         return
 
@@ -1334,10 +1362,10 @@ def _do_reexport(db: Any, job_id: str) -> None:
             return
 
     # Re-export = run.py Phase 4 (--use-model). run.py reads model/output from the repo root,
-    # so stage THIS version's commit-dir model+output there first, then capture the
-    # re-rendered output back into the commit dir.
+    # so stage THIS version's model+output there first, then capture the re-rendered output back
+    # into the version's artifact dir.
     for sub in ("model", "output"):
-        src, dst = cdir / sub, root / sub
+        src, dst = adir / sub, root / sub
         if src.is_dir():
             shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(src, dst)
@@ -1348,4 +1376,4 @@ def _do_reexport(db: Any, job_id: str) -> None:
     if _execute_subprocess(db, job_id, cmd, phase_start=4):
         out = root / "output"
         if out.is_dir():
-            shutil.copytree(out, cdir / "output", dirs_exist_ok=True)
+            shutil.copytree(out, adir / "output", dirs_exist_ok=True)
