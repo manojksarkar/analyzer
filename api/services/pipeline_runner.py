@@ -998,31 +998,11 @@ def _read_run_metadata(project_id: str, commit_sha: str) -> dict:
         return {}
 
 
-def _sync_model_to_db(db: Any, job: Any, version_id: str) -> None:
-    """Persist the completed generation's model into the DB, keyed by the version.
-
-    Gated on the SQL backend (only `SqlDatabase` exposes `_engine`), so the in-memory /
-    JSON flows are completely unaffected. Best-effort during the migration: a sync
-    failure logs but never fails the job (the file model remains authoritative until the
-    DB-native cutover). Once Phase 1/2 write the DB directly this bridge goes away.
-    """
-    engine = getattr(db, "_engine", None)
-    if engine is None:
-        return
-    try:
-        import sys
-        eng_dir = os.path.join(str(get_settings().repo_root), "engine")
-        if eng_dir not in sys.path:
-            sys.path.insert(0, eng_dir)
-        from incremental.model_store import persist_model_from_dir
-        model_dir = _commit_dir(job.project_id, job.commit_sha) / "model"
-        if not model_dir.is_dir():
-            return
-        with engine.begin() as cx:
-            persist_model_from_dir(cx, job.project_id, version_id, str(model_dir))
-        _append_log(job.id, "Model synced to the database.")
-    except Exception as exc:                                      # best-effort (transition)
-        _append_log(job.id, f"DB model sync skipped: {exc}")
+# _sync_model_to_db was removed in the PG-7b cutover: it re-persisted the completed run's
+# model/ dir into Postgres from the API side, but the engine already writes the model to the DB
+# during the run (`PgStore.write_model`, engine.py/generate.py). Both were gated on the same
+# condition — `_engine_db_env` only hands the engine a DATABASE_URL when the API is on the SQL
+# backend — so the API-side sync was always a redundant second write of data already stored.
 
 
 def _complete(db: Any, job_id: str) -> None:
@@ -1042,9 +1022,8 @@ def _complete(db: Any, job_id: str) -> None:
     version.docs_count = len(docs)
     db.versions.update(version)
 
-    # Sync FIRST, then register: _load_and_register_functions reads the model Postgres-first, so
-    # the model has to be in the DB before it runs (it falls back to disk either way).
-    _sync_model_to_db(db, job, version.id)
+    # The engine already persisted the model to Postgres during the run (PgStore.write_model), so
+    # this reads it straight back (falling back to the run's model/ dir when there is no DB).
     _load_and_register_functions(db, job, version.id)
 
     job.status = "complete"
@@ -1282,7 +1261,7 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
     """Register this version's functions in the DB under the job's id.
 
     The model is read Postgres-first for `version_id` (the run persisted it via PgStore /
-    _sync_model_to_db), falling back to the commit dir's model/functions.json."""
+    PgStore.write_model during the run), falling back to the commit dir's model/functions.json."""
     from ..models.domain import Function
 
     model_dir = _commit_dir(job.project_id, job.commit_sha) / "model"
