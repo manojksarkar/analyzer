@@ -172,6 +172,52 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-10 (**flowchart labels: every call is named, always as `Name()`.** Reported symptom: a
+> node that calls a function sometimes rendered as the call (`Call ServerReplicate(...)`), sometimes as pure
+> prose (`Replicate server state`) — a per-node coin flip. **Root cause: two contradictory rules in the same
+> system prompt.** `prompts.py` rule 2 said the label MUST name a callee ("Call ServerReplicate(...)"), while
+> the ABSTRACTION GUIDELINE listed that exact shape as its **Bad** example and dropped the name in the
+> **Good** rewrite. Three amplifiers: (a) the rule keyed off `called_functions`, which
+> `NodeEnricher._resolve_calls` only emits for callees in `calls_ids` that also resolve in the PKB, capped at
+> 3 — external/unresolved/4th-plus calls were never covered; (b) `_fallback_label` returns raw C++ for ACTION
+> nodes, and `_looks_like_fallback` prefix-sniffed `Check: `/`Loop: ` only, so ACTION fallbacks went
+> uncounted; (c) the coherence pass fixes labels "too literal *or* too abstract" (either direction) and only
+> runs at ≥5 labels, so small functions were never normalised.
+> **The rule now:** a label is descriptive prose naming **every** call, each written `Name()` — arguments
+> always stripped, uniform rendering, shorter against the 26-char DOT wrap. Phrasing is **not** a fixed
+> connector: `via X()` is wrong wherever the callee doesn't perform the action (in `functionX()->timeSlot =
+> False` it only returns the object being written). The prompt carries a **shape → phrasing table** — call
+> does the work → "with/using `Name()`"; call only supplies an object/value → "in `fnX()`" / "by calling
+> `fnJ()`" — plus an explicit *don't stamp one connector on every node*.
+> **New `engine/flowchart/cpp_tokens.py`** is the single definition of "a call": `CPP_KEYWORDS` (moved out of
+> `prompts.py`), `extract_call_names()` (source order, deduped, receiver kept: `doc.AddMember`, `Ops::fn`),
+> `render_call()`, `short_name()`. Excluded: keywords, casts, ALL-CAPS macros (logging/assert/`MAX`), lowercase
+> `assert`. **Constructors can't be told from calls textually** (`Point(1,2)` vs `process(1,2)`), so the
+> enricher passes known struct/enum/typedef names as `exclude=`. `NodeEnricher` now emits `ctx["call_names"]`
+> (complete) beside `function_calls` (PKB-described, capped) — the naming rule keys off the former.
+> **`generator.enforce_call_names(cfg)`** runs LAST in `label_cfg`, *after* the coherence pass so a rewrite
+> can't strip names back out: it normalises existing mentions to `Name()` and appends only missing ones as a
+> trailing `<br/>Calls: X()` segment (deliberately not a connector phrase — the pass can't know where the name
+> belongs in the sentence). **Prose-safety rule:** a bare word matching a call name is only converted when it
+> **cannot** be read as English (`_is_identifier_shaped`: qualified/member, snake_case, or an internal
+> capital). Otherwise "Validate the request" would become "Validate() the request"; ambiguous bare words count
+> as *absent* and get appended instead. Also: `_looks_like_fallback` replaced by a `self._fallback_ids` set
+> populated where fallbacks are applied; coherence prompt gained *never remove a function name*; DECISION
+> rule 3 no longer tells the model to drop the name via camelCase decomposition.
+> **No cache bump needed** — flowchart-level reuse is unimplemented (M2.4; `_CARRY_FIELDS` excludes
+> flowcharts, `generate.py` reports `carried: 0`), so flowcharts fully regenerate every run and `.dot_cache` is
+> content-addressed. `engine/few_shot_examples/labels/` updated (`02_action_sequence` had the old
+> name-dropping output; new `04_call_shapes`) — note **nothing reads that pool today**: `FewShotPool.select` is
+> called once, for `"descriptions"`. Tests: `tests/unit/test_call_name_labels.py`; 653 unit tests pass.
+> **Fixture:** `SampleCppProject` had **no `fn()->field` code at all**, so the hardest shape was unproven on
+> real input. Added `FlowSlot_t` + `flowSlotHandle()` and four functions to `Layer1/Flow/Flowcharts.{h,cpp}`
+> — `fnCallResultFieldWrite/Read/Address/Mixed` — covering write/read/address-of/branching, all called from
+> `runFlowTests()` so they have callers. `Layer1/Flow` is in the **Full** group; the e2e snapshots are group
+> **"My Sample"** (Core/Lib/Util), so `tests/snapshots/` is unaffected. Verified with a real LLM run
+> (qwen2.5-coder:14b): `flowSlotHandle()->timeSlot = slot` → *"Set time slot in flowSlotHandle() to value"*,
+> `&flowSlotHandle()->retryCount` → *"Return address of retry count in flowSlotHandle()"* — **zero repairs
+> fired**, and the struct member comments surfaced as "time slot"/"retry count" via `struct_member_context`.)
+
 > Updated: 2026-08-07 (**macro ingestion: JSON input + per-layer scoping + the API/UI path that was
 > silently dropping defines.** Branch `feat/macros-json-per-layer` off `poc-4`. Closes backlog **S3-1**.
 > **(1) One reader — `engine/core/macro_input.py`.** `--macros` took a 2-column CSV only; the client hands
@@ -2376,8 +2422,31 @@ Wraps the **real flowchart engine** under `engine/flowchart/`. Steps:
 
 ## 13. The flowchart engine — `engine/flowchart/`
 
-A self-contained C++ → Mermaid CFG generator. Invoked as a subprocess by the
-`flowcharts` view but can also run standalone.
+A self-contained C++ → Graphviz **DOT** CFG generator (switched from Mermaid
+2026-07-27; the `FlowchartResult.mermaid_script` field name is kept for schema
+compat but carries DOT). Invoked as a subprocess by the `flowcharts` view but
+can also run standalone.
+
+### Label policy (2026-08-10)
+
+**A label is descriptive prose that names every function the node calls, each
+written `Name()` with arguments stripped.** Held constant: the content (every
+call present, uniform `Name()` form). Not constant: the phrasing — the name
+goes where the code puts it, because `via X()` misattributes the action
+whenever the callee only supplies an object rather than performing the work.
+
+| C++ shape | What the call does | Label |
+|---|---|---|
+| `sz = functionJ();` | supplies a value | Get somethingZ by calling `functionJ()` |
+| `functionX()->timeSlot = False;` | supplies the object written | Set the time slot in `functionX()` to False |
+| `sa = &functionA()->sa;` | supplies the object read | Update sa with the address of sa in `functionA()` |
+| `ServerReplicate(part, id);` | **is** the action | Replicate partition state with `ServerReplicate()` |
+
+Enforced in three places that must agree, all keyed off
+[cpp_tokens.py](engine/flowchart/cpp_tokens.py): the enricher declares
+`call_names`, the prompt requires every one of them, and
+`enforce_call_names` verifies/repairs afterwards. **Not named** (each has its
+own prompt rule): logging macros, assertions, casts, constructors.
 
 ### Subpackage layout
 
@@ -2386,6 +2455,8 @@ engine/flowchart/
   flowchart_engine.py        Main entry, orchestrates per-function pipeline
   project_scanner.py         Standalone scanner that builds project_knowledge.json
   config.py                  EngineConfig dataclass (CLI defaults)
+  cpp_tokens.py              Single definition of "a call": CPP_KEYWORDS,
+                             extract_call_names / render_call / short_name
   models.py                  CfgNode / CfgEdge / ControlFlowGraph / FunctionEntry / …
   ast_engine/
     parser.py                SourceExtractor + TranslationUnitParser
@@ -2441,6 +2512,12 @@ engine/flowchart/
    `tests/diagnose_assert.py`** — the linter has previously reverted this fix.
 6. **Enrichment** — `NodeEnricher.enrich(cfg, func_entry)` attaches PKB
    context (callee descriptions, type meanings, project-knowledge comments).
+   Also emits **`call_names`** — every call in the node via
+   `cpp_tokens.extract_call_names`, in source order, receiver kept
+   (`doc.AddMember`), with known type names excluded so constructors don't
+   register as calls. This is the list the label naming rule is written
+   against; `function_calls` is a PKB-resolved subset capped at 3 and carries
+   descriptions only.
 7. **Optional CFG simplification** (version3) — if
    `llm.enrichment.cfgSimplification=true` and the CFG has >15 labelable
    nodes, `LabelGenerator._simplify_cfg()` asks the LLM for a merge/drop
@@ -2479,9 +2556,27 @@ engine/flowchart/
    `_fits_coherence_budget()` using the authoritative
    `self._max_context_tokens` — no more `getattr(client, "_num_ctx", 8192)`
    fallback.
+9b. **Call-name enforcement** — `generator.enforce_call_names(cfg)`,
+    deterministic, no LLM. Runs **last**, after the coherence pass, so a
+    coherence rewrite can't strip a name back out. Two steps per node:
+    normalise existing mentions to `Name()` (arguments stripped, bare
+    identifiers parenthesised), then append names with no mention at all as a
+    trailing `<br/>Calls: X()` segment. The appended form is deliberately not
+    a connector phrase — the pass can't know where the name belongs in the
+    sentence, and inventing one produces the mechanical "… via X()" filler the
+    prompt forbids. **Prose safety:** a bare word is only converted when
+    `_is_identifier_shaped` says it can't be English (qualified/member,
+    snake_case, or an internal capital), otherwise "Validate the request"
+    becomes "Validate() the request"; ambiguous bare words count as absent and
+    are appended instead. Also normalises the raw-C++ fallback labels
+    (`result = add(result, a)` → `result = add()`). A per-function append count
+    is logged — a high count means the prompt isn't landing, which is the thing
+    to fix, not this pass.
 10. **Validation** — `validate_cfg(cfg)` then `validate_mermaid(script)`.
     Failures are logged at WARNING but don't abort the run.
-11. **Build Mermaid** — `build_mermaid(cfg)`.
+11. **Build DOT** — `build_dot(cfg)`. (`_escape` turns `<br/>` into the DOT
+    line-break sequence, which is how the enforcement pass's appended segment
+    renders.)
 
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 

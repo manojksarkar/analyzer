@@ -212,6 +212,44 @@ PRIVATE int fnLoopNestedIfElse(int n) {
     return s;
 }
 
+// Calls whose result is an object, not the action itself. The label must still
+// name the call as Name(), but the verb belongs to the statement — see
+// "Label Policy" in engine/flowchart/README.md.
+
+static FlowSlot_t g_flowSlot;
+
+PRIVATE FlowSlot_t* flowSlotHandle() {
+    return &g_flowSlot;
+}
+
+// fn()->field = value  — the call supplies the object being written
+PRIVATE void fnCallResultFieldWrite(int slot) {
+    flowSlotHandle()->timeSlot = slot;
+    flowSlotHandle()->active = 0;
+}
+
+// x = fn()->field  — the call supplies the object being read
+PRIVATE int fnCallResultFieldRead() {
+    return flowSlotHandle()->timeSlot;
+}
+
+// p = &fn()->field  — address of a member of the returned object
+PRIVATE int* fnCallResultFieldAddress() {
+    int* p = &flowSlotHandle()->retryCount;
+    return p;
+}
+
+// Both shapes plus a branch, so the CFG is not one straight line
+PRIVATE int fnCallResultMixed(int delta) {
+    int base = fnCallResultFieldRead();
+    if (base < 0) {
+        flowSlotHandle()->retryCount = 0;
+        return 0;
+    }
+    flowSlotHandle()->retryCount = base + delta;
+    return flowSlotHandle()->retryCount;
+}
+
 PUBLIC int runFlowTests() {
     int total = 0;
     total += fnIfSimple(5);
@@ -233,5 +271,9 @@ PUBLIC int runFlowTests() {
     total += fnDeeplyNested(1, 1, 1);
     total += fnMultipleReturns(3, 2);
     total += fnLoopNestedIfElse(9);
+    fnCallResultFieldWrite(7);
+    total += fnCallResultFieldRead();
+    total += *fnCallResultFieldAddress();
+    total += fnCallResultMixed(3);
     return total;
 }

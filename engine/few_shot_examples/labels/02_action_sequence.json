@@ -1,5 +1,5 @@
 {
-  "tags": ["action", "json", "initialization", "sequence"],
-  "input_context": "Nodes N3, N4, N5 all operate on 'doc' (data_flow_shared).\nN3 (ACTION): doc.SetObject();\nN4 (ACTION): doc.AddMember(\"initiator\", initiatorId, alloc);\nN5 (ACTION): doc.AddMember(\"count\", iuCount, alloc);\nphase_hint: build JSON request body for replication",
-  "ideal_output": "{\"N3\": \"Initialize JSON document as object\", \"N4\": \"Add initiator ID to JSON body\", \"N5\": \"Add I/O unit count to JSON body\"}"
+  "tags": ["action", "json", "initialization", "sequence", "call_names"],
+  "input_context": "Nodes N3, N4, N5 all operate on 'doc' (data_flow_shared).\nN3 (ACTION): doc.SetObject();            call_names: [\"doc.SetObject()\"]\nN4 (ACTION): doc.AddMember(\"initiator\", initiatorId, alloc);  call_names: [\"doc.AddMember()\"]\nN5 (ACTION): doc.AddMember(\"count\", iuCount, alloc);          call_names: [\"doc.AddMember()\"]\nphase_hint: build JSON request body for replication",
+  "ideal_output": "{\"N3\": \"Initialize the JSON document with doc.SetObject()\", \"N4\": \"Add the initiator ID to the body using doc.AddMember()\", \"N5\": \"Append the I/O unit count with doc.AddMember()\"}"
 }

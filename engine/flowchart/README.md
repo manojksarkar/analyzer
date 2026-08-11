@@ -45,7 +45,8 @@ functions.json          metadata.json         project_knowledge.json
  │                          |                                  │
  │  3. Enrichment       (enrichment/)                          │
  │     Each node is enriched with extra context:               │
- │       - Function calls within the node                      │
+ │       - call_names: EVERY call in the node (cpp_tokens.py)  │
+ │       - Function calls within the node (PKB descriptions)   │
  │       - Inline source comments                              │
  │       - Enum / macro / typedef / struct member info         │
  │                          |                                  │
@@ -59,6 +60,11 @@ functions.json          metadata.json         project_knowledge.json
  │       - Neighbor node code (preceding / following)          │
  │       - Data-flow shared variables across the batch         │
  │     A coherence pass normalises labels across all batches   │
+ │                          |                                  │
+ │  4b. Call-name enforcement  (llm/generator.py)              │
+ │     Deterministic, no LLM, runs AFTER coherence:            │
+ │       - normalise every mention to Name() (args stripped)   │
+ │       - append missing names as "<br/>Calls: X()"           │
  │                          |                                  │
  │  5. DOT Build        (dot_builder.py)                       │
  │     Labeled CFG → Graphviz DOT script                       │
@@ -81,6 +87,9 @@ functions.json          metadata.json         project_knowledge.json
 flowchart_engine.py     Main entry point and orchestration
 models.py               Data models: CfgNode, CfgEdge, FunctionEntry, etc.
 config.py               EngineConfig dataclass
+cpp_tokens.py           One definition of "a function call", shared by the
+                        enricher, the prompt, and the enforcement pass:
+                        CPP_KEYWORDS, extract_call_names, render_call
 
 ast_engine/
   cfg_builder.py        Builds ControlFlowGraph from a libclang AST cursor
@@ -91,7 +100,8 @@ enrichment/
   enricher.py           Enriches CFG nodes with PKB/project-knowledge context
 
 llm/
-  generator.py          Batch LLM label generation + coherence pass
+  generator.py          Batch LLM label generation + coherence pass +
+                        enforce_call_names() (deterministic, runs last)
   prompts.py            System and user prompt templates
   client.py             Ollama HTTP client with auto-retry and auto-split
 
@@ -119,6 +129,43 @@ project_scanner.py      Standalone tool — builds project_knowledge.json
 tests/
   test_cfg_topo.py      Layer-1 & Layer-2 test runner (see Testing section)
 ```
+
+---
+
+## Label Policy
+
+**A label is descriptive prose that names every function the node calls, each
+written `Name()` with the arguments stripped.**
+
+What stays constant is the content — every call present, in the uniform
+`Name()` form. What varies is the phrasing: the name goes where the code puts
+it. `via X()` is wrong wherever the callee doesn't perform the action; in
+`functionX()->timeSlot = False` the function only returns the object being
+written, so the verb belongs to the assignment.
+
+| C++ shape | What the call does | Label |
+|---|---|---|
+| `sz = functionJ();` | supplies a value | Get somethingZ by calling `functionJ()` |
+| `functionX()->timeSlot = False;` | supplies the object written | Set the time slot in `functionX()` to False |
+| `sa = &functionA()->sa;` | supplies the object read | Update sa with the address of sa in `functionA()` |
+| `ServerReplicate(part, id);` | **is** the action | Replicate partition state with `ServerReplicate()` |
+| `doc.AddMember("initiator", id);` | **is** the action | Add the initiator ID to the JSON body using `doc.AddMember()` |
+
+Three places implement this and must agree, all keyed off `cpp_tokens.py`:
+the enricher declares `call_names`, the prompt requires every one of them, and
+`generator.enforce_call_names()` verifies and repairs afterwards — so a label
+is correct even when the LLM drifts or the batch falls back to a rule-based
+label.
+
+**Not named** (each already has its own prompt rule, and naming them would
+contradict it): logging macros, assertions, casts, and constructors.
+Constructors can't be separated from calls textually — `Point(1, 2)` and
+`process(1, 2)` are the same shape — so the enricher passes known struct/enum/
+typedef names to `extract_call_names(exclude=…)`.
+
+A high append count in the logs (`appended missing call names on N node(s)`)
+means the prompt isn't landing. Fix the prompt; the enforcement pass is the
+safety net, not the mechanism.
 
 ---
 
