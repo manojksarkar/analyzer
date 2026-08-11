@@ -210,6 +210,20 @@ def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any]) -> None:
                 json.dump(merged[n], fh, indent=2)
 
 
+def _artifact_dir_for(store, vstore, version_id: Optional[str], commit: Optional[str]) -> str:
+    """The dir holding a version's rendered artifacts, for baseline / cross-version reuse.
+
+    Prefers the version-keyed layout ``versions/<ver…>/`` that `store.capture_output` writes
+    (08 step 3) and falls back to the legacy commit-keyed dir, so reuse keeps working for
+    versions produced before the switch — and keeps working once the commit-dir copy is dropped.
+    """
+    if version_id:
+        d = store.artifact_dir(version_id)
+        if os.path.isdir(os.path.join(d, "output")):
+            return d
+    return vstore.version_dir(commit or version_id or "")
+
+
 def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
                         *, target, base_commit, base_parse_dir, project_name=None) -> bool:
     """Narrowed parse (M4.4, doc 04 §11): re-parse ONLY the affected TUs and merge them
@@ -508,7 +522,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # version has no flowchart for it). The rest of direct_fns regenerate as before (M3.6).
     # index_reused[fid] is a real ver id; the flowchart view needs that version's checkout DIR,
     # so map it back to its commit (fall back to the id for a commit-keyed CLI run).
-    xver_flowcharts = {fid: vstore.version_dir(_ver_commit.get(index_reused[fid], index_reused[fid]))
+    xver_flowcharts = {fid: _artifact_dir_for(store, vstore, index_reused[fid],
+                                              _ver_commit.get(index_reused[fid], index_reused[fid]))
                        for fid in direct_fns if fid in index_reused}
     flowchart_fids_regen = sorted(direct_fns - set(xver_flowcharts))
     # flowchartFids (for FUNCTION-LEVEL flowchart reuse, M3.6) = the directly changed/
@@ -522,7 +537,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                    "flowchartFiles": flowchart_files,
                    "flowchartFids": flowchart_fids_regen,
                    "crossVersionFlowcharts": xver_flowcharts,
-                   "baselineVersionDir": vstore.version_dir(base_commit)}, fh, indent=2)
+                   "baselineVersionDir": _artifact_dir_for(store, vstore, base_vid, base_commit)},
+                  fh, indent=2)
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
