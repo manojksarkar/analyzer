@@ -169,6 +169,21 @@ def _strip_jsonc(text: str) -> str:
 
 # ── model / config loaders ────────────────────────────────────────────────────
 
+def _as_description_list(value: Any) -> list:
+    """Coerce a behaviour row's ``behaviorDescription`` to the LIST the API contract promises.
+
+    The engine emits one entry per call, but an entry can be a plain string (a single-line
+    description) rather than a list. ``value or []`` passed a non-empty string straight through,
+    so the UI called ``.map()`` on a string and the whole document view crashed with
+    "data.descriptionList.map is not a function". Normalising here — the API/UI boundary — keeps
+    every consumer (document render, compare render, DOCX) on one shape."""
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple)):
+        return [v for v in value if v is not None]
+    return []
+
+
 def _load_model_json(model_dir: Path, name: str) -> dict:
     p = model_dir / f"{name}.json"
     if not p.exists():
@@ -905,7 +920,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                     f"{comp}-dyn-{dyn_idx}", f"{n}.2.{dyn_idx}", subheader, 3,
                     type="behavior_table", content=None,
                     behavior_table={
-                        "description_list": row.get("behaviorDescription") or [],
+                        "description_list": _as_description_list(row.get("behaviorDescription")),
                         "risk": "Medium",
                         "capacity": "Common",
                         "input_name": input_label,
