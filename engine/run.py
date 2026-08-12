@@ -76,6 +76,7 @@ Examples:
   python engine/run.py --selected-group MyGroup test_cpp_project
   python engine/run.py --data-dictionary engine/config/data_dictionary.csv SampleCppProject
 """
+import datetime as _dt
 import difflib
 import os
 import shutil
@@ -121,6 +122,10 @@ elif _quiet_flag:
     os.environ.setdefault("LOG_LEVEL", "WARNING")
 if _trace_prompts_flag:
     os.environ.setdefault("LLM_TRACE_PROMPTS", "1")
+# One id for the whole run, inherited by every phase subprocess, so their
+# per-process LLM stats files land in the same directory and can be merged
+# into a single report at the end (see the LLM report block at the bottom).
+os.environ.setdefault("ANALYZER_RUN_ID", _dt.datetime.now().strftime("%Y%m%d_%H%M%S"))
 _log_path = configure_logging(project_root=SCRIPT_DIR, quiet=_quiet_flag, verbose=_verbose_flag)
 
 # --config <path>: inject a per-project/per-version config (carries the project's
@@ -593,5 +598,29 @@ for plan in plans:
 
 print(flush=True)
 log(f"Done. Total: {total_time:.2f}s", component="run")
+
+# LLM report for the whole run. Each phase subprocess wrote its own stats file
+# on exit (core.logging_setup._emit_token_report); merge them into one table
+# plus one JSON. Silent when the run made no LLM calls.
+try:
+    from core.logging_setup import llm_stats_dir as _stats_dir
+    from llm_core import tokens as _tokens
+    _merged = _tokens.merge_dir(_stats_dir())
+    if (_merged.get("totals") or {}).get("calls"):
+        _merged["totals"]["runSeconds"] = round(total_time, 2)
+        _out = os.path.join(SCRIPT_DIR, "logs",
+                            f"llm_stats_{os.environ.get('ANALYZER_RUN_ID', 'adhoc')}.json")
+        with open(_out, "w", encoding="utf-8") as _fh:
+            _json_mod = __import__("json")
+            _json_mod.dump(_merged, _fh, indent=2)
+        print(flush=True)
+        print(_tokens.format_merged(_merged), flush=True)
+        _llm_total = _merged["totals"]["totalSeconds"]
+        _share = (100.0 * _llm_total / total_time) if total_time else 0.0
+        log(f"LLM was {_llm_total:.1f}s of {total_time:.1f}s ({_share:.0f}% of the run). "
+            f"Details: {_out}", component="run")
+except Exception as _exc:  # pragma: no cover — reporting must never fail a run
+    log(f"LLM report unavailable: {_exc}", component="run")
+
 if _log_path:
     log(f"Full log: {_log_path}", component="run")

@@ -45,6 +45,7 @@ import re
 from typing import Dict, List, Optional, Set, Tuple
 
 from cpp_tokens import render_call, short_name
+from llm_core import tokens as token_counter
 from llm_core.client import LlmClient
 from llm_core.structured_output import extract_and_validate
 from llm.prompts import SYSTEM_PROMPT, build_user_prompt
@@ -285,7 +286,8 @@ class LabelGenerator:
             '"drop": ["N12"]}'
         )
 
-        raw = self._client.generate(self._SIMPLIFY_SYSTEM, prompt)
+        with token_counter.stage("flowchart.simplify"):
+            raw = self._client.generate(self._SIMPLIFY_SYSTEM, prompt)
         if not raw:
             logger.debug("CFG simplification: no LLM response for '%s'",
                          func_entry.qualified_name)
@@ -549,7 +551,8 @@ class LabelGenerator:
                 prompt = base_prompt + _build_retry_note(last_failures)
 
             # ── Call LLM ──────────────────────────────────────────────
-            raw = self._client.generate(SYSTEM_PROMPT, prompt)
+            with token_counter.stage("flowchart.labels"):
+                raw = self._client.generate(SYSTEM_PROMPT, prompt)
 
             if raw is None:
                 no_response_attempts += 1
@@ -682,7 +685,8 @@ class LabelGenerator:
                          func_entry.qualified_name)
             return label_map
 
-        raw = self._client.generate(self._COHERENCE_SYSTEM, prompt)
+        with token_counter.stage("flowchart.coherence"):
+            raw = self._client.generate(self._COHERENCE_SYSTEM, prompt)
         if not raw:
             logger.debug("Coherence pass: no LLM response for '%s'",
                          func_entry.qualified_name)

@@ -172,6 +172,38 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-12b (**LLM observability: every call is now timed and attributed to a pipeline stage.**
+> Motivation: nothing in the project reported LLM latency, so "which phase/view is slow, and is it our logic,
+> the server, or the throttle?" was unanswerable — the old report printed only `calls=N` + token counts, and
+> even that undercounted because failures never reached `record()`.
+> **`engine/llm_core/tokens.py` rewritten.** Records per HTTP *attempt*: latency, throttle seconds, outcome
+> (`ok`/`empty`/`error`), tokens. Adds `stage()` — a **contextvar** context manager, so a label set by a caller
+> follows the call down through helper layers without threading a parameter through every signature (no thread
+> pools anywhere in `engine/`, so nothing is lost to a fresh thread context). Also `write_json()`,
+> `merge_dir()`, `format_merged()`.
+> **`client.py`:** new `_attempt()` context manager wraps all four `_call_*` paths and records in `finally`, so
+> a timeout is counted with its full latency instead of vanishing; `_throttle()` measures the sleep;
+> `record_config()` captures provider/model/baseUrl/rateLimit/numCtx at construction.
+> **Stage labels:** `flowchart.labels` / `.coherence` / `.simplify`, `pkb.*` (5 scanner call sites),
+> `enrich.*` via a new `stage=` param on `llm_enrichment._call_llm` (defaults to `kind`; `kind` is NOT reused
+> for reporting because it drives behaviour — domain anchoring + blocklist scrubbing).
+> **Cross-process:** each phase is its own subprocess with its own counter, so `ANALYZER_RUN_ID` (set by
+> `run.py`) keys `logs/llm_stats/<run-id>/`, every process writes one file at exit
+> (`logging_setup._emit_token_report`), and `run.py` merges them into `logs/llm_stats_<run-id>.json` + prints
+> one table. Both new I/O paths are `try/except`-wrapped — reporting must never fail a run.
+> **`tools/llm_stats.py`** compares two saved runs, **config diff first** (the point is attributing a delta to
+> a specific config change — server, `rateLimitSeconds`, batch size), then per-stage deltas marked
+> better/worse. `python tools/llm_stats.py A.json [B.json]`.
+> **Bug found and fixed on the way:** `llm_enrichment._get_client` builds `LlmClient(...)` directly rather than
+> via `from_config`, so it never received `rateLimitSeconds` — Phase 2/4 enrichment silently ignored the config
+> key added earlier the same day. Now passed explicitly and added to `_client_cache_key`.
+> **Overhead:** ~10 µs/call (2 `perf_counter` reads + a dict update inside the lock the counter already took)
+> against multi-second calls; one JSON write per process at exit, never per call.
+> **Cost to anything grepping logs:** the report header changed from `LLM token usage:` to `LLM calls by
+> stage:`. Verified: 702 unit tests pass — one test needed fixing (`test_aux_desc_cache.py` fakes had closed
+> signatures that rejected the new `stage` kwarg). **Not yet done: unit tests for the new tokens/compare code,
+> and a real end-to-end run — every number seen so far is mocked or synthetic.**)
+
 > Updated: 2026-08-12 (**the OpenAI gateway throttle is now a config key, `llm.rateLimitSeconds`** — it was
 > the hardcoded `_OPENAI_RATE_LIMIT_SEC = 3.0` in [engine/llm_core/client.py](engine/llm_core/client.py).
 > **Why it matters:** the pause is in a `finally` inside `_OPENAI_LOCK`, so it fires after *every* OpenAI
@@ -1443,7 +1475,8 @@ engine/llm_core/
   client.py              LlmClient + from_config — single HTTP client (ollama + openai)
   headers.py             build_openai_headers + resolve_api_key
   think.py               strip_think_section
-  tokens.py              process-wide token usage counter (record + format_report)
+  tokens.py              per-process LLM call metrics — latency/throttle/outcome/tokens,
+                         stage() attribution, format_report, write_json, merge_dir
   token_counter.py       TokenCounter (tiktoken wrapper + char/3.5 fallback) — version3
   budget.py              ContextBudget + TASK_RATIOS + resolve_max_tokens      — version3
   context_builder.py     ContextBuilder — callee/caller/types degradation ladder — version3
