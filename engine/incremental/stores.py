@@ -120,24 +120,6 @@ class VersionStore:
         os.makedirs(d, exist_ok=True)
         return d
 
-    def capture_artifacts(self, version_id: str, *, model_dir: str, output_dir: str) -> List[str]:
-        """Copy the analyzer's model/ + output/ into the version, and collect every
-        .docx into documents/. Returns the list of captured document filenames."""
-        d = self.version_dir(version_id)
-        if os.path.isdir(model_dir):
-            shutil.copytree(model_dir, os.path.join(d, "model"), dirs_exist_ok=True)
-        if os.path.isdir(output_dir):
-            shutil.copytree(output_dir, os.path.join(d, "output"), dirs_exist_ok=True)
-        docs_dir = os.path.join(d, "documents")
-        os.makedirs(docs_dir, exist_ok=True)
-        captured: List[str] = []
-        for root, _, files in os.walk(os.path.join(d, "output")):
-            for f in files:
-                if f.lower().endswith(".docx"):
-                    shutil.copyfile(os.path.join(root, f), os.path.join(docs_dir, f))
-                    captured.append(f)
-        return sorted(captured)
-
     def write_config(self, version_id: str, config: Dict[str, Any]) -> None:
         _write_json(os.path.join(self.version_dir(version_id), "config.json"), config)
 

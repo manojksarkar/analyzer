@@ -57,19 +57,9 @@ class TestVersionStore:
         assert vs.get(vid)["warnings"] == ["w1"]
         assert vs.get(vid)["decision"] == "full"
 
-    def test_capture_artifacts_collects_docx(self, tmp_path):
-        ws = _make_ws(tmp_path)
-        vs = VersionStore(ws)
-        vs.create_dir("v1")
-        model = tmp_path / "model"; model.mkdir(); (model / "functions.json").write_text("{}")
-        out = tmp_path / "output" / "G"; out.mkdir(parents=True)
-        (out / "software_detailed_design_G.docx").write_bytes(b"PK\x03\x04")
-        (out / "interface_tables.json").write_text("{}")
-        docs = vs.capture_artifacts("v1", model_dir=str(model), output_dir=str(tmp_path / "output"))
-        assert docs == ["software_detailed_design_G.docx"]
-        vd = vs.version_dir("v1")
-        assert os.path.isfile(os.path.join(vd, "model", "functions.json"))
-        assert os.path.isfile(os.path.join(vd, "documents", "software_detailed_design_G.docx"))
+    # capture_artifacts (model+output -> the commit dir) was removed in the PG-7b cutover: the
+    # store now owns artifacts (ArtifactStore.capture_output -> versions/<ver…>/, model -> the
+    # store). Its equivalent is covered by tests/unit/test_output_files_store.py.
 
 
 class TestHashEdgeStore:
