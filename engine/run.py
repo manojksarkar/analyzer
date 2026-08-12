@@ -2,9 +2,8 @@
 """Entry: python engine/run.py [options] <project_path>
 
 Options:
+  -h, --help           Show this help and exit
   --clean              Delete output/ and model/ before running
-  --selected-group <name>
-                       Export only the named modulesGroup
   --config <path>      Use this config file instead of engine/config/config.json
                        (a per-project/per-version config carrying the project's
                        `layers`). Exported as ANALYZER_CONFIG so every phase
@@ -13,6 +12,22 @@ Options:
   --use-model          Skip Phase 1/2 and reuse existing model/ files
   --skip-model         Alias of --use-model
   --no-llm-summarize   Skip LLM phase/hierarchy summarization (faster, lower quality)
+  --llm-summarize      Accepted for back-compat; no-op (summarization is the default)
+  --selected-group <name>
+                       Export only the named group (case-insensitive). Mutually
+                       exclusive with --selected-layer / --selected-component.
+  --selected-layer <name>
+                       Parse only the named layer; emit one DOCX per group in it.
+  --selected-component <name>
+                       Export a DOCX for the named component only. Repeatable —
+                       all named components must live in the same layer.
+  --component-per-docx One DOCX per component instead of one per group. Cannot be
+                       combined with --selected-component.
+  --filter-mode <mode> Override views.sequenceDiagrams.filterMode for this run.
+                       Forwarded to Phase 3 (run_views), which writes it into the
+                       in-memory config. NOTE: no view reads that key yet, so the
+                       flag is currently inert — wire up a consumer before relying
+                       on it. Any string is accepted (no fixed vocabulary yet).
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
   --to-phase N         Stop after phase N (1-4). Lets the incremental engine run
                        parse+derive only (--to-phase 2), compute impact, then
@@ -23,6 +38,8 @@ Options:
   --project-name <name>
                        Override the project name used in metadata and
                        interfaceIds (default: basename of project_path).
+  --output-name <name> Override the output subdirectory and DOCX basename
+                       (default: the selected group / component name).
   --macros <path>      Macro file passed as -D flags to Clang, for every layer.
                        CSV (Name, Value) or JSON (toolchain dump, {"NAME":"VAL"}
                        map, ["NAME=VAL"] list, or {"Layer": {...}}). Rows with
@@ -31,8 +48,10 @@ Options:
                        Same file formats, but applied to the named layer only.
                        Repeatable — use once per layer. Overrides --macros for
                        that layer's parse. Samples in engine/config/. Example:
-                         --macros-layer Layer1 engine/config/macros.layer1.example.json \
+                         --macros-layer Layer1 engine/config/macros.layer1.example.json \\
                          --macros-layer Layer2 engine/config/macros.layer2.example.json
+  --only-files <path>  Parse only the translation units listed in this file, one
+                       path per line (narrowed parse, used by the incremental engine).
   --include-emulator   Parse emulator/stub files too. By default files whose
                        basename matches config `excludeNamePatterns` (default
                        ["emul"]) are skipped from the parse scope (3.1).
@@ -47,15 +66,17 @@ Options:
   --trace-prompts      Print full LLM prompts (system + user) to stdout.
                        WARNING: large runs can emit tens of MB of prompt text.
 
+Unknown options and extra positional arguments are rejected with exit code 1.
+
 Examples:
   python engine/run.py test_cpp_project
   python engine/run.py --clean test_cpp_project
   python engine/run.py --no-llm-summarize test_cpp_project
   python engine/run.py --from-phase 3 test_cpp_project
   python engine/run.py --selected-group MyGroup test_cpp_project
-  python engine/run.py --filter-mode single_per_function test_cpp_project
   python engine/run.py --data-dictionary engine/config/data_dictionary.csv SampleCppProject
 """
+import difflib
 import os
 import shutil
 import sys
@@ -72,6 +93,13 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
         pass
+
+# --help / -h: print the option list and exit before any setup work — no log file,
+# no chdir, no config load. Handled here so `--help` still answers when the config
+# or environment is broken. The docstring above IS the help text.
+if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
+    print(__doc__ or "")
+    sys.exit(0)
 
 # run.py now lives in engine/; the repo root (holding engine/, model/, output/,
 # workspaces/) is one level up. SCRIPT_DIR is kept pointing at the repo root so every
@@ -120,6 +148,24 @@ from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, CO
 # Parse flags
 # ---------------------------------------------------------------------------
 
+# Every option the loop below accepts. Held as data (rather than derived from the
+# branches) so an unrecognised option can be rejected with a "did you mean" hint.
+# tests/unit/test_cli.py asserts this stays in sync with the branches — add a flag
+# here whenever you add a branch, or the test fails.
+_KNOWN_FLAGS = (
+    "--help", "-h",
+    "--clean", "--config",
+    "--use-model", "--skip-model",
+    "--no-llm-summarize", "--llm-summarize",
+    "--selected-group", "--selected-layer", "--selected-component",
+    "--component-per-docx", "--filter-mode",
+    "--from-phase", "--to-phase",
+    "--data-dictionary", "--project-name", "--output-name",
+    "--macros", "--macros-layer", "--include-path",
+    "--only-files", "--include-emulator",
+    "--quiet", "--verbose", "--trace-prompts",
+)
+
 clean_all               = False
 use_model               = False
 no_llm_summarize        = False
@@ -145,8 +191,8 @@ while i < len(sys.argv):
     a = sys.argv[i]
     if a == "--clean":
         clean_all = True
-    elif a in ("--quiet", "--verbose", "--trace-prompts"):
-        pass  # consumed at top of file (configure_logging / env vars)
+    elif a in ("--quiet", "--verbose", "--trace-prompts", "--help", "-h"):
+        pass  # consumed at top of file (help / configure_logging / env vars)
     elif a == "--config":
         # Value already resolved + applied to ANALYZER_CONFIG above; just consume it.
         i += 1
@@ -180,6 +226,12 @@ while i < len(sys.argv):
         selected_components_arg.append(sys.argv[i].replace(" ", "-"))
     elif a == "--component-per-docx":
         component_per_docx = True
+    elif a == "--filter-mode":
+        i += 1
+        if i >= len(sys.argv):
+            log("--filter-mode requires a mode argument", component="run", err=True)
+            sys.exit(1)
+        filter_mode_arg = sys.argv[i]
     elif a == "--data-dictionary":
         i += 1
         if i >= len(sys.argv):
@@ -248,6 +300,19 @@ while i < len(sys.argv):
         except ValueError:
             log(f"--to-phase must be 1, 2, 3, or 4 (got: {sys.argv[i]})", component="run", err=True)
             sys.exit(1)
+    elif a.startswith("-"):
+        # Anything dash-prefixed that reached here is a typo or a flag that no
+        # longer exists. Silently ignoring it used to let a whole run proceed with
+        # the wrong settings (e.g. `--phase 3` was dropped and the run restarted
+        # from Phase 1), so refuse to start instead.
+        log(f"Unknown option: {a}", component="run", err=True)
+        # cutoff 0.7, not the 0.6 default: 0.6 pairs `--phase` with `--help` and
+        # `--verbos` with `--macros`, which reads as noise next to the real match.
+        _near = difflib.get_close_matches(a, _KNOWN_FLAGS, n=3, cutoff=0.7)
+        if _near:
+            log(f"  did you mean: {', '.join(_near)}", component="run", err=True)
+        log("Run `python engine/run.py --help` to see all options.", component="run", err=True)
+        sys.exit(1)
     else:
         raw_args.append(a)
     i += 1
@@ -281,20 +346,33 @@ if len(raw_args) < 1:
     print("                     <project_path>")
     print("Example: python engine/run.py test_cpp_project")
     print("Example: python engine/run.py --selected-component Gpio SampleCppProject")
+    print("Run `python engine/run.py --help` to see all options.")
     sys.exit(1)
 
-if clean_all:
-    for d in ("output", "model"):
-        path = os.path.join(SCRIPT_DIR, d)
-        if os.path.isdir(path):
-            shutil.rmtree(path)
-            log(f"Removed {d}/", component="run")
+# Exactly one positional is expected. A second one is almost always a flag value
+# that lost its flag (`--phase 3` leaves a stray `3`) or a second path — both mean
+# the command line does not say what the user thinks it says.
+if len(raw_args) > 1:
+    log(f"Unexpected extra argument(s): {', '.join(raw_args[1:])}", component="run", err=True)
+    log(f"Only one <project_path> is accepted (got: {raw_args[0]}).", component="run", err=True)
+    log("Run `python engine/run.py --help` to see all options.", component="run", err=True)
+    sys.exit(1)
 
 project_path = raw_args[0]
 resolved = os.path.abspath(project_path) if os.path.isabs(project_path) else os.path.join(SCRIPT_DIR, project_path)
 if not os.path.isdir(resolved):
     log(f"Project path not found: {resolved}", component="run", err=True)
     sys.exit(1)
+
+# --clean runs only AFTER the project path is known good. It used to run first, so
+# a typo'd path wiped model/ and output/ and *then* aborted — leaving nothing to
+# fall back on and forcing a full re-parse.
+if clean_all:
+    for d in ("output", "model"):
+        path = os.path.join(SCRIPT_DIR, d)
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+            log(f"Removed {d}/", component="run")
 
 # ---------------------------------------------------------------------------
 # When --use-model is set, refuse early if model files are missing.
