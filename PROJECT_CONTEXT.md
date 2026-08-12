@@ -172,6 +172,95 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-12b (**LLM observability: every call is now timed and attributed to a pipeline stage.**
+> Motivation: nothing in the project reported LLM latency, so "which phase/view is slow, and is it our logic,
+> the server, or the throttle?" was unanswerable — the old report printed only `calls=N` + token counts, and
+> even that undercounted because failures never reached `record()`.
+> **`engine/llm_core/tokens.py` rewritten.** Records per HTTP *attempt*: latency, throttle seconds, outcome
+> (`ok`/`empty`/`error`), tokens. Adds `stage()` — a **contextvar** context manager, so a label set by a caller
+> follows the call down through helper layers without threading a parameter through every signature (no thread
+> pools anywhere in `engine/`, so nothing is lost to a fresh thread context). Also `write_json()`,
+> `merge_dir()`, `format_merged()`.
+> **`client.py`:** new `_attempt()` context manager wraps all four `_call_*` paths and records in `finally`, so
+> a timeout is counted with its full latency instead of vanishing; `_throttle()` measures the sleep;
+> `record_config()` captures provider/model/baseUrl/rateLimit/numCtx at construction.
+> **Stage labels:** `flowchart.labels` / `.coherence` / `.simplify`, `pkb.*` (5 scanner call sites),
+> `enrich.*` via a new `stage=` param on `llm_enrichment._call_llm` (defaults to `kind`; `kind` is NOT reused
+> for reporting because it drives behaviour — domain anchoring + blocklist scrubbing).
+> **Cross-process:** each phase is its own subprocess with its own counter, so `ANALYZER_RUN_ID` (set by
+> `run.py`) keys `logs/llm_stats/<run-id>/`, every process writes one file at exit
+> (`logging_setup._emit_token_report`), and `run.py` merges them into `logs/llm_stats_<run-id>.json` + prints
+> one table. Both new I/O paths are `try/except`-wrapped — reporting must never fail a run.
+> **`tools/llm_stats.py`** compares two saved runs, **config diff first** (the point is attributing a delta to
+> a specific config change — server, `rateLimitSeconds`, batch size), then per-stage deltas marked
+> better/worse. `python tools/llm_stats.py A.json [B.json]`.
+> **Bug found and fixed on the way:** `llm_enrichment._get_client` builds `LlmClient(...)` directly rather than
+> via `from_config`, so it never received `rateLimitSeconds` — Phase 2/4 enrichment silently ignored the config
+> key added earlier the same day. Now passed explicitly and added to `_client_cache_key`.
+> **Overhead:** ~10 µs/call (2 `perf_counter` reads + a dict update inside the lock the counter already took)
+> against multi-second calls; one JSON write per process at exit, never per call.
+> **Cost to anything grepping logs:** the report header changed from `LLM token usage:` to `LLM calls by
+> stage:`. Verified: 702 unit tests pass — one test needed fixing (`test_aux_desc_cache.py` fakes had closed
+> signatures that rejected the new `stage` kwarg). **Not yet done: unit tests for the new tokens/compare code,
+> and a real end-to-end run — every number seen so far is mocked or synthetic.**)
+
+> Updated: 2026-08-12 (**the OpenAI gateway throttle is now a config key, `llm.rateLimitSeconds`** — it was
+> the hardcoded `_OPENAI_RATE_LIMIT_SEC = 3.0` in [engine/llm_core/client.py](engine/llm_core/client.py).
+> **Why it matters:** the pause is in a `finally` inside `_OPENAI_LOCK`, so it fires after *every* OpenAI
+> call including failed ones, and the flowchart engine has **no parallelism at all** — every sleep is
+> wall-clock. Measured from `logs/run_*.log`: ~**1.5 label batches + ~0.25 coherence calls per function**
+> (212 batches / 139 functions on 2026-08-10), i.e. **~5.4 s of pure sleep per function** — ~12 min on a
+> 139-function run, ~45 min at 500. **Changes:** (1) `core.config.load_llm_config` parses optional
+> `rateLimitSeconds` (float ≥ 0, default 3.0, env `LLM_RATE_LIMIT_SECONDS`); explicit `null` raises with a
+> "use 0 to disable" hint rather than being read as auto. (2) `LlmClient.__init__` takes
+> `rate_limit_seconds`, stores `self._rate_limit`, and both OpenAI paths guard `if self._rate_limit > 0`.
+> (3) `from_config` threads it through — which is what gives `flowchart_engine._build_llm_client` the
+> setting for free. (4) Added to `engine/config/config.json` + the startup banner. Behaviour is unchanged
+> when the key is absent. **Note for anyone measuring the win:** `tokens.record()` sits on the success path
+> only, so timeouts/HTTP errors sleep but are never counted — the `calls=N` report understates the true
+> throttle cost. Tests: `TestRateLimit` in `tests/unit/test_llm_client.py` (6) + 7 in
+> `tests/unit/test_core_config.py`.)
+
+> Updated: 2026-08-11 (**`run.py` rejects unknown options and stray positionals instead of ignoring them**
+> — branch `fix/cli-strict-args`. Reported symptom: `python engine/run.py <proj> --phase 3` printed nothing
+> unusual and re-ran the whole pipeline **from Phase 1**. Root cause: the hand-rolled argv loop's final
+> `else` appended *anything* unmatched to `raw_args` (§5 "Argument parsing"), and only `raw_args[0]` was
+> ever read as `<project_path>` — so a mistyped flag after the path was silently dropped, and a mistyped
+> flag *before* it became the path (`Project path not found: …\--clen`). **Fix, all in
+> [engine/run.py](engine/run.py):** (1) new `elif a.startswith("-")` branch → `Unknown option: <flag>` +
+> a `difflib.get_close_matches(..., n=3, cutoff=0.7)` "did you mean" line + exit **1**. Cutoff is 0.7, not
+> difflib's 0.6 default: 0.6 pairs `--phase` with `--help` and `--verbos` with `--macros`, which reads as
+> noise beside the real match. (2) `len(raw_args) > 1` → `Unexpected extra argument(s): …`, exit 1 —
+> catches the orphaned value of a mistyped flag (`--phase 3` leaves a stray `3`). Runs **before** the path
+> check and before `--clean`, so nothing is deleted on a bad command line. (3) New **`--help` / `-h`**,
+> answered at the very top of the file (before `configure_logging`, `chdir`, and the config load) by
+> printing `__doc__` and exiting 0 — so help still works when the config is broken, and no log file is
+> created. The module docstring IS the help text, so it was completed to list every flag: `--llm-summarize`,
+> `--selected-layer`, `--selected-component`, `--component-per-docx`, `--filter-mode`, `--output-name`,
+> `--only-files` were all missing. Also escaped the `\` line-continuation in the `--macros-layer` example —
+> inside a non-raw docstring it was silently joining the two example lines. (4) New module-level
+> **`_KNOWN_FLAGS`** tuple feeds both the rejection and the suggestions; `tests/unit/test_cli.py` walks
+> run.py's AST and asserts it equals the set of flag literals the parse loop compares `a` against, so a new
+> branch without an entry fails the suite. **Bug found + fixed on the way:** **`--filter-mode` had no parse
+> branch at all** — it was documented here (§5), in the docstring, and passed to
+> `plan_runs(filter_mode=filter_mode_arg)`, but `filter_mode_arg` was never assigned, so the flag was dead
+> and `--filter-mode X` made `--filter-mode` the project path. Branch added; flag **kept** per user
+> decision. **Still inert downstream, by design of what exists today:** `group_planner` forwards it to
+> Phase 3 and `run_views.py:89` writes `config["views"]["sequenceDiagrams"]["filterMode"]`, but **no view
+> reads that key** — `sequenceDiagrams` appears nowhere else in the repo and is not in `config.json`. The
+> value is accepted unvalidated (no vocabulary exists yet); the documented example is `single_per_function`.
+> Wire a consumer before relying on it. **Callers unaffected:** `api/services/pipeline_runner.py`,
+> `engine/incremental/{engine,generate}.py`, and `tests/conftest.py` were audited — all pass only real flags
+> and exactly one positional. **Second destructive bug found + fixed:** the `--clean` block ran **before**
+> `<project_path>` was validated, so `run.py --clean <typo'd path>` deleted `model/` and `output/` and *then*
+> exited 1 — a mistyped path cost a full re-parse. `--clean` now runs after the path check (and after the new
+> unknown-option/extra-positional checks), so no bad command line deletes anything. Guarded by
+> `test_clean_runs_only_after_project_path_is_validated`, which asserts the ordering **via AST** — a
+> functional test would have to destroy the real `model/`/`output/` to detect the regression.
+> Tests: 664 unit pass; `tests/unit/test_cli.py` gained `TestStrictArgValidation`,
+> `TestHelp`, `TestFilterMode`. Phase scripts (`parser.py`, `run_views.py`, `docx_exporter.py`) still swallow
+> unknown args the same way — **open follow-up**, they are only spawned by `group_planner` today.)
+
 > Updated: 2026-08-10 (**flowchart labels: every call is named, always as `Name()`.** Reported symptom: a
 > node that calls a function sometimes rendered as the call (`Call ServerReplicate(...)`), sometimes as pure
 > prose (`Replicate server state`) — a per-node coin flip. **Root cause: two contradictory rules in the same
@@ -703,7 +792,8 @@ validated first by `load_llm_config()`.
 failing field name when any required field is missing / empty / wrong type:
 `provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`, `retries`.
 Optional fields (`enrichment.*`, `descriptions`, `behaviourNames`,
-`maxContextTokens`, `cacheVersion`, `fewShotExamplesDir`, `customHeaders`)
+`maxContextTokens`, `cacheVersion`, `fewShotExamplesDir`, `customHeaders`,
+`rateLimitSeconds`)
 are type-checked the same way. `provider` is restricted to
 `"ollama"`|`"openai"`.
 
@@ -724,6 +814,7 @@ LLM configuration (will be used for this run)
   maxContextTokens  : auto -> 7680
   timeoutSeconds    : 120
   retries           : 1
+  rateLimitSeconds  : 3.0  (ignored on ollama)
   apiKey            : (none)
   cacheVersion      : 1
   fewShotExamplesDir: few_shot_examples
@@ -1024,7 +1115,8 @@ python engine/run.py [options] <project_path>
 
 | Flag | Effect |
 |---|---|
-| `--clean` | Delete `model/` and `output/` before starting |
+| `--help` / `-h` | Print the option list (the `run.py` module docstring) and exit 0. Handled at the top of the file, before `configure_logging`/`chdir`/config load, so it works even with a broken config and writes no log file. |
+| `--clean` | Delete `model/` and `output/` before starting. Runs **after** `<project_path>` is validated (since 2026-08-11) — it used to run first, so `--clean <typo'd path>` wiped both dirs and then aborted. |
 | `--config <path>` | Use this config file instead of `engine/config/config.json` — a per-project/per-version config (carries the project's `layers`). Resolved+validated, then exported as `ANALYZER_CONFIG` **before** the import-time config load in `utils`, so every phase subprocess (env inherited) honors it. `config.local.json` is **not** merged on top (used as-is, for reproducibility); a set-but-missing path fails loud. Foundation for incremental per-project runs (§23, M1.1). |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
@@ -1039,7 +1131,7 @@ python engine/run.py [options] <project_path>
 | `--macros <path>` | Macro file passed as `-D` flags to Clang in Phase 1, applied to **every** layer. CSV (`Name`, `Value`; header row) **or** JSON — toolchain dump (`macros_by_cu`), `{"NAME":"VALUE"}` map, `["NAME=VALUE"]` list, or `{"Layer1": {…}}`; shape is detected by content, not extension (`core/macro_input.py`). `Value` `"ne"` (any case) skips the entry; empty → `-DNAME`; function-like names are skipped + logged. Written to `model/clang_macros.json` (scope-keyed) so the Phase 3 flowchart engine picks them up. Sample: `engine/config/macros.csv`. |
 | `--macros-layer <layer> <path>` | Same formats, applied to the named layer only. Repeatable — once per layer. Unknown layer → exit 1, missing file → exit 2. Clang honours the last `-D`, so a layer value overrides a `--macros` global one. Config equivalents: `clang.macrosFile` / `clang.macrosByLayer`; `clang.macroScopes` maps a multi-CU dump's compilation units to layers. |
 | `--include-path <layer> <dir>` | Add an extra `-I` include directory for the named layer. Repeatable — use once per directory. The directory is merged into `model/clang_include_paths.json` under the named layer key before Phase 1 runs, so Phase 1 and Phase 3 (`_resolve_layer_dirs`) pick it up automatically via existing layer-scoping. Unknown layer → exit 1. Missing directory → exit 1. |
-| `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`) |
+| `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`). Forwarded by `group_planner` to Phase 3, where `run_views.py` writes it into the in-memory config. **Currently inert — no view reads that key** (`sequenceDiagrams` exists nowhere else in the repo and is not in `config.json`); wire a consumer before relying on it. Value is not validated (no vocabulary defined yet). Had **no parse branch in `run.py` until 2026-08-11** — the flag was dead and `--filter-mode X` made `--filter-mode` the project path. |
 | `--trace-prompts` | Print full LLM prompts (system + user) to stdout. Sets `LLM_TRACE_PROMPTS=1` env var. **Warning**: large runs emit tens of MB. |
 | `--quiet` | stderr handler raised to WARNING |
 | `--verbose` | stderr handler lowered to DEBUG |
@@ -1049,12 +1141,28 @@ inherit the same verbosity.
 
 ### Argument parsing
 
-Hand-rolled token-scanning loop in [run.py](run.py) (no `argparse`). Two
-historical bugs are guarded against here:
+Hand-rolled token-scanning loop in [run.py](engine/run.py) (no `argparse`).
+**Strict since 2026-08-11** — the loop has no silent fall-through: a token is a
+known flag, a `-`-prefixed unknown (rejected), or the single positional
+`<project_path>`. Four historical bugs are guarded against here:
 
 1. `--selected-group core` used to leave `core` as a positional after the flag
    was consumed. Fix: each flag explicitly consumes its value (`i += 1`).
 2. `--from-phase` is validated to 1–4 and exits with a clear error otherwise.
+3. **Unknown options** (`elif a.startswith("-")`) exit 1 with `Unknown option: <flag>`
+   plus a `difflib` "did you mean" line (`n=3, cutoff=0.7` — 0.6 suggests `--help`
+   for `--phase`). They used to fall into `raw_args` and be ignored, so
+   `run.py <proj> --phase 3` re-ran the whole pipeline from Phase 1 in silence.
+4. **Extra positionals** (`len(raw_args) > 1`) exit 1 — usually the orphaned value
+   of a mistyped flag. Checked before the path check and before `--clean`, so a bad
+   command line never deletes `model/`/`output/`.
+
+`_KNOWN_FLAGS` (module level) backs both the rejection and the suggestions.
+`tests/unit/test_cli.py` AST-compares it against the flag literals in the parse
+loop, so adding a branch without a `_KNOWN_FLAGS` entry fails the suite.
+
+The phase scripts (`parser.py`, `run_views.py`, `docx_exporter.py`) still ignore
+unknown args — open follow-up; they are only spawned by `group_planner` today.
 
 ### Plan + dispatch
 
@@ -1142,6 +1250,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     "behaviourNames":    false,           // enable LLM behaviour input/output names
     "summarize":         false,           // false = suppress Phase 2 hierarchy summarization
     "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY
+    "rateLimitSeconds":  3.0,             // pause after every OpenAI call (>=0; 0 = off; ollama ignores)
     "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
 
     // version3 — token budgeting
@@ -1207,6 +1316,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 | `LLM_NUM_CTX` | `llm.numCtx` |
 | `LLM_RETRIES` | `llm.retries` |
 | `LLM_API_KEY` | `llm.apiKey` |
+| `LLM_RATE_LIMIT_SECONDS` | `llm.rateLimitSeconds` |
 
 Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 `USER_ID`, `SEND_SYSTEM_NAME` (handled inside `llm_core.headers`).
@@ -1365,7 +1475,8 @@ engine/llm_core/
   client.py              LlmClient + from_config — single HTTP client (ollama + openai)
   headers.py             build_openai_headers + resolve_api_key
   think.py               strip_think_section
-  tokens.py              process-wide token usage counter (record + format_report)
+  tokens.py              per-process LLM call metrics — latency/throttle/outcome/tokens,
+                         stage() attribution, format_report, write_json, merge_dir
   token_counter.py       TokenCounter (tiktoken wrapper + char/3.5 fallback) — version3
   budget.py              ContextBudget + TASK_RATIOS + resolve_max_tokens      — version3
   context_builder.py     ContextBuilder — callee/caller/types degradation ladder — version3
@@ -1405,8 +1516,11 @@ Shared pipeline:
 
 Hard rules baked in for the OpenAI route:
 - A class-level `_OPENAI_LOCK` serialises every OpenAI request process-wide.
-- Every OpenAI call is followed by `time.sleep(3.0)` (`_OPENAI_RATE_LIMIT_SEC`)
-  even on failure, because the corporate gateway throttles ~1 req/3s.
+- Every OpenAI call is followed by `time.sleep(llm.rateLimitSeconds)` even on
+  failure, because the corporate gateway throttles ~1 req/3s. Default `3.0`
+  (`_OPENAI_RATE_LIMIT_SEC`); `0` disables the pause entirely. Ollama never
+  sleeps. Cost: the engine is single-threaded, so this is ~1.5 batches +
+  ~0.25 coherence calls per function ≈ **5.4 s/function** on a flowchart run.
 
 Public properties (version3 adds `num_ctx`):
 `client.provider`, `client.model`, `client.num_ctx` — prefer these over

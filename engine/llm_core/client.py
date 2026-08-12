@@ -10,8 +10,9 @@ same response post-processing (strip_think_section + token tracking).
 
 Hard rules baked in:
   - OpenAI requests are serialised process-wide (1 in flight at a time) and
-    every successful OpenAI call is followed by a 3-second sleep, because the
-    corporate gateway throttles ~1 request per 3 seconds.
+    every OpenAI call — successful or not — is followed by a sleep, because
+    the corporate gateway throttles ~1 request per 3 seconds. The pause is
+    `llm.rateLimitSeconds` (default 3.0; 0 disables it). Ollama never sleeps.
   - Configurable retry. Default = 1 retry on (HTTP error | empty response).
   - All responses pass through strip_think_section() before being returned.
   - Token usage from both providers is recorded into llm.tokens.
@@ -34,7 +35,8 @@ import os
 import sys
 import threading
 import time
-from typing import Dict, Optional
+from contextlib import contextmanager
+from typing import Dict, Iterator, Optional
 
 import requests
 
@@ -120,6 +122,8 @@ def _trace_response(ordinal: int, response: Optional[str]) -> None:
 # of LlmClient with provider="openai" shares it — even if multiple clients
 # are constructed by different phases.
 _OPENAI_LOCK = threading.Lock()
+# Default pause after each OpenAI call. Overridable per-client via
+# `rate_limit_seconds` (config key `llm.rateLimitSeconds`).
 _OPENAI_RATE_LIMIT_SEC = 3.0
 
 
@@ -139,6 +143,7 @@ class LlmClient:
         temperature: float = 0.1,
         num_ctx: int = 8192,
         max_retries: int = 1,
+        rate_limit_seconds: float = _OPENAI_RATE_LIMIT_SEC,
         # Legacy-compat args
         url: Optional[str] = None,
         use_openai_format: bool = False,
@@ -155,6 +160,9 @@ class LlmClient:
         self._temperature = float(temperature)
         self._num_ctx = int(num_ctx)
         self._max_retries = max(0, int(max_retries))
+        # Seconds to pause after every OpenAI call (see _OPENAI_RATE_LIMIT_SEC).
+        # 0 disables the throttle. Never applied on the Ollama path.
+        self._rate_limit = max(0.0, float(rate_limit_seconds))
         self._api_key = api_key
         self._custom_headers = dict(custom_headers or {})
 
@@ -172,6 +180,51 @@ class LlmClient:
                 self._endpoint = f"{base}/api/generate"
         else:
             raise ValueError("LlmClient: either url= or base_url= is required")
+
+        # Make the run's report self-describing — a saved stats file is useless
+        # if you can't tell which provider/model/server produced it.
+        token_counter.record_config(
+            provider=self._provider,
+            model=self._model,
+            baseUrl=self._endpoint,
+            rateLimitSeconds=self._rate_limit,
+            numCtx=self._num_ctx,
+            timeoutSeconds=self._timeout,
+            retries=self._max_retries,
+        )
+
+    # ------------------------------------------------------------------
+    # Per-attempt measurement
+    # ------------------------------------------------------------------
+
+    @contextmanager
+    def _attempt(self, provider: str) -> Iterator[Dict]:
+        """Time one HTTP attempt and record it — success, empty, or exception.
+
+        The caller fills in the yielded dict as it learns things (tokens,
+        outcome, how long the throttle slept). Recording happens in `finally`,
+        so a timeout is counted with its full latency instead of vanishing:
+        failed calls cost real wall-clock time and must show up in the report.
+        """
+        m = {"prompt": 0, "completion": 0, "throttle": 0.0, "outcome": "error"}
+        t0 = time.perf_counter()
+        try:
+            yield m
+        finally:
+            elapsed = time.perf_counter() - t0
+            token_counter.record(
+                provider, self._model, m["prompt"], m["completion"],
+                latency=max(0.0, elapsed - m["throttle"]),
+                throttle=m["throttle"],
+                outcome=m["outcome"],
+            )
+
+    def _throttle(self, m: Dict) -> None:
+        """Sleep the configured gateway pause, recording how long it took."""
+        if self._rate_limit > 0:
+            t0 = time.perf_counter()
+            time.sleep(self._rate_limit)
+            m["throttle"] += time.perf_counter() - t0
 
     # ------------------------------------------------------------------
     # Public API
@@ -371,19 +424,20 @@ class LlmClient:
                 "num_predict": 2048,
             },
         }
-        resp = requests.post(self._endpoint, json=payload, timeout=self._timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        text = (data.get("response") or "").strip()
-        # Token tracking
-        prompt_tokens = int(data.get("prompt_eval_count") or 0)
-        completion_tokens = int(data.get("eval_count") or 0)
-        token_counter.record("ollama", self._model, prompt_tokens, completion_tokens)
-        if not text:
-            err = data.get("error") or ""
-            if err:
-                logger.warning("Ollama error body: %s", err)
-        return text or None
+        with self._attempt("ollama") as m:
+            resp = requests.post(self._endpoint, json=payload, timeout=self._timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            text = (data.get("response") or "").strip()
+            # Token tracking
+            m["prompt"] = int(data.get("prompt_eval_count") or 0)
+            m["completion"] = int(data.get("eval_count") or 0)
+            m["outcome"] = "ok" if text else "empty"
+            if not text:
+                err = data.get("error") or ""
+                if err:
+                    logger.warning("Ollama error body: %s", err)
+            return text or None
 
     def _call_ollama_messages(self, messages: list, temperature: float) -> Optional[str]:
         """POST to Ollama /api/chat with a pre-formed messages list."""
@@ -401,21 +455,22 @@ class LlmClient:
                 "num_predict": 2048,
             },
         }
-        resp = requests.post(chat_endpoint, json=payload, timeout=self._timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        # /api/chat returns {"message": {"role": "assistant", "content": "..."}}
-        msg = data.get("message") or {}
-        text = (msg.get("content") or "").strip()
-        # Token tracking
-        prompt_tokens = int(data.get("prompt_eval_count") or 0)
-        completion_tokens = int(data.get("eval_count") or 0)
-        token_counter.record("ollama", self._model, prompt_tokens, completion_tokens)
-        if not text:
-            err = data.get("error") or ""
-            if err:
-                logger.warning("Ollama chat error body: %s", err)
-        return text or None
+        with self._attempt("ollama") as m:
+            resp = requests.post(chat_endpoint, json=payload, timeout=self._timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            # /api/chat returns {"message": {"role": "assistant", "content": "..."}}
+            msg = data.get("message") or {}
+            text = (msg.get("content") or "").strip()
+            # Token tracking
+            m["prompt"] = int(data.get("prompt_eval_count") or 0)
+            m["completion"] = int(data.get("eval_count") or 0)
+            m["outcome"] = "ok" if text else "empty"
+            if not text:
+                err = data.get("error") or ""
+                if err:
+                    logger.warning("Ollama chat error body: %s", err)
+            return text or None
 
     # ------------------------------------------------------------------
     # OpenAI-compatible
@@ -433,36 +488,37 @@ class LlmClient:
         }
         # Serialise across the whole process. Even if multiple threads call
         # generate() concurrently, only one OpenAI request is in flight at a
-        # time, and we always sleep 3s after to satisfy the gateway throttle.
-        with _OPENAI_LOCK:
-            headers = build_openai_headers(
-                api_key=self._api_key,
-                config_headers=self._custom_headers,
-            )
-            try:
-                resp = requests.post(
-                    self._endpoint,
-                    headers=headers,
-                    json=payload,
-                    timeout=self._timeout,
+        # time, and we always sleep after to satisfy the gateway throttle.
+        with self._attempt("openai") as m:
+            with _OPENAI_LOCK:
+                headers = build_openai_headers(
+                    api_key=self._api_key,
+                    config_headers=self._custom_headers,
                 )
-                resp.raise_for_status()
-                data = resp.json()
-            finally:
-                # Sleep on every attempt — including failures — so a tight
-                # retry loop never bursts the gateway.
-                time.sleep(_OPENAI_RATE_LIMIT_SEC)
-        choices = data.get("choices") or []
-        text = ""
-        if choices:
-            msg = choices[0].get("message") or {}
-            text = (msg.get("content") or "").strip()
-        # Token tracking
-        usage = data.get("usage") or {}
-        prompt_tokens = int(usage.get("prompt_tokens") or 0)
-        completion_tokens = int(usage.get("completion_tokens") or 0)
-        token_counter.record("openai", self._model, prompt_tokens, completion_tokens)
-        return text or None
+                try:
+                    resp = requests.post(
+                        self._endpoint,
+                        headers=headers,
+                        json=payload,
+                        timeout=self._timeout,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                finally:
+                    # Sleep on every attempt — including failures — so a tight
+                    # retry loop never bursts the gateway.
+                    self._throttle(m)
+            choices = data.get("choices") or []
+            text = ""
+            if choices:
+                msg = choices[0].get("message") or {}
+                text = (msg.get("content") or "").strip()
+            # Token tracking
+            usage = data.get("usage") or {}
+            m["prompt"] = int(usage.get("prompt_tokens") or 0)
+            m["completion"] = int(usage.get("completion_tokens") or 0)
+            m["outcome"] = "ok" if text else "empty"
+            return text or None
 
     def _call_openai_messages(self, messages: list, temperature: float) -> Optional[str]:
         """POST to OpenAI endpoint with a pre-formed messages list."""
@@ -472,33 +528,34 @@ class LlmClient:
             "temperature": temperature,
             "max_tokens": 2048,
         }
-        with _OPENAI_LOCK:
-            headers = build_openai_headers(
-                api_key=self._api_key,
-                config_headers=self._custom_headers,
-            )
-            try:
-                resp = requests.post(
-                    self._endpoint,
-                    headers=headers,
-                    json=payload,
-                    timeout=self._timeout,
+        with self._attempt("openai") as m:
+            with _OPENAI_LOCK:
+                headers = build_openai_headers(
+                    api_key=self._api_key,
+                    config_headers=self._custom_headers,
                 )
-                resp.raise_for_status()
-                data = resp.json()
-            finally:
-                time.sleep(_OPENAI_RATE_LIMIT_SEC)
-        choices = data.get("choices") or []
-        text = ""
-        if choices:
-            msg = choices[0].get("message") or {}
-            text = (msg.get("content") or "").strip()
-        # Token tracking
-        usage = data.get("usage") or {}
-        prompt_tokens = int(usage.get("prompt_tokens") or 0)
-        completion_tokens = int(usage.get("completion_tokens") or 0)
-        token_counter.record("openai", self._model, prompt_tokens, completion_tokens)
-        return text or None
+                try:
+                    resp = requests.post(
+                        self._endpoint,
+                        headers=headers,
+                        json=payload,
+                        timeout=self._timeout,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                finally:
+                    self._throttle(m)
+            choices = data.get("choices") or []
+            text = ""
+            if choices:
+                msg = choices[0].get("message") or {}
+                text = (msg.get("content") or "").strip()
+            # Token tracking
+            usage = data.get("usage") or {}
+            m["prompt"] = int(usage.get("prompt_tokens") or 0)
+            m["completion"] = int(usage.get("completion_tokens") or 0)
+            m["outcome"] = "ok" if text else "empty"
+            return text or None
 
 
 # ---------------------------------------------------------------------------
@@ -516,6 +573,7 @@ def from_config(llm_cfg: Dict) -> LlmClient:
     timeout = int(llm_cfg.get("timeoutSeconds", 120))
     num_ctx = int(llm_cfg.get("numCtx", 8192))
     retries = int(llm_cfg.get("retries", 1))
+    rate_limit = float(llm_cfg.get("rateLimitSeconds", _OPENAI_RATE_LIMIT_SEC))
     custom_headers = llm_cfg.get("customHeaders") or {}
     api_key = resolve_api_key(llm_cfg)
     return LlmClient(
@@ -527,4 +585,5 @@ def from_config(llm_cfg: Dict) -> LlmClient:
         timeout=timeout,
         num_ctx=num_ctx,
         max_retries=retries,
+        rate_limit_seconds=rate_limit,
     )

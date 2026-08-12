@@ -195,6 +195,7 @@ def _client_cache_key(llm_cfg: dict) -> str:
         str(llm_cfg.get("numCtx", "")),
         str(llm_cfg.get("retries", "")),
         str(llm_cfg.get("timeoutSeconds", "")),
+        str(llm_cfg.get("rateLimitSeconds", "")),
     ])
 
 
@@ -216,6 +217,18 @@ def _get_client(config: dict) -> Optional["LlmClient"]:
         timeout=llm_cfg["timeoutSeconds"],
         num_ctx=llm_cfg["numCtx"],
         max_retries=llm_cfg["retries"],
+        # This path builds the client directly rather than via from_config(),
+        # so the throttle has to be threaded through explicitly — without this
+        # the enrichment phases silently ignore llm.rateLimitSeconds.
+        rate_limit_seconds=llm_cfg.get("rateLimitSeconds", 3.0),
+    )
+    # Config that isn't visible to LlmClient but changes what we compare
+    # between runs (see tools/llm_stats.py).
+    from llm_core import tokens as _tokens
+    _tokens.record_config(
+        maxContextTokens=llm_cfg.get("maxContextTokens"),
+        enrichment=llm_cfg.get("enrichment"),
+        cacheVersion=llm_cfg.get("cacheVersion"),
     )
     _CLIENT_CACHE[key] = client
     return client
@@ -241,11 +254,16 @@ def llm_provider_reachable(config: dict) -> bool:
         return False
 
 
-def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "default") -> str:
+def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "default",
+              stage: str = "") -> str:
     """Issue a single LLM call via the unified client. Returns "" on failure.
 
     Note: prompt/response tracing is centralized in LlmClient.generate()
     (controlled by the --trace-prompts CLI flag / LLM_TRACE_PROMPTS env var).
+
+    *stage* labels the call in the LLM report (llm_core.tokens). It defaults to
+    `kind`, which is deliberately separate: `kind` drives behaviour (domain
+    anchoring, blocklist scrubbing) and must not be split for reporting.
     """
     client = _get_client(config)
     if client is None:
@@ -259,7 +277,9 @@ def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "defau
         domain = _get_domain_context(config)
         if domain:
             system = f"{system}\n\n{domain}".strip() if system else domain
-    text = client.generate(system, prompt)
+    from llm_core import tokens as _tokens
+    with _tokens.stage(stage or f"enrich.{kind}"):
+        text = client.generate(system, prompt)
     if not text and client.provider == "ollama":
         _log.warning(
             "Ollama returned no response (prompt may exceed context window or "
@@ -343,7 +363,8 @@ def get_description(source: str, config: dict, callee_descriptions: dict = None,
 ```
 
 One-line description:"""
-    return _call_llm(prompt, config, kind="description")
+    return _call_llm(prompt, config, kind="description",
+                      stage="enrich.function_description")
 
 
 def get_global_description(source: str, config: dict, abbreviations: dict = None) -> str:
@@ -361,7 +382,8 @@ def get_global_description(source: str, config: dict, abbreviations: dict = None
 ```
 
 One-line description:"""
-    return _call_llm(prompt, config, kind="description")
+    return _call_llm(prompt, config, kind="description",
+                      stage="enrich.global_description")
 
 
 def get_unit_description(
@@ -424,7 +446,8 @@ One sentence:"""
                         return text
                 except Exception as exc:  # pragma: no cover — defensive
                     _log.debug("ensemble_generate for unit '%s' failed: %s", unit_name, exc)
-        return _call_llm(prompt, config, kind="description")
+        return _call_llm(prompt, config, kind="description",
+                          stage="enrich.unit_description")
 
     return _cached_desc(config, f"unit|{unit_name}|{fn_block}|{gv_block}|{abbr_key}", _gen)
 
@@ -496,7 +519,8 @@ Struct name: {struct_name or '(unnamed)'}
 Fields: {fields_part or 'none'}
 
 One-line description:"""
-        return _call_llm(prompt, config, kind="description")
+        return _call_llm(prompt, config, kind="description",
+                          stage="enrich.struct_description")
 
     return _cached_desc(config, f"struct|{struct_name}|{fields_part}|{abbr_key}", _gen)
 
@@ -771,7 +795,8 @@ def get_rich_description(
     parts.append("\nDescription:")
 
     user_prompt = "\n".join(parts)
-    return _call_llm(user_prompt, config, system=_RICH_DESCRIPTION_SYSTEM, kind="description")
+    return _call_llm(user_prompt, config, system=_RICH_DESCRIPTION_SYSTEM, kind="description",
+                      stage="enrich.function_description.rich")
 
 
 def _get_refined_description(
@@ -833,7 +858,8 @@ Do not add filler or qualifications just to look different.
 
     parts.append("\nRevised description:")
 
-    return _call_llm("\n".join(parts), config, system=system, kind="description")
+    return _call_llm("\n".join(parts), config, system=system, kind="description",
+                      stage="enrich.function_description.refine")
 
 
 def get_rich_global_description(
@@ -886,7 +912,8 @@ def get_rich_global_description(
         "short sentence: what it stores, what purpose it serves. Use the "
         "write/read site context to understand how it is used."
     )
-    return _call_llm("\n".join(parts), config, system=system, kind="description")
+    return _call_llm("\n".join(parts), config, system=system, kind="description",
+                      stage="enrich.global_description.rich")
 
 
 def _build_function_context(

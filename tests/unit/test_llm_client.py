@@ -190,6 +190,74 @@ class TestGenerateOpenAI:
 
 
 # ---------------------------------------------------------------------------
+# Gateway throttle (llm.rateLimitSeconds)
+# ---------------------------------------------------------------------------
+
+class TestRateLimit:
+    def _client(self, **kwargs):
+        defaults = dict(provider="openai", base_url="http://host",
+                        model="gpt-4", timeout=5, num_ctx=2048)
+        defaults.update(kwargs)
+        return LlmClient(**defaults)
+
+    def test_defaults_to_three_seconds(self):
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_openai_response("ok")), \
+             patch("llm_core.client.time.sleep") as mock_sleep:
+            self._client().generate("sys", "user")
+        mock_sleep.assert_called_once_with(3.0)
+
+    def test_honours_configured_value(self):
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_openai_response("ok")), \
+             patch("llm_core.client.time.sleep") as mock_sleep:
+            self._client(rate_limit_seconds=0.5).generate("sys", "user")
+        mock_sleep.assert_called_once_with(0.5)
+
+    def test_zero_never_sleeps(self):
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_openai_response("ok")), \
+             patch("llm_core.client.time.sleep") as mock_sleep:
+            self._client(rate_limit_seconds=0).generate("sys", "user")
+        mock_sleep.assert_not_called()
+
+    def test_sleeps_even_when_the_call_fails(self):
+        """The pause is in a finally block — a retry storm must not burst the
+        gateway just because every request errored."""
+        import requests as _requests
+        with patch("llm_core.client.requests.post",
+                   side_effect=_requests.ConnectionError("boom")), \
+             patch("llm_core.client.time.sleep") as mock_sleep:
+            result = self._client(max_retries=1).generate("sys", "user")
+        assert result is None
+        assert mock_sleep.call_count == 2          # 1 initial attempt + 1 retry
+        assert all(c.args == (3.0,) for c in mock_sleep.call_args_list)
+
+    def test_ollama_never_sleeps(self):
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_ollama_response("ok")), \
+             patch("llm_core.client.time.sleep") as mock_sleep:
+            _ollama_client().generate("sys", "user")
+        mock_sleep.assert_not_called()
+
+    def test_from_config_passes_the_value_through(self):
+        client = from_config({
+            "provider": "openai",
+            "baseUrl": "http://host",
+            "defaultModel": "gpt-4",
+            "timeoutSeconds": 5,
+            "numCtx": 2048,
+            "retries": 1,
+            "rateLimitSeconds": 1.5,
+        })
+        with patch("llm_core.client.requests.post",
+                   return_value=_mock_openai_response("ok")), \
+             patch("llm_core.client.time.sleep") as mock_sleep:
+            client.generate("sys", "user")
+        mock_sleep.assert_called_once_with(1.5)
+
+
+# ---------------------------------------------------------------------------
 # call() — multi-turn
 # ---------------------------------------------------------------------------
 

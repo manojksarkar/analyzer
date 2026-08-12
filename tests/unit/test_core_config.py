@@ -68,6 +68,31 @@ class TestLoadLlmConfig:
         with pytest.raises(LlmConfigError, match="'llm' block"):
             load_llm_config({"other": "stuff"})
 
+    def test_rate_limit_defaults_to_three_seconds(self):
+        assert load_llm_config(_cfg())["rateLimitSeconds"] == 3.0
+
+    def test_rate_limit_override(self):
+        assert load_llm_config(_cfg(rateLimitSeconds=0.5))["rateLimitSeconds"] == 0.5
+
+    def test_rate_limit_zero_is_valid(self):
+        assert load_llm_config(_cfg(rateLimitSeconds=0))["rateLimitSeconds"] == 0.0
+
+    def test_rate_limit_negative_raises(self):
+        with pytest.raises(LlmConfigError, match="rateLimitSeconds"):
+            load_llm_config(_cfg(rateLimitSeconds=-1))
+
+    def test_rate_limit_non_numeric_raises(self):
+        with pytest.raises(LlmConfigError, match="rateLimitSeconds"):
+            load_llm_config(_cfg(rateLimitSeconds="fast"))
+
+    def test_rate_limit_null_raises_with_hint(self):
+        with pytest.raises(LlmConfigError, match="use 0 to disable"):
+            load_llm_config(_cfg(rateLimitSeconds=None))
+
+    def test_rate_limit_env_var_overrides_config(self, monkeypatch):
+        monkeypatch.setenv("LLM_RATE_LIMIT_SECONDS", "0")
+        assert load_llm_config(_cfg(rateLimitSeconds=3.0))["rateLimitSeconds"] == 0.0
+
 
 class TestLoadConfigAnalyzerConfigOverride:
     """`ANALYZER_CONFIG` env var injects a per-project/per-version config (M1.1)."""

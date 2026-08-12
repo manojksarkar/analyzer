@@ -660,6 +660,14 @@ def run(config: EngineConfig) -> None:
         enrichment_config=enrichment_cfg,
         max_context_tokens=max_context_tokens,
     )
+    # Knobs the LlmClient can't see but that change the numbers when comparing
+    # two runs (tools/llm_stats.py diffs these).
+    from llm_core import tokens as _tokens
+    _tokens.record_config(
+        batchSize=config.llm_batch_size,
+        maxContextTokens=max_context_tokens,
+        enrichment=enrichment_cfg,
+    )
     writer = OutputWriter(config.out_dir)
 
     # Process each source file

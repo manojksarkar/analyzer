@@ -27,7 +27,7 @@ def test_struct_description_cached(tmp_path, monkeypatch):
     _fresh_cache(tmp_path, monkeypatch)
     calls = {"n": 0}
 
-    def fake_call(prompt, config, *, system="", kind="default"):
+    def fake_call(prompt, config, *, system="", kind="default", **kwargs):
         calls["n"] += 1
         return "A point."
 
@@ -64,7 +64,7 @@ def test_behaviour_names_cached(tmp_path, monkeypatch):
     _fresh_cache(tmp_path, monkeypatch)
     calls = {"n": 0}
 
-    def fake_call(prompt, config, *, system="", kind="default"):
+    def fake_call(prompt, config, *, system="", kind="default", **kwargs):
         calls["n"] += 1
         return "Input Name: the input\nOutput Name: the output"
 
