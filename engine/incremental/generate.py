@@ -162,7 +162,7 @@ def generate_full(
     project_name = (project.get("name") or "").strip()
     vstore = VersionStore(ws)
     hstore, estore = HashStore(vstore), EdgeStore(vstore)
-    ridx = ReuseIndex(ws)
+    # ridx is bound after make_store below (the reuse index now lives in the store).
 
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
@@ -181,6 +181,8 @@ def generate_full(
     commit_key = os.path.basename(repo_dir)
     version_id = version_id or commit_key
     store = make_store(project_id, workspaces_root)
+    from incremental.engine import StoreReuseIndex
+    ridx = StoreReuseIndex(store)      # reuse index via the store: Postgres under PgStore
 
     # 2. resolved config -> <commit_key>/config.json + a "running" manifest so the
     #    version is queryable immediately (status flips to complete/failed below).

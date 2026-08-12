@@ -210,6 +210,25 @@ def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any]) -> None:
                 json.dump(merged[n], fh, indent=2)
 
 
+class StoreReuseIndex:
+    """Adapts ArtifactStore's reuse API to the ``.get(fp)`` shape `carry_forward_from_index`
+    expects, so cross-version reuse resolves through the STORE — the `reuse_index` table under
+    PgStore — instead of the legacy ``cache/index.json`` file. FileStore keeps writing that same
+    file, so DB-less runs are byte-for-byte unchanged."""
+
+    def __init__(self, store):
+        self._store = store
+
+    def get(self, fingerprint):
+        return self._store.reuse_get(fingerprint)
+
+    def put(self, fingerprint, version_id, entity_key, *, overwrite: bool = False):
+        return self._store.reuse_put(fingerprint, version_id, entity_key, overwrite=overwrite)
+
+    def save(self) -> None:
+        self._store.reuse_save()
+
+
 def _artifact_dir_for(store, vstore, version_id: Optional[str], commit: Optional[str]) -> str:
     """The dir holding a version's rendered artifacts, for baseline / cross-version reuse.
 
@@ -352,8 +371,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     project = get_project(project_id)        # api/db/data/projects.json (no project.json)
     project_name = (project.get("name") or "").strip() or None
     from incremental.store import make_store
-    hstore, estore, ridx = HashStore(vstore), EdgeStore(vstore), ReuseIndex(ws)
+    hstore, estore = HashStore(vstore), EdgeStore(vstore)
     store = make_store(project_id, workspaces_root)
+    ridx = StoreReuseIndex(store)      # reuse index via the store: Postgres under PgStore
     # Version identity (08): the checkout DIR stays commit-keyed; version_id is the real ver…
     # id (--version) supplied by the backend, else commit[:16] for standalone CLI use.
     commit_key = os.path.basename(repo_dir)
