@@ -1007,14 +1007,30 @@ def _read_engine_manifest(project_id: str, commit_sha: str) -> dict:
         return {}
 
 
-def _read_run_metadata(project_id: str, commit_sha: str) -> dict:
-    """The run's model/metadata.json ({basePath, projectName, generatedAt, version,
-    parseFingerprint}), or {}. Its fields are stored on the version row (PG-5: the file goes away)."""
-    try:
-        p = _commit_dir(project_id, commit_sha) / "model" / "metadata.json"
-        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
-    except (OSError, ValueError):
-        return {}
+def _read_run_metadata(project_id: str, commit_sha: str,
+                       version_id: Optional[str] = None) -> dict:
+    """The run's metadata.json ({basePath, projectName, generatedAt, version, parseFingerprint}),
+    or {}. Its fields are stored on the version row (versions.project_name/base_path/
+    parse_fingerprint), which is why this is read at completion.
+
+    Looked up in the order the model can actually exist now that the commit-dir copy is gone:
+    the version's own model dir (FileStore writes versions/<ver…>/model), then the run's model
+    dir at the data root — under PgStore the model is only in Postgres, so the just-finished
+    run's model/ is the sole place metadata.json survives. Jobs are serialized, so that dir
+    still holds THIS run's metadata at completion.
+    """
+    candidates = []
+    vdir = _version_dir(project_id, version_id)
+    if vdir is not None:
+        candidates.append(vdir / "model" / "metadata.json")
+    candidates.append(get_settings().repo_root / "model" / "metadata.json")
+    for p in candidates:
+        try:
+            if p.is_file():
+                return json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+    return {}
 
 
 # _sync_model_to_db was removed in the PG-7b cutover: it re-persisted the completed run's
@@ -1153,7 +1169,7 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
     # under; fall back to a fresh id only for callers that didn't reserve one.
     vid = getattr(job, "version_id", None) or f"ver{uuid.uuid4().hex[:8]}"
     reserved = db.versions.get(vid) if getattr(job, "version_id", None) else None
-    _meta = _read_run_metadata(job.project_id, job.commit_sha)
+    _meta = _read_run_metadata(job.project_id, job.commit_sha, vid)
     version = Version(
         id=vid,
         project_id=project.id,
