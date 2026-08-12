@@ -172,6 +172,73 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-12c (**Phase 1 parse diagnostics — a log trail for "why is this function missing from
+> `model/functions.json`?"** Branch `feat/phase1-parse-diagnostics`, `engine/parser.py` only.
+> Motivation: Phase 1 had **zero `.debug()` calls**, ~17 bare `print()` (which never reach
+> `logs/run_<date>.log`), and **discarded `tu.diagnostics` entirely** — so a function absent from the model
+> left no trail at all. The flowchart engine already read diagnostics
+> (`flowchart/ast_engine/parser.py::_log_diagnostics`), which is much of why Phase 3's logs felt usable.
+> **Design constraints that shaped this** (all deliberate, don't "fix" them):
+> (1) **Counters, not per-cursor logging.** `configure_logging` gives the file handler `DEBUG`
+> unconditionally, so a `logger.debug()` in `visit_definitions` would format + write millions of lines on
+> *every* run, `--verbose` or not. Everything accumulates in module-level `_diag_*` counters and is formatted
+> **once** by `_log_parse_summary()` at the end of `main()`.
+> (2) **DEBUG is bounded to per-FILE scale, never per-cursor** (one line per TU / per skipped file).
+> (3) **No new CLI flag** — user rejected one explicitly; `--verbose` already exists and the summary is
+> always-on anyway.
+> (4) **Nothing in `logs/` is read by code.** The summary is built from in-memory counters, never by re-reading
+> the log; Phases 2-4 still read `model/*.json` only. An earlier design wrote `model/parse_report.json` and was
+> rejected — `model/` is the DOCX data contract, not a diagnostics dump.
+> **Levels:** `CRITICAL` = the 4 fatal `sys.exit(2)` paths (bad macro CSV, data-dictionary CSV
+> missing/empty/unparseable) + a top-level `except BaseException` in `__main__` that logs the traceback and
+> **re-raises** (never swallows); `ERROR` = a TU that fails to load (run continues, model is *partial*);
+> `WARNING` = TUs that parsed *with* clang errors, functions declared but never defined, text-scan misses;
+> `INFO` = resolved-input banner, stage accounting, drop tallies, the ex-`print()` output-file lines;
+> `DEBUG` = per-TU ledger (`TU x.cpp: ok, N def(s), M clang error(s)`), full `CLANG_ARGS`, skipped files,
+> drop samples.
+> **Drop reasons** are recorded by a branch added at the **end** of the `visit_definitions` if/elif chain (so
+> it cannot intercept a cursor the existing branches would take), scoped by new cached `_under_project_base()`
+> so system-header cursors don't bury the signal: `not-project-file`, `dedup-hit`, `kind=<CursorKind>`.
+> **`declaration-only` is resolved late, not counted inline** — counting every declaration cursor gave a
+> useless `749` on SampleCppProject (nearly all *are* recorded via their `.cpp`, parsed later). Declarations
+> are collected into `_diag_decl_only` keyed by `get_function_key`, then filtered against `functions` at
+> summary time → **2 genuinely never-defined functions**. Keep this shape.
+> **Text reconciliation** (`_scan_unrecorded_functions`, `_FUNC_DEF_RE`) piggybacks the read loop
+> `_scan_defines` already runs over every project file, so it costs no extra I/O. It is the **only** way to see
+> a definition in an inactive `#if` branch — libclang creates no cursor, so there is no rejection to log.
+> **Known limitation:** line-based, so a signature split across lines (return type on its own line, as in
+> `Layer1/Diag/PreprocIfFunction.cpp`) is not matched; output is capped at `_DIAG_SAMPLE_CAP` and labelled a
+> heuristic hint list, never an input to anything.
+> **Also:** `is_project_file` is now **memoized** (`_compute_is_project_file` + `_project_file_cache`) — it was
+> doing `abspath`/`normcase`/`relpath` per cursor from 13 call sites. Safe because `MODULE_BASE_PATH`,
+> `_FILE_COMPONENT_MAP`, `_EXCLUDE_NAME_PATTERNS` are each assigned once at import and never mutated **in the
+> pipeline** — but tests re-point `MODULE_BASE_PATH`, so anything doing that must clear
+> `_project_file_cache` + `_under_base_cache` (the test file has a local `_clear_path_caches()` helper;
+> deliberately **not** a reset function in `parser.py`, which would be dead production code). Module-level `_log = get_logger("parser")` added at import: the macro-loading report at
+> import time previously had **no handler installed**, so those INFO lines were silently dropped. Emitted
+> strings are ASCII-only (standalone `python engine/parser.py` lacks run.py's UTF-8 forcing → em-dashes
+> mangled).
+> **Findings surfaced, deliberately NOT fixed** (each would change output): (a) SampleCppProject has **5 TUs
+> with `unknown type name 'VOID'`** (`Layer1/Signal/*`, `Layer1/Diag/{ForwardVoidDecl,VoidIsVoid}.cpp`) — real
+> preprocessor/macro gap; (b) the `declarationOnly` branch in `visit_definitions` is **dead code** — the outer
+> gate already requires `cursor.is_definition()`, so `elif fk not in functions` can never run, and
+> declaration-only functions never enter `functions.json` at all; (c) **two log directories** — `run.py` passes
+> `project_root=SCRIPT_DIR` (= `engine/`) to `configure_logging` while phase subprocesses auto-configure to
+> `cwd` (= repo root), so orchestrator and phase logs can land in different files (`engine/logs/*.log` are
+> 0 bytes; `logs/*.log` has the real content) and `paths().logs_dir` says `<root>/logs`.
+> (d) **the unit suite clobbers `model/clang_include_paths.json`** — `tests/unit/test_cli.py` invokes
+> `engine/run.py`, which rewrites that file before Phase 1; against its throwaway project the result is `{}`.
+> The real `model/` is left with **zero include dirs**, so the *next* parse silently resolves fewer headers and
+> drops call edges (`calledByIds`) — 64 of 292 entries changed on SampleCppProject, same count with the
+> unmodified parser, i.e. pre-existing and unrelated to this work. Found while A/B-verifying; cost an
+> investigation. **Any future A/B of parser output must confirm `clang_include_paths.json` is populated first**
+> (restore it, or re-run `run.py`) or the comparison is meaningless.
+> **Verification:** `model/functions.json` **byte-for-byte identical** A/B on SampleCppProject (292 entries) —
+> the gate split is behaviour-preserving; that comparison is the gate for any future change here. Unit suite
+> 697 passed (678 + 19 new in `tests/unit/test_parse_diagnostics.py`). Phase 1 timing: OLD 30.5-34.3s vs NEW
+> 27.0-39.5s over interleaved runs — libclang dominates and variance swamps the delta, so **no measurable
+> change**, no regression.)
+
 > Updated: 2026-08-12b (**LLM observability: every call is now timed and attributed to a pipeline stage.**
 > Motivation: nothing in the project reported LLM latency, so "which phase/view is slow, and is it our logic,
 > the server, or the throttle?" was unanswerable — the old report printed only `calls=N` + token counts, and
