@@ -188,6 +188,9 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         customHeaders     - dict, default {}
         apiKey            - str | None (env LLM_API_KEY wins)
         maxContextTokens  - int | None (null → auto-derived from numCtx/provider)
+        rateLimitSeconds  - float >= 0, default 3.0 (pause after every OpenAI
+                            call to satisfy the gateway throttle; 0 disables
+                            it; ignored on Ollama)
         enrichment        - dict of feature toggles (each must be a bool):
             twoPassDescriptions (default True)
             selfReview          (default False)
@@ -199,7 +202,8 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
     Environment variables (override the matching config field if set):
         LLM_PROVIDER, LLM_BASE_URL, LLM_DEFAULT_MODEL,
-        LLM_TIMEOUT_SECONDS, LLM_NUM_CTX, LLM_RETRIES, LLM_API_KEY
+        LLM_TIMEOUT_SECONDS, LLM_NUM_CTX, LLM_RETRIES, LLM_API_KEY,
+        LLM_RATE_LIMIT_SECONDS
 
     Raises
     ------
@@ -293,6 +297,28 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
                 f"llm.maxContextTokens must be positive (got {max_ctx})"
             )
 
+    # rateLimitSeconds: pause after every OpenAI call, including failed ones,
+    # because the corporate gateway throttles ~1 request per 3 seconds. 0
+    # disables the throttle entirely. Ollama is not gateway-throttled and
+    # never sleeps, so this is an OpenAI-only knob.
+    rate_limit_raw = _env_or("LLM_RATE_LIMIT_SECONDS",
+                             llm.get("rateLimitSeconds", 3.0))
+    if rate_limit_raw is None or rate_limit_raw == "":
+        raise LlmConfigError(
+            "llm.rateLimitSeconds must be a number — "
+            "use 0 to disable the throttle"
+        )
+    try:
+        rate_limit = float(rate_limit_raw)
+    except (TypeError, ValueError):
+        raise LlmConfigError(
+            f"llm.rateLimitSeconds must be a number (got {rate_limit_raw!r})"
+        )
+    if rate_limit < 0:
+        raise LlmConfigError(
+            f"llm.rateLimitSeconds must be >= 0 (got {rate_limit})"
+        )
+
     # enrichment: every flag must be a bool
     enrich_raw = llm.get("enrichment", {}) or {}
     if not isinstance(enrich_raw, dict):
@@ -365,6 +391,7 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "customHeaders": dict(custom_headers),
         "apiKey": api_key,
         "maxContextTokens": max_ctx,
+        "rateLimitSeconds": rate_limit,
         "enrichment": enrichment,
         "cacheVersion": cache_version,
         "fewShotExamplesDir": few_shot_dir.strip(),
@@ -412,6 +439,8 @@ def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
         f"  maxContextTokens  : {max_ctx_display}",
         f"  timeoutSeconds    : {llm_cfg.get('timeoutSeconds')}",
         f"  retries           : {llm_cfg.get('retries')}",
+        f"  rateLimitSeconds  : {llm_cfg.get('rateLimitSeconds')}  "
+        f"({'used' if llm_cfg.get('provider') == 'openai' else 'ignored on ollama'})",
         f"  apiKey            : {api_key_display}",
         f"  cacheVersion      : {llm_cfg.get('cacheVersion')}",
         f"  fewShotExamplesDir: {llm_cfg.get('fewShotExamplesDir')}",

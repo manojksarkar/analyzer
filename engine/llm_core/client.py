@@ -10,8 +10,9 @@ same response post-processing (strip_think_section + token tracking).
 
 Hard rules baked in:
   - OpenAI requests are serialised process-wide (1 in flight at a time) and
-    every successful OpenAI call is followed by a 3-second sleep, because the
-    corporate gateway throttles ~1 request per 3 seconds.
+    every OpenAI call — successful or not — is followed by a sleep, because
+    the corporate gateway throttles ~1 request per 3 seconds. The pause is
+    `llm.rateLimitSeconds` (default 3.0; 0 disables it). Ollama never sleeps.
   - Configurable retry. Default = 1 retry on (HTTP error | empty response).
   - All responses pass through strip_think_section() before being returned.
   - Token usage from both providers is recorded into llm.tokens.
@@ -120,6 +121,8 @@ def _trace_response(ordinal: int, response: Optional[str]) -> None:
 # of LlmClient with provider="openai" shares it — even if multiple clients
 # are constructed by different phases.
 _OPENAI_LOCK = threading.Lock()
+# Default pause after each OpenAI call. Overridable per-client via
+# `rate_limit_seconds` (config key `llm.rateLimitSeconds`).
 _OPENAI_RATE_LIMIT_SEC = 3.0
 
 
@@ -139,6 +142,7 @@ class LlmClient:
         temperature: float = 0.1,
         num_ctx: int = 8192,
         max_retries: int = 1,
+        rate_limit_seconds: float = _OPENAI_RATE_LIMIT_SEC,
         # Legacy-compat args
         url: Optional[str] = None,
         use_openai_format: bool = False,
@@ -155,6 +159,9 @@ class LlmClient:
         self._temperature = float(temperature)
         self._num_ctx = int(num_ctx)
         self._max_retries = max(0, int(max_retries))
+        # Seconds to pause after every OpenAI call (see _OPENAI_RATE_LIMIT_SEC).
+        # 0 disables the throttle. Never applied on the Ollama path.
+        self._rate_limit = max(0.0, float(rate_limit_seconds))
         self._api_key = api_key
         self._custom_headers = dict(custom_headers or {})
 
@@ -451,7 +458,8 @@ class LlmClient:
             finally:
                 # Sleep on every attempt — including failures — so a tight
                 # retry loop never bursts the gateway.
-                time.sleep(_OPENAI_RATE_LIMIT_SEC)
+                if self._rate_limit > 0:
+                    time.sleep(self._rate_limit)
         choices = data.get("choices") or []
         text = ""
         if choices:
@@ -487,7 +495,8 @@ class LlmClient:
                 resp.raise_for_status()
                 data = resp.json()
             finally:
-                time.sleep(_OPENAI_RATE_LIMIT_SEC)
+                if self._rate_limit > 0:
+                    time.sleep(self._rate_limit)
         choices = data.get("choices") or []
         text = ""
         if choices:
@@ -516,6 +525,7 @@ def from_config(llm_cfg: Dict) -> LlmClient:
     timeout = int(llm_cfg.get("timeoutSeconds", 120))
     num_ctx = int(llm_cfg.get("numCtx", 8192))
     retries = int(llm_cfg.get("retries", 1))
+    rate_limit = float(llm_cfg.get("rateLimitSeconds", _OPENAI_RATE_LIMIT_SEC))
     custom_headers = llm_cfg.get("customHeaders") or {}
     api_key = resolve_api_key(llm_cfg)
     return LlmClient(
@@ -527,4 +537,5 @@ def from_config(llm_cfg: Dict) -> LlmClient:
         timeout=timeout,
         num_ctx=num_ctx,
         max_retries=retries,
+        rate_limit_seconds=rate_limit,
     )

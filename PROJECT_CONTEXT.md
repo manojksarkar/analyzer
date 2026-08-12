@@ -172,6 +172,23 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-12 (**the OpenAI gateway throttle is now a config key, `llm.rateLimitSeconds`** — it was
+> the hardcoded `_OPENAI_RATE_LIMIT_SEC = 3.0` in [engine/llm_core/client.py](engine/llm_core/client.py).
+> **Why it matters:** the pause is in a `finally` inside `_OPENAI_LOCK`, so it fires after *every* OpenAI
+> call including failed ones, and the flowchart engine has **no parallelism at all** — every sleep is
+> wall-clock. Measured from `logs/run_*.log`: ~**1.5 label batches + ~0.25 coherence calls per function**
+> (212 batches / 139 functions on 2026-08-10), i.e. **~5.4 s of pure sleep per function** — ~12 min on a
+> 139-function run, ~45 min at 500. **Changes:** (1) `core.config.load_llm_config` parses optional
+> `rateLimitSeconds` (float ≥ 0, default 3.0, env `LLM_RATE_LIMIT_SECONDS`); explicit `null` raises with a
+> "use 0 to disable" hint rather than being read as auto. (2) `LlmClient.__init__` takes
+> `rate_limit_seconds`, stores `self._rate_limit`, and both OpenAI paths guard `if self._rate_limit > 0`.
+> (3) `from_config` threads it through — which is what gives `flowchart_engine._build_llm_client` the
+> setting for free. (4) Added to `engine/config/config.json` + the startup banner. Behaviour is unchanged
+> when the key is absent. **Note for anyone measuring the win:** `tokens.record()` sits on the success path
+> only, so timeouts/HTTP errors sleep but are never counted — the `calls=N` report understates the true
+> throttle cost. Tests: `TestRateLimit` in `tests/unit/test_llm_client.py` (6) + 7 in
+> `tests/unit/test_core_config.py`.)
+
 > Updated: 2026-08-11 (**`run.py` rejects unknown options and stray positionals instead of ignoring them**
 > — branch `fix/cli-strict-args`. Reported symptom: `python engine/run.py <proj> --phase 3` printed nothing
 > unusual and re-ran the whole pipeline **from Phase 1**. Root cause: the hand-rolled argv loop's final
@@ -743,7 +760,8 @@ validated first by `load_llm_config()`.
 failing field name when any required field is missing / empty / wrong type:
 `provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`, `retries`.
 Optional fields (`enrichment.*`, `descriptions`, `behaviourNames`,
-`maxContextTokens`, `cacheVersion`, `fewShotExamplesDir`, `customHeaders`)
+`maxContextTokens`, `cacheVersion`, `fewShotExamplesDir`, `customHeaders`,
+`rateLimitSeconds`)
 are type-checked the same way. `provider` is restricted to
 `"ollama"`|`"openai"`.
 
@@ -764,6 +782,7 @@ LLM configuration (will be used for this run)
   maxContextTokens  : auto -> 7680
   timeoutSeconds    : 120
   retries           : 1
+  rateLimitSeconds  : 3.0  (ignored on ollama)
   apiKey            : (none)
   cacheVersion      : 1
   fewShotExamplesDir: few_shot_examples
@@ -1199,6 +1218,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     "behaviourNames":    false,           // enable LLM behaviour input/output names
     "summarize":         false,           // false = suppress Phase 2 hierarchy summarization
     "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY
+    "rateLimitSeconds":  3.0,             // pause after every OpenAI call (>=0; 0 = off; ollama ignores)
     "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
 
     // version3 — token budgeting
@@ -1264,6 +1284,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 | `LLM_NUM_CTX` | `llm.numCtx` |
 | `LLM_RETRIES` | `llm.retries` |
 | `LLM_API_KEY` | `llm.apiKey` |
+| `LLM_RATE_LIMIT_SECONDS` | `llm.rateLimitSeconds` |
 
 Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 `USER_ID`, `SEND_SYSTEM_NAME` (handled inside `llm_core.headers`).
@@ -1462,8 +1483,11 @@ Shared pipeline:
 
 Hard rules baked in for the OpenAI route:
 - A class-level `_OPENAI_LOCK` serialises every OpenAI request process-wide.
-- Every OpenAI call is followed by `time.sleep(3.0)` (`_OPENAI_RATE_LIMIT_SEC`)
-  even on failure, because the corporate gateway throttles ~1 req/3s.
+- Every OpenAI call is followed by `time.sleep(llm.rateLimitSeconds)` even on
+  failure, because the corporate gateway throttles ~1 req/3s. Default `3.0`
+  (`_OPENAI_RATE_LIMIT_SEC`); `0` disables the pause entirely. Ollama never
+  sleeps. Cost: the engine is single-threaded, so this is ~1.5 batches +
+  ~0.25 coherence calls per function ≈ **5.4 s/function** on a flowchart run.
 
 Public properties (version3 adds `num_ctx`):
 `client.provider`, `client.model`, `client.num_ctx` — prefer these over

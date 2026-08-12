@@ -83,6 +83,7 @@
     "timeoutSeconds": 300,
     "numCtx": 8192,
     "retries": 1,
+    "rateLimitSeconds": 3.0,
     "fewShotExamplesDir": "few_shot_examples",
     "abbreviationsPath": "config/abbreviations.txt",
     "domainContextPath": "config/domain.txt",
