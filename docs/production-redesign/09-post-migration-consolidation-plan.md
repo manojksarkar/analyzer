@@ -84,7 +84,17 @@ applied.
 | **B1** | **Per-job data root.** `pipeline_runner` sets `ANALYZER_DATA_ROOT` to a per-job dir (the mechanism exists in `core/paths.py`, is subprocess-inherited, and is already exercised by `verify_incremental`). Removes the shared `model/`+`output/` entirely. | ~½ day | low–med |
 | **B2** | **Per-run temp path for the clang-args response file** (currently in the shared `model/` dir — doc 07 defect 31). | ~1h | low |
 | **B3** | **Atomic writes (temp+rename) for `.mmdc_cache` / `.flowchart_cache`** — two jobs may legitimately write the same content-addressed key. | ~2h | low |
-| **B4** | **Raise `JOB_MAX_CONCURRENCY` deliberately** and add a concurrent-jobs test (two projects at once, assert both outputs intact). | ~½ day | med |
+| **B4** | **Raise `JOB_MAX_CONCURRENCY` to the target (5–6)** and add a concurrent-jobs test (several projects at once, assert every output intact and every version row correct). | ~½ day | med |
+| **B5** | **Size the DB connection budget.** `core/db.py` calls `create_engine(url, pool_pre_ping=True, future=True)` with **no `pool_size`/`max_overflow`**, so every process takes SQLAlchemy's default pool (5 + 10 overflow = 15). Each engine subprocess creates **its own** engine, so 6 concurrent jobs + the API server can demand ~100 connections — at or past Postgres's default `max_connections=100`. Set explicit pool sizes and document the budget (`jobs × pool ≤ max_connections`). | ~2h | **med — will bite at 5–6** |
+| **B6** | **LLM behaviour at N concurrent jobs.** The client rate-limits *per process*; six jobs multiply the request rate against the provider. Confirm provider limits, and decide whether throttling belongs per-process or shared. | ~½ day | med |
+
+**Two things that are already safe** (verified): the `reuse_index` upsert uses `ON CONFLICT DO
+NOTHING`, so concurrent writers cannot collide; and jobs are rejected **per project**, so
+concurrency is across *different* projects — keep that guard, since two jobs on one project would
+collide on the shared per-commit checkout dir.
+
+**Capacity note (not code):** 5–6 concurrent runs means 5–6 simultaneous libclang parses. Size CPU
+and RAM for the peak, not the average — measure with D2 before committing to the number.
 
 **Note:** B1 is required whether or not A is ever done — and if A is picked up later, per-job
 isolation matters *more*, not less, because in-process phases share one working directory.
@@ -126,7 +136,7 @@ Verified still outstanding:
 ```
 B0   (minutes, do today — removes a live corruption risk)
  └─ A0                                   capture stderr (1h; the useful part of A)
-     └─ B1 → B2 → B3 → B4                concurrency correctness  → concurrent jobs
+     └─ B1 → B2 → B3 → B5 → B6 → B4      concurrency correctness  → 5–6 concurrent jobs
           └─ D1 → D2                     narrowed parse + measurement → large-codebase speed
                └─ C0 → C1 → C8 → C3 → C5 → C9    small close-outs
                     └─ C11 ⭐ → C2 → C6 → C4 → C7 → C10   larger close-outs
@@ -135,7 +145,8 @@ B0   (minutes, do today — removes a live corruption risk)
 
 **Why this order.** B0 is free and removes a live risk. A0 buys the practical benefit of group A
 in an hour and makes everything after it debuggable. **B** then serves the first live goal —
-concurrent jobs — and B1 must precede any concurrency increase. **D1** serves the second — real
+concurrent jobs — and B1/B2/B3/B5/B6 must all precede B4, the actual increase to 5–6. **D1**
+serves the second — real
 large-codebase speed — and must come *before* C2, which changes how narrowed-parse data is stored:
 validate the feature before moving its ground. **C0** is first inside C because the seams already
 exist (it is wiring, and it takes the *rendered document* off local disk). C1/C8/C3/C5/C9 are small
@@ -152,8 +163,9 @@ does not exercise those paths.
 
 ## 4. Open decisions
 
-1. **B4 — target concurrency.** How many simultaneous jobs must the office deployment support?
-   Needed before B4; everything earlier in B is required regardless of the answer.
+1. ~~**B4 — target concurrency.**~~ **DECIDED: 5–6 simultaneous jobs.** This raises B's priority —
+   at 5–6 the shared-scratch corruption is routine rather than theoretical — and adds **B5**
+   (connection budget) and **B6** (LLM rate limits), neither of which mattered at 1–2.
 2. **C2 — skeleton storage.** Persist the model twice (post-Phase-1 + final), or derive the
    skeleton by stripping LLM fields? Decide when C6 lands.
 3. *(deferred with A)* **A6 — keep the libclang process boundary?** Recommendation: **yes**,
