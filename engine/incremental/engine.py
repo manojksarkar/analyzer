@@ -210,6 +210,18 @@ def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any]) -> None:
                 json.dump(merged[n], fh, indent=2)
 
 
+def _baseline_parse_fingerprint(base_fingerprint: Optional[str],
+                                base_model: Dict[str, Any]) -> Optional[str]:
+    """The baseline's clang-flag fingerprint for the narrowed-parse gate (M4.6).
+
+    The STORE's value wins — versions.parse_fingerprint under PgStore (doc 07 §3) — falling back
+    to the baseline's parse-dir snapshot for versions written before that column was populated.
+    None when neither has one, which disables the gate rather than failing the run."""
+    if base_fingerprint:
+        return base_fingerprint
+    return ((base_model or {}).get("metadata") or {}).get("parseFingerprint")
+
+
 class StoreReuseIndex:
     """Adapts ArtifactStore's reuse API to the ``.get(fp)`` shape `carry_forward_from_index`
     expects, so cross-version reuse resolves through the STORE — the `reuse_index` table under
@@ -244,7 +256,8 @@ def _artifact_dir_for(store, vstore, version_id: Optional[str], commit: Optional
 
 
 def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
-                        *, target, base_commit, base_parse_dir, project_name=None) -> bool:
+                        *, target, base_commit, base_parse_dir, project_name=None,
+                        base_fingerprint: Optional[str] = None) -> bool:
     """Narrowed parse (M4.4, doc 04 §11): re-parse ONLY the affected TUs and merge them
     into the baseline's parser-level snapshot, so the resulting model/ is the SAME blank
     skeleton a full parse would produce (impacted functions arrive blank -> Phase 2
@@ -299,7 +312,7 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     # M4.6 parse-fingerprint gate: if the clang flags / std / libclang toolchain changed
     # since the baseline was parsed, the baseline skeleton was built differently and a merge
     # would be unsound — discard the partial and fall back to a full parse.
-    base_fp = (base_model.get("metadata") or {}).get("parseFingerprint")
+    base_fp = _baseline_parse_fingerprint(base_fingerprint, base_model)
     part_fp = (partial.get("metadata") or {}).get("parseFingerprint")
     if base_fp and part_fp and base_fp != part_fp:
         log.info("narrowed parse: parse fingerprint changed (clang flags / std / toolchain) — full parse")
@@ -422,7 +435,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
             project_name=project_name,
             target=target, base_commit=decision["chosenBaseCommit"],
-            base_parse_dir=os.path.join(vstore.version_dir(base_commit), "parse"))
+            base_parse_dir=os.path.join(vstore.version_dir(base_commit), "parse"),
+            base_fingerprint=(store.read_run_metadata(base_vid) or {}).get("parseFingerprint"))
     if used_narrowed and verify_parse:
         # M4.5 self-check: shadow-validate the narrowed model against a FULL parse, then use
         # the full parse as the source of truth (a verify run is slow but always safe).
