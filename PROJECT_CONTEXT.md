@@ -173,6 +173,36 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-13 (`db-with-increment-changes`: **PG-7b cutover COMPLETE — Postgres is the source of
+> truth.** Validated on the office box first (two different commits: non-zero changed files, `regenerated ≥ 1`,
+> compare shows the change; `tools/verify_pg_readers.py` — new — reports per version whether view outputs,
+> model, run metadata and resolved_config are genuinely IN Postgres, since every reader falls back to disk and
+> a working run otherwise proves nothing). Then the deletions, each gated by the suite + `verify_incremental`:
+> **(1)** `_sync_model_to_db` dropped — the engine already persists via `PgStore.write_model`, and both were
+> gated on the same condition. **(2)** the **commit-dir model/output dual-write** (`vstore.capture_artifacts`)
+> dropped — the commit dir is now just the git checkout + manifest/report; artifacts live in
+> `versions/<ver…>/` + Postgres. Readers repointed first: engine baseline/cross-version reuse via a new
+> `_artifact_dir_for` (this ordering mattered — deleting first would have silently broken flowchart reuse),
+> `_make_sections`, the re-export flow (which had conflated *checkout* and *artifacts* in one `cdir`), and
+> ModelReader's disk fallback. **(3)** the reuse index moved into the store (`StoreReuseIndex`) — it was still
+> entirely `cache/index.json`, so the `reuse_index` table built in PG-4 had never been exercised. **(4)** run
+> metadata moved onto the `versions` row: the engine writes it via a new `store.write_run_metadata`
+> (`model_store.persist_run_metadata` → base_path/project_name/parse_fingerprint), the API stopped reading
+> `metadata.json`, and the narrowed-parse gate now takes the baseline fingerprint from
+> `store.read_run_metadata`. **(5)** `JsonDatabase` deleted (D-7) after moving `tools/import-output-project`
+> onto `SqlDatabase`; backend = Postgres whenever configured, else `InMemoryDatabase` as a **test seam only**
+> (startup now says loudly that an unconfigured server persists nothing, rather than looking healthy).
+> **Kept as files by design:** PNG/DOCX binaries (D-14), the git checkouts, and `model/metadata.json` — now
+> only an *in-run* intermediate between the parser and the store, with no cross-run consumer. **Kept as
+> test-only seams:** `InMemoryDatabase`, `FileStore`, and `project_db`'s read-only JSON lookup (what
+> `verify_incremental` feeds from a temp dir — the API never uses it). **Bugs found and fixed during this
+> work:** the version FK-ordering 500 on job start; a **self-baseline** regression (the reserved row became its
+> own baseline → 0 changed files → nothing regenerated, which is why a real code change never showed in
+> Compare); run metadata silently NULLing when the commit-dir model went away; and a pre-existing crash where a
+> string `behaviorDescription` reached the UI as `descriptionList` and killed the document view. **Known gap:**
+> narrowed parse has **no automated coverage** and its gate was re-sourced here — off by default and not
+> UI-reachable, but required for large codebases, so validate before enabling.)
+
 > Updated: 2026-08-10 (`db-with-increment-changes`: **storage cutover, reader half — PG-5a/5b/7a.** The API no
 > longer depends on disk snapshots for the model or the Phase-3 views; disk remains as a fallback until the
 > dual-writes are removed (PG-7b). Three increments, each additive + gated:

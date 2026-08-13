@@ -248,8 +248,20 @@ The blocker isn't `subprocess`, it's that `engine/flowchart/llm/` **shadows** `l
 | **PG-5a** ✅ | View outputs → PG: `version_output_files` table + `model_store.persist_output_files` + `PgStore.capture_output` (disk write kept) |
 | **PG-5b** ✅ | `OutputReader` (PG-first, disk fallback); **compare** reads interface tables from PG |
 | **PG-7a** ✅ | `ModelReader` (PG-first via `model_store` loaders, disk fallback); **document render + compare render** read the model from PG, version-scoped |
-| **PG-6** | Incremental on Postgres (§E) — validate 2-commit reuse/regen + compare against a live PG |
-| **PG-7b** | Cutover (destructive): drop `_sync_model_to_db`, model/output dual-writes, commit-dir layout, `api/db/data`, `JsonDatabase`; migrate the `functions` route + remaining disk asset paths; fresh-start onboarding, docs |
+| **PG-6** ✅ | Incremental on Postgres — validated on the office box: 2 different commits, non-zero changed files, `regenerated ≥ 1`, compare shows the change; `tools/verify_pg_readers.py` confirms each version is served from PG |
+| **PG-7b** ✅ | Cutover (destructive): dropped `_sync_model_to_db`, the commit-dir model/output dual-write, the file reuse index, `JsonDatabase`; run metadata + parse fingerprint moved onto the `versions` row; the importer and the API are Postgres-only |
+
+**Cutover result.** The commit dir is now only the git checkout + manifest/report; artifacts live in
+`versions/<ver…>/` (binaries) and Postgres (model, view outputs, reuse index, run metadata,
+resolved config). `InMemoryDatabase` and `FileStore` remain **test-only** seams — no production
+JSON path. Two things stay files by design: **PNG/DOCX binaries** (D-14) and `model/metadata.json`,
+which is now only an *in-run* intermediate between the parser and `store.write_run_metadata` (no
+cross-run consumer, so outside D-14's "stored project data").
+
+**Known gap:** narrowed parse (M4.4/M4.6) has **no automated coverage** and its fingerprint gate was
+re-sourced to the DB during the cutover. It is off by default and not reachable from the UI, but it
+is a required feature for large codebases — validate it before enabling (run the same commit
+narrowed vs full and assert the models match, which is what `--verify-parse` does at runtime).
 
 ### E — Incremental on Postgres
 Code is **complete** (M1–M4 + PERF caches, no TODOs). Remaining is storage + identity + validation:
