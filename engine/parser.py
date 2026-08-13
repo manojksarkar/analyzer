@@ -29,6 +29,12 @@ from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
 from incremental.virtual_dispatch import spread_virtual_families
+from core.logging_setup import get_logger
+
+# Module level, not inside main(): the macro-loading report below runs at import
+# time, and get_logger() is what installs the handlers. Obtained later, those
+# early INFO lines would be emitted with no handler attached and silently dropped.
+_log = get_logger("parser")
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -270,8 +276,7 @@ _macro_sources += _macros_layer_args
 
 _MACRO_ARGS_BY_SCOPE: dict = {}
 if _macro_sources:
-    import logging as _logging
-    _macro_log = _logging.getLogger("parser")
+    _macro_log = _log
     _macro_defs: dict = {}
     for _scope, _path in _macro_sources:
         try:
@@ -281,6 +286,10 @@ if _macro_sources:
                 default_scope=_scope,
             )
         except MacroInputError as _exc:
+            # Fatal: Phase 1 produces no model at all, so this is CRITICAL rather
+            # than ERROR (which is reserved for a single TU failing while the run
+            # continues with partial output).
+            _log.critical("macro input rejected: %s - Phase 1 aborted", _exc)
             print(f"ERROR: {_exc}")
             sys.exit(2)
         for _line in _report.lines():
@@ -487,6 +496,206 @@ def _get_source_lines(file_path: str):
     return _source_cache[file_path]
 
 
+# ---------------------------------------------------------------------------
+# Parse diagnostics — why a function did or did not reach model/functions.json
+#
+# Purely observational: counters are incremented during the walk and formatted
+# into log lines once, at the end of main(). Nothing is logged per cursor — the
+# file handler captures DEBUG on every run (see core.logging_setup), so a
+# per-cursor log call would mean millions of formatted strings and disk writes.
+# Samples are capped so a pathological project cannot flood the log either.
+# ---------------------------------------------------------------------------
+
+_DIAG_SAMPLE_CAP = 10
+
+_diag_counts: dict = defaultdict(int)          # stage totals + drop-reason tallies
+_diag_drop_samples: dict = defaultdict(list)   # reason -> ["rel/path.cpp:12 name", ...]
+_diag_tu_failures: list = []                   # (rel_path, clang message)
+_diag_tu_errors: list = []                     # (rel_path, n_errors, first message)
+_diag_tu_defs: dict = {}                       # rel_path -> definitions contributed
+_diag_unrecorded: list = []                    # (rel_path, line, name) text-scan misses
+_diag_decl_only: dict = {}                     # func_key -> "rel:line name", resolved at summary
+
+
+def _rel_path(path: str) -> str:
+    """Repo-relative, forward-slashed path for log output."""
+    try:
+        return os.path.relpath(path, MODULE_BASE_PATH).replace("\\", "/")
+    except (ValueError, TypeError):
+        return str(path).replace("\\", "/")
+
+
+# Function-shaped cursor kinds that visit_definitions deliberately does NOT record.
+# Resolved via getattr so a libclang build missing one of them cannot break import.
+_DIAG_FUNCTIONISH_KINDS = {
+    _k for _k in (
+        getattr(cindex.CursorKind, "FUNCTION_TEMPLATE", None),
+        getattr(cindex.CursorKind, "CONSTRUCTOR", None),
+        getattr(cindex.CursorKind, "DESTRUCTOR", None),
+        getattr(cindex.CursorKind, "CONVERSION_FUNCTION", None),
+    ) if _k is not None
+}
+
+_diag_recorded_names: set = set()
+
+# A function-definition-shaped line: qualifiers/return type, a name, a parameter
+# list, then an optional `{`. Deliberately loose — this is a HINT generator, not a
+# parser, so false positives are expected. The character class excludes "(" so the
+# non-greedy prefix cannot run into the parameter list and backtrack.
+_FUNC_DEF_RE = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_ \t\*&:<>,]*?"
+    r"\b([A-Za-z_][A-Za-z0-9_]*)\s*"
+    r"\([^;()]*\)\s*(?:const\s*)?\{?\s*$"
+)
+
+# Control-flow keywords and the like, which match the shape but are not definitions.
+_FUNC_DEF_SKIP = {
+    "if", "for", "while", "switch", "catch", "return", "sizeof", "else", "do",
+    "case", "new", "delete", "throw", "typedef", "using", "namespace", "defined",
+}
+
+
+def _scan_unrecorded_functions(rel_file: str, lines: list) -> None:
+    """Text-level check for definitions libclang never reported.
+
+    This is the only way to see a function sitting in an inactive #if branch: the
+    preprocessor discards it, so no cursor is ever created and there is no rejection
+    event to record. A plain text scan still sees it.
+
+    Heuristic by design — regex over C++ yields false positives (macros, function
+    pointer declarations, calls). The output is a bounded hint list for a human,
+    labelled as such in the log, and is never an input to anything.
+    """
+    if len(_diag_unrecorded) >= _DIAG_SAMPLE_CAP:
+        return
+    for idx, raw in enumerate(lines, start=1):
+        line = raw.strip()
+        # Skip comments, preprocessor lines, and pathological lengths (a minified or
+        # generated line is not worth the backtracking risk).
+        if not line or len(line) > 300 or line.startswith(("//", "/*", "*", "#")):
+            continue
+        match = _FUNC_DEF_RE.match(line)
+        if not match:
+            continue
+        name = match.group(1)
+        if name in _FUNC_DEF_SKIP or name in _diag_recorded_names:
+            continue
+        _diag_unrecorded.append((rel_file, idx, name))
+        if len(_diag_unrecorded) >= _DIAG_SAMPLE_CAP:
+            return
+
+
+_under_base_cache: dict = {}
+
+
+def _under_project_base(file_path: str) -> bool:
+    """True when the path sits under MODULE_BASE_PATH, whatever the component map says.
+
+    Used only to scope drop diagnostics to the project. A function defined in a
+    system header is out of scope rather than "missing", and counting those would
+    bury the real signal. Cached for the same reason is_project_file is.
+    """
+    if not file_path:
+        return False
+    cached = _under_base_cache.get(file_path)
+    if cached is None:
+        try:
+            abs_path = os.path.normcase(os.path.abspath(file_path))
+            abs_base = os.path.normcase(os.path.abspath(MODULE_BASE_PATH))
+            cached = abs_path.startswith(abs_base)
+        except (OSError, ValueError, TypeError):
+            cached = False
+        _under_base_cache[file_path] = cached
+    return cached
+
+
+def _diag_drop(reason: str, cursor=None) -> None:
+    """Record one rejected cursor: always a counter, a sample only up to the cap."""
+    _diag_counts[reason] += 1
+    samples = _diag_drop_samples[reason]
+    if cursor is None or len(samples) >= _DIAG_SAMPLE_CAP:
+        return
+    try:
+        loc = cursor.location
+        samples.append(
+            f"{_rel_path(loc.file.name)}:{loc.line} {cursor.spelling or '(anonymous)'}"
+        )
+    except Exception:
+        pass
+
+
+def _log_parse_summary(n_funcs: int) -> None:
+    """The end-of-Phase-1 block: what was seen, what was dropped, and why.
+
+    Formatted from the in-memory counters above. Nothing here re-reads the log, and
+    nothing here is an input to a later phase — Phases 2-4 read model/*.json only.
+    """
+    counts = _diag_counts
+    _log.info(
+        "parse summary: %d file(s) walked, %d project, %d TU(s) ok, %d failed, "
+        "%d function(s) recorded",
+        counts["files_walked"], counts["files_project"],
+        counts["tus_ok"], counts["tus_failed"], n_funcs,
+    )
+
+    if _diag_tu_failures:
+        _log.error("%d TU(s) failed to load:", len(_diag_tu_failures))
+        for rel, msg in _diag_tu_failures[:_DIAG_SAMPLE_CAP]:
+            _log.error("  %s: %s", rel, msg)
+
+    if _diag_tu_errors:
+        _log.warning(
+            "%d TU(s) parsed WITH clang errors - definitions in them may be missing:",
+            len(_diag_tu_errors),
+        )
+        # Noisiest first: the TU with the most errors is the likeliest culprit.
+        for rel, n_err, first in sorted(_diag_tu_errors, key=lambda r: -r[1])[:_DIAG_SAMPLE_CAP]:
+            _log.warning("  %s: %d error(s), first: %s", rel, n_err, first)
+        if any("file not found" in (f or "").lower() for _, _, f in _diag_tu_errors):
+            _log.warning("  Hint: missing include - check --include-path / clang_include_paths.json")
+        if any("unknown type name" in (f or "").lower() for _, _, f in _diag_tu_errors):
+            _log.warning("  Hint: undefined macro/typedef - check --macros / clang.clangArgs")
+
+    # A declaration whose definition never appeared anywhere in the parse is a real
+    # reason for a function to be absent from functions.json. Declarations that DID get
+    # a definition are silently dropped here -- they are the overwhelming majority and
+    # counting them would bury this signal.
+    never_defined = {k: v for k, v in _diag_decl_only.items() if k not in functions}
+    if never_defined:
+        _log.warning(
+            "%d function(s) declared but never defined in the parse scope:",
+            len(never_defined),
+        )
+        for desc in sorted(never_defined.values())[:_DIAG_SAMPLE_CAP]:
+            _log.warning("  %s", desc)
+    _log.debug(
+        "declarations seen: %d, of which never defined: %d",
+        len(_diag_decl_only), len(never_defined),
+    )
+
+    reasons = {k: v for k, v in counts.items() if k in _diag_drop_samples}
+    if reasons:
+        _log.info(
+            "cursors not recorded: %s",
+            ", ".join(f"{k} {v}" for k, v in sorted(reasons.items())),
+        )
+        for reason in sorted(_diag_drop_samples):
+            for sample in _diag_drop_samples[reason]:
+                _log.debug("  not recorded (%s): %s", reason, sample)
+
+    if _diag_unrecorded:
+        _log.warning(
+            "%d function-like definition(s) found in source text but NOT in the model "
+            "(heuristic - may include false positives):",
+            len(_diag_unrecorded),
+        )
+        for rel, line_no, name in _diag_unrecorded:
+            _log.warning("  %s:%d %s - in source, never seen by clang", rel, line_no, name)
+        _log.warning(
+            "  Likely an inactive #if branch, an unparsed file, or a macro-shaped line."
+        )
+
+
 def _preceding_comment(cursor) -> str:
     """Return comment text on lines immediately above cursor (// or /* */ style)."""
     if not cursor.location.file:
@@ -536,8 +745,30 @@ def _inline_comment(cursor) -> str:
     return line[idx + 2:].strip()
 
 
+# Keyed on the raw path. Anything that reassigns MODULE_BASE_PATH must clear this and
+# _under_base_cache, or the cached verdicts go stale — the pipeline never does (set once
+# at import), but tests that re-point the module at a temp tree do.
+_project_file_cache: dict = {}
+
+
 def is_project_file(file_path: str) -> bool:
     """Return True if this path should be treated as project source for parsing.
+
+    Memoized. This is called once per cursor across every TU, but the set of
+    distinct paths is small (project files plus system headers), so the
+    abspath/normcase/relpath string work is paid once per path instead of once
+    per cursor. Safe to cache because every input it reads —
+    _EXCLUDE_NAME_PATTERNS, _FILE_COMPONENT_MAP, MODULE_BASE_PATH — is assigned
+    once at import and never mutated.
+    """
+    cached = _project_file_cache.get(file_path)
+    if cached is None:
+        cached = _project_file_cache[file_path] = _compute_is_project_file(file_path)
+    return cached
+
+
+def _compute_is_project_file(file_path: str) -> bool:
+    """Uncached body of is_project_file.
 
     Uses the flat _FILE_COMPONENT_MAP built from config + filesystem scan.
     A file is included iff it is under MODULE_BASE_PATH AND appears in the map.
@@ -1081,6 +1312,11 @@ def visit_definitions(cursor):
 
         # Skip if already visited (from header included in another translation unit)
         if func_key in _visited_function_keys:
+            # Normally benign — the same definition seen through a second TU, and the
+            # first one is already recorded. Counted because it is NOT benign when two
+            # genuinely different functions collide on one key: the second is lost, and
+            # this tally is the only place that would show it.
+            _diag_drop("dedup-hit", cursor)
             for child in cursor.get_children():
                 visit_definitions(child)
             return
@@ -1228,6 +1464,32 @@ def visit_definitions(cursor):
             }
             if value_str:
                 globals_data[var_id]["value"] = value_str
+
+    elif cursor.location.file and _under_project_base(cursor.location.file.name):
+        # Nothing above recorded this cursor. When it is function-shaped, record WHY:
+        # this is the trail for "my function is missing from model/functions.json".
+        # Deliberately last in the chain so it cannot intercept a cursor either
+        # branch above would have taken. Counters only — no logging per cursor.
+        if is_function:
+            if not cursor.is_definition():
+                # Collected, NOT counted as a drop yet. Almost every declaration here is
+                # benign — the definition lives in a .cpp parsed later in the same run —
+                # so only after the full walk can we tell which declarations never got
+                # one. _log_parse_summary resolves that against `functions`.
+                try:
+                    _diag_decl_only.setdefault(
+                        get_function_key(cursor),
+                        f"{_rel_path(cursor.location.file.name)}:{cursor.location.line} "
+                        f"{cursor.spelling or '(anonymous)'}",
+                    )
+                except Exception:
+                    pass
+            else:
+                # A definition under the project base that is_project_file() still
+                # rejected — excludeNamePatterns, or absent from the component map.
+                _diag_drop("not-project-file", cursor)
+        elif cursor.kind in _DIAG_FUNCTIONISH_KINDS:
+            _diag_drop(f"kind={cursor.kind.name}", cursor)
 
     for child in cursor.get_children():
         visit_definitions(child)
@@ -1487,7 +1749,32 @@ def _collect_macro_defs(tu_cursor):
         _active_macro_lines.setdefault((cur.spelling, rel), set()).add(cur.location.line)
 
 
+def _record_tu_diagnostics(tu, rel: str) -> int:
+    """Count clang's own complaints about a TU that loaded. Returns the error count.
+
+    A TU can parse "successfully" and still be full of errors: one missing include
+    makes clang recover and hand back a partial AST, so definitions vanish with no
+    failure reported anywhere. Phase 1 discarded these entirely before, which is why
+    a missing function had no trail. Reporting them never changes what gets recorded.
+    """
+    try:
+        errors = [d for d in tu.diagnostics if d.severity >= cindex.Diagnostic.Error]
+    except Exception:
+        return 0
+    if not errors:
+        return 0
+    _diag_counts["tus_with_errors"] += 1
+    try:
+        first = errors[0].spelling
+    except Exception:
+        first = "(unavailable)"
+    _diag_tu_errors.append((rel, len(errors), first))
+    return len(errors)
+
+
 def parse_file(path):
+    rel = _rel_path(path)
+    _defs_before = len(functions)
     try:
         tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
@@ -1496,7 +1783,19 @@ def parse_file(path):
         visit_usage(tu.cursor)  # incremental (M1.2b): type/macro usage on the same TU
         _collect_macro_defs(tu.cursor)  # active #if/#else macro branch (for _scan_defines)
     except cindex.TranslationUnitLoadError as e:
-        print(f"Failed: {path}: {e}")
+        # ERROR, not CRITICAL: this TU is lost but the run continues, so the model
+        # comes out partial rather than absent.
+        _diag_counts["tus_failed"] += 1
+        _diag_tu_failures.append((rel, str(e)))
+        _log.error("TU failed to load: %s: %s", rel, e)
+        return
+    _diag_counts["tus_ok"] += 1
+    n_defs = len(functions) - _defs_before
+    _diag_tu_defs[rel] = n_defs
+    n_err = _record_tu_diagnostics(tu, rel)
+    # DEBUG is per-FILE, never per-cursor: the file handler captures DEBUG on every
+    # run, so this stays at roughly one line per TU.
+    _log.debug("TU %s: ok, %d def(s), %d clang error(s)", rel, n_defs, n_err)
 
 
 def parse_calls(path):
@@ -1721,8 +2020,14 @@ def _collect_source_files():
             else:
                 continue
             path = os.path.join(root, f)
+            _diag_counts["files_walked"] += 1
             if is_project_file(path):
+                _diag_counts["files_project"] += 1
                 bucket.append(path)
+            else:
+                # Per-file, so bounded by file count rather than cursor count. This is
+                # where an excludeNamePatterns hit or a component-map gap shows up.
+                _log.debug("file skipped (not project file): %s", _rel_path(path))
     return sources + headers
 
 
@@ -1775,6 +2080,9 @@ def _scan_defines():
             rel_file = os.path.relpath(path, MODULE_BASE_PATH).replace("\\", "/")
         except ValueError:
             rel_file = path.replace("\\", "/")
+        # Piggyback: this loop already holds every project file's lines in memory, so
+        # the "definition in the text but not in the model" check costs no extra read.
+        _scan_unrecorded_functions(rel_file, lines)
         i = 0
         n = len(lines)
         while i < n:
@@ -1871,6 +2179,9 @@ def _merge_external_data_dictionary(path: str) -> None:
     This matches how Excel merged-cell exports look in CSV.
     """
     if not os.path.isfile(path):
+        # CRITICAL: aborts Phase 1, so there is no model at all — distinct from an ERROR,
+        # where one TU is lost and the run continues with partial output.
+        _log.critical("data dictionary CSV not found: %s - Phase 1 aborted", path)
         print(f"[parser] ERROR: data dictionary CSV not found: {path}", file=sys.stderr)
         sys.exit(2)
 
@@ -1878,6 +2189,7 @@ def _merge_external_data_dictionary(path: str) -> None:
         with open(path, newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             if reader.fieldnames is None:
+                _log.critical("data dictionary CSV is empty: %s - Phase 1 aborted", path)
                 print(f"[parser] ERROR: data dictionary CSV is empty: {path}", file=sys.stderr)
                 sys.exit(2)
 
@@ -1956,6 +2268,7 @@ def _merge_external_data_dictionary(path: str) -> None:
                 merged += 1
 
     except csv.Error as exc:
+        _log.critical("failed to parse data dictionary CSV %s: %s - Phase 1 aborted", path, exc)
         print(f"[parser] ERROR: failed to parse data dictionary CSV {path}: {exc}", file=sys.stderr)
         sys.exit(2)
 
@@ -1974,6 +2287,20 @@ def main():
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
     plog = get_logger("parser")
+    # Resolved inputs, not the raw flags — when the parse scope is wrong, this block is
+    # what shows it. Same shape as the flowchart engine's startup banner.
+    _log.info("=" * 60)
+    _log.info("Phase 1 (parser) starting")
+    _log.info("  project name    : %s", PROJECT_NAME)
+    _log.info("  base path       : %s", MODULE_BASE_PATH)
+    _log.info("  selected layer  : %s", _selected_layer or "(all)")
+    _log.info("  selected group  : %s", _selected_group or "(all)")
+    _log.info("  component map   : %d file(s)", len(_FILE_COMPONENT_MAP))
+    _log.info("  exclude patterns: %s", ", ".join(_EXCLUDE_NAME_PATTERNS) or "(none)")
+    _log.info("  include dirs    : %d", sum(len(v) for v in _layer_include_paths.values()))
+    _log.info("  data dictionary : %s", _data_dict_path or "(none)")
+    _log.info("=" * 60)
+    _log.debug("CLANG_ARGS: %s", " ".join(CLANG_ARGS))
     source_files = _collect_source_files()
     if _only_files_path:
         # Narrowed parse (M4.3): restrict to the listed TUs (repo-relative, one per line).
@@ -2043,6 +2370,18 @@ def main():
     # and outrank this portable table, which e.g. hardcodes `long` as 32-bit.
     for name, info in PRIMITIVES.items():
         data_dictionary.setdefault(name, {"kind": "primitive", "range": info["range"]})
+    # Recorded names for the text reconciliation inside _scan_defines below. Built from
+    # what is actually written out, so the comparison is against the real model. Entries
+    # carry qualifiedName only, so take the bare trailing name — that is what a text scan
+    # of the definition line can see.
+    _diag_recorded_names.update(
+        _bare
+        for _bare in (
+            (f.get("qualifiedName") or "").rsplit("::", 1)[-1]
+            for f in metadata["functions"].values()
+        )
+        if _bare
+    )
     # Add defines (kind=define)
     _scan_defines()
     # Merge user-supplied data dictionary CSV (external entries win on conflict).
@@ -2084,21 +2423,37 @@ def main():
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
     n_types = len(data_dictionary)
-    print("  model/metadata.json")
-    print(f"  model/functions.json ({n_funcs})")
-    print(f"  model/globalVariables.json ({n_vars})")
+    # Through the logger rather than print() so these survive in logs/run_<date>.log
+    # instead of scrolling past on the console.
+    _log.info("  model/metadata.json")
+    _log.info("  model/functions.json (%d)", n_funcs)
+    _log.info("  model/globalVariables.json (%d)", n_vars)
     kinds = {}
     for t in data_dictionary.values():
         k = t.get("kind", "?")
         kinds[k] = kinds.get(k, 0) + 1
     plural = lambda k: "classes" if k == "class" else k + "s"
     parts = [f"{v} {plural(k)}" for k, v in sorted(kinds.items())]
-    print(f"  model/dataDictionary.json ({n_types} types: {', '.join(parts)})")
-    print(f"  model/hashes.json ({len(entity_hashes)} entities)")
-    print(f"  model/edges.json ({len(edges['typeUsers'])} types used, {len(edges['macroUsers'])} macros used)")
+    _log.info("  model/dataDictionary.json (%d types: %s)", n_types, ", ".join(parts))
+    _log.info("  model/hashes.json (%d entities)", len(entity_hashes))
+    _log.info("  model/edges.json (%d types used, %d macros used)",
+              len(edges["typeUsers"]), len(edges["macroUsers"]))
     _n_inc = sum(len(v) for v in tu_includes.values())
-    print(f"  model/tu_includes.json ({len(tu_includes)} TUs, {_n_inc} in-repo include edges)")
+    _log.info("  model/tu_includes.json (%d TUs, %d in-repo include edges)",
+              len(tu_includes), _n_inc)
+
+    _log_parse_summary(n_funcs)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        # Deliberate exits (the CRITICAL paths above) already logged their reason.
+        raise
+    except BaseException:
+        # Without this an unhandled crash left nothing in the log but the orchestrator's
+        # "failed with exit code 1". Re-raised, never swallowed: turning a crash into a
+        # silent success would be far worse than having no traceback.
+        _log.critical("Phase 1 crashed - traceback follows", exc_info=True)
+        raise
