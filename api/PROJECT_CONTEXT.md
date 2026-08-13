@@ -38,7 +38,7 @@ api/
 │
 ├── db/
 │   ├── in_memory.py         ← In-memory adapter + seed data
-│   ├── json_db.py           ← JSON-file adapter (persistent, write-through)
+│   ├── postgres/            ← SqlDatabase (THE backend; JSON adapter removed in PG-7b)
 │   └── session.py           ← ONE LINE to swap backend (reads API_DB_BACKEND)
 │
 ├── middleware/
@@ -166,7 +166,7 @@ IAnalysisJobRepository     IDocumentRepository        IDocumentAssignmentReposit
 IFunctionRepository        ICompareRepository         INotificationRepository
 ```
 
-Both `InMemoryDatabase` and `JsonDatabase` implement all 12.
+Both `SqlDatabase` (Postgres — the product backend) and `InMemoryDatabase` (test seam) implement all 12.
 
 ### Swapping the database — one line
 
@@ -398,7 +398,7 @@ All under `/api/v1`.  Full reference: `api/README.md`.
 
 ## 12. JSON Database adapter
 
-`api/db/json_db.py` — write-through persistence to `api/db/data/*.json`.
+`api/db/postgres/database.py` — `SqlDatabase`, the only persistent backend (D-16). The JSON adapter (`json_db.py` -> `api/db/data/*.json`) was deleted in the PG-7b cutover.
 
 - On first run: seeds from same dummy data as `InMemoryDatabase`, writes files.
 - On subsequent runs: loads from disk.

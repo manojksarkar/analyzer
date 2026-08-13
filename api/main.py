@@ -75,7 +75,12 @@ async def _db_startup_check() -> None:
     from .db.session import _db
     engine = getattr(_db, "_engine", None)
     if engine is None:
-        print("[api] backend: in-memory/json (no external database).", file=sys.stderr)
+        # D-16: Postgres is the only real backend. In-memory is a test/dev seam that persists
+        # NOTHING — say so loudly rather than letting a misconfigured server look healthy.
+        print("[api] *** NO DATABASE CONFIGURED — running the in-memory TEST backend. ***\n"
+              "      Seed data only; every project, version and document is lost on restart.\n"
+              "      Set DATABASE_URL, or add a `db` section to engine/config/config.local.json,\n"
+              "      then run tools/db_setup.py.", file=sys.stderr)
         return
     sys.path.insert(0, str(Path(__file__).parent.parent / "engine"))
     from core.db import _redact

@@ -77,7 +77,7 @@ api/
 │
 ├── db/
 │   ├── in_memory.py         ← In-memory adapter + seed data (default)
-│   ├── json_db.py           ← JSON-file adapter (persistent, write-through)
+│   ├── postgres/            ← SqlDatabase (THE backend; JSON adapter removed in PG-7b)
 │   └── session.py           ← ONE LINE to swap backend — reads API_DB_BACKEND
 │
 ├── middleware/

@@ -1,33 +1,27 @@
 """
 DB session — the single point where the concrete database is chosen.
 
-Backend selection
------------------
-Set the environment variable ``API_DB_BACKEND`` before starting the server:
+**Postgres is the only real backend** (D-16). It is selected automatically as soon as a database
+is configured — ``DATABASE_URL`` in the environment, or a ``db`` section in
+``engine/config/config.local.json`` — so no env var is needed to run the product:
 
-    API_DB_BACKEND=memory   uvicorn api.main:app --reload   # default
-    API_DB_BACKEND=json     uvicorn api.main:app --reload
+    uvicorn api.main:app --reload
 
-``memory``  — InMemoryDatabase (seed data only; resets on every restart).
-``json``    — JsonDatabase (persists to api/db/data/*.json; loads pipeline
-              output from model/functions.json automatically on startup).
-
-To swap via code instead of an env var, change the ``_db`` assignment below
-(the original one-line swap contract is preserved):
-
-    _db = JsonDatabase()      # or InMemoryDatabase()
+``InMemoryDatabase`` survives ONLY as a test/dev seam (seed data, resets every restart) and is
+used when no database is configured, or when ``API_DB_BACKEND=memory`` is set explicitly. It is
+not a production option: nothing it holds is persisted, and the startup check in ``api/main.py``
+says so loudly. The JSON-file backend (``JsonDatabase`` / ``api/db/data/*.json``) was removed in
+the PG-7b cutover — D-7 "drop JsonDatabase", D-14 "zero JSON data".
 """
 import os
 
 from .in_memory import InMemoryDatabase
-from .json_db import JsonDatabase
 
 # ---------------------------------------------------------------------------
 # Instantiate the database.
-# Backend selection: API_DB_BACKEND env var wins ("memory" | "json" | "postgres"). When it is
-# unset, use Postgres if a database is configured — DATABASE_URL env OR a `db` section in
-# engine/config/config.local.json — else in-memory (dev/tests). So configuring the DB in the
-# file is enough; no separate API_DB_BACKEND is required.
+# Backend selection: API_DB_BACKEND env var wins ("memory" | "postgres"). When it is unset, use
+# Postgres if a database is configured — DATABASE_URL env OR a `db` section in
+# engine/config/config.local.json — else the in-memory test seam.
 # ---------------------------------------------------------------------------
 def _engine_on_path() -> None:
     import sys
@@ -69,13 +63,10 @@ def _make_postgres():
     return SqlDatabase()
 
 
-# `memory` (default) and `json` remain for tests/dev; `postgres` is the production
-# backend. The default flips to `postgres` once validated against a live server
-# (kept opt-in here because it cannot be exercised without one).
+# `postgres` is the product backend and is chosen automatically whenever a DB is configured.
+# `memory` is the test/dev seam only — it persists nothing.
 if _backend == "postgres":
     _db = _make_postgres()
-elif _backend == "json":
-    _db = JsonDatabase()
 else:
     _db = InMemoryDatabase()
 
