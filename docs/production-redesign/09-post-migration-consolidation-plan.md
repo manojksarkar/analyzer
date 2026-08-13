@@ -97,6 +97,7 @@ Verified still outstanding:
 
 | Step | What | Why it matters | Effort |
 |---|---|---|---|
+| **C0** | **Finish the view-output reads (PG-5b).** `version_output_files` holds every view file, and the `OutputReader` seam exists — but **only `compare_engine`'s summary path uses it**. `doc_render` still reads `group_dir/interface_tables.json`, `group_dir/flowcharts/*.json` and `group_dir/behaviour_diagrams/_behaviour_pngs.json` **from disk**, and `compare_render._version_render` still renders from `snap_dir`. So the document render — the main product surface — is still disk-backed even though the data is in Postgres. Wiring only; no new infrastructure. | the rendered document stops depending on local disk | S–M |
 | **C1** | **`manifest.json` → DB + `pipeline_status` lifecycle (D-17).** Every manifest field already has a column (`decision`, `baseline_version_id`, `regenerated`, `reused`). **`versions.pipeline_status` exists but is NEVER written** — landing this gives the real `parsing → deriving → viewing → exporting → complete` progress the UI could show instead of log-scraping. | removes engine→API file; enables progress | S–M |
 | **C2** | **`<commit>/parse/` snapshot → DB.** Needs storage for `entity_files`, `func_keys`, `override_pairs` (`tu_includes` is already in the schema) **and** a way to hold the *blank skeleton* distinctly from the enriched model (the snapshot is taken post-Phase-1; the DB currently holds the post-Phase-2 model). Natural byproduct of persisting at each phase boundary (C6). | narrowed parse works **across machines**, survives a workspace wipe | M |
 | **C3** | **Delete `clang_include_paths.json`** (PG-5 says deleted outright; still written/read by `parser.py`, `run.py`, `views/flowcharts.py`). It holds machine-specific absolute paths — derive it, never store it. | removes machine-specific state | S |
@@ -107,6 +108,7 @@ Verified still outstanding:
 | **C8** | **Prune `_wizard/` clones.** The wizard's clone cache is never cleaned; grows unbounded (GBs on large repos). Add a TTL/size cap. | disk hygiene | S |
 | **C9** | **UTF-8 end-to-end test** (doc 07 G5) — round-trip a Korean comment + Unicode description. This codebase has documented cp1252 failures. | correctness | S |
 | **C10** | **Retention / delete-version action** (doc 07 G6) — `ON DELETE CASCADE` exists; the user-facing action does not. | ops | S |
+| **C11** ⭐ | **`ModelStore` — phases persist/read the model at each boundary (PG-5 core).** This is the answer to *"why write everything to `model/*.json` and only then to the DB?"*. Today the phases hand the model to each other through files and the store writes to Postgres **once, at the end**; the DB is the destination, not the channel. Target: each phase reads its input from Postgres by `version_id` and writes its output back, so there is one copy, no shared scratch, and `--from-phase N` resumes from real state. **C2 (skeleton) and C6 (atomicity) fall out of this naturally**, and it removes the last reason the shared `model/` dir exists. Doc 07 calls this the largest and riskiest step; land it "persist-after-phase" first, then "read-from-DB". | one source of truth; kills files-as-channel | **L** |
 
 ---
 
@@ -126,8 +128,8 @@ B0   (minutes, do today — removes a live corruption risk)
  └─ A0                                   capture stderr (1h; the useful part of A)
      └─ B1 → B2 → B3 → B4                concurrency correctness  → concurrent jobs
           └─ D1 → D2                     narrowed parse + measurement → large-codebase speed
-               └─ C1 → C8 → C3 → C5 → C9         small close-outs
-                    └─ C2 → C6 → C4 → C7 → C10   larger close-outs
+               └─ C0 → C1 → C8 → C3 → C5 → C9    small close-outs
+                    └─ C11 ⭐ → C2 → C6 → C4 → C7 → C10   larger close-outs
                          └─ A1 → A2 → A3 → A4 → A6 → [A5]   process consolidation (deferred)
 ```
 
@@ -135,9 +137,11 @@ B0   (minutes, do today — removes a live corruption risk)
 in an hour and makes everything after it debuggable. **B** then serves the first live goal —
 concurrent jobs — and B1 must precede any concurrency increase. **D1** serves the second — real
 large-codebase speed — and must come *before* C2, which changes how narrowed-parse data is stored:
-validate the feature before moving its ground. C1/C8/C3/C5/C9 are small and independent;
-C2/C6/C4/C7/C10 are the remaining architectural pieces. **A** last, as a quality improvement once
-the capability work is done.
+validate the feature before moving its ground. **C0** is first inside C because the seams already
+exist (it is wiring, and it takes the *rendered document* off local disk). C1/C8/C3/C5/C9 are small
+and independent. **C11 leads the larger group** because C2 and C6 fall out of it — doing them
+first would mean building skeleton storage and per-phase transactions twice. **A** last, as a
+quality improvement once the capability work is done.
 
 ## 3. Gates
 
