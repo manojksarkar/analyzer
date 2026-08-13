@@ -577,6 +577,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Structured model (+ hashes + edges) -> store, keyed by the real ver id; this is what the
     # NEXT run reads as its baseline (Postgres under PgStore, versions/<ver…>/model under FileStore).
     store.write_model(version_id, model_dir)
+    # Run identity (basePath/projectName/parseFingerprint) -> the store: the `versions` columns
+    # under PgStore. Replaces the API reading model/metadata.json off disk (doc 07 §3).
+    store.write_run_metadata(version_id, _read(model_dir, "metadata.json"))
     # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
     documents = store.capture_output(version_id, _paths().output_dir)
     llm = cfg.get("llm") or {}

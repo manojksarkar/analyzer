@@ -288,6 +288,31 @@ def load_output_files(conn, version_id) -> Dict[str, str]:
                                   .where(vof.c.version_id == version_id))}
 
 
+def persist_run_metadata(conn, version_id, meta: Dict[str, Any]) -> None:
+    """Store the run's identity metadata on the version row — the `versions` columns that replace
+    model/metadata.json (doc 07 §3: "metadata.json (basePath/projectName/parseFingerprint) ->
+    versions columns"). An UPDATE only: the row itself is created by the API at job start."""
+    from sqlalchemy import update
+    conn.execute(update(s.versions).where(s.versions.c.id == version_id).values(
+        base_path=meta.get("basePath"),
+        project_name=meta.get("projectName"),
+        parse_fingerprint=meta.get("parseFingerprint")))
+
+
+def load_run_metadata(conn, version_id) -> Dict[str, Any]:
+    """The version's identity metadata in metadata.json's shape ({} when the row is absent or the
+    columns were never populated). `parseFingerprint` is the clang-flag guard narrowed parse
+    compares against its baseline."""
+    v = s.versions
+    r = conn.execute(select(v.c.base_path, v.c.project_name, v.c.parse_fingerprint)
+                     .where(v.c.id == version_id)).first()
+    if r is None:
+        return {}
+    out = {"basePath": r.base_path, "projectName": r.project_name,
+           "parseFingerprint": r.parse_fingerprint}
+    return {k: val for k, val in out.items() if val is not None}
+
+
 def load_output_file(conn, version_id, rel_path) -> Optional[str]:
     """The content of one persisted output file (POSIX rel path under output/), or None."""
     vof = s.version_output_files

@@ -67,6 +67,17 @@ class ArtifactStore(ABC):
     def read_config(self, version_id: str) -> Dict[str, Any]:
         return _read_json(os.path.join(self.artifact_dir(version_id), "config.json"), {})
 
+    def write_run_metadata(self, version_id: str, meta: Dict[str, Any]) -> None:
+        """Persist the run's identity metadata — basePath / projectName / parseFingerprint. This is
+        what replaces model/metadata.json (doc 07 §3): PgStore puts it on the `versions` row, the
+        file store keeps it beside the version's other artifacts."""
+        _write_json(os.path.join(self.artifact_dir(version_id), "metadata.json"), meta)
+
+    def read_run_metadata(self, version_id: str) -> Dict[str, Any]:
+        """The version's identity metadata, or {}. `parseFingerprint` is the clang-flag guard the
+        narrowed parse compares against its baseline."""
+        return _read_json(os.path.join(self.artifact_dir(version_id), "metadata.json"), {})
+
     def write_manifest(self, version_id: str, manifest: Dict[str, Any]) -> None:
         _write_json(os.path.join(self.artifact_dir(version_id), "manifest.json"), manifest)
 
@@ -221,6 +232,18 @@ class PgStore(ArtifactStore):
         except Exception:                                    # best-effort: disk output is intact
             pass
         return captured
+
+    def write_run_metadata(self, version_id: str, meta: Dict[str, Any]) -> None:
+        """Onto the `versions` row (base_path / project_name / parse_fingerprint) instead of a
+        metadata.json file. An UPDATE of columns only — the row is still owned by the API."""
+        from incremental.model_store import persist_run_metadata
+        with self.engine.begin() as cx:
+            persist_run_metadata(cx, version_id, meta)
+
+    def read_run_metadata(self, version_id: str) -> Dict[str, Any]:
+        from incremental.model_store import load_run_metadata
+        with self.engine.connect() as cx:
+            return load_run_metadata(cx, version_id)
 
     def write_model(self, version_id: str, model_dir: str) -> None:
         from incremental.model_store import persist_model_from_dir

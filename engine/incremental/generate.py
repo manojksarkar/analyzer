@@ -248,6 +248,13 @@ def generate_full(
     # the NEXT run reads as its baseline (store.read_hashes/functions), replacing the on-disk
     # HashStore/EdgeStore. Postgres under PgStore; versions/<ver…>/model under FileStore.
     store.write_model(version_id, model_dir)
+    # Run identity (basePath/projectName/parseFingerprint) -> the store: the `versions` columns
+    # under PgStore. Replaces the API reading model/metadata.json off disk (doc 07 §3).
+    _meta_path = os.path.join(model_dir, "metadata.json")
+    if os.path.isfile(_meta_path):
+        import json as _json
+        with open(_meta_path, encoding="utf-8") as _fh:
+            store.write_run_metadata(version_id, _json.load(_fh))
     # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
     documents = store.capture_output(version_id, output_dir)
     import json

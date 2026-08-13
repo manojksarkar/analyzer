@@ -83,6 +83,31 @@ def test_persist_is_idempotent_and_replaces(tmp_path):
         assert "G/extra.json" in files
 
 
+def test_run_metadata_round_trips_on_the_version_row():
+    """metadata.json's fields live on the versions row (doc 07 §3) — the engine writes them via
+    store.write_run_metadata, and the narrowed-parse guard reads parseFingerprint back."""
+    import datetime
+    eng = _fresh_engine()
+    now = datetime.datetime(2026, 8, 12, tzinfo=datetime.timezone.utc)
+    with eng.begin() as cx:
+        cx.execute(s.projects.insert().values(id="p1", name="P", created_at=now))
+        cx.execute(s.versions.insert().values(id="ver1", project_id="p1", version="v1",
+                                              created_at=now))
+        ms.persist_run_metadata(cx, "ver1", {
+            "basePath": "C:/repo/SampleCppProject", "projectName": "SampleCppProject",
+            "parseFingerprint": "abc123", "generatedAt": "ignored"})
+    with eng.connect() as cx:
+        meta = ms.load_run_metadata(cx, "ver1")
+    assert meta == {"basePath": "C:/repo/SampleCppProject",
+                    "projectName": "SampleCppProject", "parseFingerprint": "abc123"}
+
+
+def test_run_metadata_absent_version_is_empty():
+    eng = _fresh_engine()
+    with eng.connect() as cx:
+        assert ms.load_run_metadata(cx, "nope") == {}
+
+
 def test_missing_output_dir_is_noop(tmp_path):
     eng = _fresh_engine()
     with eng.begin() as cx:
