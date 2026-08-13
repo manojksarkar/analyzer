@@ -14,8 +14,11 @@ and all app data live in Postgres; `JsonDatabase` is deleted; the commit dir hol
 checkout + manifest/report/parse snapshot. Validated end-to-end on the office box (two commits,
 `reused=9 / regenerated=5`, compare shows the change, `verify_pg_readers` all green).
 
-What remains falls into four groups, below. **A is scheduled first by decision of the project
-owner**, ahead of the author's recommendation to do B and D1 first — see §5.
+What remains falls into four groups, below. Work order is **B → D → C**, with **A deferred**
+(§A): it is a code-quality improvement that serves neither of the two live goals — concurrent jobs
+and large-codebase speed — so it is not worth its risk ahead of them. The one exception is **A0**
+(capture subprocess `stderr`), which is an hour of work, carries no risk, and is worth doing now
+regardless of whether the rest of A is ever done.
 
 ## 1. Principles that govern the ordering
 
@@ -32,18 +35,24 @@ owner**, ahead of the author's recommendation to do B and D1 first — see §5.
 
 ---
 
-## A. Process consolidation
+## A. Process consolidation — **DEFERRED** (except A0)
 
 Today one flowchart passes through **five nested process levels** (API → incremental → `run.py` →
 phase script → flowchart engine → `mmdc`), each wrapped in a shell on Windows (`shell=True`).
 
-**Measured reality (do not oversell this):** ~8 Python→Python spawns per run at roughly 0.5–2s
-each ⇒ **~5–20s per run**, against runs measured in minutes. The win is **debuggability, error
-visibility and simplicity — not speed.**
+**Why it is deferred.** Measured: ~8 Python→Python spawns per run at roughly 0.5–2s each ⇒
+**~5–20s per run**, against runs measured in minutes. It does **not** help concurrency (the shared
+data root does — see B) and it does **not** help large-codebase speed (parse + LLM dominate — see
+D). The win is debuggability, error visibility and simplicity: real, but a code-quality
+improvement, not a capability. Revisit after B, D and C — or sooner if measurement (D2) shows
+process overhead actually matters.
+
+**A0 is the exception and is scheduled now** (see §2): it delivers the *practical* benefit of this
+whole group — error visibility — for about an hour and no risk, without touching the architecture.
 
 | Step | What | Effort | Risk |
 |---|---|---|---|
-| **A0** | **Capture `stderr` from every spawn and log it on failure.** Do this FIRST — it makes every later step debuggable and independently removes the "exited with code 1, no reason" bug class that once hid a libclang failure for a whole debugging session. | ~1h | none |
+| **A0** ⭐ **now** | **Capture `stderr` from every spawn and log it on failure.** Independently removes the "exited with code 1, no reason" bug class that once hid a libclang failure for a whole debugging session. Valuable whether or not the rest of A ever happens. | ~1h | none |
 | **A1** | **Flowchart engine in-process (D-11).** It already exposes `run()` and reads **zero** `sys.argv` — the blocker is package layout, not code. Fix the layout, call the function. | ~½ day | low |
 | **A2** | **`run_views.py` / `model_deriver.py` / `docx_exporter.py` → callable.** Each already has `main()` and reads `sys.argv` exactly once. Change to `main(argv=None)` and call directly. | ~½ day | low |
 | **A3** | **`orchestration.PhaseRunner` → in-process dispatch**, keeping the subprocess path behind a flag until each phase is proven. | ~½ day | low–med |
@@ -51,11 +60,12 @@ visibility and simplicity — not speed.**
 | **A5** | **`parser.py` de-tangle.** Lines 28–62 parse `sys.argv` **at module import** into module globals, so importing it *executes* argument parsing and a second in-process call leaks state. Move into a function; pass a config object. **Only required if parser runs in-process.** | 1–2 days | **high** |
 | **A6** | **Decide + document the libclang boundary.** Doc 07 R5 keeps one process boundary around libclang so a segfault cannot kill the run. Recommendation: **keep it deliberately** (making A5 optional). | ~1h | — |
 
-**Target topology:** `API → worker process → in-process phases → external tools` (plus one
-optional libclang boundary). Two of our own boundaries instead of five.
+**Target topology (when this group is picked up):** `API → worker process → in-process phases →
+external tools` (plus one optional libclang boundary) — two of our own boundaries instead of five.
 
-**Dependency:** A5 is a prerequisite for running `parser.py` in-process, and *only* for that. If
-A6 keeps the libclang boundary, A5 can be dropped — ~80% of the benefit lands after A0–A4.
+**Dependencies:** A5 is a prerequisite for running `parser.py` in-process, and *only* for that. If
+A6 keeps the libclang boundary, A5 can be dropped — ~80% of the benefit lands after A1–A4.
+Nothing in B, C or D depends on A, so deferring it blocks nothing.
 
 ---
 
@@ -76,8 +86,8 @@ applied.
 | **B3** | **Atomic writes (temp+rename) for `.mmdc_cache` / `.flowchart_cache`** — two jobs may legitimately write the same content-addressed key. | ~2h | low |
 | **B4** | **Raise `JOB_MAX_CONCURRENCY` deliberately** and add a concurrent-jobs test (two projects at once, assert both outputs intact). | ~½ day | med |
 
-**Note:** B1 is still required after A. In-process phases share *one* working directory, so
-per-job isolation matters more, not less.
+**Note:** B1 is required whether or not A is ever done — and if A is picked up later, per-job
+isolation matters *more*, not less, because in-process phases share one working directory.
 
 ---
 
@@ -112,20 +122,22 @@ Verified still outstanding:
 ## 2. Recommended order
 
 ```
-B0  (minutes, do today — removes a live corruption risk)
- └─ A0  → A1 → A2 → A3 → A4        process consolidation (owner-chosen first)
-      └─ A6 decision → [A5 only if parser goes in-process]
-           └─ B1 → B2 → B3 → B4    concurrency correctness
-                └─ D1              narrowed parse (the real perf win)
-                     └─ C1 → C8 → C3 → C5 → C9      small close-outs
-                          └─ C2 → C6 → C4 → C7 → C10   larger close-outs
+B0   (minutes, do today — removes a live corruption risk)
+ └─ A0                                   capture stderr (1h; the useful part of A)
+     └─ B1 → B2 → B3 → B4                concurrency correctness  → concurrent jobs
+          └─ D1 → D2                     narrowed parse + measurement → large-codebase speed
+               └─ C1 → C8 → C3 → C5 → C9         small close-outs
+                    └─ C2 → C6 → C4 → C7 → C10   larger close-outs
+                         └─ A1 → A2 → A3 → A4 → A6 → [A5]   process consolidation (deferred)
 ```
 
-**Why this order:** B0 is free and removes a live risk. A is owner-chosen first and is
-low-risk once A0 gives real error messages. B1 must precede any concurrency increase. D1 comes
-before C2 because C2 changes how narrowed-parse data is stored — validate the feature *before*
-moving its ground. C1/C8/C3/C5/C9 are small and independent; C2/C6/C4/C7 are the remaining
-architectural pieces.
+**Why this order.** B0 is free and removes a live risk. A0 buys the practical benefit of group A
+in an hour and makes everything after it debuggable. **B** then serves the first live goal —
+concurrent jobs — and B1 must precede any concurrency increase. **D1** serves the second — real
+large-codebase speed — and must come *before* C2, which changes how narrowed-parse data is stored:
+validate the feature before moving its ground. C1/C8/C3/C5/C9 are small and independent;
+C2/C6/C4/C7/C10 are the remaining architectural pieces. **A** last, as a quality improvement once
+the capability work is done.
 
 ## 3. Gates
 
@@ -136,15 +148,21 @@ does not exercise those paths.
 
 ## 4. Open decisions
 
-1. **A6 — keep the libclang process boundary?** Recommendation: **yes**, making A5 optional.
-2. **B4 — target concurrency.** How many simultaneous jobs must the office deployment support?
-3. **C2 — skeleton storage.** Persist the model twice (post-Phase-1 + final), or derive the
+1. **B4 — target concurrency.** How many simultaneous jobs must the office deployment support?
+   Needed before B4; everything earlier in B is required regardless of the answer.
+2. **C2 — skeleton storage.** Persist the model twice (post-Phase-1 + final), or derive the
    skeleton by stripping LLM fields? Decide when C6 lands.
+3. *(deferred with A)* **A6 — keep the libclang process boundary?** Recommendation: **yes**,
+   which makes A5 — the only high-risk step in this plan — unnecessary.
 
-## 5. Author's note on sequencing
+## 5. Sequencing history
 
-The author's recommendation was **B → D1 → A**, on the grounds that A serves neither stated goal
-(concurrent jobs, large-codebase speed) — its ~5–20s/run is noise against multi-minute runs, and
-subprocesses are not what blocks concurrency. The project owner has chosen **A first** for code
-quality. Recorded here so the trade-off stays visible: **B0 should still be applied today**, since
-the concurrency bug is live regardless of what is worked on next.
+An earlier revision of this plan scheduled **A first**. That was reversed: A is a code-quality
+improvement whose measured benefit is ~5–20s per multi-minute run, it does not address either live
+goal, and it carries the only high-risk step in the plan (A5, `parser.py`). The order is now
+**B → D → C**, with A deferred and **A0 pulled out** because error visibility — the one benefit of
+A with a track record of costing real debugging time — is available for an hour and no risk.
+
+Recorded so the reasoning is not re-litigated: **A is deferred, not rejected.** Pick it up after C,
+or sooner if D2's measurement shows process overhead actually matters. **B0 applies today either
+way** — the concurrency bug is live regardless of what is worked on next.
