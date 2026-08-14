@@ -529,7 +529,8 @@ def _make_phase_persist(project_id, version_id):
     Nothing reads from the database yet — that is C11b, and it is gated on
     `tools/verify_model_parity.py` agreeing after every phase.
     """
-    if not version_id or not os.environ.get("DATABASE_URL"):
+    from core.db import is_database_configured
+    if not version_id or not is_database_configured():
         return None
     writes_model = {"parser.py", "model_deriver.py"}
 

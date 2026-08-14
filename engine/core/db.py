@@ -82,7 +82,15 @@ def _dsn_from_config() -> Optional[str]:
         from core.config import load_config
         from core.paths import paths
         db = load_config(paths().src_dir).get("db") or {}
-    except Exception:                                    # config missing/unreadable -> no DSN
+    except Exception as exc:
+        # Say so instead of vanishing. Returning None here falls back to the compose default
+        # (localhost), so a MALFORMED config.local.json used to be indistinguishable from a
+        # MISSING one — the failure surfaced minutes later as a connection timeout against a
+        # host nobody configured. §17 "fail loud on config errors" applies to the DSN too.
+        import sys as _sys
+        print(f"WARNING: could not read the 'db' section of config.local.json "
+              f"({type(exc).__name__}: {exc}); falling back to the default DSN.",
+              file=_sys.stderr)
         return None
     host = db.get("host")
     if not host:
@@ -105,6 +113,33 @@ def database_url() -> str:
         return sanitize_dsn(env)
     from_cfg = _dsn_from_config()
     return sanitize_dsn(from_cfg or DEFAULT_DSN)
+
+
+def is_database_configured() -> bool:
+    """True when a database is configured — by `DATABASE_URL` **or** by the `db` section of
+    `engine/config/config.local.json`.
+
+    The single question every backend selector must ask. Historically they each tested
+    ``os.environ.get("DATABASE_URL")`` directly, which made the env var the *only* way to turn
+    Postgres on inside the engine: a standalone `run.py` / tools invocation fell back to the
+    file store and silently wrote nothing to the database, even with a perfectly good `db`
+    section in `config.local.json`. API-driven runs hid the problem, because the API resolves
+    the DSN itself and injects `DATABASE_URL` into the subprocess.
+
+    `config.local.json` is the configured home for the connection (root PROJECT_CONTEXT §6),
+    so it must work on its own. `DATABASE_URL` still wins when set — it is how the API passes
+    the DSN to a subprocess.
+
+    Note this deliberately does NOT count the compose default: `database_url()` falls back to
+    localhost so `docker compose up -d` needs no configuration, but "nothing is configured"
+    must not read as "Postgres is on".
+    """
+    if os.environ.get("DATABASE_URL", "").strip():
+        return True
+    try:
+        return bool(_dsn_from_config())
+    except Exception:
+        return False
 
 
 def _redact(dsn: str) -> str:

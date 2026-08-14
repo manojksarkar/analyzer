@@ -328,3 +328,64 @@ class TestProjectDbDbAware:
             assert vs[0]["versionId"] == "v1"                    # the real DB id (08)
         finally:
             coredb.reset_engine()
+
+
+class TestDatabaseConfiguredDetection:
+    """Backend selection must honour config.local.json, not just DATABASE_URL.
+
+    The `db` section of `engine/config/config.local.json` is the configured home for the
+    connection (root PROJECT_CONTEXT §6). Every backend selector used to test
+    `os.environ.get("DATABASE_URL")` directly, which made the env var the ONLY way to turn
+    Postgres on inside the engine: a standalone `run.py` / tools invocation fell back to the
+    file store and silently persisted nothing, even with a valid `db` section. API-driven runs
+    masked it, because the API resolves the DSN itself and injects DATABASE_URL into the
+    subprocess — so the same deployment behaved differently depending on who started the run.
+    """
+
+    def test_env_var_alone_is_enough(self, monkeypatch):
+        import core.db as coredb
+        monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@h:5432/d")
+        assert coredb.is_database_configured() is True
+
+    def test_config_db_section_alone_is_enough(self, monkeypatch):
+        """The case that was broken: no env var, but config.local.json has a db section."""
+        import core.db as coredb
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setattr(coredb, "_dsn_from_config",
+                            lambda: "postgresql+psycopg://u:p@h:5432/d")
+        assert coredb.is_database_configured() is True
+
+    def test_nothing_configured_is_false(self, monkeypatch):
+        """The compose default must NOT count — `database_url()` falls back to localhost so
+        `docker compose up -d` needs no config, but 'nothing configured' must not read as
+        'Postgres is on', or a DB-less dev run would try to use it."""
+        import core.db as coredb
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setattr(coredb, "_dsn_from_config", lambda: None)
+        assert coredb.is_database_configured() is False
+
+    def test_unreadable_config_is_false_not_an_exception(self, monkeypatch):
+        import core.db as coredb
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+
+        def _boom():
+            raise RuntimeError("config is malformed")
+
+        monkeypatch.setattr(coredb, "_dsn_from_config", _boom)
+        assert coredb.is_database_configured() is False
+
+    def test_make_store_uses_the_config_section(self, monkeypatch, tmp_path):
+        """The end-to-end consequence: a standalone run with only config.local.json now gets
+        PgStore instead of silently getting FileStore."""
+        import core.db as coredb
+        from incremental.store import make_store, PgStore, FileStore
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        coredb.reset_engine()
+        try:
+            monkeypatch.setattr(coredb, "_dsn_from_config", lambda: "sqlite://")
+            assert isinstance(make_store("p1", workspaces_root=str(tmp_path / "a")), PgStore)
+            monkeypatch.setattr(coredb, "_dsn_from_config", lambda: None)
+            coredb.reset_engine()
+            assert isinstance(make_store("p1", workspaces_root=str(tmp_path / "b")), FileStore)
+        finally:
+            coredb.reset_engine()

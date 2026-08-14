@@ -40,10 +40,15 @@ def _records(store: Any) -> List[dict]:
 
 
 def _db_engine():
-    """The Postgres engine when a DATABASE_URL is configured, else None. On a Postgres
+    """The Postgres engine when a database is configured, else None. On a Postgres
     deployment there are no api/db/data/*.json files, so the engine reads project/version
-    metadata from the DB; in file-based dev (no DATABASE_URL) it reads the JSON as before."""
-    if not os.environ.get("DATABASE_URL"):
+    metadata from the DB; with nothing configured it reads the JSON as before.
+
+    "Configured" = `DATABASE_URL` **or** the `db` section of `config.local.json`
+    (`core.db.is_database_configured`) — the env var alone would leave a standalone run
+    reading stale JSON while the API read Postgres."""
+    from core.db import is_database_configured
+    if not is_database_configured():
         return None
     try:
         from core.db import get_engine
