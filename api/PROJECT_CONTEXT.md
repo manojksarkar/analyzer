@@ -4,6 +4,13 @@
 > (real `run.py`-backed worker, 70 routes, simulation→real) see [README.md](README.md) and
 > [PLAN.md](PLAN.md); a full refresh of this file is tracked in PLAN.md M4.
 >
+> **⚠ 2026-08-14 — storage moved to PostgreSQL** (branch `db-with-increment-changes`). `SqlDatabase`
+> is the only persistent backend; `JsonDatabase` and `api/db/data/*.json` are **deleted**;
+> `InMemoryDatabase` survives as a **test seam only**. Model, view outputs, reuse index, run
+> metadata and per-version resolved config live in Postgres. Anything below describing a JSON-backed
+> store is historical. Current state → root [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md) §6 + its
+> 2026-08-13 entry; next work → [docs/production-redesign/09](../docs/production-redesign/09-post-migration-consolidation-plan.md).
+>
 > **Contract safety-net:** the web-app's `npm run test:api` suite validates this server's
 > live responses against the zod schemas the UI expects (~46 endpoints). Run it against
 > this API to catch contract drift — see `web-app/TESTING.md`.

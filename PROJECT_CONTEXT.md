@@ -4,7 +4,36 @@
 > Optimize it for findability and completeness, not polish — no prose warm-up, no formatting for human readers.
 > A section outline is fine purely as an agent-navigation aid. Humans read the docs under `docs/` instead.
 
-> **WORK STATUS / QUEUE — 2026-07-20 (read this first if picking up in a new chat).**
+> **⭐ WORK STATUS — 2026-08-14 · branch `db-with-increment-changes` (READ THIS FIRST in a new chat).**
+> - **The PostgreSQL migration is COMPLETE and validated on the office box.** Postgres holds the model,
+>   view outputs, reuse index, run metadata, resolved config and all app data. `JsonDatabase` is deleted;
+>   the API is Postgres-only. The commit dir now holds ONLY the git checkout + `manifest.json` + `report.txt`
+>   + `parse/`. Full detail: the dated entry below (2026-08-13) and §6.
+> - **NEXT WORK IS PLANNED, NOT STARTED → [docs/production-redesign/09-post-migration-consolidation-plan.md](docs/production-redesign/09-post-migration-consolidation-plan.md).**
+>   That doc is the source of truth for what to do next; it lists 26 steps with effort, risk and gates.
+>   Order: **B0 → A0 → B(concurrency) → D(narrowed parse + measure) → C(close-out) → A(deferred)**.
+> - **⚠ B0 IS OUTSTANDING AND URGENT (user action):** `JOB_MAX_CONCURRENCY` defaults to **2**
+>   ([settings.py:47](api/services/settings.py#L47)) while every run writes a **shared** `<repo>/model`+`output`
+>   that a full generation `_rmtree_force`s — concurrent jobs corrupt each other **today** (doc 07 defect 26).
+>   Set it to **1** until B1 (per-job data root) lands.
+> - **Decided:** target concurrency **5–6 jobs** ⇒ adds **B5** (connection budget — engine subprocesses take
+>   SQLAlchemy's default 15-connection pool each, so 6 jobs + API ≈ 100 vs `max_connections=100`; **solution is
+>   designed and written up in doc 09 §B5** — `NullPool` for the engine, sized pool for the API) and **B6**
+>   (LLM rate limits per process × 6).
+> - **Deferred by decision:** group **A** (removing the Python→Python subprocesses). Measured at ~5–20s per
+>   multi-minute run — a debuggability/simplicity win, not speed, and it does not address concurrency. **A0**
+>   (capture subprocess `stderr`) is pulled out and still scheduled — 1h, no risk, kills the
+>   "exited with code 1, no reason" bug class.
+> - **⚠ Known gap — narrowed parse (M4.4/M4.6) has ZERO automated coverage**, is off by default and not
+>   UI-reachable, but the **user requires it for large codebases** and its fingerprint gate was re-sourced to
+>   the DB during the cutover. Validate before enabling (doc 09 **D1**) — same commit narrowed vs full, assert
+>   identical model (what `--verify-parse` does at runtime).
+> - **Gates to run after any change:** `pytest tests/unit tests/api` · `python tools/verify_incremental.py`
+>   (DB-less two-version incremental) · `python tools/verify_pg_readers.py` (proves data is really IN Postgres —
+>   every reader falls back to disk, so a green run alone proves nothing). API paths (sections, re-export,
+>   document render) are NOT covered by the gates — they need a real two-commit run.
+>
+> **WORK STATUS / QUEUE — 2026-07-20 (SWE.3 content work; still open, separate track).**
 > - **DONE + removed from the active batch lists:** 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7,
 >   flowcharts-in-DOCX, orphan-header handling, 3.14, 3.15, 3.18. **Remaining open:**
 >   per-layer macros, function hide/unhide (Phase-3 JSON), 3.8, 3.9, 3.10, 3.11, 3.12,

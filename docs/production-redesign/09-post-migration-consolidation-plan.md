@@ -85,7 +85,7 @@ applied.
 | **B2** | **Per-run temp path for the clang-args response file** (currently in the shared `model/` dir — doc 07 defect 31). | ~1h | low |
 | **B3** | **Atomic writes (temp+rename) for `.mmdc_cache` / `.flowchart_cache`** — two jobs may legitimately write the same content-addressed key. | ~2h | low |
 | **B4** | **Raise `JOB_MAX_CONCURRENCY` to the target (5–6)** and add a concurrent-jobs test (several projects at once, assert every output intact and every version row correct). | ~½ day | med |
-| **B5** | **Size the DB connection budget.** `core/db.py` calls `create_engine(url, pool_pre_ping=True, future=True)` with **no `pool_size`/`max_overflow`**, so every process takes SQLAlchemy's default pool (5 + 10 overflow = 15). Each engine subprocess creates **its own** engine, so 6 concurrent jobs + the API server can demand ~100 connections — at or past Postgres's default `max_connections=100`. Set explicit pool sizes and document the budget (`jobs × pool ≤ max_connections`). | ~2h | **med — will bite at 5–6** |
+| **B5** | **Size the DB connection budget.** *(solution designed — see below)* | ~1–2h | **med — will bite at 5–6** |
 | **B6** | **LLM behaviour at N concurrent jobs.** The client rate-limits *per process*; six jobs multiply the request rate against the provider. Confirm provider limits, and decide whether throttling belongs per-process or shared. | ~½ day | med |
 
 **Two things that are already safe** (verified): the `reuse_index` upsert uses `ON CONFLICT DO
@@ -95,6 +95,52 @@ collide on the shared per-commit checkout dir.
 
 **Capacity note (not code):** 5–6 concurrent runs means 5–6 simultaneous libclang parses. Size CPU
 and RAM for the peak, not the average — measure with D2 before committing to the number.
+
+### B5 — the connection-budget fix (designed, ready to implement)
+
+**Root cause is a profile mismatch**: one `get_engine()` ([core/db.py:120](engine/core/db.py#L120))
+serves two opposite workloads, and both take SQLAlchemy's default pool (5 + 10 overflow = 15).
+
+| | API server | Engine subprocess |
+|---|---|---|
+| Threading | concurrent (FastAPI threadpool) | **single-threaded** |
+| DB calls | many, short | **~10 across the whole run** |
+| Idle time | low | **minutes** between calls (parse/LLM) |
+
+So an engine subprocess pins up to 15 connections while spending ten minutes parsing. × 6 jobs ⇒
+exhaustion.
+
+**Fix — two profiles:**
+
+1. **Engine subprocesses → `NullPool`.** Single-threaded with a handful of statements: connect per
+   operation, hold **zero** idle connections during the long phases. ~10 extra connects per run is
+   irrelevant against a multi-minute run. (It also makes `pool_pre_ping` moot there — every
+   connection is fresh, which is what that flag was working around.)
+2. **API server → a sized pool**: `pool_size=5, max_overflow=5`.
+
+In `core/db.py` where the kwargs are built:
+
+```python
+# Engine subprocesses are single-threaded and mostly idle (parse/LLM); a pool would pin idle
+# connections for minutes. NullPool holds none. The API is concurrent and pools.
+if os.environ.get("ANALYZER_DB_POOL", "").lower() == "none":
+    kwargs["poolclass"] = NullPool
+else:
+    kwargs["pool_size"] = int(os.environ.get("DB_POOL_SIZE", 5))
+    kwargs["max_overflow"] = int(os.environ.get("DB_MAX_OVERFLOW", 5))
+```
+
+Set `ANALYZER_DB_POOL=none` in `pipeline_runner._engine_db_env()` — the same place that already
+injects `DATABASE_URL` into the subprocess. One env var, one place.
+
+**Budget after the fix:** API `5+5=10` + (6 jobs × ~1–2 transient) ≈ **~22 of 100**.
+**Formula:** `(API pool + overflow) + (max_jobs × per-job peak) ≤ max_connections × 0.8`.
+
+**Verify** during concurrent runs: `SELECT count(*) FROM pg_stat_activity WHERE datname='analyzer';`
+should stay in the low tens. Adding `application_name` to `connect_args` makes that query show
+which process holds what.
+
+**Not needed:** PgBouncer — that is for tens of replicas / hundreds of connections, not 6 jobs.
 
 **Note:** B1 is required whether or not A is ever done — and if A is picked up later, per-job
 isolation matters *more*, not less, because in-process phases share one working directory.
