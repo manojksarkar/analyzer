@@ -58,7 +58,8 @@ class TestRedaction:
 
 
 class TestFailFast:
-    def test_unreachable_database_raises_actionable_error(self, monkeypatch):
+    def test_unreachable_local_database_raises_actionable_error(self, monkeypatch):
+        """A LOCAL host: the fix really is to start the local container."""
         monkeypatch.delenv("DATABASE_URL", raising=False)
         reset_engine()
         with pytest.raises(DatabaseUnavailable) as excinfo:
@@ -66,9 +67,42 @@ class TestFailFast:
         msg = str(excinfo.value)
         # The operator must be told what to DO, not just what broke.
         assert "docker compose up -d" in msg
-        assert "DATABASE_URL" in msg
+        # config.local.json is the configured home for the connection, so the advice names
+        # it rather than DATABASE_URL (which it used to, before config became the norm).
+        assert "config.local.json" in msg
         assert "127.0.0.1:59999" in msg          # which server was tried
         assert "secret" not in msg               # ...without leaking the password
+
+    def test_unreachable_remote_database_does_not_advise_a_local_container(self, monkeypatch):
+        """A REMOTE host must get connectivity advice, not "docker compose up -d".
+
+        Telling someone to start a local container when their DSN points at another machine
+        sends them to inspect something unrelated to the connection that failed — which is
+        exactly what happened with a pgvector server on a separate host.
+        """
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        reset_engine()
+        remote = "postgresql+psycopg://analyzer:secret@203.0.113.9:59999/analyzer"
+        with pytest.raises(DatabaseUnavailable) as excinfo:
+            require_database(remote)
+        msg = str(excinfo.value)
+        assert "docker compose up -d" not in msg
+        assert "203.0.113.9:59999" in msg
+        assert "REMOTE" in msg
+        assert "secret" not in msg
+
+    def test_operator_advice_is_ascii_only(self, monkeypatch):
+        """PROJECT_CONTEXT §18: this text prints to a Windows cp1252 console, where a single
+        non-ASCII character renders as a replacement glyph (and can raise). Caught in review
+        when an em-dash came out as garbage on the office machine."""
+        from core.db import _unreachable_help
+        for host in ("localhost", "203.0.113.9"):
+            for exc in (TimeoutError("connection timeout expired"),
+                        OSError("connection refused"),
+                        RuntimeError("password authentication failed")):
+                text = _unreachable_help(host, 5432, exc)
+                bad = [(i, hex(ord(c))) for i, c in enumerate(text) if ord(c) > 126]
+                assert not bad, f"non-ASCII in operator advice for {host}: {bad[:3]}"
 
     def test_failure_is_fast(self, monkeypatch):
         """An unreachable DB must report in seconds, not stall the run.

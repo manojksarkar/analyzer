@@ -93,9 +93,10 @@ def main() -> int:
             print(f"checking {len(rows)} version(s)")
             all_ok = all([_check_version(cx, r) for r in rows])
     except Exception as exc:
-        print(f"\n*** cannot read the database: {type(exc).__name__}: {exc}")
-        print("    Check the DSN above (DATABASE_URL or the `db` section of "
-              "engine/config/config.local.json) and that tools/db_setup.py has been run.")
+        from core.db import dsn_host_port, _unreachable_help
+        host, port = dsn_host_port(dsn)
+        print(f"\n*** cannot read the database: {type(exc).__name__}: {exc}\n")
+        print(_unreachable_help(host, port, exc))        # one shared, failure-specific guide
         return 1
 
     print()

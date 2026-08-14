@@ -92,8 +92,15 @@ def main() -> int:
                     print(f"database already exists: {target_db!r}")
         except Exception as exc:                    # noqa: BLE001
             print(f"\nCould not reach the server / create the database: "
-                  f"{type(exc).__name__}: {exc}")
-            print("  - can this user connect to 'postgres' and CREATE DATABASE?")
+                  f"{type(exc).__name__}: {exc}\n")
+            try:
+                from core.db import dsn_host_port, _unreachable_help
+                host, port = dsn_host_port(raw)
+                print(_unreachable_help(host, port, exc))
+            except Exception:
+                pass
+            print("\n  - if the server IS reachable: can this user connect to 'postgres' "
+                  "and CREATE DATABASE?")
             return 1
 
     eng = create_engine(raw, connect_args=ca)       # target engine - dialect resolved here

@@ -211,6 +211,89 @@ def reset_engine() -> None:
     _ENGINE = None
 
 
+_LOCAL_HOSTS = frozenset(("localhost", "127.0.0.1", "::1", "0.0.0.0", ""))
+
+
+def dsn_host_port(dsn: str) -> tuple:
+    """(host, port) from a DSN, defaulting the port to 5432. ('', 5432) if unparseable."""
+    try:
+        rest = dsn.split("://", 1)[1]
+        hostpart = rest.rsplit("@", 1)[-1].split("/", 1)[0]
+        if hostpart.startswith("["):                      # IPv6 literal: [::1]:5432
+            host, _, tail = hostpart[1:].partition("]")
+            port = tail.lstrip(":")
+        else:
+            host, _, port = hostpart.partition(":")
+        return host, int(port) if port.isdigit() else 5432
+    except Exception:
+        return "", 5432
+
+
+def _unreachable_help(host: str, port: int, exc: Exception) -> str:
+    """Advice that matches the ACTUAL failure, rather than one canned suggestion.
+
+    The old message always said "docker compose up -d", which is wrong — and misleading —
+    when the DSN points at a server on another machine: it sends you to inspect a local
+    container that has nothing to do with the connection that failed.
+
+    The distinction that matters is timeout vs refused. A **timeout** means the packets went
+    nowhere and Postgres never saw the attempt (firewall DROP, unreachable host, blocked
+    port). A **refusal** means something answered and nothing was listening on that port. They
+    have completely different fixes, so they get completely different advice.
+    """
+    name, text = type(exc).__name__, str(exc).lower()
+    timed_out = "timeout" in name.lower() or "timeout" in text
+    refused = "refused" in text
+    local = host in _LOCAL_HOSTS
+
+    if local:
+        return ("The analyzer requires PostgreSQL. To start it locally:\n"
+                "    docker compose up -d\n"
+                "Or point it at an existing server via the `db` section of "
+                "engine/config/config.local.json.")
+
+    lines = [f"The DSN points at a REMOTE server ({host}:{port}), so this is a connectivity "
+             f"problem, not a local one - do NOT start a local container.", ""]
+    if timed_out:
+        lines += [
+            "A TIMEOUT means nothing answered at all: the packets were dropped before they "
+            "reached Postgres. Postgres itself never saw this attempt, so its own settings "
+            "(user, password, pg_hba) are NOT the cause yet.",
+            "",
+            "Check, in this order:",
+            f"  1. reachability from THIS machine:",
+            f"       Windows : Test-NetConnection {host} -Port {port}",
+            f"       Linux   : nc -vz {host} {port}",
+            f"     Fails -> a firewall or the network is blocking it. Everything below is moot.",
+            f"  2. on {host}: is the port published on all interfaces, not just loopback?",
+            f"       docker ps                       # is a 0.0.0.0:{port}->{port} mapping shown?",
+            f"       ss -lntp | grep {port}",
+            f"  3. on {host}: host firewall",
+            f"       sudo ufw status ; sudo ufw allow {port}/tcp",
+            f"  4. corporate networks often block {port} between subnets - if 1 fails from "
+            f"here but succeeds when run ON {host}, that is your answer.",
+        ]
+    elif refused:
+        lines += [
+            "A REFUSAL means the host answered but nothing is listening on that port.",
+            f"  * on {host}: is the container running and the port published?",
+            f"       docker ps ; ss -lntp | grep {port}",
+            "  * a container started without -p publishes nothing outside itself.",
+        ]
+    else:
+        lines += [
+            "The host was reached, so this is most likely authentication or the database "
+            "itself:",
+            "  * user / password in the `db` section of engine/config/config.local.json",
+            "  * pg_hba.conf on the server must allow this client's address",
+            "  * the database may not exist yet -> python tools/db_setup.py",
+        ]
+    lines += ["", "Connection attempts give up after "
+                  f"{CONNECT_TIMEOUT_SEC}s (raise DATABASE_CONNECT_TIMEOUT if the link is "
+                  f"merely slow)."]
+    return "\n".join(lines)
+
+
 def require_database(dsn: Optional[str] = None) -> None:
     """Verify the database is reachable, or raise :class:`DatabaseUnavailable`.
 
@@ -224,12 +307,10 @@ def require_database(dsn: Optional[str] = None) -> None:
         with engine.connect() as cx:
             cx.execute(text("SELECT 1"))
     except Exception as exc:                              # driver/network/auth all land here
+        host, port = dsn_host_port(target)
         raise DatabaseUnavailable(
             f"Cannot reach the database at {_redact(target)}\n"
             f"  reason: {type(exc).__name__}: {exc}\n"
             f"\n"
-            f"The analyzer requires PostgreSQL. To start it:\n"
-            f"    docker compose up -d\n"
-            f"Or point DATABASE_URL at an existing server:\n"
-            f"    set DATABASE_URL=postgresql+psycopg://user:pass@host:5432/dbname"
+            f"{_unreachable_help(host, port, exc)}"
         ) from exc
