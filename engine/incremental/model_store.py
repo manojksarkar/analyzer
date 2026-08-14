@@ -299,6 +299,50 @@ def persist_run_metadata(conn, version_id, meta: Dict[str, Any]) -> None:
         parse_fingerprint=meta.get("parseFingerprint")))
 
 
+def persist_run_outcome(conn, version_id, manifest: Dict[str, Any]) -> None:
+    """Store the run's incremental accounting on the version row — the columns that replace
+    ``<commit>/manifest.json`` (doc 09, C1).
+
+    Every field already had a column; the manifest was simply the transport the API read them
+    from. Writing them here removes an engine->API file, and makes the accounting readable from
+    any node instead of only the one that ran the job.
+
+    An UPDATE only, and only of fields the manifest actually carried: the row is created and
+    owned by the API at job start, and a partial manifest must not blank a good column.
+    """
+    from sqlalchemy import update
+    vals: Dict[str, Any] = {}
+    if manifest.get("decision") is not None:
+        vals["decision"] = manifest.get("decision")
+    if manifest.get("baselineVersionId") is not None:
+        vals["baseline_version_id"] = manifest.get("baselineVersionId")
+    if manifest.get("regenerated") is not None:
+        vals["regenerated"] = manifest.get("regenerated")
+    if manifest.get("reused") is not None:
+        vals["reused"] = manifest.get("reused")
+    if not vals:
+        return
+    conn.execute(update(s.versions).where(s.versions.c.id == version_id).values(**vals))
+
+
+def load_run_outcome(conn, version_id) -> Dict[str, Any]:
+    """The run's accounting back in manifest.json's shape ({} when the row is absent).
+
+    Keyed the same way the manifest was, so a caller that used to read the file can switch to
+    this without reshaping anything downstream.
+    """
+    row = conn.execute(select(s.versions.c.decision,
+                              s.versions.c.baseline_version_id,
+                              s.versions.c.regenerated,
+                              s.versions.c.reused)
+                       .where(s.versions.c.id == version_id)).first()
+    if row is None:
+        return {}
+    out = {"decision": row.decision, "baselineVersionId": row.baseline_version_id,
+           "regenerated": row.regenerated, "reused": row.reused}
+    return {k: v for k, v in out.items() if v is not None}
+
+
 def load_run_metadata(conn, version_id) -> Dict[str, Any]:
     """The version's identity metadata in metadata.json's shape ({} when the row is absent or the
     columns were never populated). `parseFingerprint` is the clang-flag guard narrowed parse

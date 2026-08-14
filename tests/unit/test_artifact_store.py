@@ -150,3 +150,74 @@ def test_real_model_roundtrip_and_parity(tmp_path):
     # parity: the two back-ends return identical data for the same input
     assert fs.read_hashes("v1") == ps.read_hashes("v1")
     assert set(fs.read_functions("v1")) == set(ps.read_functions("v1"))
+
+
+# ---------------------------------------------------------------------------
+# doc 09 B1 — rendered output goes straight into the version dir
+# ---------------------------------------------------------------------------
+
+def test_capture_output_when_run_rendered_into_the_version_dir(tmp_path):
+    """The run now renders into versions/<ver>/output directly (--output-root), so
+    capture's source and destination are the SAME directory.
+
+    Without a guard, copytree onto itself either raises or duplicates the tree. The .docx
+    collection into documents/ must still happen — that is what the API serves.
+    """
+    for store in _both_stores(tmp_path, ["v1"]):
+        store.create_version("v1")
+        out = os.path.join(store.artifact_dir("v1"), "output")
+        os.makedirs(os.path.join(out, "App"), exist_ok=True)
+        with open(os.path.join(out, "App", "software_detailed_design_App.docx"), "w") as fh:
+            fh.write("x")
+        with open(os.path.join(out, "App", "interface_tables.json"), "w") as fh:
+            fh.write("{}")
+
+        captured = store.capture_output("v1", out)
+
+        assert captured == ["software_detailed_design_App.docx"]
+        # the source tree is intact and NOT nested inside itself
+        assert os.path.isfile(os.path.join(out, "App", "interface_tables.json"))
+        assert not os.path.exists(os.path.join(out, "output"))
+
+
+def test_capture_output_still_copies_from_a_separate_dir(tmp_path):
+    """The pre-B1 shape (render elsewhere, then copy in) must keep working — a CLI run
+    with no --output-root still writes the default output dir."""
+    for store in _both_stores(tmp_path, ["v1"]):
+        store.create_version("v1")
+        src = tmp_path / f"elsewhere-{id(store)}" / "output" / "App"
+        src.mkdir(parents=True)
+        (src / "software_detailed_design_App.docx").write_text("x")
+
+        captured = store.capture_output("v1", str(src.parent))
+
+        assert captured == ["software_detailed_design_App.docx"]
+        assert os.path.isfile(os.path.join(
+            store.artifact_dir("v1"), "output", "App", "software_detailed_design_App.docx"))
+
+
+def test_set_output_dir_relocates_only_output(monkeypatch, tmp_path):
+    """Output relocates per run; logs and the render cache must NOT follow it.
+
+    Relocating the whole data root would give every run a private .flowchart_cache — the
+    caches are content-addressed and shared across runs on purpose, so per-version would
+    mean a 0% hit rate and re-rendering every diagram.
+    """
+    # NB: `import core.paths as cp` does NOT work — core/__init__.py re-exports the `paths`
+    # FUNCTION, which shadows the submodule attribute. Import the names directly.
+    from core.paths import paths as _paths, set_data_root, set_output_dir
+
+    set_data_root(str(tmp_path))                 # clears the cache too
+    before = _paths()
+    target = tmp_path / "versions" / "ver1" / "output"
+
+    set_output_dir(str(target))
+    after = _paths()
+
+    assert after.output_dir == os.path.abspath(str(target))   # moved
+    assert after.logs_dir == before.logs_dir                  # NOT moved
+    assert after.cache_dir == before.cache_dir                # NOT moved
+    assert after.model_dir == before.model_dir                # NOT moved (C11 handles it)
+    # In-process only: no environment variable is set. Subprocesses are told via
+    # `run.py --output-root`, so a run's own command line records where its output went.
+    assert "ANALYZER_OUTPUT_DIR" not in os.environ

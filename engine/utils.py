@@ -85,6 +85,24 @@ def mermaid_cache_key(mermaid: str, *, scale=None, puppeteer: bool = True) -> st
     return hashlib.sha256(src.encode("utf-8")).hexdigest()
 
 
+def _log_render_failure(tool: str, result, *, tail_lines: int = 15) -> None:
+    """Report why a renderer failed instead of returning a bare False (doc 09, A0).
+
+    Both renderers already captured stderr and discarded it, so a missing Chromium
+    or a bad DOT string surfaced only as a diagram that never appeared. Renders run
+    once per diagram, so the tail is kept short — enough to name the cause without
+    flooding the log when every render in a run fails the same way.
+    """
+    text = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "").strip()
+    if not text:
+        log(f"{tool} exited with code {getattr(result, 'returncode', '?')} (no output)",
+            component="render", err=True)
+        return
+    lines = text.splitlines()[-tail_lines:]
+    log(f"{tool} exited with code {getattr(result, 'returncode', '?')}: "
+        + " | ".join(lines), component="render", err=True)
+
+
 def _run_mmdc(project_root: str, mermaid: str, png_path: str, *,
               scale=None, puppeteer: bool = True, timeout: int = 90) -> bool:
     """Invoke mmdc on `mermaid` -> png_path (writes a temp .mmd it cleans up). Returns
@@ -109,9 +127,14 @@ def _run_mmdc(project_root: str, mermaid: str, png_path: str, *,
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False, shell=True)
             else:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+            log(f"mmdc could not run: {type(exc).__name__}: {exc}",
+                component="render", err=True)
             return False
-        return r.returncode == 0 and os.path.isfile(png_path)
+        if r.returncode != 0:
+            _log_render_failure("mmdc", r)
+            return False
+        return os.path.isfile(png_path)
     finally:
         try:
             os.remove(mmd_path)
@@ -189,9 +212,14 @@ def _run_dot_render(project_root: str, dot: str, png_path: str, *,
             else:
                 r = subprocess.run(cmd, capture_output=True, text=True,
                                    timeout=timeout, check=False)
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+            log(f"render_dot.mjs could not run: {type(exc).__name__}: {exc}",
+                component="render", err=True)
             return False
-        return r.returncode == 0 and os.path.isfile(png_path)
+        if r.returncode != 0:
+            _log_render_failure("render_dot.mjs", r)
+            return False
+        return os.path.isfile(png_path)
     finally:
         try:
             os.remove(dot_path)

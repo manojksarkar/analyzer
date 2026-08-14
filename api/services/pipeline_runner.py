@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -43,6 +44,8 @@ from .model_reader import ModelReader
 from .settings import get_settings
 
 UTC = timezone.utc
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Per-job state (thread-safe via _LOCK)
@@ -200,6 +203,10 @@ def _store_resolved_config(db: Any, job: Any, cfg: dict) -> None:
 
 
 def _mark_failed(db: Any, job_id: str, message: str) -> None:
+    # Also to the server log (doc 09, A0). The job record alone is not enough: it is
+    # only visible to someone who thinks to query that job, it is lost if the DB write
+    # itself is what failed, and an operator tailing the API sees nothing at all.
+    _log.error("job %s failed: %s", job_id, message)
     job = db.jobs.get(job_id)
     if job and job.status not in ("cancelled", "complete", "failed"):
         job.status = "failed"
@@ -802,6 +809,14 @@ def _execute_subprocess(
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     if cfg.libclang_path:
         env["LIBCLANG_PATH"] = cfg.libclang_path
+    # Tag this run's metrics records (doc 09, D2a). Concurrent jobs append to one
+    # metrics file, so without an id their phase timings and peak-RSS numbers cannot
+    # be told apart — which is the whole point of measuring before raising B4.
+    env["ANALYZER_JOB_ID"] = job_id
+    _job = db.jobs.get(job_id)
+    _vid = getattr(_job, "version_id", None) if _job else None
+    if _vid:
+        env["ANALYZER_VERSION_ID"] = str(_vid)
     env.update(extra_env or {})
 
     try:
@@ -884,8 +899,12 @@ def _execute_subprocess(
             proc.wait()
 
     if _timed_out:
-        _append_log(job_id,f"Job failed after timing out {_timeout}s")
-        _mark_failed(db, job_id, f"Subprocess timed out after {_timeout}s.")
+        # Carry the tail here too (doc 09, A0). A timeout is precisely when you need
+        # to know what the run was doing when it stalled — the non-zero-exit path
+        # below already did this; this one silently dropped it.
+        tail = "\n".join(recent_lines[-20:])
+        _append_log(job_id, f"Job failed after timing out after {_timeout}s")
+        _mark_failed(db, job_id, f"Subprocess timed out after {_timeout}s.\n{tail}")
         return False
 
     with _LOCK:
@@ -897,7 +916,7 @@ def _execute_subprocess(
 
     if rc != 0:
         tail = "\n".join(recent_lines[-20:])
-        _append_log(job_id,f"Job failed with code{rc}")
+        _append_log(job_id, f"Job failed with code {rc}")
         _mark_failed(db, job_id, f"run.py exited with code {rc}.\n{tail}")
         return False
 
@@ -997,14 +1016,36 @@ def _version_model_dir(project_id: str, commit_sha: str, version_id: Optional[st
     return d if d.is_dir() else None
 
 
-def _read_engine_manifest(project_id: str, commit_sha: str) -> dict:
-    """Read the engine's manifest.json from the commit dir (decision / baselineVersionId /
-    regenerated / reused / documents). Returns {} when absent."""
+def _read_engine_manifest(project_id: str, commit_sha: str,
+                          version_id: Optional[str] = None) -> dict:
+    """The engine's run accounting — decision / baselineVersionId / regenerated / reused.
+
+    Postgres first (doc 09, C1): the engine now writes these onto the `versions` row, so the
+    accounting is readable from any node rather than only the one that ran the job. Falls back
+    to the commit-dir manifest.json for versions written before that, and for DB-less runs.
+
+    The DB values are merged UNDER the file's, not over them, so a manifest key the columns do
+    not cover (`documents`, `status`, `warnings`) still comes through.
+    """
+    from_db: dict = {}
+    if version_id:
+        try:
+            from incremental.model_store import load_run_outcome
+            from core.db import get_engine
+            with get_engine().connect() as cx:
+                from_db = load_run_outcome(cx, version_id) or {}
+        except Exception:                       # no DB / not migrated -> the file below
+            from_db = {}
+
     p = _commit_dir(project_id, commit_sha) / "manifest.json"
     try:
-        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+        from_file = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
     except (OSError, ValueError):
-        return {}
+        from_file = {}
+
+    merged = dict(from_db)
+    merged.update({k: v for k, v in from_file.items() if v is not None})
+    return merged
 
 
 # _read_run_metadata was removed: the engine now writes the run's identity metadata straight onto
@@ -1029,7 +1070,8 @@ def _complete(db: Any, job_id: str) -> None:
     project = db.projects.get(job.project_id)
     # The engine wrote model/output + manifest INTO the commit dir and seeded the reuse index
     # itself — read the manifest for the incremental accounting; no separate capture/seed.
-    manifest = _read_engine_manifest(job.project_id, job.commit_sha)
+    manifest = _read_engine_manifest(job.project_id, job.commit_sha,
+                                     getattr(job, "version_id", None))
 
     version = _make_version(db, project, job, now, manifest)
     docs = _make_documents(db, project, version, now)

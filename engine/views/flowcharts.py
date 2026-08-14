@@ -9,6 +9,7 @@ import sys
 
 from .registry import register
 from utils import KEY_SEP, log, safe_filename, os_type, render_dot_cached
+from core.subprocess_util import log_stderr_tail, run_streaming
 
 
 # PNG slicing thresholds: split a flowchart PNG across Word pages when it is too tall to
@@ -1018,19 +1019,16 @@ def run(model, output_dir, model_dir, config):
     )
 
     try:
-        if os_type == "Windows":
-            r = subprocess.run(
-                cmd,
-                cwd=project_root,
-                check=False,
-                shell=True,
-            )
-        else:
-            r = subprocess.run(
-                cmd,
-                cwd=project_root,
-                check=False,
-            )
+        # Stream the engine's stderr through (so its per-function progress still
+        # reaches the console and the API's log tail) while keeping the tail, so a
+        # crash reports its cause instead of a bare exit code. This is the exact
+        # site where a LibclangError stayed invisible for a whole debugging
+        # session (PROJECT_CONTEXT §16 Risk 5); doc 09, A0.
+        returncode, stderr_tail, _ = run_streaming(
+            cmd,
+            cwd=project_root,
+            shell=(os_type == "Windows"),
+        )
 
     except subprocess.TimeoutExpired:
         log("generator timed out", component="flowcharts", err=True)
@@ -1040,9 +1038,10 @@ def run(model, output_dir, model_dir, config):
         log("generator failed: %s" % e, component="flowcharts", err=True)
         return
 
-    if r.returncode != 0:
+    if returncode != 0:
+        log_stderr_tail("flowchart engine", stderr_tail)
         log(
-            "generator exited with code %s" % r.returncode,
+            "generator exited with code %s" % returncode,
             component="flowcharts",
             err=True,
         )

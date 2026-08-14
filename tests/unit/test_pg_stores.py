@@ -9,7 +9,7 @@ import os
 import sys
 
 import pytest
-from sqlalchemy import create_engine, event, insert
+from sqlalchemy import create_engine, event, insert, select
 from sqlalchemy.pool import StaticPool
 
 pytestmark = pytest.mark.unit
@@ -79,6 +79,182 @@ class TestReuseIndex:
         assert b.put("fp", "v2", "k2") is True
         a.save(); b.save()                              # b's row is ignored on conflict
         assert pg_stores.PgReuseIndex(eng, PID).get("fp")["versionId"] == "v1"
+
+
+def _count_connects(eng):
+    """Count connection acquisitions on `eng`. Returns a one-element list used as a
+    counter, plus the listener so a test can stop counting."""
+    calls = []
+
+    @event.listens_for(eng, "engine_connect")
+    def _on(_conn):
+        calls.append(1)
+
+    return calls
+
+
+class TestReuseIndexBatching:
+    """doc 09 B5a — the batched forms must not scale connection acquisitions with entity
+    count.
+
+    This is the guarantee, not an optimisation detail: `PgReuseIndex.get` opens its own
+    connection, and both hot paths called it once per entity — the end-of-run seeding loop
+    does so for EVERY function and global in the project. At ~20k functions that is ~20k
+    acquisitions per run. It is nearly free against a pooled connection, which is why it
+    survived unnoticed, and ruinous under the NullPool profile B5b introduces, where each
+    one becomes a real connect + auth. If a future edit reintroduces the per-entity call,
+    these tests fail rather than the regression showing up as a slow run on a big repo.
+    """
+
+    def test_get_many_is_one_acquisition_for_many_fingerprints(self):
+        eng = _engine()
+        seed = pg_stores.PgReuseIndex(eng, PID)
+        seed.put_many((f"fp{i}", "v1", f"k{i}") for i in range(50))
+        seed.save()
+
+        idx = pg_stores.PgReuseIndex(eng, PID)
+        calls = _count_connects(eng)
+        hits = idx.get_many([f"fp{i}" for i in range(50)])
+        assert len(hits) == 50
+        assert hits["fp7"] == {"versionId": "v1", "entityKey": "k7"}
+        assert len(calls) == 1, f"expected 1 connection acquisition, got {len(calls)}"
+
+    def test_put_many_is_one_acquisition_for_many_entries(self):
+        eng = _engine()
+        idx = pg_stores.PgReuseIndex(eng, PID)
+        calls = _count_connects(eng)
+        added = idx.put_many((f"fp{i}", "v1", f"k{i}") for i in range(50))
+        assert added == 50
+        # One existence query for the whole batch (save() adds its own, after we stop counting).
+        assert len(calls) == 1, f"expected 1 connection acquisition, got {len(calls)}"
+
+    def test_batched_semantics_match_single(self):
+        """First-writer-wins and the pending buffer behave identically batched."""
+        eng = _engine()
+        a = pg_stores.PgReuseIndex(eng, PID)
+        a.put_many([("fp", "v1", "k1")]); a.save()
+
+        b = pg_stores.PgReuseIndex(eng, PID)
+        # already present -> not re-pointed, exactly as put() would report
+        assert b.put_many([("fp", "v2", "k2")]) == 0
+        b.save()
+        assert pg_stores.PgReuseIndex(eng, PID).get("fp")["versionId"] == "v1"
+
+    def test_get_many_merges_unsaved_pending_and_skips_misses(self):
+        eng = _engine()
+        idx = pg_stores.PgReuseIndex(eng, PID)
+        idx.put("buffered", "v9", "kb")                 # buffered, not yet saved
+        got = idx.get_many(["buffered", "absent"])
+        assert got["buffered"] == {"versionId": "v9", "entityKey": "kb"}
+        assert "absent" not in got                       # a miss is an absent key, not None
+
+    def test_get_many_handles_more_than_one_chunk(self):
+        """Exceeding the IN-clause bound must still be one connection, and lose nothing."""
+        eng = _engine()
+        seed = pg_stores.PgReuseIndex(eng, PID)
+        n = pg_stores._MAX_IN_PARAMS + 25
+        seed.put_many((f"f{i}", "v1", f"k{i}") for i in range(n))
+        seed.save()
+
+        idx = pg_stores.PgReuseIndex(eng, PID)
+        calls = _count_connects(eng)
+        hits = idx.get_many([f"f{i}" for i in range(n)])
+        assert len(hits) == n                            # nothing dropped at the boundary
+        assert len(calls) == 1, "chunking must reuse ONE connection"
+
+
+class TestRunOutcome:
+    """doc 09 C1 — the run's accounting lives on the version row, not in manifest.json.
+
+    Every field already had a column; the file was only the transport the API read them from.
+    Putting them on the row removes an engine->API file and makes the accounting readable from
+    any node, not just the one that happened to run the job.
+    """
+
+    def _v(self, eng, vid="v1"):
+        from incremental import model_store
+        with eng.begin() as cx:
+            _version(cx, vid, "abcdef123456")
+        return model_store
+
+    def test_round_trip_in_manifest_shape(self):
+        eng = _engine()
+        ms = self._v(eng)
+        with eng.begin() as cx:
+            ms.persist_run_outcome(cx, "v1", {
+                "decision": "incremental", "baselineVersionId": None,
+                "regenerated": 5, "reused": 9})
+        with eng.connect() as cx:
+            got = ms.load_run_outcome(cx, "v1")
+        # keyed exactly as manifest.json was, so callers need no reshaping
+        assert got["decision"] == "incremental"
+        assert got["regenerated"] == 5
+        assert got["reused"] == 9
+
+    def test_partial_manifest_does_not_blank_existing_columns(self):
+        """A manifest missing a key must leave that column alone — a later partial write
+        must not erase accounting an earlier complete one recorded."""
+        eng = _engine()
+        ms = self._v(eng)
+        with eng.begin() as cx:
+            ms.persist_run_outcome(cx, "v1", {"decision": "full", "regenerated": 14, "reused": 0})
+        with eng.begin() as cx:
+            ms.persist_run_outcome(cx, "v1", {"reused": 3})          # partial
+        with eng.connect() as cx:
+            got = ms.load_run_outcome(cx, "v1")
+        assert got["reused"] == 3                                     # updated
+        assert got["decision"] == "full"                              # NOT blanked
+        assert got["regenerated"] == 14                               # NOT blanked
+
+    def test_missing_version_returns_empty(self):
+        eng = _engine()
+        from incremental import model_store
+        with eng.connect() as cx:
+            assert model_store.load_run_outcome(cx, "nope") == {}
+
+
+class TestPipelineStatus:
+    """doc 09 C1 — `versions.pipeline_status` gives the UI real progress instead of scraping
+    `=== Phase N ===` out of the log stream.
+
+    The writes must be best-effort: a plain CLI run has no version id, and the DB-less
+    `tools/verify_incremental.py` gate runs the entire pipeline with no database at all.
+    Neither is an error, and progress reporting must never be what kills a run.
+    """
+
+    def test_writes_status_to_the_version_row(self, monkeypatch):
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "v1", "abcdef123456", pipeline_status=None)
+        import core.db as coredb
+        coredb.reset_engine()
+        monkeypatch.setattr(coredb, "get_engine", lambda *a, **k: eng)
+        coredb.set_pipeline_status("parsing", version_id="v1")
+        with eng.connect() as cx:
+            row = cx.execute(select(s.versions.c.pipeline_status)
+                             .where(s.versions.c.id == "v1")).first()
+        assert row.pipeline_status == "parsing"
+
+    def test_no_version_id_is_a_silent_no_op(self, monkeypatch):
+        """A CLI run sets no ANALYZER_VERSION_ID — it must not touch the DB or raise."""
+        import core.db as coredb
+        monkeypatch.delenv("ANALYZER_VERSION_ID", raising=False)
+
+        def _boom(*a, **k):
+            raise AssertionError("must not reach the database without a version id")
+
+        monkeypatch.setattr(coredb, "get_engine", _boom)
+        coredb.set_pipeline_status("parsing")                   # must not raise
+
+    def test_unreachable_database_is_swallowed(self, monkeypatch):
+        """The DB-less gate runs the whole pipeline; a progress marker cannot break it."""
+        import core.db as coredb
+
+        def _boom(*a, **k):
+            raise RuntimeError("no database here")
+
+        monkeypatch.setattr(coredb, "get_engine", _boom)
+        coredb.set_pipeline_status("parsing", version_id="v1")  # must not raise
 
 
 class TestProjectReads:

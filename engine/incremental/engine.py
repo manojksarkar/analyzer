@@ -34,7 +34,7 @@ _SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from core.paths import paths as _paths
+from core.paths import paths as _paths, set_output_dir
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
 from incremental.clone import ensure_commit_checkout
@@ -171,8 +171,17 @@ def carry_forward_from_index(impact_keys: Iterable[str],
 def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   data_dict_path: Optional[str], repo_dir: str, project_root: str,
                   extra_args: Optional[List[str]] = None,
-                  project_name: Optional[str] = None) -> int:
+                  project_name: Optional[str] = None,
+                  version_id: Optional[str] = None,
+                  project_id: Optional[str] = None) -> int:
     cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path]
+    # This run's own output dir (doc 09, B1) — set_output_dir was already applied in THIS
+    # process; the analyzer is a separate process, so it needs telling on its command line.
+    cmd += ["--output-root", _paths().output_dir]
+    if version_id and project_id:
+        # C11a: persist the model to Postgres at each phase boundary (dual-write; the
+        # end-of-run store.write_model still runs, and files remain authoritative).
+        cmd += ["--version-id", version_id, "--project-id", project_id]
     cmd += scope_to_args(scope)
     cmd += per_component_docx_args(scope)
     if project_name:
@@ -234,8 +243,14 @@ class StoreReuseIndex:
     def get(self, fingerprint):
         return self._store.reuse_get(fingerprint)
 
+    def get_many(self, fingerprints):
+        return self._store.reuse_get_many(fingerprints)
+
     def put(self, fingerprint, version_id, entity_key, *, overwrite: bool = False):
         return self._store.reuse_put(fingerprint, version_id, entity_key, overwrite=overwrite)
+
+    def put_many(self, entries, *, overwrite: bool = False):
+        return self._store.reuse_put_many(entries, overwrite=overwrite)
 
     def save(self) -> None:
         self._store.reuse_save()
@@ -412,8 +427,12 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     dd_path = ws.datadict_path(data_dict_id) if data_dict_id and os.path.isfile(
         ws.datadict_path(data_dict_id)) else None
     model_dir = _paths().model_dir
-    # Clean the shared output/ so this version captures only its own documents
-    # (the flowchart-reuse step re-seeds output/<scope>/flowcharts from the baseline).
+    # Render STRAIGHT into this version's own output dir (doc 09, B1) rather than the shared
+    # <root>/output that used to be copied into the version afterwards — that shared dir is
+    # what a concurrent job's wipe below would destroy.
+    set_output_dir(os.path.join(store.artifact_dir(version_id), "output"))
+    # Clean it so this version captures only its own documents (the flowchart-reuse step
+    # re-seeds output/<scope>/flowcharts from the baseline). Now scoped to THIS version.
     _rmtree_force(_paths().output_dir)
 
     def _fail(stage: str, rc: int):
@@ -444,7 +463,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         _vlog = _get_logger("incremental")
         narrowed_model = _load_parse_dir(model_dir)
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                           extra_args=["--to-phase", "1"], project_name=project_name)
+                           extra_args=["--to-phase", "1"], project_name=project_name,
+                           version_id=version_id, project_id=project_id)
         if rc != 0:
             _fail("parse", rc)
         mism = diff_models(narrowed_model, _load_parse_dir(model_dir))
@@ -459,8 +479,12 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             _vlog.info("--verify-parse: narrowed parse is byte-identical (set-equal) to a full parse ✓")
         # model/ now holds the FULL parse -> trusted regardless of the narrowed result.
     elif not used_narrowed:
+        # A full parse leaves a COMPLETE model in model/, so it is safe to persist at this
+        # boundary. The narrowed path above is not: it produces a PARTIAL model that is only
+        # complete after parse_merge, so it deliberately passes no version id.
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                           extra_args=["--to-phase", "1"], project_name=project_name)
+                           extra_args=["--to-phase", "1"], project_name=project_name,
+                           version_id=version_id, project_id=project_id)
         if rc != 0:
             _fail("parse", rc)
 
@@ -516,10 +540,18 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             _glob_cache[vid] = store.read_globals(vid)
         return _glob_cache[vid]
 
+    # Resolve every impact-set fingerprint in ONE query, then hand
+    # `carry_forward_from_index` a plain dict (doc 09, B5a). It stays pure and still just
+    # needs something with `.get(fp)` — the batching lives here, at the call site, so its
+    # unit tests keep passing a plain dict and the abstraction is unchanged.
+    _lookup_keys = [k for k in (list(plan["impact"]) + list(impacted_globals))]
+    _index_hits = ridx.get_many(
+        [fp for fp in (target_fps.get(k) for k in _lookup_keys) if fp])
+
     index_reused = carry_forward_from_index(plan["impact"], target_fps, target_functions,
-                                            ridx, version_id, _src_funcs, _CARRY_FIELDS)
+                                            _index_hits, version_id, _src_funcs, _CARRY_FIELDS)
     index_reused_g = carry_forward_from_index(impacted_globals, target_fps, target_globals,
-                                              ridx, version_id, _src_globs, ("description",))
+                                              _index_hits, version_id, _src_globs, ("description",))
     # Entities satisfied from the index drop out of the LLM regen sets (Phase 2 skips them
     # because they now carry a description + behaviour names).
     regen_impact = [k for k in plan["impact"] if k not in index_reused]
@@ -577,7 +609,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
     rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                       extra_args=["--from-phase", "2"], project_name=project_name)
+                       extra_args=["--from-phase", "2"], project_name=project_name,
+                       version_id=version_id, project_id=project_id)
     if rc != 0:
         _fail("derive+views+export", rc)
 
@@ -600,8 +633,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Content-only reuse key (recipe intentionally not folded in — approved outputs are
     # reused regardless of which model/prompt produced them). Reuse the fingerprints
     # computed for the M3.7 lookup (descriptions added since don't affect the content key).
-    for entity_key, fp in target_fps.items():
-        ridx.put(fp, version_id, entity_key)  # first version that produced a fp keeps it
+    # One existence query for the whole project instead of one per entity (doc 09, B5a).
+    # First version that produced a fingerprint keeps it — semantics unchanged.
+    ridx.put_many((fp, version_id, entity_key) for entity_key, fp in target_fps.items())
     ridx.save()
 
     manifest = _manifest(version_id, branch, target, scope, data_dict_id,

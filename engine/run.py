@@ -126,6 +126,9 @@ data_dictionary_arg     = None
 macros_arg              = None
 project_name_arg        = None
 output_name_arg         = None
+output_root_arg         = None   # B1: this run's own output dir (versions/<ver…>/output)
+version_id_arg          = None   # C11a: persist the model to Postgres at each phase boundary
+project_id_arg          = None   # C11a: owning project (the store is project-scoped)
 only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
 include_emulator_arg    = False  # opt out of the default *emul* file exclusion (3.1)
 include_path_args       = []   # list of (layer_name, abs_dir) tuples
@@ -203,6 +206,34 @@ while i < len(sys.argv):
             log("--output-name requires a name argument", component="run", err=True)
             sys.exit(1)
         output_name_arg = sys.argv[i]
+    elif a == "--version-id":
+        # Which version this run is producing (doc 09, C11a). With it, each phase persists
+        # its model to Postgres at its own boundary instead of the whole model landing once
+        # at the end of the run. A flag, not an env var, for the same reasons as
+        # --output-root: the run's command line then records what it produced.
+        i += 1
+        if i >= len(sys.argv):
+            log("--version-id requires a value", component="run", err=True)
+            sys.exit(1)
+        version_id_arg = sys.argv[i]
+    elif a == "--project-id":
+        i += 1
+        if i >= len(sys.argv):
+            log("--project-id requires a value", component="run", err=True)
+            sys.exit(1)
+        project_id_arg = sys.argv[i]
+    elif a == "--output-root":
+        # Where this run's rendered output goes (doc 09, B1). The orchestrator points it at
+        # versions/<ver…>/output so a job never writes a shared dir another job can wipe.
+        # A flag rather than an env var: the run's own command line then records where its
+        # output went, and a per-version CONFIG would be wrong — that config is stored in
+        # versions.resolved_config, and a machine-specific absolute path must never go there
+        # (the mistake C3 exists to undo).
+        i += 1
+        if i >= len(sys.argv):
+            log("--output-root requires a directory argument", component="run", err=True)
+            sys.exit(1)
+        output_root_arg = sys.argv[i]
     elif a == "--include-path":
         if i + 2 >= len(sys.argv):
             log("--include-path requires two arguments: <layer> <dir>", component="run", err=True)
@@ -236,6 +267,12 @@ while i < len(sys.argv):
     else:
         raw_args.append(a)
     i += 1
+
+# Applied right after argv parsing and BEFORE anything reads paths(): group_planner builds
+# every phase's output path from paths().output_dir, and paths() memoises on first use.
+if output_root_arg:
+    from core.paths import set_output_dir
+    set_output_dir(output_root_arg)
 
 def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
     """Resolve requested group name against config.layer, case-insensitive."""
@@ -478,11 +515,44 @@ if to_phase is not None:
     plans = _filtered
     log(f"--to-phase {to_phase}: running {len(plans)} plan(s) up to phase {to_phase}.", component="run")
 
+def _make_phase_persist(project_id, version_id):
+    """A post-phase hook that persists the model to Postgres (doc 09, C11a).
+
+    Returns None when this run is not producing a version (a plain CLI run) or when no
+    database is configured — both are normal, and neither should change behaviour.
+
+    Only the phases that CHANGE the model are persisted: Phase 1 writes the parsed skeleton,
+    Phase 2 the enriched model. Phases 3-4 only read it, so re-persisting after them would be
+    identical rows written twice.
+
+    This is the DUAL-WRITE stage: `model/*.json` is still written and still authoritative.
+    Nothing reads from the database yet — that is C11b, and it is gated on
+    `tools/verify_model_parity.py` agreeing after every phase.
+    """
+    if not version_id or not os.environ.get("DATABASE_URL"):
+        return None
+    writes_model = {"parser.py", "model_deriver.py"}
+
+    def _persist(phase):
+        if phase.script not in writes_model:
+            return
+        from core.paths import paths as _p
+        from incremental.store import make_store
+        store = make_store(project_id or "")
+        store.write_model(version_id, _p().model_dir)      # one transaction, idempotent
+        log(f"persisted model to the database after {phase.name}", component="run")
+
+    return _persist
+
+
+_phase_persist = _make_phase_persist(project_id_arg, version_id_arg)
+
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0
 for plan in plans:
     log(plan.label, component="run")
-    total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)
+    total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase,
+                             on_phase_done=_phase_persist)
 
 print(flush=True)
 log(f"Done. Total: {total_time:.2f}s", component="run")

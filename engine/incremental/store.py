@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import shutil
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from incremental.stores import _read_json, _write_json, default_workspaces_root
 
@@ -40,6 +40,19 @@ _MODEL_FILES = {
     "components": "components.json", "summaries": "summaries.json", "hashes": "hashes.json",
 }
 _EMPTY_EDGES = {"typeUsers": {}, "macroUsers": {}}
+
+
+def _same_dir(a: str, b: str) -> bool:
+    """True when two paths name the same directory.
+
+    `os.path.samefile` is the honest check (it follows symlinks and resolves case on
+    Windows) but raises when either side does not exist yet — normal here, since the
+    destination is created on demand. Fall back to a normalised comparison."""
+    try:
+        return os.path.exists(a) and os.path.exists(b) and os.path.samefile(a, b)
+    except OSError:
+        pass
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
 class ArtifactStore(ABC):
@@ -88,8 +101,12 @@ class ArtifactStore(ABC):
         """Copy the run's rendered output/ into the version and collect every .docx into
         documents/. Returns the captured document filenames (sorted)."""
         d = self.artifact_dir(version_id)
-        if os.path.isdir(output_dir):
-            shutil.copytree(output_dir, os.path.join(d, "output"), dirs_exist_ok=True)
+        dst = os.path.join(d, "output")
+        # When the run rendered STRAIGHT into the version dir (--output-root, doc 09 B1)
+        # src and dst are the same directory and there is nothing to copy — copytree onto
+        # itself would duplicate or fail. The .docx collection below still has to run.
+        if os.path.isdir(output_dir) and not _same_dir(output_dir, dst):
+            shutil.copytree(output_dir, dst, dirs_exist_ok=True)
         docs_dir = os.path.join(d, "documents")
         os.makedirs(docs_dir, exist_ok=True)
         captured: List[str] = []
@@ -135,6 +152,27 @@ class ArtifactStore(ABC):
     def reuse_put(self, fingerprint: str, version_id: str, entity_key: str, *,
                   overwrite: bool = False) -> bool:
         ...
+
+    # Batched forms (doc 09, B5a). Both hot paths resolve a whole set of fingerprints at
+    # once; doing that one statement at a time cost one connection acquisition per entity
+    # under PgStore. Concrete (not abstract) with correct default implementations, so an
+    # existing store subclass keeps working without change.
+    def reuse_get_many(self, fingerprints: Iterable[str]) -> Dict[str, Dict[str, str]]:
+        out: Dict[str, Dict[str, str]] = {}
+        for fp in dict.fromkeys(fingerprints):
+            if not fp:
+                continue
+            hit = self.reuse_get(fp)
+            if hit is not None:
+                out[fp] = hit
+        return out
+
+    def reuse_put_many(self, entries: Iterable[tuple], *, overwrite: bool = False) -> int:
+        added = 0
+        for fp, version_id, entity_key in entries:
+            if self.reuse_put(fp, version_id, entity_key, overwrite=overwrite):
+                added += 1
+        return added
 
     @abstractmethod
     def reuse_save(self) -> None:
@@ -190,6 +228,11 @@ class FileStore(ArtifactStore):
     def reuse_get(self, fingerprint: str) -> Optional[Dict[str, str]]:
         return self._reuse.get(fingerprint)
 
+    def reuse_get_many(self, fingerprints: Iterable[str]) -> Dict[str, Dict[str, str]]:
+        # The whole index is already an in-memory dict here, so batching is free.
+        return {fp: self._reuse[fp] for fp in dict.fromkeys(fingerprints)
+                if fp and fp in self._reuse}
+
     def reuse_put(self, fingerprint: str, version_id: str, entity_key: str, *,
                   overwrite: bool = False) -> bool:
         if not overwrite and fingerprint in self._reuse:
@@ -240,6 +283,28 @@ class PgStore(ArtifactStore):
         with self.engine.begin() as cx:
             persist_run_metadata(cx, version_id, meta)
 
+    def write_manifest(self, version_id: str, manifest: Dict[str, Any]) -> None:
+        """Also put the run's accounting on the `versions` row (doc 09, C1).
+
+        The file is still written by ``super()`` — additive on purpose. The migration's own
+        rule is *never delete a writer before its readers are repointed*; deleting the
+        commit-dir dual-write ahead of its readers is exactly what would have silently broken
+        flowchart reuse during the cutover. The file goes once the API reads the columns.
+        """
+        super().write_manifest(version_id, manifest)
+        try:
+            from incremental.model_store import persist_run_outcome
+            with self.engine.begin() as cx:
+                persist_run_outcome(cx, version_id, manifest)
+        except Exception:                       # accounting must not fail a completed run
+            pass
+
+    def read_run_outcome(self, version_id: str) -> Dict[str, Any]:
+        """The run's accounting from the version row, in manifest.json's shape."""
+        from incremental.model_store import load_run_outcome
+        with self.engine.connect() as cx:
+            return load_run_outcome(cx, version_id)
+
     def read_run_metadata(self, version_id: str) -> Dict[str, Any]:
         from incremental.model_store import load_run_metadata
         with self.engine.connect() as cx:
@@ -278,9 +343,15 @@ class PgStore(ArtifactStore):
     def reuse_get(self, fingerprint: str) -> Optional[Dict[str, str]]:
         return self._reuse.get(fingerprint)
 
+    def reuse_get_many(self, fingerprints: Iterable[str]) -> Dict[str, Dict[str, str]]:
+        return self._reuse.get_many(fingerprints)
+
     def reuse_put(self, fingerprint: str, version_id: str, entity_key: str, *,
                   overwrite: bool = False) -> bool:
         return self._reuse.put(fingerprint, version_id, entity_key, overwrite=overwrite)
+
+    def reuse_put_many(self, entries: Iterable[tuple], *, overwrite: bool = False) -> int:
+        return self._reuse.put_many(entries, overwrite=overwrite)
 
     def reuse_save(self) -> None:
         self._reuse.save()

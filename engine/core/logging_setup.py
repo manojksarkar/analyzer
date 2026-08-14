@@ -131,6 +131,14 @@ def _emit_token_report() -> None:
         report = _tok.format_report()
         if not (report and report.strip()):
             return
+        # Same totals, somewhere aggregatable (doc 09, D2a). Converting "how many
+        # LLM calls does a run make" into a number is what turns the concurrency
+        # question into arithmetic instead of a guess (B6).
+        try:
+            from . import run_metrics
+            run_metrics.record_llm_totals()
+        except Exception:
+            pass
         # Shutdown-ordering hazard: by the time this atexit hook runs, the stream a
         # StreamHandler captured may already be closed - pytest closes its captured stderr at
         # end of session, and the interpreter tears streams down at exit. Writing a record to

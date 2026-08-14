@@ -39,7 +39,7 @@ class ProjectPaths:
     config_path: str          # engine/config/config.defaults.json
     config_local_path: str    # config/config.local.json (may not exist)
     model_dir: str
-    output_dir: str
+    output_dir: str           # rendered output; per run via run.py --output-root
     logs_dir: str
     cache_dir: str            # .flowchart_cache
 
@@ -47,6 +47,7 @@ class ProjectPaths:
 _LOCK = threading.Lock()
 _OVERRIDE_ROOT: Optional[str] = None
 _OVERRIDE_DATA_ROOT: Optional[str] = None
+_OVERRIDE_OUTPUT_DIR: Optional[str] = None      # B1: set per run via run.py --output-root
 _CACHED: Optional[ProjectPaths] = None
 
 
@@ -66,6 +67,30 @@ def set_project_root(path: str) -> None:
     global _OVERRIDE_ROOT, _CACHED
     with _LOCK:
         _OVERRIDE_ROOT = os.path.abspath(path)
+        _CACHED = None
+
+
+def set_output_dir(path: str) -> None:
+    """Point rendered output at `path` for this process.
+
+    In-process only — deliberately **not** an environment variable. No phase subprocess needs
+    the value: `core.group_planner` reads it here and hands each phase an absolute
+    ``--output-dir`` on its command line, and `docx_exporter.OUTPUT_DIR` is only a fallback
+    for when no path is passed. So the two processes that do need it — ``run.py`` (via
+    ``--output-root``) and the orchestrator — each set it explicitly.
+
+    A flag also keeps the run reproducible from its own logged command line, which an
+    inherited env var does not.
+
+    Clears the cached snapshot, because `paths()` memoises on first use and a caller has
+    usually read it already by the time a version dir is known.
+
+    Scoped to output on purpose; see the note in `paths()` on why relocating the whole data
+    root instead would break the shared render caches.
+    """
+    global _OVERRIDE_OUTPUT_DIR, _CACHED
+    with _LOCK:
+        _OVERRIDE_OUTPUT_DIR = os.path.abspath(path)
         _CACHED = None
 
 
@@ -99,7 +124,18 @@ def paths() -> ProjectPaths:
             config_path=os.path.join(cfg_dir, "config.defaults.json"),
             config_local_path=os.path.join(cfg_dir, "config.local.json"),
             model_dir=os.path.join(data_root, "model"),
-            output_dir=os.path.join(data_root, "output"),
+            # Rendered output is relocated PER RUN (set_output_dir, from run.py --output-root),
+            # independently of the data root, so a job writes straight into its own
+            # versions/<ver…>/output instead of a shared <root>/output that a concurrent full
+            # generation would _rmtree_force (doc 09, B1).
+            #
+            # Deliberately NOT done by pointing ANALYZER_DATA_ROOT at the version dir: that
+            # also moves logs_dir and cache_dir, which would scatter the daily log across
+            # version folders and — worse — give every run a private .flowchart_cache. Those
+            # caches are content-addressed and meant to be shared ACROSS runs; per-version
+            # would mean a 0% hit rate and re-rendering every diagram, silently undoing the
+            # M-A/M-B caching work.
+            output_dir=_OVERRIDE_OUTPUT_DIR or os.path.join(data_root, "output"),
             logs_dir=os.path.join(data_root, "logs"),
             cache_dir=os.path.join(data_root, ".flowchart_cache"),
         )

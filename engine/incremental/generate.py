@@ -38,7 +38,7 @@ _SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from core.paths import paths as _paths
+from core.paths import paths as _paths, set_output_dir
 from core.config import load_config
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
@@ -205,9 +205,19 @@ def generate_full(
         decision="full", regenerated=0, reused=0, status="running", warnings=[]))
 
     # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited).
-    # Clean output/ first so the version captures only its own documents.
+    # Render STRAIGHT into this version's own output dir (doc 09, B1). Previously every run
+    # wrote the shared <root>/output and was copied into the version afterwards — so a second
+    # concurrent job's _rmtree_force below would delete this one's work. Writing to a
+    # version-scoped dir removes both the shared state and the copy step.
+    _out_root = os.path.join(store.artifact_dir(version_id), "output")
+    set_output_dir(_out_root)                       # this process (rmtree + capture below)
+    # Still cleaned, but this is now THIS version's own dir — nobody else can be using it.
     _rmtree_force(_paths().output_dir)
-    base_cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path]
+    base_cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path,
+                "--output-root", _out_root,         # and the analyzer process
+                # C11a: each phase persists its model to the DB at its own boundary. The
+                # end-of-run store.write_model below still runs — dual-write until C11b.
+                "--version-id", version_id, "--project-id", project_id]
     base_cmd += scope_to_args(scope)
     base_cmd += per_component_docx_args(scope)
     if project_name:
@@ -266,8 +276,10 @@ def generate_full(
     #    not folded in — an approved doc is reused regardless of model/prompt).
     llm = cfg.get("llm") or {}
     fps = compute_fingerprints(hashes, functions, edges)
-    for entity_key, fp in fps.items():
-        ridx.put(fp, version_id, entity_key)  # first version that produced a fp keeps it
+    # One existence query for the whole project instead of one per entity (doc 09, B5a).
+    # This is the worst case of the two seeding loops — a full generation fingerprints
+    # EVERY function and global. First writer of a fingerprint still keeps it.
+    ridx.put_many((fp, version_id, entity_key) for entity_key, fp in fps.items())
     ridx.save()
 
     # 6. manifest + index

@@ -134,6 +134,37 @@ def get_engine(dsn: Optional[str] = None):
     return _ENGINE
 
 
+def set_pipeline_status(status: str, *, version_id: Optional[str] = None) -> None:
+    """Mark how far the run has got, on the version row (doc 09, C1 / D-17).
+
+    ``versions.pipeline_status`` has existed since the migration but was never written, so
+    the UI had to infer progress by scraping ``=== Phase N ===`` out of the log stream. A
+    phase writing its own status is both simpler and correct across nodes.
+
+    **Best-effort by design.** The version id comes from ``ANALYZER_VERSION_ID`` (set by the
+    API per job) and is absent for a plain CLI run; there may be no database at all — the
+    DB-less ``tools/verify_incremental.py`` gate runs the whole pipeline that way. Neither
+    is an error, and a progress marker must never be the reason a pipeline dies, so every
+    failure here is swallowed.
+
+    Raw SQL on purpose: ``engine/core/`` is the bottom of the dependency graph, and the
+    table definition lives two layers up in ``api/db/postgres/schema.py``. One UPDATE of one
+    column needs no ORM and no upward import.
+    """
+    vid = version_id or os.environ.get("ANALYZER_VERSION_ID", "").strip()
+    if not vid or not status:
+        return
+    try:
+        from sqlalchemy import text
+        with get_engine().begin() as cx:
+            cx.execute(
+                text("UPDATE versions SET pipeline_status = :s WHERE id = :v"),
+                {"s": status, "v": vid},
+            )
+    except Exception:
+        pass                                    # progress reporting never breaks a run
+
+
 def reset_engine() -> None:
     """Drop the cached engine (tests that switch DSNs)."""
     global _ENGINE

@@ -30,6 +30,7 @@ bcrypt>=3.2.0,<4.0.0               # passlib's bcrypt backend (passlib 1.7.x bre
 python-multipart>=0.0.9           # form / file parsing for FastAPI
 sse-starlette>=2.1.0              # Server-Sent Events (analysis-job streaming)
 httpx>=0.27.0                     # required by starlette's TestClient; also used for HTTP
+psutil>=5.9.0                     # peak-RSS sampling for run metrics (doc 09 D2a); optional at runtime
 
 # --- testing ---
 pytest>=8.0

@@ -11,9 +11,14 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from sqlalchemy import func, insert, select
+
+# Bound on parameters in one IN (...) clause. Postgres caps a statement at 65535 bind
+# parameters; 5000 keeps a wide margin and keeps each statement small enough to plan
+# quickly. Only matters on projects big enough for the batching to be the point.
+_MAX_IN_PARAMS = 5000
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
@@ -51,6 +56,7 @@ class PgReuseIndex:
         self._pending: Dict[str, Dict[str, str]] = {}
 
     def get(self, fingerprint: str) -> Optional[Dict[str, str]]:
+        """Single lookup. Prefer `get_many` in a loop — see its note on the N+1."""
         if fingerprint in self._pending:
             return self._pending[fingerprint]
         ri = s.reuse_index
@@ -60,6 +66,44 @@ class PgReuseIndex:
                                   & (ri.c.fingerprint == fingerprint))).first()
         return {"versionId": r.version_id, "entityKey": r.entity_key} if r else None
 
+    def get_many(self, fingerprints: Iterable[str]) -> Dict[str, Dict[str, str]]:
+        """Resolve many fingerprints in ONE round-trip (doc 09, B5a).
+
+        `get` opens its own connection, and both hot paths called it once per entity:
+        `carry_forward_from_index` per impact-set entity, and the end-of-run seeding
+        loop — via `put` — for *every* fingerprinted entity in the project. On a 20k
+        function codebase that is ~20k connection acquisitions per run. Cheap against a
+        pooled connection, which is why it went unnoticed; ruinous under the `NullPool`
+        profile B5b introduces, where each one becomes a real connect + auth.
+
+        Returns only the fingerprints that were found, so a caller can treat a missing
+        key as a miss exactly as it treated `None` before.
+        """
+        # dict.fromkeys dedupes while preserving order (deterministic chunking).
+        fps = [f for f in dict.fromkeys(fingerprints) if f]
+        found: Dict[str, Dict[str, str]] = {}
+        remaining: List[str] = []
+        for f in fps:
+            pend = self._pending.get(f)
+            if pend is not None:
+                found[f] = pend
+            else:
+                remaining.append(f)
+        if not remaining:
+            return found
+        ri = s.reuse_index
+        with self._engine.connect() as cx:          # one connection for every chunk
+            for i in range(0, len(remaining), _MAX_IN_PARAMS):
+                chunk = remaining[i:i + _MAX_IN_PARAMS]
+                rows = cx.execute(
+                    select(ri.c.fingerprint, ri.c.version_id, ri.c.entity_key)
+                    .where((ri.c.project_id == self._project_id)
+                           & (ri.c.fingerprint.in_(chunk)))).all()
+                for r in rows:
+                    found[r.fingerprint] = {"versionId": r.version_id,
+                                            "entityKey": r.entity_key}
+        return found
+
     def put(self, fingerprint: str, version_id: str, entity_key: str, *, overwrite: bool = False) -> bool:
         """Record a pointer. First writer wins (unless overwrite). Returns True if buffered
         as a new entry. Flushed by save()."""
@@ -67,6 +111,25 @@ class PgReuseIndex:
             return False
         self._pending[fingerprint] = {"versionId": version_id, "entityKey": entity_key}
         return True
+
+    def put_many(self, entries: Iterable[tuple], *, overwrite: bool = False) -> int:
+        """Buffer many pointers using ONE existence query instead of one per entry.
+
+        `entries` is an iterable of ``(fingerprint, version_id, entity_key)``. Returns the
+        number newly buffered. Semantics match `put` exactly — first writer wins — the
+        only difference is how many times the database is asked.
+        """
+        rows = [(fp, vid, key) for fp, vid, key in entries if fp]
+        if not rows:
+            return 0
+        existing = {} if overwrite else self.get_many(fp for fp, _v, _k in rows)
+        added = 0
+        for fp, vid, key in rows:
+            if not overwrite and (fp in existing or fp in self._pending):
+                continue
+            self._pending[fp] = {"versionId": vid, "entityKey": key}
+            added += 1
+        return added
 
     def save(self) -> None:
         if not self._pending:
