@@ -569,4 +569,65 @@ functions changed); a perf measurement on a large repo.
 
 ---
 
+## 13. Caches in the database (post-migration; doc 09 **C12**)
+
+§12's caches are **directories on local disk**. That was right for the POC, where the whole design
+was file-based. It stops being right on the multi-node container deployment, for two reasons that
+have nothing to do with correctness:
+
+- A container filesystem is **ephemeral** — the cache is gone on restart.
+- A cache on node A is **invisible** to node B, so N nodes give roughly a 1/N hit rate.
+
+So the caches largely do not pay for themselves in production. The work item is doc 09 **C12**.
+
+### 13.1 The finding: two mechanisms already do one job
+
+The disk LLM cache and the DB reuse index answer the *same* question — *"has this exact code been
+described before, so we can skip the LLM?"* — with near-identical keys:
+
+```
+EntityCache (disk)     sha256( entity source + sorted(callee hashes) + cacheVersion )
+reuse index (Postgres) sha256( source_hash   + sorted(dep source-hashes) )
+```
+
+The only real difference is `cacheVersion`, and folding the LLM recipe into the reuse fingerprint was
+**deliberately dropped** (§3, "content-only"): an approved document is reused regardless of which
+model or prompt produced it.
+
+So C12 is **not a relocation** — it is removing a duplicate mechanism. The reuse index (M3.7) already
+provides cross-version, content-addressed reuse; the disk `EntityCache` predates it.
+
+### 13.2 Three kinds of cache, three answers
+
+| Cache | Holds | Duplicates the DB? | Target |
+|---|---|---|---|
+| `.flowchart_cache/llm_descriptions` | LLM descriptions by content hash | **yes** — see 13.1 | **Postgres**, folded into the reuse index |
+| `.flowchart_cache/aux_descriptions` (M-B) | struct/unit summaries at export | yes, same family | **Postgres**, same key shape |
+| `.mmdc_cache`, `.dot_cache` | rendered PNGs (~143 files / 2 MB on the sample project) | no — binaries are not in the DB (D-14) | **shared artifact storage** |
+| `.flowchart_cache/pkb_*.json` | an index rebuilt from `functions.json` | derived; holds nothing unique | **drop** once the model is read from the DB |
+
+The PNG row is the *same open question* as serving DOCX/PNG across nodes: binaries need a shared home
+(a read-write volume now, object storage later — deferred in 02 §22.8). One decision settles both.
+
+### 13.3 Design — the file design, keyed the same way
+
+The reuse model in §3 and doc 03 §6 does not change; only where the rows live.
+
+- **Key** — unchanged: content-addressed over source + dependency hashes. Same determinism guarantees,
+  same "biases to over-regenerate, never to stale" property.
+- **First-writer-wins** — already how the DB index behaves (`ON CONFLICT DO NOTHING`), so concurrent
+  writers cannot clobber each other. This is also why it is safe at the target 5–6 concurrent jobs.
+- **Batched access is mandatory** — resolve a whole set of fingerprints per statement, never one per
+  entity. A per-entity lookup is ~20k connection acquisitions on a 20k-function project (doc 09 B5a).
+- **Scope** — cache rows are project-scoped and version-referencing, exactly like `reuse_index` today;
+  they are **not** per version, which would defeat the point of a cache.
+
+### 13.4 Sequencing
+
+C12 comes **after C11** (model in the database). Every cache key is derived from model content, and
+C11 changes what the model *is* — designing the keys against the file layout first means building them
+twice. C11 also makes the `pkb_*.json` row above disappear on its own.
+
+---
+
 _End of document._

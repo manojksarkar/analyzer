@@ -12,10 +12,12 @@
 > - **NEXT WORK IS PLANNED, NOT STARTED → [docs/production-redesign/09-post-migration-consolidation-plan.md](docs/production-redesign/09-post-migration-consolidation-plan.md).**
 >   That doc is the source of truth for what to do next; it lists 26 steps with effort, risk and gates.
 >   Order: **B0 → A0 → B(concurrency) → D(narrowed parse + measure) → C(close-out) → A(deferred)**.
-> - **⚠ B0 IS OUTSTANDING AND URGENT (user action):** `JOB_MAX_CONCURRENCY` defaults to **2**
->   ([settings.py:47](api/services/settings.py#L47)) while every run writes a **shared** `<repo>/model`+`output`
->   that a full generation `_rmtree_force`s — concurrent jobs corrupt each other **today** (doc 07 defect 26).
->   Set it to **1** until B1 (per-job data root) lands.
+> - **B0 DONE (2026-08-14):** the `job_max_concurrency` **default is now 1**
+>   ([settings.py:47](api/services/settings.py#L47)). `<repo>/output` is gone too — runs render into
+>   `versions/<ver…>/output`. **`<repo>/model` is the last shared dir** and the only remaining reason
+>   concurrency must stay at 1; it goes with **C11**, not with a per-job folder.
+>   ⚠ **Multi-node:** the semaphore is per API **process**, so N replicas give N × the limit — a global
+>   cap needs a DB-backed lease (**B0c**, unfiled).
 > - **Decided:** target concurrency **5–6 jobs** ⇒ adds **B5** (connection budget — engine subprocesses take
 >   SQLAlchemy's default 15-connection pool each, so 6 jobs + API ≈ 100 vs `max_connections=100`; **solution is
 >   designed and written up in doc 09 §B5** — `NullPool` for the engine, sized pool for the API) and **B6**
@@ -201,6 +203,66 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-08-14 (`db-with-increment-changes`: **doc 09 Phase 0/1 + B5a + C1 + B1(output) landed.**
+> Gates green throughout: `pytest tests/unit tests/api --skip-pipeline` **652 passed**, `verify_incremental` green.
+> **B0** — `job_max_concurrency` **default 2 → 1** ([settings.py:47](api/services/settings.py#L47)); the old default
+> corrupted output on any box that hadn't read doc 09. ⚠ the semaphore is per API **process**, so N replicas give
+> N × the limit — a global cap needs a DB lease (unfiled, **B0c**).
+> **A0** — new `engine/core/subprocess_util.py`: stderr **streamed through** (the API tails it for SSE progress, so
+> buffering would freeze the UI) with a bounded 50-line tail logged on failure; cp1252-safe echo. Wired into
+> `PhaseRunner`, the flowchart-engine spawn (the site that hid a `LibclangError` for a session), and both renderers in
+> `utils.py` — which were capturing stderr and **discarding** it. API side: the non-zero-exit path already did this; the
+> real gaps were the **timeout path** (dropped the tail) and `_mark_failed` (DB only, no module logger).
+> **D2a** — new `engine/core/run_metrics.py`: one JSON line per phase to `logs/metrics_<date>.jsonl` with elapsed +
+> **peak RSS of the process tree**. LLM call counts already existed in `llm_core/tokens.py` and now land there too.
+> Suppressed under pytest — the at-exit hook was writing fake providers (`test-model`, `gpt-4`) into the real file
+> (32 records/run); `PYTEST_CURRENT_TEST` alone is not enough, pytest clears it before at-exit, so it also checks
+> `sys.modules`.
+> **B5a** — `PgReuseIndex.get_many`/`put_many` (chunked `ANY(…)`), threaded through `ArtifactStore`/`FileStore`/
+> `PgStore`/`StoreReuseIndex` + both hot loops. `get` opened a connection **per entity** and the seeding loop ran it for
+> every fingerprinted entity — ~20k acquisitions on a 20k-function project. Free against a pool, ruinous under B5b's
+> `NullPool` (~200s/run added). **Measured 50 → 1**, results identical; 5 tests, verified to fail against the old path.
+> **B5a is now a prerequisite for B5b.**
+> **C1** — `persist_run_outcome`/`load_run_outcome` put decision/baseline/regenerated/reused on the `versions` row
+> (mirrors `write_run_metadata`); `PgStore.write_manifest` writes both, API reads **DB-first with file fallback**.
+> `PhaseRunner` writes `versions.pipeline_status` per phase (keyed by `phase.script`, not the display name) via a raw-SQL
+> `core.db.set_pipeline_status` — raw SQL because `engine/core/` is the bottom layer and the schema sits two layers up.
+> Best-effort: no version id (CLI) or no DB (the DB-less gate) are silent no-ops.
+> **B1 (output half)** — runs render **straight into `versions/<ver…>/output`** via new `run.py --output-root`;
+> `<repo>/output` is gone and the capture copy step with it. Deliberately **not** `ANALYZER_DATA_ROOT`, which also moves
+> `logs_dir`+`cache_dir` — that would give every run a private `.flowchart_cache` (0% hit rate, silently undoing M-A/M-B).
+> A **flag, not an env var**, per user preference: no phase subprocess needs the value (`group_planner` already hands each
+> phase an absolute `--output-dir`; `docx_exporter.OUTPUT_DIR` is only a fallback), and a config key would put a
+> machine-specific path into `versions.resolved_config` — the mistake C3 exists to undo. `capture_output` gained a
+> `_same_dir` guard against copying a directory onto itself.
+> **Repo hygiene** — the two tracked `api/models/__pycache__/*.pyc` are untracked (`.gitignore` had `__pycache__/`, but
+> ignore rules don't apply to tracked files; they came from the `git add -f api/models/` in §18). They had already broken
+> a `git stash pop` mid-session.
+> **Docs** — doc 09 marks B0/A0/D2a/B5a/C1/B1(output) done, splits B5→B5a/B5b and D2→D2a/D2b, promotes D2 above B4, adds
+> **M1/M2** (unbounded flowchart TU cache — full-body ASTs, never cleared, grows with file count not change size; the
+> first thing to exhaust a container) and **C12** (consolidate the disk caches; design in
+> [04 §13](docs/production-redesign/04-incremental-changes-implementation.md#13-caches-in-the-database-post-migration-doc-09-c12)).
+> **Key C12 finding:** the disk `EntityCache` and the DB reuse index answer the same question with near-identical keys —
+> C12 removes a duplicate mechanism, not just a directory.
+> **C11a (dual-write) — landed, NOT yet validated against a real Postgres.** New
+> `PhaseRunner.run(..., on_phase_done=)` hook: `engine/core/` is the bottom layer and cannot import the
+> store, so it defines the hook and `run.py` supplies the callback (new `--version-id` / `--project-id`
+> flags, again flags not env vars). The model is persisted **at each phase boundary** instead of once at
+> the end; `PgStore.write_model` already wraps `persist_model_from_dir` in `engine.begin()` and that
+> function already `clear_version`s first — so it is one transaction and idempotent, and **C6 (phase
+> atomicity) falls out for free**. Persisted only after `parser.py`/`model_deriver.py` (phases 3-4 only
+> read), and **never after a narrowed partial parse** — that model is incomplete until `parse_merge`.
+> Files remain authoritative; nothing reads from the DB yet (that is C11b).
+> Oracle built FIRST: new **`tools/verify_model_parity.py`** compares a version's DB model against the
+> on-disk model, tolerating DB-only fields (`isVisible`) and edge-list ORDER, and hunting fields the
+> payload allow-lists (`_FN_PAYLOAD_FIELDS`) silently drop — the failure mode that would otherwise only
+> surface as a wrong document. 7 tests prove it detects each difference class and stays quiet on order.
+> +5 tests on the hook (fires per success, NOT after a failed phase, a raising hook cannot fail the run).
+> **⚠ Remaining for C11a: run `verify_model_parity.py` after each phase on the office box** — there is no
+> Postgres on the dev machine, so the dual-write path itself is unexercised (the DB-less gate proves only
+> that it correctly no-ops). **Do not start C11b until that is clean.**
+> **Next:** validate C11a on the office box, then C11b (reads from Postgres).)
 
 > Updated: 2026-08-13 (`db-with-increment-changes`: **PG-7b cutover COMPLETE — Postgres is the source of
 > truth.** Validated on the office box first (two different commits: non-zero changed files, `regenerated ≥ 1`,
