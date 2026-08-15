@@ -234,10 +234,12 @@ def generate_full(
     model_dir = _paths().model_dir
 
     def _fail_full(rc):
-        vstore.write_manifest(commit_key, _manifest(
+        m = _manifest(
             version_id, branch, actual_commit, scope, data_dict_id,
             decision="full", regenerated=0, reused=0, status="failed",
-            warnings=[f"analyzer exited {rc}"]))
+            warnings=[f"analyzer exited {rc}"])
+        vstore.write_manifest(commit_key, m)
+        store.write_manifest(version_id, m)     # close the lifecycle: 'failed', not mid-phase
         raise RuntimeError(f"analyzer run failed (exit {rc})")
 
     # Phase-split (M4.4): Phase 1 (parse) -> snapshot the blank-skeleton model into the
@@ -288,6 +290,13 @@ def generate_full(
                          regenerated=len(fps), reused=0, status="complete", warnings=[])
     manifest["documents"] = documents
     vstore.write_manifest(commit_key, manifest)
+    # AND to the store, which is what reaches Postgres (doc 09, C1). These are two different
+    # stores keyed two different ways: `vstore` is the file VersionStore keyed by COMMIT,
+    # `store` is the artifact store keyed by the real VERSION id. Writing only the first
+    # leaves versions.pipeline_status at its last in-progress phase, and
+    # pg_stores.list_versions then refuses the version as a baseline forever - so every
+    # later run falls back to a full generation and reuses nothing.
+    store.write_manifest(version_id, manifest)
 
     # End-of-run report (M3.4): a full generation regenerates everything (it becomes
     # the baseline future incrementals diff against).

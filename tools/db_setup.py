@@ -109,6 +109,29 @@ def main() -> int:
     from api.db.postgres.schema import metadata
     metadata.create_all(eng)
     print(f"\nschema created: {len(metadata.tables)} tables")
+
+    # 3. repair rows stranded mid-phase (idempotent).
+    #
+    # versions.pipeline_status was introduced unwritten, so NULL meant "finished" and
+    # pg_stores.list_versions accepts NULL or 'complete' as baseline-eligible. When the
+    # per-phase writer landed, runs began recording parsing/deriving/viewing/exporting but
+    # nothing wrote a terminal state - so every FINISHED run stayed at its last phase and was
+    # permanently refused as a baseline. The symptom is severe and silent: every later run
+    # falls back to a full generation and reports 0% reuse.
+    #
+    # The writer is fixed, but that fix is forward-only; rows already written are still
+    # stranded. A run that reached a real review status ('draft' means reserved-but-never-
+    # generated) did finish, so it is safe to close out here.
+    from sqlalchemy import text
+    with eng.begin() as cx:
+        n = cx.execute(text(
+            "UPDATE versions SET pipeline_status = 'complete' "
+            "WHERE pipeline_status IN ('parsing','deriving','viewing','exporting') "
+            "  AND status IS NOT NULL AND status <> 'draft'")).rowcount
+    if n:
+        print(f"repaired {n} version row(s) stranded mid-phase -> 'complete' "
+              f"(they are baseline-eligible again; reuse will work on the next run)")
+
     print("\nOK - now run:  python tools\\verify_db_sync.py")
     return 0
 

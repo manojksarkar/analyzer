@@ -436,10 +436,12 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     _rmtree_force(_paths().output_dir)
 
     def _fail(stage: str, rc: int):
-        vstore.write_manifest(commit_key, _manifest(
+        m = _manifest(
             version_id, branch, target, scope, data_dict_id,
             decision="incremental", regenerated=0, reused=0, status="failed",
-            warnings=decision["warnings"] + [f"{stage} exited {rc}"]))
+            warnings=decision["warnings"] + [f"{stage} exited {rc}"])
+        vstore.write_manifest(commit_key, m)
+        store.write_manifest(version_id, m)     # close the lifecycle: 'failed', not mid-phase
         raise RuntimeError(f"{stage} failed (exit {rc})")
 
     # PHASE-SPLIT (M3.2) — produce the blank-skeleton model in model/ (Phase 1). This gives
@@ -648,6 +650,11 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     manifest["carriedForward"] = n_carried
     manifest["crossVersionReused"] = len(index_reused) + len(index_reused_g)
     vstore.write_manifest(commit_key, manifest)
+    # AND to the store -> Postgres (doc 09, C1). `vstore` is the file store keyed by COMMIT;
+    # `store` is the artifact store keyed by the real VERSION id and is the only one that
+    # closes versions.pipeline_status. Without this the version stays at its last in-progress
+    # phase and is never again eligible as a baseline.
+    store.write_manifest(version_id, manifest)
 
     # End-of-run report (M3.4): inputs + change classification + reuse accounting.
     cls = plan["classify"]
