@@ -61,7 +61,16 @@ class Phase:
     args: List[str] = field(default_factory=list)
 
     def command(self, src_dir: str) -> List[str]:
-        return [sys.executable, os.path.join(src_dir, self.script), *self.args]
+        cmd = [sys.executable, os.path.join(src_dir, self.script), *self.args]
+        # Forward a relocated model dir to the phase (doc 09, C11b). Every phase reads
+        # model_dir from paths() in its OWN process, so an override set in run.py would not
+        # otherwise reach it. Appended here rather than in group_planner because this is the
+        # single place every phase command is built — a per-dispatch-shape edit would silently
+        # miss one. Only when an override is active, so a default run's argv is unchanged.
+        from .paths import _OVERRIDE_MODEL_DIR
+        if _OVERRIDE_MODEL_DIR:
+            cmd += ["--model-root", _OVERRIDE_MODEL_DIR]
+        return cmd
 
 
 class PhaseRunner:

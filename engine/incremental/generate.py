@@ -38,7 +38,7 @@ _SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from core.paths import paths as _paths, set_output_dir
+from core.paths import paths as _paths, set_output_dir, set_model_dir
 from core.config import load_config
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
@@ -210,11 +210,14 @@ def generate_full(
     # concurrent job's _rmtree_force below would delete this one's work. Writing to a
     # version-scoped dir removes both the shared state and the copy step.
     _out_root = os.path.join(store.artifact_dir(version_id), "output")
+    _model_root = os.path.join(store.artifact_dir(version_id), "model")
     set_output_dir(_out_root)                       # this process (rmtree + capture below)
+    set_model_dir(_model_root)                      # C11b: this version owns its model dir
     # Still cleaned, but this is now THIS version's own dir — nobody else can be using it.
     _rmtree_force(_paths().output_dir)
     base_cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path,
                 "--output-root", _out_root,         # and the analyzer process
+                "--model-root", _model_root,
                 # C11a: each phase persists its model to the DB at its own boundary. The
                 # end-of-run store.write_model below still runs — dual-write until C11b.
                 "--version-id", version_id, "--project-id", project_id]

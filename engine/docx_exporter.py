@@ -1805,7 +1805,10 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
 
 
 def main():
-    args = sys.argv[1:]
+    from core.paths import apply_cli_path_overrides
+    # Strip before positional parsing below: this phase takes json/docx paths as
+    # POSITIONALS, so an unconsumed flag would be read as one of them.
+    args = apply_cli_path_overrides(sys.argv[1:])
     selected_group = None
     if "--selected-group" in args:
         i = args.index("--selected-group")

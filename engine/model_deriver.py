@@ -6,7 +6,13 @@ import json
 
 from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group, short_name
 from core.config import get_component_layer_name
-from core.paths import paths as _paths
+from core.paths import paths as _paths, apply_cli_path_overrides
+
+# Apply (and strip) --model-root BEFORE paths() is snapshotted: MODEL_DIR below is a
+# module constant, and line ~51 uses it to find incremental_plan.json. Applied later
+# (e.g. in main()) it would be stale, the plan would not be found, and Phase 2 would
+# silently re-enrich everything instead of only the impact set — reuse lost, no error.
+sys.argv = apply_cli_path_overrides(sys.argv)
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir

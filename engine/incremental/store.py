@@ -204,7 +204,11 @@ class FileStore(ArtifactStore):
         return _read_json(os.path.join(self._model_dir(version_id), _MODEL_FILES[key]), default)
 
     def write_model(self, version_id: str, model_dir: str) -> None:
-        if os.path.isdir(model_dir):
+        # Since C11b a run's model dir IS versions/<ver>/model, i.e. exactly where this would
+        # copy it — copytree onto itself raises WinError 32 (files open by this process) and
+        # would otherwise duplicate the tree. Nothing to do when they are the same directory:
+        # the model is already in place. Mirrors the same guard in capture_output.
+        if os.path.isdir(model_dir) and not _same_dir(model_dir, self._model_dir(version_id)):
             shutil.copytree(model_dir, self._model_dir(version_id), dirs_exist_ok=True)
 
     def read_hashes(self, version_id: str) -> Dict[str, str]:

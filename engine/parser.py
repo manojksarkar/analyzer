@@ -22,7 +22,15 @@ from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
 from incremental.virtual_dispatch import spread_virtual_families
 
+# Apply (and strip) --model-root before paths() is snapshotted or argv[1] is read as the
+# project path — an unconsumed flag would be mistaken for a positional (doc 09, C11b).
+from core.paths import apply_cli_path_overrides as _apply_path_flags
+sys.argv = _apply_path_flags(sys.argv)
+
 _p = _paths()
+# Captured now: a module-level `for _p in _mod_paths:` below rebinds _p to a string,
+# so anything reading _p.<attr> after that point would fail at import.
+MODEL_DIR = _p.model_dir
 SCRIPT_DIR = _p.src_dir
 PROJECT_ROOT = _p.project_root
 if len(sys.argv) < 2:
@@ -197,7 +205,7 @@ _EXCLUDE_NAME_PATTERNS: list = [] if _include_emulator else [
 
 # Read layer include paths written by run.py before Phase 1 started.
 _layer_include_paths: dict = {}
-_clang_paths_file = os.path.join(PROJECT_ROOT, "model", "clang_include_paths.json")
+_clang_paths_file = os.path.join(MODEL_DIR, "clang_include_paths.json")
 if os.path.isfile(_clang_paths_file):
     try:
         with open(_clang_paths_file, "r", encoding="utf-8") as _f:
@@ -1615,8 +1623,11 @@ def main():
     p2.done()
 
     metadata = build_metadata()
-    model_dir = os.path.join(PROJECT_ROOT, "model")
-    os.makedirs(model_dir, exist_ok=True)
+    # ensure_model_dir() resolves via paths(), so it follows --model-root. The old
+    # PROJECT_ROOT hardcode created an empty <repo>/model on every run even when the real
+    # model was written elsewhere (the writes below already go through write_model_file).
+    from core.model_io import ensure_model_dir
+    ensure_model_dir()
 
     base_path = metadata["basePath"]
     meta_header = {

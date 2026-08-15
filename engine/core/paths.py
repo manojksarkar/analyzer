@@ -48,6 +48,7 @@ _LOCK = threading.Lock()
 _OVERRIDE_ROOT: Optional[str] = None
 _OVERRIDE_DATA_ROOT: Optional[str] = None
 _OVERRIDE_OUTPUT_DIR: Optional[str] = None      # B1: set per run via run.py --output-root
+_OVERRIDE_MODEL_DIR: Optional[str] = None       # C11b: set per run via run.py --model-root
 _CACHED: Optional[ProjectPaths] = None
 
 
@@ -94,6 +95,54 @@ def set_output_dir(path: str) -> None:
         _CACHED = None
 
 
+def set_model_dir(path: str) -> None:
+    """Point the model directory at `path` for this process.
+
+    Same reasoning as `set_output_dir`, and the same scope: model/ only, so logs and the
+    shared render caches stay put. In-process, no environment variable.
+    """
+    global _OVERRIDE_MODEL_DIR, _CACHED
+    with _LOCK:
+        _OVERRIDE_MODEL_DIR = os.path.abspath(path)
+        _CACHED = None
+
+
+# The path flags every phase understands. Kept here, next to the setters they drive, so a new
+# one cannot be added to run.py and silently forgotten in the phases.
+_PATH_FLAGS = (("--model-root", set_model_dir), ("--output-root", set_output_dir))
+
+
+def apply_cli_path_overrides(argv) -> list:
+    """Apply any `--model-root` / `--output-root` in `argv`, and return argv WITHOUT them.
+
+    Each phase is its OWN process and resolves `paths()` independently, so a relocation set
+    in run.py does not reach them. Output happened to be safe — `group_planner` bakes absolute
+    output paths into each phase's arguments — but model_dir is read straight from `paths()`
+    inside every phase, so it must be passed and applied.
+
+    Stripping is not optional: `docx_exporter` parses POSITIONAL arguments, so a flag it did
+    not consume would be mistaken for the json/docx path. Callers assign the result back:
+
+        sys.argv = apply_cli_path_overrides(sys.argv)
+
+    An explicit call at the top of each phase, rather than this module scanning `sys.argv` on
+    import: a library that silently reads the command line is invisible when it misbehaves,
+    and impossible to test without faking argv.
+    """
+    argv = list(argv or ())
+    flags = dict(_PATH_FLAGS)
+    out, i = [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a in flags and i + 1 < len(argv):
+            flags[a](argv[i + 1])
+            i += 2                                  # drop the flag AND its value
+            continue
+        out.append(a)
+        i += 1
+    return out
+
+
 def set_data_root(path: str) -> None:
     """Override the DATA root (model/output/logs/cache/api-db-data). Clears the cache. Prefer
     the ``ANALYZER_DATA_ROOT`` env var when an analyzer subprocess must inherit the override."""
@@ -123,7 +172,10 @@ def paths() -> ProjectPaths:
             config_dir=cfg_dir,
             config_path=os.path.join(cfg_dir, "config.defaults.json"),
             config_local_path=os.path.join(cfg_dir, "config.local.json"),
-            model_dir=os.path.join(data_root, "model"),
+            # Per run (set_model_dir, from --model-root), so a job owns its model instead of
+            # sharing <root>/model with every other job. Scoped like output_dir: logs and the
+            # content-addressed render caches must NOT follow it.
+            model_dir=_OVERRIDE_MODEL_DIR or os.path.join(data_root, "model"),
             # Rendered output is relocated PER RUN (set_output_dir, from run.py --output-root),
             # independently of the data root, so a job writes straight into its own
             # versions/<ver…>/output instead of a shared <root>/output that a concurrent full

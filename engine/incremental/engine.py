@@ -34,7 +34,7 @@ _SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from core.paths import paths as _paths, set_output_dir
+from core.paths import paths as _paths, set_output_dir, set_model_dir
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
 from incremental.clone import ensure_commit_checkout
@@ -177,7 +177,7 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
     cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path]
     # This run's own output dir (doc 09, B1) — set_output_dir was already applied in THIS
     # process; the analyzer is a separate process, so it needs telling on its command line.
-    cmd += ["--output-root", _paths().output_dir]
+    cmd += ["--output-root", _paths().output_dir, "--model-root", _paths().model_dir]
     if version_id and project_id:
         # C11a: persist the model to Postgres at each phase boundary (dual-write; the
         # end-of-run store.write_model still runs, and files remain authoritative).
@@ -426,11 +426,13 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     dd_path = ws.datadict_path(data_dict_id) if data_dict_id and os.path.isfile(
         ws.datadict_path(data_dict_id)) else None
-    model_dir = _paths().model_dir
-    # Render STRAIGHT into this version's own output dir (doc 09, B1) rather than the shared
-    # <root>/output that used to be copied into the version afterwards — that shared dir is
-    # what a concurrent job's wipe below would destroy.
+    # Relocate BEFORE reading model_dir. Capturing it first bound the local to the OLD
+    # (shared) dir while the phases were told the new one — a split brain in which the
+    # phases parsed into versions/<ver>/model but classify compared the STALE shared model,
+    # found every hash identical, and reported "nothing changed / 0 regenerated".
     set_output_dir(os.path.join(store.artifact_dir(version_id), "output"))
+    set_model_dir(os.path.join(store.artifact_dir(version_id), "model"))   # C11b
+    model_dir = _paths().model_dir
     # Clean it so this version captures only its own documents (the flowchart-reuse step
     # re-seeds output/<scope>/flowcharts from the baseline). Now scoped to THIS version.
     _rmtree_force(_paths().output_dir)

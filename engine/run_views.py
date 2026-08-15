@@ -42,7 +42,8 @@ def _load_model():
 
 
 def main():
-    args = sys.argv[1:]
+    from core.paths import apply_cli_path_overrides
+    args = apply_cli_path_overrides(sys.argv[1:])      # C11b: honour + strip --model-root
 
     output_dir = os.path.join(PROJECT_ROOT, "output")
     if "--output-dir" in args:
