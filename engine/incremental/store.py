@@ -133,6 +133,18 @@ class ArtifactStore(ABC):
     def read_model(self, version_id: str) -> Dict[str, Any]:
         """{functions, globals, datadict, edges, units, components, summaries, hashes}."""
 
+    def write_parse_snapshot(self, version_id: str, model_dir: str, names) -> int:
+        """Store the post-Phase-1 skeleton (doc 09, C2). Returns the number of files stored.
+
+        The file copy under `versions/<ver>/parse/` is still written by the caller; this is
+        the durable, machine-independent one. 0 for a store with no database — there the
+        directory IS the snapshot."""
+        return 0
+
+    def read_parse_snapshot(self, version_id: str) -> Dict[str, Any]:
+        """The stored skeleton as {filename: parsed json}, or {} when this store has none."""
+        return {}
+
     def hydrate_model(self, version_id: str, model_dir: str) -> bool:
         """Materialize this version's STORED model into `model_dir`. True if it did.
 
@@ -348,6 +360,16 @@ class PgStore(ArtifactStore):
         from incremental.model_store import load_model
         with self.engine.connect() as cx:
             return load_model(cx, version_id)
+
+    def write_parse_snapshot(self, version_id: str, model_dir: str, names) -> int:
+        from incremental.model_store import persist_parse_snapshot
+        with self.engine.begin() as cx:
+            return persist_parse_snapshot(cx, version_id, model_dir, names)
+
+    def read_parse_snapshot(self, version_id: str) -> Dict[str, Any]:
+        from incremental.model_store import load_parse_snapshot
+        with self.engine.connect() as cx:
+            return load_parse_snapshot(cx, version_id)
 
     def hydrate_model(self, version_id: str, model_dir: str) -> bool:
         from incremental.model_store import dump_model_to_dir

@@ -465,10 +465,35 @@ model_flowcharts = Table(
 
 
 # Tables whose rows belong to one version — CASCADE-deleted with it. Used by the
+parse_snapshots = Table(
+    "parse_snapshots", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("name", String, nullable=False),                     # "functions.json", "hashes.json", …
+    Column("payload", _JSONB, nullable=False),
+    UniqueConstraint("version_id", "name", name="pk_parse_snapshots"),
+    Index("ix_parse_snapshots_version", "version_id"),
+)
+"""The post-Phase-1 model — the blank skeleton, before Phase 2 fills in LLM descriptions
+(doc 09, C2). Previously `versions/<ver>/parse/` on local disk, which meant a narrowed parse
+only worked on the machine that produced the baseline.
+
+Kept SEPARATE from the enriched model rather than tagging `entity_versions` with a phase, for
+one decisive reason: this snapshot is never queried per entity. `parse_merge` loads the whole
+thing and merges dicts, so normalising it would add a phase column to the busiest table (and
+to its uniqueness constraint) for no query benefit and real regression risk.
+
+Storing it verbatim also preserves the property that matters: a field added to the model later
+cannot go missing from the skeleton, which is exactly the failure mode of reconstructing it by
+stripping LLM fields.
+
+One row per file rather than one blob per version: `functions.json` alone reaches tens of MB on
+a large project, and a reader that only wants `hashes.json` should not pull it."""
+
+
 # retention/delete path and asserted in tests so a new per-version table can't be
 # added without a delete story.
 PER_VERSION_TABLES = frozenset({
     "entity_versions", "model_units", "model_components", "model_summaries",
     "model_edges", "tu_includes", "view_interface_tables", "view_behaviour_rows",
-    "model_unit_diagrams", "model_flowcharts", "documents",
+    "model_unit_diagrams", "model_flowcharts", "documents", "parse_snapshots",
 })

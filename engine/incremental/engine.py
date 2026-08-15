@@ -212,6 +212,30 @@ def _load_parse_dir(d: str) -> Dict[str, Any]:
     return {n: _read(d, f"{n}.json") for n in _PARSE_ARTIFACTS}
 
 
+def _load_baseline_parse(store, base_vid: str, base_parse_dir: str) -> Dict[str, Any]:
+    """The baseline's post-Phase-1 skeleton — from the STORE first, disk as fallback.
+
+    Store first because the disk copy only exists on the machine that produced the baseline
+    (doc 09, C2), so on any other node a narrowed parse would find nothing and fall back to a
+    full parse — correct, but the whole point of the feature is lost. Disk still answers for
+    versions written before C2 and for DB-less runs.
+
+    Returned in `_load_parse_dir`'s shape either way, so callers need no branch.
+    """
+    snap = {}
+    try:
+        snap = store.read_parse_snapshot(base_vid) or {}
+    except Exception:
+        snap = {}
+    if snap:
+        out = {}
+        for n in _PARSE_ARTIFACTS:
+            out[n] = snap.get(f"{n}.json") or {}
+        if any(out.values()):
+            return out
+    return _load_parse_dir(base_parse_dir)
+
+
 def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any]) -> None:
     for n in _PARSE_ARTIFACTS:
         if n in merged:
@@ -272,7 +296,8 @@ def _artifact_dir_for(store, vstore, version_id: Optional[str], commit: Optional
 
 def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
                         *, target, base_commit, base_parse_dir, project_name=None,
-                        base_fingerprint: Optional[str] = None) -> bool:
+                        base_fingerprint: Optional[str] = None,
+                        store=None, base_vid: str = "") -> bool:
     """Narrowed parse (M4.4, doc 04 §11): re-parse ONLY the affected TUs and merge them
     into the baseline's parser-level snapshot, so the resulting model/ is the SAME blank
     skeleton a full parse would produce (impacted functions arrive blank -> Phase 2
@@ -284,7 +309,7 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
             or not os.path.isfile(os.path.join(base_parse_dir, "entity_files.json")):
         log.info("narrowed parse unavailable: baseline has no parser-level snapshot — full parse")
         return False
-    tu_includes = _read(base_parse_dir, "tu_includes.json")
+    tu_includes = _stored.get("tu_includes.json") or _read(base_parse_dir, "tu_includes.json")
     status = git_ops.changed_files_status(repo_dir, base_commit, target)
     reason = full_reparse_reason(status, tu_includes)
     if reason:
@@ -294,7 +319,8 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     changed = [p for _s, p in status]
     affected = affected_tus(changed, tu_includes)
     deleted = {p for s, p in status if s == "D"}
-    base_model = _load_parse_dir(base_parse_dir)
+    base_model = (_load_baseline_parse(store, base_vid, base_parse_dir)
+                  if store is not None else _load_parse_dir(base_parse_dir))
     if not affected:                       # no TU changed -> merged skeleton == baseline
         _write_parse_artifacts(model_dir, base_model)
         log.info("narrowed parse: 0 affected TU(s) — reused the baseline skeleton")
@@ -461,6 +487,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             project_name=project_name,
             target=target, base_commit=decision["chosenBaseCommit"],
             base_parse_dir=os.path.join(vstore.version_dir(base_commit), "parse"),
+            store=store, base_vid=base_vid,
             base_fingerprint=(store.read_run_metadata(base_vid) or {}).get("parseFingerprint"))
     if used_narrowed and verify_parse:
         # M4.5 self-check: shadow-validate the narrowed model against a FULL parse, then use
@@ -495,7 +522,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             _fail("parse", rc)
 
     # Snapshot THIS version's blank skeleton for future narrowed parses (M4.4).
-    snapshot_parse_model(model_dir, vdir)
+    snapshot_parse_model(model_dir, vdir, store, version_id)
     # C11b (opt-in): re-materialize the model from Postgres so Phase 2+ consume the STORED
     # model rather than whatever Phase 1 happened to leave on disk. This is what makes the
     # database authoritative — and it is exactly the round-trip tools/verify_model_parity.py

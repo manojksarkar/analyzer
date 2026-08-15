@@ -591,6 +591,47 @@ _DUMP_FILES = {
 }
 
 
+def persist_parse_snapshot(conn, version_id, model_dir, names) -> int:
+    """Store the post-Phase-1 skeleton for `version_id` (doc 09, C2). Returns files stored.
+
+    Idempotent: replaces this version's rows, so re-running Phase 1 (or `--from-phase 1`)
+    does not accumulate duplicates.
+
+    Files are stored VERBATIM. Reconstructing the skeleton later by stripping LLM fields
+    would need a hardcoded list of every field Phase 2 adds — and any field added after that
+    list was written would silently poison the skeleton, which is the failure mode this
+    snapshot exists to prevent.
+    """
+    from sqlalchemy import delete
+    conn.execute(delete(s.parse_snapshots).where(s.parse_snapshots.c.version_id == version_id))
+    rows = []
+    for name in names:
+        p = os.path.join(model_dir, name)
+        if not os.path.isfile(p):
+            continue                        # not every artifact exists on every run
+        try:
+            with open(p, encoding="utf-8") as fh:
+                rows.append({"version_id": version_id, "name": name, "payload": json.load(fh)})
+        except (OSError, ValueError):
+            continue                        # a malformed artifact must not fail the run
+    if rows:
+        conn.execute(insert(s.parse_snapshots), rows)
+    return len(rows)
+
+
+def load_parse_snapshot(conn, version_id) -> Dict[str, Any]:
+    """The stored skeleton as {filename: parsed json}, or {} when absent.
+
+    Shaped like `_load_parse_dir` reads a directory, so a caller can switch source without
+    reshaping anything downstream.
+    """
+    out: Dict[str, Any] = {}
+    for r in conn.execute(select(s.parse_snapshots.c.name, s.parse_snapshots.c.payload)
+                          .where(s.parse_snapshots.c.version_id == version_id)):
+        out[r.name] = r.payload
+    return out
+
+
 def dump_model_to_dir(conn, version_id, out_dir) -> None:
     """Materialize a version's DB model back to model/*.json. The bridge for tools that
     still take file paths (the flowchart engine / scanner subprocesses) until they read

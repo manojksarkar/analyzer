@@ -60,7 +60,8 @@ _PARSE_SNAPSHOT_FILES = ("functions.json", "globalVariables.json", "dataDictiona
                          "metadata.json")
 
 
-def snapshot_parse_model(model_dir: str, version_dir: str) -> None:
+def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
+                         version_id: str = "") -> None:
     """Capture the post-Phase-1 model (blank skeleton — no LLM descriptions yet) into
     `versions/<id>/parse/`. MUST run right after Phase 1, before Phase 2 fills
     descriptions into model/. This is the baseline a narrowed parse (M4) merges against
@@ -71,6 +72,19 @@ def snapshot_parse_model(model_dir: str, version_dir: str) -> None:
         src = os.path.join(model_dir, fn)
         if os.path.isfile(src):
             shutil.copyfile(src, os.path.join(dst, fn))
+    # AND into the store (doc 09, C2). On disk this snapshot only exists on the machine that
+    # produced the baseline, so narrowed parse could not work across nodes and was lost with
+    # any workspace clean. Additive: the files above still get written until C11c, so the
+    # readers can fall back. Best-effort — a snapshot failure must not fail a good run.
+    if store is not None and version_id:
+        try:
+            n = store.write_parse_snapshot(version_id, model_dir, _PARSE_SNAPSHOT_FILES)
+            if n:
+                from core.logging_setup import get_logger as _gl
+                _gl("incremental").info(f"C2: stored {n} parse-snapshot file(s) for {version_id}")
+        except Exception as exc:
+            from core.logging_setup import get_logger as _gl
+            _gl("incremental").warning(f"C2: could not store the parse snapshot: {exc}")
 
 
 def scope_to_args(scope: Dict[str, Any]) -> List[str]:
@@ -252,7 +266,7 @@ def generate_full(
                         cwd=project_root, shell=(os.name == "nt")).returncode
     if rc != 0:
         _fail_full(rc)
-    snapshot_parse_model(model_dir, vdir)
+    snapshot_parse_model(model_dir, vdir, store, version_id)
     # C11b (opt-in): re-materialize the model from Postgres so Phase 2+ consume the STORED
     # model rather than whatever Phase 1 happened to leave on disk. This is what makes the
     # database authoritative — and it is exactly the round-trip tools/verify_model_parity.py

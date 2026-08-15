@@ -263,3 +263,72 @@ def test_hydrate_model_leaves_files_the_store_does_not_back(tmp_path):
     assert json.loads((target / "metadata.json").read_text(encoding="utf-8"))["projectName"] == "keep me"
     assert (target / "tu_includes.json").is_file()
     assert (target / "hashes.json").is_file()          # and the stored ones did land
+
+
+# ---------------------------------------------------------------------------
+# doc 09 C2 — the post-Phase-1 skeleton lives in the database
+# ---------------------------------------------------------------------------
+
+_SNAP_NAMES = ("functions.json", "hashes.json", "tu_includes.json", "entity_files.json")
+
+
+def _parse_dir(tmp_path, name):
+    d = tmp_path / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "functions.json").write_text(json.dumps({"App|Main|calc|int": {"qualifiedName": "calc"}}),
+                                      encoding="utf-8")
+    (d / "hashes.json").write_text(json.dumps({"App|Main|calc|int": "aaa"}), encoding="utf-8")
+    (d / "tu_includes.json").write_text(json.dumps({"App/Main.cpp": ["App/Main.h"]}),
+                                        encoding="utf-8")
+    # entity_files.json deliberately absent — not every run produces every artifact
+    return str(d)
+
+
+def test_parse_snapshot_roundtrip(tmp_path):
+    _fs, ps = _both_stores(tmp_path, ["v1"])
+    src = _parse_dir(tmp_path, "parse-src")
+
+    n = ps.write_parse_snapshot("v1", src, _SNAP_NAMES)
+    assert n == 3                                     # the absent file is skipped, not an error
+
+    snap = ps.read_parse_snapshot("v1")
+    assert snap["hashes.json"] == {"App|Main|calc|int": "aaa"}
+    assert snap["tu_includes.json"] == {"App/Main.cpp": ["App/Main.h"]}
+    assert "entity_files.json" not in snap
+
+
+def test_parse_snapshot_is_idempotent(tmp_path):
+    """Re-running Phase 1 (or --from-phase 1) must replace, not accumulate."""
+    _fs, ps = _both_stores(tmp_path, ["v1"])
+    src = _parse_dir(tmp_path, "parse-src2")
+    ps.write_parse_snapshot("v1", src, _SNAP_NAMES)
+    ps.write_parse_snapshot("v1", src, _SNAP_NAMES)
+    snap = ps.read_parse_snapshot("v1")
+    assert len(snap) == 3                             # not 6
+
+
+def test_parse_snapshot_is_per_version(tmp_path):
+    _fs, ps = _both_stores(tmp_path, ["v1", "v2"])
+    a = _parse_dir(tmp_path, "pa")
+    b = tmp_path / "pb"; b.mkdir()
+    (b / "hashes.json").write_text(json.dumps({"App|Main|calc|int": "bbb"}), encoding="utf-8")
+
+    ps.write_parse_snapshot("v1", a, _SNAP_NAMES)
+    ps.write_parse_snapshot("v2", str(b), _SNAP_NAMES)
+
+    assert ps.read_parse_snapshot("v1")["hashes.json"]["App|Main|calc|int"] == "aaa"
+    assert ps.read_parse_snapshot("v2")["hashes.json"]["App|Main|calc|int"] == "bbb"
+
+
+def test_file_store_has_no_parse_snapshot(tmp_path):
+    """DB-less: the parse/ directory IS the snapshot, so the store reports nothing and the
+    caller falls back to disk."""
+    fs, _ps = _both_stores(tmp_path, ["v1"])
+    assert fs.write_parse_snapshot("v1", _parse_dir(tmp_path, "pc"), _SNAP_NAMES) == 0
+    assert fs.read_parse_snapshot("v1") == {}
+
+
+def test_parse_snapshot_is_registered_for_deletion(tmp_path):
+    """A new per-version table needs a retention story, or a deleted version leaks rows."""
+    from api.db.postgres.schema import PER_VERSION_TABLES
+    assert "parse_snapshots" in PER_VERSION_TABLES
