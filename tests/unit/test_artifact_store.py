@@ -221,3 +221,45 @@ def test_set_output_dir_relocates_only_output(monkeypatch, tmp_path):
     # In-process only: no environment variable is set. Subprocesses are told via
     # `run.py --output-root`, so a run's own command line records where its output went.
     assert "ANALYZER_OUTPUT_DIR" not in os.environ
+
+
+# ---------------------------------------------------------------------------
+# doc 09 C11b — hydrate the model FROM the store
+# ---------------------------------------------------------------------------
+
+def test_hydrate_model_writes_the_stored_model_to_disk(tmp_path):
+    """PgStore materializes its stored model; FileStore is a no-op (the files ARE the store)."""
+    fs, ps = _both_stores(tmp_path, ["v1"])
+    hashes = {"App|Main|calc|int": "aaa"}
+    md = _model_dir(tmp_path, "src", hashes)
+
+    ps.write_model("v1", md)
+    target = tmp_path / "hydrated"; target.mkdir()
+    assert ps.hydrate_model("v1", str(target)) is True
+    assert json.loads((target / "hashes.json").read_text(encoding="utf-8")) == hashes
+
+    # FileStore: nothing to materialize, and it must not claim it did.
+    assert fs.hydrate_model("v1", str(target)) is False
+
+
+def test_hydrate_model_leaves_files_the_store_does_not_back(tmp_path):
+    """Only the 8 store-backed files are overwritten.
+
+    metadata.json, tu_includes/entity_files/func_keys/override_pairs (narrowed parse, C2),
+    clang_include_paths.json (machine-specific, C3) and knowledge_base.json (C4) are NOT in
+    the database yet. A wipe-then-write would delete them and break the next phase, so
+    hydration must overwrite in place.
+    """
+    _fs, ps = _both_stores(tmp_path, ["v1"])
+    md = _model_dir(tmp_path, "src2", {"k": "h"})
+    ps.write_model("v1", md)
+
+    target = tmp_path / "hydrated2"; target.mkdir()
+    (target / "metadata.json").write_text('{"projectName": "keep me"}', encoding="utf-8")
+    (target / "tu_includes.json").write_text('{"a.cpp": []}', encoding="utf-8")
+
+    ps.hydrate_model("v1", str(target))
+
+    assert json.loads((target / "metadata.json").read_text(encoding="utf-8"))["projectName"] == "keep me"
+    assert (target / "tu_includes.json").is_file()
+    assert (target / "hashes.json").is_file()          # and the stored ones did land

@@ -133,6 +133,25 @@ class ArtifactStore(ABC):
     def read_model(self, version_id: str) -> Dict[str, Any]:
         """{functions, globals, datadict, edges, units, components, summaries, hashes}."""
 
+    def hydrate_model(self, version_id: str, model_dir: str) -> bool:
+        """Materialize this version's STORED model into `model_dir`. True if it did.
+
+        The read half of C11: it makes Postgres — not whatever the previous phase left on
+        disk — the source the next phase consumes, so `--from-phase N` resumes from real
+        stored state rather than from a directory that may be stale or half-written.
+
+        Overwrites only the files the store actually backs (the 8 in `_DUMP_FILES`) and
+        leaves the rest of the directory alone. The others are deliberately not in the DB
+        yet: the narrowed-parse artifacts (entity_files / func_keys / override_pairs /
+        tu_includes -> **C2**), `clang_include_paths.json` (machine-specific, deleted by
+        **C3**), `knowledge_base.json` (**C4**) and `metadata.json` (an in-run intermediate).
+        A wipe-then-write would destroy those, so this is an overwrite, not a rebuild.
+
+        Default is a no-op: for `FileStore` the files ARE the store, so there is nothing to
+        materialize.
+        """
+        return False
+
     @abstractmethod
     def read_hashes(self, version_id: str) -> Dict[str, str]:
         """{entityKey -> source_hash} (the classify input)."""
@@ -329,6 +348,12 @@ class PgStore(ArtifactStore):
         from incremental.model_store import load_model
         with self.engine.connect() as cx:
             return load_model(cx, version_id)
+
+    def hydrate_model(self, version_id: str, model_dir: str) -> bool:
+        from incremental.model_store import dump_model_to_dir
+        with self.engine.connect() as cx:
+            dump_model_to_dir(cx, version_id, model_dir)
+        return True
 
     def read_hashes(self, version_id: str) -> Dict[str, str]:
         from incremental.model_store import load_hashes

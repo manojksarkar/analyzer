@@ -144,6 +144,7 @@ def generate_full(
     repo_url: Optional[str] = None,
     repo_token: Optional[str] = None,
     config_path: Optional[str] = None,
+    model_from_db: bool = False,
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
 
@@ -252,6 +253,16 @@ def generate_full(
     if rc != 0:
         _fail_full(rc)
     snapshot_parse_model(model_dir, vdir)
+    # C11b (opt-in): re-materialize the model from Postgres so Phase 2+ consume the STORED
+    # model rather than whatever Phase 1 happened to leave on disk. This is what makes the
+    # database authoritative — and it is exactly the round-trip tools/verify_model_parity.py
+    # checks, so any field the store drops shows up as changed document content immediately.
+    # Off by default until that check is clean on a real database (it already caught global
+    # descriptions being dropped).
+    if model_from_db and store.hydrate_model(version_id, model_dir):
+        from core.logging_setup import get_logger as _gl
+        _gl("incremental").info(
+            f"C11b: model re-materialized from the database for {version_id}")
     rc = subprocess.run(base_cmd + ["--from-phase", "2", repo_dir],
                         cwd=project_root, shell=(os.name == "nt")).returncode
     if rc != 0:
@@ -353,12 +364,16 @@ def main() -> None:
     ap.add_argument("--version-id", default=None, help="(derived from the commit; kept for compat)")
     ap.add_argument("--no-llm", action="store_true", help="skip LLM hierarchy summarization")
     ap.add_argument("--force", action="store_true", help="(no-op; the commit dir is reused)")
+    ap.add_argument("--model-from-db", action="store_true",
+                    help="C11b (opt-in): after Phase 1, re-materialize the model from Postgres "
+                         "so Phase 2+ consume the STORED model. Off by default.")
     ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
     ap.add_argument("--repo-url", default=None, help="clone URL (else resolved from the project record)")
     args = ap.parse_args()
     m = generate_full(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
                       data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
-                      version_id=args.version_id, config_path=args.config, repo_url=args.repo_url)
+                      version_id=args.version_id, config_path=args.config, repo_url=args.repo_url,
+                      model_from_db=args.model_from_db)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, regenerated={m['regenerated']}, "
           f"documents={m.get('documents')}")
