@@ -8,6 +8,7 @@ Source extraction and libclang TranslationUnit management.
 """
 
 import logging
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -86,11 +87,20 @@ class TranslationUnitParser:
         | ci.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES
     )
 
-    def __init__(self, std: str, extra_clang_args: List[str]) -> None:
+    # How many parsed TUs to keep. Small on purpose: functions are processed grouped by
+    # source file, so 1 would already hit most of the time; the margin covers the
+    # header-resolution retry, which opens an *including* TU while the current one is live.
+    # Each retained full-body TU can be tens to hundreds of MB on firmware-scale sources,
+    # so this bound is what keeps peak memory flat instead of growing with file count.
+    DEFAULT_TU_CACHE_SIZE = 4
+
+    def __init__(self, std: str, extra_clang_args: List[str],
+                 tu_cache_size: int = DEFAULT_TU_CACHE_SIZE) -> None:
         self._std = std
         self._extra_args = extra_clang_args
         self._index = ci.Index.create()
-        self._tu_cache: Dict[str, ci.TranslationUnit] = {}
+        self._tu_cache: "OrderedDict[str, ci.TranslationUnit]" = OrderedDict()
+        self._tu_cache_size = max(1, int(tu_cache_size))
 
     def _build_args(self) -> List[str]:
         # Pull the shared default macro defines from core.config so this
@@ -109,9 +119,40 @@ class TranslationUnitParser:
                 args.append(extra)
         return args
 
+    def _cached(self, key: str, build) -> ci.TranslationUnit:
+        """LRU-bounded TU cache (doc 09, M1).
+
+        The cache was unbounded and never cleared, so a run held one syntax tree per source
+        file it touched for the whole phase — and `get_tu_full` deliberately parses WITH
+        function bodies, which is the expensive kind. Peak memory therefore grew with FILE
+        COUNT, not with change size: even a one-line incremental on a large codebase paid
+        for every file it visited. Per job, so it multiplies by concurrency, and it is the
+        first thing that exhausts a container on a big repo.
+
+        A small bound is enough because the engine processes functions grouped by source
+        file (`by_file` in flowchart_engine), so access has strong locality; the margin above
+        1 is for the header-resolution retry, which reaches into an *including* TU while the
+        current one is still in use.
+
+        Evicting is safe. libclang's Python `Cursor` holds a `_tu` reference, so a TU stays
+        alive as long as any cursor taken from it is still reachable — dropping our entry
+        frees only the ones nobody is using. (That is the same mechanism `engine/parser.py`
+        relies on when it assigns `oc._tu = c._tu` to keep a borrowed cursor valid.)
+        """
+        tu = self._tu_cache.get(key)
+        if tu is not None:
+            self._tu_cache.move_to_end(key)          # mark most-recently-used
+            return tu
+        tu = build()
+        self._tu_cache[key] = tu
+        while len(self._tu_cache) > self._tu_cache_size:
+            evicted, _ = self._tu_cache.popitem(last=False)
+            logger.debug("Evicted cached TU (cap %d): %s", self._tu_cache_size, evicted)
+        return tu
+
     def get_tu(self, abs_path: str) -> ci.TranslationUnit:
         """Return (cached) TranslationUnit for a source file."""
-        if abs_path not in self._tu_cache:
+        def _build():
             args = self._build_args()
             logger.debug("Parsing TU: %s", abs_path)
             tu = self._index.parse(abs_path, args=args,
@@ -119,16 +160,16 @@ class TranslationUnitParser:
             if tu is None:
                 raise RuntimeError(f"libclang failed to parse: {abs_path}")
             self._log_diagnostics(tu, abs_path)
-            self._tu_cache[abs_path] = tu
-        return self._tu_cache[abs_path]
+            return tu
+
+        return self._cached(abs_path, _build)
 
     def get_tu_full(self, abs_path: str) -> ci.TranslationUnit:
         """
         Return a TranslationUnit parsed WITHOUT skipping function bodies.
         Used when we need to traverse the actual function body for CFG building.
         """
-        cache_key = abs_path + "__full"
-        if cache_key not in self._tu_cache:
+        def _build():
             args = self._build_args()
             logger.debug("Parsing full TU (with bodies): %s", abs_path)
             options = (
@@ -139,8 +180,9 @@ class TranslationUnitParser:
             if tu is None:
                 raise RuntimeError(f"libclang failed to parse: {abs_path}")
             self._log_diagnostics(tu, abs_path)
-            self._tu_cache[cache_key] = tu
-        return self._tu_cache[cache_key]
+            return tu
+
+        return self._cached(abs_path + "__full", _build)
 
     @staticmethod
     def _log_diagnostics(tu: ci.TranslationUnit, path: str) -> None:

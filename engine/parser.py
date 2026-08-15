@@ -342,7 +342,16 @@ def _make_overridden_lookup():
         out = []
         for i in range(int(num.value)):
             oc = arr[i]
-            oc._tu = c._tu  # keep the TU alive for the borrowed cursor
+            # Keep the TU alive for the borrowed cursor. REQUIRED: the array comes from the
+            # C API and its cursors do not own their TU, so without this they dangle once
+            # the owning TU is collected.
+            #
+            # Audited for retention (doc 09, M2): this does NOT pin TUs for the run. The
+            # cursors are transient — the caller immediately converts each to a string key
+            # (`get_function_key`) and `_override_pairs` stores only those strings, so the
+            # TU is released with the cursor. Phase 1 likewise holds one TU at a time
+            # (`tu` is rebound per file) and stores only hashes, never cursors.
+            oc._tu = c._tu
             out.append(oc)
         f_disp(arr)
         return out
