@@ -87,6 +87,10 @@
     "abbreviationsPath": "config/abbreviations.txt",
     "domainContextPath": "config/domain.txt",
     "descriptionBlocklist": ["audio", "video"],
+    // Pause after every OpenAI-shaped call, PER PROCESS. 3 = the on-prem API gateway's
+    // global ~1-call-per-3s limit. Set 0 for an on-prem hosted model, which has no limit
+    // and where 3s per call would dominate the run.
+    "rateLimitSeconds": 3,
     "cacheVersion": 2,
     "enrichment": {
       "twoPassDescriptions": false,

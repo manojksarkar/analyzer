@@ -251,3 +251,50 @@ class TestFromConfig:
     def test_num_ctx_set_correctly(self):
         client = from_config(self._cfg(numCtx=4096))
         assert client.num_ctx == 4096
+
+
+class TestConfigurableRateLimit:
+    """doc 09 B6 — the pause after each OpenAI call must be configurable.
+
+    The two on-prem deployments need opposite values: the API **gateway** enforces a global
+    ~1-call-per-3s limit, while an on-prem **hosted model** has none — and at 3s a 20k-call
+    run would spend ~17 hours asleep for no reason. Default stays 3.0 so anyone who does not
+    set it remains gateway-safe.
+    """
+
+    def test_default_is_the_gateway_safe_value(self):
+        from llm_core.client import LlmClient, _OPENAI_RATE_LIMIT_SEC
+        c = LlmClient(provider="openai", base_url="http://x", model="m")
+        assert c._rate_limit_sec == _OPENAI_RATE_LIMIT_SEC == 3.0
+
+    def test_zero_disables_the_pause(self):
+        from llm_core.client import LlmClient
+        c = LlmClient(provider="openai", base_url="http://x", model="m",
+                      rate_limit_seconds=0)
+        assert c._rate_limit_sec == 0
+
+    def test_negative_is_clamped_not_crashing(self):
+        from llm_core.client import LlmClient
+        c = LlmClient(provider="openai", base_url="http://x", model="m",
+                      rate_limit_seconds=-5)
+        assert c._rate_limit_sec == 0
+
+    def test_from_config_threads_the_value(self):
+        from llm_core.client import from_config
+        c = from_config({"provider": "openai", "baseUrl": "http://x",
+                         "defaultModel": "m", "rateLimitSeconds": 0})
+        assert c._rate_limit_sec == 0
+
+    def test_config_validation_accepts_zero_and_rejects_nonsense(self):
+        from core.config import load_llm_config, LlmConfigError
+        base = {"llm": {"provider": "openai", "baseUrl": "http://x", "defaultModel": "m",
+                        "timeoutSeconds": 60, "numCtx": 8192, "retries": 1}}
+        import copy
+        ok = copy.deepcopy(base); ok["llm"]["rateLimitSeconds"] = 0
+        assert load_llm_config(ok)["rateLimitSeconds"] == 0.0
+        # default when absent stays gateway-safe
+        assert load_llm_config(copy.deepcopy(base))["rateLimitSeconds"] == 3.0
+        for bad in ("soon", -1):
+            cfg = copy.deepcopy(base); cfg["llm"]["rateLimitSeconds"] = bad
+            with pytest.raises(LlmConfigError):
+                load_llm_config(cfg)

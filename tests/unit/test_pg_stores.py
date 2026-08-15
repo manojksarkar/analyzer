@@ -389,3 +389,96 @@ class TestDatabaseConfiguredDetection:
             assert isinstance(make_store("p1", workspaces_root=str(tmp_path / "b")), FileStore)
         finally:
             coredb.reset_engine()
+
+
+class TestPipelineLifecycleAndBaseline:
+    """A finished run must remain eligible as a baseline (doc 09, C1 regression).
+
+    `list_versions` only offers a baseline whose pipeline_status is NULL or 'complete'. That
+    filter was written when the column was never written at all, so NULL meant "finished".
+    Once PhaseRunner started writing progress (parsing/deriving/viewing/exporting) and nothing
+    wrote a terminal state, every finished version sat at 'exporting' and was silently
+    disqualified — so the next run found NO baseline, fell back to a full generation and
+    reused 0%. It looks like the incremental feature is broken; it is one unwritten column.
+    """
+
+    def _finish(self, eng, vid, *, status="complete"):
+        from incremental import model_store
+        with eng.begin() as cx:
+            model_store.persist_run_outcome(cx, vid, {
+                "status": status, "decision": "full", "regenerated": 3, "reused": 0})
+
+    def test_completing_a_run_marks_the_version_complete(self):
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "v1", "aaaaaaaaaaaa", pipeline_status="exporting")
+        self._finish(eng, "v1")
+        with eng.connect() as cx:
+            row = cx.execute(select(s.versions.c.pipeline_status)
+                             .where(s.versions.c.id == "v1")).first()
+        assert row.pipeline_status == "complete"
+
+    def test_a_finished_version_is_offered_as_a_baseline(self):
+        """The end-to-end consequence — this is what actually broke."""
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "v1", "aaaaaaaaaaaa", pipeline_status="exporting")
+            cx.execute(s.versions.update().where(s.versions.c.id == "v1")
+                       .values(status="in_review"))
+        # mid-run state: NOT a candidate
+        assert pg_stores.list_versions(eng, PID) == []
+        self._finish(eng, "v1")
+        got = pg_stores.list_versions(eng, PID)
+        assert [v["versionId"] for v in got] == ["v1"], \
+            "a completed run must be selectable as the next run's baseline"
+
+    def test_a_failed_run_is_not_a_baseline(self):
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "v1", "aaaaaaaaaaaa", pipeline_status="deriving")
+            cx.execute(s.versions.update().where(s.versions.c.id == "v1")
+                       .values(status="in_review"))
+        self._finish(eng, "v1", status="failed")
+        assert pg_stores.list_versions(eng, PID) == [], \
+            "a failed run must never become a baseline"
+
+    def test_running_status_does_not_clobber_the_phase(self):
+        """The early 'running' manifest must not overwrite PhaseRunner's finer state."""
+        from incremental import model_store
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "v1", "aaaaaaaaaaaa", pipeline_status="parsing")
+        with eng.begin() as cx:
+            model_store.persist_run_outcome(cx, "v1", {"status": "running"})
+        with eng.connect() as cx:
+            row = cx.execute(select(s.versions.c.pipeline_status)
+                             .where(s.versions.c.id == "v1")).first()
+        assert row.pipeline_status == "parsing"
+
+
+class TestGlobalDescriptionSurvives:
+    """A global's description must round-trip (found by verify_model_parity on a real run).
+
+    It is LLM-generated and renders in the DOCX unit-header table, so dropping it costs real
+    document content — and it was missing from _GLOBAL_PAYLOAD_FIELDS, so every global lost
+    its description on the way into the database.
+    """
+
+    def test_description_is_persisted_and_loaded(self):
+        from incremental import model_store
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "v1", "aaaaaaaaaaaa")
+        globals_data = {
+            "App|Main|g_globalResult": {
+                "qualifiedName": "g_globalResult", "type": "int", "value": "0",
+                "description": "Accumulated result shared across the App unit.",
+                "location": {"file": "App/Main.cpp", "line": 7},
+            },
+        }
+        with eng.begin() as cx:
+            model_store.persist_globals(cx, PID, "v1", globals_data, {})
+        with eng.connect() as cx:
+            loaded = model_store.load_globals(cx, "v1")
+        assert loaded["App|Main|g_globalResult"]["description"] == \
+            "Accumulated result shared across the App unit."

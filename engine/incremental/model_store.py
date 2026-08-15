@@ -37,7 +37,12 @@ _FN_PAYLOAD_FIELDS = (
     "returnType", "returnExpr", "description", "behaviourInputName", "behaviourOutputName",
     "parameters", "phases", "readsGlobalIdsTransitive", "writesGlobalIdsTransitive",
 )
-_GLOBAL_PAYLOAD_FIELDS = ("type", "value")
+# `description` is LLM-generated (llm.enrichment.variableEnrichment) and renders in the DOCX
+# unit-header table, so losing it costs real document content — yet it was absent here, so
+# every global's description was dropped on the way into the database. Found by
+# tools/verify_model_parity.py on the first real run, which is exactly the class of bug an
+# allow-list invites: add a model field, forget this tuple, lose it silently.
+_GLOBAL_PAYLOAD_FIELDS = ("type", "value", "description")
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +317,17 @@ def persist_run_outcome(conn, version_id, manifest: Dict[str, Any]) -> None:
     """
     from sqlalchemy import update
     vals: Dict[str, Any] = {}
+    # Close out the pipeline lifecycle. PhaseRunner writes the IN-PROGRESS states
+    # (parsing/deriving/viewing/exporting); nothing wrote a terminal one, so a finished run
+    # stayed at 'exporting' forever. That is not cosmetic: `pg_stores.list_versions` only
+    # accepts a baseline whose pipeline_status is NULL or 'complete', so every finished
+    # version was silently disqualified — the next run found no baseline, fell back to a FULL
+    # generation and reused 0%. Writing it here covers the API and standalone CLI runs alike,
+    # because both go through write_manifest. Only terminal states: an in-progress 'running'
+    # would clobber the finer-grained phase value.
+    st = manifest.get("status")
+    if st in ("complete", "failed"):
+        vals["pipeline_status"] = st
     if manifest.get("decision") is not None:
         vals["decision"] = manifest.get("decision")
     if manifest.get("baselineVersionId") is not None:

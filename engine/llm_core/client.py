@@ -190,6 +190,17 @@ def _fake_response(*parts: str) -> str:
 # of LlmClient with provider="openai" shares it — even if multiple clients
 # are constructed by different phases.
 _OPENAI_LOCK = threading.Lock()
+
+# Default pause after every OpenAI-shaped call, in seconds. 3.0 matches the corporate/on-prem
+# API gateway, which allows roughly one request per 3s.
+#
+# Configurable because the two deployments have opposite needs (doc 09, B6): the on-prem
+# **gateway** enforces that global limit, while an on-prem **hosted model** has no limit at all
+# and 3s per call would waste most of the run. Set `llm.rateLimitSeconds` — 0 disables the
+# pause entirely.
+#
+# NOTE this is a PER-PROCESS throttle. N concurrent jobs are N independent throttles, so the
+# provider sees N x the rate; that is the open half of B6 and is not solved by this setting.
 _OPENAI_RATE_LIMIT_SEC = 3.0
 
 
@@ -209,10 +220,14 @@ class LlmClient:
         temperature: float = 0.1,
         num_ctx: int = 8192,
         max_retries: int = 1,
+        rate_limit_seconds: Optional[float] = None,
         # Legacy-compat args
         url: Optional[str] = None,
         use_openai_format: bool = False,
     ) -> None:
+        # None keeps the gateway-safe default; 0 disables the pause (on-prem hosted model).
+        self._rate_limit_sec = (_OPENAI_RATE_LIMIT_SEC if rate_limit_seconds is None
+                                else max(0.0, float(rate_limit_seconds)))
         # Resolve provider: explicit > legacy use_openai_format > default ollama
         if provider is None:
             provider = "openai" if use_openai_format else "ollama"
@@ -529,9 +544,11 @@ class LlmClient:
                 resp.raise_for_status()
                 data = resp.json()
             finally:
-                # Sleep on every attempt — including failures — so a tight
-                # retry loop never bursts the gateway.
-                time.sleep(_OPENAI_RATE_LIMIT_SEC)
+                # Sleep on every attempt — including failures — so a tight retry loop
+                # never bursts the gateway. Skipped when the limit is 0 (an on-prem
+                # hosted model with no throttle).
+                if self._rate_limit_sec > 0:
+                    time.sleep(self._rate_limit_sec)
         choices = data.get("choices") or []
         text = ""
         if choices:
@@ -567,7 +584,8 @@ class LlmClient:
                 resp.raise_for_status()
                 data = resp.json()
             finally:
-                time.sleep(_OPENAI_RATE_LIMIT_SEC)
+                if self._rate_limit_sec > 0:     # 0 = no throttle (on-prem hosted model)
+                    time.sleep(self._rate_limit_sec)
         choices = data.get("choices") or []
         text = ""
         if choices:
@@ -598,6 +616,7 @@ def from_config(llm_cfg: Dict) -> LlmClient:
     retries = int(llm_cfg.get("retries", 1))
     custom_headers = llm_cfg.get("customHeaders") or {}
     api_key = resolve_api_key(llm_cfg)
+    rate_limit = llm_cfg.get("rateLimitSeconds")
     return LlmClient(
         provider=provider,
         base_url=base_url,
@@ -607,4 +626,5 @@ def from_config(llm_cfg: Dict) -> LlmClient:
         timeout=timeout,
         num_ctx=num_ctx,
         max_retries=retries,
+        rate_limit_seconds=rate_limit,
     )
