@@ -12,6 +12,34 @@ from utils import KEY_SEP, log, safe_filename, os_type, render_dot_cached
 from core.subprocess_util import log_stderr_tail, run_streaming
 
 
+def _project_root() -> str:
+    """The CODE root, for resolving tools and assets.
+
+    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc`,
+    `engine/config/render_dot.mjs` and the shared `.mmdc_cache`, all of which live at the
+    code root — while model_dir is DATA whose location moves (per-version dirs, an isolated
+    test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
+    needed a "walk up one extra level" special case, and why relocating model/ would have
+    silently pointed the renderer at a directory with no render script in it: the render
+    simply returns False and the flowchart never appears.
+    """
+    from core.paths import paths
+    return paths().project_root
+
+
+def _output_root() -> str:
+    """The root of THIS run's rendered output tree (versions/<ver>/output since B1).
+
+    Separate from `_project_root()` on purpose: one answers "where is the code/tooling", the
+    other "where does this run write". They were the same directory before output moved,
+    which is why a single `project_root` served both — and why conflating them now would
+    break carry-forward without any error.
+    """
+    from core.paths import paths
+    return paths().output_dir
+
+
+
 # PNG slicing thresholds: split a flowchart PNG across Word pages when it is too tall to
 # embed at _SLICE_EMBED_WIDTH_IN without shrinking it illegibly.
 _SLICE_EMBED_WIDTH_IN = 4.0
@@ -31,8 +59,11 @@ def _baseline_flowchart_dir(plan, model_dir_abs, out_dir):
     if not base_ver_dir:
         return None
 
-    project_root = os.path.dirname(model_dir_abs)
-    rel = os.path.relpath(out_dir, os.path.join(project_root, "output"))
+    # Anchored on the run's OUTPUT root, not the code root: since B1 a run renders into
+    # versions/<ver>/output, so "<code root>/output" is no longer an ancestor of out_dir and
+    # relpath would yield a ../.. path resolving to nothing — silently disabling flowchart
+    # carry-forward while the report still counts the entries it MEANT to carry.
+    rel = os.path.relpath(out_dir, _output_root())
     cand = os.path.join(base_ver_dir, "output", rel)
     return cand if os.path.isdir(cand) else None
 
@@ -773,14 +804,7 @@ def run(model, output_dir, model_dir, config):
     output_dir_abs = os.path.abspath(output_dir)
     model_dir_abs = os.path.abspath(model_dir)
 
-    # When model_dir is a layer subdir (model/Layer1/), dirname gives model/
-    # not the analyzer root. Walk up one extra level in that case.
-    _parent = os.path.dirname(model_dir_abs)
-    project_root = (
-        os.path.dirname(_parent)
-        if os.path.basename(_parent) == "model"
-        else _parent
-    )
+    project_root = _project_root()
 
     # Out dir fixed in code: output/flowcharts under the view output dir
     out_dir = os.path.join(output_dir_abs, "flowcharts")

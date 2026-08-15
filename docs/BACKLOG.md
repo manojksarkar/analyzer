@@ -11,6 +11,12 @@
 | SH-2 | Same group/component name reused across layers collides (needs layer-qualified identity) | issue | open | — |
 | SH-3 | Gate updated data dictionary + integrate for correctness | enhance | open | engine/config/data_dictionary.csv |
 
+## Incremental reuse
+| ID | Item | Type | Status | Ref |
+|---|---|---|---|---|
+| IN-1 | Globals never reused: a run reports `Globals regenerated 2/2 -> reused 0 (0%)` while functions reach 80%. Global reuse looks not to be wired the way function/flowchart reuse is | issue | open | office run 2026-08-15 |
+| IN-2 | Flowchart counts don't add up in the report: `regenerated 2 / 12 function(s) -> carried 13` (2+13 > 12) — the regenerated/total/carried figures appear to count different sets (functions vs files) | issue | open | `incremental/report.py` |
+
 ## SWE.3 — detailed design
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|

@@ -9,6 +9,34 @@ from .registry import register
 from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type, render_mermaid_cached
 
 
+def _project_root() -> str:
+    """The CODE root, for resolving tools and assets.
+
+    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc`,
+    `engine/config/render_dot.mjs` and the shared `.mmdc_cache`, all of which live at the
+    code root — while model_dir is DATA whose location moves (per-version dirs, an isolated
+    test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
+    needed a "walk up one extra level" special case, and why relocating model/ would have
+    silently pointed the renderer at a directory with no render script in it: the render
+    simply returns False and the flowchart never appears.
+    """
+    from core.paths import paths
+    return paths().project_root
+
+
+def _output_root() -> str:
+    """The root of THIS run's rendered output tree (versions/<ver>/output since B1).
+
+    Separate from `_project_root()` on purpose: one answers "where is the code/tooling", the
+    other "where does this run write". They were the same directory before output moved,
+    which is why a single `project_root` served both — and why conflating them now would
+    break carry-forward without any error.
+    """
+    from core.paths import paths
+    return paths().output_dir
+
+
+
 def _affected_units(impact_fids, functions_data, fid_to_unit):
     """M3.10: the set of unit_keys whose diagram may have changed = units of the impacted
     functions PLUS their 1-hop cross-unit neighbours (callees + callers). A unit diagram
@@ -39,8 +67,12 @@ def _apply_incremental_unit_plan(model_dir, out_dir, functions_data, fid_to_unit
     # 1. carry forward the baseline version's unit diagrams (engine cleaned output/).
     base_ver_dir = plan.get("baselineVersionDir")
     if base_ver_dir:
-        project_root = os.path.dirname(os.path.abspath(model_dir))
-        rel = os.path.relpath(out_dir, os.path.join(project_root, "output"))
+        # Where this diagram sits WITHIN the run's output tree, so the same relative slot
+        # can be found inside the baseline version. Anchored on the run's actual output
+        # root, not the code root: since B1 a run renders into versions/<ver>/output, so
+        # "<code root>/output" is not an ancestor of out_dir any more and relpath would
+        # produce a ../.. path that resolves to nothing — silently disabling carry-forward.
+        rel = os.path.relpath(out_dir, _output_root())
         base_ud = os.path.join(base_ver_dir, "output", rel)
         if os.path.isdir(base_ud):
             carried = 0

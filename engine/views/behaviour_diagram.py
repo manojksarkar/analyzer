@@ -22,6 +22,22 @@ from behaviour_diagram import SequenceDiagramGenerator
 from utils import log, mmdc_path, KEY_SEP, os_type
 
 
+def _project_root() -> str:
+    """The CODE root, for resolving tools and assets.
+
+    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc`,
+    `engine/config/render_dot.mjs` and the shared `.mmdc_cache`, all of which live at the
+    code root — while model_dir is DATA whose location moves (per-version dirs, an isolated
+    test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
+    needed a "walk up one extra level" special case, and why relocating model/ would have
+    silently pointed the renderer at a directory with no render script in it: the render
+    simply returns False and the flowchart never appears.
+    """
+    from core.paths import paths
+    return paths().project_root
+
+
+
 @register("behaviourDiagram")
 def run(model, output_dir, model_dir, config):
     views_cfg = config.get("views", {})
@@ -30,7 +46,7 @@ def run(model, output_dir, model_dir, config):
         log("skipped (views.behaviourDiagram not enabled)", component="behaviourDiagram")
         return
 
-    project_root = os.path.dirname(os.path.abspath(model_dir))
+    project_root = _project_root()
     out_dir = os.path.join(output_dir, "behaviour_diagrams")
     os.makedirs(out_dir, exist_ok=True)
 
