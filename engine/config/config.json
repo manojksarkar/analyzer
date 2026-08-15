@@ -1,7 +1,8 @@
 {
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
-    "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include"
+    "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
+    "clangArgs": ["--target=arm-none-eabi"]
   },
   "views": {
     "interfaceTables": true,

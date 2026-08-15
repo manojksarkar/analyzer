@@ -172,6 +172,49 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-13 (**`clang.clangArgs` is now a discoverable config key — the fix for cross-target parse
+> errors like `use of undeclared identifier '__builtin_arm_wfi'`.** No new plumbing: the key was already
+> honored by both parse paths (`engine/parser.py:251` appends it to `CLANG_ARGS`; `engine/views/flowcharts.py:813`
+> re-reads it for the Phase 3 flowchart subprocess) and overridable per project via `build_config.clang`
+> (`api/services/pipeline_runner.py:444`) — it just appeared in **no config file**, so nobody knew it existed.
+> Now present in `engine/config/config.json`, set to `["--target=arm-none-eabi"]`.
+> **Why it matters:** clang declares the ARM hint builtins (`__builtin_arm_wfi/wfe/sev/sevl/nop/yield`,
+> `isb/dsb/dmb`) **only when the target is ARM/AArch64**. CMSIS headers reach them via
+> `#define __WFI __builtin_arm_wfi`, so parsing firmware with a host (x86) libclang errors on every use.
+> Two fixes: (a) cross-target — `--target=arm-none-eabi` **alone is sufficient** (measured); add `-mcpu=<core>
+> -mthumb` so the preprocessor takes the same `#if` branches as the real build, since the bare triple defaults
+> to a generic ARMv4 core. On a project that includes libc headers this also drops the host system headers
+> (expect `'stdio.h' file not found` unless `--sysroot` / `-I` is added) — **not** an issue for
+> `SampleCppProject`, which has zero `#include <...>`; or (b) stub the builtins to no-ops through a
+> forced-include header, `["-include", "<abs path>"]`.
+> **Enabled in the base config**, which merges into every per-project config (`pipeline_runner.py:439-447`).
+> Verified safe on 2026-08-15 by parsing the e2e scope (`--selected-group "My Sample"`) both ways:
+> `functions.json` (141) and `dataDictionary.json` (91) come out **byte-identical**; the only delta is TUs with
+> errors, 6 → 5, i.e. the 4 ARM builtin errors gone. The 5 remaining are pre-existing `unknown type name 'VOID'`
+> in `Layer1/Signal/` + `Layer1/Diag/`, unrelated to the target. Override per project via `build_config.clang`,
+> or in `engine/config/config.local.json`.
+> **Trap:** changing `clangArgs` changes the parse fingerprint (`engine/incremental/fingerprint.py:30`),
+> so the next run is a **full reparse**, not an incremental one.
+> **Correction to an earlier claim in this entry** (it said clang's 20-error limit truncates the TU and drops
+> declarations — **it does not**). Measured with libclang on 2026-08-13: an undeclared identifier in a body, an
+> unknown return type, an unknown param type, a macro-mangled signature and a missing semicolon **all** leave
+> the `FUNCTION_DECL` in the AST. The error limit caps *diagnostic output*, not parsing, so `-ferror-limit=0`
+> buys log visibility, **not** recovered functions. The only tested shape that removes a function is an
+> **inactive `#if` branch — which emits zero errors**. Consequence for triage: clang errors in the log are not
+> evidence that a function is missing, and a missing function is usually a preprocessor/`-D` problem or
+> pipeline-level filtering (`not-project-file`, `dedup-hit`, `_DIAG_FUNCTIONISH_KINDS`), not a parse error.
+> **Fixtures encoding both halves** (`SampleCppProject/Layer1/Diag/`, picked up by the existing `Diag`
+> group — no config change, and outside the `tests/snapshots/Sample/` surface so snapshots are unaffected):
+> `ArmIntrinsics.h` (CMSIS-style `#define __WFI() __builtin_arm_wfi()`), `ArmIntrinsics.cpp` (4 errors on the
+> host target, 0 with `--target=arm-none-eabi`, **all 4 functions recorded either way**), and `ArmGuarded.cpp`
+> (`ArmEnterLowPower` behind an undefined `FEATURE_ARM_PM`: absent from the model with **no** diagnostic —
+> the live example for `_scan_unrecorded_functions`, fixed by `-DFEATURE_ARM_PM`, not by the target flag).
+> **Also fixed:** `.gitignore` listed `backend/config/config.local.json`, a path that has not existed since the
+> `backend/` → `engine/` rename, so local machine-specific overrides were never actually ignored → corrected to
+> `engine/config/config.local.json` (+ `last_run.json`). All three config loaders — `engine/core/config.py`,
+> `pipeline_runner._load_base_config`, `doc_render._load_config` — strip JSONC comments, so the inline comment
+> is safe; verified against all three, and `tests/unit/{test_core_config,test_utils,test_macro_input}.py` pass.)
+
 > Updated: 2026-08-12c (**Phase 1 parse diagnostics — a log trail for "why is this function missing from
 > `model/functions.json`?"** Branch `feat/phase1-parse-diagnostics`, `engine/parser.py` only.
 > Motivation: Phase 1 had **zero `.debug()` calls**, ~17 bare `print()` (which never reach
