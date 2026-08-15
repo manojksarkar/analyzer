@@ -60,3 +60,78 @@ def test_no_sql_engine_uses_disk(tmp_path):
     assert r.groups() == {"G"}
     assert r.read_text("G/interface_tables.json") == "{}"
     assert r.read_text("G/nope.json") is None
+
+
+# ---------------------------------------------------------------------------
+# doc 09 C0 — doc_render reads the VIEW outputs through the reader
+# ---------------------------------------------------------------------------
+
+class TestDocRenderReadsViewsFromPostgres:
+    """The rendered document is the main product surface, and it still read interface
+    tables / flowcharts / behaviour rows off local disk even though PG-5a had been storing
+    them since the migration. That made the document depend on the machine that produced it.
+
+    These assert the reader is genuinely preferred — a value present ONLY in Postgres has to
+    come through — and that omitting the reader still reads disk exactly as before.
+    """
+
+    def _group_dir(self, tmp_path):
+        d = tmp_path / "output" / "App"
+        (d / "flowcharts").mkdir(parents=True)
+        (d / "behaviour_diagrams").mkdir(parents=True)
+        return d
+
+    def test_interface_tables_come_from_postgres(self, tmp_path):
+        from api.services import doc_render
+        db = _sql_db()
+        gd = self._group_dir(tmp_path)
+        (gd / "interface_tables.json").write_text(json.dumps({"unitNames": {"X|onDisk": "onDisk"}}),
+                                                  encoding="utf-8")
+        _put(db, "v1", "App/interface_tables.json",
+             json.dumps({"unitNames": {"X|fromDb": "fromDb"}}), group="App")
+
+        rdr = OutputReader(db, "v1", tmp_path)
+        got = doc_render._view_json(rdr, gd, "interface_tables.json")
+        assert got["unitNames"] == {"X|fromDb": "fromDb"}, "Postgres must win over the disk copy"
+
+    def test_falls_back_to_disk_when_not_stored(self, tmp_path):
+        from api.services import doc_render
+        db = _sql_db()
+        gd = self._group_dir(tmp_path)
+        (gd / "interface_tables.json").write_text(json.dumps({"unitNames": {"X|onDisk": "d"}}),
+                                                  encoding="utf-8")
+        rdr = OutputReader(db, "v1", tmp_path)          # nothing stored for v1
+        got = doc_render._view_json(rdr, gd, "interface_tables.json")
+        assert got["unitNames"] == {"X|onDisk": "d"}
+
+    def test_no_reader_is_the_unchanged_disk_path(self, tmp_path):
+        from api.services import doc_render
+        gd = self._group_dir(tmp_path)
+        (gd / "interface_tables.json").write_text(json.dumps({"unitNames": {"a": "b"}}),
+                                                  encoding="utf-8")
+        assert doc_render._view_json(None, gd, "interface_tables.json")["unitNames"] == {"a": "b"}
+        assert doc_render._view_json(None, gd, "missing.json") is None
+
+    def test_flowcharts_come_from_postgres(self, tmp_path):
+        from api.services import doc_render
+        db = _sql_db()
+        gd = self._group_dir(tmp_path)
+        _put(db, "v1", "App/flowcharts/Main.json",
+             json.dumps([{"name": "calc", "flowchart": "digraph {a->b}"}]), group="App")
+        _put(db, "v1", "App/flowcharts/_summary.json", json.dumps({"x": 1}), group="App")
+
+        rdr = OutputReader(db, "v1", tmp_path)
+        got = doc_render._load_flowcharts(gd / "flowcharts", rdr, gd)
+        assert got == {"Main": {"calc": "digraph {a->b}"}}
+        assert "_summary" not in got            # the summary file is not a unit
+
+    def test_behaviour_rows_come_from_postgres(self, tmp_path):
+        from api.services import doc_render
+        db = _sql_db()
+        gd = self._group_dir(tmp_path)
+        _put(db, "v1", "App/behaviour_diagrams/_behaviour_pngs.json",
+             json.dumps({"_docxRows": {"App": {"Main": [{"currentFunctionName": "calc"}]}}}),
+             group="App")
+        rdr = OutputReader(db, "v1", tmp_path)
+        rows = doc_render._load_behavior_diagrams(gd, rdr)
+        assert rows["App"]["Main"][0]["currentFunctionName"] == "calc"

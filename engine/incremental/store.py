@@ -145,6 +145,16 @@ class ArtifactStore(ABC):
         """The stored skeleton as {filename: parsed json}, or {} when this store has none."""
         return {}
 
+    def hydrate_parse_snapshot(self, version_id: str, model_dir: str) -> int:
+        """Write the stored skeleton into `model_dir`. Returns files written.
+
+        What makes `--from-phase 2` resumable from the database on ANY machine: the skeleton
+        is what Phase 2 must start from. Restoring the ENRICHED model instead would be
+        silently wrong — Phase 2 skips functions that already have a description, so it would
+        enrich nothing. Use `hydrate_model` to resume at Phase 3/4.
+        """
+        return 0
+
     def hydrate_model(self, version_id: str, model_dir: str) -> bool:
         """Materialize this version's STORED model into `model_dir`. True if it did.
 
@@ -370,6 +380,11 @@ class PgStore(ArtifactStore):
         from incremental.model_store import load_parse_snapshot
         with self.engine.connect() as cx:
             return load_parse_snapshot(cx, version_id)
+
+    def hydrate_parse_snapshot(self, version_id: str, model_dir: str) -> int:
+        from incremental.model_store import dump_parse_snapshot_to_dir
+        with self.engine.connect() as cx:
+            return dump_parse_snapshot_to_dir(cx, version_id, model_dir)
 
     def hydrate_model(self, version_id: str, model_dir: str) -> bool:
         from incremental.model_store import dump_model_to_dir

@@ -332,3 +332,30 @@ def test_parse_snapshot_is_registered_for_deletion(tmp_path):
     """A new per-version table needs a retention story, or a deleted version leaks rows."""
     from api.db.postgres.schema import PER_VERSION_TABLES
     assert "parse_snapshots" in PER_VERSION_TABLES
+
+
+def test_hydrate_parse_snapshot_restores_the_skeleton(tmp_path):
+    """--from-phase 2 must be resumable from the database on any machine.
+
+    Round-trip: store the skeleton, wipe the directory, restore it, and confirm the files
+    Phase 2 reads are back with their original contents.
+    """
+    _fs, ps = _both_stores(tmp_path, ["v1"])
+    src = _parse_dir(tmp_path, "skel-src")
+    ps.write_parse_snapshot("v1", src, _SNAP_NAMES)
+
+    target = tmp_path / "restored"            # deliberately does not exist yet
+    n = ps.hydrate_parse_snapshot("v1", str(target))
+
+    assert n == 3
+    funcs = json.loads((target / "functions.json").read_text(encoding="utf-8"))
+    assert funcs["App|Main|calc|int"]["qualifiedName"] == "calc"
+    assert "description" not in funcs["App|Main|calc|int"]      # a SKELETON: no LLM text
+    assert json.loads((target / "hashes.json").read_text(encoding="utf-8")) \
+        == {"App|Main|calc|int": "aaa"}
+
+
+def test_hydrate_parse_snapshot_is_a_no_op_without_one(tmp_path):
+    fs, ps = _both_stores(tmp_path, ["v1"])
+    assert ps.hydrate_parse_snapshot("v1", str(tmp_path / "none")) == 0   # nothing stored
+    assert fs.hydrate_parse_snapshot("v1", str(tmp_path / "none2")) == 0  # DB-less store

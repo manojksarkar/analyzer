@@ -632,6 +632,32 @@ def load_parse_snapshot(conn, version_id) -> Dict[str, Any]:
     return out
 
 
+def dump_parse_snapshot_to_dir(conn, version_id, out_dir) -> int:
+    """Write the stored post-Phase-1 skeleton back out as files. Returns files written.
+
+    The counterpart of `dump_model_to_dir`, and the reason the skeleton is stored verbatim:
+    restoring it is a straight write-out, with no reassembly step that could fail to
+    reproduce the shape the phases expect.
+
+    Which one to restore depends on where you resume, and getting it wrong is a correctness
+    bug rather than an inconvenience: Phase 2 SKIPS any function that already carries a
+    description, so resuming Phase 2 from the *enriched* model would enrich nothing.
+
+        resume at Phase 2      -> this (the skeleton)
+        resume at Phase 3 / 4  -> dump_model_to_dir (the enriched model)
+    """
+    snap = load_parse_snapshot(conn, version_id)
+    if not snap:
+        return 0
+    os.makedirs(out_dir, exist_ok=True)
+    n = 0
+    for name, payload in snap.items():
+        with open(os.path.join(out_dir, name), "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, ensure_ascii=False)
+        n += 1
+    return n
+
+
 def dump_model_to_dir(conn, version_id, out_dir) -> None:
     """Materialize a version's DB model back to model/*.json. The bridge for tools that
     still take file paths (the flowchart engine / scanner subprocesses) until they read

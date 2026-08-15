@@ -17,6 +17,7 @@ from ..models.domain import User, DocumentAssignment
 from ..services.errors import not_found, forbidden
 from ..services import doc_render
 from ..services.model_reader import ModelReader
+from ..services.output_reader import OutputReader
 from ..schemas import (
     DocStatsResponse, DocumentListResponse, RenderResponse,
     DocumentDetailResponse, DocumentResponse, AssigneesResponse,
@@ -305,9 +306,15 @@ def render_document(
         # the disk dir resolved above (so behaviour is unchanged without a SQL backend).
         reader = ModelReader(db, version.id if version else None,
                              model_root or (doc_render._REPO_ROOT / "model"))
+        # C0: the VIEW outputs (interface tables / flowcharts / behaviour rows) also come
+        # from Postgres when present. They have been stored since PG-5a, but the rendered
+        # document still read them off local disk — so the main product surface depended on
+        # the machine that produced it. snap_dir is the version's own output tree, used as
+        # the fallback.
+        out_reader = OutputReader(db, version.id if version else None, out_root.parent)
         return {"document": doc_render.build_render(
             doc, project, version, group_dir, project_id, model_root=model_root,
-            model_reader=reader)}
+            model_reader=reader, output_reader=out_reader)}
 
     sections = db.documents.list_sections(doc_id)
     return {"document": _render_doc_dict(doc, sections, project, version)}

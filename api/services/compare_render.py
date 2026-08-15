@@ -80,6 +80,7 @@ def _version_render(db: Any, project: Any, doc: Any, version: Any,
     try:
         # PG-7a: model for THIS version from Postgres when present, else the snapshot's model/.
         from .model_reader import ModelReader
+        from .output_reader import OutputReader as _OutputReader
         reader = ModelReader(db, getattr(version, "id", None),
                              model_root if model_root.is_dir() else None)
         return doc_render.build_render(
@@ -87,6 +88,9 @@ def _version_render(db: Any, project: Any, doc: Any, version: Any,
             model_root=model_root if model_root.is_dir() else None,
             asset_base=asset_base,
             model_reader=reader,
+            # C0: view outputs from Postgres when present; `snap` is this version's own
+            # snapshot dir, which OutputReader uses as its disk fallback.
+            output_reader=_OutputReader(db, getattr(version, "id", None), snap),
         )
     except Exception:
         return None
