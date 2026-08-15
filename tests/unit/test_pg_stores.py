@@ -482,3 +482,48 @@ class TestGlobalDescriptionSurvives:
             loaded = model_store.load_globals(cx, "v1")
         assert loaded["App|Main|g_globalResult"]["description"] == \
             "Accumulated result shared across the App unit."
+
+
+class TestDatabaseCanBeExplicitlyDisabled:
+    """ANALYZER_NO_DB forces the DB-less path regardless of ambient configuration.
+
+    tools/verify_incremental.py is the DB-less gate: it builds a throwaway project in a temp
+    dir and must use the file store. It used to achieve that by unsetting DATABASE_URL, which
+    stopped working once config.local.json also counted as configured — so on any machine set
+    up to reach a real Postgres the gate silently switched backends and tried to write its
+    fake project there, failing on a foreign key against `projects`.
+    """
+
+    def test_switch_overrides_a_configured_db_section(self, monkeypatch):
+        import core.db as coredb
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setattr(coredb, "_dsn_from_config",
+                            lambda: "postgresql+psycopg://u:p@h:5432/d")
+        assert coredb.is_database_configured() is True          # configured...
+        monkeypatch.setenv("ANALYZER_NO_DB", "1")
+        assert coredb.is_database_configured() is False         # ...but explicitly disabled
+
+    def test_switch_overrides_the_env_var_too(self, monkeypatch):
+        import core.db as coredb
+        monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@h:5432/d")
+        monkeypatch.setenv("ANALYZER_NO_DB", "1")
+        assert coredb.is_database_configured() is False
+
+    @pytest.mark.parametrize("val,disabled", [("1", True), ("true", True), ("yes", True),
+                                              ("0", False), ("false", False), ("", False)])
+    def test_falsey_values_do_not_disable(self, monkeypatch, val, disabled):
+        """`ANALYZER_NO_DB=0` must NOT disable the database — a careless export would
+        otherwise silently take a real deployment off Postgres."""
+        import core.db as coredb
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setattr(coredb, "_dsn_from_config",
+                            lambda: "postgresql+psycopg://u:p@h:5432/d")
+        monkeypatch.setenv("ANALYZER_NO_DB", val)
+        assert coredb.is_database_configured() is (not disabled)
+
+    def test_the_gate_sets_it(self):
+        """The tool must actually set the switch, not just intend to."""
+        import os as _os
+        root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        src = open(_os.path.join(root, "tools", "verify_incremental.py"), encoding="utf-8").read()
+        assert 'os.environ["ANALYZER_NO_DB"] = "1"' in src

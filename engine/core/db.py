@@ -134,6 +134,19 @@ def is_database_configured() -> bool:
     localhost so `docker compose up -d` needs no configuration, but "nothing is configured"
     must not read as "Postgres is on".
     """
+    # An explicit opt-OUT, checked first. `tools/verify_incremental.py` is the DB-less gate:
+    # it builds a throwaway project in a temp dir and must use the file store. It used to
+    # achieve that by unsetting DATABASE_URL — which stopped working the moment
+    # config.local.json also counted as configured, so on any machine with a real `db`
+    # section the gate silently switched to Postgres and tried to write its fake project
+    # there (foreign-key violation against `projects`).
+    #
+    # An environment variable rather than a parameter because it has to cross a PROCESS
+    # boundary: the tool spawns run.py, which asks this same question for the C11a persist
+    # hook, as does project_db for baseline lookup. It is a harness isolation switch, not run
+    # configuration — the same role ANALYZER_DATA_ROOT already plays in that tool.
+    if os.environ.get("ANALYZER_NO_DB", "").strip().lower() not in ("", "0", "false", "no"):
+        return False
     if os.environ.get("DATABASE_URL", "").strip():
         return True
     try:

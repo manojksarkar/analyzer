@@ -71,7 +71,13 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
-    os.environ.pop("DATABASE_URL", None)          # this gate is DB-less (FileStore path)
+    # This gate is DB-less (FileStore path). Both lines are needed: clearing DATABASE_URL is
+    # not sufficient any more, because a `db` section in config.local.json also counts as
+    # "database configured" — so on a machine set up to reach a real Postgres this gate would
+    # otherwise write its throwaway project into it. ANALYZER_NO_DB is inherited by the
+    # analyzer subprocesses too, which ask the same question.
+    os.environ.pop("DATABASE_URL", None)
+    os.environ["ANALYZER_NO_DB"] = "1"
 
     tmp = tempfile.mkdtemp(prefix="verify-inc-")
     # Isolate generated data (model/output/logs/cache/api-db-data) to tmp so the pipeline never
