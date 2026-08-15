@@ -1,4 +1,4 @@
-# SWE.4 Unit Test Specification — how it is generated (V1)
+# Logic for SWE.4 Unit Test Specification (V1)
 
 **Contents:** [What is produced](#what-is-produced) · [Who gets a spec](#who-gets-a-spec) ·
 [Table A](#table-a--the-test-content) · [Table B](#table-b--the-metadata) ·
@@ -60,30 +60,36 @@ three stay flat — where an entry has several values, they are separated by com
 
 ### Input
 
-- Each entry is written `type variable[start value-end value]` — the declared range in brackets.
-  A type with no meaningful range (a pointer, a struct) is written without brackets.
-- Every parameter.
-- Every mock function whose return value has to be fixed for a branch to be reachable, written the same way:
-  `type name()[start value-end value]`.
-- Listed so that, between them, every branch of the function can be reached.
+- **Input is the Precondition, plus more.** Every Precondition item the function reads appears here with its
+  range — parameters, globals that are read, and mocks that return a value. Precondition names them; Input
+  gives them their ranges.
+- **Plus anything else a decision depends on** that Precondition does not name — a value a mock writes back
+  through a pointer, a struct field. Written the same way, one entry each.
+- **Excluded:** out-parameters, write-only globals, and `void` mocks. They have no value to set — they are
+  outputs, and belong in Expected Results.
+- Each entry is written `type variable[start value-end value]`, a mock as `type name()[start value-end value]`.
+- A type with no meaningful range, such as a pointer or a struct, is written without brackets.
 - **No descriptions.** The entry is the typed input and its range, nothing else.
-- No parameters and no mocks → `VOID`.
+- Nothing read → `VOID`.
 
 ### Test Steps
 
 - A numbered transcription of the function's flowchart — one step per node, in flow order.
 - A decision sub-numbers its two legs: `2.1) True: …` / `2.2) False: …`, nesting deeper for nested decisions.
 - Plain English, naming the variables involved. A mocked callee reads *"expect mock function `name`"*.
+- **Every function name appears** — the function under test, every mock, and every inlined helper. A helper
+  is named where it is called, not described in the abstract.
+- Every `return` in the function is its own step, so Expected Results can point at it.
 - Ends where the function exits. There is no closing "verify the result" step — checking the outcome is what
   Expected Results is for.
 
 ### Expected Results
 
-- Each entry is an assertion, written `Successfully …`.
+- Each entry is an assertion, written `Successfully …`, and **names the step it comes from**.
 - `1)` is always the mocks: `Successfully called mock functions <names>`.
-- Then one entry per thing the call changes — the return value, any out-parameter written, every global
-  written.
-- Values are given as a range in brackets, `[lower-upper]`, the same way Input writes them.
+- **Every return in the function gets its own entry** — one per exit, not one range covering them all.
+- Then one entry per out-parameter written and per global written, with its range in brackets,
+  `[lower-upper]`, the same way Input writes them.
 - Nothing changes → say so explicitly.
 
 ### Test Platform
@@ -156,7 +162,7 @@ int FtlLookup(uint32_t lba, uint8_t mode, uint32_t* ppnOut)
 
 | Eval. Equipment Name | Precondition | Input | Test Steps | Expected Results | Test Platform |
 |---|---|---|---|---|---|
-| Emulator | 1) Mock functions: `FilReadPage()`, `HilNotify()`<br>2) Parameters: `uint32_t lba`, `uint8_t mode`, `uint32_t* ppnOut`<br>3) Globals: `uint16_t gEntryCount`, `uint32_t gLastLba`, `uint8_t gErrCount` | 1) `uint32_t lba[0-4294967295]`<br>2) `uint8_t mode[0-255]`<br>3) `uint32_t* ppnOut`<br>4) `int FilReadPage()[-2147483648-2147483647]` | 1) Issue function `FtlLookup` with inputs `lba`, `mode` and output buffer `ppnOut`.<br>2) Check whether `lba` is a valid LBA.<br>&nbsp;&nbsp;2.1) True: continue to step 3.<br>&nbsp;&nbsp;2.2) False: increase `gErrCount` by one; expect mock function `HilNotify` with the range-error code; return -1.<br>3) Repeat for each index `i` from 0 while `i` is less than `gEntryCount`.<br>&nbsp;&nbsp;3.1) Expect mock function `FilReadPage` with input `i` and entry buffer `e`.<br>&nbsp;&nbsp;3.2) Check whether `FilReadPage` returned zero.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.2.1) True: continue to step 3.3.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.2.2) False: increase `gErrCount` by one; return -2.<br>&nbsp;&nbsp;3.3) Check whether the entry's `lba` is equal to `lba`.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.3.1) True: select on `mode`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.3.1.1) `MODE_READ`: set `ppnOut` to the entry's `ppn`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.3.1.2) `MODE_TRIM`: set `ppnOut` to `PPN_INVALID`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.3.1.3) Any other mode: return -3.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.3.1.4) Set `gLastLba` to `lba`; return 0.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.3.2) False: continue with the next index.<br>4) Return -4.<br>5) Exit. | 1) Successfully called mock functions `FilReadPage()`, `HilNotify()`<br>2) Successfully returned expected value of `int` in range `[-4-0]`<br>3) Successfully updated `uint32_t* ppnOut` in range `[0-4294967295]`<br>4) Successfully updated `uint32_t gLastLba` in range `[0-4294967295]`<br>5) Successfully updated `uint8_t gErrCount` in range `[0-255]` | VectorCAST |
+| Emulator | 1) Mock functions: `FilReadPage()`, `HilNotify()`<br>2) Parameters: `uint32_t lba`, `uint8_t mode`, `uint32_t* ppnOut`<br>3) Globals: `uint16_t gEntryCount`, `uint32_t gLastLba`, `uint8_t gErrCount` | 1) `uint32_t lba[0-4294967295]`<br>2) `uint8_t mode[0-255]`<br>3) `uint16_t gEntryCount[0-65535]`<br>4) `uint8_t gErrCount[0-255]`<br>5) `int FilReadPage()[-2147483648-2147483647]`<br>6) `uint32_t e.lba[0-4294967295]`<br>7) `uint32_t e.ppn[0-4294967295]` | 1) Issue function `FtlLookup` with inputs `lba`, `mode` and output buffer `ppnOut`.<br>2) Call `isValidLba` with `lba` and check whether it returns true.<br>&nbsp;&nbsp;2.1) True: continue to step 3.<br>&nbsp;&nbsp;2.2) False: increase `gErrCount` by one; expect mock function `HilNotify` with the range-error code; return -1.<br>3) Repeat for each index `i` from 0 while `i` is less than `gEntryCount`.<br>&nbsp;&nbsp;3.1) Expect mock function `FilReadPage` with input `i` and entry buffer `e`.<br>&nbsp;&nbsp;3.2) Check whether `FilReadPage` returned zero.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.2.1) True: continue to step 3.3.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.2.2) False: increase `gErrCount` by one; return -2.<br>&nbsp;&nbsp;3.3) Check whether the entry's `lba` is equal to `lba`.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.3.1) True: select on `mode`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.3.1.1) `MODE_READ`: set `ppnOut` to the entry's `ppn`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.3.1.2) `MODE_TRIM`: set `ppnOut` to `PPN_INVALID`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.3.1.3) Any other mode: return -3.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.3.1.4) Set `gLastLba` to `lba`; return 0.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.3.2) False: continue with the next index.<br>4) Return -4.<br>5) Exit. | 1) Successfully called mock functions `FilReadPage()`, `HilNotify()`<br>2) Successfully returned `-1` (step 2.2)<br>3) Successfully returned `-2` (step 3.2.2)<br>4) Successfully returned `-3` (step 3.3.1.3)<br>5) Successfully returned `0` (step 3.3.1.4)<br>6) Successfully returned `-4` (step 4)<br>7) Successfully updated `uint32_t* ppnOut` in range `[0-4294967295]` (steps 3.3.1.1, 3.3.1.2)<br>8) Successfully updated `uint32_t gLastLba` in range `[0-4294967295]` (step 3.3.1.4)<br>9) Successfully updated `uint8_t gErrCount` in range `[0-255]` (steps 2.2, 3.2.2) | VectorCAST |
 
 Note what is **not** in the Precondition: `isValidLba`. It is a private helper of the same unit, so it runs
 inline and its branch shows up in the test steps as an ordinary decision rather than as a mock.
