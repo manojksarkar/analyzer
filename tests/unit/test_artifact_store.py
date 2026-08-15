@@ -121,11 +121,19 @@ def test_same_commit_two_versions_distinct(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_make_store_selects_backend(tmp_path, monkeypatch):
-    """make_store -> PgStore when DATABASE_URL is set (create_engine is lazy, no connect), else
-    FileStore. This is how the engine picks its store at runtime (08 step 4)."""
+    """make_store -> PgStore when a database is CONFIGURED (create_engine is lazy, no
+    connect), else FileStore. This is how the engine picks its store at runtime (08 step 4).
+
+    Both signals must be neutralised to test the FileStore branch, not just the env var:
+    since the C-fix, `config.local.json`'s `db` section also counts as configured. Clearing
+    only DATABASE_URL left this test reading the DEVELOPER'S OWN config — so it passed on a
+    machine with no config.local.json and failed on one set up to reach a real Postgres,
+    which is precisely backwards for a unit test.
+    """
     from incremental.store import make_store
     import core.db as coredb
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(coredb, "_dsn_from_config", lambda: None)   # ignore any real db section
     coredb.reset_engine()
     assert isinstance(make_store(PID, workspaces_root=str(tmp_path / "fs")), FileStore)
     monkeypatch.setenv("DATABASE_URL", "sqlite://")
