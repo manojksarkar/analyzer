@@ -161,7 +161,7 @@ def render_mermaid_cached(project_root: str, mermaid: str, png_path: str, *,
     if ok:                                             # populate the cache (best-effort, atomic)
         try:
             os.makedirs(cache_dir, exist_ok=True)
-            tmp = cache_png + ".tmp"
+            tmp = f"{cache_png}.{os.getpid()}.tmp"   # PID-unique: see stores._write_json
             shutil.copyfile(png_path, tmp)
             os.replace(tmp, cache_png)
         except OSError:
@@ -247,7 +247,7 @@ def render_dot_cached(project_root: str, dot: str, png_path: str, *,
     if ok:                                             # populate the cache (best-effort, atomic)
         try:
             os.makedirs(cache_dir, exist_ok=True)
-            tmp = cache_png + ".tmp"
+            tmp = f"{cache_png}.{os.getpid()}.tmp"   # PID-unique: see stores._write_json
             shutil.copyfile(png_path, tmp)
             os.replace(tmp, cache_png)
         except OSError:

@@ -58,7 +58,10 @@ def _read_json(path: str, default: Any) -> Any:
 
 def _write_json(path: str, data: Any) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
+    # PID-unique: two processes writing the SAME path would otherwise share one .tmp —
+    # each truncating it while the other is mid-write, so os.replace can publish a
+    # half-written file. Fine while jobs ran one at a time; a real hazard at concurrency > 1.
+    tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
     os.replace(tmp, path)  # atomic

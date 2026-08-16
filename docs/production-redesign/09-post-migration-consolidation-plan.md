@@ -263,3 +263,23 @@ A with a track record of costing real debugging time — is available for an hou
 Recorded so the reasoning is not re-litigated: **A is deferred, not rejected.** Pick it up after C,
 or sooner if D2's measurement shows process overhead actually matters. **B0 applies today either
 way** — the concurrency bug is live regardless of what is worked on next.
+
+## D-14 — DECIDED (2026-08-16): filesystem, not object storage
+
+PNG and DOCX stay as files on the local filesystem. No S3/MinIO/Azure Blob.
+
+What this means, stated plainly so it is not rediscovered later:
+
+* **One machine.** Every node that SERVES a document must see the files that produced it.
+  Filesystem storage means the API and the job runner share a filesystem — i.e. one host,
+  or a shared network mount (SMB/NFS) if that changes.
+* **Concurrency on that host is fine** and is the point of B1/C11b: each job now writes into
+  its own `versions/<ver>/output` and `versions/<ver>/model`, so parallel jobs no longer
+  collide. That was the blocker for raising JOB_MAX_CONCURRENCY.
+* **Everything else is still in Postgres** — the model, the parse skeleton, the view TEXT,
+  the run accounting. So a fresh node can REBUILD a version's images from the database
+  (`hydrate_model` + Phase 3/4); it just cannot serve the existing binaries without the files.
+  `tools/verify_db_rebuild.py` checks exactly that.
+
+Consequence for C11c: it deletes the model JSON files only. `clang_include_paths.json`
+(per-run scratch, see C3) and the rendered output tree must be left alone.

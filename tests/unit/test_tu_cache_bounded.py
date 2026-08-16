@@ -90,3 +90,44 @@ def test_bound_is_at_least_one():
     p = TranslationUnitParser.__new__(TranslationUnitParser)
     TranslationUnitParser.__init__(p, "c++14", [], tu_cache_size=0)
     assert p._tu_cache_size >= 1
+
+
+# ---------------------------------------------------------------------------
+# Concurrency hardening — atomic writes must not share a temp path
+# ---------------------------------------------------------------------------
+
+class TestAtomicWritesArePidUnique:
+    """Two processes writing the SAME path must not share one .tmp file.
+
+    The tmp+replace pattern is only atomic if the tmp is private. With a fixed
+    `path + ".tmp"`, a second process truncates the same file while the first is mid-write,
+    so os.replace can publish a HALF-WRITTEN file. Harmless while jobs ran one at a time
+    (JOB_MAX_CONCURRENCY=1); a real hazard as soon as that is raised — which is the point of
+    the per-version directory work.
+    """
+
+    def _src(self, rel):
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(root, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    @pytest.mark.parametrize("rel", [
+        "engine/incremental/stores.py",     # manifests, config, hashes, edges, reuse index
+        "engine/llm_core/cache.py",         # the LLM entity cache
+        "engine/utils.py",                  # the mermaid + DOT render caches
+    ])
+    def test_no_shared_temp_path(self, rel):
+        src = self._src(rel)
+        assert '+ ".tmp"' not in src, (
+            f"{rel}: a fixed .tmp path is shared between concurrent processes")
+        assert "getpid()" in src, f"{rel}: the temp path must be process-private"
+
+    def test_write_json_still_writes(self, tmp_path):
+        """Hardening must not break the write itself."""
+        import json as _json
+        from incremental.stores import _write_json, _read_json
+        p = str(tmp_path / "sub" / "x.json")
+        _write_json(p, {"a": 1})
+        assert _read_json(p, None) == {"a": 1}
+        assert not [f for f in os.listdir(os.path.dirname(p)) if f.endswith(".tmp")], \
+            "the temp file must not be left behind"

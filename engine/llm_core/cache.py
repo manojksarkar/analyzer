@@ -129,7 +129,10 @@ class EntityCache:
         }
         try:
             # Atomic write: tmp + replace
-            tmp = path + ".tmp"
+            # PID-unique (see stores._write_json): concurrent jobs enriching the same
+            # entity would otherwise share one .tmp and could publish a truncated file. A
+            # corrupt entry only costs a cache miss, but it is free to avoid.
+            tmp = f"{path}.{os.getpid()}.tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False)
             os.replace(tmp, path)
