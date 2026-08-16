@@ -665,9 +665,19 @@ def _build_cmd(
     use_model: bool = False,
     arch_layers: list = (),
     project_name: str = "",
+    model_root=None,
+    output_root=None,
 ) -> list[str]:
     cmd = [sys.executable, str(get_settings().repo_root / "engine" / "run.py")]
     cmd += ["--config", str(config_path)]
+    # Run against THIS version's own model/ and output/ instead of the shared <repo>/model
+    # and <repo>/output (doc 09, B1 + C11b). Without these the caller has to stage the
+    # version's trees into the repo root first — which means rmtree-ing a directory another
+    # concurrent job may be using.
+    if model_root is not None:
+        cmd += ["--model-root", str(model_root)]
+    if output_root is not None:
+        cmd += ["--output-root", str(output_root)]
     if use_model:
         cmd.append("--use-model")
     if from_phase > 1:
@@ -1371,6 +1381,34 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
 # Re-export
 # ---------------------------------------------------------------------------
 
+def _capture_reexport_output(db: Any, job: Any, adir) -> None:
+    """Persist a re-export's freshly rendered output back into the store.
+
+    Generation reaches this through the incremental orchestrator's `store.capture_output`;
+    re-export bypasses that orchestrator entirely, so without this the run rewrites files and
+    nothing else. That is invisible while documents render from disk, and wrong the moment
+    they render from Postgres (C0) — the stored views stay at the previous render and the
+    re-export looks like it did nothing.
+
+    Best-effort: the .docx has already been produced on disk at this point, so a store hiccup
+    must not fail an otherwise successful job.
+    """
+    version_id = getattr(job, "version_id", None)
+    if not version_id:
+        return                       # legacy commit-keyed run: nothing version-scoped to update
+    try:
+        import sys as _sys
+        engine_dir = str(get_settings().repo_root / "engine")
+        if engine_dir not in _sys.path:
+            _sys.path.insert(0, engine_dir)
+        from incremental.store import make_store          # type: ignore[import]
+        store = make_store(job.project_id,
+                           workspaces_root=str(get_settings().repo_root / "workspaces"))
+        store.capture_output(version_id, str(adir / "output"))
+    except Exception as exc:                              # pragma: no cover - never fail here
+        _log.warning("re-export: could not persist rendered output for %s: %s", version_id, exc)
+
+
 def _do_reexport(db: Any, job_id: str) -> None:
     job = db.jobs.get(job_id)
     if not job:
@@ -1400,19 +1438,21 @@ def _do_reexport(db: Any, job_id: str) -> None:
             _mark_failed(db, job_id, f"Config generation failed: {exc}")
             return
 
-    # Re-export = run.py Phase 4 (--use-model). run.py reads model/output from the repo root,
-    # so stage THIS version's model+output there first, then capture the re-rendered output back
-    # into the version's artifact dir.
-    for sub in ("model", "output"):
-        src, dst = adir / sub, root / sub
-        if src.is_dir():
-            shutil.rmtree(dst, ignore_errors=True)
-            shutil.copytree(src, dst)
-
+    # Re-export = run.py Phase 4 (--use-model), run IN PLACE against this version's own
+    # model/ and output/.
+    #
+    # It used to stage them into the SHARED <repo>/model and <repo>/output, rmtree-ing those
+    # first — the exact concurrency hazard B1 removed from the generation path, still alive
+    # here: two jobs re-exporting at once would wipe each other's staged trees mid-run, and a
+    # re-export would wipe a *generation* that was using the shared dirs. Running in place
+    # also drops two full copies of the model and output per re-export.
     arch_layers = project.architecture_layers or []
     cmd = _build_cmd(job, cdir, config_path, from_phase=4, use_model=True,
-                     arch_layers=arch_layers, project_name=(getattr(project, "name", "") or ""))
+                     arch_layers=arch_layers, project_name=(getattr(project, "name", "") or ""),
+                     model_root=adir / "model", output_root=adir / "output")
     if _execute_subprocess(db, job_id, cmd, phase_start=4):
-        out = root / "output"
-        if out.is_dir():
-            shutil.copytree(out, adir / "output", dirs_exist_ok=True)
+        # Re-persist the re-rendered views (C0). The document render now reads interface
+        # tables / flowcharts / behaviour rows from Postgres when they are there, so a
+        # re-export that only rewrote FILES would leave the stored copies stale and appear to
+        # have had no effect. capture_output also re-collects the .docx into documents/.
+        _capture_reexport_output(db, job, adir)
