@@ -144,6 +144,12 @@ versions = Table(
     Column("project_name", String),
     Column("parse_fingerprint", String),                         # clang-flag guard (narrowed parse)
     Column("resolved_config", _JSONB),                           # was versions/<id>/config.json
+    # The run manifest + end-of-run report, verbatim (doc 09, C1 follow-up). The named
+    # columns above stay the queryable accounting; this is everything else the manifest
+    # carries and no column covers — warnings, carriedForward, crossVersionReused,
+    # documents. Without it, versions/<ver>/manifest.json is not redundant and cannot be
+    # dropped: an operator on another node simply cannot see why a run warned.
+    Column("run_report", _JSONB),                                # was versions/<id>/manifest.json
     Column("report", Text),                                      # was report.txt
     UniqueConstraint("project_id", "version", name="uq_version_project_version"),
 )

@@ -730,7 +730,15 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                   "carried": len(all_files) - len(impacted_files)},
         "documents": documents, "warnings": decision["warnings"],
     }
-    emit_report(build_report(stats), version_dir=vdir)
+    _report_lines = build_report(stats)
+    emit_report(_report_lines, version_dir=vdir)
+    # ...and to the store, so the report is readable from any node rather than only the
+    # one that ran the job (versions.report existed but was never written).
+    try:
+        store.write_report(version_id, "\n".join(_report_lines))
+    except Exception:
+        pass                       # the report is already logged + on disk
+
     return manifest
 
 

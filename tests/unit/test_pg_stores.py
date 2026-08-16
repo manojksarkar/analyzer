@@ -527,3 +527,59 @@ class TestDatabaseCanBeExplicitlyDisabled:
         root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
         src = open(_os.path.join(root, "tools", "verify_incremental.py"), encoding="utf-8").read()
         assert 'os.environ["ANALYZER_NO_DB"] = "1"' in src
+
+
+class TestRunReportAndReportText:
+    """doc 09 C1 follow-up — the manifest and the end-of-run report reach the database.
+
+    C1 put the queryable accounting on the version row, but the manifest also carries
+    `warnings`, `carriedForward`, `crossVersionReused` and `documents`, which no column
+    covered — so versions/<ver>/manifest.json was genuinely load-bearing, not redundant, and
+    an operator on another node could not see why a run warned. `versions.report` had the
+    same shape as pipeline_status did: the column existed and nothing ever wrote it.
+    """
+
+    def test_manifest_fields_without_a_column_survive(self):
+        from incremental import model_store
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "v1", "aaaaaaaaaaaa")
+        manifest = {"status": "complete", "decision": "incremental", "regenerated": 3,
+                    "reused": 12, "warnings": ["narrowed parse fell back: new TU"],
+                    "carriedForward": 12, "crossVersionReused": 2, "documents": ["a.docx"]}
+        with eng.begin() as cx:
+            model_store.persist_run_outcome(cx, "v1", manifest)
+        with eng.connect() as cx:
+            got = model_store.load_run_outcome(cx, "v1")
+        assert got["warnings"] == ["narrowed parse fell back: new TU"]
+        assert got["carriedForward"] == 12
+        assert got["crossVersionReused"] == 2
+        assert got["documents"] == ["a.docx"]
+
+    def test_typed_columns_win_over_the_stored_manifest(self):
+        """The columns can be corrected after the run; the stored blob cannot."""
+        from incremental import model_store
+        from sqlalchemy import update
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "v1", "aaaaaaaaaaaa")
+            model_store.persist_run_outcome(cx, "v1", {"decision": "full", "reused": 0,
+                                                       "warnings": ["w"]})
+        with eng.begin() as cx:
+            cx.execute(update(s.versions).where(s.versions.c.id == "v1").values(reused=99))
+        with eng.connect() as cx:
+            got = model_store.load_run_outcome(cx, "v1")
+        assert got["reused"] == 99            # the column, not the blob's 0
+        assert got["warnings"] == ["w"]       # and the blob still supplies the rest
+
+    def test_report_text_is_stored(self):
+        from incremental.store import PgStore
+        eng = _engine()
+        with eng.begin() as cx:
+            _version(cx, "v1", "aaaaaaaaaaaa")
+        store = PgStore(PID, eng, workspaces_root="unused")
+        assert store.write_report("v1", "Functions : reused 12 (80%)") is True
+        with eng.connect() as cx:
+            row = cx.execute(select(s.versions.c.report)
+                             .where(s.versions.c.id == "v1")).first()
+        assert row.report == "Functions : reused 12 (80%)"

@@ -334,7 +334,7 @@ def generate_full(
     stype = (scope or {}).get("type", "project")
     names = (scope or {}).get("names") or []
     from incremental.report import build_report, emit_report
-    emit_report(build_report({
+    _report_lines = build_report({
         "versionId": version_id, "decision": "full", "status": "complete",
         "projectId": project_id, "branch": branch, "commit": actual_commit,
         "scope": stype if (stype == "project" or not names) else f"{stype}:{','.join(names)}",
@@ -345,7 +345,14 @@ def generate_full(
         "flowcharts": {"total": len(functions), "regenerated": len(functions), "carried": 0},
         "files": {"total": files_total, "regenerated": files_total, "carried": 0},
         "documents": documents, "warnings": [],
-    }), version_dir=vdir)
+    })
+    emit_report(_report_lines, version_dir=vdir)
+    # ...and to the store, so the report is readable from any node (versions.report existed
+    # but was never written).
+    try:
+        store.write_report(version_id, "\n".join(_report_lines))
+    except Exception:
+        pass                           # already logged + on disk
     return manifest
 
 

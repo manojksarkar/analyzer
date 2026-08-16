@@ -367,3 +367,52 @@ def test_hydrate_parse_snapshot_is_a_no_op_without_one(tmp_path):
     fs, ps = _both_stores(tmp_path, ["v1"])
     assert ps.hydrate_parse_snapshot("v1", str(tmp_path / "none")) == 0   # nothing stored
     assert fs.hydrate_parse_snapshot("v1", str(tmp_path / "none2")) == 0  # DB-less store
+
+
+# ---------------------------------------------------------------------------
+# doc 09 — constructing a store must not touch the filesystem
+# ---------------------------------------------------------------------------
+
+def test_constructing_a_store_creates_no_directory(tmp_path):
+    """A store used only for a probe — or by a run.py that turns out to have nothing to
+    persist — used to leave an empty workspaces/<pid>/ behind, for a project that may not
+    even exist. That is where the stray `verify-inc` directory came from."""
+    root = tmp_path / "ws"
+    FileStore("ghost-project", workspaces_root=str(root))
+    assert not (root / "ghost-project").exists(), \
+        "constructing a FileStore must have no filesystem side effect"
+
+    PgStore("ghost-project", _pg_engine([]), workspaces_root=str(root))
+    assert not (root / "ghost-project").exists(), \
+        "constructing a PgStore must have no filesystem side effect"
+
+
+def test_the_directory_still_appears_when_actually_used(tmp_path):
+    """Laziness must not break the write paths — they create what they need."""
+    root = tmp_path / "ws2"
+    fs = FileStore("p", workspaces_root=str(root))
+    fs.create_version("v1")
+    assert (root / "p" / "versions" / "v1").is_dir()
+
+    fs2 = FileStore("p2", workspaces_root=str(root))
+    fs2.reuse_put("fp", "v1", "k"); fs2.reuse_save()      # writes cache/index.json
+    assert (root / "p2" / "cache" / "index.json").is_file()
+
+
+def test_default_workspaces_root_follows_the_data_root(tmp_path, monkeypatch):
+    """Workspaces are generated DATA, so ANALYZER_DATA_ROOT must relocate them.
+
+    Anchored on the code root, an isolated run still created directories inside the repo and
+    left them there — which is how a temp-isolated gate littered the working tree.
+    """
+    import importlib
+    cp = importlib.import_module("core.paths")
+    from incremental.stores import default_workspaces_root
+    before = cp._OVERRIDE_DATA_ROOT
+    try:
+        cp.set_data_root(str(tmp_path / "elsewhere"))
+        assert default_workspaces_root() == os.path.join(
+            str(tmp_path / "elsewhere"), "workspaces")
+    finally:
+        cp._OVERRIDE_DATA_ROOT = before
+        cp._CACHED = None

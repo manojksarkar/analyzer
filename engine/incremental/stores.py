@@ -34,9 +34,19 @@ from core.paths import paths as _paths
 
 
 def default_workspaces_root() -> str:
-    """`<project_root>/workspaces` — the per-project workspaces root (created by the API at
-    onboarding / job time; the engine reads project + version metadata from api/db/data)."""
-    return os.path.join(_paths().project_root, "workspaces")
+    """`<data_root>/workspaces` — the per-project workspaces root (created by the API at
+    onboarding / job time; the engine reads project + version metadata from api/db/data).
+
+    Anchored on the DATA root, not the code root. Workspaces are generated data — checkouts,
+    per-version artifacts, the reuse index — so they belong wherever model/ output/ logs/ go.
+    Anchoring them on the code root meant `ANALYZER_DATA_ROOT` did not apply to them, so a
+    run isolated to a temp dir (`tools/verify_incremental.py`, any test) still created
+    directories inside the repo and left them there.
+
+    Unchanged for production: data_root defaults to the project root, so this is the same
+    path unless something has deliberately relocated the data.
+    """
+    return os.path.join(_paths().data_root, "workspaces")
 
 
 def _read_json(path: str, default: Any) -> Any:

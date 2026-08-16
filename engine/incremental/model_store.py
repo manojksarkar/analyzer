@@ -336,6 +336,13 @@ def persist_run_outcome(conn, version_id, manifest: Dict[str, Any]) -> None:
         vals["regenerated"] = manifest.get("regenerated")
     if manifest.get("reused") is not None:
         vals["reused"] = manifest.get("reused")
+    # And the manifest verbatim. The named columns above are the queryable accounting; this
+    # carries everything else it holds and no column covers — warnings, carriedForward,
+    # crossVersionReused, documents. Without it versions/<ver>/manifest.json is genuinely
+    # load-bearing rather than redundant, and an operator on another node cannot see why a
+    # run warned.
+    if manifest:
+        vals["run_report"] = manifest
     if not vals:
         return
     conn.execute(update(s.versions).where(s.versions.c.id == version_id).values(**vals))
@@ -350,12 +357,16 @@ def load_run_outcome(conn, version_id) -> Dict[str, Any]:
     row = conn.execute(select(s.versions.c.decision,
                               s.versions.c.baseline_version_id,
                               s.versions.c.regenerated,
-                              s.versions.c.reused)
+                              s.versions.c.reused,
+                              s.versions.c.run_report)
                        .where(s.versions.c.id == version_id)).first()
     if row is None:
         return {}
-    out = {"decision": row.decision, "baselineVersionId": row.baseline_version_id,
-           "regenerated": row.regenerated, "reused": row.reused}
+    # The stored manifest underneath, the typed columns on top: the columns are the values
+    # something may have corrected since the run (a rename, a re-export), so they win.
+    out: Dict[str, Any] = dict(row.run_report or {})
+    out.update({"decision": row.decision, "baselineVersionId": row.baseline_version_id,
+                "regenerated": row.regenerated, "reused": row.reused})
     return {k: v for k, v in out.items() if v is not None}
 
 

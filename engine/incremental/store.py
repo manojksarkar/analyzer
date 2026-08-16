@@ -103,6 +103,15 @@ class ArtifactStore(ABC):
     def read_manifest(self, version_id: str) -> Optional[Dict[str, Any]]:
         return _read_json(os.path.join(self.artifact_dir(version_id), "manifest.json"), None)
 
+    def write_report(self, version_id: str, text: str) -> bool:
+        """Store the end-of-run report. True if it went to a database.
+
+        `versions.report` has existed since the migration ("was report.txt") but nothing ever
+        wrote it — the same shape as pipeline_status. The file under versions/<ver>/ stays for
+        DB-less runs; this makes the report readable from any node.
+        """
+        return False
+
     def capture_output(self, version_id: str, output_dir: str) -> List[str]:
         """Copy the run's rendered output/ into the version and collect every .docx into
         documents/. Returns the captured document filenames (sorted)."""
@@ -233,8 +242,12 @@ class FileStore(ArtifactStore):
     def __init__(self, project_id: str, workspaces_root: Optional[str] = None):
         self.project_id = project_id
         root = workspaces_root or default_workspaces_root()
+        # NOT created here. Constructing a store must not have a filesystem side effect: a
+        # DB-less probe, or a run.py that turns out to have nothing to persist, would leave an
+        # empty workspaces/<pid>/ behind for a project that may not exist. Every write path
+        # already creates what it needs (`_write_json` makes its parent, `create_version`
+        # makes the version dir).
         self.proj_root = os.path.join(root, project_id)
-        os.makedirs(self.proj_root, exist_ok=True)
         self._reuse_path = os.path.join(self.proj_root, "cache", "index.json")
         self._reuse: Dict[str, Dict[str, str]] = _read_json(self._reuse_path, {})
 
@@ -309,8 +322,7 @@ class PgStore(ArtifactStore):
         self.project_id = project_id
         self.engine = engine
         root = workspaces_root or default_workspaces_root()
-        self.proj_root = os.path.join(root, project_id)
-        os.makedirs(self.proj_root, exist_ok=True)
+        self.proj_root = os.path.join(root, project_id)   # see FileStore: created on demand
         self._reuse = PgReuseIndex(engine, project_id)
 
     def capture_output(self, version_id: str, output_dir: str) -> List[str]:
@@ -380,6 +392,14 @@ class PgStore(ArtifactStore):
         from incremental.model_store import load_parse_snapshot
         with self.engine.connect() as cx:
             return load_parse_snapshot(cx, version_id)
+
+    def write_report(self, version_id: str, text: str) -> bool:
+        from sqlalchemy import update
+        from api.db.postgres import schema as _s
+        with self.engine.begin() as cx:
+            cx.execute(update(_s.versions).where(_s.versions.c.id == version_id)
+                       .values(report=text))
+        return True
 
     def hydrate_parse_snapshot(self, version_id: str, model_dir: str) -> int:
         from incremental.model_store import dump_parse_snapshot_to_dir
