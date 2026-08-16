@@ -210,12 +210,17 @@ def generate_full(
         _proj_cfg = os.path.join(ws.root, "config.json")
         config_path = _proj_cfg if os.path.isfile(_proj_cfg) else None
     cfg = resolve_run_config(config_path, no_llm=no_llm)
+    # Per-version artifacts belong in the VERSION dir, not the per-commit dir — the latter is
+    # shared by every version built from that commit, so a second generation of the same
+    # commit silently overwrote the first's config/parse/manifest. The git checkout stays
+    # shared (read-only once checked out; identical source for both).
+    _adir = store.create_version(version_id)
     if config_path and not no_llm:
         vcfg_path = config_path                       # run.py uses the per-project config as-is
     else:
-        vstore.write_config(commit_key, cfg)
-        vcfg_path = os.path.join(vdir, "config.json")
-    vstore.write_manifest(commit_key, _manifest(
+        store.write_config(version_id, cfg)
+        vcfg_path = os.path.join(_adir, "config.json")
+    store.write_manifest(version_id, _manifest(
         version_id, branch, actual_commit, scope, data_dict_id,
         decision="full", regenerated=0, reused=0, status="running", warnings=[]))
 
@@ -266,7 +271,7 @@ def generate_full(
                         cwd=project_root, shell=(os.name == "nt")).returncode
     if rc != 0:
         _fail_full(rc)
-    snapshot_parse_model(model_dir, vdir, store, version_id)
+    snapshot_parse_model(model_dir, _adir, store, version_id)
     # C11b (opt-in): re-materialize the model from Postgres so Phase 2+ consume the STORED
     # model rather than whatever Phase 1 happened to leave on disk. This is what makes the
     # database authoritative — and it is exactly the round-trip tools/verify_model_parity.py

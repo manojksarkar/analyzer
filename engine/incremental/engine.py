@@ -280,6 +280,22 @@ class StoreReuseIndex:
         self._store.reuse_save()
 
 
+def _parse_dir_for(store, vstore, version_id: Optional[str], commit: Optional[str]) -> str:
+    """Where a version's post-Phase-1 skeleton lives on disk.
+
+    Prefers the version-keyed `versions/<ver>/parse/`; falls back to the legacy
+    `<commit>/parse/` so versions produced before the move still resolve. The legacy location
+    is SHARED by every version of that commit, which is exactly the bug being fixed — two
+    versions built from one commit overwrote each other's skeleton, sequentially, with no
+    concurrency needed.
+    """
+    if version_id:
+        d = os.path.join(store.artifact_dir(version_id), "parse")
+        if os.path.isdir(d):
+            return d
+    return os.path.join(vstore.version_dir(commit or ""), "parse")
+
+
 def _artifact_dir_for(store, vstore, version_id: Optional[str], commit: Optional[str]) -> str:
     """The dir holding a version's rendered artifacts, for baseline / cross-version reuse.
 
@@ -443,12 +459,18 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         _proj_cfg = os.path.join(ws.root, "config.json")
         config_path = _proj_cfg if os.path.isfile(_proj_cfg) else None
     cfg = resolve_run_config(config_path, no_llm=no_llm)
+    # Per-version artifacts go in the VERSION dir, never the per-commit dir. The commit dir is
+    # shared by every version built from that commit, so config/parse/manifest written there
+    # were overwritten by the next run of the same commit — no concurrency required, just two
+    # generations of one commit. The git checkout stays shared: it is read-only once checked
+    # out, and two versions of a commit want byte-identical source.
+    _adir = store.create_version(version_id)
     if config_path and not no_llm:
         vcfg_path = config_path
     else:
-        vstore.write_config(commit_key, cfg)
-        vcfg_path = os.path.join(vdir, "config.json")
-    vstore.write_manifest(commit_key, _manifest(
+        store.write_config(version_id, cfg)
+        vcfg_path = os.path.join(_adir, "config.json")
+    store.write_manifest(version_id, _manifest(
         version_id, branch, target, scope, data_dict_id,
         decision="incremental", regenerated=0, reused=0, status="running", warnings=decision["warnings"]))
 
@@ -486,7 +508,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
             project_name=project_name,
             target=target, base_commit=decision["chosenBaseCommit"],
-            base_parse_dir=os.path.join(vstore.version_dir(base_commit), "parse"),
+            base_parse_dir=_parse_dir_for(store, vstore, base_vid, base_commit),
             store=store, base_vid=base_vid,
             base_fingerprint=(store.read_run_metadata(base_vid) or {}).get("parseFingerprint"))
     if used_narrowed and verify_parse:
@@ -522,7 +544,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             _fail("parse", rc)
 
     # Snapshot THIS version's blank skeleton for future narrowed parses (M4.4).
-    snapshot_parse_model(model_dir, vdir, store, version_id)
+    snapshot_parse_model(model_dir, _adir, store, version_id)
     # C11b (opt-in): re-materialize the model from Postgres so Phase 2+ consume the STORED
     # model rather than whatever Phase 1 happened to leave on disk. This is what makes the
     # database authoritative — and it is exactly the round-trip tools/verify_model_parity.py

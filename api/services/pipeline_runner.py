@@ -1047,11 +1047,25 @@ def _read_engine_manifest(project_id: str, commit_sha: str,
         except Exception:                       # no DB / not migrated -> the file below
             from_db = {}
 
-    p = _commit_dir(project_id, commit_sha) / "manifest.json"
-    try:
-        from_file = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
-    except (OSError, ValueError):
-        from_file = {}
+    # Version dir FIRST, commit dir as the legacy fallback. The manifest moved to
+    # versions/<ver>/ because the commit dir is shared by every version of that commit — a
+    # second generation of one commit overwrote the first's manifest. Versions written before
+    # the move still have theirs in the old place, so both are read.
+    from_file: dict = {}
+    candidates = []
+    if version_id:
+        candidates.append(_version_dir(project_id, version_id))
+    candidates.append(_commit_dir(project_id, commit_sha))
+    for d in candidates:
+        if d is None:
+            continue
+        p = d / "manifest.json"
+        try:
+            if p.is_file():
+                from_file = json.loads(p.read_text(encoding="utf-8"))
+                break
+        except (OSError, ValueError):
+            continue
 
     merged = dict(from_db)
     merged.update({k: v for k, v in from_file.items() if v is not None})
