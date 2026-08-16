@@ -295,7 +295,7 @@ def run(model, output_dir, model_dir, config):
 
     render_png = True
     # Project root must not be derived from output_dir: with --all-groups output is output/<group>/.
-    project_root = os.path.dirname(os.path.abspath(model_dir))
+    project_root = _project_root()
     mmdc = mmdc_path(project_root)
     puppeteer = os.path.join(project_root, "engine", "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):

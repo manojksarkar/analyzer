@@ -8,6 +8,15 @@ from typing import Optional, Tuple, List, Dict, Any
 from utils import os_type
 from core.paths import paths as _paths
 
+# Apply (and strip) --model-root / --output-root BEFORE paths() is snapshotted below.
+# `_p` is a MODULE-LEVEL snapshot, so applying the overrides later (e.g. inside main())
+# leaves every constant derived from it pointing at the DEFAULT directories. That is not
+# cosmetic: this phase hands `model_dir` to the views, which look there for
+# incremental_plan.json — with a stale value the plan is never found, carry-forward never
+# runs, and an incremental run silently emits only the diagrams it regenerated.
+from core.paths import apply_cli_path_overrides as _apply_path_flags
+sys.argv = _apply_path_flags(sys.argv)
+
 _p = _paths()
 PROJECT_ROOT = _p.project_root
 OUTPUT_DIR = _p.output_dir
@@ -1805,10 +1814,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
 
 
 def main():
-    from core.paths import apply_cli_path_overrides
-    # Strip before positional parsing below: this phase takes json/docx paths as
-    # POSITIONALS, so an unconsumed flag would be read as one of them.
-    args = apply_cli_path_overrides(sys.argv[1:])
+    args = sys.argv[1:]        # path flags applied (and stripped) at import
     selected_group = None
     if "--selected-group" in args:
         i = args.index("--selected-group")

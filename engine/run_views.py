@@ -5,6 +5,15 @@ import json
 
 from core.paths import paths as _paths
 
+# Apply (and strip) --model-root / --output-root BEFORE paths() is snapshotted below.
+# `_p` is a MODULE-LEVEL snapshot, so applying the overrides later (e.g. inside main())
+# leaves every constant derived from it pointing at the DEFAULT directories. That is not
+# cosmetic: this phase hands `model_dir` to the views, which look there for
+# incremental_plan.json — with a stale value the plan is never found, carry-forward never
+# runs, and an incremental run silently emits only the diagrams it regenerated.
+from core.paths import apply_cli_path_overrides as _apply_path_flags
+sys.argv = _apply_path_flags(sys.argv)
+
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
 PROJECT_ROOT = _p.project_root
@@ -42,8 +51,7 @@ def _load_model():
 
 
 def main():
-    from core.paths import apply_cli_path_overrides
-    args = apply_cli_path_overrides(sys.argv[1:])      # C11b: honour + strip --model-root
+    args = sys.argv[1:]        # path flags already applied at import
 
     output_dir = os.path.join(PROJECT_ROOT, "output")
     if "--output-dir" in args:

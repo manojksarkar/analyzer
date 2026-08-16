@@ -67,9 +67,19 @@ class Phase:
         # otherwise reach it. Appended here rather than in group_planner because this is the
         # single place every phase command is built — a per-dispatch-shape edit would silently
         # miss one. Only when an override is active, so a default run's argv is unchanged.
-        from .paths import _OVERRIDE_MODEL_DIR
+        from .paths import _OVERRIDE_MODEL_DIR, _OVERRIDE_OUTPUT_DIR
         if _OVERRIDE_MODEL_DIR:
             cmd += ["--model-root", _OVERRIDE_MODEL_DIR]
+        # --output-root too. It was omitted on the reasoning that group_planner already bakes
+        # an absolute --output-dir into each phase's args, which is true for WRITING — but the
+        # incremental views also need to know the run's output ROOT, to work out which slot a
+        # diagram occupies inside it and find the same slot in the baseline version. Without
+        # it `paths().output_dir` in the phase is the DEFAULT root, the baseline lookup
+        # resolves to nothing, and carry-forward silently does nothing: an incremental run
+        # then regenerates only the affected units and never reproduces the rest, so most
+        # diagrams are simply absent from the version's output and from the document.
+        if _OVERRIDE_OUTPUT_DIR:
+            cmd += ["--output-root", _OVERRIDE_OUTPUT_DIR]
         return cmd
 
 
