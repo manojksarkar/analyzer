@@ -60,6 +60,35 @@ _FILES = {
 }
 
 
+def _model_dir_candidates(version_id):
+    """Every place a version's model could be, newest layout first.
+
+    C11b moved the model out of the shared <repo>/model into versions/<ver>/model, so this
+    tool — written before that move — looked in a directory a current run never writes, and
+    failed with "model dir not found". The legacy locations stay in the list so a version
+    generated before the move still verifies.
+    """
+    from incremental.stores import default_workspaces_root
+    out, ws_root = [], default_workspaces_root()
+    if os.path.isdir(ws_root):
+        for pid in sorted(os.listdir(ws_root)):
+            pdir = os.path.join(ws_root, pid)
+            if not os.path.isdir(pdir):
+                continue
+            out.append(os.path.join(pdir, "versions", version_id or "", "model"))
+            out.append(os.path.join(pdir, (version_id or "")[:16], "model"))   # legacy commit-keyed
+    out.append(paths().model_dir)                      # the pre-C11b shared dir
+    return out
+
+
+def _resolve_model_dir(version_id):
+    """The first candidate that actually holds a model, or None."""
+    for c in _model_dir_candidates(version_id):
+        if os.path.isfile(os.path.join(c, "functions.json")):
+            return c
+    return None
+
+
 def _read_json(path):
     if not os.path.isfile(path):
         return None
@@ -173,10 +202,16 @@ def main(argv):
         db_model = model_store.load_model(cx, version_id)
 
     if not model_dir:
-        model_dir = paths().model_dir
-    print(f"model dir: {model_dir}")
-    if not os.path.isdir(model_dir):
-        print(f"\nFAIL: model dir not found: {model_dir}")
+        model_dir = _resolve_model_dir(version_id)
+    print(f"model dir: {model_dir or '(not found)'}")
+    if not model_dir or not os.path.isdir(model_dir):
+        print(f"\nFAIL: no model directory found for {version_id}.\n"
+              f"  Since C11b a run writes its model to versions/<ver>/model, not <repo>/model.\n"
+              f"  Looked in:")
+        for c in _model_dir_candidates(version_id):
+            print(f"    {c}")
+        print(f"  If this version was generated elsewhere, point at it explicitly:\n"
+              f"    python tools/verify_model_parity.py {version_id} --model-dir <path>")
         return 2
     print()
 
