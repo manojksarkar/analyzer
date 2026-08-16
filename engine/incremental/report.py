@@ -65,6 +65,17 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
              f"-> reused {fn.get('reused', 0)} ({_pct(fn.get('reused', 0), fn.get('total', 0))})")
     L.append(f"    Globals   : regenerated {gl.get('regenerated', 0):<4} / {gl.get('total', 0):<4} "
              f"-> reused {gl.get('reused', 0)} ({_pct(gl.get('reused', 0), gl.get('total', 0))})")
+    # Globals reuse legitimately runs much lower than functions, and a bare 0% reads like a
+    # broken feature. A global's LLM description embeds the DESCRIPTIONS of the functions that
+    # read and write it, so regenerating any of those genuinely changes the global's input —
+    # it must be regenerated too. With few globals and each touched by only one or two
+    # functions, a small change can invalidate all of them. Say so rather than leave the
+    # number to be misread.
+    if gl.get("total") and not gl.get("reused"):
+        L.append("                (0% is expected here: a global's description embeds its "
+                 "readers'/writers' descriptions,")
+        L.append("                 so every global touched by a regenerated function is "
+                 "regenerated too)")
     L.append(f"    Flowcharts: regenerated {fc.get('regenerated', 0):<4} / {fc.get('total', 0):<4} function(s) "
              f"-> carried {fc.get('carried', 0)} ({_pct(fc.get('carried', 0), fc.get('total', 0))})")
     if decision == "incremental":

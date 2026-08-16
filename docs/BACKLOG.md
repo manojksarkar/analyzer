@@ -14,7 +14,8 @@
 ## Incremental reuse
 | ID | Item | Type | Status | Ref |
 |---|---|---|---|---|
-| IN-1 | Globals never reused: a run reports `Globals regenerated 2/2 -> reused 0 (0%)` while functions reach 80%. Global reuse looks not to be wired the way function/flowchart reuse is | issue | open | office run 2026-08-15 |
+| IN-1 | ~~Globals never reused~~ — **investigated: not a defect.** A global's LLM description embeds the *descriptions* of its readers/writers (`enrich_globals_rich` pulls `fk.description` for up to 5 of each), so regenerating a using function genuinely changes the global's input and it must be regenerated. Confirmed against the sample project: each global is touched by only 1–2 functions, so a small change invalidates all of them. Untouched globals *are* reused. The report now explains the figure | issue | **closed — by design** | office run 2026-08-15 |
+| IN-4 | Globals with **>5** readers/writers are over-invalidated: the prompt only includes the top 5, so a change to the 6th cannot alter the description yet still triggers regeneration. Harmless today (max 2 users in the sample) and coupling the invalidation rule to a prompt's slice size would be fragile — revisit only if a real project shows widely-shared globals | perf | open | IN-1 analysis |
 | IN-2 | Flowchart counts don't add up in the report: `regenerated 2 / 12 function(s) -> carried 13` (2+13 > 12) — the regenerated/total/carried figures appear to count different sets (functions vs files) | issue | open | `incremental/report.py` |
 
 ## SWE.3 — detailed design
