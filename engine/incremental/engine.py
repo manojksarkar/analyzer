@@ -639,6 +639,27 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # new function fids themselves. The flowcharts view regenerates ONLY these and
     # splices them into the baseline file JSONs, instead of regenerating every function
     # in a changed file. (flowchartFiles is kept for older readers / file-level fallback.)
+    # Make sure the baseline's Phase-3 output actually EXISTS before the plan points at it
+    # (doc 09, IN-3). Flowchart carry-forward copies the baseline's <unit>.json files, and
+    # those are a genuine INPUT: the flowchart engine writes the DOT text into them in one
+    # process and the view reads them back in another to render each PNG. On a machine that
+    # did not produce the baseline those files are simply absent — carry-forward finds
+    # nothing, every flowchart is re-rendered, and the run still "succeeds" with 0% flowchart
+    # reuse and no error. The text has been in Postgres since PG-5a; this restores it.
+    _base_dir = _artifact_dir_for(store, vstore, base_vid, base_commit)
+    _base_out = os.path.join(_base_dir, "output")
+    if not os.path.isdir(_base_out) or not os.listdir(_base_out):
+        try:
+            n = store.hydrate_output(base_vid, _base_out)
+            if n:
+                from core.logging_setup import get_logger as _gl
+                _gl("incremental").info(
+                    f"IN-3: restored {n} baseline output file(s) for {base_vid} from the "
+                    f"database — flowchart carry-forward can run on this node")
+        except Exception as exc:
+            from core.logging_setup import get_logger as _gl
+            _gl("incremental").warning(f"IN-3: could not restore baseline output: {exc}")
+
     with open(os.path.join(model_dir, "incremental_plan.json"), "w", encoding="utf-8") as fh:
         json.dump({"impactFids": sorted(regen_impact),
                    "impactedGlobals": sorted(regen_globals),
@@ -646,7 +667,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                    "flowchartFiles": flowchart_files,
                    "flowchartFids": flowchart_fids_regen,
                    "crossVersionFlowcharts": xver_flowcharts,
-                   "baselineVersionDir": _artifact_dir_for(store, vstore, base_vid, base_commit)},
+                   "baselineVersionDir": _base_dir},
                   fh, indent=2)
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse

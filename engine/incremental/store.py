@@ -164,6 +164,14 @@ class ArtifactStore(ABC):
         """
         return 0
 
+    def hydrate_output(self, version_id: str, out_dir: str) -> int:
+        """Write this version's stored TEXT view files into `out_dir`. Files written.
+
+        Lets a BASELINE's Phase-3 output be reconstructed on a machine that never produced it,
+        which is what incremental flowchart carry-forward reads. 0 for a store with no
+        database — there the files on disk are the only copy."""
+        return 0
+
     def hydrate_model(self, version_id: str, model_dir: str) -> bool:
         """Materialize this version's STORED model into `model_dir`. True if it did.
 
@@ -400,6 +408,11 @@ class PgStore(ArtifactStore):
             cx.execute(update(_s.versions).where(_s.versions.c.id == version_id)
                        .values(report=text))
         return True
+
+    def hydrate_output(self, version_id: str, out_dir: str) -> int:
+        from incremental.model_store import dump_output_files_to_dir
+        with self.engine.connect() as cx:
+            return dump_output_files_to_dir(cx, version_id, out_dir)
 
     def hydrate_parse_snapshot(self, version_id: str, model_dir: str) -> int:
         from incremental.model_store import dump_parse_snapshot_to_dir

@@ -416,3 +416,54 @@ def test_default_workspaces_root_follows_the_data_root(tmp_path, monkeypatch):
     finally:
         cp._OVERRIDE_DATA_ROOT = before
         cp._CACHED = None
+
+
+# ---------------------------------------------------------------------------
+# doc 09 IN-3 — a baseline's view outputs can be restored on another machine
+# ---------------------------------------------------------------------------
+
+def test_hydrate_output_restores_the_baseline_view_files(tmp_path):
+    """Incremental flowchart carry-forward copies the baseline's <unit>.json files, and those
+    are a genuine INPUT: the flowchart engine writes the DOT text into them in one process and
+    the view reads them back in another to render each PNG. On a node that did not produce the
+    baseline they are absent — carry-forward finds nothing, every flowchart re-renders, and
+    the run still 'succeeds' with 0% flowchart reuse and no error."""
+    from sqlalchemy import insert as _insert
+    _fs, ps = _both_stores(tmp_path, ["v1"])
+    with ps.engine.begin() as cx:
+        for rel, content in (
+            ("App/flowcharts/Math.json",
+             json.dumps([{"name": "add", "flowchart": "digraph { A -> B }"}])),
+            ("App/interface_tables.json", json.dumps({"unitNames": {"App|Math": "Math"}})),
+            ("App/unit_diagrams/Math.mmd", "flowchart LR; A-->B"),
+        ):
+            cx.execute(_insert(s.version_output_files), {
+                "version_id": "v1", "rel_path": rel, "content": content, "group_name": "App"})
+
+    out = tmp_path / "restored-output"          # nothing on disk yet, as on a fresh node
+    n = ps.hydrate_output("v1", str(out))
+
+    assert n == 3
+    fc = json.loads((out / "App" / "flowcharts" / "Math.json").read_text(encoding="utf-8"))
+    assert fc[0]["flowchart"] == "digraph { A -> B }", \
+        "the DOT text must survive — it is what the PNG is rendered from"
+    assert (out / "App" / "unit_diagrams" / "Math.mmd").read_text(encoding="utf-8") \
+        == "flowchart LR; A-->B"
+
+
+def test_hydrate_output_is_a_no_op_without_stored_files(tmp_path):
+    fs, ps = _both_stores(tmp_path, ["v1"])
+    assert ps.hydrate_output("v1", str(tmp_path / "a")) == 0    # nothing stored
+    assert fs.hydrate_output("v1", str(tmp_path / "b")) == 0    # DB-less store
+
+
+def test_engine_restores_baseline_output_before_planning():
+    """The wiring: the orchestrator must restore the baseline output BEFORE writing the plan
+    that points at it, or the plan names a directory that does not exist."""
+    import os as _os
+    root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    with open(_os.path.join(root, "engine", "incremental", "engine.py"), encoding="utf-8") as fh:
+        src = fh.read()
+    assert "store.hydrate_output(base_vid, _base_out)" in src
+    assert src.index("hydrate_output") < src.index('"baselineVersionDir": _base_dir'), \
+        "the restore must happen before the plan is written"

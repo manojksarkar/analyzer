@@ -257,6 +257,39 @@ def load_edges(conn, version_id) -> Dict[str, dict]:
 _OUTPUT_TEXT_EXTS = (".json", ".mmd", ".txt", ".md", ".csv", ".dot", ".svg", ".html")
 
 
+def dump_output_files_to_dir(conn, version_id, out_dir) -> int:
+    """Write a version's stored TEXT view files back under `out_dir`. Returns files written.
+
+    The counterpart of `persist_output_files`, and what lets a BASELINE's Phase-3 output be
+    reconstructed on a machine that never produced it (doc 09, IN-3).
+
+    That matters because incremental flowchart carry-forward copies the baseline's
+    `<unit>.json` files — and those are a genuine INPUT, not a record: the flowchart engine
+    writes the DOT text into them in one process and the view reads them back in another to
+    render each PNG. With the files absent, carry-forward finds nothing, silently re-renders
+    every flowchart, and the run still "succeeds" — just slowly and with 0% flowchart reuse.
+
+    PNGs are NOT restored (they are not stored — D-14). A carried unit whose JSON is restored
+    but whose PNG is missing simply gets re-rendered from the DOT, which is correct.
+    """
+    rows = conn.execute(select(s.version_output_files.c.rel_path,
+                               s.version_output_files.c.content)
+                        .where(s.version_output_files.c.version_id == version_id)).fetchall()
+    if not rows:
+        return 0
+    n = 0
+    for r in rows:
+        dest = os.path.join(out_dir, *r.rel_path.split("/"))
+        os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+        try:
+            with open(dest, "w", encoding="utf-8") as fh:
+                fh.write(r.content or "")
+            n += 1
+        except OSError:
+            continue                     # one unwritable file must not abort the restore
+    return n
+
+
 def persist_output_files(conn, version_id, output_dir) -> int:
     """Store every TEXT file under `output_dir` as one `version_output_files` row, so the API can
     read the Phase-3 views (interface tables / flowchart + unit mermaid / behaviour rows) from
