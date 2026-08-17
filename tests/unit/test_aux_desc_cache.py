@@ -20,7 +20,13 @@ _CFG = {"llm": {"defaultModel": "m", "cacheVersion": 1, "descriptions": True}}
 
 
 def _fresh_cache(tmp_path, monkeypatch):
-    monkeypatch.setattr(le, "_AUX_DESC_CACHE", EntityCache(str(tmp_path / "c"), 1))
+    """A cache with no project id, so it never touches the database.
+
+    The in-memory half has to work on its own: these descriptions are asked for from several
+    call sites in one export, and a cache that only dedupes when Postgres is reachable would
+    quietly re-pay the LLM for each of them on any machine without one.
+    """
+    monkeypatch.setattr(le, "_AUX_DESC_CACHE", EntityCache("", "aux_descriptions", 1))
 
 
 def test_struct_description_cached(tmp_path, monkeypatch):

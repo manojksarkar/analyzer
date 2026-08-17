@@ -111,9 +111,12 @@ class TestAtomicWritesArePidUnique:
         with open(os.path.join(root, rel), encoding="utf-8") as fh:
             return fh.read()
 
+    # engine/llm_core/cache.py was here until the LLM entity cache moved into the database
+    # (doc 10 step 10). It no longer writes files, so there is no temp path to collide over —
+    # concurrent writers are settled by ON CONFLICT DO NOTHING instead, and the value is
+    # content-addressed, so the racers agree on it anyway.
     @pytest.mark.parametrize("rel", [
         "engine/incremental/stores.py",     # manifests, config, hashes, edges, reuse index
-        "engine/llm_core/cache.py",         # the LLM entity cache
         "engine/utils.py",                  # the mermaid + DOT render caches
     ])
     def test_no_shared_temp_path(self, rel):

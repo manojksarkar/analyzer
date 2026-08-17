@@ -19,8 +19,6 @@ class EngineConfig:
     # Optional: generate flowchart only for this function key
     function_key: Optional[str] = None
 
-    use_cache: bool = True
-    cache_dir: str = ".flowchart_cache"
 
     # Statement segment thresholds per ACTION node.
     # Reduced to 3 statements so that important function calls are unlikely

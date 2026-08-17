@@ -53,7 +53,7 @@ Phase 4 docx_exporter.py ──reads ──────────────�
 | `incremental_plan.json` | → new table |
 | `clang_include_paths.json` | derived in memory, never written |
 | `functions_<group>.json`, `functions_incremental.json` | gone — replaced by an indexed query |
-| `.flowchart_cache/llm_descriptions`, `aux_descriptions` | **removed, not relocated** — §5.3 |
+| `.flowchart_cache/llm_descriptions`, `aux_descriptions` | → `llm_description_cache` table (§5.3 correction: relocated, **not** removed — the full-generation path has no other protection) |
 | `.flowchart_cache/pkb_*.json` | **dropped** — derived from `functions.json`, holds nothing unique |
 | flowchart engine **inputs** | all five read from the database |
 
@@ -180,6 +180,32 @@ Three consequences:
 - **Batched access is mandatory** (doc 09 B5a — already implemented as `get_many`/`put_many`). A
   per-entity index lookup is ~20k connection acquisitions on a 20k-function project.
 
+#### Correction — the first two consequences are wrong (found implementing step 10)
+
+**The cache was relocated to Postgres, not removed.** The reasoning above holds only for the
+*incremental* path. `carry_forward_from_index` is called from `incremental/engine.py` and nowhere
+else — `generate_full` never calls it, and `llm_enrichment` consults `EntityCache` directly
+without ever touching the reuse index. So on a **full generation** the disk cache is the only
+thing standing between the run and a complete re-describe.
+
+At roughly one gateway call every three seconds that is ~14 minutes on the sample project and
+about **17 hours** on a 20k-function one. "No LLM spend is lost" was true of the path the
+paragraph had in mind and false of the one that needed it most.
+
+`llm.cacheVersion` survives for the same reason, and is now part of the table's key, so bumping it
+invalidates by construction and leaves the old rows unreferenced instead of needing a delete.
+
+What landed: table `llm_description_cache` (migration `0005`), project-scoped, namespaced
+`llm_descriptions` / `aux_descriptions`. The whole scope loads in **one query** at construction and
+`get()` is a dict lookup; writes buffer and flush with `ON CONFLICT DO NOTHING`. With no database
+it degrades to an in-process memo — still dedupes within a run, which the disk version did for
+free and would have been easy to lose.
+
+Verified across processes: three descriptions cold, three rows persisted, then a **separate
+process** served all three with zero LLM calls.
+
+The `pkb_*.json` half of C12 was dropped exactly as written — see below.
+
 `.flowchart_cache/pkb_*.json` is an index rebuilt from `functions.json`. It holds nothing unique and
 is **dropped** — reading the model from the database makes it disappear on its own.
 
@@ -303,7 +329,7 @@ SQLite with all gates green. In database mode the model dir is down from 14 file
 | ✅ 7 | flowchart engine → DB inputs (D10-4, D10-5); `clang_include_paths` derived; config → temp file | done |
 | ✅ 8 | H3–H6: `--use-model`, re-export, `--clean`, test fixtures, parity replacement · **then both modes run on the office project and the documents are diffed** | done |
 | ✅ 9 | flip the default to the database | done — `--model-store files` reverts |
-| 10 | **C12** — delete the disk LLM cache + `pkb_*.json` (§5.3). Must come AFTER the model is in the database (04 §13.4): every cache key derives from model content | **no** |
+| ✅ 10 | **C12** — the disk LLM cache moves to `llm_description_cache` (0005); `pkb_*.json` dropped. After the model is in the database (04 §13.4): every cache key derives from model content | **no** |
 | 11 | delete the file code paths, except the debug-only writer (§10) | **no** |
 
 ### Step 9 as landed

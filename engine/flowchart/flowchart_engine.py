@@ -10,11 +10,10 @@ Usage:
         --out-dir        output         \\
         --llm-url        http://localhost:11434/api/generate \\
         --llm-model      qwen2.5-coder:14b \\
-        [--function-key  "src|file|qualified|params"]  \\
-        [--no-cache]
+        [--function-key  "src|file|qualified|params"]
 
 The engine:
-  1. Builds / restores the Project Knowledge Base (PKB) from functions.json
+  1. Builds the Project Knowledge Base (PKB) from the model
   2. Groups functions by source file
   3. For each source file, for each function:
        a. Extracts source text (by line range)
@@ -56,7 +55,6 @@ from mermaid.validator import validate_cfg
 from models import FileResult, FlowchartResult, FunctionEntry, ProjectMeta
 from output.writer import OutputWriter
 from pkb.builder import ProjectKnowledgeBase
-from pkb.cache import PkbCache
 from pkb.knowledge import ProjectKnowledge, load_knowledge
 
 # ---------------------------------------------------------------------------
@@ -139,10 +137,8 @@ def _parse_args() -> EngineConfig:
                    help="Path to model/tu_includes.json. Lets a function defined in a "
                         "header that does not parse standalone be resolved inside a "
                         "translation unit that includes that header.")
-    p.add_argument("--no-cache", action="store_true",
-                   help="Rebuild PKB from scratch (ignore disk cache)")
-    p.add_argument("--cache-dir", default=".flowchart_cache",
-                   help="Directory for PKB cache files (default: .flowchart_cache)")
+    # --no-cache / --cache-dir governed the PKB disk cache, deleted with it: the knowledge base
+    # is rebuilt from the model every run, so there is nothing left to opt out of.
     p.add_argument("--llm-timeout", type=int, default=120,
                    help="LLM request timeout in seconds (default: 120)")
     p.add_argument("--llm-retries", type=int, default=2,
@@ -192,8 +188,6 @@ def _parse_args() -> EngineConfig:
         function_key=args.function_key,
         knowledge_json_path=args.knowledge_json,
         tu_includes_json_path=args.tu_includes,
-        use_cache=not args.no_cache,
-        cache_dir=args.cache_dir,
         llm_timeout=args.llm_timeout,
         llm_max_retries=args.llm_retries,
         max_stmts_per_segment=args.max_stmts,
@@ -345,25 +339,17 @@ def _load_functions(functions_path: str) -> Dict:
 # PKB construction (with optional disk cache)
 # ---------------------------------------------------------------------------
 
-def _build_pkb(functions_data: Dict, config: EngineConfig) -> ProjectKnowledgeBase:
+def _build_pkb(functions_data: Dict) -> ProjectKnowledgeBase:
+    """Build the knowledge base from the model. Always built, never cached.
+
+    `PkbCache` used to persist this to `.flowchart_cache/pkb_<hash>.json`, keyed on the
+    functions payload. It cached nothing the model does not already hold — `pkb.build()`
+    reconstructs it in full — so the file was a derived copy that could only go stale
+    (doc 04 §13.2: "derived; holds nothing unique — drop"). Now that the model is read from
+    the database, keeping a JSON mirror of it on local disk is exactly backwards.
+    """
     pkb = ProjectKnowledgeBase()
-
-    if config.use_cache:
-        functions_json_str = json.dumps(functions_data, sort_keys=True)
-        cache = PkbCache(config.cache_dir)
-        cache.invalidate_stale(functions_json_str)
-        cached = cache.load(functions_json_str)
-        if cached:
-            pkb.from_dict(cached)
-            return pkb
-
     pkb.build(functions_data)
-
-    if config.use_cache:
-        functions_json_str = json.dumps(functions_data, sort_keys=True)
-        cache = PkbCache(config.cache_dir)
-        cache.save(functions_json_str, pkb.to_dict())
-
     return pkb
 
 
@@ -668,7 +654,7 @@ def run(config: EngineConfig) -> None:
                            "that need an including TU may fail to resolve", exc)
 
     # Build PKB
-    pkb = _build_pkb(functions_data, config)
+    pkb = _build_pkb(functions_data)
 
     # Attach project knowledge to PKB for richer context packets
     if project_knowledge:

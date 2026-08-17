@@ -439,19 +439,19 @@ _AUX_DESC_CACHE = None
 
 
 def _aux_desc_cache(config: dict):
-    """Lazy content-addressed store for export-time descriptions. Stable across version
-    runs (project root), content-addressed (safe to share), honours llm.cacheVersion."""
+    """Lazy content-addressed store for export-time descriptions. Project-scoped so it is
+    stable across version runs, content-addressed (safe to share), honours llm.cacheVersion."""
     global _AUX_DESC_CACHE
     if _AUX_DESC_CACHE is None:
+        import atexit
+        from core.run_context import project_id
         from llm_core.cache import EntityCache
-        try:
-            from core.paths import paths
-            base = paths().project_root
-        except Exception:
-            base = os.getcwd()
         ver = int((config.get("llm") or {}).get("cacheVersion", 1))
-        _AUX_DESC_CACHE = EntityCache(os.path.join(base, ".flowchart_cache", "aux_descriptions"),
-                                      cache_version=ver)
+        _AUX_DESC_CACHE = EntityCache(project_id() or "", "aux_descriptions", cache_version=ver)
+        # Writes are buffered, and export-time descriptions are generated from a dozen scattered
+        # call sites with no single "done" point to flush at. atexit is the honest boundary: the
+        # worst case is a lost cache entry, never lost output.
+        atexit.register(_AUX_DESC_CACHE.flush)
     return _AUX_DESC_CACHE
 
 
@@ -1108,10 +1108,13 @@ def enrich_functions_rich(
     fs_dir = fs_dir_cfg if os.path.isabs(fs_dir_cfg) else os.path.join(base_path, fs_dir_cfg)
     few_shot_pool = FewShotPool(fs_dir)
 
-    # Entity cache for description results
+    # Entity cache for description results. Project-scoped in the database, so a second version
+    # of the same project hits rows the first one wrote — and so does a second NODE, which a
+    # per-checkout directory could never do.
+    from core.run_context import project_id as _project_id
     cache_version = int(llm_cfg.get("cacheVersion", 1))
-    cache_dir = os.path.join(base_path, ".flowchart_cache", "llm_descriptions")
-    entity_cache = EntityCache(cache_dir, cache_version=cache_version)
+    entity_cache = EntityCache(_project_id() or "", "llm_descriptions",
+                               cache_version=cache_version)
     # Track content hashes for dependency-tracked cache keys
     source_hashes: Dict[str, str] = {}
 
@@ -1192,6 +1195,7 @@ def enrich_functions_rich(
             entity_cache.put(qn or key, cache_hash, desc, metadata={"pass": 1})
         progress.step(label=short_name(qn) or "?")
 
+    entity_cache.flush()        # writes are buffered; land pass 1 before pass 2 spends more LLM
     progress.done(summary=f"{len(result)} described (pass 1) — cache: {entity_cache.stats()}")
 
     # ── Pass 2: refine with full caller context ──
@@ -1267,6 +1271,7 @@ def enrich_functions_rich(
 
         progress2.done(summary=f"{len(result)} refined (pass 2) — cache: {entity_cache.stats()}")
 
+    entity_cache.flush()        # nothing else will; an unflushed buffer is a re-paid LLM bill
     return result
 
 

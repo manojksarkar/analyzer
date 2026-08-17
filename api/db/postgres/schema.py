@@ -503,6 +503,42 @@ This is also what makes the flowchart engine able to restrict itself by version 
 changed-function list is far too long for a command line, so the engine reads the plan."""
 
 
+llm_description_cache = Table(
+    "llm_description_cache", metadata,
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+    Column("namespace", String, nullable=False),          # llm_descriptions | aux_descriptions
+    Column("cache_version", Integer, nullable=False),     # llm.cacheVersion — bump to invalidate
+    Column("entity_id", String, nullable=False),
+    Column("content_hash", String, nullable=False),       # entity source + sorted callee hashes
+    Column("value", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("project_id", "namespace", "cache_version", "entity_id", "content_hash",
+                     name="pk_llm_description_cache"),
+    Index("ix_llm_description_cache_scope", "project_id", "namespace", "cache_version"),
+)
+"""LLM descriptions keyed by content, replacing `.flowchart_cache/{llm,aux}_descriptions/*.json`
+(doc 04 §13, doc 10 step 10).
+
+Named `…_cache` deliberately: this is the one kind of data here that may be **discarded** without
+loss — every row can be recomputed by calling the LLM again — so it is the natural candidate to
+move to a cache server later, and the name marks it.
+
+A disk cache is close to worthless on the target deployment: a container filesystem is ephemeral,
+so it dies on restart, and a cache on node A is invisible to node B, giving N nodes a ~1/N hit
+rate. That is not a small loss. The gateway admits roughly one call every three seconds, so a
+cold cache on a 20k-function project is measured in hours, and it is the *full* generation path
+that depends on this — the reuse index carries descriptions forward only on the incremental path.
+
+**Scoped per project, not per version** (§13.3), which is the whole point of a cache: a version
+that re-describes identical code should hit rows written by an earlier one. `cache_version` is in
+the key rather than a filter so that bumping `llm.cacheVersion` invalidates by construction and
+leaves the old rows harmlessly unreferenced.
+
+Reads are **batched into one query per namespace** — never one statement per entity. That is not
+a micro-optimisation: per-entity lookups on a 20k-function project mean 20k round trips (doc 09
+B5a), which costs more than the LLM calls it is trying to avoid."""
+
+
 parse_snapshots = Table(
     "parse_snapshots", metadata,
     Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),

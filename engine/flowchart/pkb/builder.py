@@ -89,44 +89,6 @@ class ProjectKnowledgeBase:
 
         logger.info("PKB built: %d functions indexed", len(self._functions))
 
-    def to_dict(self) -> Dict:
-        """Serialize PKB for disk caching."""
-        return {
-            key: {
-                "qualifiedName": e.qualified_name,
-                "file": e.file,
-                "line": e.line,
-                "endLine": e.end_line,
-                "params": e.params,
-                "callsIds": e.calls_ids,
-                "calledByIds": e.called_by_ids,
-                "interfaceId": e.interface_id,
-                "description": e.description,
-                "syntheticFromVarDecl": e.synthetic_from_var_decl,
-            }
-            for key, e in self._functions.items()
-        }
-
-    def from_dict(self, data: Dict) -> None:
-        """Restore PKB from a cached dict (same shape as to_dict output)."""
-        for key, d in data.items():
-            entry = FunctionEntry(
-                key=key,
-                qualified_name=d.get("qualifiedName", ""),
-                file=d.get("file", ""),
-                line=d.get("line", 0),
-                end_line=d.get("endLine", 0),
-                params=d.get("params", []),
-                calls_ids=d.get("callsIds", []),
-                called_by_ids=d.get("calledByIds", []),
-                interface_id=d.get("interfaceId", ""),
-                description=d.get("description", ""),
-                synthetic_from_var_decl=bool(d.get("syntheticFromVarDecl", False)),
-            )
-            self._functions[key] = entry
-            self._by_qualified_name.setdefault(entry.qualified_name, []).append(key)
-        logger.info("PKB restored from cache: %d functions", len(self._functions))
-
     # ------------------------------------------------------------------
     # Lookups
     # ------------------------------------------------------------------
