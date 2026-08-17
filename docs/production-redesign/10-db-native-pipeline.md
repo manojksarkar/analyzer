@@ -53,8 +53,9 @@ Phase 4 docx_exporter.py ──reads ──────────────�
 | `incremental_plan.json` | → new table |
 | `clang_include_paths.json` | derived in memory, never written |
 | `functions_<group>.json`, `functions_incremental.json` | gone — replaced by an indexed query |
-| `.flowchart_cache/**` | → new `*_cache` table |
-| flowchart engine **inputs** | all four read from the database |
+| `.flowchart_cache/llm_descriptions`, `aux_descriptions` | **removed, not relocated** — §5.3 |
+| `.flowchart_cache/pkb_*.json` | **dropped** — derived from `functions.json`, holds nothing unique |
+| flowchart engine **inputs** | all five read from the database |
 
 **Out of scope this round** (deliberate — revisit as one piece for the whole project)
 
@@ -74,8 +75,8 @@ Phase 4 docx_exporter.py ──reads ──────────────�
 | D10-3 | **No environment variable is ever a source of our configuration** — config file + CLI flags only | §7 |
 | D10-4 | The flowchart engine becomes **DB-only**; no file-based input mode, not even for debugging | one path; debug against the SQLite dev database |
 | D10-5 | The flowchart engine **reads the incremental plan itself**, by `version_id` | the restricted fid list is far too long for a command line; this is the only shape that avoids a file |
-| D10-6 | Cache tables are named `*_cache` | so this class of data can later move to a cache server without renaming |
-| D10-7 | The LLM response cache becomes **project-scoped** | it is currently shared across every project on the machine. `projects.client` exists, so identical code from two clients would share generated prose. Scoping is the conservative default and is one line to relax |
+| D10-6 | Any future cache table is named `*_cache` | so that class of data can later move to a cache server without renaming. **Note: this work adds none** — see §5.3 |
+| D10-7 | The disk LLM cache is **deleted, not migrated** | [04 §13](04-incremental-changes-implementation.md#13-caches-in-the-database-post-migration-doc-09-c12) already establishes it duplicates the reuse index. Correcting an earlier draft of this doc, which proposed a new table — §5.3 |
 | D10-8 | A phase's input is an explicit `--version-id`, not "whatever is in `model/`" | required for phases to remain individually runnable once files are gone; also removes today's ambiguity |
 
 ## 3. Architecture
@@ -124,16 +125,10 @@ One additive migration (`0004`), nothing existing altered:
 ```
 knowledge_base        version_id, payload JSONB          Phase 2 → Phase 3 hand-off
 incremental_plans     version_id, payload JSONB          the plan the views + engine read
-llm_response_cache    project_id, entity_id, cache_version,
-                      content_hash, value, metadata JSONB, created_at
-                      PK (project_id, entity_id)         was .flowchart_cache/**
 ```
 
-`knowledge_base` and `incremental_plans` are whole-object hand-offs, never queried per field — same
-reasoning as `parse_snapshots` (doc 09, C2).
-
-`llm_response_cache` keeps the current validity rule exactly: a hit requires **both**
-`cache_version` (from `llm.cacheVersion`) and `content_hash` to match; a `put` upserts.
+Two tables, both whole-object hand-offs never queried per field — same reasoning as
+`parse_snapshots` (doc 09, C2). **No cache table** — see §5.3.
 
 **`tu_includes` already exists in the schema and nothing writes it** — the same
 declared-but-unwritten shape as `pipeline_status` and `versions.report`. This work starts writing
@@ -151,9 +146,45 @@ The engine is a separate program with a file-based CLI. Its inputs all load in *
 | `--metaData-json <metadata.json>` | `versions.base_path` / `versions.project_name` |
 | `--knowledge-json <knowledge_base.json>` | `knowledge_base` table |
 | `--tu-includes <tu_includes.json>` | `tu_includes` table |
-| `--cache-dir .flowchart_cache` | `llm_response_cache` table |
+| `--cache-dir .flowchart_cache` | **removed** — §5.3 |
 
 `EngineConfig` swaps those five path fields for `version_id` + `component`.
+
+### 5.3 The LLM cache is deleted, not moved
+
+An earlier draft of this doc proposed an `llm_response_cache` table and a one-time importer for
+the existing entries. **That was wrong**, and
+[04 §13](04-incremental-changes-implementation.md#13-caches-in-the-database-post-migration-doc-09-c12)
+already says why: the disk `EntityCache` and the Postgres reuse index answer the *same* question
+with near-identical keys.
+
+```
+EntityCache (disk)     sha256( entity source + sorted(callee hashes) + cacheVersion )
+reuse index (Postgres) sha256( source_hash   + sorted(dep source-hashes) )
+```
+
+The reuse index stores a **pointer** to the version whose stored output already has the text (D3 —
+content is never duplicated). Once the model is in the database, that pointer is enough: the
+description is fetched from that version's `content_blobs`. So the disk cache has nothing left to
+contribute; C12 is **removing a duplicate mechanism**, not relocating one.
+
+Three consequences:
+
+- **Nothing to import.** The reuse index is already populated and already used
+  (`carry_forward_from_index`), so no LLM spend is lost by deleting the disk cache. The question of
+  migrating those entries simply dissolves.
+- **`llm.cacheVersion` becomes obsolete.** Its only job is invalidating the disk cache. Folding it
+  into the reuse fingerprint was **deliberately rejected** (§3 / D3, "content-only"): an approved
+  document is reused regardless of which model or prompt produced it. Removing the disk cache
+  removes the setting.
+- **Batched access is mandatory** (doc 09 B5a — already implemented as `get_many`/`put_many`). A
+  per-entity index lookup is ~20k connection acquisitions on a 20k-function project.
+
+`.flowchart_cache/pkb_*.json` is an index rebuilt from `functions.json`. It holds nothing unique and
+is **dropped** — reading the model from the database makes it disappear on its own.
+
+`.mmdc_cache` / `.dot_cache` hold rendered PNGs, are not database material (D-14), and belong with
+the deferred `output/` work.
 
 ### Why the per-group filter gets *cheaper*
 
@@ -249,7 +280,7 @@ Each of these was missed by the first two drafts of this plan and is now a work 
 | H3 | `--use-model` means "reuse existing `model/` files"; re-export stages `adir/model` | both become "reuse the stored model for this version" — needs the version id |
 | H4 | `--clean` deletes the `model`/`output` dirs — misleading once the model is in the database | also delete the version's rows, or rename the flag |
 | H5 | Three test files `skipif(not HAS_MODEL)` against `<repo>/model` — they would **skip permanently and silently**, losing the real-model round-trip coverage | fixture that materializes a model from the database |
-| H6 | `verify_model_parity` compares database against files — it becomes meaningless with no files, exactly when it is most wanted | replace with a stored reference document that DB-mode output is diffed against |
+| H6 | `verify_model_parity` compares database against files — it becomes meaningless with no files, exactly when it is most wanted | **resolved:** keep the file writer behind a debug-only `--dump-model-files <dir>` so the check works forever. Never used by a job; §10 |
 | H7 | Memory: a DB read holds query rows *and* assembled dicts at peak, so it may be **worse** than `json.load` | measured at step 8, not argued. If it lands badly the fix is the per-target context service (doc 09, C7) |
 
 ## 9. Work order
@@ -264,11 +295,12 @@ Steps 1–7 leave current behaviour intact — the file path stays default and n
 | 3 | `--version-id` threaded to all four phases, applied before `paths()` is snapshotted | yes |
 | 4 | H1 + H2: conflict-tolerant inserts, chunking, per-phase transactions | yes |
 | 5 | convert the 25 raw path sites | yes |
-| 6 | `knowledge_base`, `incremental_plans`, `tu_includes`, `llm_response_cache` tables + writers | yes |
+| 6 | `knowledge_base`, `incremental_plans`, `tu_includes` tables + writers | yes |
 | 7 | flowchart engine → DB inputs (D10-4, D10-5); `clang_include_paths` derived; config → temp file | yes |
 | 8 | H3–H6: `--use-model`, re-export, `--clean`, test fixtures, parity replacement · **then both modes run on the office project and the documents are diffed** | — |
 | 9 | flip the default to the database | yes (flag) |
-| 10 | delete the file code paths | **no** |
+| 10 | **C12** — delete the disk LLM cache + `pkb_*.json` (§5.3). Must come AFTER the model is in the database (04 §13.4): every cache key derives from model content | **no** |
+| 11 | delete the file code paths, except the debug-only writer (§10) | **no** |
 
 ## 10. Verification
 
@@ -286,10 +318,22 @@ Lesson carried from doc 09's regressions: the unit suite repeatedly proved a *fu
 while missing that it was *connected*. Any step that spans a module or process boundary also gets
 a test asserting the wiring, not only the behaviour.
 
+### Keeping parity checkable after the files are gone (H6)
+
+The model **writer** survives behind a debug-only flag, so `verify_model_parity` keeps working
+forever:
+
+```bash
+python engine/run.py … --dump-model-files <dir>      # debug/verification only
+python tools/verify_model_parity.py <ver> --model-dir <dir>
+```
+
+Never used by a job, never a fallback, and not a second code path through the pipeline — it writes
+the same dicts the database round-trip returns. It exists because this is the check that caught the
+dropped global `description`, and the cost of keeping it is one flag.
+
 ## 11. Open items
 
-- [ ] H6 — decide the shape of the parity replacement (stored reference document vs. a
-      materialize-and-compare mode kept for the purpose)
 - [ ] H7 — measure peak RSS in DB mode on the office project; decide whether C7 becomes a
       prerequisite rather than a follow-on
 - [ ] `JOB_MAX_CONCURRENCY` raise is **independent of this work** and still pending its
