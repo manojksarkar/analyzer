@@ -193,6 +193,22 @@ def _read_decl_snippet(abs_file: str, start_line: int, *, kind: str) -> str:
     return out if out else "-"
 
 def _load_model_json(name: str) -> dict:
+    """One model artifact, through the single gateway (doc 10, step 5).
+
+    This was the Phase-4 bypass: it opened model/<name>.json directly, so it read files even
+    when the run's model is in the database. `read_model_file` resolves whichever backing the
+    run installed. Missing still yields {} — callers treat an absent artifact as empty.
+    """
+    from core.model_io import read_model_file
+    try:
+        return read_model_file(name, required=False, default={}) or {}
+    except Exception:                    # unreadable/corrupt -> empty, as before
+        return {}
+
+
+def _load_model_json_from_file(name: str) -> dict:
+    """The old direct-file read. Unused by the export path; kept for the tests that
+    deliberately exercise a hand-built model directory."""
     path = os.path.join(MODEL_DIR, f"{name}.json")
     if not os.path.isfile(path):
         return {}
@@ -1468,11 +1484,11 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         unit_used_names[_uk] = _ids
 
     # Resolve project name from metadata
-    _meta_path = os.path.join(MODEL_DIR, "metadata.json")
-    _project_name = "Software Project"
-    if os.path.isfile(_meta_path):
-        with open(_meta_path, "r", encoding="utf-8") as _f:
-            _project_name = json.load(_f).get("projectName", _project_name)
+    # Through the gateway (doc 10, step 5) — metadata is not DB-backed yet, so this still
+    # resolves to a file today, but via the one path that will change when it moves.
+    from core.model_io import read_model_file, METADATA
+    _project_name = (read_model_file(METADATA, required=False, default={}) or {}).get(
+        "projectName", "Software Project")
     # Build a readable cover label for the group / component selection
     from core.config import get_group_layer_name, get_component_layer_name as _get_comp_layer
     if selected_components:

@@ -57,10 +57,13 @@ def run(model, output_dir, model_dir, config):
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                   for uk, u in units_data.items()}
 
-    functions_path = os.path.join(model_dir, "functions.json")
-    components_path = os.path.join(model_dir, "components.json")
-    units_path = os.path.join(model_dir, "units.json")
-    gen = SequenceDiagramGenerator(components_path, units_path, functions_path, config)
+    # Pass the ALREADY-LOADED model, not paths (doc 10, step 5). run_views loads functions /
+    # units / components through model_io before calling any view, so re-reading them from disk
+    # was both redundant I/O and a bypass of the one gateway — in database mode those files do
+    # not exist at all. SequenceDiagramGenerator accepts either.
+    gen = SequenceDiagramGenerator(model.get("components") or {},
+                                   model.get("units") or {},
+                                   model.get("functions") or {}, config)
 
     render_png = True
     mmdc = mmdc_path(project_root)
