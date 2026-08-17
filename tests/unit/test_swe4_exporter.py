@@ -72,8 +72,8 @@ def test_expected_puts_mocks_first_then_returns_with_step_refs():
     })
     assert text.splitlines() == [
         "1) Successfully called mock functions m()",
-        "2) Successfully returned -1 (step 2.2)",
-        "3) Successfully returned 0 (step 3)",
+        "2) Successfully returned -1 in step 2.2",
+        "3) Successfully returned 0 in step 3",
         "4) Successfully updated int* out[0-9]",
         "5) Successfully updated char g[0-1]",
     ]

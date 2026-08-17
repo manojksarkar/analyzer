@@ -79,7 +79,7 @@ def _expected_text(exp: dict) -> str:
         entries.append("Successfully called mock functions " + ", ".join(mocks))
     for r in exp.get("returns") or []:
         step = r.get("step")
-        entries.append(f"{r.get('text', '')}" + (f" (step {step})" if step else ""))
+        entries.append(f"{r.get('text', '')}" + (f" in step {step}" if step else ""))
     for o in exp.get("outParameters") or []:
         entries.append(f"Successfully updated {o.get('text', '')}")
     for g in exp.get("globals") or []:
