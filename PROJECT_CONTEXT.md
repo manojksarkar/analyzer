@@ -378,6 +378,46 @@
 > `tests/unit/test_core_config.py` (7). Samples: `engine/config/data_dictionary.layer{1,2}.example.csv`,
 > sharing `BufferSize_t` at different ranges, shipped **unreferenced** like the macro examples.)
 
+> Updated: 2026-08-17 (**SWE.4 V1 built from scratch on `feat/swe4-v1` — unit test specification, engine-only,
+> no LLM in the derivation.** Contract = `docs/spec/SWE4_WIKI.md` (the page the client co-maintains; it
+> **supersedes** the set-based `docs/spec/SWE4_SPEC.md` for V1 and contradicts it on Input/Expected shape).
+> The older `feat/swe4-unit-test-spec` branch was used as a **reference to port from, not merged** — its
+> LLM-set content generation is obsolete.
+> - **Doc type is a dimension, not a phase.** `--doc-type swe3|swe4|all` in `run.py` (+ `_KNOWN_FLAGS`,
+>   `_SCRIPT_PHASE`); `EXPORTER_REGISTRY` / `DOC_TYPE_VIEWS` / `concrete_doc_types` in `views/registry.py`;
+>   `run_views(doc_type=)` filters the view set; `plan_runs`/`_view_export_phases` emit one Phase-4 exporter
+>   per concrete doc type. `DOC_TYPE_VIEWS["swe4"] = ("flowcharts", "testSpecs")` — SWE.4 needs the CFG.
+>   **Guard held: a no-flag run's SWE.3 DOCX is byte-identical** (verified by running the HEAD exporter and
+>   the extracted one over the same JSON and diffing every zip part).
+> - **CFG is now persisted.** `flowchart_engine.py` built a `ControlFlowGraph`, rendered it to DOT and threw
+>   the graph away. New `serialize_cfg()` in `flowchart/models.py` + a `cfg` key in
+>   `flowchart/output/writer.py` carry `{entry, exits, nodes[type,label,rawCode,line], edges[label]}`
+>   alongside the DOT. Purely additive. Node `label` falls back to `rawCode` when labelling is off.
+> - **`views/test_specs.py`** — deterministic scaffold. `_spec_function_ids()` is **both** the scope filter
+>   and the mock rule (a callee is mocked iff it has a spec of its own), so they cannot drift: `.cpp` unit +
+>   not private + **not header-defined** (the wiki's "except inline public"). Precondition = 3 flat entries
+>   (mocks / params / globals as `type variable`, no values or ranges). Input = the **read** side with ranges
+>   via `get_range`, excluding out-parameters, write-only globals and `void` mocks. Out-parameter detection is
+>   a **documented heuristic** over the signature (`T*`/`T&` written, `const` read, `(*)` = callback input) —
+>   the model records no per-parameter write info.
+> - **`views/test_steps.py`** — the only graph-walking code. Structure recovery via **post-dominators**
+>   (`_ipdom` = nearest strict post-dominator = the join); loops need no special case because a `LOOP_HEAD`'s
+>   `No` edge already points at the continuation. Emits `1)` / `2.1) True:` / `2.1.3.4)`; single-step legs
+>   inline after the label, multi-step legs nest. Also produces `expected.returns` — one entry per RETURN,
+>   each naming its step number. Strips Graphviz `<br/>` + `Calls:` tooltip markup; `break` wording is
+>   context-aware (switch vs loop).
+> - **`docx_common.py`** extracted from `docx_exporter.py` (cover/TOC/intro/leaf helpers); `docx_exporter.py`
+>   imports them under the original private names. `build_cover_page` gained `subtitle_prefix`, defaulting to
+>   the SWE.3 title. New `swe4_exporter.py` renders Table A (6 cols, 1 data row) + Table B (8 fields);
+>   `docx.swe4` config block = `evalEquipmentName`/`testPlatform`/`testEnvironment`/`priorityDefault` +
+>   `introduction`. Generation Method stays a **code constant**, not a config key.
+> - **Cost note:** flowchart LLM labelling on CPU (llama3.2) runs ~2–4 min/function, so a 45-function group is
+>   ~1.5h. Only functions that get a spec need labels — filtering the `--interface-json` to those is the
+>   practical way to run it.
+> - Tests: `test_test_specs_view.py` (28), `test_test_steps.py` (14), `test_swe4_exporter.py` (14). Suite 753 green.
+> **Open:** `get_range` emits hex (`0-0xFF`) while the wiki examples are decimal; API/web-app mirror and
+> `process="SWE.4"` tagging not started; §3 metrics still a placeholder.)
+
 > Updated: 2026-08-13 (**`clang.clangArgs` is now a discoverable config key — the fix for cross-target parse
 > errors like `use of undeclared identifier '__builtin_arm_wfi'`.** No new plumbing: the key was already
 > honored by both parse paths (`engine/parser.py:251` appends it to `CLANG_ARGS`; `engine/views/flowcharts.py:813`
