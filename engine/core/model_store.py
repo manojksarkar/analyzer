@@ -718,6 +718,23 @@ def load_tu_includes(conn, version_id) -> Dict[str, Any]:
         .where(s.tu_includes.c.version_id == version_id))}
 
 
+def persist_parse_snapshot_data(conn, version_id, snapshot: Dict[str, Any]) -> int:
+    """Store an already-in-memory skeleton: {filename -> parsed json}. Returns files stored.
+
+    The dir-based form below reads model FILES, which is empty in database mode — the phases
+    wrote to the database, so a file-sourced snapshot would capture only the few artifacts that
+    have not moved. This form lets the caller pass what it actually has.
+    """
+    from sqlalchemy import delete as _delete
+    conn.execute(_delete(s.parse_snapshots)
+                 .where(s.parse_snapshots.c.version_id == version_id))
+    rows = [{"version_id": version_id, "name": k, "payload": v}
+            for k, v in (snapshot or {}).items() if v not in (None, {})]
+    if rows:
+        conn.execute(insert(s.parse_snapshots), rows)
+    return len(rows)
+
+
 def persist_parse_snapshot(conn, version_id, model_dir, names) -> int:
     """Store the post-Phase-1 skeleton for `version_id` (doc 09, C2). Returns files stored.
 

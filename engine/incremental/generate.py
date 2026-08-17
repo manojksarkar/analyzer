@@ -61,7 +61,7 @@ _PARSE_SNAPSHOT_FILES = ("functions.json", "globalVariables.json", "dataDictiona
 
 
 def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
-                         version_id: str = "") -> None:
+                         version_id: str = "", model_store: str = "files") -> None:
     """Capture the post-Phase-1 model (blank skeleton — no LLM descriptions yet) into
     `versions/<id>/parse/`. MUST run right after Phase 1, before Phase 2 fills
     descriptions into model/. This is the baseline a narrowed parse (M4) merges against
@@ -78,7 +78,26 @@ def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
     # readers can fall back. Best-effort — a snapshot failure must not fail a good run.
     if store is not None and version_id:
         try:
-            n = store.write_parse_snapshot(version_id, model_dir, _PARSE_SNAPSHOT_FILES)
+            # In database mode the phases wrote to the database, so the model dir holds only
+            # the few artifacts that have not moved — a file-sourced snapshot would capture
+            # almost nothing and the stored skeleton would be useless as a baseline. Build it
+            # from what the database actually has.
+            if model_store == "db":
+                _m = store.read_model(version_id) or {}
+                _snap = {f"{k}.json": _m.get(v) or {} for k, v in (
+                    ("functions", "functions"), ("globalVariables", "globals"),
+                    ("dataDictionary", "datadict"), ("hashes", "hashes"),
+                    ("edges", "edges"))}
+                for _extra in ("tu_includes", "entity_files", "func_keys",
+                               "override_pairs", "metadata"):
+                    _p = os.path.join(model_dir, f"{_extra}.json")
+                    if os.path.isfile(_p):
+                        import json as _j
+                        with open(_p, encoding="utf-8") as _fh:
+                            _snap[f"{_extra}.json"] = _j.load(_fh)
+                n = store.write_parse_snapshot_data(version_id, _snap)
+            else:
+                n = store.write_parse_snapshot(version_id, model_dir, _PARSE_SNAPSHOT_FILES)
             if n:
                 from core.logging_setup import get_logger as _gl
                 _gl("incremental").info(f"C2: stored {n} parse-snapshot file(s) for {version_id}")
@@ -346,7 +365,7 @@ def generate_full(
                         cwd=project_root, shell=(os.name == "nt")).returncode
     if rc != 0:
         _fail_full(rc)
-    snapshot_parse_model(model_dir, _adir, store, version_id)
+    snapshot_parse_model(model_dir, _adir, store, version_id, model_store)
     # C11b (opt-in): re-materialize the model from Postgres so Phase 2+ consume the STORED
     # model rather than whatever Phase 1 happened to leave on disk. This is what makes the
     # database authoritative — and it is exactly the round-trip tools/verify_model_parity.py

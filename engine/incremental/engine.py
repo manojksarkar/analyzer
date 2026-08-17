@@ -47,7 +47,8 @@ from incremental.parse_merge import merge_model, diff_models
 from incremental.report import build_report, emit_report
 from incremental.generate import (_manifest, scope_to_args, per_component_docx_args,
                                   resolve_run_config, generate_full, _now_iso,
-                                  snapshot_parse_model, apply_no_llm)
+                                  snapshot_parse_model, apply_no_llm,
+                                  _orchestrator_model)
 
 
 def _entity_kind(key: str) -> str:
@@ -203,6 +204,34 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
     cmd += list(extra_args or [])
     cmd += [repo_dir]
     return subprocess.run(cmd, cwd=project_root, shell=(os.name == "nt")).returncode
+
+
+# `edges.json` shape when absent, so classify/impact get the keys they expect.
+_EMPTY_EDGES_SHAPE = {"typeUsers": {}, "macroUsers": {}}
+
+
+def _publish_model_for_next_phase(store, version_id, project_id, model_dir,
+                                  functions, globals_, hashes) -> None:
+    """Make the carried-forward model visible to Phase 2, in the right backing.
+
+    Carry-forward copies the baseline's descriptions/behaviour names onto the reuse set so
+    Phase 2 can skip them. Phase 2 reads through `core.model_io`, so in database mode the
+    values have to be in the DATABASE — writing model files there would leave every reused
+    entity blank and Phase 2 would regenerate the lot, losing the reuse the run just computed.
+    """
+    if _MODEL_STORE == "db":
+        from core.model_repo import DbRepository
+        from core.model_io import FUNCTIONS, GLOBALS, HASHES
+        repo = DbRepository(version_id, project_id or "")
+        repo.write(FUNCTIONS, functions)
+        repo.write(GLOBALS, globals_)
+        repo.write(HASHES, hashes)          # persist_functions needs them in the same call
+        repo.flush()
+        return
+    with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as fh:
+        json.dump(functions, fh, indent=2)
+    with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as fh:
+        json.dump(globals_, fh, indent=2)
 
 
 def _read(model_dir: str, name: str) -> dict:
@@ -579,7 +608,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             _fail("parse", rc)
 
     # Snapshot THIS version's blank skeleton for future narrowed parses (M4.4).
-    snapshot_parse_model(model_dir, _adir, store, version_id)
+    snapshot_parse_model(model_dir, _adir, store, version_id, _MODEL_STORE)
     # C11b (opt-in): re-materialize the model from Postgres so Phase 2+ consume the STORED
     # model rather than whatever Phase 1 happened to leave on disk. This is what makes the
     # database authoritative — and it is exactly the round-trip tools/verify_model_parity.py
@@ -591,10 +620,15 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         _gl("incremental").info(
             f"C11b: model re-materialized from the database for {version_id}")
 
-    target_hashes = _read(model_dir, "hashes.json")
-    target_functions = _read(model_dir, "functions.json")
-    target_edges = _read(model_dir, "edges.json")
-    target_globals = _read(model_dir, "globalVariables.json")
+    # The target model as Phase 1 just produced it. In database mode Phase 1 flushed to the
+    # database and these files are not written, so reading them would yield four empty dicts —
+    # classify would then see every entity as DELETED, impact would be empty, and the run would
+    # regenerate nothing while reporting success. Read whichever backing the run actually used.
+    _tm = _orchestrator_model(store, version_id, model_dir, _MODEL_STORE)
+    target_hashes = _tm.get("hashes") or {}
+    target_functions = _tm.get("functions") or {}
+    target_edges = _tm.get("edges") or _EMPTY_EDGES_SHAPE
+    target_globals = _tm.get("globals") or {}
     # Baseline read from the store by the real ver id (FileStore -> versions/<ver>/model,
     # PgStore -> Postgres). Replaces the on-disk HashStore read, the commit-dir model read, and
     # the separate DATABASE_URL branch — the store resolves file-vs-DB by construction.
@@ -657,10 +691,11 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     regen_impact = [k for k in plan["impact"] if k not in index_reused]
     regen_globals = {k for k in impacted_globals if k not in index_reused_g}
 
-    with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as fh:
-        json.dump(target_functions, fh, indent=2)
-    with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as fh:
-        json.dump(target_globals, fh, indent=2)
+    # Hand the carried-forward descriptions to Phase 2 through whatever it will READ. Writing
+    # files in database mode would put them somewhere Phase 2 never looks, so every reused
+    # entity would arrive blank and be regenerated — reuse silently lost.
+    _publish_model_for_next_phase(store, version_id, project_id, model_dir,
+                                  target_functions, target_globals, target_hashes)
 
     # impactedFiles (for SUMMARIES) = files of the full impact set (a caller's
     # description/file-summary does depend on its callees). flowchartFiles (for

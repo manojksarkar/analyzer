@@ -159,3 +159,40 @@ class TestOrchestratorsRespectTheModelStore:
         src = _src(os.path.join("engine", "incremental", "generate.py"))
         assert "def _orchestrator_model(" in src
         assert 'if model_store == "db":\n        return store.read_model(version_id) or {}' in src
+
+
+class TestIncrementalEngineInDatabaseMode:
+    """The incremental path had three file-based reads/writes that database mode breaks.
+
+    Verified end to end on SQLite (two commits, `decision=incremental regenerated=1
+    reused=281`, 9 parse-snapshot files); these keep the conversions from being undone.
+    """
+
+    def test_target_model_is_read_from_the_store(self):
+        """It classifies against the model Phase 1 just produced. Reading files in database
+        mode yields four EMPTY dicts — every entity then looks DELETED, impact is empty, and the
+        run regenerates nothing while reporting success."""
+        src = _src(os.path.join("engine", "incremental", "engine.py"))
+        assert "_tm = _orchestrator_model(store, version_id, model_dir, _MODEL_STORE)" in src
+        for name in ('_tm.get("hashes")', '_tm.get("functions")', '_tm.get("edges")',
+                     '_tm.get("globals")'):
+            assert name in src, f"target model still read from files: {name} missing"
+
+    def test_carry_forward_is_published_where_phase_2_reads(self):
+        """Carry-forward copies the baseline's descriptions onto the reuse set so Phase 2 can
+        skip them. Writing files in database mode puts them where Phase 2 never looks, so every
+        reused entity arrives blank and is regenerated — the reuse is computed then thrown away."""
+        src = _src(os.path.join("engine", "incremental", "engine.py"))
+        assert "_publish_model_for_next_phase(" in src
+        assert "def _publish_model_for_next_phase" in src
+
+    def test_parse_snapshot_takes_the_store_kind_explicitly(self):
+        """It read the ambient run context, which the ORCHESTRATOR never populates — so the
+        check always said "files" and the snapshot silently captured only the few artifacts that
+        had not moved (4 of 9). Ambient state that one process sets and another reads is the bug."""
+        gen = _src(os.path.join("engine", "incremental", "generate.py"))
+        assert 'version_id: str = "", model_store: str = "files"' in gen
+        assert "from core.run_context import model_store_kind" not in gen, \
+            "the snapshot must not infer the store kind from ambient state"
+        eng_src = _src(os.path.join("engine", "incremental", "engine.py"))
+        assert "snapshot_parse_model(model_dir, _adir, store, version_id, _MODEL_STORE)" in eng_src
