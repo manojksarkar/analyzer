@@ -42,7 +42,7 @@ def test_linear_flow_is_numbered_flat():
     cfg = _cfg([("N1", "START", "Start: fn", ""), ("N2", "ACTION", "int a = 1;", ""),
                 ("N3", "RETURN", "Return a", ""), ("NE", "END", "End", "")],
                [("N1", "N2", None), ("N2", "N3", None), ("N3", "NE", None)])
-    steps, returns = build_steps(cfg, SPEC)
+    steps, returns, _ = build_steps(cfg, SPEC)
     assert _numbers(steps) == ["1", "2", "3"]
     assert _texts(steps)["1"] == "Issue function fn with inputs x."
     assert [r["step"] for r in returns] == ["3"]
@@ -51,7 +51,7 @@ def test_linear_flow_is_numbered_flat():
 def test_entry_step_says_void_when_there_are_no_parameters():
     cfg = _cfg([("N1", "START", "Start: fn", ""), ("NE", "END", "End", "")],
                [("N1", "NE", None)])
-    steps, _ = build_steps(cfg, {"name": "fn", "precondition": {"parameters": []}})
+    steps, _, _ = build_steps(cfg, {"name": "fn", "precondition": {"parameters": []}})
     assert steps[0]["text"] == "Issue function fn with input VOID."
 
 
@@ -67,7 +67,7 @@ def if_else():
 
 
 def test_decision_legs_are_sub_numbered_true_then_false(if_else):
-    steps, _ = build_steps(if_else, SPEC)
+    steps, _, _ = build_steps(if_else, SPEC)
     t = _texts(steps)
     assert t["2"] == "Check whether x < 0."
     assert t["2.1"].startswith("True:")
@@ -80,7 +80,7 @@ def test_single_step_leg_is_inlined_after_the_label(if_else):
 
 
 def test_every_return_gets_an_entry_naming_its_step(if_else):
-    _, returns = build_steps(if_else, SPEC)
+    _, returns, _ = build_steps(if_else, SPEC)
     assert {r["step"] for r in returns} == {"2.1", "2.2"}
     assert {r["text"] for r in returns} == {"Successfully returned -1",
                                             "Successfully returned 1"}
@@ -94,7 +94,7 @@ def test_nested_decision_nests_deeper():
                [("N1", "N2", None), ("N2", "N3", "Yes"), ("N2", "N4", "No"),
                 ("N4", "N5", "Yes"), ("N4", "N6", "No"),
                 ("N3", "NE", None), ("N5", "NE", None), ("N6", "NE", None)])
-    steps, returns = build_steps(cfg, SPEC)
+    steps, returns, _ = build_steps(cfg, SPEC)
     nums = _numbers(steps)
     assert "2.2.1" in nums and "2.2.1.1" in nums and "2.2.1.2" in nums
     assert {r["step"] for r in returns} == {"2.1", "2.2.1.1", "2.2.1.2"}
@@ -108,7 +108,7 @@ def test_loop_body_nests_and_continuation_does_not():
                 ("NE", "END", "End", "")],
                [("N1", "N2", None), ("N2", "N3", "Yes"), ("N3", "N2", None),
                 ("N2", "N4", "No"), ("N4", "NE", None)])
-    steps, _ = build_steps(cfg, SPEC)
+    steps, _, _ = build_steps(cfg, SPEC)
     t = _texts(steps)
     assert t["2"].startswith("Repeat ")
     assert "2.1" in t                      # body nests
@@ -121,7 +121,7 @@ def test_back_edge_does_not_loop_forever():
                 ("NE", "END", "End", "")],
                [("N1", "N2", None), ("N2", "N3", "Yes"), ("N3", "N2", None),
                 ("N2", "N4", "No"), ("N4", "NE", None)])
-    steps, _ = build_steps(cfg, SPEC)
+    steps, _, _ = build_steps(cfg, SPEC)
     assert len(steps) < 20
 
 
@@ -177,5 +177,5 @@ def test_immediate_post_dominator_is_the_nearest_join(if_else):
 
 
 def test_missing_cfg_yields_no_steps():
-    assert build_steps(None, SPEC) == ([], [])
-    assert build_steps({}, SPEC) == ([], [])
+    assert build_steps(None, SPEC) == ([], [], {})
+    assert build_steps({}, SPEC) == ([], [], {})

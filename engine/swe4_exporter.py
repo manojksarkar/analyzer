@@ -70,6 +70,15 @@ def _input_text(inp: dict) -> str:
     return _numbered([e.get("text", "") for e in entries])
 
 
+def _steps_suffix(entry: dict) -> str:
+    """` in step 2.1` / ` in steps 2.1, 3.4` — which step(s) wrote this output.
+    Empty when the CFG could not attribute it to a step."""
+    nums = entry.get("steps") or ([entry["step"]] if entry.get("step") else [])
+    if not nums:
+        return ""
+    return f" in step{'s' if len(nums) > 1 else ''} {', '.join(nums)}"
+
+
 def _expected_text(exp: dict) -> str:
     """Assertions: mocks first, then one entry per return (naming its step),
     then out-parameters and written globals."""
@@ -78,12 +87,9 @@ def _expected_text(exp: dict) -> str:
     if mocks:
         entries.append("Successfully called mock functions " + ", ".join(mocks))
     for r in exp.get("returns") or []:
-        step = r.get("step")
-        entries.append(f"{r.get('text', '')}" + (f" in step {step}" if step else ""))
-    for o in exp.get("outParameters") or []:
-        entries.append(f"Successfully updated {o.get('text', '')}")
-    for g in exp.get("globals") or []:
-        entries.append(f"Successfully updated {g.get('text', '')}")
+        entries.append(f"{r.get('text', '')}{_steps_suffix(r)}")
+    for w in (exp.get("outParameters") or []) + (exp.get("globals") or []):
+        entries.append(f"Successfully updated {w.get('text', '')}{_steps_suffix(w)}")
     if not entries:
         return "No return value; no global side effects"
     return _numbered(entries)

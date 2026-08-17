@@ -19,6 +19,7 @@ Deterministic: no LLM here. Node wording is whatever the flowchart engine wrote
 """
 import json
 import os
+import re
 
 from utils import log
 
@@ -181,6 +182,19 @@ def _node_text(node, spec, mock_names, is_entry, ctx=None):
     return base
 
 
+def _writes(raw, name):
+    """True when `raw` assigns to `name` — `x = `, `x += `, `x++`, `++x`, `x[i] = `,
+    `*x = `. A plain read of the same name does not count, so a global that is
+    read here and written elsewhere is only credited to the step that writes it.
+    """
+    if not raw or not name:
+        return False
+    n = re.escape(name)
+    assign = rf"\*?\b{n}\b\s*(?:\[[^\]]*\]|\.[A-Za-z_]\w*|->[A-Za-z_]\w*)?\s*" \
+             rf"(?:\+\+|--|(?:[+\-*/%|&^]|<<|>>)?=(?!=))"
+    return bool(re.search(assign, raw) or re.search(rf"(?:\+\+|--)\s*\b{n}\b", raw))
+
+
 def _leg_label(edge_label):
     """'Yes'/'No' -> 'True'/'False'; switch labels pass through unchanged."""
     lab = (edge_label or "").strip()
@@ -206,12 +220,22 @@ class _Walker:
         self.entry = cfg.get("entry")
         self.steps = []      # flat, each {number, text, nodeId, type}
         self.returns = []    # {step, text} -- one per RETURN, for Expected Results
+        # name -> [step numbers that assign it], for the written globals and
+        # out-parameters Expected Results asserts.
+        exp = (spec or {}).get("expected") or {}
+        self.written_names = [g.get("name", "") for g in exp.get("globals") or []] + \
+                             [o.get("name", "") for o in exp.get("outParameters") or []]
+        self.write_steps = {}
 
     # -- emitting ----------------------------------------------------------
     def _add(self, prefix, idx, node, text):
         number = ".".join(str(x) for x in (prefix + [idx]))
         self.steps.append({"number": number, "text": text,
                            "nodeId": node.get("id", ""), "type": node.get("type", "")})
+        raw = node.get("rawCode") or ""
+        for name in self.written_names:
+            if name and _writes(raw, name):
+                self.write_steps.setdefault(name, []).append(number)
         if node.get("type") == "RETURN":
             expr = _strip_prefix(node.get("label") or node.get("rawCode") or "",
                                  "Return", "return").strip().rstrip(";").strip()
@@ -284,6 +308,11 @@ class _Walker:
             only = sub.steps[0]
             self.steps.append({"number": number, "text": f"{leg_label}: {only['text']}",
                                "nodeId": only["nodeId"], "type": only["type"]})
+            # the lone step was folded into the leg label, so any write it
+            # recorded now belongs to the leg's number
+            for name, nums in self.write_steps.items():
+                self.write_steps[name] = [number if n == only["number"] else n
+                                          for n in nums]
             for r in sub.returns:
                 r["step"] = number
             self.returns.extend(sub.returns)
@@ -300,13 +329,18 @@ class _Walker:
 
 
 def build_steps(cfg, spec, mock_names=()):
-    """(steps, returns) for one function. Empty lists when there is no CFG."""
+    """(steps, returns, write_steps) for one function.
+
+    `write_steps` maps a written global / out-parameter name to the step numbers
+    that assign it, so Expected Results can say which step wrote it. Empty when
+    there is no CFG.
+    """
     if not cfg or not cfg.get("entry"):
-        return [], []
+        return [], [], {}
     names = [m[:-2] if m.endswith("()") else m for m in (mock_names or ())]
     w = _Walker(cfg, spec, names)
     w.walk(cfg["entry"], None, [])
-    return w.steps, w.returns
+    return w.steps, w.returns, w.write_steps
 
 
 def attach(test_specs, output_dir):
@@ -328,10 +362,16 @@ def attach(test_specs, output_dir):
             cfg = cfgs.get(spec.get("functionId"))
             if not cfg:
                 continue
-            steps, returns = build_steps(
+            steps, returns, write_steps = build_steps(
                 cfg, spec, (spec.get("precondition") or {}).get("mockFunctions", ()))
             if steps:
                 spec["testSteps"] = steps
                 spec["expected"]["returns"] = returns
+                # tell each written global / out-parameter which step assigns it
+                for entry in (spec["expected"].get("globals") or []) + \
+                             (spec["expected"].get("outParameters") or []):
+                    nums = write_steps.get(entry.get("name"))
+                    if nums:
+                        entry["steps"] = nums
                 filled += 1
     return filled
