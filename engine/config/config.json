@@ -2,7 +2,9 @@
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
     "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
-    "clangArgs": ["--target=arm-none-eabi"]
+    "clangArgs": [
+      "--target=arm-none-eabi"
+    ]
   },
   "views": {
     "interfaceTables": true,
@@ -94,7 +96,10 @@
     "fewShotExamplesDir": "few_shot_examples",
     "abbreviationsPath": "config/abbreviations.txt",
     "domainContextPath": "config/domain.txt",
-    "descriptionBlocklist": ["audio", "video"],
+    "descriptionBlocklist": [
+      "audio",
+      "video"
+    ],
     "cacheVersion": 2,
     "enrichment": {
       "twoPassDescriptions": false,
@@ -126,6 +131,17 @@
         "Unit Name",
         "Static Design"
       ]
+    },
+    "swe4": {
+      "evalEquipmentName": "Emulator",
+      "testPlatform": "VectorCAST",
+      "testEnvironment": "Emulator",
+      "priorityDefault": "Medium",
+      "introduction": {
+        "purpose": "This document provides the Software Unit Test Specification for the {project_name} software. It specifies, for each software unit, the preconditions, inputs, test steps and expected results required to verify the unit against its detailed design.",
+        "scopeIntro": "This document covers the unit test specifications for the following components of the {project_name} software:",
+        "scopeBody": "Each public function is specified by two tables: Table A carries the test content (Eval. Equipment Name, Precondition, Input, Test Steps, Expected Results, Test Platform) and Table B carries the test case metadata."
+      }
     }
   }
 }
