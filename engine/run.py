@@ -128,6 +128,7 @@ project_name_arg        = None
 output_name_arg         = None
 output_root_arg         = None   # B1: this run's own output dir (versions/<ver…>/output)
 model_root_arg          = None   # C11b: this run's own model dir (versions/<ver…>/model)
+model_store_arg         = None   # doc 10: "files" (default) | "db" — where phases read the model
 version_id_arg          = None   # C11a: persist the model to Postgres at each phase boundary
 project_id_arg          = None   # C11a: owning project (the store is project-scoped)
 only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
@@ -223,6 +224,18 @@ while i < len(sys.argv):
             log("--project-id requires a value", component="run", err=True)
             sys.exit(1)
         project_id_arg = sys.argv[i]
+    elif a == "--model-store":
+        # doc 10 step 3: which backing the phases use for the model. Default "files", so this
+        # flag is the only thing that turns the database path on.
+        i += 1
+        if i >= len(sys.argv):
+            log("--model-store requires 'files' or 'db'", component="run", err=True)
+            sys.exit(1)
+        model_store_arg = sys.argv[i]
+        if model_store_arg not in ("files", "db"):
+            log(f"--model-store must be 'files' or 'db' (got {model_store_arg!r})",
+                component="run", err=True)
+            sys.exit(1)
     elif a == "--model-root":
         # This run's own model dir (doc 09, C11b). Unlike --output-root this must also be
         # forwarded to every PHASE: group_planner bakes absolute output paths into each
@@ -286,6 +299,11 @@ if output_root_arg:
 if model_root_arg:
     from core.paths import set_model_dir
     set_model_dir(model_root_arg)
+# The run identity, forwarded to every phase by Phase.command() (doc 10, step 3). Recorded
+# even in file mode: a phase being told which version it belongs to is useful regardless, and
+# it is what makes --from-phase N unambiguous.
+from core.run_context import set_run_context as _set_run_context
+_set_run_context(version=version_id_arg, project=project_id_arg, model_store=model_store_arg)
 
 def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
     """Resolve requested group name against config.layer, case-insensitive."""
@@ -549,6 +567,14 @@ def _make_phase_persist(project_id, version_id):
     """
     from core.db import is_database_configured
     if not version_id or not is_database_configured():
+        return None
+    # Not in DB mode. This hook persists by reading model FILES
+    # (write_model -> persist_model_from_dir -> clear_version + persist). In DB mode the phase
+    # writes to the database itself and there are no files, so this would clear the version and
+    # persist an EMPTY model over what the phase just flushed. The phase's own flush is
+    # authoritative there.
+    from core.run_context import model_store_kind
+    if model_store_kind() == "db":
         return None
     writes_model = {"parser.py", "model_deriver.py"}
 

@@ -34,12 +34,14 @@ def _source(name):
 @pytest.mark.parametrize("name", PHASE_SCRIPTS)
 def test_phase_applies_overrides_before_snapshotting_paths(name):
     src = _source(name)
-    assert "apply_cli_path_overrides" in src, f"{name} ignores --model-root/--output-root"
+    assert ("apply_cli_run_context" in src or "apply_cli_path_overrides" in src),         f"{name} ignores the run context (--model-root/--output-root/--version-id)"
 
     snapshots = [i for i in (src.find("_p = _paths()"), src.find("_p = paths()")) if i >= 0]
     if not snapshots:
         return                       # resolves paths() lazily; ordering cannot bite
-    assert src.find("apply_cli_path_overrides") < min(snapshots), (
+    applied = min(i for i in (src.find("apply_cli_run_context"),
+                              src.find("apply_cli_path_overrides")) if i >= 0)
+    assert applied < min(snapshots), (
         f"{name}: paths() is snapshotted into module constants BEFORE the CLI overrides are "
         f"applied, so those constants point at the default directories for the whole run")
 
@@ -48,8 +50,9 @@ def test_phase_applies_overrides_before_snapshotting_paths(name):
 def test_phase_strips_the_flags_from_argv(name):
     """docx_exporter parses POSITIONAL arguments, so an unconsumed flag becomes a file path."""
     src = _source(name)
-    assert "sys.argv = _apply_path_flags(sys.argv)" in src or \
-           "sys.argv = apply_cli_path_overrides(sys.argv)" in src, \
+    assert any(f"sys.argv = {fn}(sys.argv)" in src for fn in
+               ("_apply_run_context", "apply_cli_run_context",
+                "_apply_path_flags", "apply_cli_path_overrides")), \
         f"{name}: the result must be assigned back so the flags are removed from argv"
 
 

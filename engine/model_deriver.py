@@ -6,13 +6,14 @@ import json
 
 from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group, short_name
 from core.config import get_component_layer_name
-from core.paths import paths as _paths, apply_cli_path_overrides
+from core.paths import paths as _paths
+from core.run_context import apply_cli_run_context
 
 # Apply (and strip) --model-root BEFORE paths() is snapshotted: MODEL_DIR below is a
 # module constant, and line ~51 uses it to find incremental_plan.json. Applied later
 # (e.g. in main()) it would be stale, the plan would not be found, and Phase 2 would
 # silently re-enrich everything instead of only the impact set — reuse lost, no error.
-sys.argv = apply_cli_path_overrides(sys.argv)
+sys.argv = apply_cli_run_context(sys.argv)
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -1174,3 +1175,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # DB mode: land this phase's buffered model writes (doc 10, step 3). Database writes are
+    # buffered so the pieces persist together in one transaction, so without this the phase
+    # exits and the buffer is lost — the next phase then finds no model at all. Deliberately
+    # AFTER main() returns, never in a finally: a phase that failed must not publish a
+    # half-built model. No-op in file mode and when nothing is pending.
+    from core.run_context import flush_model
+    flush_model()

@@ -11,8 +11,8 @@ from core.paths import paths as _paths
 # cosmetic: this phase hands `model_dir` to the views, which look there for
 # incremental_plan.json — with a stale value the plan is never found, carry-forward never
 # runs, and an incremental run silently emits only the diagrams it regenerated.
-from core.paths import apply_cli_path_overrides as _apply_path_flags
-sys.argv = _apply_path_flags(sys.argv)
+from core.run_context import apply_cli_run_context as _apply_run_context
+sys.argv = _apply_run_context(sys.argv)
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -142,3 +142,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # DB mode: land this phase's buffered model writes (doc 10, step 3). Database writes are
+    # buffered so the pieces persist together in one transaction, so without this the phase
+    # exits and the buffer is lost — the next phase then finds no model at all. Deliberately
+    # AFTER main() returns, never in a finally: a phase that failed must not publish a
+    # half-built model. No-op in file mode and when nothing is pending.
+    from core.run_context import flush_model
+    flush_model()

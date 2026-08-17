@@ -80,6 +80,17 @@ class Phase:
         # diagrams are simply absent from the version's output and from the document.
         if _OVERRIDE_OUTPUT_DIR:
             cmd += ["--output-root", _OVERRIDE_OUTPUT_DIR]
+        # And the run identity (doc 10, step 3). A phase is a separate process that starts
+        # knowing nothing; once the model is in the database it must be told WHICH version it
+        # is working on, because "whatever is in model/" no longer exists. Only appended when
+        # set, so a plain file run's argv is unchanged.
+        from .run_context import version_id, project_id, model_store_kind
+        if version_id():
+            cmd += ["--version-id", version_id()]
+        if project_id():
+            cmd += ["--project-id", project_id()]
+        if model_store_kind() != "files":
+            cmd += ["--model-store", model_store_kind()]
         return cmd
 
 

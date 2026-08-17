@@ -24,8 +24,8 @@ from incremental.virtual_dispatch import spread_virtual_families
 
 # Apply (and strip) --model-root before paths() is snapshotted or argv[1] is read as the
 # project path — an unconsumed flag would be mistaken for a positional (doc 09, C11b).
-from core.paths import apply_cli_path_overrides as _apply_path_flags
-sys.argv = _apply_path_flags(sys.argv)
+from core.run_context import apply_cli_run_context as _apply_run_context
+sys.argv = _apply_run_context(sys.argv)
 
 _p = _paths()
 # Captured now: a module-level `for _p in _mod_paths:` below rebinds _p to a string,
@@ -1715,3 +1715,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # DB mode: land this phase's buffered model writes (doc 10, step 3). Database writes are
+    # buffered so the pieces persist together in one transaction, so without this the phase
+    # exits and the buffer is lost — the next phase then finds no model at all. Deliberately
+    # AFTER main() returns, never in a finally: a phase that failed must not publish a
+    # half-built model. No-op in file mode and when nothing is pending.
+    from core.run_context import flush_model
+    flush_model()
