@@ -250,6 +250,11 @@
 > [04 §13](docs/production-redesign/04-incremental-changes-implementation.md#13-caches-in-the-database-post-migration-doc-09-c12)).
 > **Key C12 finding:** the disk `EntityCache` and the DB reuse index answer the same question with near-identical keys —
 > C12 removes a duplicate mechanism, not just a directory.
+> **Corrected when C12 landed (doc 10 step 10):** that holds only on the *incremental* path.
+> `carry_forward_from_index` is called from `incremental/engine.py` and nowhere else — `generate_full` never calls it,
+> and `llm_enrichment` uses `EntityCache` directly without consulting the reuse index. On a **full** generation the
+> cache is the only thing preventing a complete re-describe (~17 h on a 20k-function project at one gateway call per
+> 3 s). So the LLM cache was **relocated to Postgres**, not deleted; only `pkb_*.json` was dropped.
 > **C11a (dual-write) — landed, NOT yet validated against a real Postgres.** New
 > `PhaseRunner.run(..., on_phase_done=)` hook: `engine/core/` is the bottom layer and cannot import the
 > store, so it defines the hook and `run.py` supplies the callback (new `--version-id` / `--project-id`
@@ -1051,7 +1056,10 @@ python engine/run.py [options] <project_path>
 
 | Flag | Effect |
 |---|---|
-| `--clean` | Delete `model/` and `output/` before starting |
+| `--clean` | Delete `model/` and `output/` before starting. In database mode it warns that the stored model **survives** — the directories are no longer where the model is. |
+| `--model-store {files,db}` | Where the phases read/write the model. **Default `db`** since doc 10 step 9 — the orchestrators (`incremental/generate.py`, `incremental/engine.py`) default to it, so a UI job gets the database without `pipeline_runner` asking for it. `files` forces the legacy `model/*.json`. `core.run_context.effective_model_store` resolves `db` **once in the orchestrator** and degrades to files with the reason on stderr when there is no database, no version id, or no `versions` row (the API reserves that row at job start; `PgStore` never creates one, so a CLI run against an unreserved version would otherwise fail on the foreign key). |
+| `--version-id <id>` / `--project-id <id>` | The run identity every phase needs once the model is rows rather than files. Applied **before** `paths()` is snapshotted. |
+| `--dump-model-files` | Debug only: write the stored model back out as `model/*.json` so `tools/verify_model_parity.py` has something to compare against. No job uses it. |
 | `--config <path>` | Use this config file instead of `engine/config/config.json` — a per-project/per-version config (carries the project's `layers`). Resolved+validated, then exported as `ANALYZER_CONFIG` **before** the import-time config load in `utils`, so every phase subprocess (env inherited) honors it. `config.local.json` is **not** merged on top (used as-is, for reproducibility); a set-but-missing path fails loud. Foundation for incremental per-project runs (§23, M1.1). |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
@@ -1427,7 +1435,7 @@ engine/llm_core/
   context_builder.py     ContextBuilder — callee/caller/types degradation ladder — version3
   repo_map.py            RepoMap — scoped repo signature view (4 tiers)          — version3
   few_shot.py            FewShotPool — keyword-ranked example selection          — version3
-  cache.py               EntityCache — composite-hash disk cache                 — version3
+  cache.py               EntityCache — composite-hash cache, `llm_description_cache` table (doc 10 step 10)
   structured_output.py   extract_and_validate + parse_label_response             — version3
   review.py              self_review + ensemble_generate                        — version3
 ```
@@ -1567,18 +1575,33 @@ Ranking: keyword overlap (callee names, param types, tags). Budget-aware
 greedy fill. Returns `""` if the directory is missing or empty — that is the
 supported off-path, not an error.
 
-### `llm_core.cache.EntityCache` (version3)
+### `llm_core.cache.EntityCache` (doc 10 step 10 — now database-backed)
 
-Per-entity disk cache with composite hash keys. Stored at
-`.flowchart_cache/llm_descriptions/` (or whatever `cache_dir` the caller
-passes).
+Per-entity cache with composite hash keys, stored in the **`llm_description_cache`
+table** (migration `0005`). It was one JSON file per entity under
+`.flowchart_cache/`; on the container deployment that dies with the container and
+is invisible to other nodes, giving N nodes a ~1/N hit rate.
 
 ```python
-EntityCache(cache_dir, cache_version)
-  .get(entity_id, content_hash) -> Optional[dict]
-  .put(entity_id, content_hash, value, metadata=None)
-  .stats() -> "N hits, M misses, X% hit rate"
+EntityCache(project_id, namespace, cache_version)   # namespace: llm_descriptions | aux_descriptions
+  .get(entity_id, content_hash) -> Optional[str]
+  .put(entity_id, content_hash, value, metadata=None)   # buffered
+  .flush()                                              # call at the end of a pass
+  .stats() -> "N hits, M misses, W writes, X% hit rate [db|in-memory only]"
 ```
+
+**Scoped per project, not per version** — the hit that matters is the next version
+finding a description an earlier one paid for. The whole scope loads in **one
+query** at construction and `get()` is a dict lookup; per-entity SELECTs would be
+~20k round trips on a 20k-function project. Writes buffer and flush with
+`ON CONFLICT DO NOTHING`.
+
+`cache_version` is part of the unique key, so bumping `llm.cacheVersion`
+invalidates by construction and leaves old rows unreferenced.
+
+With no database it degrades to an **in-process memo** — still dedupes within a
+run (several call sites ask for the same struct during one export), just does not
+survive it. `put()` never raises; a cache failure costs LLM calls, never output.
 
 Cache key = `sha256(entity_source + sorted_callee_hashes + str(cache_version))[:16]`.
 
