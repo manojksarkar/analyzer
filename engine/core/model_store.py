@@ -36,6 +36,13 @@ from api.db.postgres import schema as s   # noqa: E402
 _FN_PAYLOAD_FIELDS = (
     "returnType", "returnExpr", "description", "behaviourInputName", "behaviourOutputName",
     "parameters", "phases", "readsGlobalIdsTransitive", "writesGlobalIdsTransitive",
+    # `syntheticFromVarDecl` marks an entry the parser synthesised from a variable declaration
+    # rather than a real function. It is not cosmetic: flowchart_engine.py filters on it —
+    #     processable = [e for e in target_entries if not e.synthetic_from_var_decl]
+    # so dropping it makes the engine try to build a flowchart for a non-function once the model
+    # is read from the database. Found by verify_model_parity on the first SQLite run; the
+    # office Postgres run reported OK only because that project has no such entry.
+    "syntheticFromVarDecl",
 )
 # `description` is LLM-generated (llm.enrichment.variableEnrichment) and renders in the DOCX
 # unit-header table, so losing it costs real document content — yet it was absent here, so
@@ -499,8 +506,13 @@ def load_components(conn, version_id) -> Dict[str, dict]:
     comps: Dict[str, dict] = {}
     for r in conn.execute(select(s.model_components).where(s.model_components.c.version_id == version_id)):
         comps[r.name] = {"units": [], "headerFiles": r.header_files or []}
+    # ORDER BY: model_units has no ordinal, so without this the unit list comes back in
+    # whatever order the database happens to return — which is not stable across engines or
+    # even across runs. The container diagram draws one box per unit in list order, so an
+    # unstable order means a visually different PNG for identical input.
     for r in conn.execute(select(s.model_units.c.component, s.model_units.c.unit_key)
-                          .where(s.model_units.c.version_id == version_id)):
+                          .where(s.model_units.c.version_id == version_id)
+                          .order_by(s.model_units.c.unit_key)):
         if r.component in comps:
             comps[r.component]["units"].append(r.unit_key)
     return comps

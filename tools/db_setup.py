@@ -55,6 +55,24 @@ def main() -> int:
     # Resolve the DSN: DATABASE_URL env -> the config `db` section -> the compose default.
     # database_url() also sanitizes (strips invisible/homoglyph chars; raises on a bad scheme).
     from core.db import database_url, _redact, DatabaseUnavailable
+    # --sqlite <path>: create a local SQLite database and print the config line to paste.
+    # For internal testing on a machine with no Postgres (doc 10, D10-1) — one code path, so
+    # every gate that needs a database becomes runnable there.
+    if "--sqlite" in sys.argv:
+        i = sys.argv.index("--sqlite")
+        target = sys.argv[i + 1] if i + 1 < len(sys.argv) else "engine/config/analyzer-dev.db"
+        target = os.path.abspath(target)
+        os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+        raw = "sqlite:///" + target.replace("\\", "/")
+        print(f"creating SQLite database: {target}")
+        from sqlalchemy import create_engine as _ce
+        from api.db.postgres.schema import metadata as _md
+        _md.create_all(_ce(raw))
+        print(f"\nschema created: {len(_md.tables)} tables")
+        print("\nAdd this to engine/config/config.local.json:\n")
+        print('  { "db": { "url": "%s" } }\n' % raw)
+        return 0
+
     try:
         raw = database_url()
     except DatabaseUnavailable as exc:               # e.g. a non-ASCII scheme

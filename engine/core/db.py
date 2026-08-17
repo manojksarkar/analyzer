@@ -67,21 +67,69 @@ def sanitize_dsn(raw: str) -> str:
     return s
 
 
-def _dsn_from_config() -> Optional[str]:
-    """Build a DSN from the ``db`` section of the merged engine config (``config.defaults.json`` +
-    ``config.local.json``), so the connection can be configured in a file instead of the
-    ``DATABASE_URL`` env var. Returns ``None`` when there is no ``db.host``.
+def _db_section() -> dict:
+    """The ``db`` section, read from ``config.local.json`` SPECIFICALLY (doc 10, step 1).
 
-        "db": { "driver": "postgresql+psycopg", "host": "10.0.0.5", "port": 5432,
+    Not from the merged config, and deliberately so. ``ANALYZER_CONFIG`` / ``--config`` REPLACES
+    the config with a per-project one that carries no ``db`` section, so reading the merged
+    config meant a phase subprocess saw no database and had to be told via ``DATABASE_URL``.
+    Which database this machine talks to is a MACHINE-level setting, not a per-project one — so
+    every process reads it from the same place, independently, and nothing has to be propagated.
+
+    Falls back to the merged config so a ``db`` section placed in ``config.defaults.json``
+    (or injected into a per-project config) still works.
+    """
+    from core.paths import paths
+    from core.config import _strip_json_comments, _strip_trailing_commas
+    import json as _json
+    local = paths().config_local_path
+    if os.path.isfile(local):
+        with open(local, "r", encoding="utf-8") as fh:
+            raw = _strip_trailing_commas(_strip_json_comments(fh.read()))
+        db = (_json.loads(raw) or {}).get("db")
+        if db:
+            return db
+    from core.config import load_config
+    return load_config(paths().src_dir).get("db") or {}
+
+
+def _sqlite_url(db: dict) -> Optional[str]:
+    """A SQLite DSN from ``{"driver": "sqlite", "path": …}``, or None.
+
+    SQLite is a first-class backend for local and internal testing (doc 10, D10-1) — the same
+    code and the same schema serve it, because the schema is dialect-variant
+    (``JSON().with_variant(JSONB(), "postgresql")``) and ``_insert_ignore`` is the only place
+    the two differ. It is NOT for concurrency work: SQLite locks coarsely, so parallel jobs
+    contend.
+
+    A relative path resolves against the project root, so a config can say
+    ``engine/config/analyzer-dev.db`` and mean it regardless of the working directory.
+    """
+    if str(db.get("driver", "")).strip().lower() not in ("sqlite", "sqlite3"):
+        return None
+    from core.paths import paths
+    raw = str(db.get("path") or db.get("database") or "analyzer-dev.db")
+    path = raw if os.path.isabs(raw) else os.path.join(paths().project_root, raw)
+    return "sqlite:///" + os.path.abspath(path).replace("\\", "/")
+
+
+def _dsn_from_config() -> Optional[str]:
+    """Build a DSN from the ``db`` section of ``config.local.json``. None when unconfigured.
+
+        "db": { "url": "postgresql+psycopg://analyzer:secret@10.0.0.9:5432/analyzer" }
+        "db": { "url": "sqlite:///engine/config/analyzer-dev.db" }
+        "db": { "driver": "sqlite", "path": "engine/config/analyzer-dev.db" }
+        "db": { "driver": "postgresql+psycopg", "host": "10.0.0.9", "port": 5432,
                 "user": "analyzer", "password": "secret", "database": "analyzer" }
 
-    Put credentials in ``engine/config/config.local.json`` (gitignored), not ``config.json``.
-    Skipped inside an engine phase subprocess (``ANALYZER_CONFIG`` set to a per-project config
-    that carries no ``db`` section) — those inherit ``DATABASE_URL`` from the API instead."""
+    Precedence inside the section: ``url`` → ``driver: sqlite`` → host-based fields. ``url`` is
+    the escape hatch for any backend SQLAlchemy supports without teaching this function its
+    field names.
+
+    Put credentials in ``engine/config/config.local.json`` (gitignored), never in
+    ``config.defaults.json``, and never on a command line where ``ps`` would show them."""
     try:
-        from core.config import load_config
-        from core.paths import paths
-        db = load_config(paths().src_dir).get("db") or {}
+        db = _db_section()
     except Exception as exc:
         # Say so instead of vanishing. Returning None here falls back to the compose default
         # (localhost), so a MALFORMED config.local.json used to be indistinguishable from a
@@ -92,6 +140,12 @@ def _dsn_from_config() -> Optional[str]:
               f"({type(exc).__name__}: {exc}); falling back to the default DSN.",
               file=_sys.stderr)
         return None
+    url = str(db.get("url") or "").strip()
+    if url:
+        return url
+    sqlite = _sqlite_url(db)
+    if sqlite:
+        return sqlite
     host = db.get("host")
     if not host:
         return None
@@ -173,6 +227,13 @@ def get_engine(dsn: Optional[str] = None):
     # dead connection mid-run. connect_timeout bounds an unreachable-DB failure to seconds -
     # but it is a libpq option, so only pass it to Postgres (SQLite would reject it).
     connect_args = {"connect_timeout": CONNECT_TIMEOUT_SEC} if url.startswith("postgres") else {}
+    if url.startswith("sqlite"):
+        # The API runs jobs on threads and hands the same Engine to each, so a connection
+        # created on one thread WILL be used from another — SQLite rejects that by default.
+        # `timeout` makes a writer wait for a competing write instead of failing instantly with
+        # "database is locked"; SQLite still locks coarsely, so this makes single-job testing
+        # reliable, not concurrent jobs fast (doc 10, D10-1).
+        connect_args = {"check_same_thread": False, "timeout": CONNECT_TIMEOUT_SEC}
     kwargs = dict(pool_pre_ping=True, future=True, connect_args=connect_args)
     from sqlalchemy import create_engine
     if dsn is not None:                       # explicit DSN -> caller-owned engine (tests)

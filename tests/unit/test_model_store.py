@@ -240,3 +240,61 @@ def test_identical_payloads_dedup_to_one_blob():
     with engine.connect() as cx:
         n = cx.execute(s.content_blobs.select()).fetchall()
     assert len(n) == 1, "identical payloads should collapse to a single content blob"
+
+
+def test_synthetic_from_var_decl_round_trips(tmp_path):
+    """`syntheticFromVarDecl` must survive the database round-trip.
+
+    It is not cosmetic. flowchart_engine.py filters on it:
+
+        processable = [e for e in target_entries if not e.synthetic_from_var_decl]
+
+    so an entry the parser synthesised from a VARIABLE declaration is excluded from flowchart
+    generation. Drop the field and, once the model is read from the database, the engine tries
+    to build a flowchart for something that is not a function.
+
+    Found by tools/verify_model_parity.py on the first SQLite run. The office Postgres run
+    reported "OK for all" only because that project contains no such entry — which is exactly
+    why the check has to run against a fixture that does.
+    """
+    eng = _fk_engine()
+    with eng.begin() as cx:
+        functions = {
+            "Diag|VoidAsVar|_SOME_FUNCTION|int": {
+                "qualifiedName": "_SOME_FUNCTION", "returnType": "int",
+                "syntheticFromVarDecl": True,
+                "location": {"file": "Diag/VoidAsVar.cpp", "line": 12},
+            },
+            "Diag|VoidAsVar|realFn|void": {
+                "qualifiedName": "realFn", "returnType": "void",
+                "location": {"file": "Diag/VoidAsVar.cpp", "line": 20},
+            },
+        }
+        model_store.persist_functions(cx, PID, VID, functions, {})
+    with eng.connect() as cx:
+        loaded = model_store.load_functions(cx, VID)
+
+    assert loaded["Diag|VoidAsVar|_SOME_FUNCTION|int"]["syntheticFromVarDecl"] is True
+    assert "syntheticFromVarDecl" not in loaded["Diag|VoidAsVar|realFn|void"], \
+        "absent must stay absent — a default of False would silently change the filter"
+
+
+def test_component_unit_order_is_deterministic(tmp_path):
+    """The unit list must come back in a stable order.
+
+    `model_units` has no ordinal column, so without an ORDER BY the list is whatever the
+    database returns — not stable across engines or runs. The container diagram draws one box
+    per unit in list order, so an unstable order renders a visually different PNG from
+    identical input.
+    """
+    eng = _fk_engine()
+    with eng.begin() as cx:
+        model_store.persist_units(cx, VID, {
+            "Z|Last": {"component": "C", "name": "Last"},
+            "A|First": {"component": "C", "name": "First"},
+            "M|Mid": {"component": "C", "name": "Mid"},
+        })
+        model_store.persist_components(cx, VID, {"C": {"units": ["Z|Last", "A|First", "M|Mid"]}})
+    with eng.connect() as cx:
+        got = model_store.load_components(cx, VID)["C"]["units"]
+    assert got == sorted(got), f"unit order must be deterministic, got {got}"
