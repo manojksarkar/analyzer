@@ -18,7 +18,12 @@ incremental path drops shows up as a missing file, named.
 Needs mermaid + Graphviz (mmdc, @viz-js/viz) because the point is the DIAGRAMS. Run
 `python tools/doctor.py` first; the check skips with a clear message if they are absent.
 
-    python tools/verify_incremental_parity.py
+    python tools/verify_incremental_parity.py            # every view (slow: flowcharts)
+    python tools/verify_incremental_parity.py --fast     # skip flowcharts (minutes)
+
+`--fast` still covers the carry-forward mechanism — unit diagrams use the same
+baselineVersionDir + relpath machinery as flowcharts — while dropping the per-function
+Graphviz renders that make the full run take about an hour on this fixture.
 
 Exit 0 = the incremental document matches the full one.
 """
@@ -87,7 +92,8 @@ def main() -> int:
     os.environ["ANALYZER_NO_DB"] = "1"
 
     from utils import mmdc_path
-    if not os.path.isfile(os.path.join(_ROOT, "node_modules", "@viz-js", "viz", "package.json")):
+    if "--fast" not in sys.argv and not os.path.isfile(
+            os.path.join(_ROOT, "node_modules", "@viz-js", "viz", "package.json")):
         print("SKIP — @viz-js/viz is not installed, so flowcharts cannot render and the check "
               "would pass vacuously.  npm install @viz-js/viz")
         return 0
@@ -111,8 +117,13 @@ def main() -> int:
     from utils import load_config
     cfg = load_config(os.path.join(_ROOT, "engine"))
     # Every diagram view ON — the whole point is the images.
-    cfg["views"] = {"interfaceTables": True, "unitDiagrams": True, "flowcharts": True,
-                    "behaviourDiagram": True, "componentStaticDiagram": True}
+    fast = "--fast" in sys.argv
+    cfg["views"] = {"interfaceTables": True, "unitDiagrams": True,
+                    "flowcharts": not fast,
+                    "behaviourDiagram": not fast, "componentStaticDiagram": True}
+    if fast:
+        print("--fast: flowcharts + behaviour diagrams off (carry-forward is still exercised "
+              "through unit diagrams, which use the same mechanism)")
     cfg["llm"] = {**cfg.get("llm", {}), "descriptions": False, "behaviourNames": False,
                   "summarize": False}
     _write_json(os.path.join(ws_root, PID, "config.json"), cfg)
