@@ -129,6 +129,7 @@ output_name_arg         = None
 output_root_arg         = None   # B1: this run's own output dir (versions/<ver…>/output)
 model_root_arg          = None   # C11b: this run's own model dir (versions/<ver…>/model)
 model_store_arg         = None   # doc 10: "files" (default) | "db" — where phases read the model
+dump_model_files_arg    = None   # doc 10 H6: debug-only mirror of the model, for parity checks
 version_id_arg          = None   # C11a: persist the model to Postgres at each phase boundary
 project_id_arg          = None   # C11a: owning project (the store is project-scoped)
 only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
@@ -224,6 +225,15 @@ while i < len(sys.argv):
             log("--project-id requires a value", component="run", err=True)
             sys.exit(1)
         project_id_arg = sys.argv[i]
+    elif a == "--dump-model-files":
+        # doc 10 H6 — DEBUG ONLY. Writes the run's model out as JSON to <dir> so
+        # tools/verify_model_parity.py still has something to compare the database against once
+        # the files are gone. Never used by a job; not a fallback; nothing reads it back.
+        i += 1
+        if i >= len(sys.argv):
+            log("--dump-model-files requires a directory argument", component="run", err=True)
+            sys.exit(1)
+        dump_model_files_arg = sys.argv[i]
     elif a == "--model-store":
         # doc 10 step 3: which backing the phases use for the model. Default "files", so this
         # flag is the only thing that turns the database path on.
@@ -302,8 +312,13 @@ if model_root_arg:
 # The run identity, forwarded to every phase by Phase.command() (doc 10, step 3). Recorded
 # even in file mode: a phase being told which version it belongs to is useful regardless, and
 # it is what makes --from-phase N unambiguous.
-from core.run_context import set_run_context as _set_run_context
+from core.run_context import (set_run_context as _set_run_context,
+                              install_model_repository as _install_model_repo)
 _set_run_context(version=version_id_arg, project=project_id_arg, model_store=model_store_arg)
+# run.py itself reads the model for --dump-model-files (H6), and set_run_context only RECORDS
+# the choice — installing the repository is separate. Without this the orchestrator kept the
+# file default and the dump wrote whatever few files happened to be on disk.
+_install_model_repo()
 
 def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
     """Resolve requested group name against config.layer, case-insensitive."""
@@ -342,6 +357,15 @@ if clean_all:
         if os.path.isdir(path):
             shutil.rmtree(path)
             log(f"Removed {d}/", component="run")
+    # Say what it does NOT do (doc 10, H4). --clean removes DIRECTORIES; with the model in the
+    # database, deleting model/ leaves the rows untouched, so "clean" would read as a fresh
+    # start while the next run still resolves a stored model. Deleting a version's rows is the
+    # API's job (it owns the versions row and its cascade), not a CLI flag's, so this warns
+    # rather than reaching into the database.
+    if model_store_arg == "db":
+        log("--clean removed the directories only: the model for this version is in the "
+            "database and is NOT deleted. Remove the version through the API to clear it.",
+            component="run")
 
 project_path = raw_args[0]
 resolved = os.path.abspath(project_path) if os.path.isabs(project_path) else os.path.join(SCRIPT_DIR, project_path)
@@ -353,12 +377,19 @@ if not os.path.isdir(resolved):
 # When --use-model is set, refuse early if model files are missing.
 # ---------------------------------------------------------------------------
 if use_model:
-    MODEL_FILES = (_mfp(FUNCTIONS), _mfp(GLOBALS), _mfp(UNITS), _mfp(COMPONENTS))
-    missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
+    # Ask the REPOSITORY, not the filesystem (doc 10, step 8). "--use-model" means "reuse the
+    # model that already exists", and since step 2 that may be rows in the database rather than
+    # files — checking os.path.isfile refused a perfectly good stored model and exited 2.
+    from core.model_io import model_files_present as _present
+    missing = _present(FUNCTIONS, GLOBALS, UNITS, COMPONENTS)
     if missing:
-        log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
+        _where = "the database" if model_store_arg == "db" else "model/"
+        log(f"--use-model set but the model is missing from {_where}: {missing[0]}",
+            component="run", err=True)
         sys.exit(2)
-    log("Using existing model/ (skipping Phase 1/2).", component="run")
+    log(f"Reusing the existing model from "
+        f"{'the database' if model_store_arg == 'db' else 'model/'} (skipping Phase 1/2).",
+        component="run")
 
 # ---------------------------------------------------------------------------
 # Plan and run
@@ -590,6 +621,35 @@ def _make_phase_persist(project_id, version_id):
     return _persist
 
 
+def _dump_model_files(target_dir: str) -> None:
+    """Mirror the run's model to `target_dir` as JSON (doc 10, H6). Debug/verification only.
+
+    `verify_model_parity` compares the DATABASE against the FILES, and it is the check that
+    caught a dropped global `description` and a dropped `syntheticFromVarDecl`. Once the files
+    stop being written it has nothing to compare, exactly when it is most wanted — so the
+    WRITER survives behind this flag while the pipeline itself stops depending on files.
+
+    Not a second pipeline path: it writes the same dicts the repository just returned, after the
+    run, and nothing ever reads them back.
+    """
+    from core.model_io import read_model_file, ALL_MODEL_NAMES
+    import json as _json
+    os.makedirs(target_dir, exist_ok=True)
+    written = 0
+    for _name in ALL_MODEL_NAMES:
+        try:
+            _data = read_model_file(_name, required=False, default=None)
+        except Exception:
+            continue
+        if _data is None:
+            continue
+        with open(os.path.join(target_dir, f"{_name}.json"), "w", encoding="utf-8") as _fh:
+            _json.dump(_data, _fh, indent=2, ensure_ascii=False)
+        written += 1
+    log(f"--dump-model-files: wrote {written} model file(s) to {target_dir} "
+        f"(verification only)", component="run")
+
+
 _phase_persist = _make_phase_persist(project_id_arg, version_id_arg)
 
 runner = PhaseRunner(project_root=SCRIPT_DIR)
@@ -600,6 +660,10 @@ for plan in plans:
                              on_phase_done=_phase_persist)
 
 print(flush=True)
+# doc 10 H6 — debug-only mirror, AFTER the run so it reflects the finished model.
+if dump_model_files_arg:
+    _dump_model_files(dump_model_files_arg)
+
 log(f"Done. Total: {total_time:.2f}s", component="run")
 if _log_path:
     log(f"Full log: {_log_path}", component="run")

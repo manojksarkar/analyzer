@@ -667,6 +667,8 @@ def _build_cmd(
     project_name: str = "",
     model_root=None,
     output_root=None,
+    model_store=None,
+    version_id=None,
 ) -> list[str]:
     cmd = [sys.executable, str(get_settings().repo_root / "engine" / "run.py")]
     cmd += ["--config", str(config_path)]
@@ -678,6 +680,14 @@ def _build_cmd(
         cmd += ["--model-root", str(model_root)]
     if output_root is not None:
         cmd += ["--output-root", str(output_root)]
+    # Where the model lives, and which version's (doc 10, step 8). Re-export runs
+    # `--use-model --from-phase 4`, which now asks the REPOSITORY whether the model exists —
+    # so a version whose model is in the database must say so, or Phase 4 looks for files that
+    # were never written and the job fails with "model is missing".
+    if model_store:
+        cmd += ["--model-store", model_store]
+    if version_id:
+        cmd += ["--version-id", version_id]
     if use_model:
         cmd.append("--use-model")
     if from_phase > 1:
@@ -1461,9 +1471,29 @@ def _do_reexport(db: Any, job_id: str) -> None:
     # re-export would wipe a *generation* that was using the shared dirs. Running in place
     # also drops two full copies of the model and output per re-export.
     arch_layers = project.architecture_layers or []
+    # Does this version's model live in the database? Ask, rather than assume: a version
+    # generated before the DB-native work has files, one generated after may have only rows.
+    # Getting it wrong means Phase 4 looks in the empty place and the re-export fails.
+    _vid = getattr(job, "version_id", None)
+    _store_kind = None
+    if _vid:
+        try:
+            import sys as _sys
+            _eng_dir = str(get_settings().repo_root / "engine")
+            if _eng_dir not in _sys.path:
+                _sys.path.insert(0, _eng_dir)
+            from incremental.store import make_store as _mk
+            if _mk(job.project_id,
+                   workspaces_root=str(get_settings().repo_root / "workspaces")
+                   ).model_is_persisted(_vid):
+                _store_kind = "db"
+        except Exception:                     # cannot tell -> the file path, as before
+            _store_kind = None
+
     cmd = _build_cmd(job, cdir, config_path, from_phase=4, use_model=True,
                      arch_layers=arch_layers, project_name=(getattr(project, "name", "") or ""),
-                     model_root=adir / "model", output_root=adir / "output")
+                     model_root=adir / "model", output_root=adir / "output",
+                     model_store=_store_kind, version_id=_vid if _store_kind else None)
     if _execute_subprocess(db, job_id, cmd, phase_start=4):
         # Re-persist the re-rendered views (C0). The document render now reads interface
         # tables / flowcharts / behaviour rows from Postgres when they are there, so a

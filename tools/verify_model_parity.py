@@ -239,6 +239,17 @@ def main(argv):
     if _DB_ONLY_FIELDS:
         print(f"note: DB-only fields ignored by design: {', '.join(sorted(_DB_ONLY_FIELDS))}")
 
+    # A check that compared NOTHING must not report OK. The dump/model dir can be empty for a
+    # dozen mundane reasons — wrong directory, a run that wrote elsewhere, a debug dump that
+    # silently produced one file — and every one of them used to print "OK", which is the exact
+    # failure mode this tool exists to catch.
+    if checked == 0:
+        print("\nFAIL - compared 0 model files. Nothing was verified.\n"
+              "  The model directory has none of the artifacts this check compares, so a pass "
+              "here would be meaningless.\n"
+              f"  Looked in: {model_dir}")
+        return 2
+
     if not report:
         print(f"\nOK — the DB copy carries everything the {checked} on-disk model file(s) do.")
         return 0
