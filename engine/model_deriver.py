@@ -55,14 +55,14 @@ def _read_incremental_plan() -> dict | None:
     Phase 2 with {impactFids, impactedGlobals, impactedFiles, baselineVersionDir}.
     When present, Phase 2 restricts LLM enrichment to the impact set and carries the
     rest forward. Absent -> full enrichment (unchanged behaviour)."""
-    p = os.path.join(MODEL_DIR, "incremental_plan.json")
-    if not os.path.isfile(p):
-        return None
+    # Through the gateway (doc 10, step 6): the plan is a per-version row in database mode and
+    # model/incremental_plan.json otherwise. Absent still means "regenerate everything".
+    from core.model_io import read_model_file, INCREMENTAL_PLAN
     try:
-        with open(p, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
+        plan = read_model_file(INCREMENTAL_PLAN, required=False, default=None)
+    except Exception:
         return None
+    return plan or None
 
 
 def _file_path(data: dict, base_path: str) -> str:

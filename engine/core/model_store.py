@@ -657,6 +657,67 @@ _DUMP_FILES = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Per-version whole-object artifacts (doc 10, step 6)
+# ---------------------------------------------------------------------------
+# knowledge_base and incremental_plans are single JSON objects a phase writes and another reads.
+# tu_includes is a MAP, so it gets one row per TU on its (version_id, tu_path) index — the
+# narrowed-parse engine and the flowchart engine both look up individual headers.
+
+def persist_knowledge_base(conn, version_id, payload) -> None:
+    """Store Phase 2's project knowledge object. Idempotent (replaces)."""
+    conn.execute(delete(s.knowledge_base).where(s.knowledge_base.c.version_id == version_id))
+    if payload:
+        conn.execute(insert(s.knowledge_base),
+                     {"version_id": version_id, "payload": payload})
+
+
+def load_knowledge_base(conn, version_id) -> Dict[str, Any]:
+    r = conn.execute(select(s.knowledge_base.c.payload)
+                     .where(s.knowledge_base.c.version_id == version_id)).first()
+    return (r.payload if r else None) or {}
+
+
+def persist_incremental_plan(conn, version_id, payload) -> None:
+    """Store what this run tells Phases 2 and 3 to regenerate. Idempotent (replaces).
+
+    An empty/absent plan means "full regeneration", so writing nothing must DELETE any previous
+    row rather than leave a stale plan behind — otherwise a full run would inherit the last
+    incremental run's restriction and silently regenerate almost nothing.
+    """
+    conn.execute(delete(s.incremental_plans)
+                 .where(s.incremental_plans.c.version_id == version_id))
+    if payload:
+        conn.execute(insert(s.incremental_plans),
+                     {"version_id": version_id, "payload": payload})
+
+
+def load_incremental_plan(conn, version_id) -> Dict[str, Any]:
+    r = conn.execute(select(s.incremental_plans.c.payload)
+                     .where(s.incremental_plans.c.version_id == version_id)).first()
+    return (r.payload if r else None) or {}
+
+
+def persist_tu_includes(conn, version_id, tu_includes) -> None:
+    """Store the per-TU include closure: {tuPath -> [headers]}. Idempotent.
+
+    The table has existed since the migration and nothing ever wrote it — the same
+    declared-but-unwritten shape as `pipeline_status` and `versions.report`, both of which cost
+    real bugs. One row per TU so a reader can look up a single header on the index instead of
+    pulling the whole map.
+    """
+    conn.execute(delete(s.tu_includes).where(s.tu_includes.c.version_id == version_id))
+    rows = [{"version_id": version_id, "tu_path": k, "headers": v}
+            for k, v in (tu_includes or {}).items()]
+    insert_chunked(conn, s.tu_includes, rows)
+
+
+def load_tu_includes(conn, version_id) -> Dict[str, Any]:
+    return {r.tu_path: (r.headers or []) for r in conn.execute(
+        select(s.tu_includes.c.tu_path, s.tu_includes.c.headers)
+        .where(s.tu_includes.c.version_id == version_id))}
+
+
 def persist_parse_snapshot(conn, version_id, model_dir, names) -> int:
     """Store the post-Phase-1 skeleton for `version_id` (doc 09, C2). Returns files stored.
 

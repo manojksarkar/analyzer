@@ -76,9 +76,10 @@ def _restore_output_root():
     # (core/__init__ re-exports every public symbol), so reach the module explicitly.
     import importlib
     cp = importlib.import_module("core.paths")
-    before = cp._OVERRIDE_OUTPUT_DIR
+    before_out, before_model = cp._OVERRIDE_OUTPUT_DIR, cp._OVERRIDE_MODEL_DIR
     yield
-    cp._OVERRIDE_OUTPUT_DIR = before
+    cp._OVERRIDE_OUTPUT_DIR = before_out
+    cp._OVERRIDE_MODEL_DIR = before_model
     cp._CACHED = None
 
 
@@ -91,8 +92,13 @@ class TestApplyIncrementalUnitPlan:
         # slot a diagram occupies within the run's output tree, so that root has to be real;
         # it used to be inferred from model_dir's parent, which only worked while output and
         # model sat side by side (they no longer do — a run renders into versions/<ver>/).
-        from core.paths import set_output_dir
+        from core.paths import set_output_dir, set_model_dir
         set_output_dir(str(tmp_path / "output"))
+        # And the MODEL root: since doc 10 step 6 the view resolves incremental_plan.json
+        # through core.model_io (a per-version database row in db mode, the file otherwise)
+        # rather than joining the model_dir argument itself. The fake tree has to declare both
+        # roots for the file-backed repository to find the plan it just wrote.
+        set_model_dir(str(model_dir))
         return str(model_dir), str(out_dir)
 
     def test_no_plan_returns_none(self, tmp_path):

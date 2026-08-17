@@ -55,13 +55,14 @@ def _apply_incremental_unit_plan(model_dir, out_dir, functions_data, fid_to_unit
     forward the baseline version's unit diagrams (.mmd + .png), drop orphans (renamed/
     deleted units), and return the SET of unit_keys to regenerate. None -> no plan (caller
     does a full wipe + regenerate)."""
-    plan_path = os.path.join(os.path.abspath(model_dir), "incremental_plan.json")
-    if not os.path.isfile(plan_path):
-        return None
+    # Through the gateway (doc 10, step 6). Absent means "no plan" -> the caller does a full
+    # wipe + regenerate, unchanged.
+    from core.model_io import read_model_file, INCREMENTAL_PLAN
     try:
-        with open(plan_path, "r", encoding="utf-8") as f:
-            plan = json.load(f)
-    except (OSError, json.JSONDecodeError):
+        plan = read_model_file(INCREMENTAL_PLAN, required=False, default=None)
+    except Exception:
+        return None
+    if not plan:
         return None
 
     # 1. carry forward the baseline version's unit diagrams (engine cleaned output/).

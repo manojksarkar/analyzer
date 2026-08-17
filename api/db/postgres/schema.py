@@ -471,6 +471,38 @@ model_flowcharts = Table(
 
 
 # Tables whose rows belong to one version — CASCADE-deleted with it. Used by the
+knowledge_base = Table(
+    "knowledge_base", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"),
+           primary_key=True),
+    Column("payload", _JSONB, nullable=False),
+)
+"""The project knowledge object Phase 2 builds and Phase 3's flowchart engine consumes
+(doc 10, step 6). Previously `model/knowledge_base.json`.
+
+One row per version, whole-object: it is loaded in full by `pkb/builder.py` and never queried
+per field, so normalising it would buy nothing. D-12 intends to REPLACE it with a per-target
+context service (doc 09, C7); until then it needs a home that is not a local file, because a
+cross-machine `--from-phase 3` currently loses it and the flowchart engine silently degrades to
+less context for its node labels."""
+
+
+incremental_plans = Table(
+    "incremental_plans", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"),
+           primary_key=True),
+    Column("payload", _JSONB, nullable=False),
+)
+"""What an incremental run tells Phase 2 and Phase 3 to regenerate (doc 10, step 6).
+Previously `model/incremental_plan.json`.
+
+Carries impactFids / impactedGlobals / impactedFiles / flowchartFids / flowchartFiles /
+crossVersionFlowcharts / baselineVersionDir. Whole-object again — every reader loads all of it.
+
+This is also what makes the flowchart engine able to restrict itself by version id (D10-5): the
+changed-function list is far too long for a command line, so the engine reads the plan."""
+
+
 parse_snapshots = Table(
     "parse_snapshots", metadata,
     Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
@@ -501,5 +533,5 @@ a large project, and a reader that only wants `hashes.json` should not pull it."
 PER_VERSION_TABLES = frozenset({
     "entity_versions", "model_units", "model_components", "model_summaries",
     "model_edges", "tu_includes", "view_interface_tables", "view_behaviour_rows",
-    "model_unit_diagrams", "model_flowcharts", "documents", "parse_snapshots",
+    "model_unit_diagrams", "model_flowcharts", "documents", "parse_snapshots", "knowledge_base", "incremental_plans",
 })

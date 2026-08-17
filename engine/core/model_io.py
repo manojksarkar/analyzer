@@ -50,6 +50,11 @@ EDGES = "edges"
 # transitive include closure (M4.0). Captured every parse; the narrowed-parse engine
 # (M4) intersects it with the git diff to find affected TUs. Not in ALL_MODEL_NAMES.
 TU_INCLUDES = "tu_includes"
+# INCREMENTAL_PLAN = what the incremental engine tells Phases 2/3 to regenerate
+# (impactFids / flowchartFids / baselineVersionDir / …). Written by the engine, read by
+# model_deriver and the flowchart + unit-diagram views. Not in ALL_MODEL_NAMES: absent
+# simply means "regenerate everything".
+INCREMENTAL_PLAN = "incremental_plan"
 # ENTITY_FILES = {entityKey -> repo-relative defining file} for every hashed entity
 # (function/global/type/macro) — lets the narrowed-parse merge (M4.3) resolve each
 # entity's file (types/hashes have no inline location). Not in ALL_MODEL_NAMES.

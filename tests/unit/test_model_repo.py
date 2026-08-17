@@ -140,18 +140,23 @@ class TestDatabaseBacking:
 
 class TestFallback:
     def test_artifacts_the_database_does_not_back_go_to_files(self, db, tmp_path, monkeypatch):
-        """knowledge_base / tu_includes / metadata are still files until doc 10 steps 6-7. They
-        must keep working, or DB mode cannot be switched on before then."""
+        """Some artifacts are still files, deliberately: `metadata` is an in-run intermediate
+        whose durable fields are `versions` columns, and entity_files / func_keys /
+        override_pairs live in `parse_snapshots` for the narrowed parse. They must keep working,
+        or DB mode cannot be switched on before every last artifact has moved.
+
+        (knowledge_base and tu_includes were in this list until step 6 gave them tables.)
+        """
         import importlib
         cp = importlib.import_module("core.paths")
         before = cp._OVERRIDE_MODEL_DIR
         try:
             cp.set_model_dir(str(tmp_path / "model"))
-            from core.model_io import read_model_file, write_model_file, KNOWLEDGE_BASE
+            from core.model_io import read_model_file, write_model_file, METADATA
             _repo(db)
-            write_model_file(KNOWLEDGE_BASE, {"project": "X"})
-            assert read_model_file(KNOWLEDGE_BASE) == {"project": "X"}
-            assert (tmp_path / "model" / "knowledge_base.json").is_file(), \
+            write_model_file(METADATA, {"projectName": "X"})
+            assert read_model_file(METADATA) == {"projectName": "X"}
+            assert (tmp_path / "model" / "metadata.json").is_file(), \
                 "a non-DB-backed artifact must still be written as a file"
         finally:
             cp._OVERRIDE_MODEL_DIR = before
@@ -163,3 +168,53 @@ class TestDefaultIsFiles:
         """Step 2 must be behaviour-neutral: nothing changes until a caller opts in."""
         model_repo.set_repository(None)
         assert isinstance(model_repo.repository(), model_repo.FileRepository)
+
+
+class TestStandaloneArtifacts:
+    """knowledge_base / incremental_plan / tu_includes have their OWN tables (doc 10, step 6).
+
+    They are hand-offs — one phase writes, another reads — with no coupling to the rest of the
+    model, so a write lands immediately rather than waiting for the flush. A phase must be able
+    to pass the plan on without also rewriting the whole model.
+    """
+
+    @pytest.mark.parametrize("name,payload", [
+        ("knowledge_base", {"project": "P", "components": {"App": {}}}),
+        ("incremental_plan", {"impactFids": ["App|Main|calc|int"], "flowchartFids": []}),
+        ("tu_includes", {"App/Main.cpp": ["App/Main.h", "Lib/Util.h"]}),
+    ])
+    def test_round_trip_without_a_flush(self, db, name, payload):
+        from core.model_io import read_model_file, write_model_file
+        _repo(db)
+        write_model_file(name, payload)
+        # NO flush — a standalone artifact must be visible to the next phase immediately
+        fresh = model_repo.DbRepository(VID, PID)
+        model_repo.set_repository(fresh)
+        assert read_model_file(name) == payload
+
+    def test_writing_an_empty_plan_clears_a_previous_one(self, db):
+        """An absent plan means "regenerate everything". Leaving a stale row behind would make a
+        FULL run inherit the last incremental run's restriction and regenerate almost nothing."""
+        from core.model_io import read_model_file, write_model_file, INCREMENTAL_PLAN
+        _repo(db)
+        write_model_file(INCREMENTAL_PLAN, {"impactFids": ["a"]})
+        write_model_file(INCREMENTAL_PLAN, {})
+        fresh = model_repo.DbRepository(VID, PID)
+        model_repo.set_repository(fresh)
+        assert read_model_file(INCREMENTAL_PLAN, required=False, default={}) == {}
+
+    def test_absent_optional_is_the_default(self, db):
+        from core.model_io import read_model_file, INCREMENTAL_PLAN
+        _repo(db)
+        assert read_model_file(INCREMENTAL_PLAN, required=False, default={}) == {}
+
+    def test_tu_includes_is_stored_per_tu(self, db):
+        """One row per TU on the (version_id, tu_path) index, so a reader can look up a single
+        header instead of pulling the whole map. The table existed and nothing wrote it."""
+        from sqlalchemy import func, select as _select
+        from core.model_io import write_model_file, TU_INCLUDES
+        _repo(db)
+        write_model_file(TU_INCLUDES, {f"f{i}.cpp": [f"h{i}.h"] for i in range(5)})
+        with db.connect() as cx:
+            n = cx.execute(_select(func.count()).select_from(s.tu_includes)).scalar()
+        assert n == 5, "expected one row per TU, not a single blob"

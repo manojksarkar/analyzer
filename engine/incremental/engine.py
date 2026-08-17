@@ -696,15 +696,16 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             from core.logging_setup import get_logger as _gl
             _gl("incremental").warning(f"IN-3: could not restore baseline output: {exc}")
 
-    with open(os.path.join(model_dir, "incremental_plan.json"), "w", encoding="utf-8") as fh:
-        json.dump({"impactFids": sorted(regen_impact),
+    # Through the gateway (doc 10, step 6): a per-version row in database mode, the file
+    # otherwise. Phases 2 and 3 read it the same way, so neither cares which.
+    from core.model_io import write_model_file as _write_model, INCREMENTAL_PLAN as _PLAN
+    _write_model(_PLAN, {"impactFids": sorted(regen_impact),
                    "impactedGlobals": sorted(regen_globals),
                    "impactedFiles": impacted_files,
                    "flowchartFiles": flowchart_files,
                    "flowchartFids": flowchart_fids_regen,
                    "crossVersionFlowcharts": xver_flowcharts,
-                   "baselineVersionDir": _base_dir},
-                  fh, indent=2)
+                   "baselineVersionDir": _base_dir})
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
@@ -716,7 +717,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     # The plan file has done its job (Phase 3 read it); remove so it isn't captured.
     try:
-        os.remove(os.path.join(model_dir, "incremental_plan.json"))
+        # Clearing it is as important as writing it: a stale plan would make the NEXT run
+        # inherit this run's restriction and regenerate almost nothing.
+        _write_model(_PLAN, {})
     except OSError:
         pass
 

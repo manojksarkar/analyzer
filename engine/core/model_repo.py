@@ -30,14 +30,24 @@ import threading
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-# Canonical model names the DATABASE backs today (`model_store._DUMP_FILES`). Anything else —
-# metadata, knowledge_base, tu_includes, entity_files, func_keys, override_pairs,
-# incremental_plan — is still a file and is delegated, so the transition is safe and the
-# remaining gaps stay visible instead of failing at runtime. Steps 6-7 of doc 10 close them.
-DB_BACKED = frozenset((
+# The COUPLED model: `persist_model` writes these together (functions carries hashes and derives
+# model_edges), so a write to any of them is buffered and the whole set flushed as one transaction.
+DB_BACKED_MODEL = frozenset((
     "functions", "globalVariables", "dataDictionary", "edges",
     "units", "components", "summaries", "hashes",
 ))
+
+# Whole-object artifacts with their OWN table and no coupling to anything else (doc 10, step 6),
+# so a write lands immediately instead of waiting for the flush. Each is a hand-off that one
+# phase writes and another reads — a phase must be able to pass the plan on without also
+# rewriting the entire model.
+DB_BACKED_STANDALONE = frozenset(("knowledge_base", "incremental_plan", "tu_includes"))
+
+DB_BACKED = DB_BACKED_MODEL | DB_BACKED_STANDALONE
+
+# Still files, deliberately: entity_files / func_keys / override_pairs live in `parse_snapshots`
+# for the narrowed parse rather than as live model reads; metadata is an in-run intermediate whose
+# durable fields are `versions` columns; clang_include_paths is per-run machine-specific scratch.
 
 # canonical model name -> the keyword `model_store.persist_model` expects
 _PERSIST_KW = {
@@ -130,6 +140,15 @@ class DbRepository(ModelRepository):
         with self._lock:
             if name in self._pending:            # this phase's own write wins
                 return self._pending[name]
+        if name in DB_BACKED_STANDALONE:
+            val = self._read_standalone(name)
+            if not _is_absent(val):
+                return val
+            if required:
+                from core.model_io import ModelFileMissing
+                raise ModelFileMissing(
+                    f"model '{name}' is not in the database for version {self.version_id!r}.")
+            return default if default is not None else val
         stored = self._load_stored()
         key = _PERSIST_KW[name]
         val = stored.get(key)
@@ -149,9 +168,35 @@ class DbRepository(ModelRepository):
         if name not in DB_BACKED:
             self._fallback.write(name, data)
             return
+        if name in DB_BACKED_STANDALONE:
+            # Lands NOW: no coupling to the rest of the model, and a phase must be able to hand
+            # the plan to the next phase without also rewriting the whole model.
+            self._write_standalone(name, data)
+            return
         with self._lock:
             self._pending[name] = data
             self._stored = None                  # a later read must see the new value
+
+    # -- standalone artifacts (own table, no coupling to the rest) ----------
+    _STANDALONE_IO = {
+        "knowledge_base":   ("load_knowledge_base", "persist_knowledge_base"),
+        "incremental_plan": ("load_incremental_plan", "persist_incremental_plan"),
+        "tu_includes":      ("load_tu_includes", "persist_tu_includes"),
+    }
+
+    def _read_standalone(self, name):
+        from core.db import get_engine
+        from core import model_store
+        loader = getattr(model_store, self._STANDALONE_IO[name][0])
+        with get_engine().connect() as cx:
+            return loader(cx, self.version_id)
+
+    def _write_standalone(self, name, data):
+        from core.db import get_engine
+        from core import model_store
+        writer = getattr(model_store, self._STANDALONE_IO[name][1])
+        with get_engine().begin() as cx:
+            writer(cx, self.version_id, data)
 
     def missing(self, *names):
         out: List[str] = []
@@ -162,6 +207,10 @@ class DbRepository(ModelRepository):
             with self._lock:
                 if n in self._pending:
                     continue
+            if n in DB_BACKED_STANDALONE:
+                if _is_absent(self._read_standalone(n)):
+                    out.append(n)
+                continue
             if _is_absent(self._load_stored().get(_PERSIST_KW[n])):
                 out.append(n)
         return out
@@ -175,7 +224,9 @@ class DbRepository(ModelRepository):
         otherwise persisting would delete the rows it did not mention.
         """
         with self._lock:
-            pending, self._pending = dict(self._pending), {}
+            # Only the COUPLED set: standalone artifacts already landed on write.
+            pending = {k: v for k, v in self._pending.items() if k in DB_BACKED_MODEL}
+            self._pending = {}
         if not pending:
             return
         from core.db import get_engine

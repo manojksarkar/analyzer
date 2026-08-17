@@ -194,14 +194,17 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
     None (no plan) or a dict consumed by run() to merge + decide which PNGs to render.
     """
 
-    plan_path = os.path.join(model_dir_abs, "incremental_plan.json")
-
-    if not os.path.isfile(plan_path):
+    # Through the gateway (doc 10, step 6): a per-version row in database mode, the file
+    # otherwise. Absent means "regenerate everything".
+    from core.model_io import read_model_file, INCREMENTAL_PLAN
+    try:
+        plan = read_model_file(INCREMENTAL_PLAN, required=False, default=None)
+    except Exception:
+        plan = None
+    if not plan:
         return functions_arg_path, None
 
     try:
-        with open(plan_path, "r", encoding="utf-8") as f:
-            plan = json.load(f)
 
         with open(functions_arg_path, "r", encoding="utf-8") as f:
             funcs = json.load(f)
