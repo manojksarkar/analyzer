@@ -84,7 +84,14 @@ def model_file_path(name: str) -> str:
 
 
 def model_files_present(*names: str) -> List[str]:
-    """Return the list of canonical names whose files are MISSING on disk."""
+    """The canonical names that are MISSING — via the active repository, so this answers
+    "is it in the database?" in DB mode and "is the file there?" in file mode."""
+    from core.model_repo import repository
+    return repository().missing(*names)
+
+
+def _missing_files(*names: str) -> List[str]:
+    """The FILE implementation — called by `model_repo.FileRepository`."""
     return [n for n in names if not os.path.isfile(model_file_path(n))]
 
 
@@ -108,13 +115,23 @@ class ModelFileMissing(FileNotFoundError):
 
 
 def read_model_file(name: str, *, required: bool = True, default: Any = None) -> Any:
-    """Read a single model file. Raises ModelFileMissing if required and absent.
+    """Read one model artifact. Raises ModelFileMissing if required and absent.
+
+    Goes through the active `core.model_repo` repository, so the same call reads a file or the
+    database depending on what the run installed (doc 10, step 2). The signature is unchanged
+    on purpose — that is what lets the storage move without touching the phases.
 
     Args:
         name:     canonical name (use the constants from this module)
-        required: if False, returns `default` when the file is missing
-        default:  value to return when not required and file is absent
+        required: if False, returns `default` when the artifact is missing
+        default:  value to return when not required and absent
     """
+    from core.model_repo import repository
+    return repository().read(name, required=required, default=default)
+
+
+def _read_file(name: str, *, required: bool = True, default: Any = None) -> Any:
+    """The FILE implementation — called by `model_repo.FileRepository`, not directly."""
     path = model_file_path(name)
     if not os.path.isfile(path):
         if required:
@@ -155,7 +172,30 @@ def write_model_file(
     indent: int = 2,
     ensure_ascii: bool = True,
 ) -> str:
-    """Write a model file as JSON. Returns the path written.
+    """Write one model artifact through the active repository. Returns the path, or "" when the
+    write went to the database (doc 10, step 2).
+
+    A database write is BUFFERED and lands at the phase boundary, because the model is not a
+    per-file store — see `core.model_repo`. Callers that use the return value as a path are the
+    step-5 work; none of them do so today.
+    """
+    from core.model_repo import repository, FileRepository
+    repo = repository()
+    if not isinstance(repo, FileRepository):
+        repo.write(name, data)
+        return ""
+    return _write_file(name, data, atomic=atomic, indent=indent, ensure_ascii=ensure_ascii)
+
+
+def _write_file(
+    name: str,
+    data: Any,
+    *,
+    atomic: bool = False,
+    indent: int = 2,
+    ensure_ascii: bool = True,
+) -> str:
+    """The FILE implementation — called by `model_repo.FileRepository`, not directly.
 
     By default this is a plain in-place write (matches existing behaviour).
     Pass `atomic=True` to write to a tempfile in the same directory and

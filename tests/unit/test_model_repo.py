@@ -1,0 +1,165 @@
+"""core/model_repo — the seam model_io reads and writes through (doc 10, step 2).
+
+The point of the seam is that `read_model_file(FUNCTIONS)` returns the same dict whether the
+model is in files or in the database, so the phases need no changes. These tests hold that
+equivalence, and pin the three behaviours that are easy to get wrong:
+
+  * a phase must see its OWN writes before they are flushed (Phase 2 writes functions, then
+    reads them back);
+  * a flush must not delete rows the phase did not mention (Phase 2 rewrites functions but not
+    units — persisting only what was written would drop the units);
+  * anything the database does not back yet must fall through to files, so this can be switched
+    on before every artifact has moved.
+"""
+import datetime
+import json
+import os
+import sys
+
+import pytest
+from sqlalchemy import create_engine, event, insert
+from sqlalchemy.pool import StaticPool
+
+pytestmark = pytest.mark.unit
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "engine"))
+
+from api.db.postgres import schema as s              # noqa: E402
+from core import model_repo                          # noqa: E402
+from core.model_io import ModelFileMissing           # noqa: E402
+
+UTC = datetime.timezone.utc
+PID, VID = "proj-repo", "ver-repo"
+
+FUNCS = {"App|Main|calc|int": {"qualifiedName": "calc", "returnType": "int",
+                              "description": "Adds two numbers.",
+                              "location": {"file": "App/Main.cpp", "line": 10},
+                              "callsIds": [], "readsGlobalIds": [], "writesGlobalIds": []}}
+HASHES = {"App|Main|calc|int": "aaa"}
+UNITS = {"App|Main": {"component": "App", "name": "Main"}}
+
+
+@pytest.fixture
+def db(monkeypatch):
+    """A FK-enforcing SQLite database with the parent rows, wired in as the process engine."""
+    eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                        poolclass=StaticPool)
+
+    @event.listens_for(eng, "connect")
+    def _fk(dbapi_conn, _rec):
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
+
+    s.metadata.create_all(eng)
+    now = datetime.datetime.now(UTC)
+    with eng.begin() as cx:
+        cx.execute(insert(s.projects), {"id": PID, "name": "R", "created_at": now})
+        cx.execute(insert(s.versions),
+                   {"id": VID, "project_id": PID, "version": "v1", "created_at": now})
+    import core.db as coredb
+    monkeypatch.setattr(coredb, "get_engine", lambda *a, **k: eng)
+    yield eng
+    model_repo.set_repository(None)
+
+
+def _repo(db):
+    r = model_repo.DbRepository(VID, PID)
+    model_repo.set_repository(r)
+    return r
+
+
+class TestDatabaseBacking:
+    def test_write_then_read_through_model_io(self, db):
+        """The whole point: model_io's API, database underneath."""
+        from core.model_io import read_model_file, write_model_file, FUNCTIONS, HASHES as H
+        repo = _repo(db)
+        write_model_file(FUNCTIONS, FUNCS)
+        write_model_file(H, HASHES)
+
+        # visible to this phase BEFORE the flush
+        assert read_model_file(FUNCTIONS)["App|Main|calc|int"]["description"] == "Adds two numbers."
+
+        repo.flush()
+        # and to a FRESH repository afterwards — i.e. it really landed
+        fresh = model_repo.DbRepository(VID, PID)
+        model_repo.set_repository(fresh)
+        got = read_model_file(FUNCTIONS)
+        assert set(got) == set(FUNCS)
+        assert got["App|Main|calc|int"]["returnType"] == "int"
+        assert read_model_file(H) == HASHES
+
+    def test_flush_does_not_delete_what_the_phase_did_not_write(self, db):
+        """Phase 2 rewrites functions but not units. Persisting only the pending pieces would
+        drop the units — the flush has to complete itself from what is stored."""
+        from core.model_io import read_model_file, write_model_file, FUNCTIONS, UNITS as U, HASHES as H
+        repo = _repo(db)
+        write_model_file(FUNCTIONS, FUNCS)
+        write_model_file(H, HASHES)
+        write_model_file(U, UNITS)
+        repo.flush()
+
+        # a later phase rewrites ONLY functions (with a description filled in)
+        repo2 = model_repo.DbRepository(VID, PID)
+        model_repo.set_repository(repo2)
+        enriched = json.loads(json.dumps(FUNCS))
+        enriched["App|Main|calc|int"]["description"] = "Enriched by phase 2."
+        write_model_file(FUNCTIONS, enriched)
+        repo2.flush()
+
+        fresh = model_repo.DbRepository(VID, PID)
+        model_repo.set_repository(fresh)
+        assert read_model_file(FUNCTIONS)["App|Main|calc|int"]["description"] == "Enriched by phase 2."
+        assert set(read_model_file(U)) == set(UNITS), "units must survive a functions-only phase"
+
+    def test_missing_required_raises_the_same_error_as_a_missing_file(self, db):
+        from core.model_io import read_model_file, FUNCTIONS
+        _repo(db)
+        with pytest.raises(ModelFileMissing):
+            read_model_file(FUNCTIONS)
+
+    def test_missing_optional_returns_the_default(self, db):
+        from core.model_io import read_model_file, SUMMARIES
+        _repo(db)
+        assert read_model_file(SUMMARIES, required=False, default={}) == {}
+
+    def test_model_files_present_answers_from_the_database(self, db):
+        from core.model_io import model_files_present, write_model_file, FUNCTIONS, HASHES as H
+        repo = _repo(db)
+        assert model_files_present(FUNCTIONS) == [FUNCTIONS]      # absent
+        write_model_file(FUNCTIONS, FUNCS); write_model_file(H, HASHES)
+        assert model_files_present(FUNCTIONS) == []               # pending counts as present
+        repo.flush()
+        assert model_files_present(FUNCTIONS) == []
+
+    def test_a_version_id_is_required(self, db):
+        """A phase must be told WHICH model it is working on (D10-8)."""
+        with pytest.raises(ValueError, match="version_id"):
+            model_repo.DbRepository("", PID)
+
+
+class TestFallback:
+    def test_artifacts_the_database_does_not_back_go_to_files(self, db, tmp_path, monkeypatch):
+        """knowledge_base / tu_includes / metadata are still files until doc 10 steps 6-7. They
+        must keep working, or DB mode cannot be switched on before then."""
+        import importlib
+        cp = importlib.import_module("core.paths")
+        before = cp._OVERRIDE_MODEL_DIR
+        try:
+            cp.set_model_dir(str(tmp_path / "model"))
+            from core.model_io import read_model_file, write_model_file, KNOWLEDGE_BASE
+            _repo(db)
+            write_model_file(KNOWLEDGE_BASE, {"project": "X"})
+            assert read_model_file(KNOWLEDGE_BASE) == {"project": "X"}
+            assert (tmp_path / "model" / "knowledge_base.json").is_file(), \
+                "a non-DB-backed artifact must still be written as a file"
+        finally:
+            cp._OVERRIDE_MODEL_DIR = before
+            cp._CACHED = None
+
+
+class TestDefaultIsFiles:
+    def test_default_repository_is_files(self):
+        """Step 2 must be behaviour-neutral: nothing changes until a caller opts in."""
+        model_repo.set_repository(None)
+        assert isinstance(model_repo.repository(), model_repo.FileRepository)
