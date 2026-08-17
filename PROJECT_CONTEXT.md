@@ -1,7 +1,32 @@
 # C++ Codebase Analyzer — Complete Project Context
 
-> Updated: 2026-05-12 (feat/component-design — SAD 3.N.3 Component Design: new componentDesignDiagram view in src/sad_views/, per-component SVG showing same-layer callers/callees with ⇨ arrows, stacked unit boxes; architecture_docx_exporter gains section 3.N.3 with one subsection per component. Also corrects context: views live in src/sad_views/ (not add_views/), output goes to output/sad/ (not output/add/), runner is run_sad_views.py).
-> Current active branch: `feat/component-design` (off `feat/architecture-design`).
+> Updated: 2026-08-17 (feat/swe2-sad-all — consolidation branch: `feat/architecture-design`
+> with `feat/header-diagram` merged in, so all surviving SWE.2 / SAD work sits in one place).
+> Current active branch: `feat/swe2-sad-all` (off `feat/architecture-design`).
+>
+> **This branch is an archive for SWE.2 revival, not a mainline branch.** It is based on the
+> May 2026 flat `src/` layout and predates the incremental engine — `main` has since moved far
+> ahead (~300 files). Reviving this work means re-porting the views onto `main`, not merging.
+>
+> What it carries:
+> - SAD views: `src/sad_views/` (`registry.py`, `layer_static_diagram.py`,
+>   `component_design_diagram.py`), `src/architecture_docx_exporter.py`, `src/run_sad_views.py`,
+>   runner output under `output/sad/`.
+> - SAD 3.N.3 Component Design: per-component SVG showing same-layer callers/callees with ⇨
+>   arrows and stacked unit boxes; one subsection per component (from `feat/component-design`,
+>   already squash-merged in as PR #13).
+> - Header dependency diagram + container diagram + `includedHeaders` in `units.json`, plus the
+>   `#ifdef`-aware include reader (`_read_local_includes`, `_defined_macros_from_config` in
+>   `src/model_deriver.py`) — from `feat/header-diagram`.
+>
+> Deliberately NOT included: `feat/data-dictionary`. Its work (`--data-dictionary` CLI flag,
+> `parser._merge_external_data_dictionary`, `config/data_dictionary.csv`) already landed on `main`,
+> so re-porting it from here would be wasted effort.
+>
+> Note: `feat/architecture-design` renamed `module` → `component` throughout, so most of the merge
+> conflicts against `feat/header-diagram` were rename collisions resolved in favour of `component`.
+> `_build_component_static_structure_mermaid` is defined but never called — it was already dead
+> code on both branches before the merge (the header dependency diagram replaced it).
 > Validated against current source. Reading this file end-to-end is the
 > intended way to onboard or to refresh context after compaction.
 >
