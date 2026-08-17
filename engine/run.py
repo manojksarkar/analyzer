@@ -561,6 +561,41 @@ except LlmConfigError as e:
     log(f"Invalid LLM config: {e}", component="run", err=True)
     sys.exit(2)
 
+# --selected-unit: fail before Phase 1 rather than in Phase 3. The unit names come
+# from model/units.json, so this is only possible when a model is already on disk —
+# which is the case for the runs the flag exists for (--use-model / --from-phase 3).
+# A cold run has nothing to check against yet, so validation falls through to
+# Phase 3, where the model has just been built.
+if selected_units_arg:
+    _units_path = _mfp(UNITS)
+    if os.path.isfile(_units_path):
+        import json as _json
+        try:
+            with open(_units_path, encoding="utf-8") as _uf:
+                _unit_model = {UNITS: _json.load(_uf)}
+        except (OSError, ValueError):
+            _unit_model = None
+        if _unit_model:
+            from core.config import get_flat_groups as _gfg
+            _groups = _gfg(cfg) or {}
+            _grp = _groups.get(selected_group_arg) if selected_group_arg else None
+            if not isinstance(_grp, dict) and selected_group_arg:
+                _sk = selected_group_arg.casefold()
+                _grp = next((v for k, v in _groups.items()
+                             if isinstance(k, str) and k.casefold() == _sk), None)
+            if selected_components_arg:
+                _allowed = sorted(selected_components_arg)
+            elif isinstance(_grp, dict):
+                _allowed = sorted(k.replace(" ", "-") for k in _grp.keys())
+            else:
+                _allowed = None      # whole model in scope
+            import run_views as _rv
+            selected_units_arg = _rv._resolve_units(
+                _unit_model, selected_units_arg, _allowed)
+    else:
+        log("--selected-unit will be validated in Phase 3 (no model on disk yet)",
+            component="run")
+
 try:
     plans = plan_runs(
         cfg,
