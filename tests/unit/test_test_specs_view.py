@@ -1,0 +1,207 @@
+"""testSpecs view (SWE.4): scope, mock rule, Input/Expected composition.
+
+Rules under test come from docs/spec/SWE4_WIKI.md.
+"""
+import os
+import sys
+
+import pytest
+
+ENGINE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "engine")
+if ENGINE not in sys.path:
+    sys.path.insert(0, ENGINE)
+
+from views.test_specs import (  # noqa: E402
+    _build_test_specs, _spec_function_ids, _is_out_parameter, _test_case_id,
+    GENERATION_METHOD,
+)
+
+
+def _fn(name, *, visibility="default", file="U.cpp", line=1, params=(),
+        ret="int", calls=(), reads=(), writes=(), iid=""):
+    f = {"qualifiedName": name, "visibility": visibility, "returnType": ret,
+         "location": {"file": file, "line": line}, "parameters": list(params),
+         "callsIds": list(calls), "interfaceId": iid}
+    if reads:
+        f["readsGlobalIds"] = list(reads)
+    if writes:
+        f["writesGlobalIds"] = list(writes)
+    return f
+
+
+@pytest.fixture
+def model():
+    functions = {
+        "C|U|pub": _fn("pub", params=[{"name": "a", "type": "int"},
+                                      {"name": "out", "type": "int*"}],
+                       calls=["C|U|priv", "C|U|other", "C|O|far"],
+                       reads=["C|U|gRead"], writes=["C|U|gWrite"], iid="IF_01"),
+        "C|U|priv": _fn("priv", visibility="private", line=2),
+        "C|U|other": _fn("other", line=3, ret="short"),
+        "C|U|inlinepub": _fn("inlinepub", file="U.h", line=4),
+        "C|U|voidcallee": _fn("voidcallee", line=5, ret="void"),
+        "C|O|far": _fn("far", file="O.cpp", line=1, ret="long"),
+    }
+    units = {
+        "C|U": {"name": "U", "fileName": "U.cpp",
+                "functionIds": ["C|U|pub", "C|U|priv", "C|U|other",
+                                "C|U|inlinepub", "C|U|voidcallee"]},
+        "C|O": {"name": "O", "fileName": "O.cpp", "functionIds": ["C|O|far"]},
+        "C|H": {"name": "H", "fileName": "H.h", "functionIds": []},
+    }
+    globals_ = {
+        "C|U|gRead": {"qualifiedName": "gRead", "type": "int", "value": "7"},
+        "C|U|gWrite": {"qualifiedName": "gWrite", "type": "char"},
+    }
+    return units, functions, globals_
+
+
+def _specs(model):
+    units, functions, globals_ = model
+    r = _build_test_specs(units, functions, globals_, {})
+    return {s["name"]: s for k, v in r.items() if k != "unitNames"
+            for s in v["functions"]}
+
+
+# --- scope -----------------------------------------------------------------
+
+def test_private_function_gets_no_spec(model):
+    assert "priv" not in _specs(model)
+
+
+def test_inline_public_header_function_gets_no_spec(model):
+    """The wiki's one exception: covered through its callers instead."""
+    assert "inlinepub" not in _specs(model)
+
+
+def test_public_cpp_functions_get_a_spec(model):
+    names = _specs(model)
+    assert {"pub", "other", "far"} <= set(names)
+
+
+def test_header_only_unit_produces_no_section(model):
+    units, functions, globals_ = model
+    r = _build_test_specs(units, functions, globals_, {})
+    assert "C|H" not in r
+
+
+# --- mock rule -------------------------------------------------------------
+
+def test_callee_with_its_own_spec_is_mocked(model):
+    mocks = _specs(model)["pub"]["precondition"]["mockFunctions"]
+    assert "other()" in mocks and "far()" in mocks
+
+
+def test_callee_without_a_spec_is_inlined_not_mocked(model):
+    """A private helper has no spec, so it must run inline or its branches are
+    covered nowhere."""
+    assert "priv()" not in _specs(model)["pub"]["precondition"]["mockFunctions"]
+
+
+def test_mock_rule_matches_the_scope_set(model):
+    units, functions, globals_ = model
+    spec_ids = _spec_function_ids(units, functions, None)
+    mocks = set(_specs(model)["pub"]["precondition"]["mockFunctions"])
+    for cid in functions["C|U|pub"]["callsIds"]:
+        expected = f"{functions[cid]['qualifiedName']}()"
+        assert (expected in mocks) is (cid in spec_ids)
+
+
+# --- precondition ----------------------------------------------------------
+
+def test_precondition_globals_carry_no_value_or_range(model):
+    texts = [g["text"] for g in _specs(model)["pub"]["precondition"]["globals"]]
+    assert texts == ["int gRead", "char gWrite"]
+    assert not any("[" in t or "=" in t for t in texts)
+
+
+def test_precondition_lists_every_parameter(model):
+    texts = [p["text"] for p in _specs(model)["pub"]["precondition"]["parameters"]]
+    assert texts == ["int a", "int* out"]
+
+
+# --- input -----------------------------------------------------------------
+
+def test_input_entries_carry_a_range(model):
+    entry = next(e for e in _specs(model)["pub"]["input"]["entries"]
+                 if e["name"] == "a")
+    assert entry["text"].startswith("int a[") and entry["text"].endswith("]")
+
+
+def test_out_parameter_is_excluded_from_input(model):
+    spec = _specs(model)["pub"]
+    assert "out" not in {e["name"] for e in spec["input"]["entries"]}
+    assert "out" in {o["name"] for o in spec["expected"]["outParameters"]}
+
+
+def test_write_only_global_is_excluded_from_input(model):
+    spec = _specs(model)["pub"]
+    names = {e["name"] for e in spec["input"]["entries"]}
+    assert "gRead" in names and "gWrite" not in names
+
+
+def test_void_mock_is_named_in_precondition_but_not_in_input(model):
+    units, functions, globals_ = model
+    functions["C|U|pub"]["callsIds"].append("C|U|voidcallee")
+    spec = _specs((units, functions, globals_))["pub"]
+    assert "voidcallee()" in spec["precondition"]["mockFunctions"]
+    assert "voidcallee()" not in {e["name"] for e in spec["input"]["entries"]}
+
+
+def test_value_returning_mock_appears_in_input(model):
+    entry = next(e for e in _specs(model)["pub"]["input"]["entries"]
+                 if e["name"] == "far()")
+    assert entry["kind"] == "mockReturn" and entry["text"].startswith("long far()")
+
+
+def test_input_is_void_when_nothing_is_read():
+    functions = {"C|U|f": _fn("f", ret="void")}
+    units = {"C|U": {"name": "U", "fileName": "U.cpp", "functionIds": ["C|U|f"]}}
+    r = _build_test_specs(units, functions, {}, {})
+    assert r["C|U"]["functions"][0]["input"]["isVoid"] is True
+
+
+# --- expected --------------------------------------------------------------
+
+def test_written_global_is_an_expected_output(model):
+    assert [g["name"] for g in _specs(model)["pub"]["expected"]["globals"]] == ["gWrite"]
+
+
+def test_returns_are_left_for_the_cfg_pass(model):
+    assert _specs(model)["pub"]["expected"]["returns"] == []
+
+
+# --- out-parameter heuristic ----------------------------------------------
+
+@pytest.mark.parametrize("type_str,is_out", [
+    ("int", False), ("int*", True), ("const int*", False),
+    ("int&", True), ("const int&", False),
+    ("int (*)(int, int)", False),      # callback: an input despite the '*'
+    ("void (*)(void)", False),
+])
+def test_out_parameter_detection(type_str, is_out):
+    assert _is_out_parameter({"type": type_str}) is is_out
+
+
+# --- misc ------------------------------------------------------------------
+
+def test_test_case_id_prefers_interface_id(model):
+    assert _specs(model)["pub"]["testCaseId"] == "TC_IF_01"
+
+
+def test_test_case_id_falls_back_to_a_sanitized_name():
+    assert _test_case_id({"qualifiedName": "ns::fn"}) == "TC_ns__fn"
+
+
+def test_generation_method_is_fixed(model):
+    assert _specs(model)["pub"]["generationMethod"] == GENERATION_METHOD == \
+        "Analysis of Requirements"
+
+
+def test_build_is_deterministic(model):
+    units, functions, globals_ = model
+    import json
+    a = json.dumps(_build_test_specs(units, functions, globals_, {}), indent=2)
+    b = json.dumps(_build_test_specs(units, functions, globals_, {}), indent=2)
+    assert a == b
