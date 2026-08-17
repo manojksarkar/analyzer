@@ -805,6 +805,16 @@ def run(model, output_dir, model_dir, config):
         for m in ((config or {}).get("_analyzerAllowedComponents") or [])
     ]
 
+    # Development aid (--selected-unit): build flowcharts for these units only.
+    # This is the expensive per-function work, so narrowing it is what makes an
+    # iteration cheap. Nothing else is filtered — the model stays whole — and
+    # flowcharts already on disk for other units are left in place, so labelled
+    # units accumulate across runs.
+    allowed_units = [
+        u.lower()
+        for u in ((config or {}).get("_analyzerSelectedUnits") or [])
+    ]
+
     group_name = (config or {}).get("_analyzerSelectedGroup") or ""
 
     std = "c++14"  # fixed in code
@@ -913,20 +923,26 @@ def run(model, output_dir, model_dir, config):
     # pass only those functions to the generator.
     functions_arg_path = functions_path
 
-    if allowed_components and os.path.isfile(functions_path):
+    if (allowed_components or allowed_units) and os.path.isfile(functions_path):
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
                 all_funcs = json.load(f)
 
             if isinstance(all_funcs, dict):
-                filtered = {
-                    fid: info
-                    for fid, info in all_funcs.items()
-                    if isinstance(fid, str)
-                    and KEY_SEP in fid
-                    and fid.split(KEY_SEP, 1)[0].lower()
-                    in allowed_components
-                }
+                def _in_scope(fid):
+                    if not isinstance(fid, str) or KEY_SEP not in fid:
+                        return False
+                    parts = fid.split(KEY_SEP)
+                    if allowed_components and parts[0].lower() not in allowed_components:
+                        return False
+                    if allowed_units:
+                        unit = parts[1].lower() if len(parts) > 1 else ""
+                        if unit not in allowed_units:
+                            return False
+                    return True
+
+                filtered = {fid: info for fid, info in all_funcs.items()
+                            if _in_scope(fid)}
 
                 orig_comps = sorted(
                     (config or {}).get("_analyzerAllowedComponents") or []
@@ -935,6 +951,10 @@ def run(model, output_dir, model_dir, config):
                 filename_key = (
                     group_name or "_".join(orig_comps)
                 )
+                if allowed_units:
+                    # distinct file, so a narrowed run never overwrites the
+                    # group's full function list
+                    filename_key = f"{filename_key}_units_{'_'.join(sorted(allowed_units))}"
 
                 group_functions_path = os.path.join(
                     model_dir_abs,

@@ -23,6 +23,11 @@ Options:
                        all named components must live in the same layer.
   --component-per-docx One DOCX per component instead of one per group. Cannot be
                        combined with --selected-component.
+  --selected-unit <name>
+                       Narrow Phase 3 to the named unit(s) — flowcharts are built
+                       for those units only. Repeatable. A development aid: the
+                       expensive per-function work is skipped for everything else,
+                       while the model stays whole so derived content is unchanged.
   --filter-mode <mode> Override views.sequenceDiagrams.filterMode for this run.
                        Forwarded to Phase 3 (run_views), which writes it into the
                        in-memory config. NOTE: no view reads that key yet, so the
@@ -162,7 +167,7 @@ _KNOWN_FLAGS = (
     "--clean", "--config",
     "--use-model", "--skip-model",
     "--no-llm-summarize", "--llm-summarize",
-    "--selected-group", "--selected-layer", "--selected-component",
+    "--selected-group", "--selected-layer", "--selected-component", "--selected-unit",
     "--component-per-docx", "--filter-mode",
     "--from-phase", "--to-phase",
     "--data-dictionary", "--project-name", "--output-name",
@@ -179,6 +184,7 @@ to_phase                = None   # stop after this phase (1-4); None = run throu
 selected_group_arg      = None
 selected_layer_arg      = None
 selected_components_arg = []
+selected_units_arg      = []   # dev aid: narrow Phase 3 to these unit(s)
 component_per_docx      = False
 filter_mode_arg         = None
 data_dictionary_arg     = None
@@ -229,6 +235,12 @@ while i < len(sys.argv):
             log("--selected-component requires a component name", component="run", err=True)
             sys.exit(1)
         selected_components_arg.append(sys.argv[i].replace(" ", "-"))
+    elif a == "--selected-unit":
+        i += 1
+        if i >= len(sys.argv):
+            log("--selected-unit requires a unit name", component="run", err=True)
+            sys.exit(1)
+        selected_units_arg.append(sys.argv[i])
     elif a == "--component-per-docx":
         component_per_docx = True
     elif a == "--filter-mode":
@@ -568,6 +580,7 @@ try:
         output_name=output_name_arg,
         only_files=only_files_arg,
         include_emulator=include_emulator_arg,
+        selected_units=selected_units_arg,
     )
 except ValueError as e:
     log(str(e), component="run", err=True)

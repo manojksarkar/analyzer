@@ -96,7 +96,8 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
                         selected_group: Optional[str] = None,
                         filter_mode: Optional[str] = None,
                         extra_view_args: Optional[List[str]] = None,
-                        docx_args: Optional[List[str]] = None) -> List[Phase]:
+                        docx_args: Optional[List[str]] = None,
+                        selected_units: Optional[List[str]] = None) -> List[Phase]:
     views_args: List[str] = []
     if output_dir:
         views_args += ["--output-dir", output_dir]
@@ -104,6 +105,8 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
         views_args += ["--selected-group", selected_group]
     if filter_mode:
         views_args += ["--filter-mode", filter_mode]
+    for _unit in (selected_units or []):
+        views_args += ["--selected-unit", _unit]
     if extra_view_args:
         views_args += extra_view_args
     return [
@@ -131,6 +134,7 @@ def plan_runs(
     output_name: Optional[str] = None,
     only_files: Optional[str] = None,
     include_emulator: bool = False,
+    selected_units: Optional[List[str]] = None,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -212,6 +216,7 @@ def plan_runs(
                 os.path.join(comp_out, "interface_tables.json"),
                 os.path.join(comp_out, f"software_detailed_design_{out_key}.docx"),
             ] + comp_sel_args,
+                selected_units=selected_units,
         )
         local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
         plans.append(RunPlan(
@@ -227,7 +232,7 @@ def plan_runs(
     if not group_names:
         if use_model:
             # Skip phases 1+2; runner indices 1,2 map to phases 3,4
-            phases = _view_export_phases(filter_mode=filter_mode)
+            phases = _view_export_phases(filter_mode=filter_mode, selected_units=selected_units)
             translated = max(1, from_phase - 2)
             plans.append(RunPlan(label="single run (use-model)",
                                  phases=phases,
@@ -239,7 +244,7 @@ def plan_runs(
                                          macros_layer=macros_layer,
                                          project_name=project_name, only_files=only_files,
                                          include_emulator=include_emulator) \
-                     + _view_export_phases(filter_mode=filter_mode)
+                     + _view_export_phases(filter_mode=filter_mode, selected_units=selected_units)
             plans.append(RunPlan(label="single run",
                                  phases=phases,
                                  runner_from_phase=from_phase))
@@ -294,6 +299,7 @@ def plan_runs(
             view_phases = _view_export_phases(
                 selected_group=g,
                 filter_mode=filter_mode,
+                selected_units=selected_units,
             )
             # Embed allowed components into the phase args to pass via CLI
             for phase in view_phases:
@@ -315,6 +321,7 @@ def plan_runs(
                         os.path.join(comp_out, "interface_tables.json"),
                         os.path.join(comp_out, f"software_detailed_design_{comp}.docx"),
                     ] + comp_sel_args,
+                selected_units=selected_units,
                 )
                 plans.append(RunPlan(label=f"Component: {comp}",
                                      phases=view_phases,
@@ -332,6 +339,7 @@ def plan_runs(
                     os.path.join(group_out, f"software_detailed_design_{out_key}.docx"),
                     "--selected-group", g,
                 ],
+                selected_units=selected_units,
             )
             plans.append(RunPlan(label=f"Group: {g}",
                                  phases=view_phases,

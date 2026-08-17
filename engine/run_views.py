@@ -58,6 +58,10 @@ def main():
     for j in range(len(args) - 1):
         if args[j] == "--selected-component":
             selected_components.append(args[j + 1])
+    # Development aid: narrow the expensive per-function view work to these
+    # units. The model is left whole, so anything derived from it is unchanged.
+    selected_units = [args[j + 1] for j in range(len(args) - 1)
+                      if args[j] == "--selected-unit"]
     filter_mode_override = None
     if "--filter-mode" in args:
         i = args.index("--filter-mode")
@@ -128,6 +132,10 @@ def main():
                     layer_comps.update(g.keys())
             if layer_comps:
                 model = _filter_model_to_components(model, layer_comps)
+    if selected_units:
+        config = dict(config)
+        config["_analyzerSelectedUnits"] = selected_units
+        print(f"[run_views] narrowed to unit(s): {', '.join(selected_units)}")
     run_views(model, output_dir, model_dir, config)
 
 
