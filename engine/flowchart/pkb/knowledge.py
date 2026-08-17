@@ -327,6 +327,19 @@ def load_knowledge(path: str) -> Optional[ProjectKnowledge]:
     except Exception as exc:
         logger.error("Failed to load knowledge file %s: %s", path, exc)
         return None
+    return load_knowledge_data(data)
+
+
+def load_knowledge_data(data: Optional[dict]) -> Optional[ProjectKnowledge]:
+    """Build ProjectKnowledge from an already-loaded object (doc 10, step 7).
+
+    The knowledge base lives in the `knowledge_base` table since step 6, so the engine reads a
+    row rather than a file. Same parsing as `load_knowledge`, which now delegates here — one
+    implementation, so a field added to the format cannot be handled in a file and forgotten in
+    the database.
+    """
+    if not data:
+        return None
 
     k = ProjectKnowledge(
         project_name=data.get("project_name", ""),
@@ -410,5 +423,8 @@ def load_knowledge(path: str) -> Optional[ProjectKnowledge]:
             written_by=v.get("writtenBy", []),
         )
 
-    logger.info("Project knowledge loaded: %s  (%s)", path, k.stats())
+    # Identify the SOURCE, not a path: since step 7 this is often a database row and there is no
+    # file to name. `path` was this function's caller's parameter and no longer exists here.
+    logger.info("Project knowledge loaded: %s  (%s)",
+                data.get("project_name") or "<unnamed project>", k.stats())
     return k

@@ -37,6 +37,22 @@ class EngineConfig:
     # first): the engine retries cursor resolution inside a TU that includes it.
     tu_includes_json_path: Optional[str] = None
 
+    # --- database-native inputs (doc 10, step 7) --------------------------------------------
+    # When `version_id` is set the engine reads its inputs from Postgres/SQLite instead of the
+    # four paths above: the model from entity_versions (+ content_blobs), base_path/project_name
+    # from the `versions` row, the knowledge base and the header->TU map from their own tables.
+    #
+    # `component` narrows the model to one component using the existing
+    # ix_ev_version_component index — CHEAPER than today, where the caller writes a filtered
+    # functions_<group>.json and the engine loads and filters the whole model in Python.
+    #
+    # `restrict_from_plan` makes the engine read `flowchartFids` from `incremental_plans` and
+    # regenerate only those. That list cannot be passed on a command line at 20k functions, so
+    # reading the plan is the only shape that avoids a file (D10-5).
+    version_id: Optional[str] = None
+    component: Optional[str] = None
+    restrict_from_plan: bool = False
+
     # LLM call settings
     llm_timeout: int = 120
     llm_max_retries: int = 2

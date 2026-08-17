@@ -1008,16 +1008,30 @@ def run(model, output_dir, model_dir, config):
         llm_num_ctx,
     ]
 
-    if os.path.isfile(kb_path):
-        cmd.extend(["--knowledge-json", kb_path])
+    # doc 10 step 7 — in database mode the engine reads its own inputs: the model from
+    # entity_versions, base_path/project_name from the versions row, the knowledge base and the
+    # header->TU map from their tables, and the restricted function list from the stored
+    # incremental plan. So none of the four file arguments is passed, and no filtered
+    # functions_<group>.json / functions_incremental.json is written at all.
+    #
+    # The plan is read by the ENGINE rather than passed as ids: at 20k functions the list cannot
+    # fit on a command line, which is the whole reason for D10-5.
+    from core.run_context import model_store_kind as _store_kind, version_id as _run_version
+    if _store_kind() == "db" and _run_version():
+        cmd.extend(["--version-id", _run_version()])
+        if inc is not None:
+            cmd.append("--restrict-from-plan")
+    else:
+        if os.path.isfile(kb_path):
+            cmd.extend(["--knowledge-json", kb_path])
 
-    # tu_includes.json (Phase 1): lets the engine resolve a function defined in a
-    # header that does not parse standalone by retrying inside a .cpp that
-    # includes it. Written to the run's model dir, so it follows layer scoping.
-    tu_includes_path = os.path.join(model_dir_abs, "tu_includes.json")
+        # tu_includes.json (Phase 1): lets the engine resolve a function defined in a
+        # header that does not parse standalone by retrying inside a .cpp that
+        # includes it. Written to the run's model dir, so it follows layer scoping.
+        tu_includes_path = os.path.join(model_dir_abs, "tu_includes.json")
 
-    if os.path.isfile(tu_includes_path):
-        cmd.extend(["--tu-includes", tu_includes_path])
+        if os.path.isfile(tu_includes_path):
+            cmd.extend(["--tu-includes", tu_includes_path])
 
     # M-D: when the analyzer disables LLM (--no-llm sets llm.descriptions=False),
     # tell the flowchart engine to skip the LLM too (fallback node labels)
