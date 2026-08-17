@@ -100,7 +100,18 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
                         filter_mode: Optional[str] = None,
                         extra_view_args: Optional[List[str]] = None,
                         docx_args: Optional[List[str]] = None,
-                        selected_units: Optional[List[str]] = None) -> List[Phase]:
+                        selected_units: Optional[List[str]] = None,
+                        doc_type: str = "swe3",
+                        swe4_args: Optional[List[str]] = None) -> List[Phase]:
+    """Build the Phase-3 (views) + Phase-4 (export) phases for a run.
+
+    `doc_type` (swe3|swe4|all) selects the Phase-3 view-set (passed to
+    run_views.py) and the Phase-4 exporter(s), dispatched via EXPORTER_REGISTRY
+    so one export sub-run is emitted per concrete doc type. `docx_args` are the
+    SWE.3 exporter's args (unchanged); `swe4_args` are the SWE.4 exporter's.
+    """
+    from views.registry import EXPORTER_REGISTRY, DOC_TYPE_SWE3, DOC_TYPE_SWE4, concrete_doc_types
+
     views_args: List[str] = []
     if output_dir:
         views_args += ["--output-dir", output_dir]
@@ -110,12 +121,19 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
         views_args += ["--filter-mode", filter_mode]
     for _unit in (selected_units or []):
         views_args += ["--selected-unit", _unit]
+    views_args += ["--doc-type", doc_type]
     if extra_view_args:
         views_args += extra_view_args
-    return [
-        Phase("Phase 3: Generate views", "run_views.py", views_args),
-        Phase("Phase 4: Export to DOCX", "docx_exporter.py", list(docx_args or [])),
-    ]
+
+    exporter_args = {
+        DOC_TYPE_SWE3: list(docx_args or []),
+        DOC_TYPE_SWE4: list(swe4_args or []),
+    }
+    phases: List[Phase] = [Phase("Phase 3: Generate views", "run_views.py", views_args)]
+    for dt in concrete_doc_types(doc_type):
+        phases.append(Phase(f"Phase 4: Export {dt.upper()} DOCX",
+                            EXPORTER_REGISTRY[dt], list(exporter_args.get(dt, []))))
+    return phases
 
 
 def plan_runs(
@@ -139,12 +157,17 @@ def plan_runs(
     only_files: Optional[str] = None,
     include_emulator: bool = False,
     selected_units: Optional[List[str]] = None,
+    doc_type: str = "swe3",
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
     Each RunPlan maps to one PhaseRunner.run(...) call. Returning a *list*
     (not a single plan) lets us emit one plan per group while keeping the
     runner itself dead-simple.
+
+    `doc_type` (swe3|swe4|all) is a dimension threaded to every view+export
+    step: it selects the Phase-3 view-set and the Phase-4 exporter(s). Default
+    swe3 keeps the pipeline byte-for-byte identical to before.
 
     Raises ValueError if selected_group/selected_layer doesn't exist in config.
     """
@@ -221,7 +244,12 @@ def plan_runs(
                 os.path.join(comp_out, "interface_tables.json"),
                 os.path.join(comp_out, f"software_detailed_design_{out_key}.docx"),
             ] + comp_sel_args,
-                selected_units=selected_units,
+            selected_units=selected_units,
+            doc_type=doc_type,
+            swe4_args=[
+                os.path.join(comp_out, "test_specs.json"),
+                os.path.join(comp_out, f"software_unit_test_specification_{out_key}.docx"),
+            ] + comp_sel_args,
         )
         local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
         plans.append(RunPlan(
@@ -237,7 +265,8 @@ def plan_runs(
     if not group_names:
         if use_model:
             # Skip phases 1+2; runner indices 1,2 map to phases 3,4
-            phases = _view_export_phases(filter_mode=filter_mode, selected_units=selected_units)
+            phases = _view_export_phases(filter_mode=filter_mode, doc_type=doc_type,
+                                         selected_units=selected_units)
             translated = max(1, from_phase - 2)
             plans.append(RunPlan(label="single run (use-model)",
                                  phases=phases,
@@ -250,7 +279,8 @@ def plan_runs(
                                          macros_layer=macros_layer,
                                          project_name=project_name, only_files=only_files,
                                          include_emulator=include_emulator) \
-                     + _view_export_phases(filter_mode=filter_mode, selected_units=selected_units)
+                     + _view_export_phases(filter_mode=filter_mode, doc_type=doc_type,
+                                           selected_units=selected_units)
             plans.append(RunPlan(label="single run",
                                  phases=phases,
                                  runner_from_phase=from_phase))
@@ -307,6 +337,7 @@ def plan_runs(
                 selected_group=g,
                 filter_mode=filter_mode,
                 selected_units=selected_units,
+                doc_type=doc_type,
             )
             # Embed allowed components into the phase args to pass via CLI
             for phase in view_phases:
@@ -328,7 +359,12 @@ def plan_runs(
                         os.path.join(comp_out, "interface_tables.json"),
                         os.path.join(comp_out, f"software_detailed_design_{comp}.docx"),
                     ] + comp_sel_args,
-                selected_units=selected_units,
+                    selected_units=selected_units,
+                    doc_type=doc_type,
+                    swe4_args=[
+                        os.path.join(comp_out, "test_specs.json"),
+                        os.path.join(comp_out, f"software_unit_test_specification_{comp}.docx"),
+                    ] + comp_sel_args,
                 )
                 plans.append(RunPlan(label=f"Component: {comp}",
                                      phases=view_phases,
@@ -347,6 +383,12 @@ def plan_runs(
                     "--selected-group", g,
                 ],
                 selected_units=selected_units,
+                doc_type=doc_type,
+                swe4_args=[
+                    os.path.join(group_out, "test_specs.json"),
+                    os.path.join(group_out, f"software_unit_test_specification_{out_key}.docx"),
+                    "--selected-group", g,
+                ],
             )
             plans.append(RunPlan(label=f"Group: {g}",
                                  phases=view_phases,
