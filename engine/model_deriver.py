@@ -338,7 +338,15 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
 
     components_data = {
         m: {
-            "units":       [u for u in units_data if u.split(KEY_SEP)[0] == m],
+            # sorted, like headerFiles above. Unsorted, this list inherited the order the
+            # parser happened to walk the directory — an accident of the filesystem, so it
+            # could already differ between machines for the same commit. The component
+            # container diagram draws one box per unit IN LIST ORDER, so a non-deterministic
+            # list means the same commit renders a different picture. It also has to match
+            # what the database returns (`load_components` orders by unit_key): a stored model
+            # and a file model must be indistinguishable, or the mode-vs-mode parity check
+            # reports differences that mean nothing.
+            "units":       sorted(u for u in units_data if u.split(KEY_SEP)[0] == m),
             "headerFiles": component_header_files.get(m, []),
         }
         for m in component_names

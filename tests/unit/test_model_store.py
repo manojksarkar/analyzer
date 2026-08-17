@@ -298,3 +298,23 @@ def test_component_unit_order_is_deterministic(tmp_path):
     with eng.connect() as cx:
         got = model_store.load_components(cx, VID)["C"]["units"]
     assert got == sorted(got), f"unit order must be deterministic, got {got}"
+
+
+def test_file_and_db_agree_on_component_unit_order():
+    """The FILE side must sort too, not just the database.
+
+    The container diagram draws one box per unit in list order. Unsorted, that list inherited
+    the order the parser walked the directory — an accident of the filesystem, so the same
+    commit could render a different picture on a different machine. And it has to match what
+    `load_components` returns, or the mode-vs-mode parity check reports differences that mean
+    nothing.
+
+    Asserted on the source because the producing code is a dict comprehension inside a long
+    derive function that a unit test cannot reach without running Phase 2.
+    """
+    import os as _os
+    root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    with open(_os.path.join(root, "engine", "model_deriver.py"), encoding="utf-8") as fh:
+        src = fh.read()
+    assert 'sorted(u for u in units_data if u.split(KEY_SEP)[0] == m)' in src, \
+        "components.json must write its unit list sorted, to match load_components()"
