@@ -87,6 +87,48 @@ def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
             _gl("incremental").warning(f"C2: could not store the parse snapshot: {exc}")
 
 
+def prune_model_files(store, version_id: str, model_dir: str, *, enabled: bool) -> bool:
+    """Delete a version's model FILES once the database provably holds them (doc 09, C11c).
+
+    The files stay the channel BETWEEN phases — the phases are separate processes that read
+    and write JSON, so they cannot be removed without rewriting all four. What C11c removes is
+    keeping them AFTER the run, where Postgres is the durable copy and the directory is dead
+    weight (functions.json alone is tens of MB per version on a large project).
+
+    Three guards, because this deletes data:
+
+      * off unless asked (`enabled`) — the caller opts in;
+      * `store.model_is_persisted` must say YES. A store with no database always says no, so a
+        DB-less run keeps its files, which are then the ONLY copy;
+      * failures are swallowed. A directory that will not delete is untidy; a run that fails at
+        the last step because of tidying is worse.
+
+    Trade-off worth stating: `tools/verify_model_parity.py` compares the database against these
+    files, so pruning removes the ability to re-check a version after the fact. That is why it
+    is opt-in rather than the default.
+    """
+    if not enabled or not version_id or not model_dir:
+        return False
+    if not os.path.isdir(model_dir):
+        return False
+    if not store.model_is_persisted(version_id):
+        from core.logging_setup import get_logger as _gl
+        _gl("incremental").warning(
+            f"C11c: keeping {model_dir} — the database does not confirm the model for "
+            f"{version_id}, so the files may be the only copy")
+        return False
+    try:
+        _rmtree_force(model_dir)
+        from core.logging_setup import get_logger as _gl
+        _gl("incremental").info(f"C11c: model files pruned for {version_id} "
+                                f"(the model is in the database)")
+        return True
+    except OSError as exc:
+        from core.logging_setup import get_logger as _gl
+        _gl("incremental").warning(f"C11c: could not prune {model_dir}: {exc}")
+        return False
+
+
 def scope_to_args(scope: Dict[str, Any]) -> List[str]:
     """Map a scope object to run.py flags (doc 04 §8 / D5)."""
     stype = (scope or {}).get("type", "project")
@@ -159,6 +201,7 @@ def generate_full(
     repo_token: Optional[str] = None,
     config_path: Optional[str] = None,
     model_from_db: bool = False,
+    prune_model_files_after: bool = False,
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
 
@@ -358,6 +401,8 @@ def generate_full(
         store.write_report(version_id, "\n".join(_report_lines))
     except Exception:
         pass                           # already logged + on disk
+    # C11c — last thing, so nothing downstream can still need the files.
+    prune_model_files(store, version_id, model_dir, enabled=prune_model_files_after)
     return manifest
 
 
@@ -390,6 +435,10 @@ def main() -> None:
     ap.add_argument("--version-id", default=None, help="(derived from the commit; kept for compat)")
     ap.add_argument("--no-llm", action="store_true", help="skip LLM hierarchy summarization")
     ap.add_argument("--force", action="store_true", help="(no-op; the commit dir is reused)")
+    ap.add_argument("--prune-model-files", action="store_true",
+                    help="C11c: delete this version's model/*.json once the database is "
+                         "confirmed to hold them. Off by default — those files are what "
+                         "tools/verify_model_parity.py compares against.")
     ap.add_argument("--model-from-db", action="store_true",
                     help="C11b (opt-in): after Phase 1, re-materialize the model from Postgres "
                          "so Phase 2+ consume the STORED model. Off by default.")
@@ -399,7 +448,8 @@ def main() -> None:
     m = generate_full(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
                       data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
                       version_id=args.version_id, config_path=args.config, repo_url=args.repo_url,
-                      model_from_db=args.model_from_db)
+                      model_from_db=args.model_from_db,
+                      prune_model_files_after=args.prune_model_files)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, regenerated={m['regenerated']}, "
           f"documents={m.get('documents')}")

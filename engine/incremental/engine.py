@@ -398,7 +398,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          repo_url: Optional[str] = None,
                          repo_token: Optional[str] = None,
                          config_path: Optional[str] = None,
-                         model_from_db: bool = False) -> Dict[str, Any]:
+                         model_from_db: bool = False,
+                         prune_model_files_after: bool = False) -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
 
@@ -436,7 +437,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                              workspaces_root=workspaces_root, data_dict_id=data_dict_id,
                              no_llm=no_llm, version_id=version_id, force=force,
                              repo_url=repo_url, repo_token=repo_token, config_path=config_path,
-                             model_from_db=model_from_db)
+                             model_from_db=model_from_db,
+                             prune_model_files_after=prune_model_files_after)
 
     base_vid = decision["chosenBaseVersionId"]           # real ver… id (from list_versions)
     base_commit = decision["chosenBaseCommit"]            # resolves the baseline's checkout dir
@@ -781,6 +783,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         store.write_report(version_id, "\n".join(_report_lines))
     except Exception:
         pass                       # the report is already logged + on disk
+    # C11c — last thing, so nothing downstream can still need the files.
+    from incremental.generate import prune_model_files
+    prune_model_files(store, version_id, model_dir, enabled=prune_model_files_after)
 
     return manifest
 
@@ -809,6 +814,9 @@ def main() -> None:
     ap.add_argument("--verify-parse", action="store_true",
                     help="M4.5: with --narrowed-parse, also run a full parse and diff it against "
                          "the narrowed result (logs mismatches; uses the full parse). Slow; for validation.")
+    ap.add_argument("--prune-model-files", action="store_true",
+                    help="C11c: delete this version's model/*.json once the database is "
+                         "confirmed to hold them. Off by default.")
     ap.add_argument("--model-from-db", action="store_true",
                     help="C11b (opt-in): after Phase 1, re-materialize the model from Postgres "
                          "so Phase 2+ consume the STORED model rather than whatever is on disk. "
@@ -821,7 +829,8 @@ def main() -> None:
                              no_llm=args.no_llm, version_id=args.version_id, force=args.force,
                              narrowed_parse=args.narrowed_parse, verify_parse=args.verify_parse,
                              config_path=args.config, repo_url=args.repo_url,
-                             model_from_db=args.model_from_db)
+                             model_from_db=args.model_from_db,
+                             prune_model_files_after=args.prune_model_files)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, baseline={m.get('baselineVersionId')}, "
           f"regenerated={m['regenerated']}, reused={m['reused']}, "

@@ -64,3 +64,36 @@ def test_orchestrator_forwards_both_roots():
         src = fh.read()
     assert '"--model-root", _OVERRIDE_MODEL_DIR' in src
     assert '"--output-root", _OVERRIDE_OUTPUT_DIR' in src
+
+
+# ---------------------------------------------------------------------------
+# doc 09 C11c — the prune flag must reach both orchestrators
+# ---------------------------------------------------------------------------
+
+def _orch(name):
+    with open(os.path.join(ROOT, "engine", "incremental", name), encoding="utf-8") as fh:
+        return fh.read()
+
+
+@pytest.mark.parametrize("name", ["generate.py", "engine.py"])
+def test_prune_is_a_real_parameter_not_a_free_name(name):
+    """The call site referenced `prune_model_files_after` before either signature declared it,
+    so every run died with NameError at the very last step — after producing its documents.
+    Caught by verify_incremental, not by the unit suite, because nothing here calls the
+    orchestrators end to end."""
+    src = _orch(name)
+    assert "prune_model_files_after: bool = False" in src, \
+        f"{name}: the prune flag is used but never declared as a parameter"
+    assert "enabled=prune_model_files_after" in src, f"{name}: the flag is declared but unused"
+
+
+@pytest.mark.parametrize("name", ["generate.py", "engine.py"])
+def test_prune_flag_is_exposed_on_the_cli(name):
+    assert '"--prune-model-files"' in _orch(name)
+
+
+def test_incremental_forwards_prune_to_the_full_fallback():
+    """generate_incremental falls back to a full generation with no usable baseline; the flag
+    must survive that hand-off or the first version of a project never prunes."""
+    src = _orch("engine.py")
+    assert "prune_model_files_after=prune_model_files_after" in src

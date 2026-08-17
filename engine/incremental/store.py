@@ -164,6 +164,16 @@ class ArtifactStore(ABC):
         """
         return 0
 
+    def model_is_persisted(self, version_id: str) -> bool:
+        """True when this store definitely holds `version_id`'s model.
+
+        The precondition for deleting the model FILES (doc 09, C11c). Deliberately a positive
+        check rather than trusting that write_model returned without raising: persistence is
+        best-effort in several places, and "the write did not throw" is not the same as "the
+        rows are there". A false here just means the files are kept, which is always safe.
+        """
+        return False
+
     def hydrate_output(self, version_id: str, out_dir: str) -> int:
         """Write this version's stored TEXT view files into `out_dir`. Files written.
 
@@ -408,6 +418,17 @@ class PgStore(ArtifactStore):
             cx.execute(update(_s.versions).where(_s.versions.c.id == version_id)
                        .values(report=text))
         return True
+
+    def model_is_persisted(self, version_id: str) -> bool:
+        from sqlalchemy import func, select
+        from api.db.postgres import schema as _s
+        try:
+            with self.engine.connect() as cx:
+                n = cx.execute(select(func.count()).select_from(_s.entity_versions)
+                               .where(_s.entity_versions.c.version_id == version_id)).scalar()
+            return bool(n)
+        except Exception:
+            return False                 # cannot confirm -> keep the files
 
     def hydrate_output(self, version_id: str, out_dir: str) -> int:
         from incremental.model_store import dump_output_files_to_dir
