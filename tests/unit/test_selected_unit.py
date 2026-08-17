@@ -105,3 +105,57 @@ def test_unit_narrowing_works_without_a_component_filter():
 def test_malformed_keys_are_dropped_not_crashed():
     assert not _in_scope("malformed", [], ["core"])
     assert not _in_scope(None, [], ["core"])
+
+
+# --- validation ------------------------------------------------------------
+#
+# A mistyped unit filters the function set to nothing, so the run would report
+# success having generated no flowcharts. It has to be a hard error.
+
+import run_views  # noqa: E402
+from core.model_io import UNITS  # noqa: E402
+
+MODEL = {UNITS: {"Sample-Core|Core": {}, "Lib|Lib": {}, "Util|Util": {},
+                 "Other|Dispatch": {}}}
+IN_GROUP = ["Sample-Core", "Lib", "Util"]
+
+
+def test_known_unit_resolves():
+    assert run_views._resolve_units(MODEL, ["Core"], IN_GROUP) == ["Core"]
+
+
+def test_unit_name_is_case_insensitive_and_normalised():
+    assert run_views._resolve_units(MODEL, ["core"], IN_GROUP) == ["Core"]
+    assert run_views._resolve_units(MODEL, ["CORE"], IN_GROUP) == ["Core"]
+
+
+def test_unknown_unit_exits_rather_than_running_empty():
+    with pytest.raises(SystemExit) as e:
+        run_views._resolve_units(MODEL, ["Bogus"], IN_GROUP)
+    assert e.value.code == 1
+
+
+def test_a_unit_outside_the_component_scope_is_rejected():
+    """`Dispatch` exists in the model but not in this run's components, so it
+    would contribute no functions — the filter requires both to match."""
+    with pytest.raises(SystemExit):
+        run_views._resolve_units(MODEL, ["Dispatch"], IN_GROUP)
+
+
+def test_the_listing_names_only_units_the_run_visits(capsys):
+    with pytest.raises(SystemExit):
+        run_views._resolve_units(MODEL, ["Bogus"], IN_GROUP)
+    out = capsys.readouterr().out
+    assert "Core, Lib, Util" in out
+    assert "Dispatch" not in out
+
+
+def test_a_near_miss_gets_a_suggestion(capsys):
+    with pytest.raises(SystemExit):
+        run_views._resolve_units(MODEL, ["cor"], IN_GROUP)
+    assert "Did you mean 'Core'?" in capsys.readouterr().out
+
+
+def test_one_bad_name_fails_the_whole_run(capsys):
+    with pytest.raises(SystemExit):
+        run_views._resolve_units(MODEL, ["Core", "Bogus"], IN_GROUP)
