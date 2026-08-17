@@ -28,6 +28,8 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import delete, insert, select
 
+from core.db_util import insert_chunked, insert_ignore
+
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
@@ -77,7 +79,11 @@ def _ensure_entities(conn, project_id: str, specs: Dict[str, tuple]) -> Dict[str
     new = [{"project_id": project_id, "entity_key": k, "kind": kind, "qualified_name": qn}
            for k, (kind, qn) in specs.items() if k not in ids]
     if new:
-        conn.execute(insert(s.entities), new)
+        # `entities` is SHARED across a project's versions, so two concurrent jobs both read,
+        # both compute the same missing row, and both insert it — a unique violation on
+        # (project_id, entity_key). ON CONFLICT DO NOTHING plus the re-read below gives the
+        # right id map whichever writer won (doc 10, H1).
+        insert_ignore(conn, s.entities, new)
         ids = _entity_ids(conn, project_id)
     return ids
 
@@ -92,7 +98,11 @@ def _insert_blobs(conn, blobs: Dict[str, tuple]) -> None:
     fresh = [{"content_hash": h, "kind": k, "payload": p}
              for h, (k, p) in blobs.items() if h not in have]
     if fresh:
-        conn.execute(insert(s.content_blobs), fresh)
+        # Worse than `entities`: content_hash is GLOBAL, and every entity with an empty payload
+        # hashes identically — so two concurrent jobs on ANY projects will race for that one
+        # row, near-certainly rather than rarely. The row is content-addressed, so whoever wins
+        # stored identical bytes and a skipped insert loses nothing (doc 10, H1).
+        insert_ignore(conn, s.content_blobs, fresh)
 
 
 def _loc_cols(entry: dict) -> dict:
@@ -127,9 +137,9 @@ def persist_functions(conn, project_id, version_id, functions, hashes=None):
             edges.append({"version_id": version_id, "kind": "global_access", "src_key": fid, "dst_key": dst, "mode": "write"})
     _insert_blobs(conn, blobs)
     if ev_rows:
-        conn.execute(insert(s.entity_versions), ev_rows)
+        insert_chunked(conn, s.entity_versions, ev_rows)
     if edges:
-        conn.execute(insert(s.model_edges), edges)
+        insert_chunked(conn, s.model_edges, edges)
 
 
 def load_functions(conn, version_id) -> Dict[str, dict]:
@@ -179,7 +189,7 @@ def persist_globals(conn, project_id, version_id, globals_data, hashes=None):
                         "source_hash": hashes.get(gid), "fingerprint": None, "content_hash": ch})
     _insert_blobs(conn, blobs)
     if ev_rows:
-        conn.execute(insert(s.entity_versions), ev_rows)
+        insert_chunked(conn, s.entity_versions, ev_rows)
 
 
 def load_globals(conn, version_id) -> Dict[str, dict]:
@@ -243,7 +253,7 @@ def persist_edges(conn, version_id, edges):
         rows += [{"version_id": version_id, "kind": "macro_use", "src_key": u, "dst_key": mac, "mode": None}
                  for u in users]
     if rows:
-        conn.execute(insert(s.model_edges), rows)
+        insert_chunked(conn, s.model_edges, rows)
 
 
 def load_edges(conn, version_id) -> Dict[str, dict]:

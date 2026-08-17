@@ -26,20 +26,9 @@ if _REPO_ROOT not in sys.path:
 from api.db.postgres import schema as s   # noqa: E402
 
 
-def _insert_ignore(conn, table, rows: list) -> None:
-    """Bulk insert, skipping rows that collide on the PK (first-writer-wins). Portable
-    across Postgres and SQLite (both support ON CONFLICT DO NOTHING in SQLAlchemy 2.0)."""
-    if not rows:
-        return
-    name = conn.engine.dialect.name
-    if name == "postgresql":
-        from sqlalchemy.dialects.postgresql import insert as _ins
-        conn.execute(_ins(table).on_conflict_do_nothing(), rows)
-    elif name == "sqlite":
-        from sqlalchemy.dialects.sqlite import insert as _ins
-        conn.execute(_ins(table).on_conflict_do_nothing(), rows)
-    else:                                            # pragma: no cover
-        conn.execute(insert(table), rows)
+# One implementation, in core/ so core.model_store can use it too (doc 10, step 4). Kept as a
+# module-level name because tests and callers here already reference it.
+from core.db_util import insert_ignore as _insert_ignore   # noqa: E402,F401
 
 
 class PgReuseIndex:
