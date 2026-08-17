@@ -40,6 +40,7 @@ if _SRC not in sys.path:
 
 from core.paths import paths as _paths, set_output_dir, set_model_dir
 from core.config import load_config
+from core.run_context import effective_model_store
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
 from incremental.clone import ensure_commit_checkout
@@ -247,7 +248,7 @@ def generate_full(
     config_path: Optional[str] = None,
     model_from_db: bool = False,
     prune_model_files_after: bool = False,
-    model_store: str = "files",
+    model_store: str = "db",
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
 
@@ -284,6 +285,10 @@ def generate_full(
     from incremental.store import make_store
     commit_key = os.path.basename(repo_dir)
     version_id = version_id or commit_key
+    # Step 9: 'db' is the default, so resolve it once here against what this machine can do and
+    # pass the ANSWER down. Everything below — the phase flags, the snapshot source, the
+    # orchestrator's own model read — keys off this one value.
+    model_store = effective_model_store(model_store, version_id)
     store = make_store(project_id, workspaces_root)
     from incremental.engine import StoreReuseIndex
     ridx = StoreReuseIndex(store)      # reuse index via the store: Postgres under PgStore
@@ -487,9 +492,10 @@ def main() -> None:
     ap.add_argument("--version-id", default=None, help="(derived from the commit; kept for compat)")
     ap.add_argument("--no-llm", action="store_true", help="skip LLM hierarchy summarization")
     ap.add_argument("--force", action="store_true", help="(no-op; the commit dir is reused)")
-    ap.add_argument("--model-store", default="files", choices=("files", "db"),
-                    help="doc 10: where the PHASES read/write the model. 'db' keeps it in "
-                         "Postgres/SQLite instead of model/*.json.")
+    ap.add_argument("--model-store", default="db", choices=("files", "db"),
+                    help="where the PHASES read/write the model. Default 'db' (Postgres/SQLite); "
+                         "'files' forces the legacy model/*.json. 'db' falls back to files when "
+                         "there is no database or no versions row.")
     ap.add_argument("--prune-model-files", action="store_true",
                     help="C11c: delete this version's model/*.json once the database is "
                          "confirmed to hold them. Off by default — those files are what "

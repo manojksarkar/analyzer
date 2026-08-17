@@ -300,11 +300,37 @@ SQLite with all gates green. In database mode the model dir is down from 14 file
 | ✅ 4 | H1 + H2: conflict-tolerant inserts, chunking, per-phase transactions | done |
 | ✅ 5 | convert the 25 raw path sites | done |
 | ✅ 6 | `knowledge_base`, `incremental_plans`, `tu_includes` tables + writers | done |
-| 7 | flowchart engine → DB inputs (D10-4, D10-5); `clang_include_paths` derived; config → temp file | yes |
-| 8 | H3–H6: `--use-model`, re-export, `--clean`, test fixtures, parity replacement · **then both modes run on the office project and the documents are diffed** | — |
-| 9 | flip the default to the database | yes (flag) |
+| ✅ 7 | flowchart engine → DB inputs (D10-4, D10-5); `clang_include_paths` derived; config → temp file | done |
+| ✅ 8 | H3–H6: `--use-model`, re-export, `--clean`, test fixtures, parity replacement · **then both modes run on the office project and the documents are diffed** | done |
+| ✅ 9 | flip the default to the database | done — `--model-store files` reverts |
 | 10 | **C12** — delete the disk LLM cache + `pkb_*.json` (§5.3). Must come AFTER the model is in the database (04 §13.4): every cache key derives from model content | **no** |
 | 11 | delete the file code paths, except the debug-only writer (§10) | **no** |
+
+### Step 9 as landed
+
+`--model-store` defaults to `db` on both orchestrators, so **the API needed no change**: a UI job
+gets the database because the engine's default is the database, not because `pipeline_runner`
+asks for it. `--model-store files` still reverts a single run.
+
+A default has to hold on machines the flag never had to: `core.run_context.effective_model_store`
+resolves `db` once, in the orchestrator, and degrades to files **with the reason on stderr** when
+
+  * nothing configured a database,
+  * there is no version id, or
+  * there is no `versions` row — the API reserves that row at job start and `PgStore` never
+    creates one, so every per-version insert would otherwise fail on the foreign key. This is
+    what a plain CLI run against an unreserved version hits, and it must not be fatal.
+
+Resolved in the orchestrator and passed *down*, never re-derived per phase: a phase that answers
+differently from its orchestrator gives you half a model in each store.
+
+Verified as a subprocess with `pipeline_runner`'s exact argument shape and no `--model-store`
+anywhere: 490 `entity_versions` rows, `knowledge_base` populated, and none of the eight
+`model/*.json` written. The unreserved-version run exited 0 with the warning.
+
+**Note for step 11:** deleting the file path also deletes this fallback. All three conditions
+above then have to become hard errors, which is a real behaviour change for CLI use — decide it
+deliberately rather than discovering it.
 
 ## 10. Verification
 

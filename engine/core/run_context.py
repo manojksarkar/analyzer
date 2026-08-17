@@ -19,7 +19,8 @@ default directories while the run uses per-version ones. That exact ordering cau
 where an incremental run silently emitted only the diagrams it regenerated — see
 `tests/unit/test_phase_path_overrides.py`, which guards it.
 
-`--model-store` defaults to `files`, so adding this changes nothing until a run opts in.
+`--model-store` defaults to `db` (doc 10 step 9). `effective_model_store` degrades that to
+files when the machine cannot honour it, so the default is safe everywhere.
 """
 from __future__ import annotations
 
@@ -62,6 +63,55 @@ def set_run_context(*, version: Optional[str] = None, project: Optional[str] = N
             _PROJECT_ID = project
         if model_store is not None:
             _MODEL_STORE = model_store
+
+
+def _version_row_exists(version_id: str) -> bool:
+    """Is there a `versions` row to hang this run's model off?
+
+    Everything per-version is foreign-keyed to it, and the row is owned by the API (reserved at
+    job start) — `PgStore` never creates one. So a CLI run against a version the API has not
+    reserved would fail on the first insert, which is a poor way for a *default* to behave.
+    """
+    try:
+        import sqlalchemy as sa
+        from api.db.postgres import schema as s
+        from .db import get_engine
+        with get_engine().connect() as cx:
+            return cx.execute(sa.select(s.versions.c.id)
+                              .where(s.versions.c.id == version_id)).first() is not None
+    except Exception as exc:                                # unreachable DB, missing table, …
+        import sys
+        print(f"WARNING: could not read the versions table ({exc}).", file=sys.stderr)
+        return False
+
+
+def effective_model_store(requested: str, version_id: Optional[str]) -> str:
+    """Resolve a requested backing store against what this machine can actually do.
+
+    `db` is the default since step 9, which means it has to survive being the default on a
+    machine with no database and on a CLI run whose version was never reserved. Both degrade to
+    files *with a reason on stderr* rather than failing: the wrong backing store is a
+    recoverable annoyance, a dead generation is not.
+
+    Resolve ONCE, in the orchestrator, and pass the result down — a phase that picks its own
+    answer can disagree with the orchestrator, which is the worst of both stores.
+    """
+    if requested != "db":
+        return "files"
+    if not version_id:
+        why = "no version id"
+    else:
+        from .db import is_database_configured
+        if not is_database_configured():
+            why = "no database configured"
+        elif not _version_row_exists(version_id):
+            why = f"no versions row for {version_id!r} — the API reserves it at job start"
+        else:
+            return "db"
+    import sys
+    print(f"WARNING: model store 'db' requested but {why}; using model files instead.",
+          file=sys.stderr)
+    return "files"
 
 
 def install_model_repository() -> str:

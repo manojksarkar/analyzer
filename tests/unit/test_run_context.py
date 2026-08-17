@@ -44,6 +44,51 @@ def _restore():
     model_repo.set_repository(None)
 
 
+class TestEffectiveModelStore:
+    """Step 9 made `db` the default, so it must degrade rather than fail.
+
+    Three ways a machine can be unable to honour it, each of which used to be a caller's
+    problem and is now the *default's* problem:
+      * no database configured at all (a dev box, a clone with no config.local.json);
+      * no version id (a phase invoked standalone);
+      * a version id with no `versions` row — the API reserves that row at job start and
+        PgStore never creates one, so every per-version insert would fail on the foreign key.
+    """
+
+    def test_files_is_returned_unchanged(self):
+        assert run_context.effective_model_store("files", "ver1") == "files"
+
+    def test_no_version_id_falls_back(self, capsys):
+        assert run_context.effective_model_store("db", None) == "files"
+        assert "no version id" in capsys.readouterr().err
+
+    def test_no_database_falls_back(self, monkeypatch, capsys):
+        monkeypatch.setattr("core.db.is_database_configured", lambda: False)
+        assert run_context.effective_model_store("db", "ver1") == "files"
+        assert "no database configured" in capsys.readouterr().err
+
+    def test_missing_versions_row_falls_back(self, monkeypatch, capsys):
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
+        assert run_context.effective_model_store("db", "ver-nope") == "files"
+        err = capsys.readouterr().err
+        assert "no versions row" in err and "ver-nope" in err
+
+    def test_db_when_everything_is_in_place(self, monkeypatch):
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: True)
+        assert run_context.effective_model_store("db", "ver1") == "db"
+
+    def test_an_unreachable_database_is_not_an_exception(self, monkeypatch, capsys):
+        """A dead database must not take the run with it — it reports and uses files."""
+        def _boom():
+            raise RuntimeError("connection refused")
+        monkeypatch.setattr("core.db.get_engine", _boom)
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        assert run_context.effective_model_store("db", "ver1") == "files"
+        assert "connection refused" in capsys.readouterr().err
+
+
 class TestCliParsing:
     def test_flags_are_applied_and_stripped(self):
         argv = ["prog", "SampleCppProject", "--version-id", "ver9",
@@ -147,11 +192,29 @@ class TestOrchestratorsRespectTheModelStore:
         src = _src(os.path.join("engine", "incremental", name))
         assert '"--model-store", "db"' in src, f"{name}: phases are not told the model store"
 
-    @pytest.mark.parametrize("name", ["generate.py", "engine.py"])
-    def test_model_store_is_a_real_parameter(self, name):
+    @pytest.mark.parametrize("name,fn", [("generate.py", "def generate_full("),
+                                         ("engine.py", "def generate_incremental(")])
+    def test_the_orchestrator_entry_point_defaults_to_the_database(self, name, fn):
+        """Step 9: the database is the default, so a UI job gets it without the API asking.
+
+        Matched inside the entry point's own signature — an earlier version of this check looked
+        for the default anywhere in the file and was satisfied by a private helper's, so
+        generate.py "passed" while saying nothing about generate_full at all.
+        """
         src = _src(os.path.join("engine", "incremental", name))
-        assert 'model_store: str = "files"' in src, f"{name}: model_store is not a parameter"
+        sig = src[src.index(fn):]
+        sig = sig[:sig.index(") -> Dict[str, Any]:")]
+        assert 'model_store: str = "db"' in sig, f"{name}: {fn.strip()} does not default to db"
         assert '"--model-store"' in src, f"{name}: no CLI flag"
+        assert 'ap.add_argument("--model-store", default="db"' in src, f"{name}: CLI default"
+
+    @pytest.mark.parametrize("name", ["generate.py", "engine.py"])
+    def test_the_default_is_resolved_against_the_machine(self, name):
+        """'db' as a default has to survive a machine with no database and a CLI run whose
+        version was never reserved — otherwise the default breaks those runs outright."""
+        src = _src(os.path.join("engine", "incremental", name))
+        assert "effective_model_store(model_store, version_id)" in src, \
+            f"{name}: the requested store is used unresolved"
 
     def test_orchestrator_reads_the_model_from_the_store_in_db_mode(self):
         """The end-of-run report and fingerprints need the finished model. In db mode the files

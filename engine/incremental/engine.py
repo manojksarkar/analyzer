@@ -35,6 +35,7 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 from core.paths import paths as _paths, set_output_dir, set_model_dir
+from core.run_context import effective_model_store
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
 from incremental.clone import ensure_commit_checkout
@@ -458,7 +459,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          config_path: Optional[str] = None,
                          model_from_db: bool = False,
                          prune_model_files_after: bool = False,
-                         model_store: str = "files") -> Dict[str, Any]:
+                         model_store: str = "db") -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
 
@@ -512,6 +513,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # id (--version) supplied by the backend, else commit[:16] for standalone CLI use.
     commit_key = os.path.basename(repo_dir)
     version_id = version_id or commit_key
+    # Step 9: resolve the default 'db' once, here, and pass the answer down (the delegation to
+    # generate_full above happens before version_id is known, so that path resolves its own).
+    model_store = effective_model_store(model_store, version_id)
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
     vdir = vstore.create_dir(commit_key)  # == repo_dir (already checked out); never wiped
@@ -888,8 +892,9 @@ def main() -> None:
     ap.add_argument("--verify-parse", action="store_true",
                     help="M4.5: with --narrowed-parse, also run a full parse and diff it against "
                          "the narrowed result (logs mismatches; uses the full parse). Slow; for validation.")
-    ap.add_argument("--model-store", default="files", choices=("files", "db"),
-                    help="doc 10: where the PHASES read/write the model.")
+    ap.add_argument("--model-store", default="db", choices=("files", "db"),
+                    help="where the PHASES read/write the model. Default 'db'; 'files' forces "
+                         "the legacy model/*.json.")
     ap.add_argument("--prune-model-files", action="store_true",
                     help="C11c: delete this version's model/*.json once the database is "
                          "confirmed to hold them. Off by default.")
