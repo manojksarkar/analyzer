@@ -329,8 +329,29 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     back to a full parse (always the safe choice)."""
     from core.logging_setup import get_logger
     log = get_logger("incremental")
-    if not os.path.isfile(os.path.join(base_parse_dir, "tu_includes.json")) \
-            or not os.path.isfile(os.path.join(base_parse_dir, "entity_files.json")):
+    # Narrowed parse merges through model_dir FILES (_load_parse_dir / _write_parse_artifacts).
+    # In database mode those are not written, so the merge would read empty dicts and produce an
+    # EMPTY skeleton — a wrong model, not merely a slow one. Refuse and let the caller run a full
+    # parse: exactly what this function already promises for anything unsafe. Converting the
+    # merge itself is follow-on work; leaving it unguarded would be a silent hazard.
+    if _MODEL_STORE == "db":
+        log.info("narrowed parse: not supported with --model-store db (it merges via model "
+                 "files) — running a FULL parse instead")
+        return False
+    # The baseline's skeleton, store-first (doc 09, C2): on disk it exists only on the machine
+    # that produced the baseline. `_stored` was referenced below without ever being assigned —
+    # a NameError on every narrowed-parse call, in either mode. Nothing caught it because
+    # --narrowed-parse is opt-in, the API never sets it, and no gate exercises it.
+    _stored = {}
+    if store is not None and base_vid:
+        try:
+            _stored = store.read_parse_snapshot(base_vid) or {}
+        except Exception:
+            _stored = {}
+    _have = ("tu_includes.json" in _stored and "entity_files.json" in _stored) or (
+        os.path.isfile(os.path.join(base_parse_dir, "tu_includes.json"))
+        and os.path.isfile(os.path.join(base_parse_dir, "entity_files.json")))
+    if not _have:
         log.info("narrowed parse unavailable: baseline has no parser-level snapshot — full parse")
         return False
     tu_includes = _stored.get("tu_includes.json") or _read(base_parse_dir, "tu_includes.json")

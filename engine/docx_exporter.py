@@ -206,19 +206,6 @@ def _load_model_json(name: str) -> dict:
         return {}
 
 
-def _load_model_json_from_file(name: str) -> dict:
-    """The old direct-file read. Unused by the export path; kept for the tests that
-    deliberately exercise a hand-built model directory."""
-    path = os.path.join(MODEL_DIR, f"{name}.json")
-    if not os.path.isfile(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
 def _load_base_path() -> str:
     meta = _load_model_json("metadata")
     return (meta.get("basePath") or "").strip()

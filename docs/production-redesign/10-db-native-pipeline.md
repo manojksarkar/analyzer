@@ -288,14 +288,18 @@ Each of these was missed by the first two drafts of this plan and is now a work 
 Steps 1–7 leave current behaviour intact — the file path stays default and nothing is deleted.
 **Stop at step 8 for sign-off** before flipping the default or removing code.
 
+Progress as of **2026-08-17** (branch `db-migration`): steps **1-6 done**, each verified on
+SQLite with all gates green. In database mode the model dir is down from 14 files to **5** —
+`clang_include_paths`, `entity_files`, `func_keys`, `metadata`, `override_pairs`.
+
 | Step | Work | Reversible |
 |---|---|---|
-| 1 | SQLite backend + `db.url`; verify end-to-end on the dev machine | yes |
+| ✅ 1 | SQLite backend + `db.url`; verify end-to-end on the dev machine | done |
 | 2 | `ModelRepository`; `model_io` delegates; files still default | yes (flag) |
-| 3 | `--version-id` threaded to all four phases, applied before `paths()` is snapshotted | yes |
-| 4 | H1 + H2: conflict-tolerant inserts, chunking, per-phase transactions | yes |
-| 5 | convert the 25 raw path sites | yes |
-| 6 | `knowledge_base`, `incremental_plans`, `tu_includes` tables + writers | yes |
+| ✅ 3 | `--version-id` threaded to all four phases, applied before `paths()` is snapshotted | done |
+| ✅ 4 | H1 + H2: conflict-tolerant inserts, chunking, per-phase transactions | done |
+| ✅ 5 | convert the 25 raw path sites | done |
+| ✅ 6 | `knowledge_base`, `incremental_plans`, `tu_includes` tables + writers | done |
 | 7 | flowchart engine → DB inputs (D10-4, D10-5); `clang_include_paths` derived; config → temp file | yes |
 | 8 | H3–H6: `--use-model`, re-export, `--clean`, test fixtures, parity replacement · **then both modes run on the office project and the documents are diffed** | — |
 | 9 | flip the default to the database | yes (flag) |
@@ -331,6 +335,19 @@ python tools/verify_model_parity.py <ver> --model-dir <dir>
 Never used by a job, never a fallback, and not a second code path through the pipeline — it writes
 the same dicts the database round-trip returns. It exists because this is the check that caught the
 dropped global `description`, and the cost of keeping it is one flag.
+
+## 10b. Corrections found by reviewing the work (2026-08-17)
+
+| Finding | Fix |
+|---|---|
+| `_try_narrowed_parse` referenced `_stored` without ever assigning it — a **NameError on every call, in file mode too**. Shipped in C2 and described in that commit as applied; only half the edit landed | assignment restored (store-first, then files). `tests/unit/test_narrowed_parse_guards.py` now CALLS the function — 4 of its 5 tests fail against the broken version |
+| Narrowed parse merges through model_dir **files**, so in database mode it would read empty dicts and write an **empty** skeleton — a wrong model, silently | refuses in database mode and falls back to a full parse, which is what the function already promises for anything unsafe. Converting the merge is follow-on work |
+| Dead `_load_model_json_from_file` in `docx_exporter`, introduced with a comment claiming tests used it. Nothing did | removed |
+| `insert` became an unused import in `pg_stores` when `_insert_ignore` moved to `core/db_util` | removed |
+
+Why the first two survived: `--narrowed-parse` is opt-in, the API never sets it, and **neither
+gate exercises it**. A code path no gate touches is a code path where a claim of "done" is
+unverified — the same lesson as the diagram regressions, in a corner nobody runs.
 
 ## 11. Open items
 

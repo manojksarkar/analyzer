@@ -13,7 +13,7 @@ import os
 import sys
 from typing import Any, Dict, Iterable, List, Optional
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, select
 
 # Bound on parameters in one IN (...) clause. Postgres caps a statement at 65535 bind
 # parameters; 5000 keeps a wide margin and keeps each statement small enough to plan
