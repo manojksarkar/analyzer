@@ -9,9 +9,14 @@
 >   view outputs, reuse index, run metadata, resolved config and all app data. `JsonDatabase` is deleted;
 >   the API is Postgres-only. The commit dir now holds ONLY the git checkout + `manifest.json` + `report.txt`
 >   + `parse/`. Full detail: the dated entry below (2026-08-13) and §6.
-> - **NEXT WORK IS PLANNED, NOT STARTED → [docs/production-redesign/09-post-migration-consolidation-plan.md](docs/production-redesign/09-post-migration-consolidation-plan.md).**
->   That doc is the source of truth for what to do next; it lists 26 steps with effort, risk and gates.
->   Order: **B0 → A0 → B(concurrency) → D(narrowed parse + measure) → C(close-out) → A(deferred)**.
+> - **NEXT WORK IS PLANNED, NOT STARTED → [docs/production-redesign/10-db-native-pipeline.md](docs/production-redesign/10-db-native-pipeline.md)**
+>   (2026-08-17). Removes `model/*.json` from the pipeline itself: all four phases **and** the
+>   flowchart engine read/write their model from the database; SQLite becomes a supported backend so
+>   the gates run on a machine with no Postgres; no environment variable remains a source of our
+>   configuration. That doc is the source of truth for what to do next — 10 steps, gates after each,
+>   with a **sign-off stop at step 8** before anything is deleted.
+> - Doc 09 is **largely done** — see [09-post-migration-consolidation-plan.md](docs/production-redesign/09-post-migration-consolidation-plan.md)
+>   for the remainder (concurrency raise pending its RSS measurement; C4/C7 context service; IN-4/IN-5).
 > - **B0 DONE (2026-08-14):** the `job_max_concurrency` **default is now 1**
 >   ([settings.py:47](api/services/settings.py#L47)). `<repo>/output` is gone too — runs render into
 >   `versions/<ver…>/output`. **`<repo>/model` is the last shared dir** and the only remaining reason
