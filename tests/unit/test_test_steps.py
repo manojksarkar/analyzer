@@ -86,6 +86,29 @@ def test_every_return_gets_an_entry_naming_its_step(if_else):
                                             "Successfully returned 1"}
 
 
+def test_return_carries_the_source_expression_beside_the_wording():
+    """The wording paraphrases; the bracket gives the tester something exact.
+    Two branches can share wording while returning different expressions."""
+    cfg = _cfg([("N1", "START", "Start: fn", ""), ("N2", "DECISION", "Check: x < 0?", ""),
+                ("N3", "RETURN", "Return validated value", "return validate(10000);"),
+                ("N4", "RETURN", "Return validated value", "return validate(x);"),
+                ("NE", "END", "End", "")],
+               [("N1", "N2", None), ("N2", "N3", "Yes"), ("N2", "N4", "No"),
+                ("N3", "NE", None), ("N4", "NE", None)])
+    _, returns, _ = build_steps(cfg, SPEC)
+    texts = {r["text"] for r in returns}
+    assert "Successfully returned validated value [validate(10000)]" in texts
+    assert "Successfully returned validated value [validate(x)]" in texts
+
+
+def test_return_omits_the_bracket_when_wording_is_already_the_source():
+    cfg = _cfg([("N1", "START", "Start: fn", ""),
+                ("N2", "RETURN", "Return 0", "return 0;"), ("NE", "END", "End", "")],
+               [("N1", "N2", None), ("N2", "NE", None)])
+    _, returns, _ = build_steps(cfg, SPEC)
+    assert returns[0]["text"] == "Successfully returned 0"
+
+
 def test_nested_decision_nests_deeper():
     cfg = _cfg([("N1", "START", "Start: fn", ""), ("N2", "DECISION", "Check: x < 0?", ""),
                 ("N3", "RETURN", "Return -1", ""), ("N4", "DECISION", "Check: x == 0?", ""),

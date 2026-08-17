@@ -182,6 +182,12 @@ def _node_text(node, spec, mock_names, is_entry, ctx=None):
     return base
 
 
+def _norm(text):
+    """Whitespace/case-insensitive form, for asking whether two renderings of the
+    same return say the same thing."""
+    return re.sub(r"\s+", "", (text or "")).lower().rstrip(".")
+
+
 def _writes(raw, name):
     """True when `raw` assigns to `name` — `x = `, `x += `, `x++`, `++x`, `x[i] = `,
     `*x = `. A plain read of the same name does not count, so a global that is
@@ -239,9 +245,17 @@ class _Walker:
         if node.get("type") == "RETURN":
             expr = _strip_prefix(node.get("label") or node.get("rawCode") or "",
                                  "Return", "return").strip().rstrip(";").strip()
+            # The wording above is the readable description. Carry the source
+            # expression next to it: a generated label paraphrases and can name
+            # values the code never uses, and a tester needs something exact to
+            # check against. Omitted when the wording already IS the source.
+            source = _strip_prefix(node.get("rawCode") or "",
+                                   "Return", "return").strip().rstrip(";").strip()
+            text = f"Successfully returned {expr}" if expr else "Successfully returned"
+            if source and _norm(source) != _norm(expr):
+                text = f"{text} [{source}]"
             self.returns.append({"step": number, "expression": expr,
-                                 "text": f"Successfully returned {expr}" if expr
-                                         else "Successfully returned"})
+                                 "source": source, "text": text})
         return number
 
     def _branch_targets(self, nid, join):
