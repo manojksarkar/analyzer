@@ -56,7 +56,22 @@ class Settings(BaseSettings):
     # NOTE (multi-node): this bounds a threading.BoundedSemaphore inside ONE API
     # process (pipeline_runner._get_semaphore). With N replicas the real ceiling is
     # N x this value -- a global limit needs a DB-backed lease, tracked as B0c.
-    job_max_concurrency: int = 1
+    #
+    # Raised 1 -> 4 on 2026-08-17 (target set by the project owner; the server has 500 GB, so
+    # memory is not the ceiling). Everything that made 1 mandatory is now fixed: each job owns
+    # versions/<ver>/{model,output,config,parse,manifest} (doc 09 B1 + doc 10), the shared
+    # caches are content-addressed with process-private temp files, the per-commit checkout is
+    # locked, and `entities`/`content_blobs` inserts are conflict-tolerant (doc 10 H1 — that one
+    # was near-certain to collide, not rare).
+    #
+    # !! LLM GATEWAY (doc 09 B6, STILL OPEN): the rate limit is PER PROCESS. The corporate
+    # gateway allows ~1 call / 3s, and `llm.rateLimitSeconds` enforces that inside ONE job — so
+    # 4 concurrent jobs hit the gateway at ~4 calls / 3s, four times its limit. Until a shared
+    # limiter exists, either set `llm.rateLimitSeconds` to 3 x this value (12) so the AGGREGATE
+    # rate is correct, or point the run at the on-prem hosted model, which has no limit
+    # (`rateLimitSeconds: 0`). Concurrency with LLM enabled and a 3s per-process limit WILL
+    # exceed the gateway.
+    job_max_concurrency: int = 4
     subprocess_timeout: int = 0        # seconds; 0 = no limit
 
     # Toolchain paths forwarded to subprocesses
