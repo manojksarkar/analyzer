@@ -121,3 +121,41 @@ class TestOrchestratorForwardsIdentity:
         run_context.set_run_context(version="", project="", model_store="files")
         cmd = Phase("p", "parser.py", ["SampleCppProject"]).command(os.path.join(ROOT, "engine"))
         assert "--version-id" not in cmd and "--model-store" not in cmd
+
+
+class TestOrchestratorsRespectTheModelStore:
+    """The orchestrators end a run with store.write_model(version_id, model_dir), which persists
+    by READING model files: persist_model_from_dir -> clear_version + persist. In database mode
+    the phases wrote to the database and the model dir holds only unmigrated artifacts, so that
+    call would CLEAR the version and store an empty model over the real one.
+
+    Verified end to end by a full orchestrated db-mode generation (26 documents, 281 functions
+    still in the database afterwards); these keep the guards from being removed.
+    """
+
+    @pytest.mark.parametrize("name", ["generate.py", "engine.py"])
+    def test_write_model_is_guarded(self, name):
+        src = _src(os.path.join("engine", "incremental", name))
+        i = src.index("store.write_model(version_id, model_dir)")
+        before = src[max(0, i - 400):i]
+        assert 'model_store != "db"' in before or '_MODEL_STORE != "db"' in before, \
+            f"{name}: write_model must not run in database mode — it would clear the version"
+
+    @pytest.mark.parametrize("name", ["generate.py", "engine.py"])
+    def test_model_store_reaches_the_phases(self, name):
+        """A phase writing files while the orchestrator reads the database is the worst of both."""
+        src = _src(os.path.join("engine", "incremental", name))
+        assert '"--model-store", "db"' in src, f"{name}: phases are not told the model store"
+
+    @pytest.mark.parametrize("name", ["generate.py", "engine.py"])
+    def test_model_store_is_a_real_parameter(self, name):
+        src = _src(os.path.join("engine", "incremental", name))
+        assert 'model_store: str = "files"' in src, f"{name}: model_store is not a parameter"
+        assert '"--model-store"' in src, f"{name}: no CLI flag"
+
+    def test_orchestrator_reads_the_model_from_the_store_in_db_mode(self):
+        """The end-of-run report and fingerprints need the finished model. In db mode the files
+        are not there, so reading them would report zero counts and seed nothing."""
+        src = _src(os.path.join("engine", "incremental", "generate.py"))
+        assert "def _orchestrator_model(" in src
+        assert 'if model_store == "db":\n        return store.read_model(version_id) or {}' in src

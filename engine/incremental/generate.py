@@ -87,6 +87,32 @@ def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
             _gl("incremental").warning(f"C2: could not store the parse snapshot: {exc}")
 
 
+def _orchestrator_model(store, version_id: str, model_dir: str, model_store: str) -> Dict[str, Any]:
+    """The finished model, for the orchestrator's own bookkeeping (report + fingerprints).
+
+    In database mode the phases wrote to the database and `model_dir` holds only the artifacts
+    that have not moved yet, so reading the files would see nothing. Reads the store instead.
+
+    Returns `model_store.load_model`'s keys — functions / globals / hashes / edges / … — so both
+    paths hand back the same shape.
+    """
+    if model_store == "db":
+        return store.read_model(version_id) or {}
+    import json as _json
+
+    def _load(fn):
+        p = os.path.join(model_dir, fn)
+        try:
+            with open(p, encoding="utf-8") as fh:
+                return _json.load(fh)
+        except (OSError, ValueError):
+            return {}
+
+    return {"functions": _load("functions.json"), "globals": _load("globalVariables.json"),
+            "hashes": _load("hashes.json"), "edges": _load("edges.json"),
+            "units": _load("units.json"), "components": _load("components.json")}
+
+
 def prune_model_files(store, version_id: str, model_dir: str, *, enabled: bool) -> bool:
     """Delete a version's model FILES once the database provably holds them (doc 09, C11c).
 
@@ -202,6 +228,7 @@ def generate_full(
     config_path: Optional[str] = None,
     model_from_db: bool = False,
     prune_model_files_after: bool = False,
+    model_store: str = "files",
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
 
@@ -284,6 +311,11 @@ def generate_full(
                 # C11a: each phase persists its model to the DB at its own boundary. The
                 # end-of-run store.write_model below still runs — dual-write until C11b.
                 "--version-id", version_id, "--project-id", project_id]
+    # doc 10: which backing the PHASES use for the model. Forwarded so every phase process
+    # agrees with the orchestrator — a phase writing files while the orchestrator reads the
+    # database (or the reverse) is the worst of both.
+    if model_store == "db":
+        base_cmd += ["--model-store", "db"]
     base_cmd += scope_to_args(scope)
     base_cmd += per_component_docx_args(scope)
     if project_name:
@@ -335,7 +367,11 @@ def generate_full(
     # Structured model (+ hashes + edges) -> the store, keyed by the real ver id. This is what
     # the NEXT run reads as its baseline (store.read_hashes/functions), replacing the on-disk
     # HashStore/EdgeStore. Postgres under PgStore; versions/<ver…>/model under FileStore.
-    store.write_model(version_id, model_dir)
+    if model_store != "db":
+        # Reads model FILES (persist_model_from_dir -> clear_version + persist). In database
+        # mode the phases already flushed their own writes and there are no files, so calling
+        # this would CLEAR the version and store an empty model over the real one.
+        store.write_model(version_id, model_dir)
     # Run identity (basePath/projectName/parseFingerprint) -> the store: the `versions` columns
     # under PgStore. Replaces the API reading model/metadata.json off disk (doc 07 §3).
     _meta_path = os.path.join(model_dir, "metadata.json")
@@ -345,10 +381,8 @@ def generate_full(
             store.write_run_metadata(version_id, _json.load(_fh))
     # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
     documents = store.capture_output(version_id, output_dir)
-    import json
-    hashes = json.load(open(os.path.join(model_dir, "hashes.json"), encoding="utf-8"))
-    edges = json.load(open(os.path.join(model_dir, "edges.json"), encoding="utf-8"))
-    functions = json.load(open(os.path.join(model_dir, "functions.json"), encoding="utf-8"))
+    _m = _orchestrator_model(store, version_id, model_dir, model_store)
+    hashes, edges, functions = _m.get("hashes") or {}, _m.get("edges") or {}, _m.get("functions") or {}
 
     # 5. fingerprints -> seed reuse index (content-only key; recipe is intentionally
     #    not folded in — an approved doc is reused regardless of model/prompt).
@@ -376,8 +410,7 @@ def generate_full(
 
     # End-of-run report (M3.4): a full generation regenerates everything (it becomes
     # the baseline future incrementals diff against).
-    globals_ = json.load(open(os.path.join(model_dir, "globalVariables.json"), encoding="utf-8")) \
-        if os.path.isfile(os.path.join(model_dir, "globalVariables.json")) else {}
+    globals_ = _m.get("globals") or {}
     files_total = len({(f.get("location") or {}).get("file") for f in functions.values()} - {None})
     stype = (scope or {}).get("type", "project")
     names = (scope or {}).get("names") or []
@@ -435,6 +468,9 @@ def main() -> None:
     ap.add_argument("--version-id", default=None, help="(derived from the commit; kept for compat)")
     ap.add_argument("--no-llm", action="store_true", help="skip LLM hierarchy summarization")
     ap.add_argument("--force", action="store_true", help="(no-op; the commit dir is reused)")
+    ap.add_argument("--model-store", default="files", choices=("files", "db"),
+                    help="doc 10: where the PHASES read/write the model. 'db' keeps it in "
+                         "Postgres/SQLite instead of model/*.json.")
     ap.add_argument("--prune-model-files", action="store_true",
                     help="C11c: delete this version's model/*.json once the database is "
                          "confirmed to hold them. Off by default — those files are what "
@@ -449,7 +485,8 @@ def main() -> None:
                       data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
                       version_id=args.version_id, config_path=args.config, repo_url=args.repo_url,
                       model_from_db=args.model_from_db,
-                      prune_model_files_after=args.prune_model_files)
+                      prune_model_files_after=args.prune_model_files,
+                      model_store=args.model_store)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, regenerated={m['regenerated']}, "
           f"documents={m.get('documents')}")

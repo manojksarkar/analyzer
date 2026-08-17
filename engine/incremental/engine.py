@@ -168,6 +168,12 @@ def carry_forward_from_index(impact_keys: Iterable[str],
     return reused
 
 
+# Set by generate_incremental before it runs any phase. A module-level value rather than
+# another _run_analyzer parameter: that function is called from four places and its
+# signature is already long, and the value is constant for the whole run.
+_MODEL_STORE = "files"
+
+
 def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   data_dict_path: Optional[str], repo_dir: str, project_root: str,
                   extra_args: Optional[List[str]] = None,
@@ -178,6 +184,8 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
     # This run's own output dir (doc 09, B1) — set_output_dir was already applied in THIS
     # process; the analyzer is a separate process, so it needs telling on its command line.
     cmd += ["--output-root", _paths().output_dir, "--model-root", _paths().model_dir]
+    if _MODEL_STORE == "db":                 # phases must agree with the orchestrator (doc 10)
+        cmd += ["--model-store", "db"]
     if version_id and project_id:
         # C11a: persist the model to Postgres at each phase boundary (dual-write; the
         # end-of-run store.write_model still runs, and files remain authoritative).
@@ -399,7 +407,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          repo_token: Optional[str] = None,
                          config_path: Optional[str] = None,
                          model_from_db: bool = False,
-                         prune_model_files_after: bool = False) -> Dict[str, Any]:
+                         prune_model_files_after: bool = False,
+                         model_store: str = "files") -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
 
@@ -438,7 +447,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                              no_llm=no_llm, version_id=version_id, force=force,
                              repo_url=repo_url, repo_token=repo_token, config_path=config_path,
                              model_from_db=model_from_db,
-                             prune_model_files_after=prune_model_files_after)
+                             prune_model_files_after=prune_model_files_after,
+                             model_store=model_store)
 
     base_vid = decision["chosenBaseVersionId"]           # real ver… id (from list_versions)
     base_commit = decision["chosenBaseCommit"]            # resolves the baseline's checkout dir
@@ -482,6 +492,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # (shared) dir while the phases were told the new one — a split brain in which the
     # phases parsed into versions/<ver>/model but classify compared the STALE shared model,
     # found every hash identical, and reported "nothing changed / 0 regenerated".
+    global _MODEL_STORE
+    _MODEL_STORE = model_store                  # the guards + _run_analyzer read this
     set_output_dir(os.path.join(store.artifact_dir(version_id), "output"))
     set_model_dir(os.path.join(store.artifact_dir(version_id), "model"))   # C11b
     model_dir = _paths().model_dir
@@ -711,7 +723,10 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Capture artifacts + snapshots, seed the reuse index, finalize the manifest.
     # Structured model (+ hashes + edges) -> store, keyed by the real ver id; this is what the
     # NEXT run reads as its baseline (Postgres under PgStore, versions/<ver…>/model under FileStore).
-    store.write_model(version_id, model_dir)
+    if _MODEL_STORE != "db":
+        # See generate.py: in database mode this would clear the version and persist an EMPTY
+        # model read from a directory the phases never wrote to.
+        store.write_model(version_id, model_dir)
     # Run identity (basePath/projectName/parseFingerprint) -> the store: the `versions` columns
     # under PgStore. Replaces the API reading model/metadata.json off disk (doc 07 §3).
     store.write_run_metadata(version_id, _read(model_dir, "metadata.json"))
@@ -814,6 +829,8 @@ def main() -> None:
     ap.add_argument("--verify-parse", action="store_true",
                     help="M4.5: with --narrowed-parse, also run a full parse and diff it against "
                          "the narrowed result (logs mismatches; uses the full parse). Slow; for validation.")
+    ap.add_argument("--model-store", default="files", choices=("files", "db"),
+                    help="doc 10: where the PHASES read/write the model.")
     ap.add_argument("--prune-model-files", action="store_true",
                     help="C11c: delete this version's model/*.json once the database is "
                          "confirmed to hold them. Off by default.")
@@ -830,7 +847,8 @@ def main() -> None:
                              narrowed_parse=args.narrowed_parse, verify_parse=args.verify_parse,
                              config_path=args.config, repo_url=args.repo_url,
                              model_from_db=args.model_from_db,
-                             prune_model_files_after=args.prune_model_files)
+                             prune_model_files_after=args.prune_model_files,
+                             model_store=args.model_store)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, baseline={m.get('baselineVersionId')}, "
           f"regenerated={m['regenerated']}, reused={m['reused']}, "
