@@ -57,8 +57,15 @@ class Settings(BaseSettings):
     # process (pipeline_runner._get_semaphore). With N replicas the real ceiling is
     # N x this value -- a global limit needs a DB-backed lease, tracked as B0c.
     #
-    # Raised 1 -> 4 on 2026-08-17 (target set by the project owner; the server has 500 GB, so
-    # memory is not the ceiling). Everything that made 1 mandatory is now fixed: each job owns
+    # Raised 1 -> 2 on 2026-08-17. Memory is not the ceiling (500 GB server); 2 rather than the
+    # eventual 4 because the concurrency machinery has never run on real work, so this halves
+    # the blast radius while it is validated — and halves the gateway overshoot below. Go to 4
+    # once a real batch at 2 is clean.
+    #
+    # Worth knowing before expecting a speedup: the LLM gateway is a GLOBAL ~1 call / 3s
+    # ceiling, so concurrency cannot make LLM work faster in aggregate — the gain is confined
+    # to parse, rendering and export. It disappears entirely if the run points at the on-prem
+    # hosted model instead (rateLimitSeconds: 0), which is the higher-value change. Everything that made 1 mandatory is now fixed: each job owns
     # versions/<ver>/{model,output,config,parse,manifest} (doc 09 B1 + doc 10), the shared
     # caches are content-addressed with process-private temp files, the per-commit checkout is
     # locked, and `entities`/`content_blobs` inserts are conflict-tolerant (doc 10 H1 — that one
@@ -67,11 +74,11 @@ class Settings(BaseSettings):
     # !! LLM GATEWAY (doc 09 B6, STILL OPEN): the rate limit is PER PROCESS. The corporate
     # gateway allows ~1 call / 3s, and `llm.rateLimitSeconds` enforces that inside ONE job — so
     # 4 concurrent jobs hit the gateway at ~4 calls / 3s, four times its limit. Until a shared
-    # limiter exists, either set `llm.rateLimitSeconds` to 3 x this value (12) so the AGGREGATE
+    # limiter exists, either set `llm.rateLimitSeconds` to 3 x this value (6) so the AGGREGATE
     # rate is correct, or point the run at the on-prem hosted model, which has no limit
     # (`rateLimitSeconds: 0`). Concurrency with LLM enabled and a 3s per-process limit WILL
     # exceed the gateway.
-    job_max_concurrency: int = 4
+    job_max_concurrency: int = 2
     subprocess_timeout: int = 0        # seconds; 0 = no limit
 
     # Toolchain paths forwarded to subprocesses
