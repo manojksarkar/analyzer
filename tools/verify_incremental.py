@@ -71,15 +71,21 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
-    # This gate is DB-less (FileStore path). Both lines are needed: clearing DATABASE_URL is
-    # not sufficient any more, because a `db` section in config.local.json also counts as
-    # "database configured" — so on a machine set up to reach a real Postgres this gate would
-    # otherwise write its throwaway project into it. ANALYZER_NO_DB is inherited by the
-    # analyzer subprocesses too, which ask the same question.
-    os.environ.pop("DATABASE_URL", None)
-    os.environ["ANALYZER_NO_DB"] = "1"
-
     tmp = tempfile.mkdtemp(prefix="verify-inc-")
+    # This gate runs against a THROWAWAY SQLITE DATABASE, not the file path.
+    #
+    # It used to set ANALYZER_NO_DB=1 and exercise FileStore. Since the database became the
+    # default (doc 10 step 9) that tested a path production no longer takes — a gate that
+    # passes on code nobody runs is worse than no gate. Pointing it at its own SQLite file
+    # keeps the isolation that mattered (never touching a real Postgres) while exercising the
+    # real path.
+    #
+    # DATABASE_URL is the one mechanism that reaches the analyzer SUBPROCESSES without editing
+    # the developer's config.local.json. That is test isolation, not run configuration — no
+    # product behaviour is selected by an environment variable here.
+    _db_path = os.path.join(tmp, "verify-inc.db").replace("\\", "/")
+    os.environ.pop("ANALYZER_NO_DB", None)
+    os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
     # Isolate generated data (model/output/logs/cache/api-db-data) to tmp so the pipeline never
     # touches the repo's own model/output. The env var is what the analyzer SUBPROCESS inherits;
     # set_data_root also updates this process (and clears the paths cache). Code stays at the
@@ -111,20 +117,44 @@ def main() -> int:
     _git(repo, "symbolic-ref", "HEAD", "refs/heads/main")   # branch = main (git-version-agnostic)
     sha1 = _commit_file(repo, CPP_V1, "v1")
 
+    # Schema + the rows the engine does not own. PgStore never creates a `versions` row (the
+    # API reserves it at job start), so a run against an unreserved version falls back to files
+    # — which is exactly what this gate must NOT silently do.
+    import datetime as _dt
+    import sqlalchemy as _sa
+    from api.db.postgres import schema as _s
+    from core.db import get_engine as _get_engine
+    _eng = _get_engine()
+    _s.metadata.create_all(_eng)
+    _now = _dt.datetime.now(_dt.timezone.utc)
+    with _eng.begin() as _cx:
+        _cx.execute(_sa.insert(_s.projects), {"id": PID, "name": "verify-inc", "repo_url": "",
+                                              "default_branch": "main", "created_at": _now})
+
+    def _reserve(vid, sha):
+        """What the API does before starting a job."""
+        with _eng.begin() as cx:
+            cx.execute(_sa.insert(_s.versions), {
+                "id": vid, "project_id": PID, "version": vid, "commit_sha": sha,
+                "branch": "main", "status": "in_review", "created_at": _now})
+
     from incremental.generate import generate_full
     from incremental.engine import generate_incremental
 
+    _reserve("ver1", sha1)
     print(f"\n=== run 1 (FULL) commit {sha1[:10]} ===")
     m1 = generate_full(PID, "main", sha1, {"type": "project"},
                        workspaces_root=ws_root, no_llm=True, repo_url=repo, version_id="ver1")
     print(f"   version {m1.get('versionId')}: {m1.get('decision')} / {m1.get('status')}")
 
-    # record version 1 so list_versions (JSON mode) offers it as the baseline for run 2
-    _write_json(os.path.join(tmp, "api", "db", "data", "versions.json"),
-                [{"id": "ver1", "project_id": PID, "commit_sha": sha1, "branch": "main"}])
+    # No versions.json to write: in database mode `list_versions` reads the versions table, and
+    # only rows whose pipeline_status reached a terminal state qualify as baselines — which the
+    # full run above has just set. That is itself part of what this gate now checks; the 0%-reuse
+    # bug was exactly a version never reaching a terminal state.
 
     # commit 2 — change `add` only
     sha2 = _commit_file(repo, CPP_V2, "v2")
+    _reserve("ver2", sha2)
     print(f"\n=== run 2 (INCREMENTAL) commit {sha2[:10]} ===")
     m2 = generate_incremental(PID, "main", sha2, scope={"type": "project"},
                               workspaces_root=ws_root, no_llm=True, repo_url=repo, version_id="ver2")

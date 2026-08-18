@@ -87,10 +87,6 @@ def main() -> int:
     except Exception:
         pass
 
-    # DB-less, isolated: this is about the FILES a run produces.
-    os.environ.pop("DATABASE_URL", None)
-    os.environ["ANALYZER_NO_DB"] = "1"
-
     from utils import mmdc_path
     if "--fast" not in sys.argv and not os.path.isfile(
             os.path.join(_ROOT, "node_modules", "@viz-js", "viz", "package.json")):
@@ -102,6 +98,14 @@ def main() -> int:
         return 0
 
     tmp = tempfile.mkdtemp(prefix="verify-inc-parity-")
+    # A THROWAWAY SQLITE database, not the file path. This gate is about the images an
+    # incremental run carries forward, and since the database became the default (step 9) the
+    # file path is not how those runs happen — checking it proved nothing about production.
+    # DATABASE_URL is how the analyzer SUBPROCESSES are pointed at this throwaway file without
+    # touching the developer's config.local.json: test isolation, not run configuration.
+    _db_path = os.path.join(tmp, "verify-parity.db").replace("\\", "/")
+    os.environ.pop("ANALYZER_NO_DB", None)
+    os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
     os.environ["ANALYZER_DATA_ROOT"] = tmp
     from core.paths import set_data_root
     set_data_root(tmp)
@@ -159,9 +163,31 @@ def main() -> int:
     sha2 = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
                           capture_output=True, text=True).stdout.strip()
 
+    # Schema + the rows the engine does not own: PgStore never creates a `versions` row, so an
+    # unreserved version would fall back to files — the very path this gate stopped testing.
+    import datetime as _dt
+    import sqlalchemy as _sa
+    from api.db.postgres import schema as _s
+    from core.db import get_engine as _get_engine
+    _eng = _get_engine()
+    _s.metadata.create_all(_eng)
+    _now = _dt.datetime.now(_dt.timezone.utc)
+    with _eng.begin() as _cx:
+        _cx.execute(_sa.insert(_s.projects), {"id": PID, "name": PID, "repo_url": "",
+                                              "default_branch": "main", "created_at": _now})
+
+    def _reserve(vid, sha):
+        with _eng.begin() as cx:
+            cx.execute(_sa.insert(_s.versions), {
+                "id": vid, "project_id": PID, "version": vid, "commit_sha": sha,
+                "branch": "main", "status": "in_review", "created_at": _now})
+
     from incremental.generate import generate_full
     from incremental.engine import generate_incremental
     from incremental.store import make_store
+
+    for _vid, _sha in (("ver1", sha1), ("verFULL", sha2), ("verINC", sha2)):
+        _reserve(_vid, _sha)
 
     print(f"commit 1 {sha1[:10]}   commit 2 {sha2[:10]}   (one .cpp changed)")
     print("\n=== baseline: FULL(commit 1) ===")

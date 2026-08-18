@@ -521,12 +521,31 @@ class TestDatabaseCanBeExplicitlyDisabled:
         monkeypatch.setenv("ANALYZER_NO_DB", val)
         assert coredb.is_database_configured() is (not disabled)
 
-    def test_the_gate_sets_it(self):
-        """The tool must actually set the switch, not just intend to."""
+    @pytest.mark.parametrize("tool", ["verify_incremental.py", "verify_incremental_parity.py"])
+    def test_the_gates_run_on_a_database_not_the_file_path(self, tool):
+        """Both gates used to set ANALYZER_NO_DB=1 and exercise FileStore.
+
+        Once the database became the default (doc 10 step 9) that tested a path production no
+        longer takes — a gate passing on code nobody runs is worse than no gate, and this one
+        was the project's best end-to-end check. They now build a throwaway SQLite database, so
+        the isolation that mattered (never touching a real Postgres) is kept while the real path
+        is what gets exercised.
+
+        Moving them found a live bug immediately: an empty `globalVariables` read as missing and
+        failed Phase 2 outright — see TestEmptyIsNotMissing in test_model_repo.py.
+        """
         import os as _os
         root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-        src = open(_os.path.join(root, "tools", "verify_incremental.py"), encoding="utf-8").read()
-        assert 'os.environ["ANALYZER_NO_DB"] = "1"' in src
+        src = open(_os.path.join(root, "tools", tool), encoding="utf-8").read()
+        assert 'os.environ["ANALYZER_NO_DB"] = "1"' not in src, \
+            f"{tool} still forces the DB-less path"
+        assert 'os.environ.pop("ANALYZER_NO_DB", None)' in src, \
+            f"{tool} must clear an inherited opt-out, or a developer's shell disables the gate"
+        assert 'os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"' in src
+        assert "_s.metadata.create_all(_eng)" in src, f"{tool} does not create its schema"
+        assert "def _reserve(" in src, \
+            (f"{tool} must reserve the versions row the API owns — without it the run falls "
+             f"back to files and the gate silently tests nothing")
 
 
 class TestRunReportAndReportText:

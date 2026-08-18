@@ -69,6 +69,40 @@ def _repo(db):
     return r
 
 
+class TestEmptyIsNotMissing:
+    """A project with no global variables must not fail.
+
+    `_is_absent` treats an empty artifact as missing, which is right when nothing has been
+    written and wrong once something has: `globalVariables` is legitimately `{}` on a project
+    that declares none. Phase 2 then died with "model 'globalVariables' is not in the database.
+    Run the upstream phase first" on a model that was perfectly complete.
+
+    The file path never had this ambiguity — Phase 1 wrote `globalVariables.json` containing
+    `{}`, and an empty file is still a file. Caught by `verify_incremental.py` the moment that
+    gate moved off the file path; the fixture there has functions and no globals.
+    """
+
+    def test_an_empty_artifact_reads_as_empty_once_a_model_exists(self, db):
+        from core.model_io import read_model_file, write_model_file, FUNCTIONS, GLOBALS, HASHES as H
+        repo = _repo(db)
+        write_model_file(FUNCTIONS, FUNCS)
+        write_model_file(H, HASHES)
+        write_model_file(GLOBALS, {})                 # a project with no globals
+        repo.flush()
+
+        fresh = model_repo.DbRepository(VID, PID)
+        model_repo.set_repository(fresh)
+        assert read_model_file(GLOBALS) == {}, "an empty artifact must not read as missing"
+
+    def test_still_missing_when_nothing_was_ever_written(self, db):
+        """The guard must not swing the other way: a phase reading before its upstream ran
+        should still be told so, or it silently produces an empty document."""
+        from core.model_io import read_model_file, GLOBALS, ModelFileMissing
+        _repo(db)
+        with pytest.raises(ModelFileMissing):
+            read_model_file(GLOBALS)
+
+
 class TestDatabaseBacking:
     def test_write_then_read_through_model_io(self, db):
         """The whole point: model_io's API, database underneath."""

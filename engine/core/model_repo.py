@@ -133,6 +133,7 @@ class DbRepository(ModelRepository):
         self._fallback = fallback or FileRepository()
         self._pending: Dict[str, Any] = {}
         self._stored: Optional[Dict[str, Any]] = None      # whole-model read, cached
+        self._exists: Optional[bool] = None                # "a model was persisted", cached
         self._lock = threading.Lock()
 
     # -- reads -------------------------------------------------------------
@@ -144,6 +145,28 @@ class DbRepository(ModelRepository):
             with get_engine().connect() as cx:
                 self._stored = model_store.load_model(cx, self.version_id)
         return self._stored
+
+    def _model_exists(self) -> bool:
+        """Has Phase 1 persisted a model for this version at all?
+
+        The positive signal that separates "empty" from "never written". `entity_versions` is
+        the right table to ask: `persist_model` always writes rows there for a project with any
+        functions or globals, and a project with neither has nothing for a later phase to do.
+        Cached — every read of an empty artifact would otherwise re-query.
+        """
+        if self._exists is None:
+            try:
+                import sqlalchemy as sa
+                from api.db.postgres import schema as s
+                from core.db import get_engine
+                with get_engine().connect() as cx:
+                    n = cx.execute(
+                        sa.select(sa.func.count()).select_from(s.entity_versions)
+                        .where(s.entity_versions.c.version_id == self.version_id)).scalar()
+                self._exists = bool(n)
+            except Exception:
+                self._exists = False        # cannot confirm -> behave as before (report missing)
+        return self._exists
 
     def read(self, name, *, required=True, default=None):
         if name not in DB_BACKED:
@@ -166,8 +189,15 @@ class DbRepository(ModelRepository):
         val = stored.get(key)
         if not _is_absent(val):
             return val
-        # Empty is ambiguous: a version with no summaries and a version never persisted both
-        # look like {}. Treat it as absent so `required` behaves as it does for a missing file.
+        # Empty is ambiguous on its own: a version with no globals and a version never persisted
+        # both read as {}. Ask whether the MODEL is there before calling this one missing.
+        #
+        # Getting this wrong is not theoretical — treating empty as missing failed Phase 2
+        # outright on any project with zero global variables, because `globalVariables` is
+        # legitimately {} there. The file path never had the ambiguity: Phase 1 wrote
+        # `globalVariables.json` containing {}, and an empty file is still a file.
+        if self._model_exists():
+            return val if val is not None else (default if default is not None else {})
         if required:
             from core.model_io import ModelFileMissing
             raise ModelFileMissing(
@@ -191,6 +221,7 @@ class DbRepository(ModelRepository):
         with self._lock:
             self._pending[name] = data
             self._stored = None                  # a later read must see the new value
+            self._exists = None                  # and re-ask whether a model is there
 
     # -- standalone artifacts (own table, no coupling to the rest) ----------
     _STANDALONE_IO = {
