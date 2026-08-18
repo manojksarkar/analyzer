@@ -49,7 +49,8 @@ from incremental.report import build_report, emit_report
 from incremental.generate import (_manifest, scope_to_args, per_component_docx_args,
                                   resolve_run_config, generate_full, _now_iso,
                                   snapshot_parse_model, apply_no_llm,
-                                  _orchestrator_model)
+                                  _orchestrator_model,
+                                  _persist_run_metadata)
 
 
 def _entity_kind(key: str) -> str:
@@ -675,6 +676,11 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     # Snapshot THIS version's blank skeleton for future narrowed parses (M4.4).
     snapshot_parse_model(model_dir, _adir, store, version_id, _MODEL_STORE)
+    # Run identity lands HERE, not at the end. Phase 3's flowchart engine reads base_path from
+    # `versions` to resolve source files, and Phase 3 runs before the end-of-run write — so the
+    # engine saw NULL, rooted its SourceExtractor at "", and every flowchart came back
+    # "Source file not found: <relative path>" while the run reported success.
+    _persist_run_metadata(store, version_id, project_id, model_dir, _MODEL_STORE)
 
     # The target model as Phase 1 just produced it. In database mode Phase 1 flushed to the
     # database and these files are not written, so reading them would yield four empty dicts —
@@ -844,7 +850,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         store.write_model(version_id, model_dir)
     # Run identity (basePath/projectName/parseFingerprint) -> the store: the `versions` columns
     # under PgStore. Replaces the API reading model/metadata.json off disk (doc 07 §3).
-    store.write_run_metadata(version_id, _read(model_dir, "metadata.json"))
+    _persist_run_metadata(store, version_id, project_id, model_dir, _MODEL_STORE)
     # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
     documents = store.capture_output(version_id, _paths().output_dir)
     llm = cfg.get("llm") or {}

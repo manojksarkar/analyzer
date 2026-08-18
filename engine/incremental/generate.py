@@ -104,6 +104,56 @@ def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
             _gl("incremental").warning(f"C2: could not store the parse snapshot: {exc}")
 
 
+def run_metadata(store, version_id: str, project_id: str, model_dir: str,
+                 model_store: str) -> Dict[str, Any]:
+    """The run's identity metadata — basePath / projectName / parseFingerprint.
+
+    Read from whichever backing Phase 1 wrote it to. Both orchestrators used to open
+    `model/metadata.json` directly; step 11a moved `metadata` into `parse_snapshots`, so that
+    file stopped existing and the read silently produced nothing. `versions.base_path` was then
+    NULL, and the flowchart engine — which takes base_path from that column in database mode —
+    built a SourceExtractor rooted at "", so every function failed with
+    "Source file not found: <relative path>" and every flowchart came back empty.
+
+    Silent because both sites tolerated a missing file: one skipped the write, the other wrote
+    an empty dict. Neither is wrong on its own; both stopped being reachable at the same time.
+    """
+    if model_store == "db":
+        from core.model_repo import DbRepository
+        try:
+            return DbRepository(version_id, project_id or "").read(
+                "metadata", required=False, default={}) or {}
+        except Exception:
+            return {}
+    p = os.path.join(model_dir, "metadata.json")
+    if not os.path.isfile(p):
+        return {}
+    try:
+        import json as _json
+        with open(p, encoding="utf-8") as fh:
+            return _json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _persist_run_metadata(store, version_id: str, project_id: str, model_dir: str,
+                          model_store: str) -> bool:
+    """Write basePath / projectName / parseFingerprint to the store. True if it had something.
+
+    Called right after Phase 1 — see the call site for why the timing matters — and again at the
+    end of the run, which is idempotent and covers a metadata refresh.
+    """
+    meta = run_metadata(store, version_id, project_id, model_dir, model_store)
+    from core.logging_setup import get_logger as _gl
+    if not meta:
+        _gl("incremental").warning(
+            "run metadata is empty — versions.base_path/project_name stay NULL, and the "
+            "flowchart engine resolves every source file from base_path")
+        return False
+    store.write_run_metadata(version_id, meta)
+    return True
+
+
 def _orchestrator_model(store, version_id: str, model_dir: str, model_store: str) -> Dict[str, Any]:
     """The finished model, for the orchestrator's own bookkeeping (report + fingerprints).
 
@@ -324,6 +374,12 @@ def generate_full(
     if rc != 0:
         _fail_full(rc)
     snapshot_parse_model(model_dir, _adir, store, version_id, model_store)
+    # Run identity lands HERE, not at the end of the run. Phase 3's flowchart engine reads
+    # base_path from `versions` to resolve source files, and Phase 3 executes inside the
+    # subprocess below — so writing this after it returns is too late: the engine sees NULL,
+    # roots its SourceExtractor at "", and every function fails with
+    # "Source file not found: <relative path>" while the run reports success.
+    _persist_run_metadata(store, version_id, project_id, model_dir, model_store)
     # --model-from-db re-materialized the stored model to disk between Phase 1 and Phase 2, so
     # Phase 2+ consumed the STORED copy rather than Phase 1's files. Removed with step 11b: the
     # phases read the database directly, so there is nothing to re-materialize and nothing left
@@ -345,11 +401,7 @@ def generate_full(
         store.write_model(version_id, model_dir)
     # Run identity (basePath/projectName/parseFingerprint) -> the store: the `versions` columns
     # under PgStore. Replaces the API reading model/metadata.json off disk (doc 07 §3).
-    _meta_path = os.path.join(model_dir, "metadata.json")
-    if os.path.isfile(_meta_path):
-        import json as _json
-        with open(_meta_path, encoding="utf-8") as _fh:
-            store.write_run_metadata(version_id, _json.load(_fh))
+    _persist_run_metadata(store, version_id, project_id, model_dir, model_store)
     # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
     documents = store.capture_output(version_id, output_dir)
     _m = _orchestrator_model(store, version_id, model_dir, model_store)
