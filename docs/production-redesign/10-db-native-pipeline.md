@@ -331,7 +331,7 @@ SQLite with all gates green. In database mode the model dir is down from 14 file
 | ✅ 9 | flip the default to the database | done — `--model-store files` reverts |
 | ✅ 10 | **C12** — the disk LLM cache moves to `llm_description_cache` (0005); `pkb_*.json` dropped. After the model is in the database (04 §13.4): every cache key derives from model content | **no** |
 | ✅ 11a | `metadata` / `entity_files` / `func_keys` / `override_pairs` → `parse_snapshots`; model dir down to 1 file | done |
-| 11b | delete the file code paths, except the debug-only writer (§10) | **no** |
+| ✅ 11b | no silent fallback; `ANALYZER_NO_DB`, `--prune-model-files`, `--model-from-db` removed; both e2e gates moved onto a database | done |
 
 ### Step 9 as landed
 
@@ -377,7 +377,43 @@ baseline, so a future reader could pick up another machine's paths without notic
 
 Result: **the model directory holds one file** where it held fifteen before this doc began.
 
-**Note for step 11b:** deleting the file path also deletes this fallback. All three conditions
+### Step 11b as landed
+
+**The fallback became a failure.** A run that cannot reach the database raises `DatabaseRequired`
+instead of using files, naming which of the three conditions it hit and how to fix it. The step-9
+fallback was right while files were a working backing; they are not any more, so falling back
+produces a version that *looks* generated and is absent from every table the API reads.
+`--model-store files` survives as a deliberate opt-out — what is gone is reaching files by accident.
+
+**Prerequisite discovered here, worth recording.** Both end-to-end gates
+(`verify_incremental`, `verify_incremental_parity`) ran with `ANALYZER_NO_DB=1` against the file
+store. Since step 9 that tested a path production does not take — the project's two best checks
+were green on dead code. They now build a throwaway SQLite database, create the schema, and
+reserve the `versions` rows the API owns.
+
+That move found a live bug on its first run: `_is_absent` treats an empty artifact as missing,
+which is right before anything is written and wrong after. `globalVariables` is legitimately `{}`
+on a project that declares no globals, so **Phase 2 failed outright on every such project** in
+database mode. The file path never had the ambiguity — an empty file is still a file.
+`SampleCppProject` has 14 globals, which is why neither the unit suite nor any manual run had
+surfaced it. `DbRepository` now asks `entity_versions` whether a model was persisted at all before
+calling an empty artifact missing.
+
+**Removed:** `ANALYZER_NO_DB` (existed only for those gates, and selected product behaviour from
+an environment variable — D10-3); `--prune-model-files` and `--model-from-db`, both scaffolding for
+the period when files and the database were simultaneously live.
+
+**Not removed:** `FileRepository`. `clang_include_paths` is still a file by design, and it is the
+fallback that serves it.
+
+### Still open after step 11
+
+* **Narrowed parse** (`--narrowed-parse`) is refused in database mode, so it is now unreachable.
+  It was never enabled by the API and is untested; left in place rather than silently deleted, but
+  it needs a decision — implement it against `parse_snapshots` or drop the feature.
+* **`.mmdc_cache` / `.dot_cache`** and `versions/<ver>/output/**` — deferred with the `output/`
+  work. These are the remaining cross-node gaps: a rendered PNG on node A is invisible to node B,
+  exactly as the LLM cache was before step 10. All three conditions
 above then have to become hard errors, which is a real behaviour change for CLI use — decide it
 deliberately rather than discovering it.
 
