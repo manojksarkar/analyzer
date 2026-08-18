@@ -198,8 +198,12 @@ def _store_resolved_config(db: Any, job: Any, cfg: dict) -> None:
         if v is not None:
             v.resolved_config = cfg
             db.versions.update(v)
-    except Exception:                                # best-effort: don't fail the run on this
-        pass
+    except Exception as exc:                         # best-effort: don't fail the run on this
+        # But say so. This column is the record of what settings a version was built with, and
+        # losing it without a trace makes a later "why does this version look like that?"
+        # unanswerable — the workspace config.json is per PROJECT and shared, so it has already
+        # moved on by the time anyone asks.
+        _append_log(getattr(job, "id", ""), f"WARNING: could not store resolved_config: {exc}")
 
 
 def _mark_failed(db: Any, job_id: str, message: str) -> None:

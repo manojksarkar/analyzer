@@ -330,7 +330,8 @@ SQLite with all gates green. In database mode the model dir is down from 14 file
 | ✅ 8 | H3–H6: `--use-model`, re-export, `--clean`, test fixtures, parity replacement · **then both modes run on the office project and the documents are diffed** | done |
 | ✅ 9 | flip the default to the database | done — `--model-store files` reverts |
 | ✅ 10 | **C12** — the disk LLM cache moves to `llm_description_cache` (0005); `pkb_*.json` dropped. After the model is in the database (04 §13.4): every cache key derives from model content | **no** |
-| 11 | delete the file code paths, except the debug-only writer (§10) | **no** |
+| ✅ 11a | `metadata` / `entity_files` / `func_keys` / `override_pairs` → `parse_snapshots`; model dir down to 1 file | done |
+| 11b | delete the file code paths, except the debug-only writer (§10) | **no** |
 
 ### Step 9 as landed
 
@@ -354,7 +355,29 @@ Verified as a subprocess with `pipeline_runner`'s exact argument shape and no `-
 anywhere: 490 `entity_versions` rows, `knowledge_base` populated, and none of the eight
 `model/*.json` written. The unreserved-version run exited 0 with the warning.
 
-**Note for step 11:** deleting the file path also deletes this fallback. All three conditions
+### Step 11a as landed
+
+The four artifacts a database-mode run still wrote to `model/` were already duplicated in
+`parse_snapshots`; only the live write went to disk. They now route through the model repository
+into `parse_snapshots` directly, so **Phase 1's output IS the snapshot** rather than a file the
+snapshot goes back and reads.
+
+`persist_parse_snapshot_data` could not serve this — it clears every row for the version before
+inserting, so four sequential per-name calls would have left one row, not four. Hence
+`persist_parse_snapshot_file` / `load_parse_snapshot_file`, plus a `replace=False` mode so
+`snapshot_parse_model` merges its model-derived artifacts in rather than deleting what Phase 1
+just stored.
+
+**`clang_include_paths.json` stays a file, deliberately.** It holds absolute include directories
+under *this machine's* checkout, so a stored copy would hand another node paths that do not exist
+there — worse than not storing it. It is also read only within the run that wrote it, never from
+a baseline version, so it has none of the cross-node value the other four had. Putting it in
+`parse_snapshots` would additionally be a trap: `_load_baseline_parse` loads that whole dict for a
+baseline, so a future reader could pick up another machine's paths without noticing.
+
+Result: **the model directory holds one file** where it held fifteen before this doc began.
+
+**Note for step 11b:** deleting the file path also deletes this fallback. All three conditions
 above then have to become hard errors, which is a real behaviour change for CLI use — decide it
 deliberately rather than discovering it.
 
