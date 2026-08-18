@@ -140,3 +140,42 @@ class TestWiring:
                    encoding="utf-8").read()
         assert '_LABEL_NS = "flowchart_labels"' in eng
         assert "from llm_core.cache import EntityCache" in eng
+
+
+class TestFallbacksAreNeverCached:
+    """A timed-out LLM must not become permanent.
+
+    When the LLM returns nothing usable the generator substitutes mechanical labels so the
+    diagram still renders. Caching those would make a transient outage stick: every later run
+    would hit the cache, never retry, and the flowcharts would quietly stay mechanical with no
+    error anywhere.
+    """
+
+    def test_a_fallback_label_blocks_the_write(self, monkeypatch):
+        cache = _Cache()
+        monkeypatch.setattr(fe, "_label_cache", lambda cfg: cache)
+        cfg = _cfg()
+        cfg.nodes["n1"].label = "Reads the sensor"
+        cfg.nodes["n2"].label = "Check: x > 0"        # mechanical fallback
+        fe._store_labels(cfg, "k", None)
+        assert cache.puts == [], "a fallback label was cached and would never be retried"
+
+    def test_a_clean_result_is_cached(self, monkeypatch):
+        cache = _Cache()
+        monkeypatch.setattr(fe, "_label_cache", lambda cfg: cache)
+        cfg = _cfg()
+        cfg.nodes["n1"].label = "Reads the sensor"
+        cfg.nodes["n2"].label = "Doubles the reading"
+        fe._store_labels(cfg, "k", None)
+        assert json.loads(cache.puts[0]) == {"n1": "Reads the sensor",
+                                             "n2": "Doubles the reading"}
+
+    def test_a_missing_label_blocks_the_write(self, monkeypatch):
+        """Partial coverage is the same hazard: the gap would be cached as final."""
+        cache = _Cache()
+        monkeypatch.setattr(fe, "_label_cache", lambda cfg: cache)
+        cfg = _cfg()
+        cfg.nodes["n1"].label = "Reads the sensor"
+        cfg.nodes["n2"].label = ""
+        fe._store_labels(cfg, "k", None)
+        assert cache.puts == []

@@ -362,14 +362,31 @@ def _apply_cached_labels(cfg, key: str, config: EngineConfig) -> bool:
 
 
 def _store_labels(cfg, key: str, config: EngineConfig) -> None:
+    """Store the generated labels — unless any of them is a FALLBACK.
+
+    When the LLM times out or returns nothing usable, the generator substitutes mechanical
+    labels ("Check: ", "Loop: ", ...) so the diagram still renders. Caching those would make a
+    transient outage permanent: every later run would hit the cache and never retry, and the
+    only symptom would be flowcharts that quietly stayed mechanical forever. Same rule as
+    EntityCache's "never cache empty results", one level up.
+    """
     cache = _label_cache(config)
     if not (cache and key):
         return
     try:
         import json as _json
-        labels = {str(n.node_id): n.label for n in cfg.nodes.values()
-                  if n.node_type not in (NodeType.START, NodeType.END)}
-        if labels:
+        from llm.generator import _looks_like_fallback
+        labelable = [n for n in cfg.nodes.values()
+                     if n.node_type not in (NodeType.START, NodeType.END)]
+        if not labelable:
+            return
+        n_fallback = sum(1 for n in labelable if _looks_like_fallback(n))
+        if n_fallback:
+            logger.info("not caching labels: %d/%d node(s) fell back to mechanical labels, so "
+                        "the LLM result is incomplete", n_fallback, len(labelable))
+            return
+        labels = {str(n.node_id): n.label for n in labelable if n.label}
+        if len(labels) == len(labelable):
             cache.put(key, key, _json.dumps(labels, ensure_ascii=False))
     except Exception:
         pass
