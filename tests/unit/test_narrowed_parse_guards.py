@@ -127,3 +127,46 @@ class TestStoreFirstSnapshot:
         empty.mkdir(parents=True)
         with pytest.raises(GitError):
             _call(tmp_path, str(empty), store=_Store(), base_vid="ver1")
+
+
+class TestTheApiActuallyEnablesIt:
+    """Narrowed parse being ON in the engine is worth nothing if the API turns it off.
+
+    The flag inverted when it became the default — a job now opts OUT — and every layer still
+    defaulted the field to False: the request body, the Job dataclass and the column. So each UI
+    job would have sent `--no-narrowed-parse` and disabled the feature on exactly the path it
+    was built for, while the engine, the CLI and every gate showed it working.
+
+    Nothing would have failed. Runs would simply have stayed slow, which is how the two bugs
+    underneath it survived this long in the first place.
+    """
+
+    def _src(self, rel):
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_the_job_model_defaults_to_on(self):
+        assert "narrowed_parse: bool = True" in self._src(os.path.join("api", "models", "domain.py"))
+
+    def test_the_request_body_defaults_to_on(self):
+        assert "narrowed_parse: bool = True" in self._src(os.path.join("api", "routes", "jobs.py"))
+
+    def test_the_column_defaults_to_on(self):
+        src = self._src(os.path.join("api", "db", "postgres", "schema.py"))
+        assert 'Column("narrowed_parse", Boolean, default=True)' in src
+
+    def test_the_runner_sends_the_flag_only_to_disable(self):
+        src = self._src(os.path.join("api", "services", "pipeline_runner.py"))
+        assert '"--no-narrowed-parse"' in src
+        assert '"--narrowed-parse"' not in src, \
+            "the engine is on by default; sending the positive flag means the default is unused"
+        assert 'getattr(job, "narrowed_parse", True) is False' in src
+
+    def test_a_default_job_does_not_disable_it(self):
+        """The end of the chain: a job created with no opinion must leave it ON."""
+        sys.path.insert(0, ROOT)
+        from api.models.domain import AnalysisJob
+        import inspect
+        default = inspect.signature(AnalysisJob).parameters["narrowed_parse"].default
+        assert default is True, (
+            f"a default AnalysisJob disables narrowed parse (got {default!r})")

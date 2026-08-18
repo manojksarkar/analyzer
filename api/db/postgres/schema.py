@@ -197,7 +197,7 @@ analysis_jobs = Table(
     Column("scope", _JSONB),
     Column("no_llm", Boolean, default=False),
     Column("data_dict_id", String),
-    Column("narrowed_parse", Boolean, default=False),
+    Column("narrowed_parse", Boolean, default=True),   # opt-OUT since narrowed parse landed
     Column("regenerated", Integer),
     Column("reused", Integer),
     Index("ix_jobs_project", "project_id"),

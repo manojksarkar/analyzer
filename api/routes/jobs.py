@@ -46,7 +46,7 @@ class StartJobRequest(BaseModel):
     data_dict_id: Optional[str] = None         # resolved to workspaces/<pid>/datadict/<id>.csv
     # M4.4 opt-in: in an incremental run, re-parse only the affected TUs and merge into the
     # baseline parser snapshot instead of a full Phase-1 parse (pays off on large repos).
-    narrowed_parse: bool = False
+    narrowed_parse: bool = True         # opt-OUT: send false to force a full re-parse
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ def _job_dict(job: AnalysisJob) -> dict:
         "scope": getattr(job, "scope", None),
         "no_llm": getattr(job, "no_llm", False),
         "data_dict_id": getattr(job, "data_dict_id", None),
-        "narrowed_parse": getattr(job, "narrowed_parse", False),
+        "narrowed_parse": getattr(job, "narrowed_parse", True),
         "started_at": job.started_at.isoformat(),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "error_message": job.error_message,
