@@ -45,48 +45,64 @@ def _restore():
 
 
 class TestEffectiveModelStore:
-    """Step 9 made `db` the default, so it must degrade rather than fail.
+    """Step 11b: a run that cannot reach the database FAILS. It used to fall back to files.
 
-    Three ways a machine can be unable to honour it, each of which used to be a caller's
-    problem and is now the *default's* problem:
-      * no database configured at all (a dev box, a clone with no config.local.json);
+    That fallback was right at step 9, when files were still a working backing. They are not
+    any more — the model, the parse artifacts and the phase hand-offs are all rows — so a
+    silent fallback produces a version that *looks* generated and is absent from every table
+    the API reads. A loud failure at the start is strictly better than a quiet lie at the end.
+
+    Three ways a run can be unable to reach it, each with its own actionable message:
       * no version id (a phase invoked standalone);
+      * no database configured at all;
       * a version id with no `versions` row — the API reserves that row at job start and
         PgStore never creates one, so every per-version insert would fail on the foreign key.
     """
 
-    def test_files_is_returned_unchanged(self):
+    def test_explicit_files_is_still_honoured(self):
+        """`--model-store files` is a deliberate opt-out, not an accident — it stays."""
         assert run_context.effective_model_store("files", "ver1") == "files"
 
-    def test_no_version_id_falls_back(self, capsys):
-        assert run_context.effective_model_store("db", None) == "files"
-        assert "no version id" in capsys.readouterr().err
+    def test_no_version_id_raises(self):
+        with pytest.raises(run_context.DatabaseRequired, match="no version id"):
+            run_context.effective_model_store("db", None)
 
-    def test_no_database_falls_back(self, monkeypatch, capsys):
+    def test_no_database_raises(self, monkeypatch):
         monkeypatch.setattr("core.db.is_database_configured", lambda: False)
-        assert run_context.effective_model_store("db", "ver1") == "files"
-        assert "no database configured" in capsys.readouterr().err
+        with pytest.raises(run_context.DatabaseRequired, match="no database is configured"):
+            run_context.effective_model_store("db", "ver1")
 
-    def test_missing_versions_row_falls_back(self, monkeypatch, capsys):
+    def test_missing_versions_row_raises(self, monkeypatch):
         monkeypatch.setattr("core.db.is_database_configured", lambda: True)
         monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
-        assert run_context.effective_model_store("db", "ver-nope") == "files"
-        err = capsys.readouterr().err
-        assert "no versions row" in err and "ver-nope" in err
+        with pytest.raises(run_context.DatabaseRequired, match="ver-nope"):
+            run_context.effective_model_store("db", "ver-nope")
 
     def test_db_when_everything_is_in_place(self, monkeypatch):
         monkeypatch.setattr("core.db.is_database_configured", lambda: True)
         monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: True)
         assert run_context.effective_model_store("db", "ver1") == "db"
 
-    def test_an_unreachable_database_is_not_an_exception(self, monkeypatch, capsys):
-        """A dead database must not take the run with it — it reports and uses files."""
+    def test_an_unreachable_database_raises_too(self, monkeypatch):
+        """A dead database is not a reason to write files nobody will read."""
         def _boom():
             raise RuntimeError("connection refused")
         monkeypatch.setattr("core.db.get_engine", _boom)
         monkeypatch.setattr("core.db.is_database_configured", lambda: True)
-        assert run_context.effective_model_store("db", "ver1") == "files"
-        assert "connection refused" in capsys.readouterr().err
+        with pytest.raises(run_context.DatabaseRequired):
+            run_context.effective_model_store("db", "ver1")
+
+    @pytest.mark.parametrize("bad,fix", [
+        (None, "--version-id"),
+        ("ver-nope", "INSERT the row first"),
+    ])
+    def test_the_message_says_how_to_fix_it(self, monkeypatch, bad, fix):
+        """An operator hitting this at 2am should not have to read the source."""
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
+        with pytest.raises(run_context.DatabaseRequired) as exc:
+            run_context.effective_model_store("db", bad)
+        assert fix in str(exc.value)
 
 
 class TestCliParsing:

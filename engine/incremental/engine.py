@@ -457,8 +457,6 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          repo_url: Optional[str] = None,
                          repo_token: Optional[str] = None,
                          config_path: Optional[str] = None,
-                         model_from_db: bool = False,
-                         prune_model_files_after: bool = False,
                          model_store: str = "db") -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
@@ -497,8 +495,6 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                              workspaces_root=workspaces_root, data_dict_id=data_dict_id,
                              no_llm=no_llm, version_id=version_id, force=force,
                              repo_url=repo_url, repo_token=repo_token, config_path=config_path,
-                             model_from_db=model_from_db,
-                             prune_model_files_after=prune_model_files_after,
                              model_store=model_store)
 
     base_vid = decision["chosenBaseVersionId"]           # real ver… id (from list_versions)
@@ -613,16 +609,6 @@ def generate_incremental(project_id: str, branch: str, commit: str,
 
     # Snapshot THIS version's blank skeleton for future narrowed parses (M4.4).
     snapshot_parse_model(model_dir, _adir, store, version_id, _MODEL_STORE)
-    # C11b (opt-in): re-materialize the model from Postgres so Phase 2+ consume the STORED
-    # model rather than whatever Phase 1 happened to leave on disk. This is what makes the
-    # database authoritative — and it is exactly the round-trip tools/verify_model_parity.py
-    # checks, so any field the store drops shows up as changed document content immediately.
-    # Off by default until that check is clean on a real database (it already caught global
-    # descriptions being dropped).
-    if model_from_db and store.hydrate_model(version_id, model_dir):
-        from core.logging_setup import get_logger as _gl
-        _gl("incremental").info(
-            f"C11b: model re-materialized from the database for {version_id}")
 
     # The target model as Phase 1 just produced it. In database mode Phase 1 flushed to the
     # database and these files are not written, so reading them would yield four empty dicts —
@@ -862,8 +848,6 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     except Exception:
         pass                       # the report is already logged + on disk
     # C11c — last thing, so nothing downstream can still need the files.
-    from incremental.generate import prune_model_files
-    prune_model_files(store, version_id, model_dir, enabled=prune_model_files_after)
 
     return manifest
 
@@ -894,14 +878,9 @@ def main() -> None:
                          "the narrowed result (logs mismatches; uses the full parse). Slow; for validation.")
     ap.add_argument("--model-store", default="db", choices=("files", "db"),
                     help="where the PHASES read/write the model. Default 'db'; 'files' forces "
-                         "the legacy model/*.json.")
-    ap.add_argument("--prune-model-files", action="store_true",
-                    help="C11c: delete this version's model/*.json once the database is "
-                         "confirmed to hold them. Off by default.")
-    ap.add_argument("--model-from-db", action="store_true",
-                    help="C11b (opt-in): after Phase 1, re-materialize the model from Postgres "
-                         "so Phase 2+ consume the STORED model rather than whatever is on disk. "
-                         "Off by default until tools/verify_model_parity.py is clean.")
+                         "the legacy model/*.json. Without an explicit 'files', a run that "
+                         "cannot reach the database FAILS rather than silently producing a "
+                         "version that is not there.")
     ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
     ap.add_argument("--repo-url", default=None, help="clone URL (else resolved from the project record)")
     args = ap.parse_args()
@@ -910,8 +889,6 @@ def main() -> None:
                              no_llm=args.no_llm, version_id=args.version_id, force=args.force,
                              narrowed_parse=args.narrowed_parse, verify_parse=args.verify_parse,
                              config_path=args.config, repo_url=args.repo_url,
-                             model_from_db=args.model_from_db,
-                             prune_model_files_after=args.prune_model_files,
                              model_store=args.model_store)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, baseline={m.get('baselineVersionId')}, "

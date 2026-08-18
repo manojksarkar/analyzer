@@ -104,7 +104,6 @@ def main() -> int:
     # DATABASE_URL is how the analyzer SUBPROCESSES are pointed at this throwaway file without
     # touching the developer's config.local.json: test isolation, not run configuration.
     _db_path = os.path.join(tmp, "verify-parity.db").replace("\\", "/")
-    os.environ.pop("ANALYZER_NO_DB", None)
     os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
     os.environ["ANALYZER_DATA_ROOT"] = tmp
     from core.paths import set_data_root

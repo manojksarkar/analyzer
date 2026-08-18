@@ -79,24 +79,19 @@ def _orch(name):
 
 
 @pytest.mark.parametrize("name", ["generate.py", "engine.py"])
-def test_prune_is_a_real_parameter_not_a_free_name(name):
-    """The call site referenced `prune_model_files_after` before either signature declared it,
-    so every run died with NameError at the very last step — after producing its documents.
-    Caught by verify_incremental, not by the unit suite, because nothing here calls the
-    orchestrators end to end."""
-    src = _orch(name)
-    assert "prune_model_files_after: bool = False" in src, \
-        f"{name}: the prune flag is used but never declared as a parameter"
-    assert "enabled=prune_model_files_after" in src, f"{name}: the flag is declared but unused"
+def test_the_transition_scaffolding_is_gone(name):
+    """`--prune-model-files` deleted model/*.json after a run; `--model-from-db`
+    re-materialized the stored model between Phase 1 and Phase 2. Both existed to manage a
+    period when the files and the database were BOTH live. Step 11b ended that period: the
+    files are not written, so there is nothing to prune and nothing to re-materialize.
 
-
-@pytest.mark.parametrize("name", ["generate.py", "engine.py"])
-def test_prune_flag_is_exposed_on_the_cli(name):
-    assert '"--prune-model-files"' in _orch(name)
-
-
-def test_incremental_forwards_prune_to_the_full_fallback():
-    """generate_incremental falls back to a full generation with no usable baseline; the flag
-    must survive that hand-off or the first version of a project never prunes."""
-    src = _orch("engine.py")
-    assert "prune_model_files_after=prune_model_files_after" in src
+    Asserted rather than merely deleted because a flag that no longer does anything is worse
+    than none — an operator passing it would reasonably expect an effect.
+    """
+    # Comments stripped: both files explain in prose what the flags used to do and why they
+    # went, which is worth keeping and is not a live reference.
+    code = "".join(ln for ln in _orch(name).splitlines(keepends=True)
+                   if not ln.lstrip().startswith("#"))
+    for gone in ("--prune-model-files", "prune_model_files_after", "--model-from-db",
+                 "model_from_db"):
+        assert gone not in code, f"{name}: {gone} outlived the transition it managed"

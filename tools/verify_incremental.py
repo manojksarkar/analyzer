@@ -1,10 +1,13 @@
-"""DB-less two-version incremental e2e — the gate for the version-identity work (doc 08).
+"""Two-version incremental e2e — the gate for the version-identity work (doc 08).
 
-Runs the REAL incremental engine end-to-end on a throwaway C++ git fixture — no database, no
-LLM, views off — across two commits, and asserts the UNCHANGED function is reused and the
-CHANGED one regenerated. `run_incremental`'s dir/identity plumbing has no unit coverage, so this
-is the safety net: run it BEFORE and AFTER wiring the ArtifactStore into the engine — the
-reused/regenerated numbers must not move.
+Runs the REAL incremental engine end-to-end on a throwaway C++ git fixture — its own SQLite
+database, no LLM, views off — across two commits, and asserts the UNCHANGED function is reused
+and the CHANGED one regenerated. `run_incremental`'s dir/identity plumbing has no unit coverage,
+so this is the safety net: the reused/regenerated numbers must not move.
+
+It was DB-LESS until doc 10 step 11b, exercising the file store. That stopped being production's
+path at step 9, and the first run against a database turned up a bug the file path had hidden
+for the life of the feature (an empty `globalVariables` reading as missing).
 
     python tools/verify_incremental.py
 """
@@ -74,7 +77,7 @@ def main() -> int:
     tmp = tempfile.mkdtemp(prefix="verify-inc-")
     # This gate runs against a THROWAWAY SQLITE DATABASE, not the file path.
     #
-    # It used to set ANALYZER_NO_DB=1 and exercise FileStore. Since the database became the
+    # It used to force a DB-less FileStore path. Since the database became the
     # default (doc 10 step 9) that tested a path production no longer takes — a gate that
     # passes on code nobody runs is worse than no gate. Pointing it at its own SQLite file
     # keeps the isolation that mattered (never touching a real Postgres) while exercising the
@@ -84,7 +87,6 @@ def main() -> int:
     # the developer's config.local.json. That is test isolation, not run configuration — no
     # product behaviour is selected by an environment variable here.
     _db_path = os.path.join(tmp, "verify-inc.db").replace("\\", "/")
-    os.environ.pop("ANALYZER_NO_DB", None)
     os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
     # Isolate generated data (model/output/logs/cache/api-db-data) to tmp so the pipeline never
     # touches the repo's own model/output. The env var is what the analyzer SUBPROCESS inherits;

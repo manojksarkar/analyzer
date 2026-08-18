@@ -481,37 +481,3 @@ def test_model_is_persisted_reports_the_truth(tmp_path):
     # A DB-less store can never confirm, so its files are never pruned — they are the
     # only copy.
     assert fs.model_is_persisted("v1") is False
-
-
-def test_prune_deletes_only_when_the_database_confirms(tmp_path):
-    from incremental.generate import prune_model_files
-    _fs, ps = _both_stores(tmp_path, ["v1"])
-    md = _model_dir(tmp_path, "prune-me", {"App|Main|calc|int": "aaa"})
-
-    # not confirmed yet -> kept
-    assert prune_model_files(ps, "v1", md, enabled=True) is False
-    assert os.path.isdir(md), "files must survive when the DB cannot confirm them"
-
-    ps.write_model("v1", md)
-    assert prune_model_files(ps, "v1", md, enabled=True) is True
-    assert not os.path.isdir(md)
-
-
-def test_prune_is_off_by_default(tmp_path):
-    """Opt-in: these files are what verify_model_parity compares against."""
-    from incremental.generate import prune_model_files
-    _fs, ps = _both_stores(tmp_path, ["v1"])
-    md = _model_dir(tmp_path, "keep-me", {"k": "h"})
-    ps.write_model("v1", md)
-    assert prune_model_files(ps, "v1", md, enabled=False) is False
-    assert os.path.isdir(md)
-
-
-def test_prune_never_raises(tmp_path):
-    from incremental.generate import prune_model_files
-    _fs, ps = _both_stores(tmp_path, ["v1"])
-    # absent dir, empty ids — all must be quiet no-ops, never an exception at the end of a
-    # run that has already produced its documents.
-    assert prune_model_files(ps, "v1", str(tmp_path / "nope"), enabled=True) is False
-    assert prune_model_files(ps, "", str(tmp_path), enabled=True) is False
-    assert prune_model_files(ps, "v1", "", enabled=True) is False

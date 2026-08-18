@@ -484,68 +484,43 @@ class TestGlobalDescriptionSurvives:
             "Accumulated result shared across the App unit."
 
 
-class TestDatabaseCanBeExplicitlyDisabled:
-    """ANALYZER_NO_DB forces the DB-less path regardless of ambient configuration.
+class TestTheGatesRunOnADatabase:
+    """The two end-to-end gates must exercise the path production takes.
 
-    tools/verify_incremental.py is the DB-less gate: it builds a throwaway project in a temp
-    dir and must use the file store. It used to achieve that by unsetting DATABASE_URL, which
-    stopped working once config.local.json also counted as configured — so on any machine set
-    up to reach a real Postgres the gate silently switched backends and tried to write its
-    fake project there, failing on a foreign key against `projects`.
+    They used to set `ANALYZER_NO_DB=1` — an opt-out that existed ONLY for them — and run
+    against the file store. Once the database became the default (doc 10 step 9) that tested
+    code nobody runs, which is worse than no gate at all: these are the project's best
+    end-to-end checks and they were green on a dead path.
+
+    They now build a throwaway SQLite database, so the isolation that mattered (never writing a
+    fake project into a real Postgres) is kept while the real path is what runs. `ANALYZER_NO_DB`
+    itself is gone with step 11b — with files no longer a working backing, an opt-out that
+    selects them only produces a version that looks generated and is not there.
+
+    The move paid for itself immediately: an empty `globalVariables` read as missing and failed
+    Phase 2 on every project with no global variables. See TestEmptyIsNotMissing in
+    test_model_repo.py.
     """
 
-    def test_switch_overrides_a_configured_db_section(self, monkeypatch):
-        import core.db as coredb
-        monkeypatch.delenv("DATABASE_URL", raising=False)
-        monkeypatch.setattr(coredb, "_dsn_from_config",
-                            lambda: "postgresql+psycopg://u:p@h:5432/d")
-        assert coredb.is_database_configured() is True          # configured...
-        monkeypatch.setenv("ANALYZER_NO_DB", "1")
-        assert coredb.is_database_configured() is False         # ...but explicitly disabled
-
-    def test_switch_overrides_the_env_var_too(self, monkeypatch):
-        import core.db as coredb
-        monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@h:5432/d")
-        monkeypatch.setenv("ANALYZER_NO_DB", "1")
-        assert coredb.is_database_configured() is False
-
-    @pytest.mark.parametrize("val,disabled", [("1", True), ("true", True), ("yes", True),
-                                              ("0", False), ("false", False), ("", False)])
-    def test_falsey_values_do_not_disable(self, monkeypatch, val, disabled):
-        """`ANALYZER_NO_DB=0` must NOT disable the database — a careless export would
-        otherwise silently take a real deployment off Postgres."""
-        import core.db as coredb
-        monkeypatch.delenv("DATABASE_URL", raising=False)
-        monkeypatch.setattr(coredb, "_dsn_from_config",
-                            lambda: "postgresql+psycopg://u:p@h:5432/d")
-        monkeypatch.setenv("ANALYZER_NO_DB", val)
-        assert coredb.is_database_configured() is (not disabled)
-
     @pytest.mark.parametrize("tool", ["verify_incremental.py", "verify_incremental_parity.py"])
-    def test_the_gates_run_on_a_database_not_the_file_path(self, tool):
-        """Both gates used to set ANALYZER_NO_DB=1 and exercise FileStore.
-
-        Once the database became the default (doc 10 step 9) that tested a path production no
-        longer takes — a gate passing on code nobody runs is worse than no gate, and this one
-        was the project's best end-to-end check. They now build a throwaway SQLite database, so
-        the isolation that mattered (never touching a real Postgres) is kept while the real path
-        is what gets exercised.
-
-        Moving them found a live bug immediately: an empty `globalVariables` read as missing and
-        failed Phase 2 outright — see TestEmptyIsNotMissing in test_model_repo.py.
-        """
+    def test_the_gate_uses_a_throwaway_database(self, tool):
         import os as _os
         root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
         src = open(_os.path.join(root, "tools", tool), encoding="utf-8").read()
-        assert 'os.environ["ANALYZER_NO_DB"] = "1"' not in src, \
-            f"{tool} still forces the DB-less path"
-        assert 'os.environ.pop("ANALYZER_NO_DB", None)' in src, \
-            f"{tool} must clear an inherited opt-out, or a developer's shell disables the gate"
         assert 'os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"' in src
         assert "_s.metadata.create_all(_eng)" in src, f"{tool} does not create its schema"
-        assert "def _reserve(" in src, \
-            (f"{tool} must reserve the versions row the API owns — without it the run falls "
-             f"back to files and the gate silently tests nothing")
+        assert "def _reserve(" in src,             (f"{tool} must reserve the versions row the API owns — without it the run cannot "
+             f"reach the database and the gate tests nothing")
+
+    def test_the_opt_out_is_gone(self):
+        """ANALYZER_NO_DB must not come back by habit: it selects a backing that no longer
+        works, and it is an environment variable deciding product behaviour."""
+        import os as _os
+        root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        for rel in ("engine/core/db.py", "tools/verify_incremental.py",
+                    "tools/verify_incremental_parity.py"):
+            src = open(_os.path.join(root, rel), encoding="utf-8").read()
+            assert "ANALYZER_NO_DB" not in src, f"{rel} still references the removed opt-out"
 
 
 class TestRunReportAndReportText:

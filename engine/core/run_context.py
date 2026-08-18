@@ -85,33 +85,44 @@ def _version_row_exists(version_id: str) -> bool:
         return False
 
 
+class DatabaseRequired(RuntimeError):
+    """The run needs the database and cannot have it. Raised instead of quietly using files."""
+
+
 def effective_model_store(requested: str, version_id: Optional[str]) -> str:
-    """Resolve a requested backing store against what this machine can actually do.
+    """Check that this run can actually reach the database. Raises if it cannot (step 11b).
 
-    `db` is the default since step 9, which means it has to survive being the default on a
-    machine with no database and on a CLI run whose version was never reserved. Both degrade to
-    files *with a reason on stderr* rather than failing: the wrong backing store is a
-    recoverable annoyance, a dead generation is not.
+    Step 9 made `db` the default and degraded to files with a warning when it could not be
+    honoured. That was right while files were still a working backing. They no longer are: the
+    model, the parse artifacts and the phase hand-offs are all rows, so a run that silently
+    falls back produces a version that LOOKS generated and is missing from every table the API
+    reads. Failing at the start beats that.
 
-    Resolve ONCE, in the orchestrator, and pass the result down — a phase that picks its own
-    answer can disagree with the orchestrator, which is the worst of both stores.
+    Resolve ONCE, in the orchestrator, and pass the result down — a phase that answers
+    differently from its orchestrator leaves half a model in each store.
     """
-    if requested != "db":
-        return "files"
+    if requested == "files":
+        return "files"                                  # explicit opt-out, still honoured
     if not version_id:
-        why = "no version id"
+        why, fix = ("no version id was given", "pass --version-id <id>")
     else:
         from .db import is_database_configured
         if not is_database_configured():
-            why = "no database configured"
+            why = "no database is configured"
+            fix = ("set the `db` section in engine/config/config.local.json, then run "
+                   "`python tools/db_setup.py`")
         elif not _version_row_exists(version_id):
-            why = f"no versions row for {version_id!r} — the API reserves it at job start"
+            why = f"there is no versions row for {version_id!r}"
+            fix = ("the API reserves that row when a job starts, so generate through the API — "
+                   "or, for a CLI-only run, INSERT the row first (see docs/production-redesign/"
+                   "10-db-native-pipeline.md §9)")
         else:
             return "db"
-    import sys
-    print(f"WARNING: model store 'db' requested but {why}; using model files instead.",
-          file=sys.stderr)
-    return "files"
+    raise DatabaseRequired(
+        f"this run needs the database but {why}.\n"
+        f"  Fix: {fix}.\n"
+        f"  The model, parse artifacts and phase hand-offs are all database rows now, so "
+        f"continuing would produce a version that looks generated and is not there.")
 
 
 def install_model_repository() -> str:
