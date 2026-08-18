@@ -406,11 +406,45 @@ the period when files and the database were simultaneously live.
 **Not removed:** `FileRepository`. `clang_include_paths` is still a file by design, and it is the
 fallback that serves it.
 
-### Still open after step 11
+### Narrowed parse — landed, and on by default
 
-* **Narrowed parse** (`--narrowed-parse`) is refused in database mode, so it is now unreachable.
-  It was never enabled by the API and is untested; left in place rather than silently deleted, but
-  it needs a decision — implement it against `parse_snapshots` or drop the feature.
+Parse is ~65% of a non-LLM run and scales with source volume, so this was the largest saving
+still on the table. On `SampleCppProject` Phase 1 drops **13.07s → 1.56s** with the document
+identical to a full run.
+
+**The plan changed during verification, which is why it was worth doing first.** The intent was
+to let the partial parse land in the real version and rely on `pipeline_status`. `engine.py`
+already said the narrowed path *"deliberately passes no version id"* because its output is a
+PARTIAL model — and it is right: `--use-model --from-phase 4` re-export reads the version's
+model, so a partial persisted there would export a document holding only the changed files. The
+partial now runs under an explicit `--model-store files`; only the MERGED result is published,
+through the repository.
+
+Fixed: the merged skeleton publishes via `DbRepository`; `--verify-parse` reads the right backing
+(it was comparing two stale file copies and reporting a meaningless match); the baseline func-key
+map moved from the `ANALYZER_BASELINE_FUNCKEYS` environment variable to `--baseline-version-id`
+read from `parse_snapshots` (D10-3); and `parser.py` imports `core.model_store` first, since its
+subprocess `sys.path` lacks the repo root.
+
+**Two bugs the new gate found that no unit test could:**
+
+1. Step 11a gave `tu_includes` its own table, so `read_parse_snapshot` stopped returning it and
+   the availability check refused *every* narrowed parse. A one-step-old regression.
+2. `parse_fingerprint` hashed absolute `-I` paths. Every commit checks out to its own directory,
+   so the fingerprint differed on every run and the safety gate tripped **100% of the time** —
+   narrowed parse had never once executed since checkouts became commit-keyed. It now folds the
+   checkout root out, which also makes the value comparable across nodes.
+
+Both were invisible because falling back to a full parse is the *safe* branch: nothing failed,
+runs were simply as slow as before.
+
+`tools/verify_narrowed_parse.py` compares narrowed against full entity by entity, asserts the
+cross-file call edge by name, and **fails if the narrowed path fell back** — it passed vacuously
+on its first run by doing exactly that.
+
+Default on; `--no-narrowed-parse` forces a full parse. The safety fallbacks are untouched.
+
+### Still open after step 11
 * **`.mmdc_cache` / `.dot_cache`** and `versions/<ver>/output/**` — deferred with the `output/`
   work. These are the remaining cross-node gaps: a rendered PNG on node A is invisible to node B,
   exactly as the LLM cache was before step 10. All three conditions
