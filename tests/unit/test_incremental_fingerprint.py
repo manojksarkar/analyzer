@@ -72,3 +72,71 @@ class TestComputeFingerprints:
         # no matter the (hypothetical) model/prompt. Guards against re-introducing it.
         h, f, e = self._model()
         assert compute_fingerprints(h, f, e)["C|U|a|"] == compute_fingerprints(h, f, e)["C|U|a|"]
+
+
+class TestGlobalsFoldInTheirAccessors:
+    """A global's fingerprint must move when a function that reads or writes it changes.
+
+    `enrich_globals_rich` builds a global's description from the DESCRIPTIONS of its readers and
+    writers, so a changed reader changes the global's input. The fingerprint was
+    `_fingerprint(own_source_hash, [])` — no dependencies — so it did not move, the reuse index
+    scored a hit, and the global kept a description written against the reader's old behaviour.
+
+    Observed in a real run: 4 functions regenerated, both globals "reused 100%" via the content
+    index. The report even claimed globals get regenerated when a reader does; the fingerprint
+    made that false.
+
+    Functions already folded in their callees. Globals were the gap.
+    """
+
+    def _model(self, reader_hash):
+        functions = {
+            "App|U|reader|void": {"qualifiedName": "reader", "callsIds": [],
+                                  "readsGlobalIds": ["App|U|g_flag"], "writesGlobalIds": []},
+        }
+        hashes = {"App|U|reader|void": reader_hash, "App|U|g_flag": "GLOBAL-SRC-1"}
+        return hashes, functions, {"typeUsers": {}, "macroUsers": {}}
+
+    def test_a_changed_reader_changes_the_global_fingerprint(self):
+        h1, f1, e1 = self._model("READER-V1")
+        h2, f2, e2 = self._model("READER-V2")      # the global's own source is identical
+        fp1 = compute_fingerprints(h1, f1, e1)["App|U|g_flag"]
+        fp2 = compute_fingerprints(h2, f2, e2)["App|U|g_flag"]
+        assert fp1 != fp2, ("the global's fingerprint ignored its reader, so a stale description "
+                            "would be reused")
+
+    def test_an_unchanged_reader_keeps_it_stable(self):
+        """Reuse must still happen when nothing relevant moved — the point is precision, not
+        regenerating everything."""
+        h1, f1, e1 = self._model("READER-V1")
+        h2, f2, e2 = self._model("READER-V1")
+        assert (compute_fingerprints(h1, f1, e1)["App|U|g_flag"]
+                == compute_fingerprints(h2, f2, e2)["App|U|g_flag"])
+
+    def test_a_writer_counts_too(self):
+        base = {"App|U|w|void": {"qualifiedName": "w", "callsIds": [],
+                                 "readsGlobalIds": [], "writesGlobalIds": ["App|U|g_flag"]}}
+        edges = {"typeUsers": {}, "macroUsers": {}}
+        a = compute_fingerprints({"App|U|w|void": "W1", "App|U|g_flag": "G"}, base, edges)
+        b = compute_fingerprints({"App|U|w|void": "W2", "App|U|g_flag": "G"}, base, edges)
+        assert a["App|U|g_flag"] != b["App|U|g_flag"]
+
+    def test_accessor_order_does_not_matter(self):
+        """Two readers listed in either order must fingerprint the same — `_fingerprint` sorts
+        its dependency hashes, and a set is unordered anyway."""
+        edges = {"typeUsers": {}, "macroUsers": {}}
+        fns = {
+            "App|U|a|void": {"qualifiedName": "a", "callsIds": [],
+                             "readsGlobalIds": ["App|U|g"], "writesGlobalIds": []},
+            "App|U|b|void": {"qualifiedName": "b", "callsIds": [],
+                             "writesGlobalIds": ["App|U|g"], "readsGlobalIds": []},
+        }
+        h = {"App|U|a|void": "A", "App|U|b|void": "B", "App|U|g": "G"}
+        first = compute_fingerprints(h, fns, edges)["App|U|g"]
+        second = compute_fingerprints(dict(reversed(list(h.items()))), fns, edges)["App|U|g"]
+        assert first == second
+
+    def test_a_global_with_no_accessors_still_gets_one(self):
+        edges = {"typeUsers": {}, "macroUsers": {}}
+        out = compute_fingerprints({"App|U|orphan": "G"}, {}, edges)
+        assert out.get("App|U|orphan")

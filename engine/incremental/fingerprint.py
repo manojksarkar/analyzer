@@ -114,10 +114,25 @@ def compute_fingerprints(hashes: Dict[str, str],
         out[fid] = _fingerprint(sh, dep_hashes)
 
     # Globals: model keys with exactly 2 pipes that aren't already functions.
+    #
+    # Their fingerprint folds in the ACCESSORS' source hashes, not just their own. A global's
+    # LLM description is built from the descriptions of the functions that read and write it
+    # (`enrich_globals_rich` puts them in the prompt), so a changed reader changes the global's
+    # input. With `_fingerprint(sh, [])` — own source only — the fingerprint did NOT move, the
+    # reuse index scored a hit, and the global kept a description written against the reader's
+    # OLD behaviour. Silently stale, and exactly the failure the content-addressed design exists
+    # to prevent: "a dependency change, even in an unchanged file, changes the fingerprint"
+    # (doc 04 §4). Functions already did this with their callees; globals were the gap.
+    accessors: Dict[str, Set[str]] = {}
+    for fid, f in (functions or {}).items():
+        for gkey in list(f.get("readsGlobalIds") or []) + list(f.get("writesGlobalIds") or []):
+            accessors.setdefault(gkey, set()).add(fid)
+
     for key, sh in hashes.items():
         if key in out or key in functions:
             continue
         if key.count("|") == 2:  # component|unit|qualifiedName  (global)
-            out[key] = _fingerprint(sh, [])
+            dep_hashes = [hashes[a] for a in accessors.get(key, ()) if a in hashes]
+            out[key] = _fingerprint(sh, dep_hashes)
 
     return out

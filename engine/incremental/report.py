@@ -71,6 +71,11 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
     # it must be regenerated too. With few globals and each touched by only one or two
     # functions, a small change can invalidate all of them. Say so rather than leave the
     # number to be misread.
+    #
+    # This note used to describe an intention the code did not implement: a global's fingerprint
+    # was its own source hash with NO dependencies, so a changed reader left it untouched and the
+    # reuse index handed back a description written against the reader's old behaviour. Globals
+    # now fold their accessors' hashes in, which is what makes the sentence below true.
     if gl.get("total") and not gl.get("reused"):
         L.append("                (0% is expected here: a global's description embeds its "
                  "readers'/writers' descriptions,")
