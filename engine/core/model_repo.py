@@ -43,11 +43,22 @@ DB_BACKED_MODEL = frozenset((
 # rewriting the entire model.
 DB_BACKED_STANDALONE = frozenset(("knowledge_base", "incremental_plan", "tu_includes"))
 
-DB_BACKED = DB_BACKED_MODEL | DB_BACKED_STANDALONE
+# Parse-level artifacts: whole-object, per-version, produced by Phase 1 and consumed by a LATER
+# run's narrowed parse rather than by this one (doc 10, step 11). They land in `parse_snapshots`,
+# which already has exactly this shape and is already where `snapshot_parse_model` copied them —
+# writing there directly makes Phase 1's output the snapshot instead of a file the snapshot has
+# to go back and read.
+#
+# `metadata` is here too. Its DURABLE fields (basePath / projectName / parseFingerprint) are
+# `versions` columns written by `persist_run_metadata`; this row is the in-run channel, which is
+# what Phase 4 and the flowchart engine actually read.
+DB_BACKED_PARSE = frozenset(("entity_files", "func_keys", "override_pairs", "metadata"))
 
-# Still files, deliberately: entity_files / func_keys / override_pairs live in `parse_snapshots`
-# for the narrowed parse rather than as live model reads; metadata is an in-run intermediate whose
-# durable fields are `versions` columns; clang_include_paths is per-run machine-specific scratch.
+DB_BACKED = DB_BACKED_MODEL | DB_BACKED_STANDALONE | DB_BACKED_PARSE
+
+# Still a file, deliberately: `clang_include_paths` is per-run, machine-specific scratch —
+# absolute include directories under THIS machine's checkout. Storing it would hand the next node
+# paths that do not exist there, which is worse than not storing it at all.
 
 # canonical model name -> the keyword `model_store.persist_model` expects
 _PERSIST_KW = {
@@ -140,8 +151,9 @@ class DbRepository(ModelRepository):
         with self._lock:
             if name in self._pending:            # this phase's own write wins
                 return self._pending[name]
-        if name in DB_BACKED_STANDALONE:
-            val = self._read_standalone(name)
+        if name in DB_BACKED_STANDALONE or name in DB_BACKED_PARSE:
+            val = (self._read_parse(name) if name in DB_BACKED_PARSE
+                   else self._read_standalone(name))
             if not _is_absent(val):
                 return val
             if required:
@@ -168,6 +180,9 @@ class DbRepository(ModelRepository):
         if name not in DB_BACKED:
             self._fallback.write(name, data)
             return
+        if name in DB_BACKED_PARSE:
+            self._write_parse(name, data)        # lands now; parse_snapshots is per-name
+            return
         if name in DB_BACKED_STANDALONE:
             # Lands NOW: no coupling to the rest of the model, and a phase must be able to hand
             # the plan to the next phase without also rewriting the whole model.
@@ -191,6 +206,19 @@ class DbRepository(ModelRepository):
         with get_engine().connect() as cx:
             return loader(cx, self.version_id)
 
+    # -- parse-level artifacts (rows in parse_snapshots, keyed by name) -----
+    def _read_parse(self, name):
+        from core.db import get_engine
+        from core import model_store
+        with get_engine().connect() as cx:
+            return model_store.load_parse_snapshot_file(cx, self.version_id, f"{name}.json")
+
+    def _write_parse(self, name, data):
+        from core.db import get_engine
+        from core import model_store
+        with get_engine().begin() as cx:
+            model_store.persist_parse_snapshot_file(cx, self.version_id, f"{name}.json", data)
+
     def _write_standalone(self, name, data):
         from core.db import get_engine
         from core import model_store
@@ -207,6 +235,10 @@ class DbRepository(ModelRepository):
             with self._lock:
                 if n in self._pending:
                     continue
+            if n in DB_BACKED_PARSE:
+                if _is_absent(self._read_parse(n)):
+                    out.append(n)
+                continue
             if n in DB_BACKED_STANDALONE:
                 if _is_absent(self._read_standalone(n)):
                     out.append(n)

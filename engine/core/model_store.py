@@ -718,21 +718,57 @@ def load_tu_includes(conn, version_id) -> Dict[str, Any]:
         .where(s.tu_includes.c.version_id == version_id))}
 
 
-def persist_parse_snapshot_data(conn, version_id, snapshot: Dict[str, Any]) -> int:
+def persist_parse_snapshot_data(conn, version_id, snapshot: Dict[str, Any], *,
+                                replace: bool = True) -> int:
     """Store an already-in-memory skeleton: {filename -> parsed json}. Returns files stored.
 
     The dir-based form below reads model FILES, which is empty in database mode — the phases
     wrote to the database, so a file-sourced snapshot would capture only the few artifacts that
     have not moved. This form lets the caller pass what it actually has.
     """
-    from sqlalchemy import delete as _delete
-    conn.execute(_delete(s.parse_snapshots)
-                 .where(s.parse_snapshots.c.version_id == version_id))
     rows = [{"version_id": version_id, "name": k, "payload": v}
             for k, v in (snapshot or {}).items() if v not in (None, {})]
+    from sqlalchemy import delete as _delete
+    if replace:
+        conn.execute(_delete(s.parse_snapshots)
+                     .where(s.parse_snapshots.c.version_id == version_id))
+    elif rows:
+        # Merge: clear only the names being written. Phase 1 has already stored the parse-level
+        # artifacts through the repository, and wiping the version would take them with it.
+        conn.execute(_delete(s.parse_snapshots).where(
+            (s.parse_snapshots.c.version_id == version_id)
+            & (s.parse_snapshots.c.name.in_([r["name"] for r in rows]))))
     if rows:
         conn.execute(insert(s.parse_snapshots), rows)
     return len(rows)
+
+
+def persist_parse_snapshot_file(conn, version_id, name, payload) -> None:
+    """Upsert ONE parse-snapshot row (doc 10, step 11).
+
+    Phase 1 writes `entity_files` / `func_keys` / `override_pairs` / `metadata` one at a time
+    through the model repository, so it needs per-name semantics.
+    `persist_parse_snapshot_data` cannot serve that: it clears every row for the version first,
+    so four sequential calls would leave one row, not four.
+
+    Delete-then-insert for the single name rather than a dialect-specific upsert — one row, in
+    the caller's transaction, and it reads the same on Postgres and SQLite.
+    """
+    from sqlalchemy import delete as _delete
+    conn.execute(_delete(s.parse_snapshots).where(
+        (s.parse_snapshots.c.version_id == version_id) & (s.parse_snapshots.c.name == name)))
+    if payload in (None, {}):
+        return                              # absent stays absent; nothing to distinguish
+    conn.execute(insert(s.parse_snapshots),
+                 [{"version_id": version_id, "name": name, "payload": payload}])
+
+
+def load_parse_snapshot_file(conn, version_id, name):
+    """One parse-snapshot payload, or None when the row is absent."""
+    row = conn.execute(select(s.parse_snapshots.c.payload).where(
+        (s.parse_snapshots.c.version_id == version_id)
+        & (s.parse_snapshots.c.name == name))).first()
+    return row.payload if row else None
 
 
 def persist_parse_snapshot(conn, version_id, model_dir, names) -> int:

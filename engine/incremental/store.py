@@ -150,7 +150,8 @@ class ArtifactStore(ABC):
         directory IS the snapshot."""
         return 0
 
-    def write_parse_snapshot_data(self, version_id: str, snapshot) -> int:
+    def write_parse_snapshot_data(self, version_id: str, snapshot, *,
+                                  replace: bool = True) -> int:
         """Store an already-in-memory skeleton. 0 for a store with no database."""
         return 0
 
@@ -410,10 +411,11 @@ class PgStore(ArtifactStore):
         with self.engine.begin() as cx:
             return persist_parse_snapshot(cx, version_id, model_dir, names)
 
-    def write_parse_snapshot_data(self, version_id: str, snapshot) -> int:
+    def write_parse_snapshot_data(self, version_id: str, snapshot, *,
+                                  replace: bool = True) -> int:
         from incremental.model_store import persist_parse_snapshot_data
         with self.engine.begin() as cx:
-            return persist_parse_snapshot_data(cx, version_id, snapshot)
+            return persist_parse_snapshot_data(cx, version_id, snapshot, replace=replace)
 
     def read_parse_snapshot(self, version_id: str) -> Dict[str, Any]:
         from incremental.model_store import load_parse_snapshot

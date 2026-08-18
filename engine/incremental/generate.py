@@ -89,14 +89,11 @@ def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
                     ("functions", "functions"), ("globalVariables", "globals"),
                     ("dataDictionary", "datadict"), ("hashes", "hashes"),
                     ("edges", "edges"))}
-                for _extra in ("tu_includes", "entity_files", "func_keys",
-                               "override_pairs", "metadata"):
-                    _p = os.path.join(model_dir, f"{_extra}.json")
-                    if os.path.isfile(_p):
-                        import json as _j
-                        with open(_p, encoding="utf-8") as _fh:
-                            _snap[f"{_extra}.json"] = _j.load(_fh)
-                n = store.write_parse_snapshot_data(version_id, _snap)
+                # tu_includes / entity_files / func_keys / override_pairs / metadata are NOT
+                # read back off disk any more (step 11): Phase 1 wrote them straight into
+                # parse_snapshots and tu_includes through the repository. Hence merge rather
+                # than replace — a replace here would delete exactly those rows.
+                n = store.write_parse_snapshot_data(version_id, _snap, replace=False)
             else:
                 n = store.write_parse_snapshot(version_id, model_dir, _PARSE_SNAPSHOT_FILES)
             if n:
