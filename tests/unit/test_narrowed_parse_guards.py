@@ -5,8 +5,10 @@ sets it, and neither gate exercises it.
 
   * `_stored` was referenced without ever being assigned — a NameError on EVERY call, in file
     mode too. Shipped in C2, described in the commit as applied; only half the edit landed.
-  * the merge goes through model_dir FILES, so in database mode it would read empty dicts and
-    write an EMPTY skeleton — a wrong model, silently.
+  * the merge went through model_dir FILES, so in database mode it read empty dicts and would
+    have written an EMPTY skeleton. That was guarded by refusing outright; the guard is gone
+    now that the merge publishes through the model repository (doc 10, narrowed parse in db
+    mode) and `tools/verify_narrowed_parse.py` proves narrowed == full end to end.
 
 These call the real function with a fabricated baseline, so the first line of it executing is
 covered rather than inspected.
@@ -38,7 +40,10 @@ def _baseline(tmp_path, *, with_snapshot=True):
     d.mkdir(parents=True)
     if with_snapshot:
         (d / "tu_includes.json").write_text(json.dumps({"App/Main.cpp": []}), encoding="utf-8")
-        (d / "entity_files.json").write_text(json.dumps({}), encoding="utf-8")
+        # Non-empty: the gate requires a baseline that could actually support a merge. An
+        # entity->file map with nothing in it cannot place a single merged entity.
+        (d / "entity_files.json").write_text(
+            json.dumps({"App|Main|main|int": "App/Main.cpp"}), encoding="utf-8")
     return str(d)
 
 
@@ -71,22 +76,36 @@ class TestItRunsAtAll:
             _call(tmp_path, _baseline(tmp_path))
 
 
-class TestDatabaseModeIsRefused:
-    def test_db_mode_returns_false_before_touching_files(self, tmp_path, caplog):
-        """It must refuse rather than merge empty dicts into an empty skeleton."""
-        import logging
-        eng._MODEL_STORE = "db"
-        with caplog.at_level(logging.INFO):
-            assert _call(tmp_path, _baseline(tmp_path)) is False
-        assert any("model-store db" in r.message for r in caplog.records), \
-            "refusing in database mode must say so, not fail silently"
+class TestDatabaseModeIsSupported:
+    """Database mode used to be refused outright, because the merge published through files.
 
-    def test_db_mode_does_not_write_a_skeleton(self, tmp_path):
-        """The dangerous outcome: an EMPTY merged model written over the real one."""
+    It publishes through the model repository now, so the refusal is gone. What must stay true
+    is the reason it existed: database mode must never write parse artifacts as FILES, because
+    Phase 2 would not read them and the model it derived would hold only the changed files.
+    """
+
+    def test_it_gets_past_the_gate_and_writes_no_parse_files(self, tmp_path):
+        """Reaching the git diff is the proof it is no longer refused — it used to return False
+        on the first line. GitError here just means tmp_path/repo is not a repository."""
+        from incremental.git_ops import GitError
         eng._MODEL_STORE = "db"
-        _call(tmp_path, _baseline(tmp_path))
-        written = list((tmp_path / "model").glob("*.json"))
+        with pytest.raises(GitError):
+            _call(tmp_path, _baseline(tmp_path))
+        written = [p.name for p in (tmp_path / "model").glob("*.json")]
         assert not written, f"database mode must write no parse artifacts, got {written}"
+
+    def test_the_refusal_is_gone(self):
+        """A guard that silently disables the feature is worse than none — it cost the whole
+        speed-up with no error to explain why."""
+        import inspect
+        src = inspect.getsource(eng._try_narrowed_parse)
+        assert "not supported with --model-store db" not in src
+
+    def test_the_publisher_targets_the_repository_in_db_mode(self):
+        import inspect
+        src = inspect.getsource(eng._write_parse_artifacts)
+        assert 'if _MODEL_STORE == "db":' in src
+        assert "DbRepository" in src
 
 
 class TestStoreFirstSnapshot:
@@ -97,7 +116,8 @@ class TestStoreFirstSnapshot:
 
         class _Store:
             def read_parse_snapshot(self, _vid):
-                return {"tu_includes.json": {"App/Main.cpp": []}, "entity_files.json": {}}
+                return {"tu_includes.json": {"App/Main.cpp": []},
+                        "entity_files.json": {"App|Main|main|int": "App/Main.cpp"}}
 
         # base_parse_dir deliberately EMPTY — only the store has the snapshot. Reaching the
         # git diff (GitError, no repo here) proves the gate accepted the STORED snapshot; had it

@@ -343,8 +343,11 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
         cmd += ["--data-dict-id", job.data_dict_id]
     if getattr(job, "no_llm", False):
         cmd.append("--no-llm")
-    if mode != "full" and getattr(job, "narrowed_parse", False):
-        cmd.append("--narrowed-parse")
+    # Narrowed parse is ON by default in the engine, so a job opts OUT rather than in. It only
+    # applies to an incremental run (a full generation has no baseline to merge against), and it
+    # falls back to a full parse by itself whenever it cannot prove the merge safe.
+    if mode != "full" and getattr(job, "narrowed_parse", True) is False:
+        cmd.append("--no-narrowed-parse")
     _append_log(job_id, f"Generating ({'full' if mode == 'full' else 'auto'}) via {script}…")
 
     ok = _execute_subprocess(db, job_id, cmd, phase_start=1, extra_env=_engine_db_env(db))

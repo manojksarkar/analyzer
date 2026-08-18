@@ -46,6 +46,7 @@ _selected_group: str | None = None
 _selected_layer: str | None = None
 _project_name_override: str | None = None
 _only_files_path: str | None = None  # narrowed parse (M4.3): parse only the listed TUs
+_baseline_version_id: str | None = None  # narrowed parse: version holding the func-key map
 _include_emulator: bool = False  # opt out of the default *emul* file exclusion (3.1)
 _i = 2
 while _i < len(sys.argv):
@@ -54,6 +55,9 @@ while _i < len(sys.argv):
         _i += 2
     elif sys.argv[_i] == "--only-files" and _i + 1 < len(sys.argv):
         _only_files_path = sys.argv[_i + 1]
+        _i += 2
+    elif sys.argv[_i] == "--baseline-version-id" and _i + 1 < len(sys.argv):
+        _baseline_version_id = sys.argv[_i + 1]
         _i += 2
     elif sys.argv[_i] == "--macros" and _i + 1 < len(sys.argv):
         _macros_path = sys.argv[_i + 1]
@@ -1604,16 +1608,31 @@ def main():
         source_files = _restrict_to_only_files(source_files)
         plog.info(f"narrowed parse: {len(source_files)} affected TU(s) (--only-files)")
         # M4.4: load the baseline's func-key map so cross-TU calls (to functions defined in
-        # files we did NOT re-parse) still produce call edges.
-        _bfk = os.environ.get("ANALYZER_BASELINE_FUNCKEYS")
-        if _bfk and os.path.isfile(_bfk):
+        # files we did NOT re-parse) still produce call edges. Without it, a call from a
+        # re-parsed file into an un-parsed one resolves to nothing and the edge vanishes —
+        # the document then shows a function as calling less than it does.
+        #
+        # Read from `parse_snapshots` by version id. It was a path to func_keys.json passed in
+        # the ANALYZER_BASELINE_FUNCKEYS environment variable, which stopped being a file when
+        # the model moved to the database, and was an environment variable deciding run
+        # behaviour besides (D10-3).
+        if _baseline_version_id:
             try:
-                with open(_bfk, "r", encoding="utf-8") as _f:
-                    _baseline_func_keys.update(json.load(_f))
+                # Import core.model_store FIRST: it puts the repo root on sys.path for
+                # `api.db.postgres`. Importing that directly here raised ModuleNotFoundError —
+                # parser.py runs as a subprocess whose sys.path has engine/ but not the root.
+                from core.model_store import load_parse_snapshot_file as _load_snap
+                from core.db import get_engine as _get_engine
+                with _get_engine().connect() as _cx:
+                    _fk = _load_snap(_cx, _baseline_version_id, "func_keys.json") or {}
+                _baseline_func_keys.update(_fk)
                 plog.info(f"narrowed parse: loaded {len(_baseline_func_keys)} baseline func-keys "
-                          f"for cross-TU call resolution")
-            except (OSError, ValueError):
-                pass
+                          f"from version {_baseline_version_id} for cross-TU call resolution")
+            except Exception as _exc:
+                # Degrade to no map: edges into un-parsed files are lost, which the caller's
+                # --verify-parse gate would catch. Never fail the parse over it.
+                plog.warning(f"narrowed parse: could not load baseline func-keys "
+                             f"({type(_exc).__name__}: {_exc}) — cross-TU edges may be missing")
     total = len(source_files)
 
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
@@ -1652,7 +1671,10 @@ def main():
         _toolchain = cindex.conf.get_filename() or ""
     except Exception:
         _toolchain = ""
-    meta_header["parseFingerprint"] = parse_fingerprint(CLANG_ARGS, std="", toolchain=str(_toolchain))
+    # base_path folds the commit-keyed checkout root out of the -I paths. Without it the
+    # fingerprint changes on every commit and the narrowed-parse gate refuses every time.
+    meta_header["parseFingerprint"] = parse_fingerprint(
+        CLANG_ARGS, std="", toolchain=str(_toolchain), base_path=base_path)
     from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
                                HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS)
     write_model_file(METADATA, meta_header)

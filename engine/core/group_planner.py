@@ -66,6 +66,7 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
                         selected_layer: Optional[str] = None,
                         project_name: Optional[str] = None,
                         only_files: Optional[str] = None,
+                        baseline_version_id: Optional[str] = None,
                         include_emulator: bool = False) -> List[Phase]:
     deriver_args = [] if no_llm_summarize else ["--llm-summarize"]
     parser_args = [project_path]
@@ -81,6 +82,13 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
         parser_args += ["--project-name", project_name]
     if only_files:  # narrowed parse (M4.4): parser parses only the listed TUs
         parser_args += ["--only-files", only_files]
+    if baseline_version_id:
+        # The baseline's func-key map, so a call from a re-parsed file into one we did NOT
+        # re-parse still resolves to an edge. Passed as a version id and read from
+        # `parse_snapshots`; it used to be a path to func_keys.json handed over in the
+        # ANALYZER_BASELINE_FUNCKEYS environment variable, which is both a file that no longer
+        # exists and an environment variable deciding run behaviour (D10-3).
+        parser_args += ["--baseline-version-id", baseline_version_id]
     if include_emulator:  # opt out of the default *emul* file exclusion (3.1)
         parser_args += ["--include-emulator"]
     return [
@@ -126,6 +134,7 @@ def plan_runs(
     project_name: Optional[str] = None,
     output_name: Optional[str] = None,
     only_files: Optional[str] = None,
+    baseline_version_id: Optional[str] = None,
     include_emulator: bool = False,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
@@ -184,7 +193,7 @@ def plan_runs(
                 macros_path=macros_path,
                 selected_layer=derived_layer,
                 project_name=project_name,
-                only_files=only_files,
+                only_files=only_files, baseline_version_id=baseline_version_id,
                 include_emulator=include_emulator,
             )
             if from_phase <= 2:
@@ -232,6 +241,7 @@ def plan_runs(
                                          data_dictionary_path=data_dictionary_path,
                                          macros_path=macros_path,
                                          project_name=project_name, only_files=only_files,
+                                         baseline_version_id=baseline_version_id,
                                          include_emulator=include_emulator) \
                      + _view_export_phases(filter_mode=filter_mode)
             plans.append(RunPlan(label="single run",
@@ -257,6 +267,7 @@ def plan_runs(
                                             selected_group=resolved_selected,
                                             selected_layer=selected_layer,
                                             project_name=project_name, only_files=only_files,
+                                         baseline_version_id=baseline_version_id,
                                             include_emulator=include_emulator)
         # If the user wants to start at phase >= 3, the build step is skipped
         # entirely (use existing model on disk).

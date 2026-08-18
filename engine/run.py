@@ -133,6 +133,8 @@ dump_model_files_arg    = None   # doc 10 H6: debug-only mirror of the model, fo
 version_id_arg          = None   # C11a: persist the model to Postgres at each phase boundary
 project_id_arg          = None   # C11a: owning project (the store is project-scoped)
 only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
+baseline_version_id_arg = None   # narrowed parse: the version whose func-key map resolves
+                                 # calls into files this run did not re-parse
 include_emulator_arg    = False  # opt out of the default *emul* file exclusion (3.1)
 include_path_args       = []   # list of (layer_name, abs_dir) tuples
 raw_args                = []
@@ -195,6 +197,12 @@ while i < len(sys.argv):
             log("--only-files requires a file path", component="run", err=True)
             sys.exit(1)
         only_files_arg = sys.argv[i]
+    elif a == "--baseline-version-id":
+        i += 1
+        if i >= len(sys.argv):
+            log("--baseline-version-id requires a version id", component="run", err=True)
+            sys.exit(1)
+        baseline_version_id_arg = sys.argv[i]
     elif a == "--include-emulator":
         include_emulator_arg = True
     elif a == "--project-name":
@@ -559,6 +567,7 @@ try:
         project_name=project_name_arg,
         output_name=output_name_arg,
         only_files=only_files_arg,
+        baseline_version_id=baseline_version_id_arg,
         include_emulator=include_emulator_arg,
     )
 except ValueError as e:

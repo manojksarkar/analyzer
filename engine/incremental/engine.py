@@ -181,13 +181,27 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   extra_args: Optional[List[str]] = None,
                   project_name: Optional[str] = None,
                   version_id: Optional[str] = None,
-                  project_id: Optional[str] = None) -> int:
+                  project_id: Optional[str] = None,
+                  model_store: Optional[str] = None) -> int:
+    """Run the analyzer as a subprocess.
+
+    `model_store` overrides the orchestrator's backing for THIS invocation. Only the narrowed
+    parse uses it, and only to say `files`: its output is a PARTIAL model that is not valid
+    until `parse_merge` has combined it with the baseline, so it must not reach the version's
+    rows. Left as None everywhere else, which means "agree with the orchestrator".
+    """
     cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path]
     # This run's own output dir (doc 09, B1) — set_output_dir was already applied in THIS
     # process; the analyzer is a separate process, so it needs telling on its command line.
     cmd += ["--output-root", _paths().output_dir, "--model-root", _paths().model_dir]
-    if _MODEL_STORE == "db":                 # phases must agree with the orchestrator (doc 10)
+    _store = model_store or _MODEL_STORE
+    if _store == "db":                       # phases must agree with the orchestrator (doc 10)
         cmd += ["--model-store", "db"]
+    elif model_store == "files":
+        # Explicit, not implicit. Without this the phase would inherit `db`, find no version id
+        # and fall back to files anyway — same result, reached by accident, with a warning that
+        # reads like a problem.
+        cmd += ["--model-store", "files"]
     if version_id and project_id:
         # C11a: persist the model to Postgres at each phase boundary (dual-write; the
         # end-of-run store.write_model still runs, and files remain authoritative).
@@ -250,6 +264,29 @@ def _load_parse_dir(d: str) -> Dict[str, Any]:
     return {n: _read(d, f"{n}.json") for n in _PARSE_ARTIFACTS}
 
 
+def _load_parse_model(model_dir: str, *, version_id: str = "",
+                      project_id: str = "") -> Dict[str, Any]:
+    """The nine parse artifacts from whichever backing this run uses.
+
+    `_load_parse_dir` reads files, which is right for the PARTIAL parse (deliberately run in
+    files mode) and wrong for anything a phase produced in database mode. `--verify-parse`
+    compares a narrowed model against a full one; reading files there would compare two stale
+    copies and report a match that means nothing — the exact shape of failure that check exists
+    to prevent.
+    """
+    if _MODEL_STORE != "db" or not version_id:
+        return _load_parse_dir(model_dir)
+    from core.model_repo import DbRepository
+    repo = DbRepository(version_id, project_id or "")
+    out: Dict[str, Any] = {}
+    for n in _PARSE_ARTIFACTS:
+        try:
+            out[n] = repo.read(n, required=False, default={}) or {}
+        except Exception:
+            out[n] = {}
+    return out
+
+
 def _load_baseline_parse(store, base_vid: str, base_parse_dir: str) -> Dict[str, Any]:
     """The baseline's post-Phase-1 skeleton — from the STORE first, disk as fallback.
 
@@ -269,12 +306,54 @@ def _load_baseline_parse(store, base_vid: str, base_parse_dir: str) -> Dict[str,
         out = {}
         for n in _PARSE_ARTIFACTS:
             out[n] = snap.get(f"{n}.json") or {}
+        # `tu_includes` is NOT in parse_snapshots: step 6 gave it its own table so the flowchart
+        # engine could query the header->TU map on an index instead of loading a blob. Reading
+        # only the snapshot therefore returned an empty map, the caller concluded the baseline
+        # had no skeleton, and narrowed parse refused EVERY time — silently, as a fallback to a
+        # full parse, which is correct output and none of the speed-up.
+        if not out.get("tu_includes"):
+            out["tu_includes"] = _stored_tu_includes(base_vid)
         if any(out.values()):
             return out
     return _load_parse_dir(base_parse_dir)
 
 
-def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any]) -> None:
+def _stored_tu_includes(version_id: str) -> Dict[str, Any]:
+    """A version's header->TU map from its own table, or {}."""
+    if not version_id:
+        return {}
+    try:
+        from core.db import get_engine, is_database_configured
+        from core import model_store
+        if not is_database_configured():
+            return {}
+        with get_engine().connect() as cx:
+            return model_store.load_tu_includes(cx, version_id) or {}
+    except Exception:
+        return {}
+
+
+def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any],
+                           *, version_id: str = "", project_id: str = "") -> None:
+    """Publish the merged skeleton where the NEXT phase will look for it.
+
+    In database mode that is the version's rows, not `model/*.json` — Phase 2 reads through
+    `core.model_io`, so writing files would leave it reading whatever the partial parse left
+    behind and it would derive a model containing only the changed files' functions. A wrong
+    document, produced without an error, which is the failure this whole feature must not have.
+
+    All nine artifacts are written through the repository and take three different routes into
+    the database (coupled model / own table / parse_snapshots); the flush covers the coupled
+    ones. Verified lossless end to end before this was wired up.
+    """
+    if _MODEL_STORE == "db":
+        from core.model_repo import DbRepository
+        repo = DbRepository(version_id, project_id or "")
+        for n in _PARSE_ARTIFACTS:
+            if n in merged:
+                repo.write(n, merged[n])
+        repo.flush()
+        return
     for n in _PARSE_ARTIFACTS:
         if n in merged:
             with open(os.path.join(model_dir, f"{n}.json"), "w", encoding="utf-8") as fh:
@@ -351,7 +430,8 @@ def _artifact_dir_for(store, vstore, version_id: Optional[str], commit: Optional
 def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root, model_dir,
                         *, target, base_commit, base_parse_dir, project_name=None,
                         base_fingerprint: Optional[str] = None,
-                        store=None, base_vid: str = "") -> bool:
+                        store=None, base_vid: str = "",
+                        version_id: str = "", project_id: str = "") -> bool:
     """Narrowed parse (M4.4, doc 04 §11): re-parse ONLY the affected TUs and merge them
     into the baseline's parser-level snapshot, so the resulting model/ is the SAME blank
     skeleton a full parse would produce (impacted functions arrive blank -> Phase 2
@@ -359,32 +439,16 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     back to a full parse (always the safe choice)."""
     from core.logging_setup import get_logger
     log = get_logger("incremental")
-    # Narrowed parse merges through model_dir FILES (_load_parse_dir / _write_parse_artifacts).
-    # In database mode those are not written, so the merge would read empty dicts and produce an
-    # EMPTY skeleton — a wrong model, not merely a slow one. Refuse and let the caller run a full
-    # parse: exactly what this function already promises for anything unsafe. Converting the
-    # merge itself is follow-on work; leaving it unguarded would be a silent hazard.
-    if _MODEL_STORE == "db":
-        log.info("narrowed parse: not supported with --model-store db (it merges via model "
-                 "files) — running a FULL parse instead")
-        return False
     # The baseline's skeleton, store-first (doc 09, C2): on disk it exists only on the machine
-    # that produced the baseline. `_stored` was referenced below without ever being assigned —
-    # a NameError on every narrowed-parse call, in either mode. Nothing caught it because
-    # --narrowed-parse is opt-in, the API never sets it, and no gate exercises it.
-    _stored = {}
-    if store is not None and base_vid:
-        try:
-            _stored = store.read_parse_snapshot(base_vid) or {}
-        except Exception:
-            _stored = {}
-    _have = ("tu_includes.json" in _stored and "entity_files.json" in _stored) or (
-        os.path.isfile(os.path.join(base_parse_dir, "tu_includes.json"))
-        and os.path.isfile(os.path.join(base_parse_dir, "entity_files.json")))
-    if not _have:
+    # that produced the baseline. Loaded ONCE, up front, and the availability check reads from
+    # it — the check used to inspect the raw snapshot keys instead, which stopped matching what
+    # the loader actually assembles and made every narrowed parse refuse.
+    base_model = (_load_baseline_parse(store, base_vid, base_parse_dir)
+                  if store is not None else _load_parse_dir(base_parse_dir))
+    tu_includes = base_model.get("tu_includes") or {}
+    if not (tu_includes and base_model.get("entity_files")):
         log.info("narrowed parse unavailable: baseline has no parser-level snapshot — full parse")
         return False
-    tu_includes = _stored.get("tu_includes.json") or _read(base_parse_dir, "tu_includes.json")
     status = git_ops.changed_files_status(repo_dir, base_commit, target)
     reason = full_reparse_reason(status, tu_includes)
     if reason:
@@ -394,10 +458,9 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     changed = [p for _s, p in status]
     affected = affected_tus(changed, tu_includes)
     deleted = {p for s, p in status if s == "D"}
-    base_model = (_load_baseline_parse(store, base_vid, base_parse_dir)
-                  if store is not None else _load_parse_dir(base_parse_dir))
     if not affected:                       # no TU changed -> merged skeleton == baseline
-        _write_parse_artifacts(model_dir, base_model)
+        _write_parse_artifacts(model_dir, base_model, version_id=version_id,
+                               project_id=project_id)
         log.info("narrowed parse: 0 affected TU(s) — reused the baseline skeleton")
         return True
 
@@ -405,21 +468,20 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     os.makedirs(model_dir, exist_ok=True)
     with open(listfile, "w", encoding="utf-8") as fh:
         fh.write("\n".join(sorted(affected)) + "\n")
-    # M4.4: hand the partial parse the baseline's func-key map (via env, inherited by the
-    # run.py -> parser.py subprocess) so calls into UN-parsed files still resolve to edges.
-    bfk = os.path.join(base_parse_dir, "func_keys.json")
-    prev_bfk = os.environ.get("ANALYZER_BASELINE_FUNCKEYS")
-    if os.path.isfile(bfk):
-        os.environ["ANALYZER_BASELINE_FUNCKEYS"] = bfk
-    try:
-        rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
-                           extra_args=["--to-phase", "1", "--only-files", listfile],
-                           project_name=project_name)
-    finally:
-        if prev_bfk is None:
-            os.environ.pop("ANALYZER_BASELINE_FUNCKEYS", None)
-        else:
-            os.environ["ANALYZER_BASELINE_FUNCKEYS"] = prev_bfk
+    # M4.4: tell the partial parse WHICH version holds the baseline's func-key map, so calls
+    # into files we did not re-parse still resolve to edges. A CLI argument reaching parser.py
+    # through the planner, replacing ANALYZER_BASELINE_FUNCKEYS — a path to func_keys.json in
+    # an environment variable. The file moved into `parse_snapshots` at step 11a, and an
+    # environment variable must not decide run behaviour (D10-3).
+    _extra = ["--to-phase", "1", "--only-files", listfile]
+    if base_vid:
+        _extra += ["--baseline-version-id", base_vid]
+    rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
+                       extra_args=_extra, project_name=project_name,
+                       # PARTIAL output: valid only after parse_merge, so it must not reach the
+                       # version's rows. A resume (--use-model --from-phase 4) would otherwise
+                       # export a document containing just the changed files.
+                       model_store="files")
     if rc != 0:
         log.info(f"narrowed parse: partial parse failed (exit {rc}) — full parse")
         return False
@@ -438,7 +500,8 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     # partial transitively saw — those were only partially parsed, so keep their baseline.
     drop = set(affected) | set(changed) | deleted
     merged = merge_model(base_model, partial, drop)
-    _write_parse_artifacts(model_dir, merged)
+    _write_parse_artifacts(model_dir, merged, version_id=version_id,
+                           project_id=project_id)
     log.info(f"narrowed parse: re-parsed {len(affected)} affected TU(s), merged into the baseline "
              f"skeleton — {len(merged.get('functions') or {})} functions total")
     return True
@@ -452,7 +515,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          no_llm: bool = False,
                          version_id: Optional[str] = None,
                          force: bool = False,
-                         narrowed_parse: bool = False,
+                         narrowed_parse: bool = True,
                          verify_parse: bool = False,
                          repo_url: Optional[str] = None,
                          repo_token: Optional[str] = None,
@@ -573,20 +636,23 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             project_name=project_name,
             target=target, base_commit=decision["chosenBaseCommit"],
             base_parse_dir=_parse_dir_for(store, vstore, base_vid, base_commit),
-            store=store, base_vid=base_vid,
+            store=store, base_vid=base_vid, version_id=version_id, project_id=project_id,
             base_fingerprint=(store.read_run_metadata(base_vid) or {}).get("parseFingerprint"))
     if used_narrowed and verify_parse:
         # M4.5 self-check: shadow-validate the narrowed model against a FULL parse, then use
         # the full parse as the source of truth (a verify run is slow but always safe).
         from core.logging_setup import get_logger as _get_logger
         _vlog = _get_logger("incremental")
-        narrowed_model = _load_parse_dir(model_dir)
+        narrowed_model = _load_parse_model(model_dir, version_id=version_id,
+                                           project_id=project_id)
         rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
                            extra_args=["--to-phase", "1"], project_name=project_name,
                            version_id=version_id, project_id=project_id)
         if rc != 0:
             _fail("parse", rc)
-        mism = diff_models(narrowed_model, _load_parse_dir(model_dir))
+        mism = diff_models(narrowed_model,
+                           _load_parse_model(model_dir, version_id=version_id,
+                                             project_id=project_id))
         if mism:
             _vlog.error(f"--verify-parse: narrowed parse DIFFERS from a full parse "
                         f"({len(mism)} mismatch(es)) — narrowed parse is NOT safe for this diff:")
@@ -870,9 +936,14 @@ def main() -> None:
     ap.add_argument("--version-id", default=None)
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--force", action="store_true")
-    ap.add_argument("--narrowed-parse", action="store_true",
-                    help="M4.4 (opt-in): re-parse only affected TUs + merge into the baseline "
-                         "skeleton, instead of a full re-parse. Falls back to full when unsafe.")
+    ap.add_argument("--no-narrowed-parse", dest="narrowed_parse", action="store_false",
+                    default=True,
+                    help="Force a FULL re-parse. Narrowed parse is ON by default: it re-parses "
+                         "only the affected TUs and merges them into the baseline skeleton, "
+                         "which is the single biggest non-LLM saving (parsing is ~65%% of a "
+                         "run). It falls back to a full parse by itself whenever it cannot "
+                         "prove the merge safe — changed compiler flags, a rename it cannot "
+                         "track, a baseline with no stored skeleton.")
     ap.add_argument("--verify-parse", action="store_true",
                     help="M4.5: with --narrowed-parse, also run a full parse and diff it against "
                          "the narrowed result (logs mismatches; uses the full parse). Slow; for validation.")
