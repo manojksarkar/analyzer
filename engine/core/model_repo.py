@@ -30,6 +30,8 @@ import threading
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
+_MISSING = object()
+
 # The COUPLED model: `persist_model` writes these together (functions carries hashes and derives
 # model_edges), so a write to any of them is buffered and the whole set flushed as one transaction.
 DB_BACKED_MODEL = frozenset((
@@ -134,16 +136,46 @@ class DbRepository(ModelRepository):
         self._pending: Dict[str, Any] = {}
         self._stored: Optional[Dict[str, Any]] = None      # whole-model read, cached
         self._exists: Optional[bool] = None                # "a model was persisted", cached
+        self._aux: Dict[str, Any] = {}                     # parse/standalone reads, cached
         self._lock = threading.Lock()
 
     # -- reads -------------------------------------------------------------
-    def _load_stored(self) -> Dict[str, Any]:
-        """The stored model, read once. Keyed by `model_store.load_model`'s names."""
+    # One loader per artifact. Reading any single artifact used to call `load_model`, which
+    # fetches ALL EIGHT — three of them expensive joins over entity_versions + entities +
+    # content_blobs. A phase that wanted `units` paid for every function in the project, and
+    # each of the four phases plus the orchestrator did it at least once per run. Profiling a
+    # two-commit run of a TWO-function fixture counted 13 whole-model loads and 43 entity
+    # joins; on a real project that is the difference the reported timings showed.
+    _LOADERS = {
+        "functions": "load_functions", "globalVariables": "load_globals",
+        "dataDictionary": "load_types", "edges": "load_edges", "units": "load_units",
+        "components": "load_components", "summaries": "load_summaries", "hashes": "load_hashes",
+    }
+
+    def _load_one(self, name: str) -> Any:
+        """One artifact, fetched once and cached. `None` marks "not loaded yet"."""
+        key = _PERSIST_KW[name]
+        cached = self._stored.get(key, _MISSING) if self._stored is not None else _MISSING
+        if cached is not _MISSING:
+            return cached
+        from core.db import get_engine
+        from core import model_store
+        loader = getattr(model_store, self._LOADERS[name])
+        with get_engine().connect() as cx:
+            val = loader(cx, self.version_id)
         if self._stored is None:
-            from core.db import get_engine
-            from core import model_store
-            with get_engine().connect() as cx:
-                self._stored = model_store.load_model(cx, self.version_id)
+            self._stored = {}
+        self._stored[key] = val
+        return val
+
+    def _load_stored(self) -> Dict[str, Any]:
+        """The WHOLE model. Only for callers that genuinely need every part (the flush, which
+        must complete a partial write). Per-artifact reads go through `_load_one`."""
+        from core.db import get_engine
+        from core import model_store
+        with get_engine().connect() as cx:
+            full = model_store.load_model(cx, self.version_id)
+        self._stored = dict(full)
         return self._stored
 
     def _model_exists(self) -> bool:
@@ -184,9 +216,7 @@ class DbRepository(ModelRepository):
                 raise ModelFileMissing(
                     f"model '{name}' is not in the database for version {self.version_id!r}.")
             return default if default is not None else val
-        stored = self._load_stored()
-        key = _PERSIST_KW[name]
-        val = stored.get(key)
+        val = self._load_one(name)
         if not _is_absent(val):
             return val
         # Empty is ambiguous on its own: a version with no globals and a version never persisted
@@ -212,11 +242,13 @@ class DbRepository(ModelRepository):
             return
         if name in DB_BACKED_PARSE:
             self._write_parse(name, data)        # lands now; parse_snapshots is per-name
+            self._aux[name] = data               # a later read must see this phase's write
             return
         if name in DB_BACKED_STANDALONE:
             # Lands NOW: no coupling to the rest of the model, and a phase must be able to hand
             # the plan to the next phase without also rewriting the whole model.
             self._write_standalone(name, data)
+            self._aux[name] = data
             return
         with self._lock:
             self._pending[name] = data
@@ -231,18 +263,30 @@ class DbRepository(ModelRepository):
     }
 
     def _read_standalone(self, name):
+        cached = self._aux.get(name, _MISSING)
+        if cached is not _MISSING:
+            return cached
         from core.db import get_engine
         from core import model_store
         loader = getattr(model_store, self._STANDALONE_IO[name][0])
         with get_engine().connect() as cx:
-            return loader(cx, self.version_id)
+            val = loader(cx, self.version_id)
+        self._aux[name] = val
+        return val
 
     # -- parse-level artifacts (rows in parse_snapshots, keyed by name) -----
     def _read_parse(self, name):
+        """Cached like the coupled model. Without this every `read_model_file(METADATA)` — and
+        Phase 4 makes several — opened a fresh connection and re-queried parse_snapshots."""
+        cached = self._aux.get(name, _MISSING)
+        if cached is not _MISSING:
+            return cached
         from core.db import get_engine
         from core import model_store
         with get_engine().connect() as cx:
-            return model_store.load_parse_snapshot_file(cx, self.version_id, f"{name}.json")
+            val = model_store.load_parse_snapshot_file(cx, self.version_id, f"{name}.json")
+        self._aux[name] = val
+        return val
 
     def _write_parse(self, name, data):
         from core.db import get_engine
@@ -274,7 +318,7 @@ class DbRepository(ModelRepository):
                 if _is_absent(self._read_standalone(n)):
                     out.append(n)
                 continue
-            if _is_absent(self._load_stored().get(_PERSIST_KW[n])):
+            if _is_absent(self._load_one(n)):
                 out.append(n)
         return out
 

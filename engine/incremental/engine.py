@@ -708,9 +708,12 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Baseline read from the store by the real ver id (FileStore -> versions/<ver>/model,
     # PgStore -> Postgres). Replaces the on-disk HashStore read, the commit-dir model read, and
     # the separate DATABASE_URL branch — the store resolves file-vs-DB by construction.
-    base_hashes = store.read_hashes(base_vid)
-    base_functions = store.read_functions(base_vid)
-    base_globals = store.read_globals(base_vid)
+    # ONE connection for all three, instead of one each. They are the same version and the
+    # same join; splitting them tripled the connection acquisitions for no benefit.
+    _bm = store.read_model_parts(base_vid, ("hashes", "functions", "globals"))
+    base_hashes = _bm.get("hashes") or {}
+    base_functions = _bm.get("functions") or {}
+    base_globals = _bm.get("globals") or {}
 
     # Precise impact (classify + reverse-BFS over the fresh model) drives ALL reuse:
     # function descriptions/behaviour-names/summaries (Phase 2) AND flowcharts (Phase 3).

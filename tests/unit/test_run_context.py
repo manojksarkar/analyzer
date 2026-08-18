@@ -237,7 +237,10 @@ class TestOrchestratorsRespectTheModelStore:
         are not there, so reading them would report zero counts and seed nothing."""
         src = _src(os.path.join("engine", "incremental", "generate.py"))
         assert "def _orchestrator_model(" in src
-        assert 'if model_store == "db":\n        return store.read_model(version_id) or {}' in src
+        # Reads only the parts the orchestrators use. It fetched all eight artifacts to consume
+        # four, so two of the three expensive entity joins were pure waste on every run.
+        assert 'return store.read_model_parts(version_id, parts) or {}' in src
+        assert '_ORCH_PARTS = ("functions", "globals", "hashes", "edges")' in src
 
 
 class TestIncrementalEngineInDatabaseMode:

@@ -154,7 +154,14 @@ def _persist_run_metadata(store, version_id: str, project_id: str, model_dir: st
     return True
 
 
-def _orchestrator_model(store, version_id: str, model_dir: str, model_store: str) -> Dict[str, Any]:
+# What the orchestrators actually consume out of the model. Loading all eight artifacts to use
+# four meant two of the three expensive entity joins were pure waste, once per run per
+# orchestrator.
+_ORCH_PARTS = ("functions", "globals", "hashes", "edges")
+
+
+def _orchestrator_model(store, version_id: str, model_dir: str, model_store: str,
+                        parts=_ORCH_PARTS) -> Dict[str, Any]:
     """The finished model, for the orchestrator's own bookkeeping (report + fingerprints).
 
     In database mode the phases wrote to the database and `model_dir` holds only the artifacts
@@ -164,7 +171,7 @@ def _orchestrator_model(store, version_id: str, model_dir: str, model_store: str
     paths hand back the same shape.
     """
     if model_store == "db":
-        return store.read_model(version_id) or {}
+        return store.read_model_parts(version_id, parts) or {}
     import json as _json
 
     def _load(fn):
