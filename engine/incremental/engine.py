@@ -226,6 +226,20 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
 _EMPTY_EDGES_SHAPE = {"typeUsers": {}, "macroUsers": {}}
 
 
+def _write_plan(version_id: str, project_id: str, plan: Dict[str, Any]) -> None:
+    """Publish the incremental plan where Phases 2 and 3 will read it.
+
+    The orchestrator has no model repository installed, so it must name the backing itself —
+    exactly as `_publish_model_for_next_phase` does for the carried-forward model.
+    """
+    if _MODEL_STORE == "db" and version_id:
+        from core.model_repo import DbRepository
+        DbRepository(version_id, project_id or "").write("incremental_plan", plan)
+        return
+    from core.model_io import write_model_file, INCREMENTAL_PLAN
+    write_model_file(INCREMENTAL_PLAN, plan)
+
+
 def _publish_model_for_next_phase(store, version_id, project_id, model_dir,
                                   functions, globals_, hashes) -> None:
     """Make the carried-forward model visible to Phase 2, in the right backing.
@@ -814,16 +828,19 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             from core.logging_setup import get_logger as _gl
             _gl("incremental").warning(f"IN-3: could not restore baseline output: {exc}")
 
-    # Through the gateway (doc 10, step 6): a per-version row in database mode, the file
-    # otherwise. Phases 2 and 3 read it the same way, so neither cares which.
-    from core.model_io import write_model_file as _write_model, INCREMENTAL_PLAN as _PLAN
-    _write_model(_PLAN, {"impactFids": sorted(regen_impact),
-                   "impactedGlobals": sorted(regen_globals),
-                   "impactedFiles": impacted_files,
-                   "flowchartFiles": flowchart_files,
-                   "flowchartFids": flowchart_fids_regen,
-                   "crossVersionFlowcharts": xver_flowcharts,
-                   "baselineVersionDir": _base_dir})
+    # Written to the backing the PHASES read (doc 10, step 6). The orchestrator installs no
+    # model repository, so `write_model_file` here would use the FILE default and drop the plan
+    # into model/incremental_plan.json — while Phase 3, running in database mode, looks in
+    # `incremental_plans` and finds nothing. It then treats the run as non-incremental and
+    # rebuilds EVERY flowchart, which is the largest cost in Phase 3, with no error and a reuse
+    # report that still claims the carry-forward happened.
+    _write_plan(version_id, project_id, {"impactFids": sorted(regen_impact),
+                                   "impactedGlobals": sorted(regen_globals),
+                                   "impactedFiles": impacted_files,
+                                   "flowchartFiles": flowchart_files,
+                                   "flowchartFids": flowchart_fids_regen,
+                                   "crossVersionFlowcharts": xver_flowcharts,
+                                   "baselineVersionDir": _base_dir})
 
     # Resume derive+views+export: Phase 2 summarizer skips the carried-forward reuse
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
@@ -837,7 +854,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     try:
         # Clearing it is as important as writing it: a stale plan would make the NEXT run
         # inherit this run's restriction and regenerate almost nothing.
-        _write_model(_PLAN, {})
+        _write_plan(version_id, project_id, {})
     except OSError:
         pass
 

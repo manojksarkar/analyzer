@@ -196,7 +196,7 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
 
     # Through the gateway (doc 10, step 6): a per-version row in database mode, the file
     # otherwise. Absent means "regenerate everything".
-    from core.model_io import read_model_file, INCREMENTAL_PLAN
+    from core.model_io import read_model_file, INCREMENTAL_PLAN, FUNCTIONS
     try:
         plan = read_model_file(INCREMENTAL_PLAN, required=False, default=None)
     except Exception:
@@ -204,13 +204,23 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
     if not plan:
         return functions_arg_path, None
 
+    # The functions model, through the gateway. This used to open `functions_arg_path`
+    # directly — a path that in database mode points at a `model/functions.json` nobody
+    # writes any more. The open failed, this returned `inc = None`, and EVERY run
+    # regenerated every flowchart from scratch: the single largest cost in Phase 3, with no
+    # error and no log line to show reuse had been skipped.
     try:
-
-        with open(functions_arg_path, "r", encoding="utf-8") as f:
-            funcs = json.load(f)
-
-    except (OSError, json.JSONDecodeError):
-        return functions_arg_path, None
+        funcs = read_model_file(FUNCTIONS, required=False, default=None)
+    except Exception:
+        funcs = None
+    if not funcs:
+        try:
+            with open(functions_arg_path, "r", encoding="utf-8") as f:
+                funcs = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            log("incremental: no functions model available - full flowchart regen",
+                "flowcharts")
+            return functions_arg_path, None
 
     base_fc = _baseline_flowchart_dir(plan, model_dir_abs, out_dir)
 
@@ -298,6 +308,10 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
             for u in changed_units
         }
 
+        # The engine reads its functions from the database when given --version-id and
+        # restricts itself from the stored plan, so this file is only an input on the file
+        # path. Written either way: it costs nothing and keeps that path unchanged.
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(restricted, f, indent=2)
 
