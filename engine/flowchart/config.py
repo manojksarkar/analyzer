@@ -13,6 +13,9 @@ class EngineConfig:
     std: str = "c++14"
     clang_args: List[str] = field(default_factory=list)
 
+    # llm.cacheVersion — part of the label cache key, so bumping it invalidates cached
+    # node labels exactly as it does cached descriptions.
+    llm_cache_version: int = 1
     llm_url: str = "http://localhost:11434/api/generate"
     llm_model: str = "gpt-oss"
 

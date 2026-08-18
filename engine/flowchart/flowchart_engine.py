@@ -52,7 +52,7 @@ from llm_core.client import LlmClient
 from llm.generator import LabelGenerator
 from dot_builder import build_dot
 from mermaid.validator import validate_cfg
-from models import FileResult, FlowchartResult, FunctionEntry, ProjectMeta
+from models import FileResult, FlowchartResult, FunctionEntry, NodeType, ProjectMeta
 from output.writer import OutputWriter
 from pkb.builder import ProjectKnowledgeBase
 from pkb.knowledge import ProjectKnowledge, load_knowledge
@@ -139,6 +139,9 @@ def _parse_args() -> EngineConfig:
                         "translation unit that includes that header.")
     # --no-cache / --cache-dir governed the PKB disk cache, deleted with it: the knowledge base
     # is rebuilt from the model every run, so there is nothing left to opt out of.
+    p.add_argument("--llm-cache-version", type=int, default=1,
+                   help="llm.cacheVersion — part of the node-label cache key, so bumping it in "
+                        "config invalidates cached labels too.")
     p.add_argument("--llm-timeout", type=int, default=120,
                    help="LLM request timeout in seconds (default: 120)")
     p.add_argument("--llm-retries", type=int, default=2,
@@ -183,6 +186,7 @@ def _parse_args() -> EngineConfig:
         out_dir=args.out_dir,
         std=args.std,
         clang_args=args.clang_args,
+        llm_cache_version=args.llm_cache_version,
         llm_url=args.llm_url,
         llm_model=args.llm_model,
         function_key=args.function_key,
@@ -274,6 +278,102 @@ def _db_conn():
         raise RuntimeError("--version-id needs a configured database (db.url in "
                            "engine/config/config.local.json)")
     return get_engine()
+
+
+# --- LLM label cache (content-addressed, shared with the description cache) ------------
+_LABEL_CACHE = None
+_LABEL_NS = "flowchart_labels"
+
+
+def _label_cache(config: EngineConfig):
+    """Lazy `EntityCache` for node labels, or None when unavailable.
+
+    Shares `llm_description_cache` under its own namespace, so labels get the same
+    project-scoped, cross-node behaviour descriptions already have.
+    """
+    global _LABEL_CACHE
+    if _LABEL_CACHE is None:
+        try:
+            from llm_core.cache import EntityCache
+            pid = _project_id_for(config.version_id)
+            ver = int(getattr(config, "llm_cache_version", 1) or 1)
+            _LABEL_CACHE = EntityCache(pid, _LABEL_NS, cache_version=ver)
+        except Exception as exc:
+            logger.warning("label cache unavailable (%s); labels will not be cached", exc)
+            _LABEL_CACHE = False
+    return _LABEL_CACHE or None
+
+
+def _project_id_for(version_id: str) -> str:
+    if not version_id:
+        return ""
+    try:
+        from sqlalchemy import select
+        from api.db.postgres import schema as _s
+        with _db_conn().connect() as cx:
+            row = cx.execute(select(_s.versions.c.project_id)
+                             .where(_s.versions.c.id == version_id)).first()
+        return (row.project_id if row else "") or ""
+    except Exception:
+        return ""
+
+
+def _label_cache_key(source_code: str, config: EngineConfig) -> str:
+    """Content hash over the function source AND the model that would label it.
+
+    The model is in the key because a different model produces different prose; the source is
+    the whole of the rest, since the CFG is derived from it deterministically.
+    """
+    try:
+        from llm_core.cache import EntityCache
+        return EntityCache.compute_hash(f"{source_code}|model={config.llm_model}")
+    except Exception:
+        return ""
+
+
+def _apply_cached_labels(cfg, key: str, config: EngineConfig) -> bool:
+    """Fill `cfg` from the cache. True only if EVERY labelable node was covered.
+
+    The node-id set is stored with the labels and must match exactly. CFG construction is
+    deterministic for a given source, but a change to the BUILDER would shift ids while the
+    source hash stayed the same — that would silently attach the wrong label to the wrong node,
+    which is worse than paying for the call.
+    """
+    cache = _label_cache(config)
+    if not (cache and key):
+        return False
+    try:
+        import json as _json
+        raw = cache.get(key, key)
+        if not raw:
+            return False
+        stored = _json.loads(raw)
+        want = {str(n.node_id) for n in cfg.nodes.values()
+                if n.node_type not in (NodeType.START, NodeType.END)}
+        if set(stored) != want:
+            return False
+        for node in cfg.nodes.values():
+            nid = str(node.node_id)
+            if nid in stored:
+                node.label = stored[nid]
+        return True
+    except Exception:
+        return False
+
+
+def _store_labels(cfg, key: str, config: EngineConfig) -> None:
+    cache = _label_cache(config)
+    if not (cache and key):
+        return
+    try:
+        import json as _json
+        labels = {str(n.node_id): n.label for n in cfg.nodes.values()
+                  if n.node_type not in (NodeType.START, NodeType.END)}
+        if labels:
+            cache.put(key, key, _json.dumps(labels, ensure_ascii=False))
+    except Exception:
+        pass
+
 
 
 def _load_inputs_from_db(config: EngineConfig):
@@ -439,8 +539,16 @@ def _process_function(
         )
         enricher.enrich(cfg, func_entry)
 
-        # 6. Generate LLM labels (one call per function)
-        label_generator.label_cfg(cfg, func_entry, source_code, base_path)
+        # 6. Generate LLM labels (one call per function) — cached by CONTENT.
+        #
+        # This was the pipeline's largest unbounded cost. Nothing cached these: every run
+        # re-labelled every function, and at the gateway's one-call-per-three-seconds a
+        # 14-flowchart component took 225 seconds of pure LLM wait, repeated in full on the
+        # next run even when not a line had changed.
+        _lbl_key = _label_cache_key(source_code, config)
+        if not _apply_cached_labels(cfg, _lbl_key, config):
+            label_generator.label_cfg(cfg, func_entry, source_code, base_path)
+            _store_labels(cfg, _lbl_key, config)
 
         # 7. Validate CFG
         cfg_validation = validate_cfg(cfg)

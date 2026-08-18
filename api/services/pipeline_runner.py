@@ -909,6 +909,12 @@ def _execute_subprocess(
                 current_phase = new_phase
                 phase_start_time = _now()
 
+            # The ACTIVITY label follows the marker regardless of direction, so a later
+            # component's Phase 3 is not still announced as "Exporting".
+            _marker = _marker_phase(line)
+            if _marker:
+                _set_activity(db, job_id, _ACTIVITY[_marker])
+
             # Update activity detail from log content (strip log prefix)
             detail = _strip_log_prefix(line)
             if detail and len(detail) > 10:
@@ -959,14 +965,31 @@ def _execute_subprocess(
     return True
 
 
-def _detect_phase(line: str, current_phase: int) -> int:
-    """Detect a phase start marker in a log line. Only advances forward."""
+def _marker_phase(line: str) -> int:
+    """The phase a `=== Phase N: ... ===` marker names, or 0 when the line is not a marker."""
     if "===" not in line:
-        return current_phase
-    for n in range(current_phase + 1, 5):
+        return 0
+    for n in range(1, 5):
         if _PHASE_MARKERS[n] in line:
             return n
-    return current_phase
+    return 0
+
+
+def _detect_phase(line: str, current_phase: int) -> int:
+    """Detect a phase start marker. Advances forward only — see `_marker_phase` for why.
+
+    A run is one PLAN PER COMPONENT (`--component-per-docx`), and every plan emits its own
+    Phase 3 and Phase 4 markers. The phase list shown in the UI is per RUN, not per plan, so
+    letting it walk backwards would flip completed phases back to running on every component.
+
+    The cost of that is a wrong LABEL: once plan 1 reaches Phase 4, plan 2's Phase-3 work —
+    flowcharts, the most expensive thing in the pipeline — is reported as "Exporting". A run
+    spending four minutes per component on flowchart LLM labels looked like four minutes of
+    DOCX export. `_execute_subprocess` now takes the activity text from `_marker_phase`, which
+    does not care about direction, so the label follows the real work.
+    """
+    n = _marker_phase(line)
+    return n if n > current_phase else current_phase
 
 
 def _strip_log_prefix(line: str) -> str:
@@ -995,6 +1018,14 @@ def _transition_phase(db: Any, job_id: str, old_phase: int, new_phase: int,
     job.eta_seconds = max(0, (4 - new_phase) * 120)
     db.jobs.update(job)
     _append_log(job_id, f"→ Phase {new_phase}: {_ACTIVITY.get(new_phase, '')}")
+
+
+def _set_activity(db: Any, job_id: str, activity: str) -> None:
+    """Set the headline activity. Separate from `_update_activity`, which sets the DETAIL line."""
+    job = db.jobs.get(job_id)
+    if job and job.current_activity != activity:
+        job.current_activity = activity
+        db.jobs.update(job)
 
 
 def _update_activity(db: Any, job_id: str, detail: str) -> None:

@@ -1020,6 +1020,8 @@ def run(model, output_dir, model_dir, config):
         llm_model,
         "--llm-num-ctx",
         llm_num_ctx,
+        "--llm-cache-version",
+        str(int(llm_cfg.get("cacheVersion", 1) or 1)),
     ]
 
     # doc 10 step 7 — in database mode the engine reads its own inputs: the model from
