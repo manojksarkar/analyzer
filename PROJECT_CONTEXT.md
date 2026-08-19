@@ -283,6 +283,86 @@
 > `tests/unit/test_incremental_parse_merge.py::TestFileLessEntries`, incl. one pinning that a type WITH a
 > file still follows the baseline-wins rule.)
 
+> Updated: 2026-08-19 (**SWE.4 correctness pass on `feat/swe4-v1` — 7 commits `2ddf351`..`0d02122`. Every fix
+> came from reading a generated document as a tester would: could someone write a working unit test from this?
+> Suite 788 green; `output/My-Sample/interface_tables.json` still byte-identical to the SWE.3 snapshot.**
+> - **One principle behind the mock fixes: follow the real execution path, stop at every stub.**
+>   `_mocked_callee_ids()` (new) adds what really runs; `_global_ids()` removes what really does not. Both take
+>   the stub set as a parameter, which is also the shape the wiki's new Dynamic-Behaviour section needs (its
+>   rule is the same walk with participants excluded from the stub set).
+> - **`2ddf351` mock scope is the LAYER, not the document's components.** `_spec_function_ids()` was doing two
+>   jobs with one filtered set, so a callee in another component looked unspecced and was silently **inlined**
+>   — dropped from Precondition, its return dropped from Input, its `Successfully called mock functions` line
+>   dropped from Expected. Now `spec_ids` (mockability) uses `_layer_components(config, allowed)` = every
+>   component of the layer owning the selected ones; `doc_ids` (who gets a spec here) stays component-scoped.
+>   Measured: 25 mock entries lost in `Cross`, 17 in `Sample-Core`, 10 in `App`. Invisible on a wide group,
+>   appears as scope narrows. `_layer_components` returns None (= everything parsed) when `layers` config is
+>   absent or nothing matches — deliberate, since **under**-scoping silently drops mocks.
+> - **`b201f08` the mock boundary, both directions.** (a) `_mocked_callee_ids()` walks callees and stops at
+>   each stub, so a spec'd function called by an **inlined** helper is hoisted into the mock list — it really
+>   executes, and unstubbed the real function links in. (b) `_global_ids()` no longer reads the model's
+>   `<which>GlobalIdsTransitive` (that spans the whole call graph, `_propagate_global_access` in
+>   `model_deriver`); it re-walks from the direct `readsGlobalIds`, stopping at mocks. A stub never runs, so
+>   its globals are not preconditions. Worked case `utilChain` -> inlined `utilNorm` -> `utilCompute`:
+>   mocks gain `utilCompute()`, globals lose `g_utilBase` (its only reader is now a stub). **Committed
+>   together on purpose** — either alone makes that spec worse than before.
+> - **`d2f218b` `_is_assign_op` read `tokens[1]` — PRE-EXISTING, wider than SWE.4.** That only works for a
+>   single-token LHS: `g_count = 5` detected, `w->id = id` (`tokens[1] == "->"`) and `g_a[i] = 5` MISSED. A
+>   missed assignment is not merely lost — the walker descends with `is_write=False`, so the target is
+>   recorded as a **READ**, corrupting `writesGlobalIds` and the In/Out `direction` built from it (-> SWE.3
+>   interface tables). Now locates the operator as the first token past the LHS child's extent. **No visible
+>   change on the sample** (no `g_x.field =` / `g_a[i] =` global writes); expect real churn on struct-heavy
+>   client firmware — diff before/after on a real parse. Tests: `tests/unit/test_parser_assign_op.py` (5).
+>   **`5e5dee0` depends on this** — without it, written fields are recorded as reads.
+> - **`5e5dee0` Input names what a stub must write back.** A mock returns *and* fills what it is handed; if the
+>   body then branches on `e.lba`, the tester must make the stub write it or the branch reads uninitialised
+>   memory. New parser fact **`readsFields`** = `[{var, structType, field}]` from a `MEMBER_REF_EXPR` walk
+>   (`_member_base` resolves the base variable + its struct type). `_mock_writeback_entries()` lists the
+>   intersection of *fields a mocked callee's out-parameter can write* and *fields this function reads*, so
+>   `e.unused` never appears. Filters: FIELD_DECL referents only (`op.apply()` is also a MEMBER_REF_EXPR);
+>   reads only (a written field is an output). Key is `structType`, NOT `type` — it holds the **struct's**
+>   type; the field's own type/range come from the dataDictionary. **Limitation:** the filter is
+>   per-function, not per-decision — a field read anywhere in the body qualifies, where the wiki means one a
+>   *branch* depends on. Superset, never a wrong entry; narrowing needs the CFG.
+> - **`82fc4ac`** `_expected_text(exp, return_type)`: only claim "No return value" when the signature says
+>   `void`. A non-void function with no CFG-attributed returns is a **gap in the spec**, not an assertion.
+> - **`56a1f9b` assert an out-parameter only where the body writes it.** The signature says a parameter
+>   *could* be written; `applyWithOperation(Operation* op, ...)` only calls `op->apply(a,b)` and never
+>   modifies `op`, yet the doc asserted `Successfully updated Operation * op` — a check that can never pass.
+>   New parser fact **`writesParams`** = pointer/ref parameter names written by dereference (`*out = x`) **or**
+>   by field (`w->id = x`; the MEMBER_REF_EXPR branch recurses into its base with the write flag set, so one
+>   collector covers both). By-value writes excluded (a local copy the caller never sees). The wiki asserts
+>   the **whole parameter** ("one entry per out-parameter written"), so no per-field breakdown is kept — an
+>   earlier `writesFields` + `outParameterField` pair was built and then **deliberately removed** as detail
+>   the spec does not ask for, and which cannot survive an inlined helper without call-site argument mapping.
+> - **`0d02122` drawing the images is now separate from building the graph.** `views.flowcharts` conflated the
+>   two, so turning off pictures also killed the CFG and every SWE.4 Test Steps cell read "Not available",
+>   warned only by a log line. Two changes: the duplicate `views.flowcharts` gate inside `flowcharts.run()` is
+>   **removed** (`run_views` is the sole decider and already forces `DOC_TYPE_VIEWS["swe4"]`, which the
+>   internal re-check silently undid — the view returned in 0.00s); and new **`views.flowchartImages`**
+>   (default true) gates only the PNG loop. Measured on the 45-function sample: **CFG 15s, PNGs 89 min**, so
+>   `--doc-type swe4` now runs in ~13s. `--doc-type all` / `swe3` still render, since those documents embed
+>   them.
+> - **Model schema: two new OPTIONAL `functions.json` keys** — `readsFields` (7/297 in the sample),
+>   `writesParams` (2/297). Both omitted when empty, both **require a FULL re-parse**: `--from-phase 2` leaves
+>   them absent, and then write-back Inputs silently do not render and out-parameters go unasserted. Failing
+>   that way is deliberate — a missing assertion is a visible gap, an unprovable one wastes a tester's time.
+>   Hashing is token-based on source so neither affects entity hashes; both are forward fields like
+>   `readsGlobalIds` and survive `parse_merge`'s by-file merge. `test_specs.json` gains input kind
+>   `mockWriteback`.
+> - **Review aid: `tools/swe4_audit.py`** — audits every generated `output/*/test_specs.json` against the wiki
+>   (mock-set agreement across Precondition/Expected, value-returning vs `void` mocks in Input, out-params
+>   excluded from Input, `VOID` correctness, returns naming their step, Test Steps numbering, Table B). Not
+>   wired into the engine; the unit tests cover the view against fixtures, this checks real output end-to-end.
+>   Current state: 11 groups, 89 specs, all with Test Steps, **0 violations**.
+> **Still open:** `get_range` emits hex (`[-0x80000000-0x7FFFFFFF]`) where the wiki is decimal (dataDictionary,
+> affects SWE.3 too); Expected entry `1)` is conditional on mocks existing where the wiki says it is always the
+> mocks; returns carry a bracketed source expression from `48c3d44` the wiki does not describe; **the Graphviz
+> render timeout does not hold** — `utilChain` ran 79 min against `timeout=180` then failed, so any images-on
+> run can stall; the wiki's new **Dynamic Behaviour test specs** section (180 lines, client-added) is
+> unimplemented. `Access`/`Diag`/`Platform` yield 0 specs — every function private by the call-graph rule,
+> correct here but on real code that usually means entry points are not being detected.)
+
 > Updated: 2026-08-18 (**Per-layer data dictionary — closes backlog SH-3.** Branch
 > `feat/per-layer-data-dictionary` off `poc-4`. **The rule, decided with the user and general to every
 > per-layer input: resolving anything for layer `L` uses global + `L` only; another layer's inputs are
