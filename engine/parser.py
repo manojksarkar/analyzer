@@ -1648,22 +1648,39 @@ _ASSIGN_OPS = {"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="
 
 
 def _is_assign_op(cursor):
+    """(is_write, is_compound) for a BINARY_OPERATOR.
+
+    The operator is located as the first token past the end of the LHS child, NOT
+    as `tokens[1]`. A multi-token LHS is the common case in real code and the fixed
+    index silently missed every one of them:
+
+        g_count  = 5;   tokens [g_count, =, 5]     -> tokens[1] == "="   detected
+        w->id    = id;  tokens [w, ->, id, =, id]  -> tokens[1] == "->"  MISSED
+        g_a[i]   = 5;   tokens [g_a, [, i, ], =, 5]                      MISSED
+
+    A missed assignment is not merely lost: the walker then descends with
+    `is_write=False`, so the target is recorded as a READ. That corrupts
+    `writesGlobalIds` and the In/Out `direction` derived from it.
+    """
     if cursor.kind != cindex.CursorKind.BINARY_OPERATOR:
         return False, False
     try:
-        tokens = list(cursor.get_tokens())
-        # Tokens: [LHS, op, RHS] or [LHS, +, =, RHS] for +=
-        if len(tokens) >= 2:
-            op = tokens[1].spelling
-            if op == "=":
-                return True, False  # pure write
-            if op in _ASSIGN_OPS:
-                return True, True   # compound = both
-            # Tokenized as separate: + and = -> +=
-            if len(tokens) >= 3:
-                combined = tokens[1].spelling + tokens[2].spelling
-                if combined in _ASSIGN_OPS:
-                    return True, True
+        children = list(cursor.get_children())
+        if len(children) < 2:
+            return False, False
+        lhs_end = children[0].extent.end.offset
+        op_tokens = [t.spelling for t in cursor.get_tokens()
+                     if t.extent.start.offset >= lhs_end]
+        if not op_tokens:
+            return False, False
+        op = op_tokens[0]
+        if op == "=":
+            return True, False      # pure write
+        if op in _ASSIGN_OPS:
+            return True, True       # compound = both read and write
+        # Tokenized apart, e.g. `+` `=` -> `+=`
+        if len(op_tokens) >= 2 and (op + op_tokens[1]) in _ASSIGN_OPS:
+            return True, True
     except Exception:
         pass
     return False, False
