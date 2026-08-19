@@ -67,12 +67,18 @@ def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
     `versions/<id>/parse/`. MUST run right after Phase 1, before Phase 2 fills
     descriptions into model/. This is the baseline a narrowed parse (M4) merges against
     so impacted functions arrive blank and get regenerated (doc 04 §11)."""
-    dst = os.path.join(version_dir, "parse")
-    os.makedirs(dst, exist_ok=True)
-    for fn in _PARSE_SNAPSHOT_FILES:
-        src = os.path.join(model_dir, fn)
-        if os.path.isfile(src):
-            shutil.copyfile(src, os.path.join(dst, fn))
+    # The on-disk copy is the FILE-mode snapshot. In database mode the snapshot lives in
+    # `parse_snapshots` and this directory is not read by anything — copying into it only
+    # mirrors whatever happens to be in model_dir, which after a narrowed parse is the PARTIAL
+    # parse. That is how an incremental version ended up with a versions/<id>/parse/ full of
+    # incomplete JSON while a full version's stayed empty.
+    if model_store != "db":
+        dst = os.path.join(version_dir, "parse")
+        os.makedirs(dst, exist_ok=True)
+        for fn in _PARSE_SNAPSHOT_FILES:
+            src = os.path.join(model_dir, fn)
+            if os.path.isfile(src):
+                shutil.copyfile(src, os.path.join(dst, fn))
     # AND into the store (doc 09, C2). On disk this snapshot only exists on the machine that
     # produced the baseline, so narrowed parse could not work across nodes and was lost with
     # any workspace clean. Additive: the files above still get written until C11c, so the
@@ -176,8 +182,15 @@ def llm_call_counts(version_id: str) -> Dict[str, int]:
         from llm_core.callstats import load_for_version
         with get_engine().connect() as cx:
             return {f"{k}|{o}": n for (k, o), n in load_for_version(cx, version_id).items()}
-    except Exception:
-        return {}
+    except Exception as exc:
+        # Do NOT return {} here. An empty dict means "no LLM calls", and the report then omits
+        # the section entirely — so a missing `llm_call_stats` table (migration 0007 not
+        # applied) looks exactly like a --no-llm run. The section going quiet is precisely the
+        # kind of silent absence this accounting exists to end.
+        from core.logging_setup import get_logger as _gl
+        _gl("incremental").warning("LLM call accounting unavailable (%s) — the report's LLM "
+                                   "section will say so rather than be omitted", exc)
+        return {"__unavailable__": str(exc)}
 
 def _orchestrator_model(store, version_id: str, model_dir: str, model_store: str,
                         parts=_ORCH_PARTS) -> Dict[str, Any]:

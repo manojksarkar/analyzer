@@ -25,7 +25,13 @@ failure while the code worked.
 
     python tools/verify_flowchart_reuse.py
 
-Exit 0 = the incremental run reused the baseline's flowcharts.
+It also checks that an incremental run leaves the SAME clean version directory a full run
+does. The partial parse writes model/*.json as scratch (its output is only valid after
+parse_merge), nothing removed them, and snapshot_parse_model then copied that partial model into
+versions/<id>/parse/ — so a full version was clean and an incremental one was full of
+incomplete JSON.
+
+Exit 0 = the incremental run reused the baseline's flowcharts and left a clean version.
 """
 import datetime
 import json
@@ -172,7 +178,28 @@ print()
 for m in restricted + carried + full_regen + rendered:
     print("   " + m.strip())
 
+# Bug: an incremental run left the PARTIAL parse's model/*.json in place, and
+# snapshot_parse_model copied them into versions/<id>/parse/. A full version was clean, an
+# incremental one was not.
+MODEL_JSON = {"functions.json", "globalVariables.json", "dataDictionary.json", "edges.json",
+              "hashes.json", "tu_includes.json", "entity_files.json", "func_keys.json",
+              "override_pairs.json", "metadata.json"}
+for _v in (VID, VID2):
+    _md = os.path.join(ws, PID, "versions", _v, "model")
+    _pd = os.path.join(ws, PID, "versions", _v, "parse")
+    _mleft = sorted(MODEL_JSON & set(os.listdir(_md))) if os.path.isdir(_md) else []
+    _pleft = sorted(os.listdir(_pd)) if os.path.isdir(_pd) else []
+    print(f"    {_v}: model/*.json={_mleft}  parse/={len(_pleft)} file(s)")
+
 fails = []
+for _v in (VID, VID2):
+    _md = os.path.join(ws, PID, "versions", _v, "model")
+    _pd = os.path.join(ws, PID, "versions", _v, "parse")
+    if os.path.isdir(_md) and (MODEL_JSON & set(os.listdir(_md))):
+        fails.append(f"{_v}: scratch model/*.json left behind: "
+                     f"{sorted(MODEL_JSON & set(os.listdir(_md)))}")
+    if os.path.isdir(_pd) and os.listdir(_pd):
+        fails.append(f"{_v}: versions/<id>/parse/ is not empty in db mode: {os.listdir(_pd)}")
 if full_regen:
     fails.append(f"flowcharts fully regenerated instead of reused: {full_regen[0]}")
 if not restricted:

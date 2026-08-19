@@ -284,6 +284,31 @@ def _load_parse_dir(d: str) -> Dict[str, Any]:
     return {n: _read(d, f"{n}.json") for n in _PARSE_ARTIFACTS}
 
 
+def _clear_scratch_parse_files(model_dir: str) -> int:
+    """Delete the PARTIAL model files the narrowed parse wrote as scratch. Returns the count.
+
+    The partial parse deliberately runs with `--model-store files` — its output is only valid
+    after `parse_merge`, so it must not reach the version's rows. What it leaves behind is a
+    directory of INCOMPLETE model files, and nothing removed them: an incremental run therefore
+    ended with a `model/` full of partial JSON, and `snapshot_parse_model` copied that straight
+    into `versions/<id>/parse/`. A full run produced a clean version, an incremental one did not
+    — which is exactly the inconsistency this was reported as.
+
+    Worse than untidy: those files describe only the re-parsed translation units, so anything
+    reading the on-disk snapshot got a model missing most of the project.
+    """
+    removed = 0
+    for name in _PARSE_ARTIFACTS:
+        p = os.path.join(model_dir, f"{name}.json")
+        try:
+            if os.path.isfile(p):
+                os.unlink(p)
+                removed += 1
+        except OSError:
+            pass                      # a file we cannot delete is untidy, not fatal
+    return removed
+
+
 def _load_parse_model(model_dir: str, *, version_id: str = "",
                       project_id: str = "") -> Dict[str, Any]:
     """The nine parse artifacts from whichever backing this run uses.
@@ -514,6 +539,11 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     part_fp = (partial.get("metadata") or {}).get("parseFingerprint")
     if base_fp and part_fp and base_fp != part_fp:
         log.info("narrowed parse: parse fingerprint changed (clang flags / std / toolchain) — full parse")
+        # The caller runs a FULL parse next, which rewrites these anyway in file mode; in
+        # database mode nothing would, so a partial model would survive as the version's
+        # on-disk skeleton. Clear it either way — the partial is never valid on its own.
+        if _MODEL_STORE == "db":
+            _clear_scratch_parse_files(model_dir)
         return False
     # Drop (use fresh for) the files that were actually re-parsed: the affected TUs + any
     # CHANGED header (refreshed via the including TUs) + deletions. NOT every file the
@@ -522,6 +552,12 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     merged = merge_model(base_model, partial, drop)
     _write_parse_artifacts(model_dir, merged, version_id=version_id,
                            project_id=project_id)
+    if _MODEL_STORE == "db":
+        # The merged model went to the database; the scratch files are the PARTIAL parse and
+        # must not be left where snapshot_parse_model would copy them into versions/<id>/parse/.
+        n = _clear_scratch_parse_files(model_dir)
+        if n:
+            log.debug("narrowed parse: removed %d scratch model file(s)", n)
     log.info(f"narrowed parse: re-parsed {len(affected)} affected TU(s), merged into the baseline "
              f"skeleton — {len(merged.get('functions') or {})} functions total")
     return True

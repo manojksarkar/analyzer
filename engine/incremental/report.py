@@ -37,6 +37,13 @@ def _llm_lines(counts: Dict[str, Any]) -> List[str]:
     """
     if not counts:
         return []
+    if "__unavailable__" in counts:
+        return [_THIN,
+                "  LLM CALLS : accounting unavailable "
+                f"({counts['__unavailable__']})",
+                "              Run `python tools/db_setup.py` to apply migration 0007. Until "
+                "then the",
+                "              report cannot say how many LLM calls failed."]
     by_kind: Dict[str, Dict[str, int]] = {}
     for key, n in counts.items():
         kind, _, outcome = str(key).partition("|")
