@@ -596,6 +596,12 @@ component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
 global_access_writes = defaultdict(set)  # func_key -> set of var_id
+# func_key -> set of (base variable, its struct type, field) that the body READS.
+# SWE.4 needs it to tell which of a mocked callee's write-backs actually matter: a
+# stub can fill in any field of the struct it is handed, but only the fields this
+# function goes on to read can change its behaviour, and only those belong in Input.
+# Reads only -- a field the function assigns to is an output, not test setup.
+field_access_reads = defaultdict(set)
 # First non-trivial return expression per function (for behaviour output naming)
 function_return_expr = {}
 
@@ -1698,6 +1704,34 @@ def _is_inc_dec_op(cursor):
     return False
 
 
+def _member_base(cursor):
+    """(variable name, struct type) a MEMBER_REF_EXPR is reached through.
+
+    Returns ("", "") when the base is not a plain variable — a call result
+    (`getSlot()->f`) has no name the test can set up, so it is not an input.
+    The type is stripped of `*`, `&` and `const` so `MapEntry *` matches the
+    `MapEntry` the data dictionary is keyed by.
+    """
+    children = list(cursor.get_children())
+    if not children:
+        return ("", "")
+    base = children[0]
+    # Unwrap the UNEXPOSED_EXPR / paren / cast layers clang puts over the reference.
+    while base.kind != cindex.CursorKind.DECL_REF_EXPR:
+        kids = list(base.get_children())
+        if not kids:
+            return ("", "")
+        base = kids[0]
+    ref = base.referenced
+    if not ref or ref.kind not in (cindex.CursorKind.VAR_DECL,
+                                   cindex.CursorKind.PARM_DECL):
+        return ("", "")
+    t = (ref.type.spelling if ref.type else "") or ""
+    for token in ("const", "volatile", "struct", "*", "&"):
+        t = t.replace(token, " ")
+    return (ref.spelling or "", " ".join(t.split()))
+
+
 def visit_global_access(cursor, current_key=None, is_write=False, is_compound=False):
     """Track global variable reads/writes per function for In/Out direction."""
     kind = cursor.kind
@@ -1748,6 +1782,22 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
                     function_return_expr[current_key] = expr
             except Exception:
                 pass
+    elif kind == cindex.CursorKind.MEMBER_REF_EXPR and current_key:
+        # `e.lba` / `p->ppn`. `op.apply()` is also a MEMBER_REF_EXPR, so only a
+        # FIELD_DECL referent counts -- a method is not data the test can set up.
+        # A compound assign (`s->n += 1`) reads the field as well as writing it.
+        ref = cursor.referenced
+        if ref and ref.kind == cindex.CursorKind.FIELD_DECL \
+                and (not is_write or is_compound):
+            field = cursor.spelling or ""
+            base_var, base_type = _member_base(cursor)
+            if field and base_var and base_type:
+                field_access_reads[current_key].add((base_var, base_type, field))
+        # Keep walking: the base may itself contain reads (`a[i].f`, `g_t.f`), and a
+        # write must reach the base so the global behind `g_t.f = x` is recorded.
+        for child in cursor.get_children():
+            visit_global_access(child, current_key, is_write, is_compound)
+        return
     elif kind == cindex.CursorKind.DECL_REF_EXPR and current_key:
         ref = cursor.referenced
         if ref and ref.kind == cindex.CursorKind.VAR_DECL:
@@ -2154,6 +2204,14 @@ def build_metadata():
             functions_dict[fid]["readsGlobalIds"] = read_vids
         if write_vids:
             functions_dict[fid]["writesGlobalIds"] = write_vids
+
+        # Struct fields this function reads, for the SWE.4 mock write-back inputs.
+        fields_read = field_access_reads.get(func_key, set())
+        if fields_read:
+            functions_dict[fid]["readsFields"] = [
+                {"var": v, "structType": t, "field": f}
+                for v, t, f in sorted(fields_read)
+            ]
 
         # Direction: Get=Out, Set=In, both=In. No direct global access -> In.
         if write_raw:

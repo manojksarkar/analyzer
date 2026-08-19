@@ -254,3 +254,72 @@ def test_global_read_by_an_inlined_callee_is_a_precondition():
     """gInline is read by `helper`, which really executes."""
     names = {g["name"] for g in _boundary_model()["precondition"]["globals"]}
     assert "gInline" in names
+
+
+# --- mock write-backs (Input) ----------------------------------------------
+#
+# Wiki, Input: "Plus anything else a decision depends on that Precondition does not
+# name -- a value a mock writes back through a pointer, a struct field."
+# Its worked example lists `e.lba` and `e.ppn` because FtlLookup reads them; a field
+# it never reads is a dead input and must not appear.
+
+def _writeback_model(reads_fields=None):
+    """The wiki's worked example, reduced: FtlLookup mocks
+    FilReadPage(uint16_t, MapEntry*) and reads two of MapEntry's three fields."""
+    lookup = _fn("FtlLookup", file="FtlMap.cpp", line=1,
+                 params=[{"name": "lba", "type": "uint32_t"}],
+                 calls=["F|Fil|FilReadPage"], iid="FTL_MAP_02")
+    if reads_fields is None:
+        reads_fields = [
+            {"var": "e", "structType": "MapEntry", "field": "lba"},
+            {"var": "e", "structType": "MapEntry", "field": "ppn"},
+        ]
+    if reads_fields:
+        lookup["readsFields"] = reads_fields
+    functions = {
+        "F|Map|FtlLookup": lookup,
+        "F|Fil|FilReadPage": _fn("FilReadPage", file="Fil.cpp", line=1,
+                                 params=[{"name": "idx", "type": "uint16_t"},
+                                         {"name": "e", "type": "MapEntry *"}],
+                                 iid="FIL_01"),
+    }
+    units = {
+        "F|Map": {"name": "Map", "fileName": "FtlMap.cpp",
+                  "functionIds": ["F|Map|FtlLookup"]},
+        "F|Fil": {"name": "Fil", "fileName": "Fil.cpp",
+                  "functionIds": ["F|Fil|FilReadPage"]},
+    }
+    dd = {"MapEntry": {"kind": "struct", "range": "NA", "fields": [
+        {"name": "lba", "type": "uint32_t", "range": "0-4294967295"},
+        {"name": "ppn", "type": "uint32_t", "range": "0-4294967295"},
+        {"name": "unused", "type": "uint8_t", "range": "0-255"},
+    ]}}
+    out = _build_test_specs(units, functions, {}, dd)
+    return out["F|Map"]["functions"][0]["input"]["entries"]
+
+
+def test_mock_writeback_lists_the_fields_the_function_reads():
+    wb = [e for e in _writeback_model() if e["kind"] == "mockWriteback"]
+    assert [(e["name"], e["type"]) for e in wb] == [
+        ("e.lba", "uint32_t"), ("e.ppn", "uint32_t")]
+    # Written like any other input: `type variable[range]`.
+    assert all(e["text"].startswith(f"{e['type']} {e['name']}[") for e in wb)
+
+
+def test_mock_writeback_omits_a_field_the_function_never_reads():
+    """`unused` is a MapEntry field the stub could write, but FtlLookup never reads
+    it -- setting it cannot change any outcome, so it is not an input."""
+    assert "e.unused" not in {e.get("name") for e in _writeback_model()}
+
+
+def test_mock_writeback_absent_when_the_function_reads_no_fields():
+    entries = _writeback_model(reads_fields=[])
+    assert [e for e in entries if e["kind"] == "mockWriteback"] == []
+
+
+def test_mock_writeback_ignores_a_same_named_field_of_another_struct():
+    """The base's declared type disambiguates: reading `other.lba` says nothing
+    about the MapEntry that FilReadPage writes back."""
+    entries = _writeback_model(reads_fields=[
+        {"var": "other", "structType": "Other", "field": "lba"}])
+    assert [e for e in entries if e["kind"] == "mockWriteback"] == []

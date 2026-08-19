@@ -187,6 +187,70 @@ def _mock_functions(func, functions_data, spec_ids):
     return sorted(names)
 
 
+def _bare_type(type_str):
+    """`const MapEntry *` -> `MapEntry`, the form the data dictionary is keyed by."""
+    t = (type_str or "").strip()
+    for token in ("const", "volatile", "struct", "*", "&"):
+        t = t.replace(token, " ")
+    return " ".join(t.split())
+
+
+def _mock_writeback_entries(func, functions_data, spec_ids, dd):
+    """Input entries for values a mocked callee writes back through a pointer.
+
+    A stub does not just return — it fills in whatever it is handed. If the function
+    then branches on one of those fields, the tester must make the stub write it, or
+    the branch reads uninitialised memory and the test is nondeterministic. The wiki
+    lists exactly these (`uint32_t e.lba`, `uint32_t e.ppn` in its worked example).
+
+    Only the fields **this function actually reads** are listed. A mock can touch
+    every field of the struct it receives, but a field the function never reads back
+    cannot change its behaviour or its output, so listing it would hand the tester a
+    dead input — a column to fill in that provably changes nothing. `readsFields`
+    (parser) supplies that filter, matched on the base's declared type so a field
+    name shared by two structs cannot match the wrong one.
+
+    Known limitation: the filter is per-function, not per-decision. A field read
+    anywhere in the body qualifies, where the wiki means one a branch depends on —
+    narrowing that needs the CFG. The result is a superset, never a wrong entry.
+    """
+    reads = func.get("readsFields") or []
+    if not reads:
+        return []
+    read_by_type = {}
+    for r in reads:
+        read_by_type.setdefault(r.get("structType", ""), {}).setdefault(
+            r.get("field", ""), r.get("var", ""))
+
+    seen, out = set(), []
+    for cid in sorted(_mocked_callee_ids(func, functions_data, spec_ids)):
+        callee = functions_data.get(cid)
+        if not callee:
+            continue
+        for p in callee.get("parameters") or []:
+            if not _is_out_parameter(p):
+                continue
+            fields_read = read_by_type.get(_bare_type(p.get("type")))
+            if not fields_read:
+                continue
+            entry = dd.get(_bare_type(p.get("type")))
+            dd_fields = {f.get("name"): f
+                         for f in (entry or {}).get("fields", [])
+                         if isinstance(entry, dict)}
+            for fname, base_var in sorted(fields_read.items()):
+                fld = dd_fields.get(fname)
+                if not fld:          # not a data field of this struct
+                    continue
+                label = f"{base_var}.{fname}"
+                if label in seen:
+                    continue
+                seen.add(label)
+                ftype = fld.get("type", "")
+                out.append({"kind": "mockWriteback", "name": label, "type": ftype,
+                            "text": _ranged(ftype, label, dd)})
+    return out
+
+
 def _mock_return_entries(func, functions_data, spec_ids, dd):
     """Input entries for mocked callees that return a value.
 
@@ -286,6 +350,7 @@ def _build_spec(fid, func, unit_key, unit_name, functions_data,
                               "type": g.get("type", ""),
                               "text": _ranged(g.get("type", ""), gname, dd)})
     input_entries += _mock_return_entries(func, functions_data, spec_ids, dd)
+    input_entries += _mock_writeback_entries(func, functions_data, spec_ids, dd)
 
     # ---- Expected Results -------------------------------------------------
     out_params = [{"kind": "outParameter", "name": p.get("name", ""),
