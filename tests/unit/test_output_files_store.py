@@ -25,10 +25,38 @@ pytestmark = pytest.mark.unit
 
 
 def _fresh_engine():
+    """An engine with the PARENT rows these tests' foreign keys need.
+
+    version_output_files.version_id is a FK to versions.id. SQLite ignored foreign keys until
+    core.db turned the pragma on, so these tests inserted output rows for a version that did not
+    exist — a state Postgres would already have rejected. Creating the parents makes the fixture
+    describe something that can actually happen.
+    """
+    import datetime
+    from sqlalchemy import insert
     eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
                         poolclass=StaticPool)
     s.metadata.create_all(eng)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    with eng.begin() as cx:
+        cx.execute(insert(s.projects), {"id": "proj-1", "name": "P", "created_at": now})
     return eng
+
+
+def _ensure_version(eng, vid: str, project_id: str = "proj-1") -> None:
+    """Create the parent versions row if it is not already there.
+
+    Tolerant because some tests insert their own with specific fields; this only has to satisfy
+    the foreign key for the ones that do not.
+    """
+    import datetime
+    from sqlalchemy import insert, select
+    with eng.begin() as cx:
+        if cx.execute(select(s.versions.c.id).where(s.versions.c.id == vid)).first():
+            return
+        cx.execute(insert(s.versions), {
+            "id": vid, "project_id": project_id, "version": vid,
+            "created_at": datetime.datetime.now(datetime.timezone.utc)})
 
 
 def _write(base: str, rel: str, content) -> None:
@@ -47,6 +75,8 @@ def test_persist_and_load_round_trip(tmp_path):
     _write(out, "My-Sample/flowcharts/Core.png", b"\x89PNG\r\n\x1a\n")   # binary → skipped
 
     eng = _fresh_engine()
+    _ensure_version(eng, "ver1")
+    _ensure_version(eng, "v1")
     with eng.begin() as cx:
         n = ms.persist_output_files(cx, "ver1", out)
     assert n == 3                                              # 3 text files; the PNG is skipped
@@ -67,6 +97,8 @@ def test_persist_is_idempotent_and_replaces(tmp_path):
     out = str(tmp_path / "output")
     _write(out, "G/interface_tables.json", '{"v": 1}')
     eng = _fresh_engine()
+    _ensure_version(eng, "ver1")
+    _ensure_version(eng, "v1")
     with eng.begin() as cx:
         ms.persist_output_files(cx, "ver1", out)
 
@@ -87,7 +119,7 @@ def test_run_metadata_round_trips_on_the_version_row():
     """metadata.json's fields live on the versions row (doc 07 §3) — the engine writes them via
     store.write_run_metadata, and the narrowed-parse guard reads parseFingerprint back."""
     import datetime
-    eng = _fresh_engine()
+    eng = _fresh_engine()          # this test creates its own version row below
     now = datetime.datetime(2026, 8, 12, tzinfo=datetime.timezone.utc)
     with eng.begin() as cx:
         cx.execute(s.projects.insert().values(id="p1", name="P", created_at=now))
@@ -104,12 +136,16 @@ def test_run_metadata_round_trips_on_the_version_row():
 
 def test_run_metadata_absent_version_is_empty():
     eng = _fresh_engine()
+    _ensure_version(eng, "ver1")
+    _ensure_version(eng, "v1")
     with eng.connect() as cx:
         assert ms.load_run_metadata(cx, "nope") == {}
 
 
 def test_missing_output_dir_is_noop(tmp_path):
     eng = _fresh_engine()
+    _ensure_version(eng, "ver1")
+    _ensure_version(eng, "v1")
     with eng.begin() as cx:
         assert ms.persist_output_files(cx, "ver1", str(tmp_path / "nope")) == 0
     with eng.connect() as cx:

@@ -39,13 +39,29 @@ def _engine():
             "build_config": {"repo_access_token": "tok"},
             "architecture_layers": [{"name": "L1"}],
             "created_at": datetime.datetime.now(UTC)})
+        # reuse_index.version_id became a foreign key in 0006 — a pointer to a deleted version
+        # kept occupying its (project_id, fingerprint) slot and, since the index is
+        # first-writer-wins, permanently blocked a live version from claiming it. The reuse
+        # tests point at "v1", so it has to exist.
+        cx.execute(insert(s.versions), {
+            "id": "v1", "project_id": PID, "version": "v1", "commit_sha": "a" * 40,
+            "created_at": datetime.datetime.now(UTC)})
     return eng
 
 
 def _version(cx, vid, commit, *, pipeline_status="complete", branch="main"):
-    cx.execute(insert(s.versions), {
-        "id": vid, "project_id": PID, "version": vid, "commit_sha": commit, "branch": branch,
-        "pipeline_status": pipeline_status, "created_at": datetime.datetime.now(UTC)})
+    """Create or UPDATE the version row.
+
+    Idempotent because `_engine()` pre-creates "v1" to satisfy reuse_index's foreign key (added
+    in 0006), and several tests then want that same id with their own commit and status.
+    """
+    row = {"id": vid, "project_id": PID, "version": vid, "commit_sha": commit, "branch": branch,
+           "pipeline_status": pipeline_status, "created_at": datetime.datetime.now(UTC)}
+    if cx.execute(select(s.versions.c.id).where(s.versions.c.id == vid)).first():
+        cx.execute(s.versions.update().where(s.versions.c.id == vid)
+                   .values({k: v for k, v in row.items() if k != "id"}))
+        return
+    cx.execute(insert(s.versions), row)
 
 
 class TestReuseIndex:

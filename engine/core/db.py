@@ -221,6 +221,7 @@ def get_engine(dsn: Optional[str] = None):
         # "database is locked"; SQLite still locks coarsely, so this makes single-job testing
         # reliable, not concurrent jobs fast (doc 10, D10-1).
         connect_args = {"check_same_thread": False, "timeout": CONNECT_TIMEOUT_SEC}
+        _enforce_sqlite_foreign_keys()
     kwargs = dict(pool_pre_ping=True, future=True, connect_args=connect_args)
     from sqlalchemy import create_engine
     if dsn is not None:                       # explicit DSN -> caller-owned engine (tests)
@@ -228,6 +229,37 @@ def get_engine(dsn: Optional[str] = None):
     if _ENGINE is None:
         _ENGINE = create_engine(url, **kwargs)
     return _ENGINE
+
+
+_FK_PRAGMA_INSTALLED = False
+
+
+def _enforce_sqlite_foreign_keys() -> None:
+    """Turn foreign keys ON for every SQLite connection.
+
+    SQLite ignores foreign keys unless each connection asks for them, so `ondelete="CASCADE"`
+    silently did nothing: deleting a version left its output files, entity rows and reuse
+    pointers behind. Postgres cascaded correctly, which meant the SQLite backend — the one the
+    gates and local testing run on — did not behave like production, and `check_db.py` found
+    exactly that (26 orphan `version_output_files` rows).
+
+    D10-2 is "one code path for both backends"; that has to include referential integrity.
+    """
+    global _FK_PRAGMA_INSTALLED
+    if _FK_PRAGMA_INSTALLED:
+        return
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    @event.listens_for(Engine, "connect")
+    def _fk_on(dbapi_conn, _rec):
+        try:
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA foreign_keys=ON")
+            cur.close()
+        except Exception:
+            pass                      # not SQLite, or a driver that has no cursor() here
+    _FK_PRAGMA_INSTALLED = True
 
 
 def set_pipeline_status(status: str, *, version_id: Optional[str] = None) -> None:

@@ -393,7 +393,10 @@ reuse_index = Table(
     "reuse_index", metadata,
     Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
     Column("fingerprint", String, nullable=False),
-    Column("version_id", String),
+    # FK added in 0006. Without it a deleted version's pointers survived, and since the index
+    # is first-writer-wins they kept occupying (project_id, fingerprint) — so a LIVE version
+    # with identical content could never claim the entry and its reuse was lost permanently.
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE")),
     Column("entity_key", String),
     UniqueConstraint("project_id", "fingerprint", name="pk_reuse_index"),
 )

@@ -24,7 +24,23 @@ def _sql_db():
 
 
 def _put(db, version_id, rel, content, group=None):
+    """Store one output file, creating the parent rows the foreign key needs.
+
+    version_output_files.version_id references versions.id. SQLite ignored foreign keys until
+    core.db turned the pragma on, so these rows used to be inserted for a version that did not
+    exist — which Postgres would have rejected outright. Creating the parent keeps the fixture
+    describing a state the product can actually reach.
+    """
+    import datetime
+    from sqlalchemy import select
     with db._engine.begin() as cx:
+        if not cx.execute(select(s.projects.c.id).where(s.projects.c.id == "p1")).first():
+            cx.execute(insert(s.projects).values(
+                id="p1", name="P", created_at=datetime.datetime.now(datetime.timezone.utc)))
+        if not cx.execute(select(s.versions.c.id).where(s.versions.c.id == version_id)).first():
+            cx.execute(insert(s.versions).values(
+                id=version_id, project_id="p1", version=version_id,
+                created_at=datetime.datetime.now(datetime.timezone.utc)))
         cx.execute(insert(s.version_output_files).values(
             version_id=version_id, rel_path=rel, content=content, group_name=group))
 
