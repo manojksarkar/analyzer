@@ -10,6 +10,7 @@
     "interfaceTables": true,
     "unitDiagrams": true,
     "flowcharts": false,
+    "flowchartImages": false,
     "behaviourDiagram": false,
     "componentStaticDiagram": true
   },

@@ -741,6 +741,19 @@ def _resolve_layer_dirs(config, group_name, layer_paths):
     return all_dirs
 
 
+def _needs_flowchart_images(config) -> bool:
+    """`views.flowchartImages` -- draw the PNGs, or not. Independent of doc type.
+
+    The flowchart stage always runs, because both documents need the control-flow
+    graph: SWE.3 draws it, SWE.4 transcribes it into Test Steps. Only the drawing is
+    optional, and it is where the time goes -- measured on the 45-function sample,
+    the CFG took 15s and the PNGs 89 minutes.
+
+    Defaults to True so an existing config keeps rendering.
+    """
+    return (config or {}).get("views", {}).get("flowchartImages", True) is not False
+
+
 def _resolve_script(project_root: str, script_path: str) -> str:
     if not script_path:
         raise ValueError("flowchart scriptPath is empty — no generator configured to run")
@@ -773,12 +786,13 @@ def _resolve_script(project_root: str, script_path: str) -> str:
 
 @register("flowcharts")
 def run(model, output_dir, model_dir, config):
-    views_cfg = config.get("views", {})
-    val = views_cfg.get("flowcharts")
-
-    if val is None or val is False:
-        # Not enabled
-        return
+    # No `views.flowcharts` gate here: `run_views` owns that decision and is the
+    # only caller. It already honours the config for SWE.3 *and* forces the views a
+    # doc type declares in DOC_TYPE_VIEWS -- SWE.4 needs the CFG for Test Steps and
+    # the per-return Expected entries. Re-checking the config here silently undid
+    # that forcing, so `--doc-type swe4` with `views.flowcharts: false` exported a
+    # document whose Test Steps column read "Not available" for every function,
+    # warned only by a log line (the view returned in 0.00s).
 
     # Be robust to callers passing relative output_dir/model_dir.
     output_dir_abs = os.path.abspath(output_dir)
@@ -1166,6 +1180,14 @@ def run(model, output_dir, model_dir, config):
 
         except (json.JSONDecodeError, OSError):
             pass
+
+    if not _needs_flowchart_images(config):
+        # The per-unit JSON (DOT script + serialized CFG) is already written above;
+        # Test Steps and the per-return Expected entries come from that. Only the
+        # images are skipped, and no document in this run embeds them.
+        log("%d flowchart(s) built; PNG render skipped "
+            "(views.flowchartImages is false)" % len(items), component="flowcharts")
+        return
 
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
