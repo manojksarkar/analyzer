@@ -55,6 +55,21 @@ def _merge_keyed(baseline: Dict[str, Any], fresh: Dict[str, Any],
     return out
 
 
+def _merge_func_keys(baseline: Dict[str, str], fresh: Dict[str, str],
+                     entity_files: Dict[str, str], drop: Set[str]) -> Dict[str, str]:
+    """Merge {mangled-func-key -> fid} by the file of the VALUE.
+
+    `_merge_keyed` cannot serve here: it resolves a file from the entry's KEY, and these keys are
+    mangled C++ names, not entity keys. Using it silently kept every baseline entry and discarded
+    every fresh one, because no mangled name is ever found in `entity_files`.
+    """
+    out = {k: v for k, v in (baseline or {}).items() if _file_of(v, entity_files) not in drop}
+    for k, v in (fresh or {}).items():
+        if _file_of(v, entity_files) in drop:
+            out[k] = v
+    return out
+
+
 def _merge_edges(baseline_edges: Dict[str, Dict[str, List[str]]],
                  fresh_edges: Dict[str, Dict[str, List[str]]],
                  entity_files: Dict[str, str], drop: Set[str],
@@ -169,6 +184,16 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
         "tu_includes": dict(sorted(tu_includes.items())),
         "entity_files": merged_entity_files,
         "override_pairs": override_pairs,
+        # The baseline's {mangled-func-key -> fid} map, merged by the fid's FILE.
+        #
+        # It was not merged or republished at all, so a narrowed parse produced a version whose
+        # stored snapshot had no func_keys. The map is what lets a call from a re-parsed file
+        # into an UN-parsed one resolve to an edge, so the NEXT narrowed parse against that
+        # version silently lost cross-TU call edges — the document then shows a function calling
+        # less than it does, with nothing logged. One narrowed parse from a full baseline worked,
+        # which is why the gate did not catch it: the damage needs two in a row.
+        "func_keys": _merge_func_keys(baseline.get("func_keys") or {},
+                                      fresh.get("func_keys") or {}, merged_entity_files, drop),
     }
 
 

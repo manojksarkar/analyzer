@@ -170,3 +170,51 @@ class TestTheApiActuallyEnablesIt:
         default = inspect.signature(AnalysisJob).parameters["narrowed_parse"].default
         assert default is True, (
             f"a default AnalysisJob disables narrowed parse (got {default!r})")
+
+
+class TestFuncKeysSurviveTheMerge:
+    """A narrowed parse must republish the baseline's func-key map.
+
+    `func_keys` maps a mangled function key to its fid, and it is what lets a call from a
+    RE-PARSED file into a file this run did NOT re-parse still resolve to an edge. It was absent
+    from both `_PARSE_ARTIFACTS` and `merge_model`, so a narrowed parse produced a version whose
+    stored snapshot had no func_keys at all — reported by check_db.py as "parse snapshot missing
+    func_keys.json" on a real incremental version.
+
+    The damage needs TWO narrowed parses in a row: the first works from a full baseline, the
+    second gets no map and silently drops every cross-TU call edge. The document then shows a
+    function calling less than it does, with nothing logged. One narrowed parse from a full
+    baseline is what the gate exercises, which is why it passed.
+    """
+
+    def test_it_is_published(self):
+        assert "func_keys" in eng._PARSE_ARTIFACTS
+
+    def test_the_merge_keeps_baseline_entries_for_untouched_files(self):
+        from incremental.parse_merge import merge_model
+        baseline = {
+            "functions": {}, "globalVariables": {}, "dataDictionary": {}, "hashes": {},
+            "edges": {"typeUsers": {}, "macroUsers": {}}, "tu_includes": {},
+            "entity_files": {"F_UART": "uart.cpp", "F_TIMER": "timer.cpp"},
+            "override_pairs": [], "metadata": {},
+            "func_keys": {"_Z9uart_sendv": "F_UART", "_Z10timer_waitv": "F_TIMER"},
+        }
+        # A real partial parse re-emits entity_files for the file it re-parsed, so the new fid
+        # resolves to a dropped file. Without that the merge cannot tell where it belongs.
+        fresh = dict(baseline,
+                     entity_files={"F_UART_NEW": "uart.cpp", "F_TIMER": "timer.cpp"},
+                     func_keys={"_Z9uart_sendv": "F_UART_NEW"})
+        merged = merge_model(baseline, fresh, ["uart.cpp"])
+        fk = merged["func_keys"]
+        assert fk["_Z10timer_waitv"] == "F_TIMER", \
+            "the untouched file's func-key was dropped; cross-TU calls into it stop resolving"
+        assert fk["_Z9uart_sendv"] == "F_UART_NEW", "the re-parsed file's func-key was not updated"
+
+    def test_a_baseline_without_func_keys_does_not_break_the_merge(self):
+        """Versions produced before this fix have no func_keys; merging must still work."""
+        from incremental.parse_merge import merge_model
+        baseline = {"functions": {}, "globalVariables": {}, "dataDictionary": {}, "hashes": {},
+                    "edges": {"typeUsers": {}, "macroUsers": {}}, "tu_includes": {},
+                    "entity_files": {}, "override_pairs": [], "metadata": {}}
+        merged = merge_model(baseline, dict(baseline), [])
+        assert merged["func_keys"] == {}
