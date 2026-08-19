@@ -304,6 +304,75 @@ def _global_ids(func, which, functions_data, spec_ids):
     return out
 
 
+def _trace_derivation(name, func, functions_data, global_variables_data, spec_ids,
+                      precondition, input_entries):
+    """Why each Precondition/Input entry is there -- and what was left out.
+
+    DEBUG only (`--verbose`), and it returns before doing any work when DEBUG is
+    off, so a normal run pays nothing. Exists because the derivation is otherwise
+    only checkable by re-deriving it by hand: every bug found on 2026-08-19 was an
+    entry that should not have been there, or one that should have been and was not.
+    The `drop` lines are the useful ones -- exclusions are invisible in the document.
+    """
+    import logging
+    from core.logging_setup import get_logger
+    logger = get_logger("testSpecs")
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+
+    def qn(fid):
+        return short_name((functions_data.get(fid) or {}).get("qualifiedName", "")) or fid
+
+    # Re-walk recording HOW each stub was reached: directly, or through which
+    # inlined callee. Mirrors _mocked_callee_ids.
+    via, seen = {}, set()
+    stack = [(cid, None) for cid in (func.get("callsIds") or [])]
+    while stack:
+        cid, through = stack.pop()
+        if cid in seen:
+            continue
+        seen.add(cid)
+        if cid in spec_ids:
+            via.setdefault(cid, through)
+            continue
+        callee = functions_data.get(cid)
+        if not callee:
+            continue
+        stack.extend((c, cid) for c in (callee.get("callsIds") or []))
+
+    lines = [f"derivation: {name}"]
+    for m in precondition.get("mockFunctions") or []:
+        fid = next((f for f in via if f"{qn(f)}()" == m), None)
+        through = via.get(fid)
+        lines.append(f"    mock  {m:<22} "
+                     + (f"via inlined {qn(through)}" if through else "direct call"))
+    for g in precondition.get("globals") or []:
+        lines.append(f"    glob  {g.get('name',''):<22} read or written on the executed path")
+
+    # Globals the model's transitive set carries but the mock boundary excluded.
+    bounded = {g.get("globalId") for g in precondition.get("globals") or []}
+    for which in ("reads", "writes"):
+        for gid in (func.get(f"{which}GlobalIdsTransitive") or []):
+            if gid in bounded:
+                continue
+            gv = global_variables_data.get(gid) or {}
+            gname = short_name(gv.get("qualifiedName", "")) or gid
+            reader = next((qn(c) for c in via
+                           if gid in ((functions_data.get(c) or {}).get(f"{which}GlobalIds") or [])),
+                          None)
+            verb = "read" if which == "reads" else "written"
+            lines.append(f"    drop  {gname:<22} "
+                         + (f"only {verb} by mocked {reader}()" if reader
+                            else f"only {verb} beyond the mock boundary"))
+    for e in input_entries:
+        kind = e.get("kind", "")
+        why = {"parameter": "parameter", "global": "global read on the executed path",
+               "mockReturn": "return value of a mocked callee",
+               "mockWriteback": "field a mocked callee writes back, read here"}.get(kind, kind)
+        lines.append(f"    in    {e.get('name',''):<22} {why}")
+    logger.debug("\n".join(lines))
+
+
 def _out_parameter_entries(func, params, dd):
     """Expected-Results entries for out-parameters the function actually writes.
 
@@ -379,6 +448,9 @@ def _build_spec(fid, func, unit_key, unit_name, functions_data,
                               "text": _ranged(g.get("type", ""), gname, dd)})
     input_entries += _mock_return_entries(func, functions_data, spec_ids, dd)
     input_entries += _mock_writeback_entries(func, functions_data, spec_ids, dd)
+
+    _trace_derivation(name, func, functions_data, global_variables_data, spec_ids,
+                      precondition, input_entries)
 
     # ---- Expected Results -------------------------------------------------
     out_params = _out_parameter_entries(func, params, dd)
