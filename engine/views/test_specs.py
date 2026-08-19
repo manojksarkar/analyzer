@@ -304,6 +304,34 @@ def _global_ids(func, which, functions_data, spec_ids):
     return out
 
 
+def _out_parameter_entries(func, params, dd):
+    """Expected-Results entries for out-parameters the function actually writes.
+
+    The signature alone only says a parameter *could* be written.
+    `applyWithOperation(Operation* op, ...)` merely calls `op->apply(a, b)` and never
+    modifies `op`, yet a signature-only rule asserted "Successfully updated
+    Operation * op" -- a statement the tester writes as a check, watches fail, and
+    then hunts for a defect that is not there.
+
+    So the body decides, via `writesParams`: the pointer/reference parameters it is
+    seen to write, by dereference (`*out = x`) or by field (`w->id = x`). The wiki
+    asserts the whole parameter ("one entry per out-parameter written"), so no
+    per-field breakdown is emitted.
+
+    A parameter not in that set is not asserted. The key is omitted when empty, so a
+    model parsed before it existed reads as "writes nothing" and its out-parameters
+    go unasserted. That is the safe direction to fail: a missing assertion is a gap a
+    reviewer can see, whereas an unprovable one costs a tester real time.
+    Regenerating needs a full re-parse, not `--from-phase 2`.
+    """
+    written = set(func.get("writesParams") or [])
+    return [{"kind": "outParameter", "name": p.get("name", ""),
+             "type": p.get("type", ""),
+             "text": _ranged(p.get("type", ""), p.get("name", ""), dd)}
+            for p in params
+            if _is_out_parameter(p) and p.get("name", "") in written]
+
+
 def _global_name(gid, g):
     return short_name(g.get("qualifiedName", "")) or gid.split(KEY_SEP)[-1]
 
@@ -353,10 +381,7 @@ def _build_spec(fid, func, unit_key, unit_name, functions_data,
     input_entries += _mock_writeback_entries(func, functions_data, spec_ids, dd)
 
     # ---- Expected Results -------------------------------------------------
-    out_params = [{"kind": "outParameter", "name": p.get("name", ""),
-                   "type": p.get("type", ""),
-                   "text": _ranged(p.get("type", ""), p.get("name", ""), dd)}
-                  for p in params if _is_out_parameter(p)]
+    out_params = _out_parameter_entries(func, params, dd)
     written_globals = []
     for gid in sorted(writes):
         g = global_variables_data.get(gid)

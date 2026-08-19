@@ -19,7 +19,7 @@ from views.test_specs import (  # noqa: E402
 
 
 def _fn(name, *, visibility="default", file="U.cpp", line=1, params=(),
-        ret="int", calls=(), reads=(), writes=(), iid=""):
+        ret="int", calls=(), reads=(), writes=(), iid="", writes_params=()):
     f = {"qualifiedName": name, "visibility": visibility, "returnType": ret,
          "location": {"file": file, "line": line}, "parameters": list(params),
          "callsIds": list(calls), "interfaceId": iid}
@@ -27,6 +27,9 @@ def _fn(name, *, visibility="default", file="U.cpp", line=1, params=(),
         f["readsGlobalIds"] = list(reads)
     if writes:
         f["writesGlobalIds"] = list(writes)
+    if writes_params:
+        # Out-parameters are asserted only where the body is seen to write them.
+        f["writesParams"] = list(writes_params)
     return f
 
 
@@ -36,7 +39,8 @@ def model():
         "C|U|pub": _fn("pub", params=[{"name": "a", "type": "int"},
                                       {"name": "out", "type": "int*"}],
                        calls=["C|U|priv", "C|U|other", "C|O|far"],
-                       reads=["C|U|gRead"], writes=["C|U|gWrite"], iid="IF_01"),
+                       reads=["C|U|gRead"], writes=["C|U|gWrite"], iid="IF_01",
+                       writes_params=["out"]),
         "C|U|priv": _fn("priv", visibility="private", line=2),
         "C|U|other": _fn("other", line=3, ret="short"),
         "C|U|inlinepub": _fn("inlinepub", file="U.h", line=4),
@@ -323,3 +327,33 @@ def test_mock_writeback_ignores_a_same_named_field_of_another_struct():
     entries = _writeback_model(reads_fields=[
         {"var": "other", "structType": "Other", "field": "lba"}])
     assert [e for e in entries if e["kind"] == "mockWriteback"] == []
+
+
+# --- Expected Results: only out-parameters the body actually writes ---------
+#
+# Wiki: "one entry per out-parameter written". The signature only says a parameter
+# COULD be written; asserting on that alone produced "Successfully updated
+# Operation * op" for a function that merely calls through it.
+
+def _outparam_entries(writes_params=None):
+    fn = _fn("f", file="U.cpp", params=[{"name": "w", "type": "Widget_t *"}],
+             ret="void", iid="IF_01",
+             writes_params=writes_params or ())
+    units = {"C|U": {"name": "U", "fileName": "U.cpp", "functionIds": ["C|U|f"]}}
+    out = _build_test_specs(units, {"C|U|f": fn}, {}, {})
+    return out["C|U"]["functions"][0]["expected"]["outParameters"]
+
+
+def test_out_parameter_never_written_is_not_asserted():
+    """`applyWithOperation(Operation* op)` only calls `op->apply()`. Asserting
+    'Successfully updated op' gives the tester a check that can never pass."""
+    assert _outparam_entries() == []
+
+
+def test_written_out_parameter_is_asserted_as_a_whole():
+    """`writesParams` covers both `*w = x` and `w->id = x`; the wiki asserts the
+    parameter, not its fields, so one entry is emitted either way."""
+    entries = _outparam_entries(["w"])
+    assert [e["name"] for e in entries] == ["w"]
+    assert entries[0]["kind"] == "outParameter"
+    assert entries[0]["text"].startswith("Widget_t * w")

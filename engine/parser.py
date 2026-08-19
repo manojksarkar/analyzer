@@ -602,6 +602,14 @@ global_access_writes = defaultdict(set)  # func_key -> set of var_id
 # function goes on to read can change its behaviour, and only those belong in Input.
 # Reads only -- a field the function assigns to is an output, not test setup.
 field_access_reads = defaultdict(set)
+# func_key -> set of pointer/reference PARAMETER names the body writes through,
+# either by dereference (`*out = x`) or by field (`w->id = x`). Both mean the same
+# thing to SWE.4: this out-parameter is an output. The wiki asserts the whole
+# parameter ("one entry per out-parameter written"), not individual fields, so no
+# per-field breakdown is kept. Without this the only evidence would be the
+# parameter's TYPE, which wrongly asserted "Successfully updated" for pointers a
+# function merely reads or calls through.
+param_writes = defaultdict(set)
 # First non-trivial return expression per function (for behaviour output naming)
 function_return_expr = {}
 
@@ -1800,6 +1808,16 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
         return
     elif kind == cindex.CursorKind.DECL_REF_EXPR and current_key:
         ref = cursor.referenced
+        if is_write and ref and ref.kind == cindex.CursorKind.PARM_DECL:
+            # Reached with is_write=True through `*out = x` (the UNARY_OPERATOR
+            # deref falls through to the generic recursion, which preserves the
+            # flag) or through `w->id = x` (the MEMBER_REF_EXPR branch above
+            # recurses into its base with the flag still set).
+            # Only a pointer/reference parameter counts: assigning to a by-value
+            # parameter (`a = a - b`) writes a local copy the caller never sees.
+            ptype = (ref.type.spelling if ref.type else "") or ""
+            if ref.spelling and ("*" in ptype or "&" in ptype):
+                param_writes[current_key].add(ref.spelling)
         if ref and ref.kind == cindex.CursorKind.VAR_DECL:
             par = ref.semantic_parent
             if par and par.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE):
@@ -2212,6 +2230,9 @@ def build_metadata():
                 {"var": v, "structType": t, "field": f}
                 for v, t, f in sorted(fields_read)
             ]
+        written_params = param_writes.get(func_key, set())
+        if written_params:
+            functions_dict[fid]["writesParams"] = sorted(written_params)
 
         # Direction: Get=Out, Set=In, both=In. No direct global access -> In.
         if write_raw:
