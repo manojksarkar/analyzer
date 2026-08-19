@@ -23,6 +23,56 @@ def _line(label: str, value: Any) -> str:
     return f"  {label:<16}: {value}"
 
 
+def _llm_lines(counts: Dict[str, Any]) -> List[str]:
+    """The LLM section: how many calls a run made, and how many produced nothing.
+
+    Token counts already say what was SPENT. They do not say whether the spending bought
+    anything, and that gap hid a real failure: a run took 2062 seconds and produced mechanical
+    flowchart labels while the gateway answered every request correctly — the replies were being
+    destroyed after arrival. Tokens looked healthy throughout. "1 call in 3 returned nothing" is
+    the line that would have pointed straight at it.
+
+    `counts` is {(kind, outcome): n} flattened to {"kind|outcome": n} by the caller, summed
+    across every phase subprocess.
+    """
+    if not counts:
+        return []
+    by_kind: Dict[str, Dict[str, int]] = {}
+    for key, n in counts.items():
+        kind, _, outcome = str(key).partition("|")
+        by_kind.setdefault(kind, {}).setdefault(outcome, 0)
+        by_kind[kind][outcome] += int(n or 0)
+
+    tot = {"ok": 0, "empty": 0, "error": 0}
+    for oc in by_kind.values():
+        for k in tot:
+            tot[k] += oc.get(k, 0)
+    calls = sum(tot.values())
+    if not calls:
+        return []
+
+    failed = tot["empty"] + tot["error"]
+    L = [_THIN, "  LLM CALLS (a failed call means the caller fell back to a mechanical result)"]
+    L.append(f"    Total     : {calls:<5}  answered {tot['ok']} ({_pct(tot['ok'], calls)})")
+    if failed:
+        L.append(f"    Failed    : {failed:<5}  empty {tot['empty']}, error {tot['error']}"
+                 f"  -> {_pct(failed, calls)} of calls produced NOTHING")
+    for kind in sorted(by_kind):
+        oc = by_kind[kind]
+        k_ok, k_empty, k_err = oc.get("ok", 0), oc.get("empty", 0), oc.get("error", 0)
+        k_tot = k_ok + k_empty + k_err
+        detail = f"ok {k_ok}"
+        if k_empty:
+            detail += f", empty {k_empty}"
+        if k_err:
+            detail += f", error {k_err}"
+        L.append(f"      {kind:<22} {k_tot:<5}  ({detail})")
+    if failed:
+        L.append("    A non-zero failed count means the document contains fallback text or")
+        L.append("    mechanical labels. Check the log for 'empty response' / 'HTTP'.")
+    return L
+
+
 def build_report(stats: Dict[str, Any]) -> List[str]:
     """Build the report lines from a stats dict (see generate_incremental/full)."""
     decision = stats.get("decision", "full")
@@ -92,6 +142,8 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
         if xv_fn or xv_gl or xv_fc:
             L.append(f"    X-version : {xv_fn} function(s) + {xv_gl} global(s) + {xv_fc} flowchart(s) reused "
                      f"from a prior version via the content index (revert / cross-branch)")
+
+    L.extend(_llm_lines(stats.get("llmCalls") or {}))
 
     L.append(_THIN)
     docs = stats.get("documents") or []

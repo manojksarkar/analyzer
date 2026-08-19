@@ -542,6 +542,28 @@ a micro-optimisation: per-entity lookups on a 20k-function project mean 20k roun
 B5a), which costs more than the LLM calls it is trying to avoid."""
 
 
+llm_call_stats = Table(
+    "llm_call_stats", metadata,
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("phase", String, nullable=False),      # which subprocess reported (script name)
+    Column("kind", String, nullable=False),       # description | label | summary | behaviour | ...
+    Column("outcome", String, nullable=False),    # ok | empty | error
+    Column("n", Integer, nullable=False),
+    Index("ix_llm_call_stats_version", "version_id"),
+)
+"""How many LLM calls a run made, and how many of them came back usable.
+
+`tokens` records what was SPENT; this records whether the spending bought anything. A run once
+took 2062 seconds and produced mechanical flowchart labels while the gateway answered every
+request correctly — the replies were being destroyed after arrival. Token counts looked healthy
+throughout. "1 call in 3 returned empty" is the number that would have pointed straight at it,
+and nothing was recording it.
+
+One row per (process, kind, outcome): the phases are separate subprocesses, so each flushes its
+own tally and the orchestrator sums them for the report. Deliberately not deduplicated —
+`phase` keeps the breakdown, which is what tells you WHERE the failures are."""
+
+
 parse_snapshots = Table(
     "parse_snapshots", metadata,
     Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),

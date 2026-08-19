@@ -267,7 +267,7 @@ class LabelGenerator:
             '"drop": ["N12"]}'
         )
 
-        raw = self._client.generate(self._SIMPLIFY_SYSTEM, prompt)
+        raw = self._client.generate(self._SIMPLIFY_SYSTEM, prompt, kind="cfg-simplify")
         if not raw:
             logger.debug("CFG simplification: no LLM response for '%s'",
                          func_entry.qualified_name)
@@ -531,7 +531,7 @@ class LabelGenerator:
                 prompt = base_prompt + _build_retry_note(last_failures)
 
             # ── Call LLM ──────────────────────────────────────────────
-            raw = self._client.generate(SYSTEM_PROMPT, prompt)
+            raw = self._client.generate(SYSTEM_PROMPT, prompt, kind="flowchart-label")
 
             if raw is None:
                 no_response_attempts += 1
@@ -660,7 +660,7 @@ class LabelGenerator:
                          func_entry.qualified_name)
             return label_map
 
-        raw = self._client.generate(self._COHERENCE_SYSTEM, prompt)
+        raw = self._client.generate(self._COHERENCE_SYSTEM, prompt, kind="flowchart-coherence")
         if not raw:
             logger.debug("Coherence pass: no LLM response for '%s'",
                          func_entry.qualified_name)

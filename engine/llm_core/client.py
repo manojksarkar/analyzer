@@ -41,6 +41,7 @@ from typing import Dict, List, Optional
 import requests
 
 from .headers import build_openai_headers, resolve_api_key
+from . import callstats
 from .think import strip_think_section
 from . import tokens as token_counter
 
@@ -279,10 +280,17 @@ class LlmClient:
         """
         return self._num_ctx
 
-    def generate(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+    def generate(self, system_prompt: str, user_prompt: str,
+                 *, kind: str = "other") -> Optional[str]:
         """Call the LLM and return the (think-stripped) response text.
 
         Returns None on persistent failure (after retries) or empty response.
+
+        `kind` labels the call for the run's LLM accounting — description, label, summary,
+        behaviour. Every call site reaches the model through here, so this is the one place that
+        can count them; the report then says how many calls a run made and how many produced
+        nothing, which is the number that distinguishes "the LLM is expensive" from "the LLM is
+        not answering".
         """
         trace_ord = _trace_request(self._provider, self._model, system_prompt, user_prompt) \
             if _trace_enabled() else 0
@@ -304,6 +312,7 @@ class LlmClient:
                 if raw:
                     cleaned = strip_think_section(raw)
                     if cleaned:
+                        callstats.record(kind, callstats.OK)
                         if trace_ord:
                             _trace_response(trace_ord, cleaned)
                         return cleaned
@@ -318,6 +327,11 @@ class LlmClient:
                     "LLM (%s/%s) returned empty response after %d attempt(s)",
                     self._provider, self._model, total_attempts,
                 )
+                # Counted once per CALL, not per attempt: the caller asked one question and got
+                # no answer, and that is what the report has to say. Retries are visible in the
+                # log, and counting them here would make a healthy run with one flaky retry look
+                # like a broken one.
+                callstats.record(kind, callstats.EMPTY)
                 if trace_ord:
                     _trace_response(trace_ord, "")
                 return None
@@ -353,11 +367,13 @@ class LlmClient:
                 "LLM (%s/%s) failed after %d attempt(s): %s",
                 self._provider, self._model, total_attempts, last_exc,
             )
+        callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY)
         if trace_ord:
             _trace_response(trace_ord, f"<failed: {last_exc}>" if last_exc else "<empty>")
         return None
 
-    def call(self, messages: list, *, temperature: Optional[float] = None) -> Optional[str]:
+    def call(self, messages: list, *, temperature: Optional[float] = None,
+             kind: str = "other") -> Optional[str]:
         """Send a multi-message conversation to the LLM.
 
         This is the lower-level interface that ``generate()`` delegates to.
@@ -396,6 +412,7 @@ class LlmClient:
                 if raw:
                     cleaned = strip_think_section(raw)
                     if cleaned:
+                        callstats.record(kind, callstats.OK)
                         if trace_ord:
                             _trace_response(trace_ord, cleaned)
                         return cleaned
@@ -409,6 +426,7 @@ class LlmClient:
                     "LLM (%s/%s) call() empty response after %d attempt(s)",
                     self._provider, self._model, total_attempts,
                 )
+                callstats.record(kind, callstats.EMPTY)
                 if trace_ord:
                     _trace_response(trace_ord, "")
                 return None
@@ -443,6 +461,7 @@ class LlmClient:
                 "LLM (%s/%s) call() failed after %d attempt(s): %s",
                 self._provider, self._model, total_attempts, last_exc,
             )
+        callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY)
         if trace_ord:
             _trace_response(trace_ord, f"<failed: {last_exc}>" if last_exc else "<empty>")
         return None

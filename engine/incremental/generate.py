@@ -160,6 +160,25 @@ def _persist_run_metadata(store, version_id: str, project_id: str, model_dir: st
 _ORCH_PARTS = ("functions", "globals", "hashes", "edges")
 
 
+def llm_call_counts(version_id: str) -> Dict[str, int]:
+    """{"kind|outcome": n} for a version, summed over every phase subprocess.
+
+    Read at report time, not accumulated in the orchestrator: the phases are separate
+    processes, so the orchestrator's own counter would always be empty. Best-effort — the
+    report must still print if the accounting is unavailable.
+    """
+    if not version_id:
+        return {}
+    try:
+        from core.db import get_engine, is_database_configured
+        if not is_database_configured():
+            return {}
+        from llm_core.callstats import load_for_version
+        with get_engine().connect() as cx:
+            return {f"{k}|{o}": n for (k, o), n in load_for_version(cx, version_id).items()}
+    except Exception:
+        return {}
+
 def _orchestrator_model(store, version_id: str, model_dir: str, model_store: str,
                         parts=_ORCH_PARTS) -> Dict[str, Any]:
     """The finished model, for the orchestrator's own bookkeeping (report + fingerprints).
@@ -456,6 +475,7 @@ def generate_full(
         "flowcharts": {"total": len(functions), "regenerated": len(functions), "carried": 0},
         "files": {"total": files_total, "regenerated": files_total, "carried": 0},
         "documents": documents, "warnings": [],
+        "llmCalls": llm_call_counts(version_id),
     })
     emit_report(_report_lines, version_dir=vdir)
     # ...and to the store, so the report is readable from any node (versions.report existed

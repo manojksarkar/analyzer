@@ -50,7 +50,8 @@ from incremental.generate import (_manifest, scope_to_args, per_component_docx_a
                                   resolve_run_config, generate_full, _now_iso,
                                   snapshot_parse_model, apply_no_llm,
                                   _orchestrator_model,
-                                  _persist_run_metadata)
+                                  _persist_run_metadata,
+                                  llm_call_counts as _llm_call_counts)
 
 
 def _entity_kind(key: str) -> str:
@@ -934,6 +935,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         "files": {"total": len(all_files), "regenerated": len(impacted_files),
                   "carried": len(all_files) - len(impacted_files)},
         "documents": documents, "warnings": decision["warnings"],
+        "llmCalls": _llm_call_counts(version_id),
     }
     _report_lines = build_report(stats)
     emit_report(_report_lines, version_dir=vdir)

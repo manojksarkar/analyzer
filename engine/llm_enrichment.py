@@ -259,7 +259,7 @@ def _call_llm(prompt: str, config: dict, *, system: str = "", kind: str = "defau
         domain = _get_domain_context(config)
         if domain:
             system = f"{system}\n\n{domain}".strip() if system else domain
-    text = client.generate(system, prompt)
+    text = client.generate(system, prompt, kind=kind)
     if not text and client.provider == "ollama":
         _log.warning(
             "Ollama returned no response (prompt may exceed context window or "
