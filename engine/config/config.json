@@ -14,6 +14,8 @@
   "layers": {
     "Layer1": {
       "path": "Layer1",
+      "dataDictionary": "engine/config/data_dictionary.layer1.example.csv",
+      "macros": "engine/config/macros.layer1.example.json",
       "groups": {
         "My Sample": {
           "Sample Core": "Sample/Core",
@@ -49,6 +51,8 @@
     },
     "Layer2": {
       "path": "Layer2",
+      "dataDictionary": "engine/config/data_dictionary.layer2.example.csv",
+      "macros": "engine/config/macros.layer2.example.json",
       "groups": {
         "Platform": {
           "Gpio": "Platform/Gpio",
@@ -71,6 +75,8 @@
     },
     "Layer3": {
       "path": "Layer3",
+      "dataDictionary": "",
+      "macros": "",
       "groups": {}
     }
   },

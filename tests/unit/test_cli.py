@@ -208,12 +208,67 @@ class TestStrictArgValidation:
         assert _declared_flags() == _branch_flags()
 
 
+class TestLayerScopedFlags:
+    """The layer-scoped flags all take <layer> <path> and validate the layer.
+
+    `--include-path-layer` had no coverage at all before 2026-08-18 — the AST check
+    above only proves _KNOWN_FLAGS matches the parse branches, never that the flag
+    behaves.
+    """
+
+    def test_include_path_layer_rejects_unknown_layer(self):
+        result = _run_cli("--include-path-layer", "NoSuchLayer", PROJECT_ROOT, SAMPLE_PROJECT)
+
+        assert result.returncode == 1
+        assert "unknown layer" in _output(result).lower()
+
+    def test_include_path_layer_rejects_missing_directory(self):
+        result = _run_cli("--include-path-layer", "Layer1",
+                          os.path.join(PROJECT_ROOT, "no_such_dir_xyz"), SAMPLE_PROJECT)
+
+        assert result.returncode == 1
+        assert "directory not found" in _output(result).lower()
+
+    def test_include_path_layer_needs_two_arguments(self):
+        result = _run_cli("--include-path-layer", "Layer1")
+
+        assert result.returncode == 1
+        assert "two arguments" in _output(result).lower()
+
+    def test_old_include_path_name_is_rejected_with_a_suggestion(self):
+        # Renamed 2026-08-18. No deprecation alias — the unknown-option handler's
+        # difflib hint is what makes the rename self-correcting, so pin it.
+        result = _run_cli("--include-path", "Layer1", PROJECT_ROOT, SAMPLE_PROJECT)
+
+        out = _output(result)
+        assert result.returncode == 1
+        assert "unknown option" in out.lower()
+        assert "--include-path-layer" in out
+
+    def test_data_dictionary_layer_rejects_unknown_layer(self):
+        result = _run_cli("--data-dictionary-layer", "NoSuchLayer",
+                          os.path.join(PROJECT_ROOT, "engine", "config", "data_dictionary.csv"),
+                          SAMPLE_PROJECT)
+
+        assert result.returncode == 1
+        assert "unknown layer" in _output(result).lower()
+
+    def test_data_dictionary_layer_missing_file_exits_2(self):
+        # Deliberately 2, matching --macros-layer. --include-path-layer uses 1 for a
+        # missing dir; that inconsistency is known and recorded, not fixed here.
+        result = _run_cli("--data-dictionary-layer", "Layer1",
+                          os.path.join(PROJECT_ROOT, "no_such_dd.csv"), SAMPLE_PROJECT)
+
+        assert result.returncode == 2
+
+
 class TestHelp:
     def test_help_exits_zero_and_lists_options(self):
         result = _run_cli("--help")
 
         assert result.returncode == 0
-        for flag in ("--clean", "--from-phase", "--selected-component", "--macros-layer"):
+        for flag in ("--clean", "--from-phase", "--selected-component", "--macros-layer",
+                     "--data-dictionary-layer", "--include-path-layer"):
             assert flag in result.stdout
 
     def test_short_help_flag(self):

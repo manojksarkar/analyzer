@@ -1,0 +1,8 @@
+Name,Kind,EntryName,Range,Comment
+BufferSize_t,typedef,,0-1023,Transfer buffer size in bytes (Layer1 window)
+FlashPage_t,typedef,,0-4095,Physical page index within a flash block
+RetryCount_t,typedef,,0-7,Retry budget for a single host request
+LayerMode,enum,,0-2,Layer1 operating mode
+,enumerator,MODE_IDLE,0,No transfer in flight
+,enumerator,MODE_ACTIVE,1,Transfer in progress
+,enumerator,MODE_FAULT,2,Unrecoverable error latched

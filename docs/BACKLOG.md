@@ -9,8 +9,9 @@
 |---|---|---|---|---|
 | SH-1 | Requirements / Linked Work Items source (Polarion / SWE.1) | input | blocked | SWE2 + SWE4 |
 | SH-2 | Same group/component name reused across layers collides (needs layer-qualified identity) | issue | open | — |
-| SH-3 | Gate updated data dictionary + integrate for correctness | enhance | open | engine/config/data_dictionary.csv |
+| SH-3 | Per-layer data dictionary: layer-scoped entries + layer-aware `get_range` | issue | done 2026-08-18 | §17 |
 | SH-4 | Array data range: an `int[6]` global reports `NA` (an array's range is not one interval — needs a rule, e.g. element range + length) | enhance | open | engine/utils.py |
+| SH-5 | `entity_hashes` / `_type_keys` stay bare-qn while the dictionary is layer-keyed: two layers defining one type share a hash (last definition wins), so a narrowed parse can miss a change in the loser. Needs `typeUsers` keyed by layer too — `impact_set` joins hash keys to it directly. | issue | open | engine/parser.py, incremental/impact.py |
 
 ## SWE.3 — detailed design
 | ID | Item | Type | Status | Ref |

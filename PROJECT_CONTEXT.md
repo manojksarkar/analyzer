@@ -172,6 +172,101 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-18 (**Per-layer data dictionary — closes backlog SH-3.** Branch
+> `feat/per-layer-data-dictionary` off `poc-4`. **The rule, decided with the user and general to every
+> per-layer input: resolving anything for layer `L` uses global + `L` only; another layer's inputs are
+> never consulted, and layers are never blended.** Macros (`args_for_scope`) and the Phase-3 flowchart
+> include dirs (`_resolve_layer_dirs`) already obeyed it; the data dictionary and the Phase-1 include
+> dirs did not.
+> **(1) Root cause.** `data_dictionary` is keyed by bare qualified name and written by straight
+> assignment, so two layers defining `UINT8`/`enum Status` meant **the last file parsed silently won,
+> for every layer** — from source alone, before any client CSV. `run_views._filter_model_to_components`
+> filters functions/globals/units/components and deliberately **not** `dataDictionary`, so every
+> layer's DOCX could show another layer's range.
+> **(2) Entries carry `layer`.** `parser.layer_for_rel_file()` resolves file → component → layer (the
+> same path `clang_args_for` uses, so a type's layer and its TU's `-D` set cannot disagree). New
+> `_dd_store()` keeps the bare key for the first writer and any same-layer redefinition (today's
+> last-wins, unchanged) and writes `qn@<layer>` for a *different* layer, following the existing
+> `typedef@qn:file:line` idiom. Builtins/`PRIMITIVES` are stamped `layer: None` = the global tier,
+> visible to everyone. `_log_dd_collisions()` prints one line per name defined in >1 layer — these were
+> invisible before, because the loser was overwritten.
+> **(3) `get_range(type, dd, layer=None, _depth=0)`.** The layer filter is applied at **all three**
+> lookup paths, because guarding only the direct hit lets the `qualifiedName` scan find the very entry
+> just rejected, and the alias recursion resolve one hop down against another layer: direct hit
+> (`utils.py:533`), qualifiedName scan (`:561`), alias recursion (`:549`/`:569` — `layer` is threaded).
+> That scan is also where the pre-existing first-match-wins ambiguity lived, so one filter fixes both.
+> `layer=None` keeps the pre-layer behaviour exactly, so every existing caller and test is unaffected.
+> **(4) Config carries PER-LAYER inputs only.** `layers.<L>.dataDictionary` and `layers.<L>.macros` sit
+> beside `path`/`groups`, so no layer name is repeated in a by-layer map where a typo matches nothing.
+> New `core.config` helpers: `layer_source()`, `layer_sources()`. `clang.macrosByLayer` still works,
+> deprecated; `layers.<L>.macros` wins for the same layer.
+> **Project-wide sources are CLI-only** (user decision, 2026-08-18): `--data-dictionary` / `--macros`.
+> A top-level `dataDictionary.file` key was built and then **removed** — every entry point already
+> passes the project-wide dictionary as a flag (`run.py`; API/incremental via `currentDataDictId` →
+> `--data-dictionary`, `incremental/generate.py:214`), so the key was a second silent source for one
+> input. **`clang.macrosFile` / `clang.macroScopes` are the deliberate exception and stay honoured in
+> code** — they are pre-existing (S3-1) and the API has **no** CLI path for macros: the main job path
+> runs `incremental/{generate,engine}.py` (`_build_cmd` is re-export only, `pipeline_runner.py:1253`)
+> and passes `--data-dictionary` but no macro flag, so the wizard's `preprocessor_definitions` reach
+> Clang *only* through `cfg["clang"]["macrosFile"]` (`pipeline_runner.py:460`). Dropping that key would
+> break the web macro feature end-to-end. Neither macro key appears in the shipped `config.json`.
+> The shipped config wires the **per-layer** keys to the committed examples (Layer1/Layer2 populated,
+> Layer3 left `""` to show both are optional) — empty/whitespace is treated as absent by
+> `layer_source()`. Values, not `//` comments: the file is `.json`, so comments light up every editor
+> with "Comments are not permitted in JSON" even though `load_config` strips them.
+> **(5) CLI `--data-dictionary-layer <layer> <path>`** mirrors `--macros-layer` (repeatable, unknown
+> layer → exit 1, missing file → exit 2). `_KNOWN_FLAGS` + the module docstring + `group_planner`'s
+> call sites moved together, as `test_cli.py`'s AST walk requires.
+> **(6) Phase-1 include paths were the same leak (was a deferred finding, promoted to a task).**
+> `parser.py` flattened **every** layer's dirs into the module-level `CLANG_ARGS`, discarding the layer
+> keys — masked in a single-layer run because run.py writes only the selected layer's dirs, so it bit
+> exactly the multi-layer run. They now live in `_LAYER_INCLUDE_ARGS` and are appended by
+> `clang_args_for()`, making that function the single per-TU resolution point for both includes and
+> defines. A file outside every layer still gets all dirs (no global include set exists to fall back
+> on; that is the pre-change behaviour and the only way an orphan header parses). Two consequences
+> handled: `parse_global_access` was parsing with raw `CLANG_ARGS` (so it already missed per-layer
+> macros) → now `clang_args_for(path)`; and `parseFingerprint` would no longer notice an include/macro
+> change → it now hashes the global args plus every layer's includes and defines, sorted.
+> **(7) Phase 4 needed no change** (the plan flagged it as unknown): `docx_exporter` reads ranges only
+> from the already-resolved `interface_tables.json`, and its unit-header table selects dd entries by
+> `location.file`, which is inherently layer-correct.
+> **(8) Narrowed-parse trap found + fixed.** `parse_merge._file_of` falls back to the text after `@`
+> when `entity_files` has no entry — for `qn@Layer2` that yields a *layer name*, which matches no
+> dropped file, so the entry would be kept from the baseline forever and never refresh. `_dd_store`
+> now registers `entity_files[key] = <real file>`.
+> **Known limit → new backlog SH-5:** `entity_hashes` / `_type_keys` stay bare-qn on purpose. They must
+> match `edges.json` `typeUsers`, which `visit_usage` keys by bare name and `impact_set` looks a changed
+> hash key up in directly — a `qn@Layer` hash key would find no users and silently skip regenerating
+> them. So two layers defining one type still share a hash (last definition wins) and a narrowed parse
+> can miss a change in the loser; fixing it means keying `type_users` by layer too.
+> **Verified:** full suite green (739 unit + pipeline), `tests/snapshots/Sample/interface_tables.json`
+> **unchanged**. A/B on `SampleCppProject` with both layers given a dictionary overriding `int`:
+> `model/dataDictionary.json` carries all three keys — `int` (global, libclang-measured, untouched by
+> either CSV), `int@Layer1`, `int@Layer2` — and the Layer1 run renders `L1-ONLY-RANGE` for all 114
+> occurrences, never Layer2's, while the default config still renders the ordinary
+> `-0x80000000-0x7FFFFFFF`. (Sample `Layer2/Platform` has 156 functions all marked `private`, so its
+> interface tables are empty — pre-existing, confirmed identical on a stashed baseline.)
+> **(9) CLI naming made consistent — `--include-path` → `--include-path-layer`.** Every other
+> layer-scoped flag says so in its name (`--macros-layer`, `--data-dictionary-layer`); `--include-path`
+> took a layer as its first argument and did not, so you could not tell from the name that it was
+> scoped. It has no project-wide sibling (an include dir always belongs to a layer), which is why the
+> suffix was originally omitted — but "suffix it if it takes a layer" is a rule a reader can apply from
+> the name alone, whereas "suffix it only when a global sibling exists" requires already knowing the
+> flag set. Straight rename, no deprecation alias: every caller is in-repo
+> (`api/services/pipeline_runner.py:660` is the only programmatic one), the flag was ~2 months old, and
+> `run.py`'s unknown-option handler already suggests the new name — `--include-path` scores **0.824**
+> against `--include-path-layer`, above the 0.7 `difflib` cutoff. An alias would be permanent cruft that
+> recreates the same "which one is current?" ambiguity. Internal `include_path_args` renamed to match.
+> Historical PROJECT_CONTEXT entries (2026-06-15 etc.) keep the old name deliberately — a dated log that
+> gets rewritten to match today's names stops being a record.
+> **Known inconsistency left alone (needs a decision):** `--include-path-layer` exits **1** on a missing
+> directory, while `--macros-layer` / `--data-dictionary-layer` exit **2** on a missing file. Aligning
+> them is a behaviour change, not a rename, so it was not folded in here.
+> New tests: `tests/unit/test_data_dictionary_layers.py` (18 — isolation asserted once per lookup path,
+> same-name-two-layers, global tier, collision bookkeeping) + `TestLayerSources` in
+> `tests/unit/test_core_config.py` (7). Samples: `engine/config/data_dictionary.layer{1,2}.example.csv`,
+> sharing `BufferSize_t` at different ranges, shipped **unreferenced** like the macro examples.)
+
 > Updated: 2026-08-13 (**`clang.clangArgs` is now a discoverable config key — the fix for cross-target parse
 > errors like `use of undeclared identifier '__builtin_arm_wfi'`.** No new plumbing: the key was already
 > honored by both parse paths (`engine/parser.py:251` appends it to `CLANG_ARGS`; `engine/views/flowcharts.py:813`
@@ -447,7 +542,8 @@
 > `views/flowcharts.py` picks `"*"` + its group's layer via the new `_resolve_layer_name` (extracted from
 > `_resolve_layer_dirs`).
 > **(4) CLI:** `--macros <path>` unchanged (global); new repeatable **`--macros-layer <layer> <path>`**,
-> mirroring `--include-path`'s two-arg validation (unknown layer → exit 1, missing file → exit 2). A second
+> mirroring `--include-path`'s two-arg validation (unknown layer → exit 1, missing file → exit 2; that flag
+> is now `--include-path-layer` — see the 2026-08-18 entry). A second
 > flag rather than overloading `--macros` arity, which would have to guess layer-vs-path.
 > **(5) Config-driven sources — `clang.macrosFile` / `clang.macrosByLayer` / `clang.macroScopes`**
 > (CU→layer map for a multi-CU dump). Read by `parser.py` **before** the CLI flags, so a flag wins. This is
@@ -739,6 +835,10 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
       config.local.json       Local overrides (gitignored)
       abbreviations.txt       Abbreviation expansions for LLM prompts
       data_dictionary.csv     Sample data-dictionary CSV (--data-dictionary <path>)
+      data_dictionary.layer1.example.csv  Per-layer sample (layers.Layer1.dataDictionary)
+      data_dictionary.layer2.example.csv  Second sample — shares BufferSize_t at a
+                                          different range (the per-layer case). Both
+                                          shipped UNREFERENCED, like the macro examples.
       macros.csv              Sample macros CSV (--macros <path>)
       macros.layer1.example.json   Sample toolchain macro list, client schema (cu "fcore")
       macros.layer2.example.json   Second sample list (cu "hil") — the per-layer / two-file case
@@ -1029,6 +1129,12 @@ renamed to "component". Specific impacts:
 "layers": {
   "Layer1": {
     "path": "Layer1",          // relative to <project_path>
+    // Per-layer INPUTS live in the layer block, beside path/groups — so no layer
+    // name is repeated in a by-layer map where a typo would match nothing. Both
+    // optional; both are paths, never inline content. Shipped as "" (= absent) so
+    // the keys are discoverable without changing the default run. See §17.
+    "dataDictionary": "engine/config/data_dictionary.layer1.example.csv",
+    "macros":         "engine/config/macros.layer1.example.json",
     "groups": {
       "Sample": {              // group name (for --selected-group)
         "Core": "Sample/Core", // component → path (relative to layer path)
@@ -1056,7 +1162,20 @@ renamed to "component". Specific impacts:
 
 `core.config.get_flat_groups(cfg)` flattens this into
 `{groupName: {componentName: resolvedPath}}` with layer paths prepended.
-Falls back to the old `layer` key for backwards compatibility.
+Falls back to the old `layer` key for backwards compatibility. `_resolve_layer_paths`
+reads only `path` + `groups`, so the per-layer input keys above are ignored there and
+adding more of them needs no change.
+
+Per-layer inputs are read via `core.config.layer_source(cfg, layer, key)` /
+`layer_sources(cfg, key)` → `{layer: path}`. Adding a third per-layer input costs one
+call, not a new schema. `clang.macrosByLayer` still works but is **deprecated** —
+`layers.<L>.macros` wins for the same layer.
+
+**Config is per-layer only.** The project-wide dictionary and macro list are CLI
+(`--data-dictionary`, `--macros`); there is no `dataDictionary.file` key. The single
+exception is `clang.macrosFile` / `clang.macroScopes`, still honoured in code because
+the API has no CLI path for macros (see §17, 2026-08-18) — but absent from the shipped
+`config.json`.
 
 ### Same-layer model filtering
 
@@ -1236,11 +1355,12 @@ python engine/run.py [options] <project_path>
 | `--selected-component <name>` | Export a DOCX for the named component only. Repeatable — use once per component to bundle multiple into one DOCX. All named components must be in the same layer. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx` (`_` between names, `-` replaces spaces). Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`. |
 | `--component-per-docx` | Modifier: split group/layer runs into one DOCX per component instead of one per group. Compatible with `--selected-group`, `--selected-layer`, or no selection. Cannot be combined with `--selected-component`. See §4f. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
-| `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `engine/config/data_dictionary.csv` for format. |
+| `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. **Project-wide**: its entries answer for every layer. External entries win on conflict. See `engine/config/data_dictionary.csv` for format. **CLI-only — no config key by design** (§17). |
+| `--data-dictionary-layer <layer> <path>` | Same format, scoped to one layer. Repeatable, once per layer. Unknown layer → exit 1, missing file → exit 2. A layer's entries answer **only** for that layer; another layer's dictionary is never consulted. Config equivalent: `layers.<name>.dataDictionary`. |
 | `--project-name <name>` | Override the project name written into `model/metadata.json` as `projectName`. Default: `os.path.basename(project_path)`. Propagates to `model_deriver` (interfaceId fallback segment, LLM knowledge base), flowchart engine, and LLM prompts. |
 | `--macros <path>` | Macro file passed as `-D` flags to Clang in Phase 1, applied to **every** layer. CSV (`Name`, `Value`; header row) **or** JSON — toolchain dump (`macros_by_cu`), `{"NAME":"VALUE"}` map, `["NAME=VALUE"]` list, or `{"Layer1": {…}}`; shape is detected by content, not extension (`core/macro_input.py`). `Value` `"ne"` (any case) skips the entry; empty → `-DNAME`; function-like names are skipped + logged. Written to `model/clang_macros.json` (scope-keyed) so the Phase 3 flowchart engine picks them up. Sample: `engine/config/macros.csv`. |
 | `--macros-layer <layer> <path>` | Same formats, applied to the named layer only. Repeatable — once per layer. Unknown layer → exit 1, missing file → exit 2. Clang honours the last `-D`, so a layer value overrides a `--macros` global one. Config equivalents: `clang.macrosFile` / `clang.macrosByLayer`; `clang.macroScopes` maps a multi-CU dump's compilation units to layers. |
-| `--include-path <layer> <dir>` | Add an extra `-I` include directory for the named layer. Repeatable — use once per directory. The directory is merged into `model/clang_include_paths.json` under the named layer key before Phase 1 runs, so Phase 1 and Phase 3 (`_resolve_layer_dirs`) pick it up automatically via existing layer-scoping. Unknown layer → exit 1. Missing directory → exit 1. |
+| `--include-path-layer <layer> <dir>` | Add an extra `-I` include directory for the named layer. Repeatable — use once per directory. The directory is merged into `model/clang_include_paths.json` under the named layer key before Phase 1 runs, so Phase 1 (`clang_args_for`) and Phase 3 (`_resolve_layer_dirs`) pick it up automatically via existing layer-scoping. **No project-wide form** — an include dir always belongs to a layer. Unknown layer → exit 1. Missing directory → exit 1. Renamed from `--include-path` on 2026-08-18 (§17). |
 | `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`). Forwarded by `group_planner` to Phase 3, where `run_views.py` writes it into the in-memory config. **Currently inert — no view reads that key** (`sequenceDiagrams` exists nowhere else in the repo and is not in `config.json`); wire a consumer before relying on it. Value is not validated (no vocabulary defined yet). Had **no parse branch in `run.py` until 2026-08-11** — the flag was dead and `--filter-mode X` made `--filter-mode` the project path. |
 | `--trace-prompts` | Print full LLM prompts (system + user) to stdout. Sets `LLM_TRACE_PROMPTS=1` env var. **Warning**: large runs emit tens of MB. |
 | `--quiet` | stderr handler raised to WARNING |
@@ -1986,15 +2106,22 @@ elaborated `"enum Mode_t"` would miss.
 range from it reads a range out of a type name (`"size_t" in "Size_t"` stamped
 `0-0xFFFFFFFFFFFFFFFF` on a `{int width; int height;}` struct).
 
-### Where a data range comes from (precedence, 2026-08-03)
+### Where a data range comes from (precedence, 2026-08-03; layer scoping 2026-08-18)
+
+**Scope is resolved before precedence.** `get_range(type, dd, layer)` first decides *which
+entries may answer at all*: the layer's own (`name@<layer>`, or a bare entry stamped with
+that layer) and the global tier (`layer: None` — builtins, `PRIMITIVES`, the project-wide
+CSV). **Another layer's entry is never eligible**, at any of the three lookup paths. Only
+among the eligible entries does the order below apply. `layer=None` disables the filter
+entirely, which is what keeps every layer-unaware caller behaving as before.
 
 Highest wins. The order is enforced by *when* each source runs in Phase 1, not by
 branching logic:
 
-1. **External CSV** — merged last (`_merge_external_data_dictionary`), so it overrides
-   everything. This is why ranges must NOT be frozen onto each parameter in
-   `functions.json`: parameters are collected before the merge, and a baked parameter
-   range would make `--data-dictionary` unable to override anything.
+1. **External CSV** — merged last (`_merge_dd_rows`), so it overrides everything *within its
+   scope*. This is why ranges must NOT be frozen onto each parameter in `functions.json`:
+   parameters are collected before the merge, and a baked parameter range would make
+   `--data-dictionary` unable to override anything.
 2. **libclang** — `_range_from_clang_type(ctype)`: `get_canonical()` walks the typedef
    chain to the real builtin, `get_size()` gives its width **for the parsed target**
    (`long` = 4 bytes on Windows, 8 on Linux — the table below cannot express that).
@@ -2194,7 +2321,15 @@ Fixture: `SampleCppProject/Layer1/Poly/OpsTable.cpp` (table + ops, deliberately 
 
 ### External data dictionary merge
 
-After `_scan_defines()` and before writing `dataDictionary.json`, if `--data-dictionary <path>` was passed, `_merge_external_data_dictionary(path)` is called. **There is no config key for this** — the path comes from the CLI (`run.py` → `group_planner` → `parser` argv) or, in the API/incremental path, from `currentDataDictId` → `ws.datadict_path(...)`. Because the merge happens inside Phase 1, `--data-dictionary` is a **silent no-op with `--from-phase 2+` or `--use-model`**; changing the CSV requires a re-parse.
+After `_scan_defines()` and before writing `dataDictionary.json`, every source in `_dd_sources` is merged by `_merge_dd_rows(path, layer)` (`_merge_external_data_dictionary(path)` is the thin project-wide wrapper the tests drive). Sources in order — **config first, CLI second**, matching the macro block:
+
+1. `layers.<L>.dataDictionary` — config, scoped to that layer
+2. `--data-dictionary <path>` — CLI, project-wide
+3. `--data-dictionary-layer <layer> <path>` — CLI, repeatable, scoped
+
+**The project-wide dictionary is CLI-only — it has no config key, by design.** Every entry point already passes it as a flag: `run.py` from `--data-dictionary`, and the API/incremental path from `currentDataDictId` → `ws.datadict_path(...)` → `--data-dictionary` (`incremental/generate.py:214`). A config key would be a second, silent source for the same input. Config carries **per-layer** dictionaries only.
+
+A layer's rows never touch another layer's entries: `_dd_target_key()` writes the bare name only when the slot is free or already that layer's, and `name@<layer>` when the global tier or another layer holds it. So "last wins" applies **within one scope only**. In the API/incremental path the project-wide CSV still arrives from `currentDataDictId` → `ws.datadict_path(...)`. Because the merge happens inside Phase 1, these are a **silent no-op with `--from-phase 2+` or `--use-model`**; changing a CSV requires a re-parse.
 
 - Reads a CSV with columns: `Name, Kind, EntryName, Range, Comment`.
 - **Top-level rows** (non-empty `Name`): copy existing auto-parsed entry, overwrite `kind`/`range`/`comment` from CSV, reset `enumerators`/`fields` list if the kind uses them.
