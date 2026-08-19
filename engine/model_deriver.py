@@ -483,15 +483,24 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
     # Try to load existing knowledge_base.json for richer context.
     # On first run it won't exist — the rich path still works (just without
     # repo map and sibling context), and the knowledge base is generated after.
+    # Read through the gateway. This opened model/knowledge_base.json directly, and step 6 moved
+    # the knowledge base into its own TABLE — so in database mode the file was never there,
+    # `knowledge` was always None, and every description was generated WITHOUT the repo map and
+    # sibling context the rich path is built around. Silent: the miss is logged as "expected on
+    # first run" and the whole block is wrapped in `except: pass`. Not slower, just worse prose,
+    # which is the hardest kind of regression to notice.
     knowledge = None
     try:
-        from flowchart.pkb.knowledge import load_knowledge
-        from core.paths import paths
-        import os
-        kb_path = os.path.join(paths().model_dir, "knowledge_base.json")
-        knowledge = load_knowledge(kb_path)
+        from core.model_io import read_model_file, KNOWLEDGE_BASE
+        from flowchart.pkb.knowledge import load_knowledge_data
+        knowledge = load_knowledge_data(read_model_file(KNOWLEDGE_BASE, required=False,
+                                                        default=None))
     except Exception:
         pass
+    if knowledge is None:
+        from core.logging_setup import get_logger as _gl
+        _gl("model_deriver").info("no knowledge base available — descriptions will be generated without repo-map "
+                  "and sibling context (expected on the FIRST run of a project only)")
 
     # Rich enrichment path — budget-aware with degradation ladder
     desc = enrich_functions_rich(functions_data, base_path, config, knowledge=knowledge)
