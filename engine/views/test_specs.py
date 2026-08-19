@@ -143,12 +143,41 @@ def _layer_components(config, allowed_components):
     return scope or None
 
 
+def _mocked_callee_ids(func, functions_data, spec_ids):
+    """Every callee this spec stubs: the direct ones with a spec of their own, plus
+    those reached **through a callee that runs inline**.
+
+    Follow the real execution path and stop at each stub. A callee with no spec of
+    its own is not mocked, so it really executes -- and a call it makes to a function
+    that *does* have a spec really happens, and must be stubbed here too. Looking at
+    direct callees only missed those: the tester never mocked them, so the real
+    function linked in and the test quietly stopped being a unit test.
+
+    Example: `utilChain` calls `utilNorm`, which has no spec and so runs inline;
+    `utilNorm` calls `utilCompute`, which has its own spec. `utilCompute()` belongs
+    in `utilChain`'s mock list even though `utilChain` never names it.
+    """
+    mocked, seen = set(), set()
+    stack = list(func.get("callsIds") or [])
+    while stack:
+        cid = stack.pop()
+        if cid in seen:
+            continue
+        seen.add(cid)
+        if cid in spec_ids:      # a stub: it does not run, so do not walk into it
+            mocked.add(cid)
+            continue
+        callee = functions_data.get(cid)
+        if not callee:           # unnameable library call -- left out (wiki)
+            continue
+        stack.extend(callee.get("callsIds") or [])
+    return mocked
+
+
 def _mock_functions(func, functions_data, spec_ids):
     """Callees to stub, written `name()` — exactly those with a spec of their own."""
     names = set()
-    for cid in func.get("callsIds") or []:
-        if cid not in spec_ids:
-            continue
+    for cid in _mocked_callee_ids(func, functions_data, spec_ids):
         callee = functions_data.get(cid)
         if not callee:
             continue
@@ -165,9 +194,7 @@ def _mock_return_entries(func, functions_data, spec_ids, dd):
     does not appear in Input.
     """
     seen, out = set(), []
-    for cid in sorted(func.get("callsIds") or []):
-        if cid not in spec_ids:
-            continue
+    for cid in sorted(_mocked_callee_ids(func, functions_data, spec_ids)):
         callee = functions_data.get(cid)
         if not callee:
             continue
@@ -183,11 +210,34 @@ def _mock_return_entries(func, functions_data, spec_ids, dd):
     return out
 
 
-def _global_ids(func, which):
-    """Union of the direct and transitive global ids for 'reads' or 'writes'."""
-    direct = set(func.get(f"{which}GlobalIds") or [])
-    trans = set(func.get(f"{which}GlobalIdsTransitive") or [])
-    return direct | trans
+def _global_ids(func, which, functions_data, spec_ids):
+    """Global ids for 'reads' or 'writes': the function's own, plus those reached
+    through the callees that run **inline**.
+
+    The model's `<which>GlobalIdsTransitive` spans the entire call graph and cannot
+    be used here: it also carries globals touched only by *mocked* callees. A mock is
+    a stub — it never executes, so its globals are not preconditions of this spec, and
+    naming them tells the tester to set up state the test can never reach. The wiki
+    scopes it deliberately: globals are "the function's, plus its inlined helpers'".
+
+    So walk the callee chain and stop at every mock boundary — the mirror of
+    `_mocked_callee_ids`. Recursing through the inlined callees, rather than reading
+    their transitive field, keeps that boundary honoured at any depth.
+    """
+    out = set(func.get(f"{which}GlobalIds") or [])
+    seen = set()
+    stack = [cid for cid in (func.get("callsIds") or []) if cid not in spec_ids]
+    while stack:
+        cid = stack.pop()
+        if cid in seen:
+            continue
+        seen.add(cid)
+        callee = functions_data.get(cid)
+        if not callee:
+            continue
+        out |= set(callee.get(f"{which}GlobalIds") or [])
+        stack.extend(c for c in (callee.get("callsIds") or []) if c not in spec_ids)
+    return out
 
 
 def _global_name(gid, g):
@@ -199,8 +249,8 @@ def _build_spec(fid, func, unit_key, unit_name, functions_data,
     qn = func.get("qualifiedName", "")
     name = short_name(qn)
     params = func.get("parameters") or []
-    reads = _global_ids(func, "reads")
-    writes = _global_ids(func, "writes")
+    reads = _global_ids(func, "reads", functions_data, spec_ids)
+    writes = _global_ids(func, "writes", functions_data, spec_ids)
 
     # ---- Precondition: names only, no values, no ranges -------------------
     pre_globals = []

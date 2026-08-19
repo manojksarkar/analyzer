@@ -205,3 +205,52 @@ def test_build_is_deterministic(model):
     a = json.dumps(_build_test_specs(units, functions, globals_, {}), indent=2)
     b = json.dumps(_build_test_specs(units, functions, globals_, {}), indent=2)
     assert a == b
+
+
+# --- the mock boundary: what runs, what is stubbed -------------------------
+#
+# Wiki: a callee with no spec of its own is never mocked -- it runs inline. So the
+# spec'd functions IT calls really get called, and a global only a MOCK reads is
+# never reached. Both follow from "follow the real execution path, stop at each stub".
+
+def _boundary_model():
+    """`chain` calls `helper` (no spec -> inlined); `helper` calls `deep` (has a
+    spec -> stubbed) and `deep` is the only reader of gDeep. `helper` itself reads
+    gInline. Mirrors utilChain -> utilNorm -> utilCompute in the sample."""
+    functions = {
+        "C|U|chain": _fn("chain", line=1, calls=["C|U|helper"], iid="IF_01"),
+        # no external caller in this model -> no spec -> runs inline
+        "C|U|helper": _fn("helper", visibility="private", line=2,
+                          calls=["C|O|deep"], reads=["C|U|gInline"]),
+        "C|O|deep": _fn("deep", file="O.cpp", line=1, ret="int",
+                        reads=["C|U|gDeep"]),
+    }
+    units = {
+        "C|U": {"name": "U", "fileName": "U.cpp",
+                "functionIds": ["C|U|chain", "C|U|helper"]},
+        "C|O": {"name": "O", "fileName": "O.cpp", "functionIds": ["C|O|deep"]},
+    }
+    globals_ = {
+        "C|U|gInline": {"qualifiedName": "gInline", "type": "int"},
+        "C|U|gDeep": {"qualifiedName": "gDeep", "type": "int"},
+    }
+    out = _build_test_specs(units, functions, globals_, {})
+    return out["C|U"]["functions"][0]
+
+
+def test_mock_reached_through_an_inlined_callee_is_stubbed():
+    """`chain` never names `deep`, but `helper` runs inline and really calls it."""
+    assert _boundary_model()["precondition"]["mockFunctions"] == ["deep()"]
+
+
+def test_global_read_only_by_a_mock_is_not_a_precondition():
+    """gDeep is read only inside `deep`, which this spec stubs -- so the test can
+    never reach it and setting it up would change nothing."""
+    names = {g["name"] for g in _boundary_model()["precondition"]["globals"]}
+    assert "gDeep" not in names
+
+
+def test_global_read_by_an_inlined_callee_is_a_precondition():
+    """gInline is read by `helper`, which really executes."""
+    names = {g["name"] for g in _boundary_model()["precondition"]["globals"]}
+    assert "gInline" in names
