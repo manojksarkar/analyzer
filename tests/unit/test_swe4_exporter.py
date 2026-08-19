@@ -167,3 +167,18 @@ def test_each_function_gets_one_table_a_and_one_table_b(spec_json, tmp_path):
 def test_missing_input_json_fails_cleanly(tmp_path):
     ok, path = export_test_specs(str(tmp_path / "nope.json"), str(tmp_path / "o.docx"))
     assert ok is False and path is None
+
+
+# --- Expected Results: the empty-entries fallback ---------------------------
+
+def test_void_function_with_no_outputs_says_so():
+    assert _expected_text({}, "void") == "No return value; no global side effects"
+
+
+def test_non_void_function_does_not_claim_it_returns_nothing():
+    """`libAdd(int, int)` returns int. With no CFG-attributed returns the cell used
+    to read "No return value", which is simply false -- it is a missing
+    transcription, not an assertion about the signature."""
+    text = _expected_text({}, "int")
+    assert "No return value" not in text
+    assert "int" in text

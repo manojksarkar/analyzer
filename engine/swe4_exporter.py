@@ -79,7 +79,7 @@ def _steps_suffix(entry: dict) -> str:
     return f" in step{'s' if len(nums) > 1 else ''} {', '.join(nums)}"
 
 
-def _expected_text(exp: dict) -> str:
+def _expected_text(exp: dict, return_type: str = "") -> str:
     """Assertions: mocks first, then one entry per return (naming its step),
     then out-parameters and written globals."""
     entries = []
@@ -90,9 +90,17 @@ def _expected_text(exp: dict) -> str:
         entries.append(f"{r.get('text', '')}{_steps_suffix(r)}")
     for w in (exp.get("outParameters") or []) + (exp.get("globals") or []):
         entries.append(f"Successfully updated {w.get('text', '')}{_steps_suffix(w)}")
-    if not entries:
-        return "No return value; no global side effects"
-    return _numbered(entries)
+    if entries:
+        return _numbered(entries)
+    # "Nothing changes -> say so explicitly" (wiki). Only claim there is no return
+    # value when the signature actually says so: a non-void function with no return
+    # entries means the CFG pass could not attribute its exits -- a gap in the spec,
+    # not an assertion that the function returns nothing.
+    rt = (return_type or "").strip()
+    if rt and rt.lower() != "void":
+        return (f"Not available (no control-flow graph attributed the `{rt}` "
+                f"return of this function)")
+    return "No return value; no global side effects"
 
 
 def _test_steps_text(spec: dict) -> str:
@@ -125,7 +133,7 @@ def _add_table_a(doc, spec: dict, cfg_swe4: dict, font_small) -> None:
         _precondition_text(spec.get("precondition", {})),
         _input_text(spec.get("input", {})),
         _test_steps_text(spec),
-        _expected_text(spec.get("expected", {})),
+        _expected_text(spec.get("expected", {}), spec.get("returnType", "")),
         cfg_swe4.get("testPlatform", "VectorCAST"),
     )
     for i, txt in enumerate(values):
