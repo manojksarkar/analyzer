@@ -80,10 +80,26 @@ def _spec_function_ids(units_data, functions_data, allowed_components):
     unit, not private) **except inline public functions** — those defined in a
     header, which are covered through the functions that call them.
 
-    This set is also the mock rule: a callee is mocked if and only if it is in
-    here. Anything outside it (a private helper, an inline public function) has
-    no spec of its own, so it must run inline or its branches are exercised
-    nowhere.
+    Called for two different jobs, at two different scopes (layer > group >
+    component > unit):
+
+    - the document's components -> which functions this document writes a spec for.
+    - the whole LAYER's components -> the mock rule. A callee is mocked if and only
+      if it is in that set. Anything outside it (a private helper, an inline public
+      function) has no spec of its own, so it must run inline or its branches are
+      exercised nowhere.
+
+    The mock rule must not be narrowed to the document's components. A callee in
+    another component of the same layer still has a spec of its own, in that
+    component's document, so the tester stubs it. Narrowing it made every
+    cross-component callee look like an unspecced helper and silently inlined it:
+    dropped from Precondition, its return value dropped from Input, and its
+    `Successfully called mock functions` line dropped from Expected Results.
+
+    The layer is the ceiling, and it has to be stated explicitly: a run covers one
+    layer, and a callee outside it belongs to a different deliverable. Passing None
+    would mean "everything parsed", which equals the layer only when the parse was
+    itself layer-scoped -- on a full multi-layer parse it reaches across layers.
     """
     spec_ids = set()
     for unit_key, unit_info in units_data.items():
@@ -102,6 +118,29 @@ def _spec_function_ids(units_data, functions_data, allowed_components):
                 continue
             spec_ids.add(fid)
     return spec_ids
+
+
+def _layer_components(config, allowed_components):
+    """Every component of the layer(s) owning `allowed_components`, lowercased.
+
+    The mock rule's scope. Returns None when the layer cannot be resolved — no
+    `layers` config, no selected components, or names that match nothing — which
+    falls back to "everything parsed". That is the only safe default: under-scoping
+    here silently drops mocks, which is the failure this scope exists to prevent.
+    """
+    layers_cfg = (config or {}).get("layers") or {}
+    if not layers_cfg or not allowed_components:
+        return None
+    wanted = {(c or "").replace(" ", "-").lower() for c in allowed_components}
+    scope = set()
+    for layer_cfg in layers_cfg.values():
+        comps = set()
+        for grp in ((layer_cfg or {}).get("groups") or {}).values():
+            if isinstance(grp, dict):
+                comps |= {(k or "").replace(" ", "-").lower() for k in grp}
+        if comps & wanted:
+            scope |= comps
+    return scope or None
 
 
 def _mock_functions(func, functions_data, spec_ids):
@@ -243,9 +282,13 @@ def _build_spec(fid, func, unit_key, unit_name, functions_data,
 
 
 def _build_test_specs(units_data, functions_data, global_variables_data,
-                      data_dictionary=None, *, allowed_components=None):
+                      data_dictionary=None, *, allowed_components=None,
+                      mock_components=None):
     dd = data_dictionary or {}
-    spec_ids = _spec_function_ids(units_data, functions_data, allowed_components)
+    # Mockability is scoped to the LAYER; which functions this document writes a
+    # spec for is scoped to its components. See _spec_function_ids.
+    spec_ids = _spec_function_ids(units_data, functions_data, mock_components)
+    doc_ids = _spec_function_ids(units_data, functions_data, allowed_components)
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                   for uk, u in units_data.items()}
 
@@ -256,7 +299,7 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
         for fid in sorted(unit_info.get("functionIds", []) or [],
                           key=lambda x: functions_data.get(x, {})
                                         .get("location", {}).get("line", 0)):
-            if fid not in spec_ids:
+            if fid not in doc_ids:
                 continue
             func = functions_data.get(fid)
             if not func:
@@ -278,6 +321,7 @@ def run(model, output_dir, model_dir, config):
         model.get("globalVariables", {}),
         model.get("dataDictionary", {}),
         allowed_components=allowed_components,
+        mock_components=_layer_components(config, allowed_components),
     )
     # Test Steps + the per-return Expected entries come from the flowchart
     # engine's CFG (Phase 3 runs `flowcharts` before `testSpecs` for swe4).
