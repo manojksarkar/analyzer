@@ -37,15 +37,41 @@ Generating needs four things the engine does not create for itself: the `project
 workspace directory, that project's `config.json`, and a `versions` row (the API reserves that
 at job start). One command does all of it:
 
+**Preferred — bring your own config:**
+
+```
+python tools\new_project.py --project-id myproj --repo-url https://git.example.com/x.git --config path\to\my-config.json
+```
+
+`--config` copies a complete config in. This is the right option for a real project: layers are
+only one part of it, and clang args, views and LLM settings do not belong on a command line.
+Start from `engine/config/config.defaults.json`, edit it, point at it. (It is read as strict
+JSON, so the comments and trailing commas that `config.defaults.json` tolerates must be removed.)
+
+**Quick start — layers only:**
+
 ```
 python tools\new_project.py --project-id myproj --repo-url https://git.example.com/x.git --layers "App=src/app,Lib=src/lib"
 ```
 
-`--layers` maps a layer name to a directory **relative to the repo root**. Omit it and the
-defaults are kept — then edit `layers` in `workspaces/myproj/config.json` yourself.
+Edits only the `layers` of the default config; everything else keeps its default. Paths are
+**relative to the repo root**. The two options are alternatives, not combinable.
 
-Already have the code checked out locally? Skip `--repo-url` and put the checkout at
-`workspaces/myproj/<first-16-chars-of-sha>/`.
+### Using a local C++ checkout instead of a remote
+
+`--repo-url` accepts a **local path**, because `git clone` does:
+
+```
+python tools\new_project.py --project-id myproj --repo-url D:\code\my-cpp-project --layers "App=src"
+```
+
+The one requirement is that it must be a **git repository** — the whole incremental model is
+built on commits (`--commit <sha>`, baseline selection, diffs between versions). A plain
+directory with no git history cannot be used.
+
+Already have the exact commit checked out? Put it at
+`workspaces/myproj/<first-16-chars-of-sha>/` and omit `--repo-url` — an existing `.git` there
+is reused rather than re-cloned.
 
 ### Reserve a version for the commit you want
 

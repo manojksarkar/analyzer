@@ -57,8 +57,13 @@ def main(argv=None) -> int:
     ap.add_argument("--name", default=None, help="display name (default: the id)")
     ap.add_argument("--repo-url", default="", help="clone URL, so the engine can fetch commits")
     ap.add_argument("--branch", default="main")
+    ap.add_argument("--config", default=None,
+                    help="an existing config.json to use as this project's config. Preferred "
+                         "for a real project: layers are only one part of it, and clang args, "
+                         "views and llm settings do not fit on a command line.")
     ap.add_argument("--layers", default=None,
-                    help='"App=src/app,Lib=src/lib" — which directories are which layer')
+                    help='"App=src/app,Lib=src/lib" — a shortcut that edits ONLY the layers of '
+                         'the default config. For a quick start; use --config for real work.')
     ap.add_argument("--version-id", default=None, help="also reserve this version")
     ap.add_argument("--commit", default=None, help="the commit that version is for")
     ap.add_argument("--force-config", action="store_true",
@@ -108,18 +113,41 @@ def main(argv=None) -> int:
     print(f"workspace: {proj_dir}")
 
     # 3. the per-project config -----------------------------------------------------------
+    if args.config and args.layers:
+        print("\n--config and --layers are alternatives: --config brings the whole file, "
+              "--layers edits only the layers of the default. Pass one.")
+        return 2
     cfg_path = os.path.join(proj_dir, "config.json")
     if os.path.isfile(cfg_path) and not args.force_config:
         print(f"config   : {cfg_path} (kept — --force-config to replace)")
     else:
-        cfg = _load_defaults()
-        if args.layers:
-            cfg["layers"] = _parse_layers(args.layers)
+        if args.config:
+            src = os.path.abspath(args.config)
+            if not os.path.isfile(src):
+                print(f"\n--config not found: {src}")
+                return 2
+            try:
+                with open(src, encoding="utf-8") as fh:
+                    cfg = json.load(fh)
+            except ValueError as exc:
+                print(f"\n--config is not valid JSON ({exc}). Note this reads STRICT json — "
+                      f"comments and trailing commas are only tolerated in "
+                      f"config.defaults.json.")
+                return 2
+            if not (cfg.get("layers") or {}):
+                print("           ! that config has no `layers` — the parser will find no "
+                      "source. Add them before generating.")
+        else:
+            cfg = _load_defaults()
+            if args.layers:
+                cfg["layers"] = _parse_layers(args.layers)
         with open(cfg_path, "w", encoding="utf-8") as fh:
             json.dump(cfg, fh, indent=2)
-        print(f"config   : {cfg_path} WRITTEN"
-              + (f"  layers={list(cfg.get('layers') or {})}" if args.layers else ""))
-        if not args.layers:
+        _src_note = f" (from {os.path.basename(args.config)})" if args.config else ""
+        print(f"config   : {cfg_path} WRITTEN{_src_note}"
+              + (f"  layers={list(cfg.get('layers') or {})}"
+                 if (args.layers or args.config) else ""))
+        if not (args.layers or args.config):
             print("           ^ no --layers given, so it kept the defaults. Edit `layers` in "
                   "that file to point at your source directories.")
 
