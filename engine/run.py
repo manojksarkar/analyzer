@@ -117,8 +117,10 @@ use_model               = False
 no_llm_summarize        = False
 from_phase              = 1
 to_phase                = None   # stop after this phase (1-4); None = run through phase 4
-selected_group_arg      = None
-selected_layer_arg      = None
+selected_group_arg      = None   # first, for messages
+selected_groups_arg     = []     # ALL: --selected-group is repeatable (--scope group:A,B)
+selected_layer_arg      = None   # first, for messages
+selected_layers_arg     = []     # ALL: repeatable, same reason as --selected-group
 selected_components_arg = []
 component_per_docx      = False
 filter_mode_arg         = None
@@ -164,13 +166,15 @@ while i < len(sys.argv):
         if i >= len(sys.argv):
             log("--selected-group requires a group name", component="run", err=True)
             sys.exit(1)
-        selected_group_arg = sys.argv[i]
+        selected_groups_arg.append(sys.argv[i])
+        selected_group_arg = selected_groups_arg[0]
     elif a == "--selected-layer":
         i += 1
         if i >= len(sys.argv):
             log("--selected-layer requires a layer name", component="run", err=True)
             sys.exit(1)
-        selected_layer_arg = sys.argv[i]
+        selected_layers_arg.append(sys.argv[i])
+        selected_layer_arg = selected_layers_arg[0]
     elif a == "--selected-component":
         i += 1
         if i >= len(sys.argv):
@@ -554,8 +558,8 @@ try:
     plans = plan_runs(
         cfg,
         project_path=resolved,
-        selected_group=selected_group_arg,
-        selected_layer=selected_layer_arg,
+        selected_group=selected_groups_arg or selected_group_arg,
+        selected_layer=selected_layers_arg or selected_layer_arg,
         selected_components=selected_components_arg,
         component_per_docx=component_per_docx,
         use_model=use_model,

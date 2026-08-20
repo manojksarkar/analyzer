@@ -42,7 +42,9 @@ MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.
 # Scan for optional flags passed by group_planner.
 _data_dict_path: str | None = None
 _macros_path: str | None = None
-_selected_group: str | None = None
+_selected_group: str | None = None      # first one, kept for existing reads
+_selected_groups: list = []             # ALL of them: --selected-group is repeatable
+_selected_layers: list = []
 _selected_layer: str | None = None
 _project_name_override: str | None = None
 _only_files_path: str | None = None  # narrowed parse (M4.3): parse only the listed TUs
@@ -63,7 +65,10 @@ while _i < len(sys.argv):
         _macros_path = sys.argv[_i + 1]
         _i += 2
     elif sys.argv[_i] == "--selected-group" and _i + 1 < len(sys.argv):
-        _selected_group = sys.argv[_i + 1]
+        # Repeatable: a scope may name several groups (--scope group:App,Math), and taking
+        # only the last would silently parse the wrong subset.
+        _selected_groups.append(sys.argv[_i + 1])
+        _selected_group = _selected_groups[0]
         _i += 2
     elif sys.argv[_i] == "--selected-layer" and _i + 1 < len(sys.argv):
         _selected_layer = sys.argv[_i + 1]
@@ -108,9 +113,22 @@ if _llvm and os.path.isfile(_llvm):
 from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups
 if _selected_layer:
     _components_groups = _get_layer_flat_groups(_config, _selected_layer)
-elif _selected_group:
-    _layer_name = _get_group_layer_name(_config, _selected_group)
-    _components_groups = _get_layer_flat_groups(_config, _layer_name) if _layer_name else _get_flat_groups(_config)
+elif _selected_groups:
+    # The UNION of the selected groups' layers. Parsing is layer-scoped (a group's callees can
+    # live anywhere in its layer), and two groups may sit in DIFFERENT layers — resolving only
+    # the first would parse one layer and silently leave the other group's source unseen, so
+    # its functions would be missing from the model and from the document.
+    _components_groups = {}
+    _seen_layers = set()
+    for _g in _selected_groups:
+        _layer_name = _get_group_layer_name(_config, _g)
+        if _layer_name and _layer_name in _seen_layers:
+            continue
+        if _layer_name:
+            _seen_layers.add(_layer_name)
+            _components_groups.update(_get_layer_flat_groups(_config, _layer_name) or {})
+        else:
+            _components_groups.update(_get_flat_groups(_config) or {})
 else:
     _components_groups = _get_flat_groups(_config)
 _components_cfg = _config.get("components") or _config.get("modules") or {}

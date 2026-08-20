@@ -127,18 +127,35 @@ It selects the nearest ancestor version as its baseline. Add ` --base-version-id
 
 ## 4. Scoping
 
+**Quote the value.** A scope naming more than one thing contains a comma, and some shells treat
+that as an argument separator — which shows up as `argument --scope: expected one argument`.
+Quoting is always safe:
+
 ```
 --scope project
 ```
 ```
---scope layer:App
+--scope "layer:Layer1"
 ```
 ```
---scope group:Support
+--scope "group:App"
 ```
 ```
---scope component:Uart,Spi
+--scope "group:App,Math"
 ```
+```
+--scope "component:Uart,Spi"
+```
+
+Several names are allowed for every kind — `group:App,Math` generates App **and** Math. A name
+that does not exist stops the run and lists the valid ones, rather than generating the subset
+that happened to resolve.
+
+**What a scope does and does not limit:** it selects which **documents** are produced. Parsing
+stays **layer-scoped**, because a function in one group can call into another group in the same
+layer, and a model missing those callees would give you wrong call graphs. So with `App,Math`
+in `Layer1`, the stored model covers `Layer1` while the documents and `output/` cover App and
+Math only.
 
 ---
 
@@ -239,6 +256,8 @@ Every one of these exists because something passed the unit tests and was still 
 | `no database is configured` | Add the `db` section to `config.local.json`, then `tools\db_setup.py`. |
 | `per-project config not found` | `new_project.py` writes it; check `workspaces/<pid>/config.json`. |
 | `clone --depth failed` | `--repo-url` is wrong or unreachable, or the sha is not on that branch. |
+| `argument --scope: expected one argument` | Quote it: `--scope "group:App,Math"`. The comma is being read as an argument separator. |
+| `Unknown group(s) in the scope: X` | A typo, or X is a component rather than a group. The message lists the valid group names. |
 | `narrowed parse unavailable: baseline has no parser-level snapshot` | The baseline predates the feature. It falls back to a full parse; the next run narrows. |
 | `LLM CALLS : accounting unavailable` | Run `tools\db_setup.py` — a migration is missing. |
 | `run metadata is empty` | Phase 1 stored nothing; the flowchart engine will not resolve source files. |

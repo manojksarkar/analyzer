@@ -225,12 +225,21 @@ def scope_to_args(scope: Dict[str, Any]) -> List[str]:
     names = (scope or {}).get("names") or []
     if stype == "project":
         return []
+    # Every name, not just the first. `names[0]` meant `--scope group:App,Math` generated App
+    # and silently dropped Math: the run succeeded, the reuse report looked healthy, and the
+    # document simply had one group in it.
     if stype == "layer":
-        return ["--selected-layer", names[0]]
-    if stype == "group":
-        return ["--selected-group", names[0]]
-    if stype == "component":
         out: List[str] = []
+        for n in names:
+            out += ["--selected-layer", n]
+        return out
+    if stype == "group":
+        out = []
+        for n in names:
+            out += ["--selected-group", n]
+        return out
+    if stype == "component":
+        out = []
         for n in names:
             out += ["--selected-component", n]
         return out

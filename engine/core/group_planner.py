@@ -74,8 +74,13 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
         parser_args += ["--data-dictionary", data_dictionary_path]
     if macros_path:
         parser_args += ["--macros", macros_path]
-    if selected_group:
-        parser_args += ["--selected-group", selected_group]
+    # One flag per group: a scope may name several (--scope group:App,Math), and the parser
+    # unions their layers. Group and layer selection stay mutually exclusive, as before.
+    _groups = ([selected_group] if isinstance(selected_group, str)
+               else list(selected_group or []))
+    if _groups:
+        for _g in _groups:
+            parser_args += ["--selected-group", _g]
     elif selected_layer:
         parser_args += ["--selected-layer", selected_layer]
     if project_name:
@@ -150,7 +155,28 @@ def plan_runs(
     groups_cfg = get_flat_groups(cfg)
     group_names = sorted(groups_cfg.keys()) if isinstance(groups_cfg, dict) else []
 
-    resolved_selected = _resolve_group_name(groups_cfg, selected_group)
+    # `selected_group` may be a single name or a LIST (--scope group:App,Math). Resolving only
+    # the first silently generated one group and dropped the rest — the run succeeded and the
+    # document simply had less in it.
+    _requested_groups = ([g for g in selected_group if g]
+                         if isinstance(selected_group, (list, tuple)) else
+                         ([selected_group] if selected_group else []))
+    _resolved_groups, _unknown_groups = [], []
+    for _g in _requested_groups:
+        _r = _resolve_group_name(groups_cfg, _g)
+        if _r:
+            if _r not in _resolved_groups:
+                _resolved_groups.append(_r)
+        elif not _g.startswith("_single_file_"):
+            _unknown_groups.append(_g)
+    # A name that resolves to nothing is a typo, and generating the subset that DID resolve
+    # would hand back a document quietly missing a group the caller asked for.
+    if _unknown_groups and _resolved_groups:
+        raise ValueError(
+            f"Unknown group(s) in the scope: {', '.join(_unknown_groups)}. "
+            f"Valid groups: {', '.join(group_names) if group_names else '(none)'}")
+    selected_group = _requested_groups[0] if _requested_groups else None
+    resolved_selected = _resolved_groups[0] if _resolved_groups else None
     if selected_group and not resolved_selected:
         # Allow single-file mode without layer entry
         if selected_group.startswith("_single_file_"):
@@ -161,19 +187,24 @@ def plan_runs(
                 f"Valid groups: {', '.join(group_names) if group_names else '(none)'}"
             )
 
-    # Validate --selected-layer and derive target groups for that layer.
-    if selected_layer:
-        layer_cfg = (cfg.get("layers") or {}).get(selected_layer)
+    # Validate --selected-layer and derive target groups. Like groups, this accepts a LIST
+    # (--scope layer:A,B): taking one and ignoring the rest is a silent partial generation.
+    _requested_layers = ([l for l in selected_layer if l]
+                         if isinstance(selected_layer, (list, tuple)) else
+                         ([selected_layer] if selected_layer else []))
+    selected_layer = _requested_layers[0] if _requested_layers else None
+    layer_group_names = set()
+    for _l in _requested_layers:
+        layer_cfg = (cfg.get("layers") or {}).get(_l)
         if layer_cfg is None:
             valid_layers = sorted((cfg.get("layers") or {}).keys())
             raise ValueError(
-                f"Unknown --selected-layer {selected_layer!r}. "
+                f"Unknown --selected-layer {_l!r}. "
                 f"Valid layers: {', '.join(valid_layers) if valid_layers else '(none)'}"
             )
-        layer_group_names = set((layer_cfg.get("groups") or {}).keys())
-        layer_target_groups = [g for g in group_names if g in layer_group_names]
-    else:
-        layer_target_groups = []
+        layer_group_names |= set((layer_cfg.get("groups") or {}).keys())
+    layer_target_groups = ([g for g in group_names if g in layer_group_names]
+                           if _requested_layers else [])
 
     plans: List[RunPlan] = []
 
@@ -254,8 +285,8 @@ def plan_runs(
     # ------------------------------------------------------------------
     if selected_layer:
         target_groups = layer_target_groups
-    elif resolved_selected:
-        target_groups = [resolved_selected]
+    elif _resolved_groups:
+        target_groups = list(_resolved_groups)      # every named group, not just the first
     else:
         target_groups = group_names
 
@@ -264,7 +295,7 @@ def plan_runs(
         build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                             data_dictionary_path=data_dictionary_path,
                                             macros_path=macros_path,
-                                            selected_group=resolved_selected,
+                                            selected_group=_resolved_groups or resolved_selected,
                                             selected_layer=selected_layer,
                                             project_name=project_name, only_files=only_files,
                                          baseline_version_id=baseline_version_id,
@@ -272,8 +303,8 @@ def plan_runs(
         # If the user wants to start at phase >= 3, the build step is skipped
         # entirely (use existing model on disk).
         if from_phase <= 2:
-            if resolved_selected:
-                label = f"Build model (layer of {resolved_selected})"
+            if _resolved_groups:
+                label = f"Build model (layer(s) of {', '.join(_resolved_groups)})"
             elif selected_layer:
                 label = f"Build model ({selected_layer})"
             else:
