@@ -163,9 +163,15 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
     return L
 
 
-def emit_report(lines: List[str], version_dir: str = None, logger_name: str = "incremental") -> None:
-    """Log each line (-> logs/run_<date>.log + stderr) and persist to
-    <version_dir>/report.txt."""
+def emit_report(lines: List[str], version_dir: str = None, logger_name: str = "incremental",
+                *, write_file: bool = True) -> None:
+    """Log each line (-> logs/run_<date>.log + stderr) and, when asked, write report.txt.
+
+    `write_file=False` in database mode: the report is stored verbatim in `versions.report`,
+    and nothing reads the file — it was write-only. Every line still goes to the log, so the
+    run is no less inspectable on the machine that produced it, and now it is inspectable from
+    any other node too.
+    """
     try:
         from core.logging_setup import get_logger
         log = get_logger(logger_name)
@@ -174,7 +180,7 @@ def emit_report(lines: List[str], version_dir: str = None, logger_name: str = "i
     except Exception:
         for ln in lines:
             print(ln)
-    if version_dir:
+    if version_dir and write_file:
         try:
             with open(os.path.join(version_dir, "report.txt"), "w", encoding="utf-8") as fh:
                 fh.write("\n".join(lines) + "\n")

@@ -402,20 +402,33 @@ class PgStore(ArtifactStore):
             persist_run_metadata(cx, version_id, meta)
 
     def write_manifest(self, version_id: str, manifest: Dict[str, Any]) -> None:
-        """Also put the run's accounting on the `versions` row (doc 09, C1).
+        """Put the run's accounting on the `versions` row (doc 09, C1). No file.
 
-        The file is still written by ``super()`` — additive on purpose. The migration's own
-        rule is *never delete a writer before its readers are repointed*; deleting the
-        commit-dir dual-write ahead of its readers is exactly what would have silently broken
-        flowchart reuse during the cutover. The file goes once the API reads the columns.
+        `manifest.json` is no longer written here. Its own precondition — "the file goes once
+        the API reads the columns" — is met: `versions.run_report` stores the manifest VERBATIM,
+        and `_run_accounting` reads the row first, so nothing the file carried is lost.
+        Versions written before this keep their file, and the API still falls back to it for
+        them; only new writes stop.
+
+        FileStore is untouched, so a DB-less run still gets its manifest on disk — there it is
+        the only copy.
         """
-        super().write_manifest(version_id, manifest)
         try:
             from incremental.model_store import persist_run_outcome
             with self.engine.begin() as cx:
                 persist_run_outcome(cx, version_id, manifest)
         except Exception:                       # accounting must not fail a completed run
             pass
+
+    def read_manifest(self, version_id: str) -> Optional[Dict[str, Any]]:
+        """The manifest from the `versions` row, since the file is no longer written.
+
+        The writer moved to the row and the reader has to move with it — leaving this pointing
+        at a file nobody writes is how a store silently starts returning None. Falls back to the
+        file for versions produced before the change, which still have theirs.
+        """
+        row = self.read_run_outcome(version_id)
+        return row or super().read_manifest(version_id)
 
     def read_run_outcome(self, version_id: str) -> Dict[str, Any]:
         """The run's accounting from the version row, in manifest.json's shape."""

@@ -490,7 +490,9 @@ def generate_full(
         "documents": documents, "warnings": [],
         "llmCalls": llm_call_counts(version_id),
     })
-    emit_report(_report_lines, version_dir=vdir)
+    # report.txt is not written in database mode: the report is stored verbatim in
+    # versions.report, nothing reads the file, and the log still carries every line.
+    emit_report(_report_lines, version_dir=vdir, write_file=(model_store != "db"))
     # ...and to the store, so the report is readable from any node (versions.report existed
     # but was never written).
     try:

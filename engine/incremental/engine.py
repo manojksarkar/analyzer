@@ -974,7 +974,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         "llmCalls": _llm_call_counts(version_id),
     }
     _report_lines = build_report(stats)
-    emit_report(_report_lines, version_dir=vdir)
+    # report.txt is not written in database mode: the report is stored verbatim in
+    # versions.report, nothing reads the file, and the log still carries every line.
+    emit_report(_report_lines, version_dir=vdir, write_file=(_MODEL_STORE != "db"))
     # ...and to the store, so the report is readable from any node rather than only the
     # one that ran the job (versions.report existed but was never written).
     try:
