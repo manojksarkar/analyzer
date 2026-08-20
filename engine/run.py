@@ -40,6 +40,14 @@ Options:
   --data-dictionary <path>
                        CSV file to merge into model/dataDictionary.json (overrides
                        auto-parsed entries). See engine/config/data_dictionary.csv for format.
+                       Project-wide: its entries answer for every layer.
+  --data-dictionary-layer <layer> <path>
+                       Same format, scoped to one layer. Repeatable, once per layer.
+                       Unknown layer -> exit 1, missing file -> exit 2. A layer's
+                       entries answer only for that layer; another layer's dictionary
+                       is never consulted. Config equivalent: layers.<name>.dataDictionary.
+                       The PROJECT-WIDE dictionary is CLI-only (--data-dictionary above);
+                       it has no config key by design.
   --project-name <name>
                        Override the project name used in metadata and
                        interfaceIds (default: basename of project_path).
@@ -60,12 +68,13 @@ Options:
   --include-emulator   Parse emulator/stub files too. By default files whose
                        basename matches config `excludeNamePatterns` (default
                        ["emul"]) are skipped from the parse scope (3.1).
-  --include-path <layer> <dir>
+  --include-path-layer <layer> <dir>
                        Add an extra -I include directory for the named layer.
                        Repeatable. Merged into clang_include_paths.json before
                        Phase 1, so layer-scoping in Phase 1 and Phase 3 is
-                       automatic. Example:
-                         --include-path Layer1 C:/ThirdParty/boost/include
+                       automatic. There is no project-wide form: an include dir
+                       always belongs to a layer. Example:
+                         --include-path-layer Layer1 C:/ThirdParty/boost/include
   --verbose            Enable DEBUG logs (cache hits, budgets, few-shot picks)
   --quiet              Only log WARNINGs and above
   --trace-prompts      Print full LLM prompts (system + user) to stdout.
@@ -170,8 +179,9 @@ _KNOWN_FLAGS = (
     "--selected-group", "--selected-layer", "--selected-component", "--selected-unit",
     "--component-per-docx", "--filter-mode",
     "--from-phase", "--to-phase",
-    "--data-dictionary", "--project-name", "--output-name",
-    "--macros", "--macros-layer", "--include-path",
+    "--data-dictionary", "--data-dictionary-layer",
+    "--project-name", "--output-name",
+    "--macros", "--macros-layer", "--include-path-layer",
     "--only-files", "--include-emulator",
     "--quiet", "--verbose", "--trace-prompts",
 )
@@ -188,13 +198,14 @@ selected_units_arg      = []   # dev aid: narrow Phase 3 to these unit(s)
 component_per_docx      = False
 filter_mode_arg         = None
 data_dictionary_arg     = None
+data_dictionary_layer_args = []   # list of (layer_name, path) tuples
 macros_arg              = None
 macros_layer_args       = []   # list of (layer_name, path) tuples
 project_name_arg        = None
 output_name_arg         = None
 only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
 include_emulator_arg    = False  # opt out of the default *emul* file exclusion (3.1)
-include_path_args       = []   # list of (layer_name, abs_dir) tuples
+include_path_layer_args = []   # list of (layer_name, abs_dir) tuples
 raw_args                = []
 
 i = 1
@@ -255,6 +266,13 @@ while i < len(sys.argv):
             log("--data-dictionary requires a file path", component="run", err=True)
             sys.exit(1)
         data_dictionary_arg = sys.argv[i]
+    elif a == "--data-dictionary-layer":
+        if i + 2 >= len(sys.argv):
+            log("--data-dictionary-layer requires two arguments: <layer> <path>",
+                component="run", err=True)
+            sys.exit(1)
+        data_dictionary_layer_args.append((sys.argv[i + 1], sys.argv[i + 2]))
+        i += 2
     elif a == "--macros":
         i += 1
         if i >= len(sys.argv):
@@ -287,11 +305,11 @@ while i < len(sys.argv):
             log("--output-name requires a name argument", component="run", err=True)
             sys.exit(1)
         output_name_arg = sys.argv[i]
-    elif a == "--include-path":
+    elif a == "--include-path-layer":
         if i + 2 >= len(sys.argv):
-            log("--include-path requires two arguments: <layer> <dir>", component="run", err=True)
+            log("--include-path-layer requires two arguments: <layer> <dir>", component="run", err=True)
             sys.exit(1)
-        include_path_args.append((sys.argv[i + 1], sys.argv[i + 2]))
+        include_path_layer_args.append((sys.argv[i + 1], sys.argv[i + 2]))
         i += 2
     elif a == "--from-phase":
         i += 1
@@ -438,6 +456,14 @@ for _ml_layer, _ml_path in macros_layer_args:
         sys.exit(2)
     macros_layer_paths.append((_ml_layer, _ml_abs))
 
+data_dictionary_layer_paths = []
+for _dl_layer, _dl_path in data_dictionary_layer_args:
+    _dl_abs = _dl_path if os.path.isabs(_dl_path) else os.path.join(SCRIPT_DIR, _dl_path)
+    if not os.path.isfile(_dl_abs):
+        log(f"--data-dictionary-layer file not found: {_dl_abs}", component="run", err=True)
+        sys.exit(2)
+    data_dictionary_layer_paths.append((_dl_layer, _dl_abs))
+
 
 # ---------------------------------------------------------------------------
 # Collect layer include paths before any phase runs.
@@ -499,19 +525,23 @@ for _lname, _layer in (cfg.get("layers") or {}).items():
         _dirs.append(_dirpath)
     _layer_inc[_lname] = _dirs
 
-# Validate and merge --include-path <layer> <dir> entries.
+# Validate and merge --include-path-layer <layer> <dir> entries.
 _known_layers = set((cfg.get("layers") or {}).keys())
 for _ml_layer, _ in macros_layer_paths:
     if _ml_layer not in _known_layers:
         log(f"--macros-layer: unknown layer {_ml_layer!r}. Valid layers: {', '.join(sorted(_known_layers))}", component="run", err=True)
         sys.exit(1)
-for _ip_layer, _ip_dir in include_path_args:
+for _dl_layer, _ in data_dictionary_layer_paths:
+    if _dl_layer not in _known_layers:
+        log(f"--data-dictionary-layer: unknown layer {_dl_layer!r}. Valid layers: {', '.join(sorted(_known_layers))}", component="run", err=True)
+        sys.exit(1)
+for _ip_layer, _ip_dir in include_path_layer_args:
     if _ip_layer not in _known_layers:
-        log(f"--include-path: unknown layer {_ip_layer!r}. Valid layers: {', '.join(sorted(_known_layers))}", component="run", err=True)
+        log(f"--include-path-layer: unknown layer {_ip_layer!r}. Valid layers: {', '.join(sorted(_known_layers))}", component="run", err=True)
         sys.exit(1)
     _ip_abs = _ip_dir if os.path.isabs(_ip_dir) else os.path.join(SCRIPT_DIR, _ip_dir)
     if not os.path.isdir(_ip_abs):
-        log(f"--include-path: directory not found: {_ip_abs}", component="run", err=True)
+        log(f"--include-path-layer: directory not found: {_ip_abs}", component="run", err=True)
         sys.exit(1)
     _layer_inc.setdefault(_ip_layer, [])
     if _ip_abs not in _layer_inc[_ip_layer]:
@@ -609,6 +639,7 @@ try:
         from_phase=from_phase,
         filter_mode=filter_mode_arg,
         data_dictionary_path=data_dictionary_path,
+        data_dictionary_layer=data_dictionary_layer_paths,
         macros_path=macros_path,
         macros_layer=macros_layer_paths,
         project_name=project_name_arg,

@@ -9,7 +9,10 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
-from core.config import load_config, load_llm_config, LlmConfigError, format_llm_config_banner
+from core.config import (
+    load_config, load_llm_config, LlmConfigError, format_llm_config_banner,
+    layer_source, layer_sources,
+)
 
 
 def _cfg(**overrides):
@@ -143,3 +146,51 @@ class TestFormatLlmConfigBanner:
         banner = format_llm_config_banner(cfg)
         assert "sk-secret" not in banner
         assert "set" in banner
+
+
+class TestLayerSources:
+    """Per-layer inputs live INSIDE the layer block, beside `path` and `groups`."""
+
+    CFG = {
+        "layers": {
+            "Layer1": {
+                "path": "Layer1",
+                "dataDictionary": " engine/config/dd.layer1.csv ",
+                "macros": "engine/config/macros.layer1.json",
+                "groups": {"G1": {"C1": "A"}},
+            },
+            "Layer2": {"path": "Layer2", "dataDictionary": "dd.layer2.csv", "groups": {}},
+            "Layer3": {"path": "Layer3", "groups": {}},
+        }
+    }
+
+    def test_layer_source_strips_whitespace(self):
+        assert layer_source(self.CFG, "Layer1", "dataDictionary") == "engine/config/dd.layer1.csv"
+
+    def test_absent_key_is_none(self):
+        assert layer_source(self.CFG, "Layer3", "dataDictionary") is None
+        assert layer_source(self.CFG, "Layer2", "macros") is None
+
+    def test_unknown_layer_is_none(self):
+        assert layer_source(self.CFG, "Nope", "dataDictionary") is None
+
+    def test_empty_string_is_none(self):
+        cfg = {"layers": {"L": {"dataDictionary": "   "}}}
+        assert layer_source(cfg, "L", "dataDictionary") is None
+
+    def test_layer_sources_collects_only_declaring_layers(self):
+        assert layer_sources(self.CFG, "dataDictionary") == {
+            "Layer1": "engine/config/dd.layer1.csv",
+            "Layer2": "dd.layer2.csv",
+        }
+        assert layer_sources(self.CFG, "macros") == {
+            "Layer1": "engine/config/macros.layer1.json",
+        }
+
+    def test_no_layers_block_is_empty(self):
+        assert layer_sources({}, "dataDictionary") == {}
+
+    def test_unknown_layer_keys_do_not_disturb_group_flattening(self):
+        """`dataDictionary`/`macros` sit beside `groups`; _resolve_layer_paths must ignore them."""
+        from core.config import get_flat_groups
+        assert get_flat_groups(self.CFG) == {"G1": {"C1": "Layer1/A"}}

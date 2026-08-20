@@ -516,8 +516,32 @@ def get_range_for_type(type_str: str) -> str:
     return "NA"
 
 
-def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
-    """Look up range from data dictionary (keyed by name); fallback to get_range_for_type."""
+def _visible_to_layer(entry: dict, layer) -> bool:
+    """Whether a dd entry is allowed to answer for `layer`.
+
+    Layers partition: an entry stamped with a DIFFERENT layer is not a worse
+    answer, it is the wrong type — a same-named type belonging to someone else.
+    An entry with no layer is the global tier (builtins, project-wide CSV) and
+    answers for everyone.
+
+    `layer=None` means the caller has no layer context, so nothing is filtered and
+    behaviour is exactly what it was before layers existed.
+    """
+    if layer is None:
+        return True
+    ent_layer = entry.get("layer")
+    return ent_layer is None or ent_layer == layer
+
+
+def get_range(type_str: str, data_dictionary: dict, layer=None, _depth: int = 0) -> str:
+    """Look up range from data dictionary (keyed by name); fallback to get_range_for_type.
+
+    `layer` scopes the lookup: the layer's own entry wins, the global tier answers
+    when the layer is silent, and another layer's entry is never consulted. The
+    filter is applied at ALL THREE lookup paths below — direct hit, qualifiedName
+    scan, and the alias recursion — because rejecting only the direct hit lets the
+    scan find the very entry that was just rejected.
+    """
     t = (type_str or "").strip()
     if not t:
         return "NA"
@@ -529,8 +553,16 @@ def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
     if "&" in base:
         base = base.split("&")[0].strip()
     base_lower = base.lower()
-    # Direct lookup (name/qualifiedName as key)
-    entry = dd.get(base) or dd.get(base_lower)
+    # Direct lookup: this layer's own key first (parser writes `name@layer` when a
+    # second layer defines a name the bare slot already holds), then the bare name
+    # if it is this layer's or global.
+    entry = None
+    if layer:
+        entry = dd.get(f"{base}@{layer}") or dd.get(f"{base_lower}@{layer}")
+    if entry is None:
+        _cand = dd.get(base) or dd.get(base_lower)
+        if _cand is not None and _visible_to_layer(_cand, layer):
+            entry = _cand
     if entry:
         r = entry.get("range")
         if r and r != "NA":
@@ -546,7 +578,9 @@ def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
             # `typedef struct { ... } Name;` (underlyingType is the type's own name);
             # recursing on it only burns depth.
             if underlying and underlying != base:
-                resolved = get_range(underlying, dd, _depth + 1)
+                # `layer` rides the whole alias chain: resolving UINT8 -> Handle_t must
+                # not pick up another layer's Handle_t one hop down.
+                resolved = get_range(underlying, dd, layer, _depth + 1)
                 if resolved and resolved != "NA":
                     return resolved
         # Nothing better found: the entry's own "NA" is the answer. Falling through to
@@ -558,7 +592,12 @@ def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
     # Search by qualifiedName — same precedence as the direct lookup above: a usable
     # range wins, else resolve the alias, else fall back to this entry's own "NA"
     # (first match still wins, so which entry answers does not change).
+    # The layer filter matters most here: this scan is what would otherwise reach the
+    # entry the direct lookup just refused, and it is also where the pre-existing
+    # first-match-wins ambiguity between two layers' same-named types lived.
     for ent in dd.values():
+        if not _visible_to_layer(ent, layer):
+            continue
         if ent.get("qualifiedName") == base or ent.get("qualifiedName", "").lower() == base_lower:
             r = ent.get("range")
             if r and r != "NA":
@@ -566,7 +605,7 @@ def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
             if ent.get("kind") == "typedef" and _depth < 10:
                 underlying = ent.get("underlyingType", "")
                 if underlying and underlying != base:
-                    resolved = get_range(underlying, dd, _depth + 1)
+                    resolved = get_range(underlying, dd, layer, _depth + 1)
                     if resolved and resolved != "NA":
                         return resolved
                 return r if r else "NA"

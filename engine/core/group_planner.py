@@ -61,6 +61,7 @@ def _resolve_group_name(groups: Dict[str, Any], requested: Optional[str]) -> Opt
 
 def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
                         data_dictionary_path: Optional[str] = None,
+                        data_dictionary_layer: Optional[List[Tuple[str, str]]] = None,
                         macros_path: Optional[str] = None,
                         macros_layer: Optional[List[Tuple[str, str]]] = None,
                         selected_group: Optional[str] = None,
@@ -72,6 +73,8 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
     parser_args = [project_path]
     if data_dictionary_path:
         parser_args += ["--data-dictionary", data_dictionary_path]
+    for _layer, _path in (data_dictionary_layer or []):
+        parser_args += ["--data-dictionary-layer", _layer, _path]
     if macros_path:
         parser_args += ["--macros", macros_path]
     for _layer, _path in (macros_layer or []):
@@ -128,6 +131,7 @@ def plan_runs(
     from_phase: int = 1,
     filter_mode: Optional[str],
     data_dictionary_path: Optional[str] = None,
+    data_dictionary_layer: Optional[List[Tuple[str, str]]] = None,
     macros_path: Optional[str] = None,
     macros_layer: Optional[List[Tuple[str, str]]] = None,
     project_name: Optional[str] = None,
@@ -189,6 +193,7 @@ def plan_runs(
                 project_path,
                 no_llm_summarize=no_llm_summarize,
                 data_dictionary_path=data_dictionary_path,
+                data_dictionary_layer=data_dictionary_layer,
                 macros_path=macros_path,
                 macros_layer=macros_layer,
                 selected_layer=derived_layer,
@@ -240,6 +245,7 @@ def plan_runs(
         else:
             phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                          data_dictionary_path=data_dictionary_path,
+                                         data_dictionary_layer=data_dictionary_layer,
                                          macros_path=macros_path,
                                          macros_layer=macros_layer,
                                          project_name=project_name, only_files=only_files,
@@ -264,6 +270,7 @@ def plan_runs(
         # Build-model plan covers phases 1+2 only.
         build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                             data_dictionary_path=data_dictionary_path,
+                                            data_dictionary_layer=data_dictionary_layer,
                                             macros_path=macros_path,
                                             macros_layer=macros_layer,
                                             selected_group=resolved_selected,

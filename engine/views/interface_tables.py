@@ -4,6 +4,7 @@ import os
 import re
 
 from .registry import register
+from core.config import get_group_layer_name
 from utils import get_range, log, scoped_name, short_name, KEY_SEP
 
 
@@ -30,6 +31,27 @@ def _strip_ext(name):
     return base if ext else name
 
 
+def _resolve_layer(config):
+    """Layer owning the group this view run is rendering, or None.
+
+    `_analyzerSelectedGroup` is set by run_views from the resolved config key, so
+    an exact match is the normal path; the case-insensitive sweep mirrors
+    flowcharts._resolve_layer_name for callers that pass a differently-cased name.
+    """
+    group_name = config.get("_analyzerSelectedGroup")
+    if not group_name:
+        return None
+    exact = get_group_layer_name(config, group_name)
+    if exact:
+        return exact
+    target = str(group_name).casefold()
+    for layer_name, layer_cfg in (config.get("layers") or {}).items():
+        for grp in ((layer_cfg or {}).get("groups") or {}):
+            if str(grp).casefold() == target:
+                return layer_name
+    return None
+
+
 def _fid_to_unit(units_data):
     """functionId -> set of unit names (derived from model, not stored)."""
     out = {}
@@ -46,6 +68,7 @@ def _build_interface_tables(
     data_dictionary=None,
     *,
     allowed_components: set | None = None,
+    layer: str | None = None,
 ):
     # Only .cpp units; entries sorted by line; caller/callee units derived from calledByIds/callsIds
     fid_to_unit = _fid_to_unit(units_data)
@@ -108,7 +131,7 @@ def _build_interface_tables(
             ))
             source_dest = ', '.join(callers_fmt) if callers_fmt else "-"
             raw_params = f.get("parameters", [])
-            params = [{**p, "range": get_range(p.get("type", ""), dd)} for p in raw_params]
+            params = [{**p, "range": get_range(p.get("type", ""), dd, layer)} for p in raw_params]
             e = {
                 "interfaceId": f.get("interfaceId", ""),
                 "functionId": fid,
@@ -121,7 +144,7 @@ def _build_interface_tables(
                 "location": loc,
                 "parameters": params,
                 "returnType": f.get("returnType", ""),
-                "returnRange": get_range(f.get("returnType", ""), dd),
+                "returnRange": get_range(f.get("returnType", ""), dd, layer),
                 "direction": f.get("direction") or "In",
                 "reason": f.get("reason") or f.get("directionReason") or "",
                 "sourceDest": source_dest,
@@ -155,7 +178,7 @@ def _build_interface_tables(
                 "unitName": unit_name_display,
                 "location": loc,
                 "variableType": g.get("type", ""),
-                "range": get_range(g.get("type", ""), dd),
+                "range": get_range(g.get("type", ""), dd, layer),
                 "direction": g.get("direction") or "In/Out",
                 "reason": g.get("reason") or g.get("directionReason") or "",
                 "sourceDest": unit_key.replace(KEY_SEP, "/"),
@@ -220,6 +243,11 @@ def run(model, output_dir, model_dir, config):
     global_variables_data = model.get("globalVariables", {})
     data_dict = model.get("dataDictionary", {})
     allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
+    # Ranges resolve inside the layer being documented: the layer's own dictionary
+    # entry wins, the global tier answers when it is silent, and another layer's
+    # same-named type is never consulted. None (no group selected) keeps the
+    # unscoped, pre-layer behaviour.
+    layer = _resolve_layer(config)
 
     interface_tables = _build_interface_tables(
         units_data,
@@ -227,6 +255,7 @@ def run(model, output_dir, model_dir, config):
         global_variables_data,
         data_dict,
         allowed_components=allowed_components,
+        layer=layer,
     )
     out_path = os.path.join(output_dir, "interface_tables.json")
     os.makedirs(output_dir, exist_ok=True)

@@ -614,6 +614,36 @@ def get_layer_flat_groups(cfg: Dict[str, Any], layer_name: str) -> Dict[str, Any
     return _resolve_layer_paths({layer_name: layer_cfg})
 
 
+def layer_source(cfg: Dict[str, Any], layer_name: str, key: str) -> Optional[str]:
+    """Return `layers.<layer_name>.<key>` as a stripped path, or None.
+
+    A layer owns its own inputs (`dataDictionary`, `macros`) beside `path` and
+    `groups`, so the layer name is never repeated in a separate by-layer map
+    where a typo would silently match nothing.
+    """
+    layer_cfg = (cfg.get("layers") or {}).get(layer_name)
+    if not isinstance(layer_cfg, dict):
+        return None
+    raw = layer_cfg.get(key)
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    return raw.strip()
+
+
+def layer_sources(cfg: Dict[str, Any], key: str) -> Dict[str, str]:
+    """Return {layerName: path} for every layer declaring `key`.
+
+    Layer order follows the config, which is what makes the per-source merge
+    order in Phase 1 reproducible.
+    """
+    out: Dict[str, str] = {}
+    for layer_name in (cfg.get("layers") or {}):
+        path = layer_source(cfg, layer_name, key)
+        if path:
+            out[layer_name] = path
+    return out
+
+
 def components_groups() -> Dict[str, Any]:
     """Return flattened groups across all layers with paths resolved."""
     return get_flat_groups(app_config())

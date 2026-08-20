@@ -198,8 +198,10 @@ class TestRegisterBuiltinRange:
         parser_mod.data_dictionary.clear()
         try:
             parser_mod._register_builtin_range(ctype)
+            # layer None = the global tier: a builtin's width is a property of the
+            # target, not of a layer, so every layer may resolve against it.
             assert parser_mod.data_dictionary["unsigned char"] == {
-                "kind": "primitive", "range": "0-0xFF"}
+                "kind": "primitive", "range": "0-0xFF", "layer": None}
             # NOT under the written alias — that would shadow the U8 typedef entry.
             assert "U8" not in parser_mod.data_dictionary
         finally:

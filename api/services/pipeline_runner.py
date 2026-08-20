@@ -647,7 +647,7 @@ def _build_cmd(
             cmd += ["--data-dictionary", str(dd_path)]
     if getattr(job, "version_tag", None):
         cmd += ["--project-name", job.version_tag]
-    # Extra include paths from architecture_layers.lib_paths (--include-path <layer> <abs_dir>)
+    # Extra include paths from architecture_layers.lib_paths (--include-path-layer <layer> <abs_dir>)
     for layer in arch_layers:
         if not isinstance(layer, dict):
             continue
@@ -657,7 +657,7 @@ def _build_cmd(
         for lp in (layer.get("lib_paths") or []):
             lp = str(lp).strip()
             if lp:
-                cmd += ["--include-path", lname, str(checkout_dir / lp)]
+                cmd += ["--include-path-layer", lname, str(checkout_dir / lp)]
     cmd.append(str(checkout_dir))
     return cmd
 

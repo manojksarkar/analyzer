@@ -1,0 +1,6 @@
+Name,Kind,EntryName,Range,Comment
+BufferSize_t,typedef,,0-65535,Transfer buffer size in bytes (Layer2 window)
+HostTag_t,typedef,,0-255,Host command tag
+LayerMode,enum,,0-1,Layer2 operating mode
+,enumerator,MODE_IDLE,0,Link down
+,enumerator,MODE_ACTIVE,1,Link up

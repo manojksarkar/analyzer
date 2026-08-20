@@ -16,6 +16,7 @@ from core.config import (
     app_config as _app_config,
     clang_config as _clang_config,
     default_clang_macro_defs,
+    layer_sources as _layer_sources,
 )
 from core.macro_input import (
     MacroInputError,
@@ -47,6 +48,7 @@ MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.
 
 # Scan for optional flags passed by group_planner.
 _data_dict_path: str | None = None
+_data_dict_layer_args: list = []  # (layer, path) from --data-dictionary-layer, repeatable
 _macros_path: str | None = None
 _macros_layer_args: list = []   # (layer, path) pairs from --macros-layer, repeatable
 _selected_group: str | None = None
@@ -59,6 +61,9 @@ while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
         _data_dict_path = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--data-dictionary-layer" and _i + 2 < len(sys.argv):
+        _data_dict_layer_args.append((sys.argv[_i + 1], sys.argv[_i + 2]))
+        _i += 3
     elif sys.argv[_i] == "--only-files" and _i + 1 < len(sys.argv):
         _only_files_path = sys.argv[_i + 1]
         _i += 2
@@ -232,14 +237,17 @@ CLANG_ARGS = [
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
-# Extend with layer include dirs (scoped to selected layer when --selected-group/--selected-layer is set).
-_clang_args_seen = set(CLANG_ARGS)
-for _dirs in _layer_include_paths.values():
-    for _d in _dirs:
-        _a = f"-I{_d}"
-        if _a not in _clang_args_seen:
-            _clang_args_seen.add(_a)
-            CLANG_ARGS.append(_a)
+# Layer include dirs are NOT folded in here. Flattening every layer's dirs into one
+# global arg list is the same cross-layer leak the data dictionary had: in a run
+# spanning layers (no --selected-layer, or --component-per-docx across layers) every
+# TU saw every layer's headers, so a name defined in two layers resolved to whichever
+# -I sorted first. They are appended per TU by clang_args_for() instead, beside the
+# per-layer macro defines, so one function is the single place a file's layer is
+# resolved. Only the genuinely global dirs stay in CLANG_ARGS.
+_LAYER_INCLUDE_ARGS: dict = {
+    _lname: [f"-I{_d}" for _d in _dirs]
+    for _lname, _dirs in _layer_include_paths.items()
+}
 # Visibility-style macros (PRIVATE/PROTECTED/PUBLIC/__OVLYINIT) come from
 # `core.config.default_clang_macro_defs()` so the flowchart engine's
 # per-function re-parser reuses the same set.
@@ -270,6 +278,11 @@ if isinstance(_cfg_macros_file, str) and _cfg_macros_file.strip():
 for _cfg_layer, _cfg_path in (_clang.get("macrosByLayer") or {}).items():
     if isinstance(_cfg_path, str) and _cfg_path.strip():
         _macro_sources.append((_cfg_layer, _cfg_path.strip()))
+# `layers.<L>.macros` — the preferred spelling: the layer owns its own inputs, so
+# no layer name is repeated in a map where a typo would match nothing. Loaded after
+# macrosByLayer (deprecated), so it wins for the same layer.
+for _cfg_layer, _cfg_path in _layer_sources(_config, "macros").items():
+    _macro_sources.append((_cfg_layer, _cfg_path))
 if _macros_path:
     _macro_sources.append((None, _macros_path))
 _macro_sources += _macros_layer_args
@@ -312,6 +325,24 @@ if _MACRO_ARGS_BY_SCOPE or os.path.isfile(_macros_json):
         json.dump(_MACRO_ARGS_BY_SCOPE, _mf, indent=2)
 
 
+# Data-dictionary CSV sources as (layer|None, path), merged at the END of Phase 1.
+# Config first, CLI second, so a flag overrides the config and the later file wins on
+# a name collision. A layer's rows never touch another layer's entries (see
+# _dd_target_key), so "last wins" only ever applies within one scope.
+#
+# There is deliberately NO config key for the PROJECT-WIDE dictionary — it is
+# CLI-only (`--data-dictionary`). Config carries per-layer dictionaries only. Every
+# entry point already supplies the project-wide one as a flag: run.py from
+# `--data-dictionary`, and the API/incremental path from `currentDataDictId` ->
+# `ws.datadict_path(...)` -> `--data-dictionary` (incremental/generate.py). A config
+# key would be a second, silent source for the same thing.
+_dd_sources: list = []
+for _cfg_layer, _cfg_path in _layer_sources(_config, "dataDictionary").items():
+    _dd_sources.append((_cfg_layer, _cfg_path))
+if _data_dict_path:
+    _dd_sources.append((None, _data_dict_path))
+_dd_sources += _data_dict_layer_args
+
 
 def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str:
     """Scan raw source lines at/before line_no to detect PRIVATE/PUBLIC/PROTECTED prefix.
@@ -350,26 +381,113 @@ def get_component_name(file_path: str) -> str:
     return _FILE_COMPONENT_MAP.get(rel, "unknown")
 
 
+_FILE_LAYER_CACHE: dict = {}
+
+
+def layer_for_rel_file(rel_file: str) -> "str | None":
+    """Layer owning a repo-relative file, or None outside every configured layer.
+
+    Same file -> component -> layer resolution `clang_args_for` uses, so a type's
+    layer and its TU's `-D` set can never disagree. Cached per file because the
+    type visitor asks once per declaration, not once per file.
+    """
+    if not rel_file:
+        return None
+    norm = rel_file.replace("\\", "/")
+    if norm in _FILE_LAYER_CACHE:
+        return _FILE_LAYER_CACHE[norm]
+    component = get_component_name(os.path.join(MODULE_BASE_PATH, norm))
+    layer = (_get_component_layer_name(_config, component)
+             if component and component != "unknown" else None)
+    _FILE_LAYER_CACHE[norm] = layer
+    return layer
+
+
+# Cross-layer key collisions, reported once per name at the end of Phase 1.
+_dd_collisions: dict = {}
+
+
+def _dd_store(qn: str, entry: dict, layer: "str | None", loc: dict) -> str:
+    """Write a data-dictionary entry, keeping a colliding OTHER layer's entry alive.
+
+    The registry is keyed by bare qualified name, so two layers defining `Status`
+    or `UINT8` used to mean the last file parsed silently won — for every layer.
+    Layers partition: those are two different types and both must survive.
+
+    Bare `qn` stays the key for the first writer and for any same-layer
+    redefinition (today's last-wins, unchanged). A *different* layer is stored
+    under `qn@<layer>`, following the existing `typedef@qn:file:line` idiom. A
+    file outside every configured layer has no layer to qualify with, so it falls
+    back to `qn@file:line`, which is still unique.
+
+    Returns the key actually written.
+    """
+    entry["layer"] = layer
+    existing = data_dictionary.get(qn)
+    if existing is None or existing.get("layer") == layer:
+        data_dictionary[qn] = entry
+        return qn
+    if layer:
+        key = f"{qn}@{layer}"
+    else:
+        key = f"{qn}@{loc.get('file', '')}:{loc.get('line', '')}"
+    _dd_collisions.setdefault(qn, set()).update(
+        {existing.get("layer"), layer}
+    )
+    data_dictionary[key] = entry
+    # The narrowed-parse merge resolves an entry's file via entity_files, falling
+    # back to the text after "@" in the key. For `qn@Layer2` that fallback yields a
+    # LAYER name, which matches no dropped file, so the entry would be kept from the
+    # baseline forever and never refresh. Registering the real file keeps
+    # parse_merge._file_of on the entity_files path.
+    _file = loc.get("file")
+    if _file:
+        entity_files[key] = _file
+    return key
+
+
+def _log_dd_collisions() -> None:
+    """One line per name defined in more than one layer.
+
+    Nothing else surfaces these: before the layer key they were invisible by
+    construction, because the loser was overwritten.
+    """
+    for qn in sorted(_dd_collisions):
+        layers = sorted(str(x) for x in _dd_collisions[qn])
+        _log.info("  data dictionary: '%s' defined in %d layers (%s) — kept per layer",
+                  qn, len(layers), ", ".join(layers))
+
+
 _LAYER_ARGS_CACHE: dict = {}
 
 
 def clang_args_for(file_path: str) -> list:
-    """CLANG_ARGS plus the macro defines in scope for this file's layer.
+    """CLANG_ARGS plus the include dirs and macro defines in scope for this file's layer.
 
     Args are resolved per TU because one run can span layers: the global ("*")
     defines come first, then the layer's own, and Clang honours the *last* -D for
-    a name — so a layer value overrides the global one by position. A file
-    outside every configured component (an orphan header, say) resolves to no
-    layer and is parsed with the global set only.
+    a name — so a layer value overrides the global one by position. Include dirs
+    follow the same rule (global + this layer only), so a TU can never be compiled
+    against another layer's headers. A file outside every configured component (an
+    orphan header, say) resolves to no layer and is parsed with the global set only.
     """
-    if not _MACRO_ARGS_BY_SCOPE:
+    if not _MACRO_ARGS_BY_SCOPE and not _LAYER_INCLUDE_ARGS:
         return CLANG_ARGS
     component = get_component_name(file_path)
     layer = (_get_component_layer_name(_config, component)
              if component and component != "unknown" else None)
     cached = _LAYER_ARGS_CACHE.get(layer)
     if cached is None:
-        cached = CLANG_ARGS + _args_for_scope(_MACRO_ARGS_BY_SCOPE, layer)
+        # A file with no layer still needs headers to resolve, and there is no
+        # "global" include set to fall back on — so it gets every layer's dirs,
+        # which is the pre-change behaviour and the only way an orphan header parses.
+        if layer:
+            _inc = _LAYER_INCLUDE_ARGS.get(layer) or []
+        else:
+            _inc = [_a for _dirs in _LAYER_INCLUDE_ARGS.values() for _a in _dirs]
+        _seen: set = set(CLANG_ARGS)
+        _inc = [_a for _a in _inc if not (_a in _seen or _seen.add(_a))]
+        cached = CLANG_ARGS + _inc + _args_for_scope(_MACRO_ARGS_BY_SCOPE, layer)
         _LAYER_ARGS_CACHE[layer] = cached
     return cached
 
@@ -652,7 +770,7 @@ def _log_parse_summary(n_funcs: int) -> None:
         for rel, n_err, first in sorted(_diag_tu_errors, key=lambda r: -r[1])[:_DIAG_SAMPLE_CAP]:
             _log.warning("  %s: %d error(s), first: %s", rel, n_err, first)
         if any("file not found" in (f or "").lower() for _, _, f in _diag_tu_errors):
-            _log.warning("  Hint: missing include - check --include-path / clang_include_paths.json")
+            _log.warning("  Hint: missing include - check --include-path-layer / clang_include_paths.json")
         if any("unknown type name" in (f or "").lower() for _, _, f in _diag_tu_errors):
             _log.warning("  Hint: undefined macro/typedef - check --macros / clang.clangArgs")
 
@@ -927,7 +1045,9 @@ def _register_builtin_range(ctype) -> None:
     existing = data_dictionary.get(name)
     if existing is not None and existing.get("kind") != "primitive":
         return  # never shadow a project type that happens to share the name
-    data_dictionary[name] = {"kind": "primitive", "range": rng}
+    # layer None: a builtin's width is a property of the target, not of a layer, so
+    # every layer may answer from it. This is the "global" tier of the lookup.
+    data_dictionary[name] = {"kind": "primitive", "range": rng, "layer": None}
 
 
 def _typedef_underlying(cursor) -> str:
@@ -989,6 +1109,9 @@ def _maybe_add_typedef_for_struct(name: str, qn: str, loc: dict, rel_file: str):
         "kind": "typedef",
         "name": name,
         "qualifiedName": qn,
+        # Key already carries file+line, so it is unique across layers; the stamp is
+        # what lets the lookup refuse it when resolving for a different layer.
+        "layer": layer_for_rel_file(rel_file),
         "underlyingType": underlying or "(opaque)",
         # underlyingType is the type's OWN name here (the alias names the struct it
         # follows), so deriving a range from it would be reading a range out of a
@@ -1013,6 +1136,9 @@ def visit_type_definitions(cursor):
         rel_file = cursor.location.file.name.replace("\\", "/")
 
     loc = {"file": rel_file, "line": cursor.location.line}
+    # Which layer owns this declaration. Stamped on every entry so the lookup can
+    # refuse another layer's answer (layers partition; they do not inherit).
+    _layer = layer_for_rel_file(rel_file)
 
     if cursor.kind in (cindex.CursorKind.STRUCT_DECL, cindex.CursorKind.CLASS_DECL):
         if cursor.spelling or cursor.is_definition():
@@ -1046,7 +1172,15 @@ def visit_type_definitions(cursor):
             cmt = _preceding_comment(cursor)
             if cmt:
                 struct_entry["comment"] = cmt
-            data_dictionary[qn] = struct_entry
+            _dd_store(qn, struct_entry, _layer, loc)
+            # NOTE: entity_hashes / _type_keys stay keyed by BARE qn even when the
+            # dictionary entry above was layer-qualified. They must match edges.json
+            # `typeUsers`, which visit_usage keys by the bare type name — impact_set
+            # looks a changed hash key up there directly, so a `qn@Layer` hash key
+            # would find no users and silently skip regenerating them. Making these
+            # layer-aware means keying type_users by layer too; until then two layers
+            # defining one type share a hash (last definition wins), so a narrowed
+            # parse can miss a change in the loser. Tracked as backlog SH-5.
             # Incremental (M1.2): type hash keyed by qn; a definition wins over a forward decl.
             if cursor.is_definition() or qn not in entity_hashes:
                 entity_hashes[qn] = hash_cursor(cursor, comment=struct_entry.get("comment", ""))
@@ -1084,7 +1218,7 @@ def visit_type_definitions(cursor):
         cmt = _preceding_comment(cursor)
         if cmt:
             enum_dict["comment"] = cmt
-        data_dictionary[qn] = enum_dict
+        _dd_store(qn, enum_dict, _layer, loc)
         # Incremental (M1.2): enum hash keyed by qn; a definition wins over a forward decl.
         if cursor.is_definition() or qn not in entity_hashes:
             entity_hashes[qn] = hash_cursor(cursor, comment=enum_dict.get("comment", ""))
@@ -1117,7 +1251,13 @@ def visit_type_definitions(cursor):
             cmt = _preceding_comment(cursor)
             if cmt:
                 typedef_dict["comment"] = cmt
-            data_dictionary[key] = typedef_dict
+            if key == qn:
+                _dd_store(qn, typedef_dict, _layer, loc)
+            else:
+                # Already disambiguated against a same-named enum — that key carries
+                # file+line, so it cannot collide across layers.
+                typedef_dict["layer"] = _layer
+                data_dictionary[key] = typedef_dict
             # Incremental (M1.2): typedef hash keyed by qn; don't clobber a struct/enum
             # definition's hash that already owns this qn (e.g. typedef of a named enum).
             entity_hashes.setdefault(qn, hash_cursor(cursor, comment=typedef_dict.get("comment", "")))
@@ -1809,7 +1949,10 @@ def parse_calls(path):
 def parse_global_access(path):
     """Collect global read/write per function for direction (In/Out)."""
     try:
-        tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        # clang_args_for, not CLANG_ARGS: this pass must see the same defines and
+        # include dirs as the definition pass, or a layer-gated #ifdef makes the two
+        # walks disagree about which globals a function touches.
+        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         visit_global_access(tu.cursor)
     except cindex.TranslationUnitLoadError:
         pass
@@ -2131,6 +2274,9 @@ def _scan_defines():
                 "kind": "define",
                 "name": name,
                 "qualifiedName": name,
+                # Key already carries file+line, so no cross-layer collision is
+                # possible here; the stamp scopes the lookup.
+                "layer": layer_for_rel_file(rel_file),
                 "value": e["value"],
                 "text": e["full"],
                 "location": {"file": rel_file, "line": e["line"]},
@@ -2164,8 +2310,33 @@ def _format_csv_merge_report(matched_names, new_names, orphan_children, *, limit
     return lines
 
 
-def _merge_external_data_dictionary(path: str) -> None:
-    """Merge a user-authored CSV into the component-level data_dictionary (external wins).
+def _dd_target_key(name: str, layer: "str | None") -> str:
+    """Key a CSV row should be written to for `layer`.
+
+    Mirrors the lookup rule so a merge and a read agree:
+      * no layer (project-wide CSV) -> the bare name, as before;
+      * layer already has an entry  -> update it in place;
+      * bare slot free or already this layer's -> the bare name;
+      * bare slot owned by the global tier or another layer -> `name@layer`,
+        leaving that entry untouched. This is what stops a layer's CSV from
+        rewriting a builtin's range for every other layer.
+    """
+    if not layer:
+        return name
+    qualified = f"{name}@{layer}"
+    if qualified in data_dictionary:
+        return qualified
+    existing = data_dictionary.get(name)
+    if existing is not None and existing.get("layer") != layer:
+        return qualified
+    return name
+
+
+def _merge_dd_rows(path: str, layer: "str | None" = None) -> None:
+    """Merge a user-authored CSV into data_dictionary (external wins).
+
+    `layer` scopes every row to one layer; None is the project-wide dictionary and
+    keeps the pre-layer behaviour exactly.
 
     CSV columns: Name, Kind, EntryName, Range, Comment
     - Name (required for top-level rows): type key in dataDictionary.
@@ -2246,14 +2417,24 @@ def _merge_external_data_dictionary(path: str) -> None:
                 if not name:
                     continue
 
-                parent_key = name
                 kind = kind or "typedef"
 
+                target_key = _dd_target_key(name, layer)
+                parent_key = target_key
+
                 # Start from existing entry so unspecified sub-lists are preserved.
-                existing = data_dictionary.get(name, {})
+                existing = data_dictionary.get(target_key, {})
+                if not existing and target_key != name:
+                    # First row for this layer on a name the global tier already holds:
+                    # seed from the global entry so location/fields survive, but never
+                    # from another LAYER's entry.
+                    _global = data_dictionary.get(name)
+                    if _global is not None and _global.get("layer") is None:
+                        existing = _global
                 (matched_names if existing else new_names).append(name)
                 entry: dict = dict(existing)
                 entry["kind"] = kind
+                entry["layer"] = layer
                 if range_v:
                     entry["range"] = range_v
                 if comment:
@@ -2264,7 +2445,7 @@ def _merge_external_data_dictionary(path: str) -> None:
                 if kind in ("struct", "class"):
                     entry["fields"] = []
 
-                data_dictionary[name] = entry
+                data_dictionary[target_key] = entry
                 merged += 1
 
     except csv.Error as exc:
@@ -2278,9 +2459,15 @@ def _merge_external_data_dictionary(path: str) -> None:
     # print-only.)
     from core.logging_setup import get_logger
     _plog = get_logger("parser")
-    _plog.info(f"data dictionary: merged {merged} entries from {os.path.basename(path)}")
+    _scope = f" [{layer}]" if layer else ""
+    _plog.info(f"data dictionary{_scope}: merged {merged} entries from {os.path.basename(path)}")
     for line in _format_csv_merge_report(matched_names, new_names, orphan_children):
         _plog.info(line.strip())
+
+
+def _merge_external_data_dictionary(path: str) -> None:
+    """Project-wide CSV merge (no layer). Kept as the name the tests drive directly."""
+    _merge_dd_rows(path, None)
 
 
 def main():
@@ -2300,7 +2487,9 @@ def main():
     _log.info("  include dirs    : %d", sum(len(v) for v in _layer_include_paths.values()))
     _log.info("  data dictionary : %s", _data_dict_path or "(none)")
     _log.info("=" * 60)
-    _log.debug("CLANG_ARGS: %s", " ".join(CLANG_ARGS))
+    _log.debug("CLANG_ARGS (global): %s", " ".join(CLANG_ARGS))
+    for _lname in sorted(_LAYER_INCLUDE_ARGS):
+        _log.debug("  include dirs [%s]: %d", _lname, len(_LAYER_INCLUDE_ARGS[_lname]))
     source_files = _collect_source_files()
     if _only_files_path:
         # Narrowed parse (M4.3): restrict to the listed TUs (repo-relative, one per line).
@@ -2358,7 +2547,16 @@ def main():
         _toolchain = cindex.conf.get_filename() or ""
     except Exception:
         _toolchain = ""
-    meta_header["parseFingerprint"] = parse_fingerprint(CLANG_ARGS, std="", toolchain=str(_toolchain))
+    # Every arg any TU could be parsed with, not just the global set: the per-layer
+    # include dirs and defines moved out of CLANG_ARGS into clang_args_for, and a
+    # fingerprint that ignored them would let an include-path or macro change slip
+    # past the narrowed-parse gate. Sorted so it does not depend on layer order.
+    _fp_args = list(CLANG_ARGS)
+    for _lname in sorted(_LAYER_INCLUDE_ARGS):
+        _fp_args += _LAYER_INCLUDE_ARGS[_lname]
+    for _scope in sorted(_MACRO_ARGS_BY_SCOPE):
+        _fp_args += _MACRO_ARGS_BY_SCOPE[_scope]
+    meta_header["parseFingerprint"] = parse_fingerprint(_fp_args, std="", toolchain=str(_toolchain))
     from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
                                HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS,
                                ADDRESS_TAKEN)
@@ -2369,7 +2567,8 @@ def main():
     # libclang during the parse (_register_builtin_range) are facts about the target
     # and outrank this portable table, which e.g. hardcodes `long` as 32-bit.
     for name, info in PRIMITIVES.items():
-        data_dictionary.setdefault(name, {"kind": "primitive", "range": info["range"]})
+        data_dictionary.setdefault(
+            name, {"kind": "primitive", "range": info["range"], "layer": None})
     # Recorded names for the text reconciliation inside _scan_defines below. Built from
     # what is actually written out, so the comparison is against the real model. Entries
     # carry qualifiedName only, so take the bare trailing name — that is what a text scan
@@ -2384,9 +2583,12 @@ def main():
     )
     # Add defines (kind=define)
     _scan_defines()
-    # Merge user-supplied data dictionary CSV (external entries win on conflict).
-    if _data_dict_path:
-        _merge_external_data_dictionary(_data_dict_path)
+    # Merge user-supplied data dictionary CSVs (external entries win on conflict).
+    # Project-wide sources land on the bare name; a layer's rows are scoped to that
+    # layer so they cannot answer for any other one.
+    for _dd_scope, _dd_path in _dd_sources:
+        _merge_dd_rows(_dd_path, _dd_scope)
+    _log_dd_collisions()
     write_model_file(DATA_DICTIONARY, data_dictionary)
 
     # Incremental (M1.2): entity hash snapshot for change detection.
