@@ -59,6 +59,38 @@ def _resolve_group_name(groups: Dict[str, Any], requested: Optional[str]) -> Opt
     return None
 
 
+def _components_by_name(groups: Dict[str, Any]) -> Dict[str, str]:
+    """{component name (casefolded) -> the group it belongs to}."""
+    out = {}
+    for gname, comps in (groups or {}).items():
+        if isinstance(comps, dict):
+            for cname in comps:
+                if isinstance(cname, str):
+                    out[cname.casefold()] = gname
+    return out
+
+
+def _unknown_group_message(names, groups_cfg: Dict[str, Any], group_names) -> str:
+    """Explain an unresolved scope name — and say what it IS, when we can tell.
+
+    "Valid groups: Access, Diag, …" is accurate and unhelpful when the name the caller used is a
+    real COMPONENT sitting inside one of those groups. Naming the right flag turns a dead end
+    into a fix.
+    """
+    comp_owner = _components_by_name(groups_cfg)
+    as_components = [n for n in names if n.casefold() in comp_owner]
+    unknown = [n for n in names if n.casefold() not in comp_owner]
+    lines = [f"Unknown group(s) in the scope: {', '.join(names)}."]
+    if as_components:
+        pairs = ", ".join(f"{n} (in group {comp_owner[n.casefold()]})" for n in as_components)
+        lines.append(f"  {pairs} — these are COMPONENTS, not groups.")
+        lines.append(f"  Use:  --scope \"component:{','.join(as_components)}\"")
+    if unknown:
+        lines.append(f"  Not found at all: {', '.join(unknown)}")
+    lines.append(f"  Valid groups: {', '.join(group_names) if group_names else '(none)'}")
+    return "\n".join(lines)
+
+
 def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
                         data_dictionary_path: Optional[str] = None,
                         macros_path: Optional[str] = None,
@@ -172,9 +204,7 @@ def plan_runs(
     # A name that resolves to nothing is a typo, and generating the subset that DID resolve
     # would hand back a document quietly missing a group the caller asked for.
     if _unknown_groups and _resolved_groups:
-        raise ValueError(
-            f"Unknown group(s) in the scope: {', '.join(_unknown_groups)}. "
-            f"Valid groups: {', '.join(group_names) if group_names else '(none)'}")
+        raise ValueError(_unknown_group_message(_unknown_groups, groups_cfg, group_names))
     selected_group = _requested_groups[0] if _requested_groups else None
     resolved_selected = _resolved_groups[0] if _resolved_groups else None
     if selected_group and not resolved_selected:
@@ -182,10 +212,7 @@ def plan_runs(
         if selected_group.startswith("_single_file_"):
             resolved_selected = selected_group
         else:
-            raise ValueError(
-                f"Unknown --selected-group {selected_group!r}. "
-                f"Valid groups: {', '.join(group_names) if group_names else '(none)'}"
-            )
+            raise ValueError(_unknown_group_message(_requested_groups, groups_cfg, group_names))
 
     # Validate --selected-layer and derive target groups. Like groups, this accepts a LIST
     # (--scope layer:A,B): taking one and ignoring the rest is a silent partial generation.

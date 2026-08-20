@@ -86,18 +86,25 @@ existing `.git` there is reused rather than re-cloned:
 python tools\new_project.py --project-id myproj --branch main --config my-config.json
 ```
 
-### Reserve a version for the commit you want
+### Reserve the first version — in the SAME command
+
+Add `--version-id` and `--commit` to the call above. There is no need to run it twice:
 
 ```
-python tools\new_project.py --project-id myproj --version-id v1 --commit <full-40-char-sha>
+python tools\new_project.py --project-id myproj --repo-url https://git.example.com/my-cpp.git --branch main --config my-config.json --version-id v1 --commit <full-40-char-sha>
 ```
 
-`git rev-parse HEAD` gives the full sha. The command is idempotent — run it again for `v2`,
-`v3`, and it prints the exact generate command to run next.
+`git rev-parse HEAD` gives the full sha.
 
-**Or skip this step**: add `--create-version` to the generate command and it reserves the row
-itself. It is opt-in rather than automatic so that a mistyped `--version-id` fails instead of
-quietly starting a brand-new version.
+For **later** commits only the version part is needed, since the project already exists:
+
+```
+python tools\new_project.py --project-id myproj --version-id v2 --commit <second-sha>
+```
+
+**Or skip that too**: add `--create-version` to the generate command and it reserves the row
+itself. Opt-in rather than automatic, so a mistyped `--version-id` fails instead of quietly
+starting a brand-new version.
 
 ---
 
@@ -153,7 +160,29 @@ Quoting is always safe:
 
 Several names are allowed for every kind — `group:App,Math` generates App **and** Math. A name
 that does not exist stops the run and lists the valid ones, rather than generating the subset
-that happened to resolve.
+that happened to resolve. If the name is a **component** rather than a group, the error says so
+and prints the corrected command.
+
+**Groups and components are not the same thing**, and mixing them up is the most likely reason
+a scope is rejected. In the shipped sample config, `Support` is a *group* and `App` / `Math` are
+*components* inside it. To see yours:
+
+```
+python -c "import json; cfg=json.load(open('workspaces/myproj/config.json')); [print(f'{g}: {list(c)}') for l in cfg['layers'].values() for g,c in (l.get('groups') or {}).items()]"
+```
+
+**One document or several?**
+
+| Scope | Documents produced |
+|---|---|
+| `project` | one per **component**, across the whole project |
+| `layer:L` | one per component in that layer |
+| `group:G` | one per component in that group |
+| `component:A,B` | **ONE combined document**, named `A_B` |
+
+`component:` bundles deliberately — that is how you produce a single document covering a chosen
+set. For App and Math as **separate** documents, scope to the group that holds them
+(`group:Support`, which also yields its other components) or to `project`.
 
 **What a scope does and does not limit:** it selects which **documents** are produced. Parsing
 stays **layer-scoped**, because a function in one group can call into another group in the same
@@ -262,7 +291,7 @@ Every one of these exists because something passed the unit tests and was still 
 | `per-project config not found` | `new_project.py` writes it; check `workspaces/<pid>/config.json`. |
 | `clone --depth failed` | `--repo-url` is wrong or unreachable, or the sha is not on that branch. |
 | `argument --scope: expected one argument` | Quote it: `--scope "group:App,Math"`. The comma is being read as an argument separator. |
-| `Unknown group(s) in the scope: X` | A typo, or X is a component rather than a group. The message lists the valid group names. |
+| `Unknown group(s) in the scope: X` | X is probably a **component**, not a group — the message says so and prints the corrected `--scope`. |
 | `narrowed parse unavailable: baseline has no parser-level snapshot` | The baseline predates the feature. It falls back to a full parse; the next run narrows. |
 | `LLM CALLS : accounting unavailable` | Run `tools\db_setup.py` — a migration is missing. |
 | `run metadata is empty` | Phase 1 stored nothing; the flowchart engine will not resolve source files. |

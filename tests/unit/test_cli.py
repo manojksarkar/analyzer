@@ -108,6 +108,22 @@ class TestRunPyCli:
         output = _output(result)
 
         assert result.returncode == 2
-        assert "Unknown --selected-group 'DoesNotExist'" in output
+        # The message names every unresolved name and separates "not a group at all" from
+        # "that is a COMPONENT" — the two have different fixes, and the old single-line form
+        # ("Unknown --selected-group 'X'. Valid groups: ...") left the caller to work out which
+        # case they were in by comparing two lists.
+        assert "Unknown group(s) in the scope: DoesNotExist" in output
+        assert "Not found at all: DoesNotExist" in output
         for expected in ("Sample", "Full", "Support", "Access", "Diag"):
             assert expected in output
+
+    def test_a_component_name_is_identified_as_such(self):
+        """`App` is a real COMPONENT in the sample config, inside the group `Support`. Saying
+        only "valid groups: ..." is accurate and a dead end."""
+        result = _run_cli("--selected-group", "App", PROJECT_ROOT)
+        output = _output(result)
+
+        assert result.returncode == 2
+        assert "COMPONENTS, not groups" in output
+        assert "in group Support" in output
+        assert '--scope "component:App"' in output

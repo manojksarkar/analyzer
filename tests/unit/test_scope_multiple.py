@@ -84,3 +84,53 @@ class TestThePlannerHonoursEveryName:
         """A typo must not quietly yield the subset that happened to resolve."""
         with pytest.raises(ValueError, match="Nope"):
             self._plans(selected_group=["App", "Nope"])
+
+
+class TestAComponentNameGetsAUsefulError:
+    """`--scope group:App,Math` when App and Math are COMPONENTS.
+
+    The message was "Unknown --selected-group 'App'. Valid groups: Access, Diag, Full, …" —
+    accurate, and a dead end. App IS valid, as a component inside the group Support, and
+    nothing said so. The caller is left comparing two lists by hand to work out that the flag
+    was wrong rather than the name.
+    """
+
+    def _cfg(self):
+        return {"layers": {"Layer1": {"path": ".", "groups": {
+            "Support": {"Math": "math", "App": "app", "Outer": "outer"},
+            "Access": {"Access": "access"}}}}}
+
+    def _plan(self, groups):
+        from core.group_planner import plan_runs
+        return plan_runs(self._cfg(), project_path=".", selected_group=groups,
+                         use_model=True, no_llm_summarize=True, filter_mode=None)
+
+    def test_it_says_they_are_components_and_names_the_group(self):
+        with pytest.raises(ValueError) as exc:
+            self._plan(["App", "Math"])
+        msg = str(exc.value)
+        assert "COMPONENTS, not groups" in msg
+        assert "in group Support" in msg
+
+    def test_it_prints_the_corrected_command(self):
+        with pytest.raises(ValueError) as exc:
+            self._plan(["App", "Math"])
+        assert '--scope "component:App,Math"' in str(exc.value)
+
+    def test_a_genuinely_unknown_name_is_reported_separately(self):
+        """Mixing a component and a typo must distinguish them — the fixes differ."""
+        with pytest.raises(ValueError) as exc:
+            self._plan(["App", "Nonsense"])
+        msg = str(exc.value)
+        assert "Nonsense" in msg
+        assert "Not found at all" in msg
+
+    def test_it_is_case_insensitive_like_group_resolution(self):
+        with pytest.raises(ValueError) as exc:
+            self._plan(["app"])
+        assert "COMPONENTS, not groups" in str(exc.value)
+
+    def test_valid_groups_are_still_listed(self):
+        with pytest.raises(ValueError) as exc:
+            self._plan(["App"])
+        assert "Support" in str(exc.value) and "Access" in str(exc.value)
