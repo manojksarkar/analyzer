@@ -94,7 +94,8 @@ class TestEffectiveModelStore:
 
     @pytest.mark.parametrize("bad,fix", [
         (None, "--version-id"),
-        ("ver-nope", "INSERT the row first"),
+        # Was "INSERT the row first", pointing at a design document. It names the command now.
+        ("ver-nope", "tools/new_project.py"),
     ])
     def test_the_message_says_how_to_fix_it(self, monkeypatch, bad, fix):
         """An operator hitting this at 2am should not have to read the source."""
@@ -229,7 +230,7 @@ class TestOrchestratorsRespectTheModelStore:
         """'db' as a default has to survive a machine with no database and a CLI run whose
         version was never reserved — otherwise the default breaks those runs outright."""
         src = _src(os.path.join("engine", "incremental", name))
-        assert "effective_model_store(model_store, version_id)" in src, \
+        assert "effective_model_store(model_store, version_id" in src, \
             f"{name}: the requested store is used unresolved"
 
     def test_orchestrator_reads_the_model_from_the_store_in_db_mode(self):
@@ -278,3 +279,82 @@ class TestIncrementalEngineInDatabaseMode:
             "the snapshot must not infer the store kind from ambient state"
         eng_src = _src(os.path.join("engine", "incremental", "engine.py"))
         assert "snapshot_parse_model(model_dir, _adir, store, version_id, _MODEL_STORE)" in eng_src
+
+
+class TestTheMissingVersionMessageIsActionable:
+    """The error a CLI user hits most often must name the command that fixes it.
+
+    It pointed at "docs/production-redesign/10-db-native-pipeline.md §9" — a design document —
+    and was written before tools/new_project.py existed. Reading a plan's section 9 to discover
+    that one command reserves the row is a poor trade for one line of output.
+    """
+
+    def test_it_names_the_command_with_the_real_values(self, monkeypatch):
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
+        with pytest.raises(run_context.DatabaseRequired) as exc:
+            run_context.effective_model_store("db", "v1", project_id="myproj", commit="a" * 40)
+        msg = str(exc.value)
+        assert "tools/new_project.py" in msg
+        assert "--project-id myproj" in msg, "the message should carry the caller's own values"
+        assert "--version-id v1" in msg
+        assert "a" * 40 in msg
+        assert "--create-version" in msg
+        assert "10-db-native-pipeline.md" not in msg, "it should not send anyone to a design doc"
+
+    def test_it_degrades_to_placeholders_when_it_has_no_values(self, monkeypatch):
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
+        with pytest.raises(run_context.DatabaseRequired) as exc:
+            run_context.effective_model_store("db", "v1")
+        assert "<project-id>" in str(exc.value)
+
+
+class TestCreateVersionIsOptIn:
+    """`--create-version` exists so a CLI-only run is one command, not two.
+
+    Deliberately NOT the default: the row is the API's to own, and creating one silently would
+    turn a mistyped --version-id into a brand-new version instead of the error it should be.
+    """
+
+    def test_without_the_flag_a_missing_row_still_raises(self, monkeypatch):
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
+        created = []
+        monkeypatch.setattr(run_context, "_create_version_row",
+                            lambda *a: created.append(a) or True)
+        with pytest.raises(run_context.DatabaseRequired):
+            run_context.effective_model_store("db", "v1", project_id="p", commit="c" * 40)
+        assert not created, "the row was created without --create-version"
+
+    def test_with_the_flag_it_creates_and_proceeds(self, monkeypatch):
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
+        monkeypatch.setattr(run_context, "_create_version_row", lambda *a: True)
+        assert run_context.effective_model_store(
+            "db", "v1", project_id="p", commit="c" * 40, create_version=True) == "db"
+
+    def test_a_failed_create_still_raises(self, monkeypatch):
+        """Reporting success on a row that was not created would be the worst outcome."""
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
+        monkeypatch.setattr(run_context, "_create_version_row", lambda *a: False)
+        with pytest.raises(run_context.DatabaseRequired, match="could not create"):
+            run_context.effective_model_store(
+                "db", "v1", project_id="p", commit="c" * 40, create_version=True)
+
+    def test_it_needs_both_project_and_commit(self, monkeypatch):
+        """Without them there is nothing to write into the row."""
+        monkeypatch.setattr("core.db.is_database_configured", lambda: True)
+        monkeypatch.setattr(run_context, "_version_row_exists", lambda vid: False)
+        monkeypatch.setattr(run_context, "_create_version_row",
+                            lambda *a: pytest.fail("should not attempt a create"))
+        with pytest.raises(run_context.DatabaseRequired):
+            run_context.effective_model_store("db", "v1", create_version=True)
+
+
+@pytest.mark.parametrize("name", ["generate.py", "engine.py"])
+def test_both_orchestrators_expose_create_version(name):
+    src = _src(os.path.join("engine", "incremental", name))
+    assert '"--create-version"' in src
+    assert "create_version=create_version" in src

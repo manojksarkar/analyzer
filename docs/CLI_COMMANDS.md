@@ -95,6 +95,10 @@ python tools\new_project.py --project-id myproj --version-id v1 --commit <full-4
 `git rev-parse HEAD` gives the full sha. The command is idempotent — run it again for `v2`,
 `v3`, and it prints the exact generate command to run next.
 
+**Or skip this step**: add `--create-version` to the generate command and it reserves the row
+itself. It is opt-in rather than automatic so that a mistyped `--version-id` fails instead of
+quietly starting a brand-new version.
+
 ---
 
 ## 3. Generate
@@ -167,6 +171,7 @@ Math only.
 | `--model-store files` | Revert to `model/*.json`. The escape hatch. |
 | `--no-narrowed-parse` | Force a full re-parse (incremental only). |
 | `--verify-parse` | Run narrowed AND full, diff them, use the full one. Slow; for validation. |
+| `--create-version` | Reserve the `versions` row if absent, instead of erroring. Opt-in, so a typo in `--version-id` still fails. |
 | `--data-dict-id <id>` | Merge `workspaces/<pid>/datadict/<id>.csv` into the data dictionary. |
 | `--config <path>` | Use a specific config instead of the per-project one. |
 
@@ -252,7 +257,7 @@ Every one of these exists because something passed the unit tests and was still 
 | Message | What to do |
 |---|---|
 | `WorkspaceNotFound: no workspace for project 'x'` | Run `tools\new_project.py` (§2) — the directory, config and rows all come from there. |
-| `this run needs the database but there is no versions row for 'vX'` | Reserve it: `new_project.py --project-id … --version-id vX --commit <sha>`. |
+| `this run needs the database but there is no versions row for 'vX'` | Reserve it — the message prints the exact command with your values — or re-run with `--create-version`. |
 | `no database is configured` | Add the `db` section to `config.local.json`, then `tools\db_setup.py`. |
 | `per-project config not found` | `new_project.py` writes it; check `workspaces/<pid>/config.json`. |
 | `clone --depth failed` | `--repo-url` is wrong or unreachable, or the sha is not on that branch. |

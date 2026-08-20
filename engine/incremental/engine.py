@@ -576,7 +576,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          repo_url: Optional[str] = None,
                          repo_token: Optional[str] = None,
                          config_path: Optional[str] = None,
-                         model_store: str = "db") -> Dict[str, Any]:
+                         model_store: str = "db",
+                         create_version: bool = False) -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
 
@@ -630,7 +631,9 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     version_id = version_id or commit_key
     # Step 9: resolve the default 'db' once, here, and pass the answer down (the delegation to
     # generate_full above happens before version_id is known, so that path resolves its own).
-    model_store = effective_model_store(model_store, version_id)
+    model_store = effective_model_store(model_store, version_id,
+                                        project_id=project_id, commit=target,
+                                        create_version=create_version)
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
     vdir = vstore.create_dir(commit_key)  # == repo_dir (already checked out); never wiped
@@ -1022,6 +1025,8 @@ def main() -> None:
                          "the legacy model/*.json. Without an explicit 'files', a run that "
                          "cannot reach the database FAILS rather than silently producing a "
                          "version that is not there.")
+    ap.add_argument("--create-version", action="store_true",
+                    help="reserve the versions row if it does not exist (see generate.py).")
     ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
     ap.add_argument("--repo-url", default=None, help="clone URL (else resolved from the project record)")
     args = ap.parse_args()
@@ -1030,7 +1035,8 @@ def main() -> None:
                              no_llm=args.no_llm, version_id=args.version_id, force=args.force,
                              narrowed_parse=args.narrowed_parse, verify_parse=args.verify_parse,
                              config_path=args.config, repo_url=args.repo_url,
-                             model_store=args.model_store)
+                             model_store=args.model_store,
+                             create_version=args.create_version)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, baseline={m.get('baselineVersionId')}, "
           f"regenerated={m['regenerated']}, reused={m['reused']}, "

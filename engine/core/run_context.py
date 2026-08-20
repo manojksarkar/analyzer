@@ -65,6 +65,36 @@ def set_run_context(*, version: Optional[str] = None, project: Optional[str] = N
             _MODEL_STORE = model_store
 
 
+def _create_version_row(version_id: str, project_id: str, commit: str) -> bool:
+    """Reserve the versions row a CLI run needs. True on success.
+
+    Only ever called behind an explicit `--create-version`: the row is normally the API's to
+    own, and creating one silently would turn a mistyped `--version-id` into a brand-new
+    version rather than the error it should be.
+    """
+    try:
+        import datetime
+        import sqlalchemy as sa
+        from api.db.postgres import schema as s
+        from .db import get_engine
+        with get_engine().begin() as cx:
+            if not cx.execute(sa.select(s.projects.c.id)
+                              .where(s.projects.c.id == project_id)).first():
+                import sys
+                print(f"WARNING: no project {project_id!r} — run tools/new_project.py first.",
+                      file=sys.stderr)
+                return False
+            cx.execute(sa.insert(s.versions), {
+                "id": version_id, "project_id": project_id, "version": version_id,
+                "commit_sha": commit, "status": "in_review",
+                "created_at": datetime.datetime.now(datetime.timezone.utc)})
+        return True
+    except Exception as exc:
+        import sys
+        print(f"WARNING: could not reserve the versions row ({exc}).", file=sys.stderr)
+        return False
+
+
 def _version_row_exists(version_id: str) -> bool:
     """Is there a `versions` row to hang this run's model off?
 
@@ -89,7 +119,9 @@ class DatabaseRequired(RuntimeError):
     """The run needs the database and cannot have it. Raised instead of quietly using files."""
 
 
-def effective_model_store(requested: str, version_id: Optional[str]) -> str:
+def effective_model_store(requested: str, version_id: Optional[str],
+                          *, project_id: str = "", commit: str = "",
+                          create_version: bool = False) -> str:
     """Check that this run can actually reach the database. Raises if it cannot (step 11b).
 
     Step 9 made `db` the default and degraded to files with a warning when it could not be
@@ -112,10 +144,23 @@ def effective_model_store(requested: str, version_id: Optional[str]) -> str:
             fix = ("set the `db` section in engine/config/config.local.json, then run "
                    "`python tools/db_setup.py`")
         elif not _version_row_exists(version_id):
-            why = f"there is no versions row for {version_id!r}"
-            fix = ("the API reserves that row when a job starts, so generate through the API — "
-                   "or, for a CLI-only run, INSERT the row first (see docs/production-redesign/"
-                   "10-db-native-pipeline.md §9)")
+            if create_version and project_id and commit:
+                if _create_version_row(version_id, project_id, commit):
+                    return "db"
+                why = f"could not create the versions row for {version_id!r}"
+                fix = "check the database is writable and the project id exists"
+            else:
+                why = f"there is no versions row for {version_id!r}"
+                # Name the command, not a design document. The row is trivially creatable and
+                # the tool that does it already exists; sending someone to read §9 of a plan to
+                # find that out is a poor trade for one line of output.
+                _pid = project_id or "<project-id>"
+                _sha = commit or "<full-40-char-sha>"
+                fix = (f"reserve it first —\n"
+                       f"    python tools/new_project.py --project-id {_pid} "
+                       f"--version-id {version_id} --commit {_sha}\n"
+                       f"  or add --create-version to this command to do it in one step. "
+                       f"(The API reserves the row itself when a job starts.)")
         else:
             return "db"
     raise DatabaseRequired(

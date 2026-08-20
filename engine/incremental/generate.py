@@ -300,6 +300,7 @@ def generate_full(
     repo_token: Optional[str] = None,
     config_path: Optional[str] = None,
     model_store: str = "db",
+    create_version: bool = False,
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
 
@@ -339,7 +340,9 @@ def generate_full(
     # Step 9: 'db' is the default, so resolve it once here against what this machine can do and
     # pass the ANSWER down. Everything below — the phase flags, the snapshot source, the
     # orchestrator's own model read — keys off this one value.
-    model_store = effective_model_store(model_store, version_id)
+    model_store = effective_model_store(model_store, version_id,
+                                        project_id=project_id, commit=actual_commit,
+                                        create_version=create_version)
     store = make_store(project_id, workspaces_root)
     from incremental.engine import StoreReuseIndex
     ridx = StoreReuseIndex(store)      # reuse index via the store: Postgres under PgStore
@@ -546,13 +549,18 @@ def main() -> None:
                          "'files' forces the legacy model/*.json. Without an explicit "
                          "'files', a run that cannot reach the database FAILS rather than "
                          "silently producing a version that is not there.")
+    ap.add_argument("--create-version", action="store_true",
+                    help="reserve the versions row if it does not exist. The API normally owns "
+                         "that row; without this a missing one is an error, so a mistyped "
+                         "--version-id fails instead of silently starting a new version.")
     ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
     ap.add_argument("--repo-url", default=None, help="clone URL (else resolved from the project record)")
     args = ap.parse_args()
     m = generate_full(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
                       data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
                       version_id=args.version_id, config_path=args.config, repo_url=args.repo_url,
-                      model_store=args.model_store)
+                      model_store=args.model_store,
+                      create_version=args.create_version)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, regenerated={m['regenerated']}, "
           f"documents={m.get('documents')}")
