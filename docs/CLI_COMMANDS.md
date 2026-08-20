@@ -35,43 +35,56 @@ python tools\check_llm.py
 
 Generating needs four things the engine does not create for itself: the `projects` row, the
 workspace directory, that project's `config.json`, and a `versions` row (the API reserves that
-at job start). One command does all of it:
+at job start). `new_project.py` does all four.
 
-**Preferred — bring your own config:**
+First write the project's `config.json`. Copy `engine/config/config.defaults.json`, then edit
+`layers` to point at your source directories — that is what tells the parser which code belongs
+to which layer. Remove the comments and trailing commas: the defaults file tolerates them,
+`--config` reads strict JSON.
 
-```
-python tools\new_project.py --project-id myproj --repo-url https://git.example.com/x.git --config path\to\my-config.json
-```
-
-`--config` copies a complete config in. This is the right option for a real project: layers are
-only one part of it, and clang args, views and LLM settings do not belong on a command line.
-Start from `engine/config/config.defaults.json`, edit it, point at it. (It is read as strict
-JSON, so the comments and trailing commas that `config.defaults.json` tolerates must be removed.)
-
-**Quick start — layers only:**
-
-```
-python tools\new_project.py --project-id myproj --repo-url https://git.example.com/x.git --layers "App=src/app,Lib=src/lib"
-```
-
-Edits only the `layers` of the default config; everything else keeps its default. Paths are
-**relative to the repo root**. The two options are alternatives, not combinable.
-
-### Using a local C++ checkout instead of a remote
-
-`--repo-url` accepts a **local path**, because `git clone` does:
-
-```
-python tools\new_project.py --project-id myproj --repo-url D:\code\my-cpp-project --layers "App=src"
+```json
+{
+  "layers": {
+    "App": { "path": "src/app", "groups": { "Core": { "Uart": "uart", "Spi": "spi" } } },
+    "Lib": { "path": "src/lib", "groups": { "Util": { "Math": "math" } } }
+  },
+  "views":  { "interfaceTables": true, "flowcharts": true, "unitDiagrams": true },
+  "llm":    { "provider": "openai", "defaultModel": "openai/gpt-oss-120b" }
+}
 ```
 
-The one requirement is that it must be a **git repository** — the whole incremental model is
-built on commits (`--commit <sha>`, baseline selection, diffs between versions). A plain
-directory with no git history cannot be used.
+Paths under `layers` are **relative to the repo root**.
 
-Already have the exact commit checked out? Put it at
-`workspaces/myproj/<first-16-chars-of-sha>/` and omit `--repo-url` — an existing `.git` there
-is reused rather than re-cloned.
+### A. C++ source from a git URL
+
+```
+python tools\new_project.py --project-id myproj --repo-url https://git.example.com/my-cpp.git --branch main --config my-config.json
+```
+
+### B. C++ source from a local path
+
+`--repo-url` accepts a local path, because `git clone` does:
+
+```
+python tools\new_project.py --project-id myproj --repo-url D:\code\my-cpp-project --branch main --config my-config.json
+```
+
+The one requirement is that it be a **git repository** — the incremental model is built on
+commits (`--commit <sha>`, baseline selection, diffs between versions), so a plain directory
+with no git history cannot be used. Run `git init` and commit once if it is not one yet.
+
+Note this **clones** your local path into `workspaces/<pid>/<sha[:16]>/`. That is deliberate —
+a version is pinned to a commit — but it means uncommitted edits in your working directory are
+not picked up until you commit them.
+
+### C. The commit is already checked out
+
+Put it at `workspaces/myproj/<first-16-chars-of-sha>/` and omit `--repo-url` entirely. An
+existing `.git` there is reused rather than re-cloned:
+
+```
+python tools\new_project.py --project-id myproj --branch main --config my-config.json
+```
 
 ### Reserve a version for the commit you want
 

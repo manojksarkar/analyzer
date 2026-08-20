@@ -9,7 +9,7 @@ anything useful has happened.
 
     python tools/new_project.py --project-id myproj --repo-url https://git/x.git
     python tools/new_project.py --project-id myproj --version-id v2 --commit <sha>
-    python tools/new_project.py --project-id myproj --layers "App=src/app,Lib=src/lib"
+    python tools/new_project.py --project-id myproj --config my-config.json
 
 Idempotent: run it again to reserve another version, or after editing the defaults to refresh
 the config. Nothing existing is overwritten unless you pass --force-config.
@@ -37,19 +37,6 @@ def _load_defaults() -> dict:
     return json.loads(raw)
 
 
-def _parse_layers(spec: str) -> dict:
-    """"App=src/app,Lib=src/lib" -> the layers block the parser expects."""
-    out = {}
-    for part in (spec or "").split(","):
-        part = part.strip()
-        if not part:
-            continue
-        name, _, path = part.partition("=")
-        name, path = name.strip(), (path.strip() or name.strip())
-        out[name] = {"path": path, "groups": {name: {name: "."}}}
-    return out
-
-
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -61,9 +48,6 @@ def main(argv=None) -> int:
                     help="an existing config.json to use as this project's config. Preferred "
                          "for a real project: layers are only one part of it, and clang args, "
                          "views and llm settings do not fit on a command line.")
-    ap.add_argument("--layers", default=None,
-                    help='"App=src/app,Lib=src/lib" — a shortcut that edits ONLY the layers of '
-                         'the default config. For a quick start; use --config for real work.')
     ap.add_argument("--version-id", default=None, help="also reserve this version")
     ap.add_argument("--commit", default=None, help="the commit that version is for")
     ap.add_argument("--force-config", action="store_true",
@@ -113,10 +97,6 @@ def main(argv=None) -> int:
     print(f"workspace: {proj_dir}")
 
     # 3. the per-project config -----------------------------------------------------------
-    if args.config and args.layers:
-        print("\n--config and --layers are alternatives: --config brings the whole file, "
-              "--layers edits only the layers of the default. Pass one.")
-        return 2
     cfg_path = os.path.join(proj_dir, "config.json")
     if os.path.isfile(cfg_path) and not args.force_config:
         print(f"config   : {cfg_path} (kept — --force-config to replace)")
@@ -138,18 +118,20 @@ def main(argv=None) -> int:
                 print("           ! that config has no `layers` — the parser will find no "
                       "source. Add them before generating.")
         else:
+            # No --config: the defaults are a starting point, not a usable project config.
+            # `layers` there points at this repo's own sample tree, so a run would parse the
+            # wrong source or none at all.
             cfg = _load_defaults()
-            if args.layers:
-                cfg["layers"] = _parse_layers(args.layers)
         with open(cfg_path, "w", encoding="utf-8") as fh:
             json.dump(cfg, fh, indent=2)
         _src_note = f" (from {os.path.basename(args.config)})" if args.config else ""
         print(f"config   : {cfg_path} WRITTEN{_src_note}"
-              + (f"  layers={list(cfg.get('layers') or {})}"
-                 if (args.layers or args.config) else ""))
-        if not (args.layers or args.config):
-            print("           ^ no --layers given, so it kept the defaults. Edit `layers` in "
-                  "that file to point at your source directories.")
+              + f"  layers={list(cfg.get('layers') or {})}")
+        if not args.config:
+            print("           ! no --config given, so this is a COPY OF THE DEFAULTS. Its "
+                  "`layers` point at this repo's sample tree,")
+            print("             not your code. Edit that file, or re-run with "
+                  "--config <your.json> --force-config, before generating.")
 
     # 4. the versions row -----------------------------------------------------------------
     if args.version_id:
