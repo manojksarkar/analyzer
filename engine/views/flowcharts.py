@@ -308,12 +308,15 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
             for u in changed_units
         }
 
-        # The engine reads its functions from the database when given --version-id and
-        # restricts itself from the stored plan, so this file is only an input on the file
-        # path. Written either way: it costs nothing and keeps that path unchanged.
-        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(restricted, f, indent=2)
+        # Only the FILE path consumes this. Given --version-id the engine reads its functions
+        # from the database and restricts itself from the stored plan, so writing
+        # functions_incremental.json there produces a file nothing opens — it was showing up in
+        # version dirs as unexplained leftovers.
+        from core.run_context import model_store_kind as _msk, version_id as _vid
+        if not (_msk() == "db" and _vid()):
+            os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(restricted, f, indent=2)
 
         log(
             f"incremental: flowcharts (function-level) restricted to {len(restricted)} changed "

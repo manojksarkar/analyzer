@@ -186,6 +186,106 @@ def _reserve_version(db: Any, job: Any, project: Any) -> None:
         created_by=(project.created_by if project else "system"), created_at=_now()))
 
 
+def _materialise_data_dictionary(db: Any, job: Any) -> Optional[Path]:
+    """Put the uploaded data dictionary where the engine expects it, and persist it.
+
+    The engine resolves it as `workspaces/<pid>/datadict/<id>.csv` — and nothing ever created
+    that file. `POST /uploads` kept the bytes in a module-level `_UPLOADS` dict and returned an
+    id; the wizard stored the id in `build_config`; the runner then checked for a file that was
+    never written, found nothing, and silently omitted `--data-dictionary`. The CSV therefore
+    never reached the parser, never merged into `dataDictionary`, and never appeared in the
+    database. No error at any step.
+
+    Two destinations, because they answer different questions:
+      * the FILE is what `parser.py` reads (it takes a path);
+      * `data_dictionaries` + `data_dictionary_entries` make it survive an API restart and be
+        visible from another node — the in-memory dict does neither.
+
+    Returns the path, or None when the job has no dictionary or the content cannot be found.
+    """
+    ddid = getattr(job, "data_dict_id", None)
+    if not ddid:
+        return None
+    dd_path = (get_settings().repo_root / "workspaces" / job.project_id
+               / "datadict" / f"{ddid}.csv")
+    if dd_path.is_file():
+        return dd_path                       # already materialised by an earlier run
+
+    data = _upload_bytes(ddid) or _stored_dictionary_bytes(db, job.project_id, ddid)
+    if not data:
+        _append_log(job.id, f"WARNING: data dictionary {ddid} has no content on this node — "
+                            f"the run will proceed WITHOUT it")
+        return None
+
+    try:
+        dd_path.parent.mkdir(parents=True, exist_ok=True)
+        dd_path.write_bytes(data)
+    except OSError as exc:
+        _append_log(job.id, f"WARNING: could not write the data dictionary: {exc}")
+        return None
+    _persist_dictionary(db, job.project_id, ddid, data)
+    _append_log(job.id, f"Data dictionary {ddid} ready ({len(data)} bytes).")
+    return dd_path
+
+
+def _upload_bytes(upload_id: str) -> Optional[bytes]:
+    """The uploaded bytes, if this process still holds them (they are in memory only)."""
+    try:
+        from ..routes.repositories import _UPLOADS
+        rec = _UPLOADS.get(upload_id) or {}
+        return rec.get("data")
+    except Exception:
+        return None
+
+
+def _stored_dictionary_bytes(db: Any, project_id: str, ddid: str) -> Optional[bytes]:
+    """Rebuild the CSV from `data_dictionary_entries` — the copy that survives a restart."""
+    try:
+        import sqlalchemy as sa
+        from ..db.postgres import schema as s
+        eng = getattr(db, "_engine", None)
+        if eng is None:
+            return None
+        with eng.connect() as cx:
+            rows = cx.execute(
+                sa.select(s.data_dictionary_entries.c.payload)
+                .where(s.data_dictionary_entries.c.data_dictionary_id == ddid)
+                .order_by(s.data_dictionary_entries.c.id)).all()
+        if not rows:
+            return None
+        lines = [r[0].get("_raw", "") for r in rows if isinstance(r[0], dict)]
+        if not any(lines):
+            return None
+        return ("\n".join(lines) + "\n").encode("utf-8")
+    except Exception:
+        return None
+
+
+def _persist_dictionary(db: Any, project_id: str, ddid: str, data: bytes) -> None:
+    """Store the CSV so a restart or another node can still find it. Best-effort."""
+    try:
+        import sqlalchemy as sa
+        from ..db.postgres import schema as s
+        eng = getattr(db, "_engine", None)
+        if eng is None:
+            return
+        text = data.decode("utf-8", errors="replace")
+        rows = [{"data_dictionary_id": ddid, "payload": {"_raw": ln}}
+                for ln in text.splitlines()]
+        with eng.begin() as cx:
+            if not cx.execute(sa.select(s.data_dictionaries.c.id)
+                              .where(s.data_dictionaries.c.id == ddid)).first():
+                cx.execute(sa.insert(s.data_dictionaries), {
+                    "id": ddid, "project_id": project_id, "name": f"{ddid}.csv",
+                    "uploaded_at": _now()})
+            cx.execute(sa.delete(s.data_dictionary_entries)
+                       .where(s.data_dictionary_entries.c.data_dictionary_id == ddid))
+            if rows:
+                cx.execute(sa.insert(s.data_dictionary_entries), rows)
+    except Exception as exc:
+        _log.warning("could not persist the data dictionary %s: %s", ddid, exc)
+
+
 def _store_resolved_config(db: Any, job: Any, cfg: dict) -> None:
     """Persist the per-version NON-SECRET analysis config onto the reserved version row
     (versions.resolved_config). Best-effort: a storage hiccup must not fail the run — the
@@ -340,6 +440,9 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
         # list_versions returns real ver ids now, so the baseline override IS the real id.
         cmd += ["--base-version-id", job.reference_version_id]
     if getattr(job, "data_dict_id", None):
+        # Materialise it FIRST — the engine resolves the id to a file, and nothing else
+        # creates that file.
+        _materialise_data_dictionary(db, job)
         cmd += ["--data-dict-id", job.data_dict_id]
     if getattr(job, "no_llm", False):
         cmd.append("--no-llm")
