@@ -104,6 +104,53 @@ class TestMergeModel:
         assert m["tu_includes"] == {"A.cpp": ["X.h", "Z.h"], "B.cpp": ["Y.h"]}
 
 
+class TestFileLessEntries:
+    """dataDictionary entries no file owns: the external CSV, PRIMITIVES, builtins.
+
+    `_file_of` resolves them to "", which is never in `drop`, so the plain by-file rule
+    kept the baseline copy and discarded the fresh one — an added or edited
+    --data-dictionary CSV silently never reached an incremental run's model.
+    """
+
+    def test_csv_entry_added_after_the_baseline_lands(self):
+        baseline = _model({}, dataDictionary={"Point": {"kind": "struct"}},
+                          entity_files={"Point": "P.h"})
+        fresh = _model({}, dataDictionary={"Point": {"kind": "struct"},
+                                           "BOOL32": {"kind": "typedef", "range": "0-1"}},
+                       entity_files={"Point": "P.h"})
+        m = merge_model(baseline, fresh, drop_files={"P.h"})
+        assert m["dataDictionary"]["BOOL32"]["range"] == "0-1"
+
+    def test_edited_csv_range_wins_over_the_stale_baseline(self):
+        baseline = _model({}, dataDictionary={"BOOL32": {"kind": "typedef", "range": "STALE"}})
+        fresh = _model({}, dataDictionary={"BOOL32": {"kind": "typedef", "range": "0-1"}})
+        m = merge_model(baseline, fresh, drop_files={"A.cpp"})
+        assert m["dataDictionary"]["BOOL32"]["range"] == "0-1"
+
+    def test_baseline_builtins_from_untouched_tus_survive(self):
+        """Why this is a union, not a replace.
+
+        A narrowed parse only registers the builtins its re-parsed TUs use, so
+        replacing the file-less set wholesale would lose ranges owned by TUs the
+        partial parse never opened.
+        """
+        baseline = _model({}, dataDictionary={"unsigned char": {"kind": "primitive",
+                                                                "range": "0-0xFF"},
+                                              "long": {"kind": "primitive", "range": "0-0xFF"}})
+        fresh = _model({}, dataDictionary={"long": {"kind": "primitive", "range": "0-0xFF"}})
+        m = merge_model(baseline, fresh, drop_files={"A.cpp"})
+        assert m["dataDictionary"]["unsigned char"]["range"] == "0-0xFF"
+
+    def test_file_owned_types_still_follow_the_by_file_rule(self):
+        """The exception must not leak: a type WITH a file is still baseline-wins."""
+        baseline = _model({}, dataDictionary={"Point": {"kind": "struct", "range": "BASE"}},
+                          entity_files={"Point": "P.h"})
+        fresh = _model({}, dataDictionary={"Point": {"kind": "struct", "range": "PARTIAL"}},
+                       entity_files={"Point": "P.h"})
+        m = merge_model(baseline, fresh, drop_files={"Other.cpp"})   # P.h not re-parsed
+        assert m["dataDictionary"]["Point"]["range"] == "BASE"
+
+
 class TestDiffModels:
     """M4.5 --verify-parse self-check: diff a narrowed model against a full one."""
 

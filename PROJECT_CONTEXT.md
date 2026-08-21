@@ -172,6 +172,109 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-22 (**the CSV-failing-silently work rebased onto the per-layer data dictionary**
+> — the two landed on `poc-4` in parallel and both rewrote the same merge function, so this is the
+> reconciliation, not new behaviour. `_merge_external_data_dictionary` is now a thin shim over
+> `_merge_dd_rows(path, layer)` and **passes the report lines through**, so the tests that drive the old
+> name still see them.
+> **(1) The merge report and the layer key had to be resolved by ONE rule.** The layered merge seeds a
+> row from the global tier when the bare slot is not this layer's; the report decides matched-vs-new
+> against a pre-loop snapshot. Written twice, those two answers drift. New `_dd_row_base(source, name,
+> target_key)` holds the rule once and is called twice per row — with the **live** dictionary to build
+> the entry from, and with the **snapshot** to file the report. `pre_existing` is now a shallow
+> `dict(data_dictionary)`, not a set of keys, because the layered lookup has to read each candidate's
+> `layer` and the loop stamps `layer` on what it writes. Shallow is enough: the loop rebinds
+> `data_dictionary[target_key]` to a fresh `dict(existing)` and never mutates a snapshot value in place.
+> **(2) `_csv_top_level_names` is keyed by layer** (`None` = the global tier), not one flat set. It
+> licenses `_reresolve_struct_field_ranges` to overwrite a measured field width, and flat it would have
+> let a **Layer2** CSV naming `BOOL32` rewrite a **Layer1** struct's `BOOL32` field — the layer-blending
+> the per-layer work exists to stop. Same pass now calls `get_range(ftype, data_dictionary,
+> entry.get("layer"))`; it was the last dictionary read still unscoped.
+> **(3) `tools/check_data_dictionary_csv.py` gained `--layer`.** Passes C and D looked names up by
+> BARE name, so against a layered model a correctly applied `--data-dictionary-layer` CSV reported
+> *"NOT ONE row from this CSV is in dataDictionary.json"* and exited 1 — the tool's loudest ERROR, on a
+> correct run. New `dd_key(dd, name, layer)` mirrors `_dd_target_key` + `_visible_to_layer` (layer key
+> first, then the bare name only if it is global or this layer's); pass D resolves through
+> `get_range(t, dd, layer)`. Omit the flag for a project-wide CSV and nothing changes.
+> **(4) `parse_merge._merge_keyed` needed no reconciliation** — file-less keys take fresh (the CSV fix)
+> and `_dd_store` registers `entity_files` for `qn@Layer` keys (the layer fix); they are disjoint.
+> New tests: `TestLayeredMergeReport` in `tests/unit/test_data_dictionary_csv.py` (3 — a layer row on a
+> global type is *matched* and leaves the global entry alone; duplicate layer rows on an unparsed type
+> count **once** as new under the `name@layer` key; another layer's CSV does not license a field
+> rewrite) — the layer-by-report interaction neither branch had a case for — and `TestAppliedPassLayerScoped`
+> in `tests/unit/test_check_data_dictionary_csv.py` (4). No snapshot regen needed.)
+
+> Updated: 2026-08-21 (**`tools/check_data_dictionary_csv.py` — pre-flight validator for the
+> `--data-dictionary` CSV, written while diagnosing "all SWE.3 data ranges are NA" on the client
+> project.** UNCOMMITTED, on `poc-4`. Reads the CSV exactly as `_merge_external_data_dictionary` does
+> and reports what that merge stays silent about. Four passes: **A** encoding (the merge opens
+> `encoding="utf-8"` and catches only `csv.Error`, so a cp1252 export aborts Phase 1 with an uncaught
+> `UnicodeDecodeError`), delimiter, header — a renamed/absent `Name` column or a title row above the
+> header makes `row.get("Name")` `None` for every row → *merged 0*, no other sign; **B** per-row —
+> duplicate `Name`s, rows with an empty `Name` and a non-child `Kind` (dropped by `if not name:
+> continue`, counted in **neither** `merged` nor `orphan_children`), unquoted commas past the header,
+> non-identifier Names (`get_range` strips `const`/`*`/`&` **before** the lookup), and top-level
+> `enum`/`struct` rows with no child rows below them — those reset `enumerators`/`fields` to `[]` and
+> **destroy the parsed list**; **C** applied? — the merge writes top-level rows *unconditionally*, so a
+> CSV name absent from `dataDictionary.json` proves the CSV never ran for that model; **D** NA audit —
+> resolves every parameter/return/global spelling through the real `utils.get_range` (imported, not
+> re-implemented) and buckets the NAs into *named in the CSV but still NA* / *unknown scalar — add these*
+> / *aggregate or derived, NA is correct*. Exit 1 on any ERROR.
+> `python tools/check_data_dictionary_csv.py <csv> --model-dir model [--quiet] [--limit N]`.
+> Tests: `tests/unit/test_check_data_dictionary_csv.py` (one case per failure mode).
+>
+> **Engine fixes landed with it** (same branch, all tested):
+> **(a) The merge report no longer lies** (`_merge_external_data_dictionary` +
+> `_format_csv_merge_report`). matched-vs-new is now decided against a `pre_existing = set(data_dictionary)`
+> snapshot taken **before** the row loop — testing `data_dictionary.get(name)` per row meant the 2nd row of
+> a duplicated Name saw the entry the 1st row had just written and was filed under *"matched a parsed
+> type"*, reporting a type absent from the source as a successful override. Two new report lines:
+> duplicated Names (last row wins) and rows dropped for an empty `Name` on a non-child `Kind` (a
+> merged-cell Excel export becomes a file of these; they were counted in **neither** `merged` nor
+> `orphan_children`). The function now **returns** its report lines as well as logging them, so the
+> counting is directly assertable.
+> **(b) Struct fields can no longer contradict their own type** — new `_reresolve_struct_field_ranges()`,
+> run after the CSV merge and before `write_model_file`. Field ranges are baked during the parse from the
+> canonical clang type, ~1300 lines before the CSV is read, so a `BOOL32` field kept `0-0xFFFFFFFF` while
+> the type entry said `0-1`. Re-answers only two cases: baked range is `"NA"`, or the field's base type was
+> named by the CSV (`_csv_top_level_names`) — a **measured width outranks anything name-derived**.
+> ⚠️ **Derived spellings are skipped unless CSV-named**: `get_range` answers a pointer from its pointee, so
+> the first cut stamped `-0x80-0x7F` on `Widget_t.name` (`const char *`) — a signed-char range on a string,
+> worse than the `NA` it replaced. Caught on the Sample; guarded by `_is_derived_type`.
+> **(c) Incremental no longer discards file-less dictionary entries** (`parse_merge._merge_keyed`) —
+> see the dedicated note below.
+> **Verified end-to-end** on SampleCppProject: full suite **975 passed / 4 skipped**; the two snapshots
+> (`interface_tables.json`, `unit_diagrams.json`) carry no struct-field ranges so **no snapshot regen was
+> needed**; a run with a deliberately broken CSV logs all four report lines with `BOOL32` counted **once**
+> as new despite two rows.
+>
+> **Not fixed, still live:** (1) types declared in include paths are never in the dictionary at all —
+> `visit_type_definitions` returns early unless `is_project_file()` (`parser.py:1004`), so the CSV is the
+> *only* source of a range for them — this is the design, not a bug; (2) there is **no `config.json` key**
+> for the data dictionary — CLI `--data-dictionary` or the API's `data_dict_id` only (the Phase 1 banner
+> *does* log the resolved path — that line already existed); (3) `api/routes/repositories.py:44` accepts
+> `.xlsx`/`.xls` uploads but `pipeline_runner.py:643` only ever builds `datadict/<id>.csv` and guards with
+> `if dd_path.is_file():` — **no xlsx→csv conversion exists anywhere in the repo**, so an Excel upload
+> silently omits the flag. Deprioritised: the client is not using xlsx today.)
+
+> Updated: 2026-08-21b (**incremental: a `--data-dictionary` CSV never reached an incremental run's model**
+> — `engine/incremental/parse_merge.py::_merge_keyed`. `_file_of()` returns `""` for an entry with no
+> `entity_files` mapping and no `@file` in its key: CSV-added dataDictionary entries, the `PRIMITIVES` seed,
+> and the canonical builtins `_register_builtin_range` records. `""` is never in `drop`, so the by-file rule
+> kept every baseline file-less entry and discarded every fresh one — **a CSV added after the baseline never
+> landed at all, and an edited range lost to the stale baseline value**, silently, on every incremental run.
+> The narrowed parse *does* receive the flag (`incremental/engine.py:184-185`), so the fresh model had the
+> right data; the merge threw it away. `dataDictId` is recorded in the manifest but never compared, and
+> `parseFingerprint` covers only clang args/std/toolchain — nothing forces a full re-parse when the CSV
+> changes. Fix: file-less keys are owned by no file, so the by-file rule cannot arbitrate them — take fresh.
+> **Union, not replace**, deliberately: a narrowed parse only registers the builtins its re-parsed TUs use,
+> so dropping baseline file-less entries absent from `fresh` would lose builtin ranges owned by untouched
+> TUs. **Residual, documented in the docstring:** a row DELETED from the CSV survives until the next full
+> parse; the exact alternative (folding a CSV content hash into `parseFingerprint`) forces a full re-parse
+> on every CSV edit and defeats the point of incremental. Tests:
+> `tests/unit/test_incremental_parse_merge.py::TestFileLessEntries`, incl. one pinning that a type WITH a
+> file still follows the baseline-wins rule.)
+
 > Updated: 2026-08-18 (**Per-layer data dictionary — closes backlog SH-3.** Branch
 > `feat/per-layer-data-dictionary` off `poc-4`. **The rule, decided with the user and general to every
 > per-layer input: resolving anything for layer `L` uses global + `L` only; another layer's inputs are
@@ -2336,12 +2439,14 @@ A layer's rows never touch another layer's entries: `_dd_target_key()` writes th
 - **Child rows** (empty `Name`, Kind=`enumerator` or `field`): carry forward the last non-empty `Name` as parent key and append `{name: EntryName, value/range, comment}` to the parent's list. Empty `Name` matches Excel merged-cell CSV exports.
 - External entries win on conflict. New entries (not in parsed source) are added as-is.
 - `location` and other auto-parsed fields are preserved on updated entries via `dict(existing)` copy.
-- A range set here reaches the interface tables through `utils.get_range`, including via an alias whose own range was baked `"NA"` — see [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03). `fields[].range` inside a struct entry stays as parsed (nothing downstream reads it).
-- **Merge report** (`_format_csv_merge_report`): after the count, the parser prints which rows landed on a parsed type and which were **new, not found in source**. A typo'd or renamed type name is otherwise silently added as its own entry and looks identical to a successful override. Orphan child rows (no `Name` above them) are counted too.
+- A range set here reaches the interface tables through `utils.get_range`, including via an alias whose own range was baked `"NA"` — see [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03). `fields[].range` inside a struct entry is **re-answered after every CSV** by `_reresolve_struct_field_ranges()` — it is baked during the parse from the canonical clang type, long before the CSV is read, so a `BOOL32` field kept `0-0xFFFFFFFF` while the CSV set the `BOOL32` *type* to `0-1`. Only two cases are re-answered: baked range is `"NA"`, or the field's base type was named by a CSV **visible to that entry's layer** (`_csv_top_level_names`, keyed by layer) — a measured width outranks anything name-derived. Derived spellings (`*`, `&`, `[`, `(`) are skipped unless CSV-named, so a `const char *` keeps `NA` instead of taking a signed-char range from its pointee. The lookup is layer-scoped (`get_range(ftype, dd, entry.layer)`).
+- **Merge report** (`_format_csv_merge_report`): after the count, the parser prints which rows landed on a parsed type and which were **new, not found in source**. A typo'd or renamed type name is otherwise silently added as its own entry and looks identical to a successful override. Orphan child rows (no `Name` above them) are counted too, as are **duplicated Names** (last row wins, and the earlier entry's `enumerators`/`fields` are reset out from under it) and **rows dropped for an empty `Name` on a non-child `Kind`** — a merged-cell Excel export becomes a file of these, and they were previously counted in neither `merged` nor the orphan tally. matched-vs-new is decided against a snapshot taken **before** the row loop, so the second row of a duplicated Name cannot see what the first wrote and be mis-filed as a successful override. The function **returns** its lines as well as logging them, so the counting is assertable in tests. The line is prefixed `[<layer>]` for a layer-scoped source.
   ```
   data dictionary: merged 6 entries from data_dictionary.csv
       4 matched a parsed type: DB_TYPE, Status, Color, GG
       2 new, not found in source: MotorSpeed_t, Voltage_t
+      1 name(s) appear on more than one row (last row wins): BOOL32
+      3 row(s) dropped: empty Name on a row that is not Kind=enumerator/field
   ```
 
 ### Outputs

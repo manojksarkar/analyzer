@@ -92,6 +92,7 @@ PROJECT_NAME = _project_name_override or os.path.basename(MODULE_BASE_PATH)
 
 from utils import (
     get_component_name as _get_component,
+    get_range,
     get_range_for_type,
     load_config,
     make_function_key,
@@ -533,6 +534,13 @@ _clang_overridden = _make_overridden_lookup()
 functions = {}
 globals_data = {}
 data_dictionary = {}
+# Top-level names each external CSV wrote, keyed by that CSV's layer (None = the
+# project-wide tier, visible to everyone). Filled by _merge_dd_rows, read by
+# _reresolve_struct_field_ranges to know which baked field ranges the author
+# deliberately overrode. Keyed by layer, not one flat set, for the same reason the
+# dictionary itself is: a Layer2 CSV naming a type must not license a rewrite of a
+# Layer1 struct's field of that name.
+_csv_top_level_names: dict = {}
 # Incremental (M1.2): entityKey -> token-sha256, for all four entity kinds.
 # Function/global keys are filled in build_metadata (need the model key); type and
 # macro keys are filled directly in their passes. Written to model/hashes.json.
@@ -2289,12 +2297,18 @@ def _scan_defines():
             entity_files[f"{name}@{rel_file}"] = rel_file  # M4.3
 
 
-def _format_csv_merge_report(matched_names, new_names, orphan_children, *, limit=10):
+def _format_csv_merge_report(matched_names, new_names, orphan_children,
+                             duplicate_names=None, blank_name_rows=0, *, limit=10):
     """Lines telling the CSV author which rows actually landed on a parsed type.
 
     "new, not found in source" is the one that matters: a typo'd or renamed type is
     silently added as its own entry, so without this it looks exactly like a
     successful override while the real type keeps its old range.
+
+    `duplicate_names` and `blank_name_rows` cover the two ways a row goes wrong
+    without changing any count above: a repeated Name (last one wins, and the
+    earlier entry's enumerators/fields are reset out from under it) and a row whose
+    Name cell is empty on a non-child Kind, which the merge loop drops outright.
     """
     def _names(names):
         shown = ", ".join(names[:limit])
@@ -2305,6 +2319,16 @@ def _format_csv_merge_report(matched_names, new_names, orphan_children, *, limit
         lines.append(f"    {len(matched_names)} matched a parsed type: {_names(matched_names)}")
     if new_names:
         lines.append(f"    {len(new_names)} new, not found in source: {_names(new_names)}")
+    if duplicate_names:
+        lines.append(
+            f"    {len(duplicate_names)} name(s) appear on more than one row (last row wins): "
+            f"{_names(duplicate_names)}"
+        )
+    if blank_name_rows:
+        lines.append(
+            f"    {blank_name_rows} row(s) dropped: empty Name on a row that is not "
+            "Kind=enumerator/field"
+        )
     if orphan_children:
         lines.append(f"    {orphan_children} child row(s) skipped: no parent Name above them")
     return lines
@@ -2332,11 +2356,32 @@ def _dd_target_key(name: str, layer: "str | None") -> str:
     return name
 
 
-def _merge_dd_rows(path: str, layer: "str | None" = None) -> None:
+def _dd_row_base(source: dict, name: str, target_key: str) -> "dict | None":
+    """The existing entry a CSV row builds on, looked up in `source`.
+
+    Called twice per row against two different dicts: the live dictionary, to build the
+    new entry from, and the pre-loop snapshot, to decide matched-vs-new. Those answers
+    differ exactly for a duplicated Name — where the live dictionary already holds what
+    the earlier row wrote — which is why the report cannot read the live one.
+    """
+    hit = source.get(target_key)
+    if hit is None and target_key != name:
+        # First row for this layer on a name the global tier already holds: seed from
+        # the global entry so location/fields survive, but never from another LAYER's.
+        _global = source.get(name)
+        if _global is not None and _global.get("layer") is None:
+            hit = _global
+    return hit
+
+
+def _merge_dd_rows(path: str, layer: "str | None" = None) -> list:
     """Merge a user-authored CSV into data_dictionary (external wins).
 
     `layer` scopes every row to one layer; None is the project-wide dictionary and
     keeps the pre-layer behaviour exactly.
+
+    Returns the merge-report lines (also logged) so callers and tests can see which
+    rows landed.
 
     CSV columns: Name, Kind, EntryName, Range, Comment
     - Name (required for top-level rows): type key in dataDictionary.
@@ -2373,9 +2418,24 @@ def _merge_dd_rows(path: str, layer: "str | None" = None) -> None:
             # type that does not exist (typo, or a type renamed in the code) is added as
             # a brand-new entry and would otherwise look identical to a successful
             # override — the author would believe it applied.
+            #
+            # Snapshot the dictionary BEFORE the loop: testing `data_dictionary.get(name)`
+            # per row asks "is it there *now*", so the second row of a duplicated Name sees
+            # the entry the FIRST row just wrote and gets filed under "matched a parsed
+            # type" — reporting a type absent from the source as a successful override.
+            #
+            # A dict, not a set of keys, because the layered lookup (`_dd_row_base`) has to
+            # read each candidate's `layer` to tell the global tier from another layer's
+            # entry — and the loop stamps `layer` on the entries it writes. A SHALLOW copy
+            # is enough: the loop rebinds `data_dictionary[target_key]` to a fresh
+            # `dict(existing)` rather than mutating in place, and the only in-place writes
+            # (child rows appending to enumerators/fields) go to that fresh dict.
+            pre_existing = dict(data_dictionary)
             matched_names: list = []
             new_names: list = []
             orphan_children = 0
+            blank_name_rows = 0
+            seen_names: dict = {}       # Name -> times seen, for the duplicate report
 
             for row in reader:
                 name     = (row.get("Name")      or "").strip()
@@ -2415,23 +2475,29 @@ def _merge_dd_rows(path: str, layer: "str | None" = None) -> None:
 
                 # Top-level row: create or update a dictionary entry.
                 if not name:
+                    # An empty Name on a non-child Kind. Counted here because the merge
+                    # drops it and every other number in the report stays the same — a
+                    # merged-cell Excel export turns into a file of these.
+                    if any((kind, entry_nm, range_v, comment)):
+                        blank_name_rows += 1
                     continue
 
                 kind = kind or "typedef"
+                seen_names[name] = seen_names.get(name, 0) + 1
 
                 target_key = _dd_target_key(name, layer)
                 parent_key = target_key
 
                 # Start from existing entry so unspecified sub-lists are preserved.
-                existing = data_dictionary.get(target_key, {})
-                if not existing and target_key != name:
-                    # First row for this layer on a name the global tier already holds:
-                    # seed from the global entry so location/fields survive, but never
-                    # from another LAYER's entry.
-                    _global = data_dictionary.get(name)
-                    if _global is not None and _global.get("layer") is None:
-                        existing = _global
-                (matched_names if existing else new_names).append(name)
+                existing = _dd_row_base(data_dictionary, name, target_key) or {}
+                if seen_names[name] == 1:
+                    # Decided against the PRE-LOOP snapshot, and only on a name's first
+                    # row: resolving this against the live dictionary meant the 2nd row
+                    # of a duplicated Name found what the 1st row had just written and
+                    # was filed under "matched a parsed type", reporting a type absent
+                    # from the source as a successful override.
+                    _prior = _dd_row_base(pre_existing, name, target_key)
+                    (matched_names if _prior is not None else new_names).append(name)
                 entry: dict = dict(existing)
                 entry["kind"] = kind
                 entry["layer"] = layer
@@ -2461,13 +2527,100 @@ def _merge_dd_rows(path: str, layer: "str | None" = None) -> None:
     _plog = get_logger("parser")
     _scope = f" [{layer}]" if layer else ""
     _plog.info(f"data dictionary{_scope}: merged {merged} entries from {os.path.basename(path)}")
-    for line in _format_csv_merge_report(matched_names, new_names, orphan_children):
+    _csv_top_level_names.setdefault(layer, set()).update(seen_names)
+    duplicate_names = [n for n, count in seen_names.items() if count > 1]
+    lines = _format_csv_merge_report(matched_names, new_names, orphan_children,
+                                     duplicate_names, blank_name_rows)
+    for line in lines:
         _plog.info(line.strip())
+    # Returned as well as logged so the counting can be asserted directly in tests;
+    # main() ignores it and reads the log like everyone else.
+    return lines
 
 
-def _merge_external_data_dictionary(path: str) -> None:
-    """Project-wide CSV merge (no layer). Kept as the name the tests drive directly."""
-    _merge_dd_rows(path, None)
+def _dd_base_name(type_str: str) -> str:
+    """The key `get_range` looks a type up under: no cv-qualifiers, no pointer/ref."""
+    base = (type_str or "").replace("const ", "").replace("volatile ", "").strip()
+    for sep in ("*", "&"):
+        if sep in base:
+            base = base.split(sep)[0].strip()
+    return base
+
+
+def _is_derived_type(type_str: str) -> bool:
+    """Pointer, reference, array or function-pointer spelling — not a scalar itself."""
+    return any(ch in (type_str or "") for ch in "*&[(")
+
+
+def _reresolve_struct_field_ranges() -> int:
+    """Re-answer struct/class field ranges from the completed dictionary.
+
+    A field's range is baked during the parse from the CANONICAL clang type
+    (`visit_type_definitions`), which happens long before the external CSV is read and
+    knows nothing about it. So a `BOOL32` field kept the width-derived
+    `0-0xFFFFFFFF` while the CSV set the BOOL32 *type* to `0-1` — both in the same
+    model, disagreeing, and only the field one reaching a struct table.
+
+    Two cases are re-answered, and only these two:
+
+      - the baked range is "NA" — libclang had no answer (a typedef of a project type,
+        or a type declared outside the project), but the dictionary may have one now;
+      - the field's base type was named by the CSV — the author deliberately overrode
+        it, and "external entries win on conflict" is the merge's existing contract.
+
+    Everything else keeps its baked range: a measured width is a fact about the target
+    being parsed and outranks anything inferred from a name.
+
+    This also closes a split-brain between a field and a *parameter* of the same type —
+    parameters are resolved through `get_range` at view time, fields never were.
+
+    Returns the number of fields changed (for the Phase 1 log).
+    """
+    changed = 0
+    # Global + own layer only, never another layer's — the rule every per-layer input
+    # follows. Cached per layer because the union is the same for every struct in it.
+    _global_csv = _csv_top_level_names.get(None, frozenset())
+    _visible_csv: dict = {}
+    for entry in data_dictionary.values():
+        if entry.get("kind") not in ("struct", "class"):
+            continue
+        _layer = entry.get("layer")
+        if _layer not in _visible_csv:
+            # For _layer None this is the global set unioned with itself.
+            _visible_csv[_layer] = _global_csv | _csv_top_level_names.get(_layer, frozenset())
+        csv_names = _visible_csv[_layer]
+        for field in entry.get("fields") or []:
+            # CSV-authored field rows carry no `type`, only a name/range the author gave.
+            ftype = field.get("type") or ""
+            if not ftype:
+                continue
+            baked = field.get("range") or "NA"
+            csv_named = _dd_base_name(ftype) in csv_names
+            if baked != "NA" and not csv_named:
+                continue
+            # `get_range` answers a pointer/array from its POINTEE, which is right for a
+            # `BOOL32 *` the author ranged but wrong for `const char *name` — that would
+            # stamp a signed-char range on a string where "NA" was the honest answer. An
+            # unknown derived type keeps NA; a CSV-named one still resolves, because
+            # naming the type is the author saying they mean it.
+            if not csv_named and _is_derived_type(ftype):
+                continue
+            # Layer-scoped like every other dictionary read: a Layer1 struct's field
+            # must not be answered by a Layer2 entry of the same type name.
+            resolved = get_range(ftype, data_dictionary, _layer)
+            if resolved and resolved != "NA" and resolved != baked:
+                field["range"] = resolved
+                changed += 1
+    return changed
+
+
+def _merge_external_data_dictionary(path: str) -> list:
+    """Project-wide CSV merge (no layer). Kept as the name the tests drive directly.
+
+    Passes the merge-report lines straight through, so a caller holding this name sees
+    the same report `_merge_dd_rows` returns.
+    """
+    return _merge_dd_rows(path, None)
 
 
 def main():
@@ -2589,6 +2742,14 @@ def main():
     for _dd_scope, _dd_path in _dd_sources:
         _merge_dd_rows(_dd_path, _dd_scope)
     _log_dd_collisions()
+    # After every CSV, so a field can pick up a range only the dictionary knows — and so
+    # a field can never contradict the entry for its own type.
+    _n_fields = _reresolve_struct_field_ranges()
+    if _n_fields:
+        from core.logging_setup import get_logger
+        get_logger("parser").info(
+            f"data dictionary: re-resolved {_n_fields} struct field range(s) "
+            "from the completed dictionary")
     write_model_file(DATA_DICTIONARY, data_dictionary)
 
     # Incremental (M1.2): entity hash snapshot for change detection.

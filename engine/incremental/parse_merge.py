@@ -47,10 +47,25 @@ def _merge_keyed(baseline: Dict[str, Any], fresh: Dict[str, Any],
     """Generic by-file merge for a {key -> entry} artifact: for a DROPPED file use the
     fresh entry, for every other file keep the baseline entry. Fresh entries for non-dropped
     files are DISCARDED — a partial parse sees (incomplete) entities for everything its
-    affected TUs transitively #include, and only the dropped files were fully re-parsed."""
+    affected TUs transitively #include, and only the dropped files were fully re-parsed.
+
+    **File-less entries are the exception.** `_file_of` returns "" for an entry that has no
+    `entity_files` mapping and no `@file` in its key — dataDictionary entries added by the
+    external `--data-dictionary` CSV, the `PRIMITIVES` seed, and the canonical builtins
+    `_register_builtin_range` records. "" is never in `drop`, so the plain rule kept the
+    baseline copy and threw the fresh one away: a CSV added after the baseline never landed
+    at all, and an edited range lost to the stale baseline value — silently, on every
+    incremental run.
+
+    Since no file owns them, the by-file rule cannot arbitrate: take the fresh entry.
+    **Union, not replace** — a narrowed parse only calls `_register_builtin_range` for the
+    builtins its re-parsed TUs use, so dropping baseline file-less entries absent from
+    `fresh` would lose builtin ranges belonging to untouched TUs. The residual gap is a row
+    DELETED from the CSV: its entry survives until the next full parse."""
     out = {k: v for k, v in (baseline or {}).items() if _file_of(k, entity_files) not in drop}
     for k, v in (fresh or {}).items():
-        if _file_of(k, entity_files) in drop:
+        f = _file_of(k, entity_files)
+        if f in drop or not f:
             out[k] = v
     return out
 
