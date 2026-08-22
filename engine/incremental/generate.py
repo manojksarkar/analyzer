@@ -40,13 +40,22 @@ if _SRC not in sys.path:
 
 from core.paths import paths as _paths, set_output_dir, set_model_dir
 from core.config import load_config
-from core.run_context import effective_model_store
+from core.run_context import effective_model_store, DatabaseRequired as _DatabaseRequired
 from incremental import git_ops
 from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
 from incremental.clone import ensure_commit_checkout
 from incremental.project_db import get_project, resolve_project_repo
 from incremental.fingerprint import compute_fingerprints
 from incremental.edges import build_edges  # noqa: F401  (kept for symmetry / future use)
+
+
+class AnalyzerRunFailed(RuntimeError):
+    """A phase subprocess exited non-zero. Carries the code so the CLI can tell a USAGE error
+    (exit 2 — the analyzer already printed exactly what was wrong) from a real crash."""
+
+    def __init__(self, message: str, returncode: int = 1):
+        super().__init__(message)
+        self.returncode = returncode
 
 
 def _now_iso() -> str:
@@ -416,7 +425,7 @@ def generate_full(
             warnings=[f"analyzer exited {rc}"])
         vstore.write_manifest(commit_key, m)
         store.write_manifest(version_id, m)     # close the lifecycle: 'failed', not mid-phase
-        raise RuntimeError(f"analyzer run failed (exit {rc})")
+        raise AnalyzerRunFailed(f"analyzer run failed (exit {rc})", rc)
 
     # Phase-split (M4.4): Phase 1 (parse) -> snapshot the blank-skeleton model into the
     # version (the baseline a future narrowed parse merges against) -> Phase 2+.
@@ -556,11 +565,25 @@ def main() -> None:
     ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
     ap.add_argument("--repo-url", default=None, help="clone URL (else resolved from the project record)")
     args = ap.parse_args()
-    m = generate_full(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
-                      data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
-                      version_id=args.version_id, config_path=args.config, repo_url=args.repo_url,
-                      model_store=args.model_store,
-                      create_version=args.create_version)
+    try:
+        m = generate_full(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
+                          data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
+                          version_id=args.version_id, config_path=args.config,
+                          repo_url=args.repo_url, model_store=args.model_store,
+                          create_version=args.create_version)
+    except AnalyzerRunFailed as exc:
+        # Exit 2 is the analyzer's USAGE code: it already printed the reason — an unknown group,
+        # a bad flag — in a form built to be acted on. A traceback here adds nothing and pushes
+        # that message fifteen lines up the terminal, which is exactly where it stops being read.
+        if exc.returncode == 2:
+            print("\nStopped: see the error above. (No traceback — the "
+                  "analyzer already said what was wrong and how to fix it.)",
+                  file=sys.stderr)
+            raise SystemExit(2)
+        raise
+    except _DatabaseRequired as exc:
+        print(f"\n{exc}", file=sys.stderr)
+        raise SystemExit(2)
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
           f"decision={m['decision']}, regenerated={m['regenerated']}, "
           f"documents={m.get('documents')}")

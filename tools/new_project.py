@@ -20,21 +20,81 @@ import argparse
 import datetime
 import json
 import os
-import re
 import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [_ROOT, os.path.join(_ROOT, "engine")]
 
 
+_CONFIG_DIR = os.path.join(_ROOT, "engine", "config")
+
+
+def _load_jsonc(path: str) -> dict:
+    """Parse a config the way every other reader in this repo does — comments and trailing
+    commas tolerated.
+
+    --config used a strict json.load, so it rejected config.defaults.json itself: the one file
+    the docs tell you to copy and edit. The engine (core.config.load_config) and the API
+    (pipeline_runner._load_base_config) have always accepted JSONC; this is the same stripper.
+    """
+    from core.config import _strip_json_comments, _strip_trailing_commas
+    with open(path, encoding="utf-8") as fh:
+        return json.loads(_strip_trailing_commas(_strip_json_comments(fh.read())))
+
+
 def _load_defaults() -> dict:
-    """engine/config/config.defaults.json, comments and trailing commas tolerated."""
-    p = os.path.join(_ROOT, "engine", "config", "config.defaults.json")
-    with open(p, encoding="utf-8") as fh:
-        raw = fh.read()
-    raw = re.sub(r"^\s*//.*$", "", raw, flags=re.M)
-    raw = re.sub(r",(\s*[}\]])", r"\1", raw)
-    return json.loads(raw)
+    return _load_jsonc(os.path.join(_CONFIG_DIR, "config.defaults.json"))
+
+
+def _resolve_config(user_path):
+    """Build the per-project config the way the API does (pipeline_runner._write_project_config):
+    the defaults as the BASE, the project's own file layered on top, then config.local.json's
+    machine-specific settings.
+
+    Copying --config verbatim was the bug. A project config carrying only `layers` — the only
+    part that is genuinely per-project — produced a workspace config with no `clang`, no `views`
+    and no `llm` at all, so the run stopped at load_llm_config or parsed with no include paths.
+    The UI never hit it because the API has merged onto the defaults all along.
+    """
+    from core.config import _deep_merge
+    cfg = _load_defaults()
+    if user_path:
+        user = _load_jsonc(user_path)
+        _deep_merge(cfg, user)
+        # `layers` is REPLACED, never merged. A deep merge keeps every layer, group and
+        # component of the SAMPLE tree the user's file does not mention — which is exactly how
+        # a config naming only Math and App still produced a document for Outer.
+        if user.get("layers"):
+            cfg["layers"] = user["layers"]
+    local = os.path.join(_CONFIG_DIR, "config.local.json")
+    if os.path.isfile(local):
+        try:
+            over = _load_jsonc(local)
+            # The engine reaches Postgres through its own config, and a workspace file is no
+            # place for the password. `layers` are the project's identity, not a machine
+            # setting, so a local override must not silently replace what --config just set.
+            over.pop("db", None)
+            over.pop("layers", None)
+            _deep_merge(cfg, over)
+        except Exception:
+            pass                         # best-effort, as in the API
+    return cfg
+
+
+def _describe_layers(cfg: dict, limit: int = 12) -> None:
+    """Print what was actually written. The point of the exercise is that the caller can see
+    the groups and components this project will use WITHOUT opening the file."""
+    shown = 0
+    for lname, layer in (cfg.get("layers") or {}).items():
+        for gname, comps in ((layer or {}).get("groups") or {}).items():
+            if shown >= limit:
+                print("           ...")
+                return
+            names = ", ".join(comps) if isinstance(comps, dict) else str(comps)
+            print(f"           {lname} / {gname}: {names}")
+            shown += 1
+    if not shown:
+        print("           ! no `layers` — the parser will find no source.")
 
 
 def main(argv=None) -> int:
@@ -52,6 +112,10 @@ def main(argv=None) -> int:
     ap.add_argument("--commit", default=None, help="the commit that version is for")
     ap.add_argument("--force-config", action="store_true",
                     help="overwrite an existing config.json")
+    ap.add_argument("--use-defaults", action="store_true",
+                    help="onboard with config.defaults.json as the project config. Only for "
+                         "this repo's own sample tree — its `layers` are the sample's, not "
+                         "your code's. Without it, a project with no config needs --config.")
     args = ap.parse_args(argv)
 
     try:
@@ -59,10 +123,42 @@ def main(argv=None) -> int:
     except Exception:
         pass
 
+    from incremental.stores import default_workspaces_root
+
+    # --- resolve the config FIRST, before anything is created ----------------------------
+    # This was step 3, after the projects row and the workspace directory already existed. A
+    # --config path that did not resolve therefore exited 2 having left a half-onboarded
+    # project behind — and the obvious next command (`--version-id v2 --commit <sha>`, which
+    # takes no --config) then filled that empty workspace with the SAMPLE defaults, quietly.
+    # That is how a project ends up carrying layers, groups and components nobody asked for.
+    pid = args.project_id
+    proj_dir = os.path.join(default_workspaces_root(), pid)
+    cfg_path = os.path.join(proj_dir, "config.json")
+    have_config = os.path.isfile(cfg_path)
+    src = os.path.abspath(args.config) if args.config else None
+    if src and not os.path.isfile(src):
+        print(f"--config not found: {src}")
+        print("\nNothing was created. Check the path and run the same command again.")
+        return 2
+    if not src and not have_config and not args.use_defaults:
+        print(f"{pid} has no config yet, and no --config was given.")
+        print("\n  Pass --config <your.json>. Only `layers` has to be in it — clang, views and")
+        print("  llm are merged in from config.defaults.json:")
+        print('\n      {"layers": {"Layer1": {"path": "Layer1", '
+              '"groups": {"MyGroup": {"CompA": "A"}}}}}')
+        print("\n  Or pass --use-defaults to onboard against this repo's own SAMPLE tree.")
+        print("\nNothing was created.")
+        return 2
+    try:
+        cfg = _resolve_config(src)
+    except ValueError as exc:
+        print(f"--config is not valid JSON ({exc}).")
+        print("\nNothing was created.")
+        return 2
+
     import sqlalchemy as sa
     from api.db.postgres import schema as s
     from core.db import database_url, get_engine, require_database, _redact, DatabaseUnavailable
-    from incremental.stores import default_workspaces_root
 
     try:
         require_database()
@@ -71,7 +167,6 @@ def main(argv=None) -> int:
         print("\nRun `python tools/db_setup.py` first.")
         return 2
 
-    pid = args.project_id
     eng = get_engine()
     now = datetime.datetime.now(datetime.timezone.utc)
     print(f"database : {_redact(database_url())}")
@@ -91,47 +186,38 @@ def main(argv=None) -> int:
     # 2. the workspace directory ----------------------------------------------------------
     # `Workspace.__init__` raises WorkspaceNotFound if this is missing, before the run does
     # anything — the engine treats the workspace as onboarding-owned and never creates it.
-    ws_root = default_workspaces_root()
-    proj_dir = os.path.join(ws_root, pid)
     os.makedirs(os.path.join(proj_dir, "datadict"), exist_ok=True)
     print(f"workspace: {proj_dir}")
 
     # 3. the per-project config -----------------------------------------------------------
-    cfg_path = os.path.join(proj_dir, "config.json")
-    if os.path.isfile(cfg_path) and not args.force_config:
+    if have_config and not args.force_config:
+        # Keeping an existing config is right for `new_project.py --project-id x --version-id v2`,
+        # where no config is involved at all. It is WRONG to do it quietly when a --config WAS
+        # passed and differs: the run then uses a config the caller never saw, and the first sign
+        # of it is a document full of components they did not ask for.
+        try:
+            with open(cfg_path, encoding="utf-8") as fh:
+                on_disk = json.load(fh)
+        except Exception:
+            on_disk = None
+        if src and on_disk != cfg:
+            print(f"\nconfig   : {cfg_path}")
+            print(f"           ALREADY EXISTS and differs from --config, so it was NOT replaced.")
+            print(f"           Nothing here uses {os.path.basename(src)} — stopping rather than "
+                  f"generating from the wrong config.")
+            print(f"\n           Re-run with --force-config to replace it, or delete that file.")
+            return 2
         print(f"config   : {cfg_path} (kept — --force-config to replace)")
+        _describe_layers(cfg if on_disk is None else on_disk)
     else:
-        if args.config:
-            src = os.path.abspath(args.config)
-            if not os.path.isfile(src):
-                print(f"\n--config not found: {src}")
-                return 2
-            try:
-                with open(src, encoding="utf-8") as fh:
-                    cfg = json.load(fh)
-            except ValueError as exc:
-                print(f"\n--config is not valid JSON ({exc}). Note this reads STRICT json — "
-                      f"comments and trailing commas are only tolerated in "
-                      f"config.defaults.json.")
-                return 2
-            if not (cfg.get("layers") or {}):
-                print("           ! that config has no `layers` — the parser will find no "
-                      "source. Add them before generating.")
-        else:
-            # No --config: the defaults are a starting point, not a usable project config.
-            # `layers` there points at this repo's own sample tree, so a run would parse the
-            # wrong source or none at all.
-            cfg = _load_defaults()
         with open(cfg_path, "w", encoding="utf-8") as fh:
             json.dump(cfg, fh, indent=2)
-        _src_note = f" (from {os.path.basename(args.config)})" if args.config else ""
-        print(f"config   : {cfg_path} WRITTEN{_src_note}"
-              + f"  layers={list(cfg.get('layers') or {})}")
-        if not args.config:
-            print("           ! no --config given, so this is a COPY OF THE DEFAULTS. Its "
-                  "`layers` point at this repo's sample tree,")
-            print("             not your code. Edit that file, or re-run with "
-                  "--config <your.json> --force-config, before generating.")
+        _src_note = f" (from {os.path.basename(src)} + defaults)" if src else ""
+        print(f"config   : {cfg_path} WRITTEN{_src_note}")
+        _describe_layers(cfg)
+        if not src:
+            print("           ! --use-defaults: these `layers` are this repo's SAMPLE tree, "
+                  "not your code.")
 
     # 4. the versions row -----------------------------------------------------------------
     if args.version_id:
