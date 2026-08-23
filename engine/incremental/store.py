@@ -388,10 +388,13 @@ class PgStore(ArtifactStore):
             return load_run_metadata(cx, version_id)
 
     def write_model(self, version_id: str, model_dir: str) -> None:
-        """Load a model from a DIRECTORY into the database.
+        """Load a model from a DIRECTORY into the database. **Test helper — no run calls this.**
 
-        Not a pipeline path — the phases write their own rows. This is how a fixture or a
-        rebuild check gets a known model into a version (tools/verify_db_rebuild.py).
+        The pipeline does not use it: each phase writes its own rows through the repository,
+        and the orchestrators explicitly do NOT call this (see the note at the end of
+        generate_full — calling it would clear the version and store an empty model read from
+        a directory the phases never wrote to). What is left is a way for a test to put a known
+        model into a version in one line, which ten of them do.
         """
         from incremental.model_store import persist_model_from_dir
         with self.engine.begin() as cx:

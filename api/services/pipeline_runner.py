@@ -1210,12 +1210,13 @@ def _read_engine_manifest(project_id: str, commit_sha: str,
                           version_id: Optional[str] = None) -> dict:
     """The engine's run accounting — decision / baselineVersionId / regenerated / reused.
 
-    Postgres first (doc 09, C1): the engine now writes these onto the `versions` row, so the
-    accounting is readable from any node rather than only the one that ran the job. Falls back
-    to the commit-dir manifest.json for versions written before that, and for DB-less runs.
+    From the `versions` row (doc 09, C1), so it is readable from any node rather than only the
+    one that ran the job.
 
-    The DB values are merged UNDER the file's, not over them, so a manifest key the columns do
-    not cover (`documents`, `status`, `warnings`) still comes through.
+    There was a disk fallback here for versions written before that, reading the commit-dir
+    manifest.json. Nothing writes that file any more, and the merge had the file OVERRIDE the
+    database — so on a version that somehow had both, the stale copy won. Gone with the rest
+    of the JSON persistence.
     """
     from_db: dict = {}
     if version_id:
@@ -1227,29 +1228,7 @@ def _read_engine_manifest(project_id: str, commit_sha: str,
         except Exception:                       # no DB / not migrated -> the file below
             from_db = {}
 
-    # Version dir FIRST, commit dir as the legacy fallback. The manifest moved to
-    # versions/<ver>/ because the commit dir is shared by every version of that commit — a
-    # second generation of one commit overwrote the first's manifest. Versions written before
-    # the move still have theirs in the old place, so both are read.
-    from_file: dict = {}
-    candidates = []
-    if version_id:
-        candidates.append(_version_dir(project_id, version_id))
-    candidates.append(_commit_dir(project_id, commit_sha))
-    for d in candidates:
-        if d is None:
-            continue
-        p = d / "manifest.json"
-        try:
-            if p.is_file():
-                from_file = json.loads(p.read_text(encoding="utf-8"))
-                break
-        except (OSError, ValueError):
-            continue
-
-    merged = dict(from_db)
-    merged.update({k: v for k, v in from_file.items() if v is not None})
-    return merged
+    return dict(from_db)
 
 
 # _read_run_metadata was removed: the engine now writes the run's identity metadata straight onto
