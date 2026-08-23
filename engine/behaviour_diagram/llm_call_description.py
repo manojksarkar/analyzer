@@ -55,11 +55,16 @@ class CallDescriptionGenerator:
             return False
 
         try:
-            from llm_client import _ollama_available, _openai_available
-            if _ollama_available(self.config) or _openai_available(self.config):
-                self._llm_available = True
-                return True
-        except ImportError:
+            from core.config import load_llm_config
+            from llm_core.client import from_config
+            from llm_enrichment import llm_provider_reachable
+
+            if (self.config.get("llm", {}).get("descriptions", True)
+                    and llm_provider_reachable(self.config)):
+                self._llm_client = from_config(load_llm_config(self.config))
+                self._llm_available = self._llm_client is not None
+                return self._llm_available
+        except Exception:
             pass
 
         self._llm_available = False
@@ -134,8 +139,12 @@ class CallDescriptionGenerator:
         Returns:
             Generated description or empty string on failure
         """
+        if not self._is_llm_available():
+            return ""
+
         try:
-            from llm_client import _call_llm
+            from llm_core import tokens
+            from llm_enrichment import _get_domain_context
 
             prompt = (
                 "Generate a short, human-readable description (1 line, max 20 words) "
@@ -150,7 +159,12 @@ class CallDescriptionGenerator:
                 "Description:"
             )
 
-            result = _call_llm(prompt, self.config, kind="call_description")
+            # Anchor the model to the project's real domain (Task 3.14) so it
+            # stops inventing unrelated vocabulary in call descriptions.
+            system = _get_domain_context(self.config)
+
+            with tokens.stage("behaviour.call_description"):
+                result = self._llm_client.generate(system, prompt)
             return result.strip() if result else ""
-        except ImportError:
+        except Exception:
             return ""
