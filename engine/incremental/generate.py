@@ -188,9 +188,15 @@ def llm_call_counts(version_id: str) -> Dict[str, int]:
         from core.db import get_engine, is_database_configured
         if not is_database_configured():
             return {}
-        from llm_core.callstats import load_for_version
+        from llm_core.callstats import load_for_version, load_timing_for_version
         with get_engine().connect() as cx:
-            return {f"{k}|{o}": n for (k, o), n in load_for_version(cx, version_id).items()}
+            out = {f"{k}|{o}": n for (k, o), n in load_for_version(cx, version_id).items()}
+            # Prefixed so it cannot collide with a "kind|outcome" key. The report reads it to
+            # say where the wall-clock went — on a throttled gateway that is the whole story,
+            # and a call count alone never shows it.
+            for f, v in load_timing_for_version(cx, version_id).items():
+                out[f"__timing__|{f}"] = v
+            return out
     except Exception as exc:
         # Do NOT return {} here. An empty dict means "no LLM calls", and the report then omits
         # the section entirely — so a missing `llm_call_stats` table (migration 0007 not

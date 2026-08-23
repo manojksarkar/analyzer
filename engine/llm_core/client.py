@@ -279,6 +279,27 @@ class LlmClient:
     # Per-attempt measurement
     # ------------------------------------------------------------------
 
+    # Thread-local so two concurrent generate() calls cannot pour their attempts into one
+    # another's bucket. The OpenAI path is serialised by _OPENAI_LOCK, the Ollama path is not.
+    _CALL_COST = threading.local()
+
+    @classmethod
+    def _cost_bucket(cls) -> Dict:
+        b = getattr(cls._CALL_COST, "b", None)
+        if b is None:
+            b = cls._CALL_COST.b = {"latency_seconds": 0.0, "throttle_seconds": 0.0,
+                                    "prompt_tokens": 0, "completion_tokens": 0}
+        return b
+
+    @classmethod
+    def _drain_cost(cls) -> Dict:
+        """Take what this call cost and zero the bucket for the next one."""
+        b = cls._cost_bucket()
+        out = dict(b)
+        b.update({"latency_seconds": 0.0, "throttle_seconds": 0.0,
+                  "prompt_tokens": 0, "completion_tokens": 0})
+        return out
+
     @contextmanager
     def _attempt(self, provider: str) -> Iterator[Dict]:
         """Time one HTTP attempt and record it — success, empty, or exception.
@@ -294,12 +315,20 @@ class LlmClient:
             yield m
         finally:
             elapsed = time.perf_counter() - t0
+            latency = max(0.0, elapsed - m["throttle"])
             token_counter.record(
                 provider, self._model, m["prompt"], m["completion"],
-                latency=max(0.0, elapsed - m["throttle"]),
+                latency=latency,
                 throttle=m["throttle"],
                 outcome=m["outcome"],
             )
+            # ...and into the per-call bucket, so the same measurement reaches the database
+            # row that generate() writes. One measurement, two sinks.
+            b = self._cost_bucket()
+            b["latency_seconds"] += latency
+            b["throttle_seconds"] += m["throttle"]
+            b["prompt_tokens"] += int(m["prompt"] or 0)
+            b["completion_tokens"] += int(m["completion"] or 0)
 
     def _throttle(self, m: Dict) -> None:
         """Sleep the configured gateway pause, recording how long it took."""
@@ -361,7 +390,7 @@ class LlmClient:
                 if raw:
                     cleaned = strip_think_section(raw)
                     if cleaned:
-                        callstats.record(kind, callstats.OK)
+                        callstats.record(kind, callstats.OK, **self._drain_cost())
                         if trace_ord:
                             _trace_response(trace_ord, cleaned)
                         return cleaned
@@ -380,7 +409,7 @@ class LlmClient:
                 # no answer, and that is what the report has to say. Retries are visible in the
                 # log, and counting them here would make a healthy run with one flaky retry look
                 # like a broken one.
-                callstats.record(kind, callstats.EMPTY)
+                callstats.record(kind, callstats.EMPTY, **self._drain_cost())
                 if trace_ord:
                     _trace_response(trace_ord, "")
                 return None
@@ -416,7 +445,8 @@ class LlmClient:
                 "LLM (%s/%s) failed after %d attempt(s): %s",
                 self._provider, self._model, total_attempts, last_exc,
             )
-        callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY)
+        callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY,
+                         **self._drain_cost())
         if trace_ord:
             _trace_response(trace_ord, f"<failed: {last_exc}>" if last_exc else "<empty>")
         return None
@@ -461,7 +491,7 @@ class LlmClient:
                 if raw:
                     cleaned = strip_think_section(raw)
                     if cleaned:
-                        callstats.record(kind, callstats.OK)
+                        callstats.record(kind, callstats.OK, **self._drain_cost())
                         if trace_ord:
                             _trace_response(trace_ord, cleaned)
                         return cleaned
@@ -475,7 +505,7 @@ class LlmClient:
                     "LLM (%s/%s) call() empty response after %d attempt(s)",
                     self._provider, self._model, total_attempts,
                 )
-                callstats.record(kind, callstats.EMPTY)
+                callstats.record(kind, callstats.EMPTY, **self._drain_cost())
                 if trace_ord:
                     _trace_response(trace_ord, "")
                 return None
@@ -510,7 +540,8 @@ class LlmClient:
                 "LLM (%s/%s) call() failed after %d attempt(s): %s",
                 self._provider, self._model, total_attempts, last_exc,
             )
-        callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY)
+        callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY,
+                         **self._drain_cost())
         if trace_ord:
             _trace_response(trace_ord, f"<failed: {last_exc}>" if last_exc else "<empty>")
         return None

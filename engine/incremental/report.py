@@ -44,8 +44,12 @@ def _llm_lines(counts: Dict[str, Any]) -> List[str]:
                 "              Run `python tools/db_setup.py` to apply migration 0007. Until "
                 "then the",
                 "              report cannot say how many LLM calls failed."]
+    timing = {str(k).split("|", 1)[1]: v for k, v in counts.items()
+              if str(k).startswith("__timing__|")}
     by_kind: Dict[str, Dict[str, int]] = {}
     for key, n in counts.items():
+        if str(key).startswith("__timing__|"):
+            continue
         kind, _, outcome = str(key).partition("|")
         by_kind.setdefault(kind, {}).setdefault(outcome, 0)
         by_kind[kind][outcome] += int(n or 0)
@@ -74,6 +78,20 @@ def _llm_lines(counts: Dict[str, Any]) -> List[str]:
         if k_err:
             detail += f", error {k_err}"
         L.append(f"      {kind:<22} {k_tot:<5}  ({detail})")
+    if timing:
+        _lat, _thr = timing.get("latency_seconds", 0.0), timing.get("throttle_seconds", 0.0)
+        _wall = _lat + _thr
+        if _wall > 0:
+            L.append(f"    Time      : {_wall:.0f}s total  "
+                     f"({_lat:.0f}s waiting on the model, {_thr:.0f}s in the rate-limit pause)")
+            if _thr > _lat:
+                L.append("                Most of it was the THROTTLE, not the model — "
+                         "llm.rateLimitSeconds")
+                L.append("                is the lever, and 0 disables it on an endpoint "
+                         "with no limit.")
+        _pt, _ct = timing.get("prompt_tokens", 0), timing.get("completion_tokens", 0)
+        if _pt or _ct:
+            L.append(f"    Tokens    : {_pt + _ct:<5}  ({_pt} prompt, {_ct} completion)")
     if failed:
         L.append("    A non-zero failed count means the document contains fallback text or")
         L.append("    mechanical labels. Check the log for 'empty response' / 'HTTP'.")
