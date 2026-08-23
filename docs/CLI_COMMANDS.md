@@ -363,7 +363,6 @@ Math only.
 | Flag | Effect |
 |---|---|
 | `--no-llm` | No LLM at all. Structure is produced; prose and labels are mechanical. |
-| `--model-store files` | Revert to `model/*.json`. The escape hatch. |
 | `--no-narrowed-parse` | Force a full re-parse (incremental only). |
 | `--verify-parse` | Run narrowed AND full, diff them, use the full one. Slow; for validation. |
 | `--create-version` | Reserve the `versions` row if absent, instead of erroring. Opt-in, so a typo in `--version-id` still fails. |
@@ -439,9 +438,6 @@ python tools\verify_narrowed_parse.py
 ```
 python tools\verify_incremental_parity.py --fast
 ```
-```
-python tools\verify_model_parity.py
-```
 
 Every one of these exists because something passed the unit tests and was still broken.
 
@@ -453,7 +449,7 @@ Every one of these exists because something passed the unit tests and was still 
 |---|---|
 | `WorkspaceNotFound: no workspace for project 'x'` | Run `tools\new_project.py` (§2) — the directory, config and rows all come from there. |
 | `this run needs the database but there is no versions row for 'vX'` | Reserve it — the message prints the exact command with your values — or re-run with `--create-version`. |
-| `no database is configured` | Add the `db` section to `config.local.json`, then `tools\db_setup.py`. |
+| `no database is configured` | Add the `db` section to `config.local.json`, then `tools\db_setup.py`. The model and every version artifact live there and nowhere else, so a run without one stops rather than producing a version that is not there. |
 | `per-project config not found` | `new_project.py` writes it; check `workspaces/<pid>/config.json`. |
 | `ALREADY EXISTS and differs from --config` | The project already has a config. Add `--force-config` to replace it, or delete `workspaces/<pid>/config.json`. |
 | `--config not found: <path>` | The path does not resolve. Nothing was created — fix it and re-run the same command. |

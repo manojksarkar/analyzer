@@ -9,8 +9,7 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
-from incremental.stores import (Workspace, VersionStore, HashStore, EdgeStore,
-                                ReuseIndex, WorkspaceNotFound)
+from incremental.stores import Workspace, VersionStore, WorkspaceNotFound
 
 
 def _make_ws(tmp_path, project_id="proj"):
@@ -44,53 +43,11 @@ class TestVersionStore:
         assert vs.create_dir("08d2f565cd03e72e") == d        # no raise
         assert os.path.isfile(os.path.join(d, "x.txt"))      # not wiped
 
-    def test_manifest_roundtrip(self, tmp_path):
-        # write_manifest writes the per-version record into the commit dir; the registry is
-        # the API DB (api/db/data/versions.json), not a flat index here — get() reads it back.
-        vs = VersionStore(_make_ws(tmp_path))
-        vid = "08d2f565cd03e72e"
-        vs.create_dir(vid)
-        man = {"versionId": vid, "branch": "main", "commit": "abc", "scope": {"type": "project"},
-               "decision": "full", "regenerated": 5, "reused": 0, "status": "complete",
-               "createdAt": "t", "warnings": ["w1"]}
-        vs.write_manifest(vid, man)
-        assert vs.get(vid)["warnings"] == ["w1"]
-        assert vs.get(vid)["decision"] == "full"
 
     # capture_artifacts (model+output -> the commit dir) was removed in the PG-7b cutover: the
     # store now owns artifacts (ArtifactStore.capture_output -> versions/<ver…>/, model -> the
     # store). Its equivalent is covered by tests/unit/test_output_files_store.py.
 
 
-class TestHashEdgeStore:
-    def test_hash_and_edge_roundtrip(self, tmp_path):
-        vs = VersionStore(_make_ws(tmp_path)); vs.create_dir("v1")
-        HashStore(vs).write("v1", {"K|U|f|": "deadbeef"})
-        EdgeStore(vs).write("v1", {"typeUsers": {"T": ["K|U|f|"]}, "macroUsers": {}})
-        assert HashStore(vs).read("v1") == {"K|U|f|": "deadbeef"}
-        assert EdgeStore(vs).read("v1")["typeUsers"] == {"T": ["K|U|f|"]}
-
-    def test_missing_reads_return_empty(self, tmp_path):
-        vs = VersionStore(_make_ws(tmp_path))
-        assert HashStore(vs).read("vX") == {}
-        assert EdgeStore(vs).read("vX") == {"typeUsers": {}, "macroUsers": {}}
 
 
-class TestReuseIndex:
-    def test_put_first_wins_and_persist(self, tmp_path):
-        ws = _make_ws(tmp_path)
-        ri = ReuseIndex(ws)
-        assert ri.put("fp1", "v1", "K|U|a|") is True
-        assert ri.put("fp1", "v2", "K|U|a|") is False        # first version keeps it
-        assert ri.get("fp1") == {"versionId": "v1", "entityKey": "K|U|a|"}
-        ri.save()
-        # reload from disk
-        ri2 = ReuseIndex(ws)
-        assert ri2.get("fp1")["versionId"] == "v1"
-        assert len(ri2) == 1
-
-    def test_overwrite_flag(self, tmp_path):
-        ri = ReuseIndex(_make_ws(tmp_path))
-        ri.put("fp", "v1", "k")
-        assert ri.put("fp", "v9", "k", overwrite=True) is True
-        assert ri.get("fp")["versionId"] == "v9"

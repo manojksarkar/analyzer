@@ -42,7 +42,7 @@ from core.paths import paths as _paths, set_output_dir, set_model_dir
 from core.config import load_config
 from core.run_context import effective_model_store, DatabaseRequired as _DatabaseRequired
 from incremental import git_ops
-from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
+from incremental.stores import Workspace, VersionStore, _rmtree_force
 from incremental.clone import ensure_commit_checkout
 from incremental.project_db import get_project, resolve_project_repo
 from incremental.fingerprint import compute_fingerprints
@@ -288,7 +288,6 @@ def generate_full(
     project = get_project(project_id)        # api/db/data/projects.json (no project.json)
     project_name = (project.get("name") or "").strip()
     vstore = VersionStore(ws)
-    hstore, estore = HashStore(vstore), EdgeStore(vstore)
     # ridx is bound after make_store below (the reuse index now lives in the store).
 
     data_dict_id = data_dict_id or project.get("currentDataDictId")
@@ -383,7 +382,6 @@ def generate_full(
             version_id, branch, actual_commit, scope, data_dict_id,
             decision="full", regenerated=0, reused=0, status="failed",
             warnings=[f"analyzer exited {rc}"])
-        vstore.write_manifest(commit_key, m)
         store.write_manifest(version_id, m)     # close the lifecycle: 'failed', not mid-phase
         raise AnalyzerRunFailed(f"analyzer run failed (exit {rc})", rc)
 
@@ -441,7 +439,6 @@ def generate_full(
                          decision="full",
                          regenerated=len(fps), reused=0, status="complete", warnings=[])
     manifest["documents"] = documents
-    vstore.write_manifest(commit_key, manifest)
     # AND to the store, which is what reaches Postgres (doc 09, C1). These are two different
     # stores keyed two different ways: `vstore` is the file VersionStore keyed by COMMIT,
     # `store` is the artifact store keyed by the real VERSION id. Writing only the first

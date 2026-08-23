@@ -1,8 +1,8 @@
-"""ArtifactStore — FileStore/PgStore round-trip, parity, and the correctness fix (doc 08).
+"""ArtifactStore — PgStore round-trip and the correctness fix (doc 08).
 
 The store keys artifacts by the real `ver…` id, not `commit[:16]`. The headline test is
 `test_same_commit_two_versions_distinct`: two versions that would share one commit dir today
-get INDEPENDENT artifacts — the collision bug (08 §1) is gone. FileStore runs on a temp dir;
+get INDEPENDENT artifacts — the collision bug (08 §1) is gone. PgStore runs on
 PgStore on a FK-enforcing SQLite engine (Postgres-strict), so both back-ends prove the same
 behaviour without Docker.
 """
@@ -22,7 +22,7 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 
 from api.db.postgres import schema as s          # noqa: E402
-from incremental.store import FileStore, PgStore  # noqa: E402
+from incremental.store import PgStore  # noqa: E402
 
 PID = "proj-store"
 MODEL_DIR = os.path.join(ROOT, "model")
@@ -50,10 +50,14 @@ def _pg_engine(version_ids):
 
 
 def _both_stores(tmp_path, version_ids):
-    """A FileStore and a PgStore, each isolated, both set up for `version_ids`."""
-    fs = FileStore(PID, workspaces_root=str(tmp_path / "fs"))
-    ps = PgStore(PID, _pg_engine(version_ids), workspaces_root=str(tmp_path / "pg"))
-    return [fs, ps]
+    """The store, isolated and set up for `version_ids`.
+
+    This used to return a FileStore alongside the PgStore and every test below ran against
+    both, because the point was PARITY between two backings. There is one backing now; the
+    tests are kept as they are — a list of one — because what they assert about the store's
+    behaviour has not changed.
+    """
+    return [PgStore(PID, _pg_engine(version_ids), workspaces_root=str(tmp_path / "pg"))]
 
 
 def _model_dir(tmp_path, name, hashes):
@@ -88,11 +92,7 @@ def test_reuse_index_first_writer_wins_and_persists(tmp_path):
 
 
 def test_reuse_index_survives_a_fresh_store(tmp_path):
-    # FileStore reloads cache/index.json; PgStore re-queries the reuse_index table.
-    fs = FileStore(PID, workspaces_root=str(tmp_path / "fs"))
-    fs.reuse_put("fp", "v1", "E|u|f|"); fs.reuse_save()
-    assert FileStore(PID, workspaces_root=str(tmp_path / "fs")).reuse_get("fp") \
-        == {"versionId": "v1", "entityKey": "E|u|f|"}
+    # A fresh PgStore re-queries the reuse_index table rather than trusting memory.
 
     engine = _pg_engine(["v1"])
     ps = PgStore(PID, engine, workspaces_root=str(tmp_path / "pg"))
@@ -117,14 +117,14 @@ def test_same_commit_two_versions_distinct(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Real-model round-trip + FileStore/PgStore parity
+# Real-model round-trip
 # ---------------------------------------------------------------------------
 
 def test_make_store_selects_backend(tmp_path, monkeypatch):
     """make_store -> PgStore when a database is CONFIGURED (create_engine is lazy, no
-    connect), else FileStore. This is how the engine picks its store at runtime (08 step 4).
+    connect), and REFUSES when there is none - it used to fall back to a DB-less FileStore.
 
-    Both signals must be neutralised to test the FileStore branch, not just the env var:
+    Both signals must be neutralised to test the refusal, not just the env var:
     since the C-fix, `config.local.json`'s `db` section also counts as configured. Clearing
     only DATABASE_URL left this test reading the DEVELOPER'S OWN config — so it passed on a
     machine with no config.local.json and failed on one set up to reach a real Postgres,
@@ -135,7 +135,8 @@ def test_make_store_selects_backend(tmp_path, monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setattr(coredb, "_dsn_from_config", lambda: None)   # ignore any real db section
     coredb.reset_engine()
-    assert isinstance(make_store(PID, workspaces_root=str(tmp_path / "fs")), FileStore)
+    with pytest.raises(RuntimeError, match="no database is configured"):
+        make_store(PID, workspaces_root=str(tmp_path / "fs"))
     monkeypatch.setenv("DATABASE_URL", "sqlite://")
     coredb.reset_engine()
     try:
@@ -149,15 +150,12 @@ def test_real_model_roundtrip_and_parity(tmp_path):
     orig_hashes = json.load(open(os.path.join(MODEL_DIR, "hashes.json"), encoding="utf-8"))
     orig_funcs = json.load(open(os.path.join(MODEL_DIR, "functions.json"), encoding="utf-8"))
 
-    fs, ps = _both_stores(tmp_path, ["v1"])
-    for store in (fs, ps):
+    ps, = _both_stores(tmp_path, ["v1"])
+    for store in (ps,):
         store.write_model("v1", MODEL_DIR)
         assert store.read_hashes("v1") == orig_hashes                 # exact
         assert set(store.read_functions("v1")) == set(orig_funcs)     # same function set
 
-    # parity: the two back-ends return identical data for the same input
-    assert fs.read_hashes("v1") == ps.read_hashes("v1")
-    assert set(fs.read_functions("v1")) == set(ps.read_functions("v1"))
 
 
 # ---------------------------------------------------------------------------
@@ -236,8 +234,8 @@ def test_set_output_dir_relocates_only_output(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_hydrate_model_writes_the_stored_model_to_disk(tmp_path):
-    """PgStore materializes its stored model; FileStore is a no-op (the files ARE the store)."""
-    fs, ps = _both_stores(tmp_path, ["v1"])
+    """PgStore materializes its stored model into a directory on demand."""
+    ps, = _both_stores(tmp_path, ["v1"])
     hashes = {"App|Main|calc|int": "aaa"}
     md = _model_dir(tmp_path, "src", hashes)
 
@@ -246,8 +244,6 @@ def test_hydrate_model_writes_the_stored_model_to_disk(tmp_path):
     assert ps.hydrate_model("v1", str(target)) is True
     assert json.loads((target / "hashes.json").read_text(encoding="utf-8")) == hashes
 
-    # FileStore: nothing to materialize, and it must not claim it did.
-    assert fs.hydrate_model("v1", str(target)) is False
 
 
 def test_hydrate_model_leaves_files_the_store_does_not_back(tmp_path):
@@ -258,7 +254,7 @@ def test_hydrate_model_leaves_files_the_store_does_not_back(tmp_path):
     the database yet. A wipe-then-write would delete them and break the next phase, so
     hydration must overwrite in place.
     """
-    _fs, ps = _both_stores(tmp_path, ["v1"])
+    ps, = _both_stores(tmp_path, ["v1"])
     md = _model_dir(tmp_path, "src2", {"k": "h"})
     ps.write_model("v1", md)
 
@@ -293,7 +289,7 @@ def _parse_dir(tmp_path, name):
 
 
 def test_parse_snapshot_roundtrip(tmp_path):
-    _fs, ps = _both_stores(tmp_path, ["v1"])
+    ps, = _both_stores(tmp_path, ["v1"])
     src = _parse_dir(tmp_path, "parse-src")
 
     n = ps.write_parse_snapshot("v1", src, _SNAP_NAMES)
@@ -307,7 +303,7 @@ def test_parse_snapshot_roundtrip(tmp_path):
 
 def test_parse_snapshot_is_idempotent(tmp_path):
     """Re-running Phase 1 (or --from-phase 1) must replace, not accumulate."""
-    _fs, ps = _both_stores(tmp_path, ["v1"])
+    ps, = _both_stores(tmp_path, ["v1"])
     src = _parse_dir(tmp_path, "parse-src2")
     ps.write_parse_snapshot("v1", src, _SNAP_NAMES)
     ps.write_parse_snapshot("v1", src, _SNAP_NAMES)
@@ -316,7 +312,7 @@ def test_parse_snapshot_is_idempotent(tmp_path):
 
 
 def test_parse_snapshot_is_per_version(tmp_path):
-    _fs, ps = _both_stores(tmp_path, ["v1", "v2"])
+    ps, = _both_stores(tmp_path, ["v1", "v2"])
     a = _parse_dir(tmp_path, "pa")
     b = tmp_path / "pb"; b.mkdir()
     (b / "hashes.json").write_text(json.dumps({"App|Main|calc|int": "bbb"}), encoding="utf-8")
@@ -328,12 +324,6 @@ def test_parse_snapshot_is_per_version(tmp_path):
     assert ps.read_parse_snapshot("v2")["hashes.json"]["App|Main|calc|int"] == "bbb"
 
 
-def test_file_store_has_no_parse_snapshot(tmp_path):
-    """DB-less: the parse/ directory IS the snapshot, so the store reports nothing and the
-    caller falls back to disk."""
-    fs, _ps = _both_stores(tmp_path, ["v1"])
-    assert fs.write_parse_snapshot("v1", _parse_dir(tmp_path, "pc"), _SNAP_NAMES) == 0
-    assert fs.read_parse_snapshot("v1") == {}
 
 
 def test_parse_snapshot_is_registered_for_deletion(tmp_path):
@@ -348,7 +338,7 @@ def test_hydrate_parse_snapshot_restores_the_skeleton(tmp_path):
     Round-trip: store the skeleton, wipe the directory, restore it, and confirm the files
     Phase 2 reads are back with their original contents.
     """
-    _fs, ps = _both_stores(tmp_path, ["v1"])
+    ps, = _both_stores(tmp_path, ["v1"])
     src = _parse_dir(tmp_path, "skel-src")
     ps.write_parse_snapshot("v1", src, _SNAP_NAMES)
 
@@ -364,9 +354,8 @@ def test_hydrate_parse_snapshot_restores_the_skeleton(tmp_path):
 
 
 def test_hydrate_parse_snapshot_is_a_no_op_without_one(tmp_path):
-    fs, ps = _both_stores(tmp_path, ["v1"])
+    ps, = _both_stores(tmp_path, ["v1"])
     assert ps.hydrate_parse_snapshot("v1", str(tmp_path / "none")) == 0   # nothing stored
-    assert fs.hydrate_parse_snapshot("v1", str(tmp_path / "none2")) == 0  # DB-less store
 
 
 # ---------------------------------------------------------------------------
@@ -378,25 +367,10 @@ def test_constructing_a_store_creates_no_directory(tmp_path):
     persist — used to leave an empty workspaces/<pid>/ behind, for a project that may not
     even exist. That is where the stray `verify-inc` directory came from."""
     root = tmp_path / "ws"
-    FileStore("ghost-project", workspaces_root=str(root))
-    assert not (root / "ghost-project").exists(), \
-        "constructing a FileStore must have no filesystem side effect"
-
     PgStore("ghost-project", _pg_engine([]), workspaces_root=str(root))
-    assert not (root / "ghost-project").exists(), \
-        "constructing a PgStore must have no filesystem side effect"
+    assert not (root / "ghost-project").exists(),         "constructing a PgStore must have no filesystem side effect"
 
 
-def test_the_directory_still_appears_when_actually_used(tmp_path):
-    """Laziness must not break the write paths — they create what they need."""
-    root = tmp_path / "ws2"
-    fs = FileStore("p", workspaces_root=str(root))
-    fs.create_version("v1")
-    assert (root / "p" / "versions" / "v1").is_dir()
-
-    fs2 = FileStore("p2", workspaces_root=str(root))
-    fs2.reuse_put("fp", "v1", "k"); fs2.reuse_save()      # writes cache/index.json
-    assert (root / "p2" / "cache" / "index.json").is_file()
 
 
 def test_default_workspaces_root_follows_the_data_root(tmp_path, monkeypatch):
@@ -429,7 +403,7 @@ def test_hydrate_output_restores_the_baseline_view_files(tmp_path):
     baseline they are absent — carry-forward finds nothing, every flowchart re-renders, and
     the run still 'succeeds' with 0% flowchart reuse and no error."""
     from sqlalchemy import insert as _insert
-    _fs, ps = _both_stores(tmp_path, ["v1"])
+    ps, = _both_stores(tmp_path, ["v1"])
     with ps.engine.begin() as cx:
         for rel, content in (
             ("App/flowcharts/Math.json",
@@ -452,9 +426,8 @@ def test_hydrate_output_restores_the_baseline_view_files(tmp_path):
 
 
 def test_hydrate_output_is_a_no_op_without_stored_files(tmp_path):
-    fs, ps = _both_stores(tmp_path, ["v1"])
+    ps, = _both_stores(tmp_path, ["v1"])
     assert ps.hydrate_output("v1", str(tmp_path / "a")) == 0    # nothing stored
-    assert fs.hydrate_output("v1", str(tmp_path / "b")) == 0    # DB-less store
 
 
 def test_engine_restores_baseline_output_before_planning():
@@ -474,10 +447,7 @@ def test_engine_restores_baseline_output_before_planning():
 # ---------------------------------------------------------------------------
 
 def test_model_is_persisted_reports_the_truth(tmp_path):
-    fs, ps = _both_stores(tmp_path, ["v1"])
+    ps, = _both_stores(tmp_path, ["v1"])
     assert ps.model_is_persisted("v1") is False        # nothing written yet
     ps.write_model("v1", _model_dir(tmp_path, "mp", {"App|Main|calc|int": "aaa"}))
     assert ps.model_is_persisted("v1") is True
-    # A DB-less store can never confirm, so its files are never pruned — they are the
-    # only copy.
-    assert fs.model_is_persisted("v1") is False

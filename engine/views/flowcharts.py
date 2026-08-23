@@ -361,8 +361,12 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
         if (info.get("location") or {}).get("file") in impacted
     }
 
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(restricted, f, indent=2)
+    # Same as the function-level branch above: with a version id the engine reads its
+    # functions from the database and this file is opened by nothing.
+    from core.run_context import version_id as _vid2
+    if not _vid2():
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(restricted, f, indent=2)
 
     log(
         f"incremental: flowcharts (file-level) restricted to {len(restricted)} function(s) "

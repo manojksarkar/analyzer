@@ -107,18 +107,16 @@ class Workspace:
 
 
 class VersionStore:
-    """Version lifecycle: create per-commit version dirs (capturing model/output/documents)
-    and write per-version manifests. The version REGISTRY is api/db/data/versions.json (the
-    API's DB) — read via incremental.project_db; this store no longer keeps its own."""
+    """The per-commit directory: where a commit's git checkout lives.
+
+    It used to write the version's config and manifest alongside the checkout as JSON. Both
+    are rows now (`versions.resolved_config`, `versions.manifest`), and a second copy on disk
+    was one more thing that could disagree with them. What is left is the directory itself,
+    which is not a record of anything — it is where the source code is.
+    """
 
     def __init__(self, workspace: Workspace):
         self.ws = workspace
-
-    def get(self, version_id: str) -> Optional[Dict[str, Any]]:
-        return _read_json(os.path.join(self.version_dir(version_id), "manifest.json"), None)
-
-    def exists(self, version_id: str) -> bool:
-        return os.path.isdir(self.version_dir(version_id))
 
     def version_dir(self, version_id: str) -> str:
         """versionId == commit[:16]; the version dir IS the per-commit dir (which also
@@ -133,71 +131,9 @@ class VersionStore:
         os.makedirs(d, exist_ok=True)
         return d
 
-    def write_config(self, version_id: str, config: Dict[str, Any]) -> None:
-        _write_json(os.path.join(self.version_dir(version_id), "config.json"), config)
-
-    def write_manifest(self, version_id: str, manifest: Dict[str, Any]) -> None:
-        # Per-version record in the commit dir (the filesystem source of truth). The API's
-        # _complete projects this into api/db/data/versions.json for the DB/UI.
-        _write_json(os.path.join(self.version_dir(version_id), "manifest.json"), manifest)
 
 
-class HashStore:
-    """Per-version entity-hash snapshot: {entityKey -> token-sha256} (doc 04 §4)."""
-
-    def __init__(self, version_store: VersionStore):
-        self.vs = version_store
-
-    def _path(self, version_id: str) -> str:
-        return os.path.join(self.vs.version_dir(version_id), "hashes.json")
-
-    def write(self, version_id: str, hashes: Dict[str, str]) -> None:
-        _write_json(self._path(version_id), hashes)
-
-    def read(self, version_id: str) -> Dict[str, str]:
-        return _read_json(self._path(version_id), {})
 
 
-class EdgeStore:
-    """Per-version slim usage index: {typeUsers, macroUsers} (doc 04 §4)."""
-
-    def __init__(self, version_store: VersionStore):
-        self.vs = version_store
-
-    def _path(self, version_id: str) -> str:
-        return os.path.join(self.vs.version_dir(version_id), "edges.json")
-
-    def write(self, version_id: str, edges: Dict[str, Any]) -> None:
-        _write_json(self._path(version_id), edges)
-
-    def read(self, version_id: str) -> Dict[str, Any]:
-        return _read_json(self._path(version_id), {"typeUsers": {}, "macroUsers": {}})
 
 
-class ReuseIndex:
-    """Cross-version content-addressed pointer index (doc 04 §3, D3):
-    {fingerprint -> {versionId, entityKey}}. Output content is never duplicated —
-    the index only records *where* a fingerprint's output already lives."""
-
-    def __init__(self, workspace: Workspace):
-        self.ws = workspace
-        self._path = os.path.join(self.ws.cache_dir, "index.json")
-        self._index: Dict[str, Dict[str, str]] = _read_json(self._path, {})
-
-    def get(self, fingerprint: str) -> Optional[Dict[str, str]]:
-        return self._index.get(fingerprint)
-
-    def put(self, fingerprint: str, version_id: str, entity_key: str, *, overwrite: bool = False) -> bool:
-        """Record a pointer. By default the first version that produced a fingerprint
-        keeps it (a later identical fingerprint reuses, doesn't re-point). Returns
-        True if a new entry was added."""
-        if not overwrite and fingerprint in self._index:
-            return False
-        self._index[fingerprint] = {"versionId": version_id, "entityKey": entity_key}
-        return True
-
-    def save(self) -> None:
-        _write_json(self._path, self._index)
-
-    def __len__(self) -> int:
-        return len(self._index)

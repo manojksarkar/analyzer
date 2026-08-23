@@ -38,7 +38,7 @@ from core.paths import paths as _paths, set_output_dir, set_model_dir
 from core.run_context import (effective_model_store,
                               DatabaseRequired as _DatabaseRequired)
 from incremental import git_ops
-from incremental.stores import Workspace, VersionStore, HashStore, EdgeStore, ReuseIndex, _rmtree_force
+from incremental.stores import Workspace, VersionStore, _rmtree_force
 from incremental.clone import ensure_commit_checkout
 from incremental.project_db import get_project, list_versions, resolve_project_repo
 from incremental.baseline import select_baseline
@@ -598,7 +598,6 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     project = get_project(project_id)        # api/db/data/projects.json (no project.json)
     project_name = (project.get("name") or "").strip() or None
     from incremental.store import make_store
-    hstore, estore = HashStore(vstore), EdgeStore(vstore)
     store = make_store(project_id, workspaces_root)
     ridx = StoreReuseIndex(store)      # reuse index via the store: Postgres under PgStore
     # Version identity (08): the checkout DIR stays commit-keyed; version_id is the real ver…
@@ -651,7 +650,6 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             version_id, branch, target, scope, data_dict_id,
             decision="incremental", regenerated=0, reused=0, status="failed",
             warnings=decision["warnings"] + [f"{stage} exited {rc}"])
-        vstore.write_manifest(commit_key, m)
         store.write_manifest(version_id, m)     # close the lifecycle: 'failed', not mid-phase
         raise AnalyzerRunFailed(f"{stage} failed (exit {rc})", rc)
 
@@ -906,7 +904,6 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     manifest["documents"] = documents
     manifest["carriedForward"] = n_carried
     manifest["crossVersionReused"] = len(index_reused) + len(index_reused_g)
-    vstore.write_manifest(commit_key, manifest)
     # AND to the store -> Postgres (doc 09, C1). `vstore` is the file store keyed by COMMIT;
     # `store` is the artifact store keyed by the real VERSION id and is the only one that
     # closes versions.pipeline_status. Without this the version stays at its last in-progress

@@ -391,10 +391,11 @@ class TestDatabaseConfiguredDetection:
         assert coredb.is_database_configured() is False
 
     def test_make_store_uses_the_config_section(self, monkeypatch, tmp_path):
-        """The end-to-end consequence: a standalone run with only config.local.json now gets
-        PgStore instead of silently getting FileStore."""
+        """The end-to-end consequence: a standalone run with only config.local.json gets a
+        store, and one with no database at all is refused rather than quietly given a
+        DB-less FileStore that no reader would ever look at."""
         import core.db as coredb
-        from incremental.store import make_store, PgStore, FileStore
+        from incremental.store import make_store, PgStore
         monkeypatch.delenv("DATABASE_URL", raising=False)
         coredb.reset_engine()
         try:
@@ -402,7 +403,8 @@ class TestDatabaseConfiguredDetection:
             assert isinstance(make_store("p1", workspaces_root=str(tmp_path / "a")), PgStore)
             monkeypatch.setattr(coredb, "_dsn_from_config", lambda: None)
             coredb.reset_engine()
-            assert isinstance(make_store("p1", workspaces_root=str(tmp_path / "b")), FileStore)
+            with pytest.raises(RuntimeError, match="no database is configured"):
+                make_store("p1", workspaces_root=str(tmp_path / "b"))
         finally:
             coredb.reset_engine()
 

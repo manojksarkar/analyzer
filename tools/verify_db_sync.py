@@ -90,6 +90,15 @@ def main() -> int:
         print(f"\n  load_model parts: {', '.join(f'{k}={len(v)}' for k, v in model.items())}")
         loaded = model["hashes"]
 
+    # Clean the fixture up. It used to sync a REAL generation's model dir, so what it left
+    # behind looked like a version; the synthetic one does not, and `verify_db_rebuild`
+    # inspects the NEWEST version in the database — which was this fixture, reported as an
+    # unrebuildable version. A gate has no business leaving rows in a developer's database.
+    with engine.begin() as cx:
+        model_store.clear_version(cx, VID)
+        cx.execute(s.versions.delete().where(s.versions.c.id == VID))
+        cx.execute(s.projects.delete().where(s.projects.c.id == PID))
+
     ok = loaded == HASHES
     print(f"\n  load_hashes() == what went in : {'YES' if ok else 'NO'} "
           f"({len(loaded)} vs {len(HASHES)} keys)")

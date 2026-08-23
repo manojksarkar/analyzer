@@ -26,18 +26,25 @@ from incremental.stores import _read_json, _write_json, default_workspaces_root
 
 
 def make_store(project_id: str, workspaces_root: Optional[str] = None) -> "ArtifactStore":
-    """The production store for a run: `PgStore` when a database is configured (artifacts in
-    the DB, keyed by the real ver id), else the DB-less `FileStore`.
+    """The store for a run: `PgStore`. There is no other one.
+
+    It used to fall back to a DB-less `FileStore` writing versions/<ver>/ as JSON. That store
+    was a second source of truth for the same artifacts, and the fallback was silent — a run
+    that could not reach the database produced a complete-looking version on disk that no
+    reader ever looked at.
 
     "Configured" means `DATABASE_URL` **or** the `db` section of `config.local.json` — see
     `core.db.is_database_configured`. Testing the env var alone made a standalone engine run
-    fall back to files while the same deployment's API-driven runs used Postgres, because the
-    API injects the DSN into its subprocesses."""
+    fall back while the same deployment's API-driven runs used Postgres, because the API
+    injects the DSN into its subprocesses."""
     from core.db import is_database_configured
-    if is_database_configured():
-        from core.db import get_engine
-        return PgStore(project_id, get_engine(), workspaces_root=workspaces_root)
-    return FileStore(project_id, workspaces_root=workspaces_root)
+    if not is_database_configured():
+        raise RuntimeError(
+            "no database is configured, and the artifacts of a version live nowhere else. "
+            "Set the `db` section in engine/config/config.local.json (or DATABASE_URL), then "
+            "run `python tools/db_setup.py`.")
+    from core.db import get_engine
+    return PgStore(project_id, get_engine(), workspaces_root=workspaces_root)
 
 # model dict key -> the file name the pipeline produces / reads
 _MODEL_FILES = {
@@ -290,77 +297,6 @@ class ArtifactStore(ABC):
         ...
 
 
-class FileStore(ArtifactStore):
-    """DB-less implementation: everything under workspaces/<pid>/versions/<ver…>/ (model in
-    model/, config/manifest/output alongside) + a shared cache/index.json reuse index."""
-
-    def __init__(self, project_id: str, workspaces_root: Optional[str] = None):
-        self.project_id = project_id
-        root = workspaces_root or default_workspaces_root()
-        # NOT created here. Constructing a store must not have a filesystem side effect: a
-        # DB-less probe, or a run.py that turns out to have nothing to persist, would leave an
-        # empty workspaces/<pid>/ behind for a project that may not exist. Every write path
-        # already creates what it needs (`_write_json` makes its parent, `create_version`
-        # makes the version dir).
-        self.proj_root = os.path.join(root, project_id)
-        self._reuse_path = os.path.join(self.proj_root, "cache", "index.json")
-        self._reuse: Dict[str, Dict[str, str]] = _read_json(self._reuse_path, {})
-
-    def _model_dir(self, version_id: str) -> str:
-        return os.path.join(self.artifact_dir(version_id), "model")
-
-    def _model_file(self, version_id: str, key: str, default: Any) -> Any:
-        return _read_json(os.path.join(self._model_dir(version_id), _MODEL_FILES[key]), default)
-
-    def write_model(self, version_id: str, model_dir: str) -> None:
-        # Since C11b a run's model dir IS versions/<ver>/model, i.e. exactly where this would
-        # copy it — copytree onto itself raises WinError 32 (files open by this process) and
-        # would otherwise duplicate the tree. Nothing to do when they are the same directory:
-        # the model is already in place. Mirrors the same guard in capture_output.
-        if os.path.isdir(model_dir) and not _same_dir(model_dir, self._model_dir(version_id)):
-            shutil.copytree(model_dir, self._model_dir(version_id), dirs_exist_ok=True)
-
-    def read_hashes(self, version_id: str) -> Dict[str, str]:
-        return self._model_file(version_id, "hashes", {})
-
-    def read_functions(self, version_id: str) -> Dict[str, Any]:
-        return self._model_file(version_id, "functions", {})
-
-    def read_globals(self, version_id: str) -> Dict[str, Any]:
-        return self._model_file(version_id, "globals", {})
-
-    def read_edges(self, version_id: str) -> Dict[str, Any]:
-        return self._model_file(version_id, "edges", dict(_EMPTY_EDGES))
-
-    def read_model(self, version_id: str) -> Dict[str, Any]:
-        return {
-            "functions": self.read_functions(version_id),
-            "globals": self.read_globals(version_id),
-            "datadict": self._model_file(version_id, "datadict", {}),
-            "edges": self.read_edges(version_id),
-            "units": self._model_file(version_id, "units", {}),
-            "components": self._model_file(version_id, "components", {}),
-            "summaries": self._model_file(version_id, "summaries", {}),
-            "hashes": self.read_hashes(version_id),
-        }
-
-    def reuse_get(self, fingerprint: str) -> Optional[Dict[str, str]]:
-        return self._reuse.get(fingerprint)
-
-    def reuse_get_many(self, fingerprints: Iterable[str]) -> Dict[str, Dict[str, str]]:
-        # The whole index is already an in-memory dict here, so batching is free.
-        return {fp: self._reuse[fp] for fp in dict.fromkeys(fingerprints)
-                if fp and fp in self._reuse}
-
-    def reuse_put(self, fingerprint: str, version_id: str, entity_key: str, *,
-                  overwrite: bool = False) -> bool:
-        if not overwrite and fingerprint in self._reuse:
-            return False
-        self._reuse[fingerprint] = {"versionId": version_id, "entityKey": entity_key}
-        return True
-
-    def reuse_save(self) -> None:
-        _write_json(self._reuse_path, self._reuse)
 
 
 class PgStore(ArtifactStore):
@@ -442,6 +378,11 @@ class PgStore(ArtifactStore):
             return load_run_metadata(cx, version_id)
 
     def write_model(self, version_id: str, model_dir: str) -> None:
+        """Load a model from a DIRECTORY into the database.
+
+        Not a pipeline path — the phases write their own rows. This is how a fixture or a
+        rebuild check gets a known model into a version (tools/verify_db_rebuild.py).
+        """
         from incremental.model_store import persist_model_from_dir
         with self.engine.begin() as cx:
             persist_model_from_dir(cx, self.project_id, version_id, model_dir)

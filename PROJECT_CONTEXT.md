@@ -208,6 +208,35 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-23 (**poc-4 merged onto the DB architecture; the file backing removed** — branch
+> `integration/poc-4-db`. Manoj's 34 commits (typedef/data ranges, per-layer data dictionary and macros,
+> class scope in interface names, `address_taken`, unit-diagram edge layout, call-name flowchart labels,
+> strict CLI validation, `--selected-unit`, LLM stage timing, clangArgs, the behaviour-diagram rewrite) on
+> top of the Postgres migration. 17 files conflicted; resolved by intent, never by side. Four SILENT
+> breaks the merge produced: `_KNOWN_FLAGS` did not list the eight database flags, so every DB run would
+> have died at argv parse; `address_taken` was unregistered in the repository and fell through to a file
+> nothing reads; `_looks_like_fallback` was deleted by the label rewrite while the label cache still
+> imported it INSIDE a try, so the cache silently stored nothing; two `--clean` blocks survived, ours
+> before the path guard, so a typo'd path still deleted `model/` and `output/`. The parser fingerprint
+> needed BOTH sides — his per-layer include/macro args (or a macro change slips the gate) and our
+> `base_path` fold (or the fingerprint changes every commit and narrowed parse never runs).
+> **`--project-name` now carries the job's version tag**, reversing D-3: re-exporting v1 and v2 gives
+> "v1.0" and "v2.1" rather than both naming the project. Migration **0008** adds `job_functions.class_name`
+> (its absence failed every API insert with "Unconsumed column names") and latency/throttle/token columns
+> on `llm_call_stats`. LLM accounting unified: Manoj's per-attempt measurement feeds BOTH
+> `logs/llm_stats_*.json` and the database, and the run report now says where the wall clock went —
+> throttle vs model, which a call count cannot distinguish. **File backing deleted**: `FileRepository`,
+> `--model-store`, `--dump-model-files`, `FileStore`, `HashStore`/`EdgeStore`/file `ReuseIndex`, the
+> commit-dir `manifest.json`, and the C11a dual-write hook. `make_store` now REFUSES without a database
+> rather than silently returning a DB-less store nothing reads. `tools/verify_model_parity.py` went with
+> it — it compared the DB against `model/*.json`, and with nothing writing those it could only compare
+> against stale leftovers or a dump of the database itself. `verify_db_sync` survives, rewritten to build
+> its own small model: what it proves is the DIALECT, which three rows exercise as well as three hundred.
+> ONE file-writing path is deliberate — `ScratchRepository`, reached by `--model-scratch`, for the
+> narrowed parse's partial pass, which carries no version id so it cannot write rows by accident.
+> Gates: pytest 1334 passed / 10 skipped, verify_incremental, verify_narrowed_parse,
+> verify_flowchart_reuse, verify_incremental_parity --fast, verify_db_sync, verify_db_rebuild — all green.)
+
 > Updated: 2026-08-22b (**behaviour diagram package replaced + LLM path rewired** — branch
 > `fix/behaviour-diagram`. All 7 modules under `engine/behaviour_diagram/` swapped for an external version;
 > it did not run as delivered (3 crash bugs) and its LLM imports pointed at `llm_client`, deleted in the
@@ -1638,9 +1667,8 @@ python engine/run.py [options] <project_path>
 | Flag | Effect |
 |---|---|
 | `--clean` | Delete `model/` and `output/` before starting. Runs **after** `<project_path>` is validated (since 2026-08-11) — it used to run first, so `--clean <typo'd path>` wiped both dirs and then aborted. In database mode it also warns that the stored model **survives** — the directories are no longer where the model is. |
-| `--model-store {files,db}` | Where the phases read/write the model. **Default `db`** since doc 10 step 9 — the orchestrators (`incremental/generate.py`, `incremental/engine.py`) default to it, so a UI job gets the database without `pipeline_runner` asking for it. `files` forces the legacy `model/*.json`. `core.run_context.effective_model_store` resolves `db` **once in the orchestrator** and degrades to files with the reason on stderr when there is no database, no version id, or no `versions` row (the API reserves that row at job start; `PgStore` never creates one, so a CLI run against an unreserved version would otherwise fail on the foreign key). |
+| `--model-scratch` | The model of THIS invocation is scratch, not a version's: it goes to JSON in the run's model dir and carries no version id. One caller - the narrowed parse's partial pass, whose output covers only the changed translation units and is valid only after `parse_merge`. Not a storage choice; no flag points a real run at it. |
 | `--version-id <id>` / `--project-id <id>` | The run identity every phase needs once the model is rows rather than files. Applied **before** `paths()` is snapshotted. |
-| `--dump-model-files` | Debug only: write the stored model back out as `model/*.json` so `tools/verify_model_parity.py` has something to compare against. No job uses it. |
 | `--help` / `-h` | Print the option list (the `run.py` module docstring) and exit 0. Handled at the top of the file, before `configure_logging`/`chdir`/config load, so it works even with a broken config and writes no log file. |
 | `--config <path>` | Use this config file instead of `engine/config/config.json` — a per-project/per-version config (carries the project's `layers`). Resolved+validated, then exported as `ANALYZER_CONFIG` **before** the import-time config load in `utils`, so every phase subprocess (env inherited) honors it. `config.local.json` is **not** merged on top (used as-is, for reproducibility); a set-but-missing path fails loud. Foundation for incremental per-project runs (§23, M1.1). |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
