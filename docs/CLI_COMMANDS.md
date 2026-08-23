@@ -368,6 +368,43 @@ Math only.
 | `--create-version` | Reserve the `versions` row if absent, instead of erroring. Opt-in, so a typo in `--version-id` still fails. |
 | `--data-dict-id <id>` | Merge `workspaces/<pid>/datadict/<id>.csv` into the data dictionary. |
 | `--config <path>` | Use a specific config instead of the per-project one. |
+| `--base-version-id <id>` | Force the baseline instead of letting it pick the nearest ancestor (incremental only). |
+| `--repo-url <url or path>` | Clone from here if the checkout is not present yet. |
+| `--force` | Accepted, no-op — the commit dir is reused either way. |
+
+`--project-id`, `--branch` and `--commit` are required on both orchestrators. `--version-id` is
+what every phase uses to find its rows, so a run without one stops rather than guessing.
+
+---
+
+## 5b. Per-layer inputs
+
+A real project rarely has one set of macros or one data dictionary. Three flags take a **layer
+name and a path**, and they are repeatable — once per layer. They go on `run.py`, and the
+orchestrators pass them through from the config:
+
+```
+--data-dictionary-layer Layer1 dd_layer1.csv
+```
+```
+--macros-layer Layer1 engine\config\macros.layer1.example.json
+```
+```
+--include-path-layer Layer1 C:\ThirdParty\boost\include
+```
+
+The un-suffixed `--data-dictionary <path>` and `--macros <path>` still apply to **every** layer.
+An unknown layer name is rejected with the list of valid ones rather than silently ignored.
+
+Macro files are JSON — `engine/config/macros.layer1.example.json` is a working example. For a
+UI job you do not write one: the API materialises `workspaces/<pid>/macros.json` from the
+project's `preprocessor_definitions`.
+
+Check a data dictionary CSV before feeding it to a run — a malformed one used to fail silently:
+
+```
+python tools\check_data_dictionary_csv.py <path-to.csv>
+```
 
 ---
 
@@ -396,8 +433,30 @@ The run's own report lives on the version row:
 SELECT report FROM versions WHERE id = 'v2';
 ```
 
-It ends with an **LLM CALLS** block — how many calls the run made and how many produced nothing.
-A non-zero "Failed" count means the document contains fallback text rather than real prose.
+It ends with an **LLM CALLS** block — how many calls the run made, how many produced nothing,
+and where the wall clock went:
+
+```
+LLM CALLS (a failed call means the caller fell back to a mechanical result)
+  Total     : 185    answered 180 (97%)
+  Time      : 795s total  (240s waiting on the model, 555s in the rate-limit pause)
+  Tokens    : 102000  (90000 prompt, 12000 completion)
+```
+
+A non-zero "Failed" count means the document contains fallback text rather than real prose. If
+**Time** is mostly the pause rather than the model, `llm.rateLimitSeconds` is the lever — it is
+3.0 by default, which is right for a throttled gateway and pure waste for an on-prem hosted model
+with no limit. Set it to 0 there.
+
+Every run also writes `logs/llm_stats_<run-id>.json` with the same numbers broken down per
+pipeline stage. To compare two runs — "did that change help?" — pass both:
+
+```
+python tools\llm_stats.py logs\llm_stats_A.json logs\llm_stats_B.json
+```
+
+It prints the config difference first, because a comparison you cannot attribute to a specific
+change is two columns of numbers.
 
 ---
 
@@ -410,11 +469,63 @@ cannot infer which version it belongs to:
 python run.py <checkout-path> --config ..\workspaces\myproj\config.json --version-id v2 --project-id myproj --output-root ..\workspaces\myproj\versions\v2\output --model-root ..\workspaces\myproj\versions\v2\model --from-phase 3
 ```
 
-`--from-phase N` — 1 parse, 2 derive, 3 views, 4 export.
+`--from-phase N` — 1 parse, 2 derive, 3 views, 4 export. `--to-phase N` stops after N.
 `--use-model` skips phases 1–2 and reuses the stored model (what re-export does).
 
 The model is persisted at each phase boundary, so resuming at 3 or 4 reads the database instead
 of re-parsing.
+
+**`run.py` rejects anything it does not recognise**, including a stray second path. `run.py x
+--phase 3` used to drop both tokens silently and re-run the whole pipeline from Phase 1; now it
+stops with `Unknown option: --phase` and suggests the nearest real flag.
+
+### Narrowing Phase 3 to one unit
+
+While iterating on a single unit's diagrams, re-rendering the whole group is wasted time:
+
+```
+python run.py <checkout-path> --config ..\workspaces\myproj\config.json --version-id v2 --project-id myproj --use-model --selected-unit Uart
+```
+
+Repeatable, once per unit. It only affects Phase 3 — the model is untouched, so the documents
+are the ones the stored model implies. An unknown unit name stops the run and lists the real
+ones rather than rendering nothing, and when a model already exists that check happens **before
+Phase 1** instead of three phases later.
+
+`--selected-unit` is a development aid. It narrows what gets RENDERED; `--scope` is what decides
+which documents a version contains.
+
+### Every `run.py` flag
+
+You rarely type these — `--scope` on the orchestrator becomes the selection flags, and the
+orchestrator supplies the identity and roots. This is the whole list, for when you drive a phase
+by hand:
+
+| Flag | Effect |
+|---|---|
+| `--help`, `-h` | The option list. Handled before the config loads, so it works with a broken config. |
+| `--config <path>` | The config for this run, exported to every phase subprocess as `ANALYZER_CONFIG`. |
+| `--clean` | Delete `output/` and `model/` first. Runs **after** the path is validated, and warns that the stored model survives. |
+| `--from-phase N` / `--to-phase N` | Start at / stop after phase N. |
+| `--use-model`, `--skip-model` | Skip phases 1–2 and reuse the stored model. |
+| `--selected-group <name>` | One group. Repeatable. Phases 1–2 parse only its layer. |
+| `--selected-layer <name>` | One layer, every group in it. Repeatable. |
+| `--selected-component <name>` | One component. Repeatable — several bundle into ONE document. |
+| `--component-per-docx` | Split a group/layer run into one document per component. Not combinable with `--selected-component`. |
+| `--selected-unit <name>` | Narrow Phase 3 to this unit. Repeatable. Development aid. |
+| `--filter-mode <mode>` | Behaviour-diagram selection mode. |
+| `--project-name <name>` / `--output-name <name>` | Override the document title / the output folder name. |
+| `--data-dictionary <path>` / `--data-dictionary-layer <layer> <path>` | §5b. |
+| `--macros <path>` / `--macros-layer <layer> <path>` | §5b. |
+| `--include-path-layer <layer> <dir>` | §5b. |
+| `--only-files <listfile>` | Parse only the files listed. What the narrowed parse uses. |
+| `--include-emulator` | Include emulator sources in the parse. |
+| `--no-llm-summarize` / `--llm-summarize` | Phase-2 hierarchy summarization off / on (on by default). |
+| `--version-id <id>` / `--project-id <id>` | Which version this phase writes. Required in practice — the model is rows. |
+| `--baseline-version-id <id>` | The version whose parse snapshot a narrowed parse merges against. |
+| `--model-root <dir>` / `--output-root <dir>` | This run's model and output directories. |
+| `--model-scratch` | Internal: the narrowed parse's partial pass. Carries no version id, so it cannot write rows. |
+| `--quiet` / `--verbose` / `--trace-prompts` | Log level; `--trace-prompts` records every LLM prompt. |
 
 ---
 
@@ -446,6 +557,16 @@ python tools\verify_db_rebuild.py
 ```
 
 Every one of these exists because something passed the unit tests and was still broken.
+
+Other tools, not part of the gate set:
+
+| Tool | For |
+|---|---|
+| `tools\seed_db.py` | Put a demo project + version into an empty database. |
+| `tools\verify_api_db.py` | The API's repositories round-trip on real Postgres. Needs a Postgres `DATABASE_URL`. |
+| `tools\verify_pg_readers.py` | Which versions still depend on a disk fallback. Reports per version. |
+| `tools\render_flowchart_pngs.py` | Re-render flowchart PNGs from stored DOT without a full run. |
+| `tools\diag_dialect.py` | Diagnose a SQLAlchemy dialect/driver problem when the database will not connect. |
 
 The last two need a real database. `verify_db_sync` proves the persistence layer against
 **Postgres**, where the unit tests use SQLite — the dialect differences (JSONB, BigInteger

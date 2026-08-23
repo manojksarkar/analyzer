@@ -509,11 +509,6 @@ def main() -> None:
     ap.add_argument("--version-id", default=None, help="(derived from the commit; kept for compat)")
     ap.add_argument("--no-llm", action="store_true", help="skip LLM hierarchy summarization")
     ap.add_argument("--force", action="store_true", help="(no-op; the commit dir is reused)")
-    ap.add_argument("--model-store", default="db", choices=("files", "db"),
-                    help="where the PHASES read/write the model. Default 'db' (Postgres/SQLite); "
-                         "'files' forces the legacy model/*.json. Without an explicit "
-                         "'files', a run that cannot reach the database FAILS rather than "
-                         "silently producing a version that is not there.")
     ap.add_argument("--create-version", action="store_true",
                     help="reserve the versions row if it does not exist. The API normally owns "
                          "that row; without this a missing one is an error, so a mistyped "
