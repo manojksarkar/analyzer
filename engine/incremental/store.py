@@ -88,27 +88,37 @@ class ArtifactStore(ABC):
         return os.path.isdir(self.artifact_dir(version_id))
 
     def write_config(self, version_id: str, config: Dict[str, Any]) -> None:
+        """The resolved per-run config, as a FILE — deliberately.
+
+        It is not a record of the version (the API stores that in `versions.resolved_config`);
+        it is what the phase subprocesses are handed as `--config`, in the same way the
+        workspace config.json is. A process boundary needs a file on one side of it.
+        """
         _write_json(os.path.join(self.artifact_dir(version_id), "config.json"), config)
 
     def read_config(self, version_id: str) -> Dict[str, Any]:
+        """The config that file holds. Kept as the counterpart of the write — reading back what
+        a phase was actually handed is the only way to check it."""
         return _read_json(os.path.join(self.artifact_dir(version_id), "config.json"), {})
 
+    @abstractmethod
     def write_run_metadata(self, version_id: str, meta: Dict[str, Any]) -> None:
-        """Persist the run's identity metadata — basePath / projectName / parseFingerprint. This is
-        what replaces model/metadata.json (doc 07 §3): PgStore puts it on the `versions` row, the
-        file store keeps it beside the version's other artifacts."""
-        _write_json(os.path.join(self.artifact_dir(version_id), "metadata.json"), meta)
+        """Persist the run's identity metadata — basePath / projectName / parseFingerprint.
 
+        Replaces model/metadata.json (doc 07 §3). Abstract, not a file default: the default
+        wrote metadata.json next to the version for FileStore's benefit, and with that store
+        gone it was a JSON writer no subclass could reach."""
+
+    @abstractmethod
     def read_run_metadata(self, version_id: str) -> Dict[str, Any]:
         """The version's identity metadata, or {}. `parseFingerprint` is the clang-flag guard the
         narrowed parse compares against its baseline."""
-        return _read_json(os.path.join(self.artifact_dir(version_id), "metadata.json"), {})
 
-    def write_manifest(self, version_id: str, manifest: Dict[str, Any]) -> None:
-        _write_json(os.path.join(self.artifact_dir(version_id), "manifest.json"), manifest)
+    @abstractmethod
+    def write_manifest(self, version_id: str, manifest: Dict[str, Any]) -> None: ...
 
-    def read_manifest(self, version_id: str) -> Optional[Dict[str, Any]]:
-        return _read_json(os.path.join(self.artifact_dir(version_id), "manifest.json"), None)
+    @abstractmethod
+    def read_manifest(self, version_id: str) -> Optional[Dict[str, Any]]: ...
 
     def write_report(self, version_id: str, text: str) -> bool:
         """Store the end-of-run report. True if it went to a database.
