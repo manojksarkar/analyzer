@@ -71,46 +71,32 @@ _PARSE_SNAPSHOT_FILES = ("functions.json", "globalVariables.json", "dataDictiona
 
 
 def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
-                         version_id: str = "", model_store: str = "files") -> None:
-    """Capture the post-Phase-1 model (blank skeleton — no LLM descriptions yet) into
-    `versions/<id>/parse/`. MUST run right after Phase 1, before Phase 2 fills
-    descriptions into model/. This is the baseline a narrowed parse (M4) merges against
-    so impacted functions arrive blank and get regenerated (doc 04 §11)."""
-    # The on-disk copy is the FILE-mode snapshot. In database mode the snapshot lives in
-    # `parse_snapshots` and this directory is not read by anything — copying into it only
-    # mirrors whatever happens to be in model_dir, which after a narrowed parse is the PARTIAL
-    # parse. That is how an incremental version ended up with a versions/<id>/parse/ full of
-    # incomplete JSON while a full version's stayed empty.
-    if model_store != "db":
-        dst = os.path.join(version_dir, "parse")
-        os.makedirs(dst, exist_ok=True)
-        for fn in _PARSE_SNAPSHOT_FILES:
-            src = os.path.join(model_dir, fn)
-            if os.path.isfile(src):
-                shutil.copyfile(src, os.path.join(dst, fn))
-    # AND into the store (doc 09, C2). On disk this snapshot only exists on the machine that
-    # produced the baseline, so narrowed parse could not work across nodes and was lost with
-    # any workspace clean. Additive: the files above still get written until C11c, so the
-    # readers can fall back. Best-effort — a snapshot failure must not fail a good run.
+                         version_id: str = "") -> None:
+    """Capture the post-Phase-1 model (blank skeleton — no LLM descriptions yet) into the
+    version's parse snapshot. MUST run right after Phase 1, before Phase 2 fills descriptions
+    in. This is the baseline a narrowed parse (M4) merges against, so impacted functions arrive
+    blank and get regenerated (doc 04 §11).
+
+    Stored, never copied to disk (doc 09, C2). On disk a snapshot only existed on the machine
+    that produced the baseline, so narrowed parse could not work across nodes and was lost with
+    any workspace clean. Best-effort — a snapshot failure must not fail a good run.
+    """
     if store is not None and version_id:
         try:
-            # In database mode the phases wrote to the database, so the model dir holds only
-            # the few artifacts that have not moved — a file-sourced snapshot would capture
-            # almost nothing and the stored skeleton would be useless as a baseline. Build it
-            # from what the database actually has.
-            if model_store == "db":
-                _m = store.read_model(version_id) or {}
-                _snap = {f"{k}.json": _m.get(v) or {} for k, v in (
-                    ("functions", "functions"), ("globalVariables", "globals"),
-                    ("dataDictionary", "datadict"), ("hashes", "hashes"),
-                    ("edges", "edges"))}
-                # tu_includes / entity_files / func_keys / override_pairs / metadata are NOT
-                # read back off disk any more (step 11): Phase 1 wrote them straight into
-                # parse_snapshots and tu_includes through the repository. Hence merge rather
-                # than replace — a replace here would delete exactly those rows.
-                n = store.write_parse_snapshot_data(version_id, _snap, replace=False)
-            else:
-                n = store.write_parse_snapshot(version_id, model_dir, _PARSE_SNAPSHOT_FILES)
+            # Built from what the database HAS, not from the model dir. After a narrowed parse
+            # that directory holds the PARTIAL parse, and a snapshot of it would be a baseline
+            # full of holes — which is how an incremental version once ended up with a
+            # versions/<id>/parse/ of incomplete JSON while a full version's stayed empty.
+            _m = store.read_model(version_id) or {}
+            _snap = {f"{k}.json": _m.get(v) or {} for k, v in (
+                ("functions", "functions"), ("globalVariables", "globals"),
+                ("dataDictionary", "datadict"), ("hashes", "hashes"),
+                ("edges", "edges"))}
+            # tu_includes / entity_files / func_keys / override_pairs / address_taken /
+            # metadata are NOT read back off disk: Phase 1 wrote them straight into
+            # parse_snapshots through the repository. Hence merge rather than replace — a
+            # replace here would delete exactly those rows.
+            n = store.write_parse_snapshot_data(version_id, _snap, replace=False)
             if n:
                 from core.logging_setup import get_logger as _gl
                 _gl("incremental").info(f"C2: stored {n} parse-snapshot file(s) for {version_id}")
@@ -119,46 +105,34 @@ def snapshot_parse_model(model_dir: str, version_dir: str, store=None,
             _gl("incremental").warning(f"C2: could not store the parse snapshot: {exc}")
 
 
-def run_metadata(store, version_id: str, project_id: str, model_dir: str,
-                 model_store: str) -> Dict[str, Any]:
+def run_metadata(store, version_id: str, project_id: str) -> Dict[str, Any]:
     """The run's identity metadata — basePath / projectName / parseFingerprint.
 
-    Read from whichever backing Phase 1 wrote it to. Both orchestrators used to open
+    Read from the parse snapshot Phase 1 wrote. Both orchestrators used to open
     `model/metadata.json` directly; step 11a moved `metadata` into `parse_snapshots`, so that
     file stopped existing and the read silently produced nothing. `versions.base_path` was then
-    NULL, and the flowchart engine — which takes base_path from that column in database mode —
-    built a SourceExtractor rooted at "", so every function failed with
-    "Source file not found: <relative path>" and every flowchart came back empty.
+    NULL, and the flowchart engine — which takes base_path from that column — built a
+    SourceExtractor rooted at "", so every function failed with "Source file not found:
+    <relative path>" and every flowchart came back empty.
 
     Silent because both sites tolerated a missing file: one skipped the write, the other wrote
     an empty dict. Neither is wrong on its own; both stopped being reachable at the same time.
     """
-    if model_store == "db":
-        from core.model_repo import DbRepository
-        try:
-            return DbRepository(version_id, project_id or "").read(
-                "metadata", required=False, default={}) or {}
-        except Exception:
-            return {}
-    p = os.path.join(model_dir, "metadata.json")
-    if not os.path.isfile(p):
-        return {}
+    from core.model_repo import DbRepository
     try:
-        import json as _json
-        with open(p, encoding="utf-8") as fh:
-            return _json.load(fh)
-    except (OSError, ValueError):
+        return DbRepository(version_id, project_id or "").read(
+            "metadata", required=False, default={}) or {}
+    except Exception:
         return {}
 
 
-def _persist_run_metadata(store, version_id: str, project_id: str, model_dir: str,
-                          model_store: str) -> bool:
+def _persist_run_metadata(store, version_id: str, project_id: str) -> bool:
     """Write basePath / projectName / parseFingerprint to the store. True if it had something.
 
     Called right after Phase 1 — see the call site for why the timing matters — and again at the
     end of the run, which is idempotent and covers a metadata refresh.
     """
-    meta = run_metadata(store, version_id, project_id, model_dir, model_store)
+    meta = run_metadata(store, version_id, project_id)
     from core.logging_setup import get_logger as _gl
     if not meta:
         _gl("incremental").warning(
@@ -207,31 +181,13 @@ def llm_call_counts(version_id: str) -> Dict[str, int]:
                                    "section will say so rather than be omitted", exc)
         return {"__unavailable__": str(exc)}
 
-def _orchestrator_model(store, version_id: str, model_dir: str, model_store: str,
-                        parts=_ORCH_PARTS) -> Dict[str, Any]:
+def _orchestrator_model(store, version_id: str, parts=_ORCH_PARTS) -> Dict[str, Any]:
     """The finished model, for the orchestrator's own bookkeeping (report + fingerprints).
 
-    In database mode the phases wrote to the database and `model_dir` holds only the artifacts
-    that have not moved yet, so reading the files would see nothing. Reads the store instead.
-
-    Returns `model_store.load_model`'s keys — functions / globals / hashes / edges / … — so both
-    paths hand back the same shape.
+    The phases write to the database, so this reads the store. Returns
+    `core.model_store.load_model`'s keys — functions / globals / hashes / edges / …
     """
-    if model_store == "db":
-        return store.read_model_parts(version_id, parts) or {}
-    import json as _json
-
-    def _load(fn):
-        p = os.path.join(model_dir, fn)
-        try:
-            with open(p, encoding="utf-8") as fh:
-                return _json.load(fh)
-        except (OSError, ValueError):
-            return {}
-
-    return {"functions": _load("functions.json"), "globals": _load("globalVariables.json"),
-            "hashes": _load("hashes.json"), "edges": _load("edges.json"),
-            "units": _load("units.json"), "components": _load("components.json")}
+    return store.read_model_parts(version_id, parts) or {}
 
 
 def scope_to_args(scope: Dict[str, Any]) -> List[str]:
@@ -314,7 +270,6 @@ def generate_full(
     repo_url: Optional[str] = None,
     repo_token: Optional[str] = None,
     config_path: Optional[str] = None,
-    model_store: str = "db",
     create_version: bool = False,
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
@@ -355,9 +310,10 @@ def generate_full(
     # Step 9: 'db' is the default, so resolve it once here against what this machine can do and
     # pass the ANSWER down. Everything below — the phase flags, the snapshot source, the
     # orchestrator's own model read — keys off this one value.
-    model_store = effective_model_store(model_store, version_id,
-                                        project_id=project_id, commit=actual_commit,
-                                        create_version=create_version)
+    # Not a choice any more — a check. Raises DatabaseRequired when this run cannot reach the
+    # database, which is the only backing there is.
+    effective_model_store(version_id, project_id=project_id, commit=actual_commit,
+                          create_version=create_version)
     store = make_store(project_id, workspaces_root)
     from incremental.engine import StoreReuseIndex
     ridx = StoreReuseIndex(store)      # reuse index via the store: Postgres under PgStore
@@ -407,8 +363,6 @@ def generate_full(
     # doc 10: which backing the PHASES use for the model. Forwarded so every phase process
     # agrees with the orchestrator — a phase writing files while the orchestrator reads the
     # database (or the reverse) is the worst of both.
-    if model_store == "db":
-        base_cmd += ["--model-store", "db"]
     base_cmd += scope_to_args(scope)
     base_cmd += per_component_docx_args(scope)
     if project_name:
@@ -439,13 +393,13 @@ def generate_full(
                         cwd=project_root, shell=(os.name == "nt")).returncode
     if rc != 0:
         _fail_full(rc)
-    snapshot_parse_model(model_dir, _adir, store, version_id, model_store)
+    snapshot_parse_model(model_dir, _adir, store, version_id)
     # Run identity lands HERE, not at the end of the run. Phase 3's flowchart engine reads
     # base_path from `versions` to resolve source files, and Phase 3 executes inside the
     # subprocess below — so writing this after it returns is too late: the engine sees NULL,
     # roots its SourceExtractor at "", and every function fails with
     # "Source file not found: <relative path>" while the run reports success.
-    _persist_run_metadata(store, version_id, project_id, model_dir, model_store)
+    _persist_run_metadata(store, version_id, project_id)
     # --model-from-db re-materialized the stored model to disk between Phase 1 and Phase 2, so
     # Phase 2+ consumed the STORED copy rather than Phase 1's files. Removed with step 11b: the
     # phases read the database directly, so there is nothing to re-materialize and nothing left
@@ -460,17 +414,16 @@ def generate_full(
     # Structured model (+ hashes + edges) -> the store, keyed by the real ver id. This is what
     # the NEXT run reads as its baseline (store.read_hashes/functions), replacing the on-disk
     # HashStore/EdgeStore. Postgres under PgStore; versions/<ver…>/model under FileStore.
-    if model_store != "db":
-        # Reads model FILES (persist_model_from_dir -> clear_version + persist). In database
-        # mode the phases already flushed their own writes and there are no files, so calling
-        # this would CLEAR the version and store an empty model over the real one.
-        store.write_model(version_id, model_dir)
+    # NB: no store.write_model() here. That reads model FILES
+    # (persist_model_from_dir -> clear_version + persist); the phases have already flushed
+    # their own writes, so calling it would CLEAR the version and store an empty model over
+    # the real one.
     # Run identity (basePath/projectName/parseFingerprint) -> the store: the `versions` columns
     # under PgStore. Replaces the API reading model/metadata.json off disk (doc 07 §3).
-    _persist_run_metadata(store, version_id, project_id, model_dir, model_store)
+    _persist_run_metadata(store, version_id, project_id)
     # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
     documents = store.capture_output(version_id, output_dir)
-    _m = _orchestrator_model(store, version_id, model_dir, model_store)
+    _m = _orchestrator_model(store, version_id)
     hashes, edges, functions = _m.get("hashes") or {}, _m.get("edges") or {}, _m.get("functions") or {}
 
     # 5. fingerprints -> seed reuse index (content-only key; recipe is intentionally
@@ -519,7 +472,7 @@ def generate_full(
     })
     # report.txt is not written in database mode: the report is stored verbatim in
     # versions.report, nothing reads the file, and the log still carries every line.
-    emit_report(_report_lines, version_dir=vdir, write_file=(model_store != "db"))
+    emit_report(_report_lines, version_dir=vdir, write_file=False)
     # ...and to the store, so the report is readable from any node (versions.report existed
     # but was never written).
     try:
@@ -575,7 +528,7 @@ def main() -> None:
         m = generate_full(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
                           data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
                           version_id=args.version_id, config_path=args.config,
-                          repo_url=args.repo_url, model_store=args.model_store,
+                          repo_url=args.repo_url,
                           create_version=args.create_version)
     except AnalyzerRunFailed as exc:
         # Exit 2 is the analyzer's USAGE code: it already printed the reason — an unknown group,

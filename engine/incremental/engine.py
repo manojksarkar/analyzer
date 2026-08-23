@@ -177,7 +177,6 @@ def carry_forward_from_index(impact_keys: Iterable[str],
 # Set by generate_incremental before it runs any phase. A module-level value rather than
 # another _run_analyzer parameter: that function is called from four places and its
 # signature is already long, and the value is constant for the whole run.
-_MODEL_STORE = "files"
 
 
 def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
@@ -186,29 +185,24 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   project_name: Optional[str] = None,
                   version_id: Optional[str] = None,
                   project_id: Optional[str] = None,
-                  model_store: Optional[str] = None) -> int:
+                  scratch_model: bool = False) -> int:
     """Run the analyzer as a subprocess.
 
-    `model_store` overrides the orchestrator's backing for THIS invocation. Only the narrowed
-    parse uses it, and only to say `files`: its output is a PARTIAL model that is not valid
+    `scratch_model` sends this invocation's model to a scratch directory instead of the
+    version. Only the narrowed parse sets it: its output is a PARTIAL model that is not valid
     until `parse_merge` has combined it with the baseline, so it must not reach the version's
-    rows. Left as None everywhere else, which means "agree with the orchestrator".
+    rows.
     """
     cmd = [sys.executable, os.path.join(_SRC, "run.py"), "--config", vcfg_path]
     # This run's own output dir (doc 09, B1) — set_output_dir was already applied in THIS
     # process; the analyzer is a separate process, so it needs telling on its command line.
     cmd += ["--output-root", _paths().output_dir, "--model-root", _paths().model_dir]
-    _store = model_store or _MODEL_STORE
-    if _store == "db":                       # phases must agree with the orchestrator (doc 10)
-        cmd += ["--model-store", "db"]
-    elif model_store == "files":
-        # Explicit, not implicit. Without this the phase would inherit `db`, find no version id
-        # and fall back to files anyway — same result, reached by accident, with a warning that
-        # reads like a problem.
-        cmd += ["--model-store", "files"]
-    if version_id and project_id:
-        # C11a: persist the model to Postgres at each phase boundary (dual-write; the
-        # end-of-run store.write_model still runs, and files remain authoritative).
+    if scratch_model:
+        # The narrowed parse's partial pass: its model is scratch for parse_merge, not this
+        # version's. Passing the version id as well would let the phase write rows.
+        cmd += ["--model-scratch"]
+    elif version_id and project_id:
+        # Each phase persists the model at its own boundary, against this version.
         cmd += ["--version-id", version_id, "--project-id", project_id]
     cmd += scope_to_args(scope)
     cmd += per_component_docx_args(scope)
@@ -235,12 +229,8 @@ def _write_plan(version_id: str, project_id: str, plan: Dict[str, Any]) -> None:
     The orchestrator has no model repository installed, so it must name the backing itself —
     exactly as `_publish_model_for_next_phase` does for the carried-forward model.
     """
-    if _MODEL_STORE == "db" and version_id:
-        from core.model_repo import DbRepository
-        DbRepository(version_id, project_id or "").write("incremental_plan", plan)
-        return
-    from core.model_io import write_model_file, INCREMENTAL_PLAN
-    write_model_file(INCREMENTAL_PLAN, plan)
+    from core.model_repo import DbRepository
+    DbRepository(version_id, project_id or "").write("incremental_plan", plan)
 
 
 def _publish_model_for_next_phase(store, version_id, project_id, model_dir,
@@ -252,19 +242,13 @@ def _publish_model_for_next_phase(store, version_id, project_id, model_dir,
     values have to be in the DATABASE — writing model files there would leave every reused
     entity blank and Phase 2 would regenerate the lot, losing the reuse the run just computed.
     """
-    if _MODEL_STORE == "db":
-        from core.model_repo import DbRepository
-        from core.model_io import FUNCTIONS, GLOBALS, HASHES
-        repo = DbRepository(version_id, project_id or "")
-        repo.write(FUNCTIONS, functions)
-        repo.write(GLOBALS, globals_)
-        repo.write(HASHES, hashes)          # persist_functions needs them in the same call
-        repo.flush()
-        return
-    with open(os.path.join(model_dir, "functions.json"), "w", encoding="utf-8") as fh:
-        json.dump(functions, fh, indent=2)
-    with open(os.path.join(model_dir, "globalVariables.json"), "w", encoding="utf-8") as fh:
-        json.dump(globals_, fh, indent=2)
+    from core.model_repo import DbRepository
+    from core.model_io import FUNCTIONS, GLOBALS, HASHES
+    repo = DbRepository(version_id, project_id or "")
+    repo.write(FUNCTIONS, functions)
+    repo.write(GLOBALS, globals_)
+    repo.write(HASHES, hashes)              # persist_functions needs them in the same call
+    repo.flush()
 
 
 def _read(model_dir: str, name: str) -> dict:
@@ -289,7 +273,7 @@ def _load_parse_dir(d: str) -> Dict[str, Any]:
 def _clear_scratch_parse_files(model_dir: str) -> int:
     """Delete the PARTIAL model files the narrowed parse wrote as scratch. Returns the count.
 
-    The partial parse deliberately runs with `--model-store files` — its output is only valid
+    The partial parse deliberately runs with `--model-scratch` — its output is only valid
     after `parse_merge`, so it must not reach the version's rows. What it leaves behind is a
     directory of INCOMPLETE model files, and nothing removed them: an incremental run therefore
     ended with a `model/` full of partial JSON, and `snapshot_parse_model` copied that straight
@@ -321,7 +305,7 @@ def _load_parse_model(model_dir: str, *, version_id: str = "",
     copies and report a match that means nothing — the exact shape of failure that check exists
     to prevent.
     """
-    if _MODEL_STORE != "db" or not version_id:
+    if not version_id:
         return _load_parse_dir(model_dir)
     from core.model_repo import DbRepository
     repo = DbRepository(version_id, project_id or "")
@@ -393,18 +377,12 @@ def _write_parse_artifacts(model_dir: str, merged: Dict[str, Any],
     the database (coupled model / own table / parse_snapshots); the flush covers the coupled
     ones. Verified lossless end to end before this was wired up.
     """
-    if _MODEL_STORE == "db":
-        from core.model_repo import DbRepository
-        repo = DbRepository(version_id, project_id or "")
-        for n in _PARSE_ARTIFACTS:
-            if n in merged:
-                repo.write(n, merged[n])
-        repo.flush()
-        return
+    from core.model_repo import DbRepository
+    repo = DbRepository(version_id, project_id or "")
     for n in _PARSE_ARTIFACTS:
         if n in merged:
-            with open(os.path.join(model_dir, f"{n}.json"), "w", encoding="utf-8") as fh:
-                json.dump(merged[n], fh, indent=2)
+            repo.write(n, merged[n])
+    repo.flush()
 
 
 def _baseline_parse_fingerprint(base_fingerprint: Optional[str],
@@ -528,7 +506,7 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
                        # PARTIAL output: valid only after parse_merge, so it must not reach the
                        # version's rows. A resume (--use-model --from-phase 4) would otherwise
                        # export a document containing just the changed files.
-                       model_store="files")
+                       scratch_model=True)
     if rc != 0:
         log.info(f"narrowed parse: partial parse failed (exit {rc}) — full parse")
         return False
@@ -544,8 +522,7 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
         # The caller runs a FULL parse next, which rewrites these anyway in file mode; in
         # database mode nothing would, so a partial model would survive as the version's
         # on-disk skeleton. Clear it either way — the partial is never valid on its own.
-        if _MODEL_STORE == "db":
-            _clear_scratch_parse_files(model_dir)
+        _clear_scratch_parse_files(model_dir)
         return False
     # Drop (use fresh for) the files that were actually re-parsed: the affected TUs + any
     # CHANGED header (refreshed via the including TUs) + deletions. NOT every file the
@@ -554,12 +531,11 @@ def _try_narrowed_parse(vcfg_path, scope, no_llm, dd_path, repo_dir, project_roo
     merged = merge_model(base_model, partial, drop)
     _write_parse_artifacts(model_dir, merged, version_id=version_id,
                            project_id=project_id)
-    if _MODEL_STORE == "db":
-        # The merged model went to the database; the scratch files are the PARTIAL parse and
-        # must not be left where snapshot_parse_model would copy them into versions/<id>/parse/.
-        n = _clear_scratch_parse_files(model_dir)
-        if n:
-            log.debug("narrowed parse: removed %d scratch model file(s)", n)
+    # The merged model went to the database; the scratch files are the PARTIAL parse and must
+    # not be left lying in the version's model dir.
+    n = _clear_scratch_parse_files(model_dir)
+    if n:
+        log.debug("narrowed parse: removed %d scratch model file(s)", n)
     log.info(f"narrowed parse: re-parsed {len(affected)} affected TU(s), merged into the baseline "
              f"skeleton — {len(merged.get('functions') or {})} functions total")
     return True
@@ -578,7 +554,6 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          repo_url: Optional[str] = None,
                          repo_token: Optional[str] = None,
                          config_path: Optional[str] = None,
-                         model_store: str = "db",
                          create_version: bool = False) -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
@@ -616,8 +591,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
         return generate_full(project_id, branch, commit, scope,
                              workspaces_root=workspaces_root, data_dict_id=data_dict_id,
                              no_llm=no_llm, version_id=version_id, force=force,
-                             repo_url=repo_url, repo_token=repo_token, config_path=config_path,
-                             model_store=model_store)
+                             repo_url=repo_url, repo_token=repo_token, config_path=config_path)
 
     base_vid = decision["chosenBaseVersionId"]           # real ver… id (from list_versions)
     base_commit = decision["chosenBaseCommit"]            # resolves the baseline's checkout dir
@@ -633,9 +607,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     version_id = version_id or commit_key
     # Step 9: resolve the default 'db' once, here, and pass the answer down (the delegation to
     # generate_full above happens before version_id is known, so that path resolves its own).
-    model_store = effective_model_store(model_store, version_id,
-                                        project_id=project_id, commit=target,
-                                        create_version=create_version)
+    effective_model_store(version_id, project_id=project_id, commit=target,
+                          create_version=create_version)
     data_dict_id = data_dict_id or project.get("currentDataDictId")
 
     vdir = vstore.create_dir(commit_key)  # == repo_dir (already checked out); never wiped
@@ -666,8 +639,6 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # (shared) dir while the phases were told the new one — a split brain in which the
     # phases parsed into versions/<ver>/model but classify compared the STALE shared model,
     # found every hash identical, and reported "nothing changed / 0 regenerated".
-    global _MODEL_STORE
-    _MODEL_STORE = model_store                  # the guards + _run_analyzer read this
     set_output_dir(os.path.join(store.artifact_dir(version_id), "output"))
     set_model_dir(os.path.join(store.artifact_dir(version_id), "model"))   # C11b
     model_dir = _paths().model_dir
@@ -735,18 +706,18 @@ def generate_incremental(project_id: str, branch: str, commit: str,
             _fail("parse", rc)
 
     # Snapshot THIS version's blank skeleton for future narrowed parses (M4.4).
-    snapshot_parse_model(model_dir, _adir, store, version_id, _MODEL_STORE)
+    snapshot_parse_model(model_dir, _adir, store, version_id)
     # Run identity lands HERE, not at the end. Phase 3's flowchart engine reads base_path from
     # `versions` to resolve source files, and Phase 3 runs before the end-of-run write — so the
     # engine saw NULL, rooted its SourceExtractor at "", and every flowchart came back
     # "Source file not found: <relative path>" while the run reported success.
-    _persist_run_metadata(store, version_id, project_id, model_dir, _MODEL_STORE)
+    _persist_run_metadata(store, version_id, project_id)
 
     # The target model as Phase 1 just produced it. In database mode Phase 1 flushed to the
     # database and these files are not written, so reading them would yield four empty dicts —
     # classify would then see every entity as DELETED, impact would be empty, and the run would
     # regenerate nothing while reporting success. Read whichever backing the run actually used.
-    _tm = _orchestrator_model(store, version_id, model_dir, _MODEL_STORE)
+    _tm = _orchestrator_model(store, version_id)
     target_hashes = _tm.get("hashes") or {}
     target_functions = _tm.get("functions") or {}
     target_edges = _tm.get("edges") or _EMPTY_EDGES_SHAPE
@@ -910,13 +881,11 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # Capture artifacts + snapshots, seed the reuse index, finalize the manifest.
     # Structured model (+ hashes + edges) -> store, keyed by the real ver id; this is what the
     # NEXT run reads as its baseline (Postgres under PgStore, versions/<ver…>/model under FileStore).
-    if _MODEL_STORE != "db":
-        # See generate.py: in database mode this would clear the version and persist an EMPTY
-        # model read from a directory the phases never wrote to.
-        store.write_model(version_id, model_dir)
+    # NB: no store.write_model() — see generate.py. It would clear the version and persist an
+    # EMPTY model read from a directory the phases never wrote to.
     # Run identity (basePath/projectName/parseFingerprint) -> the store: the `versions` columns
     # under PgStore. Replaces the API reading model/metadata.json off disk (doc 07 §3).
-    _persist_run_metadata(store, version_id, project_id, model_dir, _MODEL_STORE)
+    _persist_run_metadata(store, version_id, project_id)
     # Rendered output -> versions/<ver id>/ (what every reader resolves) + the .docx list.
     documents = store.capture_output(version_id, _paths().output_dir)
     llm = cfg.get("llm") or {}
@@ -981,7 +950,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     _report_lines = build_report(stats)
     # report.txt is not written in database mode: the report is stored verbatim in
     # versions.report, nothing reads the file, and the log still carries every line.
-    emit_report(_report_lines, version_dir=vdir, write_file=(_MODEL_STORE != "db"))
+    emit_report(_report_lines, version_dir=vdir, write_file=False)
     # ...and to the store, so the report is readable from any node rather than only the
     # one that ran the job (versions.report existed but was never written).
     try:
@@ -1022,11 +991,6 @@ def main() -> None:
     ap.add_argument("--verify-parse", action="store_true",
                     help="M4.5: with --narrowed-parse, also run a full parse and diff it against "
                          "the narrowed result (logs mismatches; uses the full parse). Slow; for validation.")
-    ap.add_argument("--model-store", default="db", choices=("files", "db"),
-                    help="where the PHASES read/write the model. Default 'db'; 'files' forces "
-                         "the legacy model/*.json. Without an explicit 'files', a run that "
-                         "cannot reach the database FAILS rather than silently producing a "
-                         "version that is not there.")
     ap.add_argument("--create-version", action="store_true",
                     help="reserve the versions row if it does not exist (see generate.py).")
     ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
@@ -1042,7 +1006,6 @@ def main() -> None:
                                  narrowed_parse=args.narrowed_parse,
                                  verify_parse=args.verify_parse,
                                  config_path=args.config, repo_url=args.repo_url,
-                                 model_store=args.model_store,
                                  create_version=args.create_version)
     except AnalyzerRunFailed as exc:
         # See generate.main(): exit 2 means the analyzer rejected the request and already

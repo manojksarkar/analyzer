@@ -97,8 +97,12 @@ class TestApplyIncrementalUnitPlan:
         # And the MODEL root: since doc 10 step 6 the view resolves incremental_plan.json
         # through core.model_io (a per-version database row in db mode, the file otherwise)
         # rather than joining the model_dir argument itself. The fake tree has to declare both
-        # roots for the file-backed repository to find the plan it just wrote.
+        # roots for the repository to find the plan it just wrote.
         set_model_dir(str(model_dir))
+        # There is no default repository any more. ScratchRepository is the file-backed one —
+        # it reads the incremental_plan.json this fixture wrote into model_dir.
+        from core import model_repo
+        model_repo.set_repository(model_repo.ScratchRepository())
         return str(model_dir), str(out_dir)
 
     def test_no_plan_returns_none(self, tmp_path):

@@ -165,7 +165,7 @@ if "--config" in sys.argv:
 
 from utils import log, load_config
 from core import PhaseRunner, plan_runs
-from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, COMPONENTS
+from core.model_io import FUNCTIONS, GLOBALS, UNITS, COMPONENTS
 
 # ---------------------------------------------------------------------------
 # Parse flags
@@ -194,7 +194,7 @@ _KNOWN_FLAGS = (
     # ::test_known_flags_stays_in_sync_with_parse_branches` compares this against the parse
     # branches by AST, which is what keeps the two from drifting apart again.
     "--version-id", "--project-id", "--baseline-version-id",
-    "--model-store", "--model-root", "--output-root", "--dump-model-files",
+    "--model-root", "--output-root", "--model-scratch",
 )
 
 clean_all               = False
@@ -218,8 +218,7 @@ project_name_arg        = None
 output_name_arg         = None
 output_root_arg         = None   # B1: this run's own output dir (versions/<ver…>/output)
 model_root_arg          = None   # C11b: this run's own model dir (versions/<ver…>/model)
-model_store_arg         = None   # doc 10: "files" (default) | "db" — where phases read the model
-dump_model_files_arg    = None   # doc 10 H6: debug-only mirror of the model, for parity checks
+model_scratch_arg       = False
 version_id_arg          = None   # C11a: persist the model to Postgres at each phase boundary
 project_id_arg          = None   # C11a: owning project (the store is project-scoped)
 only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
@@ -350,27 +349,11 @@ while i < len(sys.argv):
             log("--project-id requires a value", component="run", err=True)
             sys.exit(1)
         project_id_arg = sys.argv[i]
-    elif a == "--dump-model-files":
-        # doc 10 H6 — DEBUG ONLY. Writes the run's model out as JSON to <dir> so
-        # tools/verify_model_parity.py still has something to compare the database against once
-        # the files are gone. Never used by a job; not a fallback; nothing reads it back.
-        i += 1
-        if i >= len(sys.argv):
-            log("--dump-model-files requires a directory argument", component="run", err=True)
-            sys.exit(1)
-        dump_model_files_arg = sys.argv[i]
-    elif a == "--model-store":
-        # doc 10 step 3: which backing the phases use for the model. Default "files", so this
-        # flag is the only thing that turns the database path on.
-        i += 1
-        if i >= len(sys.argv):
-            log("--model-store requires 'files' or 'db'", component="run", err=True)
-            sys.exit(1)
-        model_store_arg = sys.argv[i]
-        if model_store_arg not in ("files", "db"):
-            log(f"--model-store must be 'files' or 'db' (got {model_store_arg!r})",
-                component="run", err=True)
-            sys.exit(1)
+    elif a == "--model-scratch":
+        # The narrowed parse's partial pass. Its output covers only the changed translation
+        # units and is valid only after parse_merge, so it must not reach the version's rows.
+        # Not a storage choice — there is no way to point a real run at it.
+        model_scratch_arg = True
     elif a == "--model-root":
         # This run's own model dir (doc 09, C11b). Unlike --output-root this must also be
         # forwarded to every PHASE: group_planner bakes absolute output paths into each
@@ -452,10 +435,10 @@ if model_root_arg:
 # it is what makes --from-phase N unambiguous.
 from core.run_context import (set_run_context as _set_run_context,
                               install_model_repository as _install_model_repo)
-_set_run_context(version=version_id_arg, project=project_id_arg, model_store=model_store_arg)
-# run.py itself reads the model for --dump-model-files (H6), and set_run_context only RECORDS
-# the choice — installing the repository is separate. Without this the orchestrator kept the
-# file default and the dump wrote whatever few files happened to be on disk.
+_set_run_context(version=version_id_arg, project=project_id_arg, scratch=model_scratch_arg)
+# set_run_context only RECORDS the identity; installing the repository is separate, and run.py
+# itself reads the model (the --selected-unit pre-check below), so it needs one too. Phase
+# subprocesses get the same treatment from their own apply_cli_run_context.
 _install_model_repo()
 
 def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
@@ -520,10 +503,9 @@ if clean_all:
     # start while the next run still resolves a stored model. Deleting a version's rows is the
     # API's job (it owns the versions row and its cascade), not a CLI flag's, so this warns
     # rather than reaching into the database.
-    if model_store_arg == "db":
-        log("--clean removed the directories only: the model for this version is in the "
-            "database and is NOT deleted. Remove the version through the API to clear it.",
-            component="run")
+    log("--clean removed the directories only: the model for this version is in the "
+        "database and is NOT deleted. Remove the version through the API to clear it.",
+        component="run")
 
 # ---------------------------------------------------------------------------
 # When --use-model is set, refuse early if model files are missing.
@@ -535,12 +517,11 @@ if use_model:
     from core.model_io import model_files_present as _present
     missing = _present(FUNCTIONS, GLOBALS, UNITS, COMPONENTS)
     if missing:
-        _where = "the database" if model_store_arg == "db" else "model/"
-        log(f"--use-model set but the model is missing from {_where}: {missing[0]}",
+        log(f"--use-model set but the model is missing from the database: {missing[0]}",
             component="run", err=True)
         sys.exit(2)
     log(f"Reusing the existing model from "
-        f"{'the database' if model_store_arg == 'db' else 'model/'} (skipping Phase 1/2).",
+        "the database (skipping Phase 1/2).",
         component="run")
 
 # ---------------------------------------------------------------------------
@@ -719,40 +700,43 @@ except LlmConfigError as e:
     log(f"Invalid LLM config: {e}", component="run", err=True)
     sys.exit(2)
 
-# --selected-unit: fail before Phase 1 rather than in Phase 3. The unit names come
-# from model/units.json, so this is only possible when a model is already on disk —
-# which is the case for the runs the flag exists for (--use-model / --from-phase 3).
-# A cold run has nothing to check against yet, so validation falls through to
-# Phase 3, where the model has just been built.
+# --selected-unit: fail before Phase 1 rather than in Phase 3. The unit names come from the
+# stored model, so this is only possible when one already exists — which is the case for the
+# runs the flag exists for (--use-model / --from-phase 3). A cold run has nothing to check
+# against yet, so validation falls through to Phase 3, where the model has just been built.
+#
+# Read through the repository. This used to open model/units.json directly, and once the model
+# became rows that file was never there: the pre-check quietly never ran, and every mistyped
+# --selected-unit went back to failing in Phase 3 instead.
 if selected_units_arg:
-    _units_path = _mfp(UNITS)
-    if os.path.isfile(_units_path):
-        import json as _json
-        try:
-            with open(_units_path, encoding="utf-8") as _uf:
-                _unit_model = {UNITS: _json.load(_uf)}
-        except (OSError, ValueError):
-            _unit_model = None
-        if _unit_model:
-            from core.config import get_flat_groups as _gfg
-            _groups = _gfg(cfg) or {}
-            _grp = _groups.get(selected_group_arg) if selected_group_arg else None
-            if not isinstance(_grp, dict) and selected_group_arg:
-                _sk = selected_group_arg.casefold()
-                _grp = next((v for k, v in _groups.items()
-                             if isinstance(k, str) and k.casefold() == _sk), None)
-            if selected_components_arg:
-                _allowed = sorted(selected_components_arg)
-            elif isinstance(_grp, dict):
-                _allowed = sorted(k.replace(" ", "-") for k in _grp.keys())
-            else:
-                _allowed = None      # whole model in scope
-            import run_views as _rv
-            selected_units_arg = _rv._resolve_units(
-                _unit_model, selected_units_arg, _allowed)
-    else:
-        log("--selected-unit will be validated in Phase 3 (no model on disk yet)",
-            component="run")
+    _unit_model = None
+    try:
+        from core.model_io import read_model_file as _rmf
+        _units_data = _rmf(UNITS, required=False, default=None)
+        if _units_data:
+            _unit_model = {UNITS: _units_data}
+    except Exception:
+        _unit_model = None
+    if _unit_model:
+        from core.config import get_flat_groups as _gfg
+        _groups = _gfg(cfg) or {}
+        _grp = _groups.get(selected_group_arg) if selected_group_arg else None
+        if not isinstance(_grp, dict) and selected_group_arg:
+            _sk = selected_group_arg.casefold()
+            _grp = next((v for k, v in _groups.items()
+                         if isinstance(k, str) and k.casefold() == _sk), None)
+        if selected_components_arg:
+            _allowed = sorted(selected_components_arg)
+        elif isinstance(_grp, dict):
+            _allowed = sorted(k.replace(" ", "-") for k in _grp.keys())
+        else:
+            _allowed = None      # whole model in scope
+        import run_views as _rv
+        selected_units_arg = _rv._resolve_units(
+            _unit_model, selected_units_arg, _allowed)
+else:
+    log("--selected-unit will be validated in Phase 3 (no model stored yet)",
+        component="run")
 
 try:
     plans = plan_runs(
@@ -798,88 +782,13 @@ if to_phase is not None:
     plans = _filtered
     log(f"--to-phase {to_phase}: running {len(plans)} plan(s) up to phase {to_phase}.", component="run")
 
-def _make_phase_persist(project_id, version_id):
-    """A post-phase hook that persists the model to Postgres (doc 09, C11a).
-
-    Returns None when this run is not producing a version (a plain CLI run) or when no
-    database is configured — both are normal, and neither should change behaviour.
-
-    Only the phases that CHANGE the model are persisted: Phase 1 writes the parsed skeleton,
-    Phase 2 the enriched model. Phases 3-4 only read it, so re-persisting after them would be
-    identical rows written twice.
-
-    This is the DUAL-WRITE stage: `model/*.json` is still written and still authoritative.
-    Nothing reads from the database yet — that is C11b, and it is gated on
-    `tools/verify_model_parity.py` agreeing after every phase.
-    """
-    from core.db import is_database_configured
-    if not version_id or not is_database_configured():
-        return None
-    # Not in DB mode. This hook persists by reading model FILES
-    # (write_model -> persist_model_from_dir -> clear_version + persist). In DB mode the phase
-    # writes to the database itself and there are no files, so this would clear the version and
-    # persist an EMPTY model over what the phase just flushed. The phase's own flush is
-    # authoritative there.
-    from core.run_context import model_store_kind
-    if model_store_kind() == "db":
-        return None
-    writes_model = {"parser.py", "model_deriver.py"}
-
-    def _persist(phase):
-        if phase.script not in writes_model:
-            return
-        from core.paths import paths as _p
-        from incremental.store import make_store
-        store = make_store(project_id or "")
-        store.write_model(version_id, _p().model_dir)      # one transaction, idempotent
-        log(f"persisted model to the database after {phase.name}", component="run")
-
-    return _persist
-
-
-def _dump_model_files(target_dir: str) -> None:
-    """Mirror the run's model to `target_dir` as JSON (doc 10, H6). Debug/verification only.
-
-    `verify_model_parity` compares the DATABASE against the FILES, and it is the check that
-    caught a dropped global `description` and a dropped `syntheticFromVarDecl`. Once the files
-    stop being written it has nothing to compare, exactly when it is most wanted — so the
-    WRITER survives behind this flag while the pipeline itself stops depending on files.
-
-    Not a second pipeline path: it writes the same dicts the repository just returned, after the
-    run, and nothing ever reads them back.
-    """
-    from core.model_io import read_model_file, ALL_MODEL_NAMES
-    import json as _json
-    os.makedirs(target_dir, exist_ok=True)
-    written = 0
-    for _name in ALL_MODEL_NAMES:
-        try:
-            _data = read_model_file(_name, required=False, default=None)
-        except Exception:
-            continue
-        if _data is None:
-            continue
-        with open(os.path.join(target_dir, f"{_name}.json"), "w", encoding="utf-8") as _fh:
-            _json.dump(_data, _fh, indent=2, ensure_ascii=False)
-        written += 1
-    log(f"--dump-model-files: wrote {written} model file(s) to {target_dir} "
-        f"(verification only)", component="run")
-
-
-_phase_persist = _make_phase_persist(project_id_arg, version_id_arg)
-
 runner = PhaseRunner(project_root=SCRIPT_DIR)
 total_time = 0.0
 for plan in plans:
     log(plan.label, component="run")
-    total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase,
-                             on_phase_done=_phase_persist)
+    total_time += runner.run(plan.phases, from_phase=plan.runner_from_phase)
 
 print(flush=True)
-# doc 10 H6 — debug-only mirror, AFTER the run so it reflects the finished model.
-if dump_model_files_arg:
-    _dump_model_files(dump_model_files_arg)
-
 log(f"Done. Total: {total_time:.2f}s", component="run")
 
 # LLM report for the whole run. Each phase subprocess wrote its own stats file

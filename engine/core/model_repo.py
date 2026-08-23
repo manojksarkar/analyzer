@@ -26,6 +26,7 @@ its own stale input.
 """
 from __future__ import annotations
 
+import os
 import threading
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
@@ -110,36 +111,67 @@ class ModelRepository(ABC):
         """Persist anything buffered. No-op where a write already landed."""
 
 
-class FileRepository(ModelRepository):
-    """model/*.json — today's behaviour, delegating to the file helpers in `model_io`."""
+class ScratchRepository(ModelRepository):
+    """JSON in the run's model dir, for output that must NOT reach a version.
+
+    Exactly one caller: the narrowed parse's partial pass. It re-parses only the changed
+    translation units, so its output describes a fraction of the project and is valid only
+    after `parse_merge` has folded it into the baseline. Writing that into the version's rows
+    would leave a resume (`--use-model --from-phase 4`) exporting a document containing just
+    the changed files.
+
+    This is scratch, not a storage backend: no version id, nothing reads it but the merge that
+    immediately follows, and `_clear_scratch_parse_files` deletes it afterwards. It is not
+    selectable — there is no flag that points a real run at it.
+    """
 
     def read(self, name, *, required=True, default=None):
-        from core.model_io import _read_file
-        return _read_file(name, required=required, default=default)
+        import json
+        path = _scratch_path(name)
+        if not os.path.isfile(path):
+            if required:
+                from core.model_io import ModelFileMissing
+                raise ModelFileMissing(f"{path} not found. Run the upstream phase first.")
+            return default
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
 
     def write(self, name, data):
-        from core.model_io import _write_file
-        _write_file(name, data)
+        import json
+        path = _scratch_path(name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
 
     def missing(self, *names):
-        from core.model_io import _missing_files
-        return _missing_files(*names)
+        return [n for n in names if not os.path.isfile(_scratch_path(n))]
+
+
+def _scratch_path(name: str) -> str:
+    # Through model_io, so there is ONE answer to "where does artifact X live as a file".
+    from core.model_io import model_file_path
+    return model_file_path(name)
+
+
+class UnknownArtifact(KeyError):
+    """A model artifact nobody registered in DB_BACKED.
+
+    This used to fall through to a file on disk, which is worse than it sounds: the write
+    succeeded, so nothing complained, and the artifact simply was not part of the version.
+    `address_taken` spent the poc-4 merge in exactly that state. Raising makes a new artifact
+    announce itself the moment it is first written.
+    """
 
 
 class DbRepository(ModelRepository):
-    """The model in Postgres/SQLite for one version.
+    """The model in Postgres/SQLite for one version. The only repository there is."""
 
-    Anything the database does not back yet is delegated to `fallback` (a FileRepository), so
-    this can be switched on before every last artifact has moved.
-    """
-
-    def __init__(self, version_id: str, project_id: str, *, fallback: ModelRepository = None):
+    def __init__(self, version_id: str, project_id: str):
         if not version_id:
             raise ValueError("DbRepository needs a version_id — a phase must be told WHICH "
                              "model it is working on (doc 10, D10-8)")
         self.version_id = version_id
         self.project_id = project_id
-        self._fallback = fallback or FileRepository()
         self._pending: Dict[str, Any] = {}
         self._stored: Optional[Dict[str, Any]] = None      # whole-model read, cached
         self._exists: Optional[bool] = None                # "a model was persisted", cached
@@ -209,7 +241,9 @@ class DbRepository(ModelRepository):
 
     def read(self, name, *, required=True, default=None):
         if name not in DB_BACKED:
-            return self._fallback.read(name, required=required, default=default)
+            raise UnknownArtifact(
+                f"model artifact {name!r} is not registered in DB_BACKED — add it to "
+                f"DB_BACKED_MODEL, DB_BACKED_STANDALONE or DB_BACKED_PARSE in model_repo.py")
         with self._lock:
             if name in self._pending:            # this phase's own write wins
                 return self._pending[name]
@@ -245,8 +279,9 @@ class DbRepository(ModelRepository):
     # -- writes ------------------------------------------------------------
     def write(self, name, data):
         if name not in DB_BACKED:
-            self._fallback.write(name, data)
-            return
+            raise UnknownArtifact(
+                f"model artifact {name!r} is not registered in DB_BACKED — add it to "
+                f"DB_BACKED_MODEL, DB_BACKED_STANDALONE or DB_BACKED_PARSE in model_repo.py")
         if name in DB_BACKED_PARSE:
             self._write_parse(name, data)        # lands now; parse_snapshots is per-name
             self._aux[name] = data               # a later read must see this phase's write
@@ -312,7 +347,8 @@ class DbRepository(ModelRepository):
         out: List[str] = []
         for n in names:
             if n not in DB_BACKED:
-                out += self._fallback.missing(n)
+                raise UnknownArtifact(
+                    f"model artifact {n!r} is not registered in DB_BACKED")
                 continue
             with self._lock:
                 if n in self._pending:
@@ -381,16 +417,17 @@ def set_repository(repo: Optional[ModelRepository]) -> None:
 
 
 def repository() -> ModelRepository:
-    """The active repository — `FileRepository` unless something installed otherwise.
+    """The repository this run installed.
 
-    Defaulting to files is what makes this step behaviour-neutral: nothing changes until a
-    caller opts in.
+    There is no default any more. `model/*.json` was one until the file backing was removed,
+    and a default is exactly what made a misconfigured run look successful: it wrote a model
+    to disk, said nothing, and left the version empty in every table the API reads.
     """
-    global _ACTIVE
     if _ACTIVE is None:
-        with _LOCK:
-            if _ACTIVE is None:
-                _ACTIVE = FileRepository()
+        raise RuntimeError(
+            "no model repository is installed for this run. A phase needs --version-id (and "
+            "--project-id) so it knows which version it is writing; the orchestrator normally "
+            "passes both.")
     return _ACTIVE
 
 

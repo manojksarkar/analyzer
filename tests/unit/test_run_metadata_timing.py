@@ -55,7 +55,7 @@ class TestItIsWrittenBeforePhase3:
 
     def test_generate_full_persists_before_running_phase_2_onwards(self):
         src = _src(os.path.join("engine", "incremental", "generate.py"))
-        i_persist = src.index("_persist_run_metadata(store, version_id, project_id, model_dir")
+        i_persist = src.index("_persist_run_metadata(store, version_id, project_id)")
         i_phase2 = src.index('base_cmd + ["--from-phase", "2", repo_dir]')
         assert i_persist < i_phase2, \
             "run metadata is written after the phases that need it — base_path will be NULL"

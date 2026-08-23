@@ -172,63 +172,8 @@ class TestDatabaseBacking:
             model_repo.DbRepository("", PID)
 
 
-class TestFallback:
-    def test_artifacts_the_database_does_not_back_go_to_files(self, db, tmp_path, monkeypatch):
-        """One artifact is still a file, deliberately: `clang_include_paths` holds absolute
-        include directories under THIS machine's checkout. Storing it would hand another node
-        paths that do not exist there — worse than not storing it at all.
-
-        (knowledge_base and tu_includes left this list at step 6; metadata, entity_files,
-        func_keys and override_pairs left it at step 11.)
-        """
-        import importlib
-        cp = importlib.import_module("core.paths")
-        before = cp._OVERRIDE_MODEL_DIR
-        try:
-            cp.set_model_dir(str(tmp_path / "model"))
-            from core.model_io import read_model_file, write_model_file
-            _repo(db)
-            write_model_file("clang_include_paths", {"App": ["/tmp/inc"]})
-            assert read_model_file("clang_include_paths") == {"App": ["/tmp/inc"]}
-            assert (tmp_path / "model" / "clang_include_paths.json").is_file(), \
-                "a non-DB-backed artifact must still be written as a file"
-        finally:
-            cp._OVERRIDE_MODEL_DIR = before
-            cp._CACHED = None
-
-    def test_the_parse_artifacts_now_go_to_the_database(self, db, tmp_path):
-        """Step 11: metadata / entity_files / func_keys / override_pairs land in
-        `parse_snapshots` instead of model/*.json.
-
-        Each is written SEPARATELY, which is the trap this guards: the bulk writer clears every
-        row for the version before inserting, so four sequential calls through it would leave
-        one row, not four.
-        """
-        import importlib
-        cp = importlib.import_module("core.paths")
-        before = cp._OVERRIDE_MODEL_DIR
-        try:
-            cp.set_model_dir(str(tmp_path / "model"))
-            from core.model_io import read_model_file, write_model_file
-            _repo(db)
-            written = {"metadata": {"projectName": "X"}, "entity_files": {"e": "f.c"},
-                       "func_keys": {"k": "fid"}, "override_pairs": ["a|b"]}
-            for name, val in written.items():
-                write_model_file(name, val)
-            for name, val in written.items():
-                assert read_model_file(name) == val, f"{name} did not survive the round trip"
-                assert not (tmp_path / "model" / f"{name}.json").is_file(), \
-                    f"{name} was still written as a file"
-        finally:
-            cp._OVERRIDE_MODEL_DIR = before
-            cp._CACHED = None
 
 
-class TestDefaultIsFiles:
-    def test_default_repository_is_files(self):
-        """Step 2 must be behaviour-neutral: nothing changes until a caller opts in."""
-        model_repo.set_repository(None)
-        assert isinstance(model_repo.repository(), model_repo.FileRepository)
 
 
 class TestStandaloneArtifacts:

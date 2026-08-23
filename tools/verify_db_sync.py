@@ -4,10 +4,16 @@ The unit tests prove the manifest persistence against SQLite; this proves it aga
 Postgres you actually deploy. It:
   1. fails fast if the DB is unreachable,
   2. ensures a throwaway project + version row exist (so the FKs are satisfiable),
-  3. syncs the local model/ directory into the manifest tables,
-  4. prints the row counts and confirms load_hashes() reproduces hashes.json.
+  3. persists a small model into the manifest tables,
+  4. prints the row counts and confirms load_model() reproduces what went in.
 
-Run (Postgres up, `alembic upgrade head` done, a model/ present from any generation):
+The model is built here rather than read from `model/*.json`. It used to sync whatever
+generation had last been run into a directory; there is no file model any more, and a gate
+that silently compared against stale leftovers would be worse than none. Small is fine: what
+this proves is the DIALECT - JSONB, BigInteger identities, ON CONFLICT - which SQLite hides
+and which a row count of 3 exercises exactly as well as one of 300.
+
+Run (Postgres up, `alembic upgrade head` done):
 
     docker compose up -d
     python -m alembic upgrade head
@@ -29,18 +35,28 @@ from core.db import get_engine, require_database                  # noqa: E402
 from incremental import model_store                               # noqa: E402
 
 PID, VID = "verify-proj", "verify-ver"
-MODEL_DIR = os.path.join(_ROOT, "model")
 UTC = datetime.timezone.utc
+
+# One function calling another, one global, and their hashes - enough to put a row in every
+# table the manifest writes and to make the edge and content-blob paths real.
+FUNCTIONS = {
+    "f1": {"name": "add", "qualifiedName": "Calc::add", "className": "Calc",
+           "file": "src/calc.cpp", "line": 10, "endLine": 14, "unit": "Calc",
+           "component": "App", "visibility": "public", "direction": "In",
+           "description": "Adds two numbers.", "callsIds": ["f2"], "calledByIds": []},
+    "f2": {"name": "mul", "qualifiedName": "Calc::mul", "className": "Calc",
+           "file": "src/calc.cpp", "line": 20, "endLine": 24, "unit": "Calc",
+           "component": "App", "visibility": "private", "direction": "In",
+           "description": "Multiplies two numbers.", "callsIds": [], "calledByIds": ["f1"]},
+}
+GLOBALS = {"g1": {"name": "g_count", "file": "src/calc.cpp", "line": 3, "unit": "Calc",
+                  "component": "App", "type": "int", "description": "Call counter."}}
+HASHES = {"f1": "h-one", "f2": "h-two", "g1": "h-three"}
 
 
 def main() -> int:
     require_database()                                            # clear message if DB is down
     engine = get_engine()
-
-    if not os.path.isfile(os.path.join(MODEL_DIR, "functions.json")):
-        print("No model/ found. Generate one first, e.g.:\n"
-              "    python tools/parity/capture_baseline.py --out .parity/before")
-        return 1
 
     now = datetime.datetime.now(UTC)
     with engine.begin() as cx:
@@ -49,7 +65,9 @@ def main() -> int:
         if not cx.execute(select(s.versions.c.id).where(s.versions.c.id == VID)).first():
             cx.execute(insert(s.versions), {"id": VID, "project_id": PID, "version": VID,
                                             "created_at": now})
-        model_store.persist_model_from_dir(cx, PID, VID, MODEL_DIR)   # idempotent
+        model_store.clear_version(cx, VID)                            # idempotent re-runs
+        model_store.persist_functions(cx, PID, VID, FUNCTIONS, HASHES)
+        model_store.persist_globals(cx, PID, VID, GLOBALS, HASHES)
 
     with engine.connect() as cx:
         print("\nentities by kind:")
@@ -72,11 +90,9 @@ def main() -> int:
         print(f"\n  load_model parts: {', '.join(f'{k}={len(v)}' for k, v in model.items())}")
         loaded = model["hashes"]
 
-    hp = os.path.join(MODEL_DIR, "hashes.json")
-    hashes = json.load(open(hp, encoding="utf-8")) if os.path.isfile(hp) else {}
-    ok = loaded == hashes
-    print(f"\n  load_hashes() == hashes.json : {'YES' if ok else 'NO'} "
-          f"({len(loaded)} vs {len(hashes)} keys)")
+    ok = loaded == HASHES
+    print(f"\n  load_hashes() == what went in : {'YES' if ok else 'NO'} "
+          f"({len(loaded)} vs {len(HASHES)} keys)")
     print("\nOK - model persisted to Postgres and reads back intact."
           if ok and ev > 0 else "\nMISMATCH - see above.")
     return 0 if (ok and ev > 0) else 1

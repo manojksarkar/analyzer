@@ -100,11 +100,6 @@ def model_files_present(*names: str) -> List[str]:
     return repository().missing(*names)
 
 
-def _missing_files(*names: str) -> List[str]:
-    """The FILE implementation — called by `model_repo.FileRepository`."""
-    return [n for n in names if not os.path.isfile(model_file_path(n))]
-
-
 def ensure_model_dir() -> str:
     """Make sure the active model directory exists. Returns its absolute path."""
     md = paths().model_dir
@@ -138,19 +133,6 @@ def read_model_file(name: str, *, required: bool = True, default: Any = None) ->
     """
     from core.model_repo import repository
     return repository().read(name, required=required, default=default)
-
-
-def _read_file(name: str, *, required: bool = True, default: Any = None) -> Any:
-    """The FILE implementation — called by `model_repo.FileRepository`, not directly."""
-    path = model_file_path(name)
-    if not os.path.isfile(path):
-        if required:
-            raise ModelFileMissing(
-                f"{path} not found. Run the upstream phase first."
-            )
-        return default
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def load_model(
@@ -189,47 +171,8 @@ def write_model_file(
     per-file store — see `core.model_repo`. Callers that use the return value as a path are the
     step-5 work; none of them do so today.
     """
-    from core.model_repo import repository, FileRepository
-    repo = repository()
-    if not isinstance(repo, FileRepository):
-        repo.write(name, data)
-        return ""
-    return _write_file(name, data, atomic=atomic, indent=indent, ensure_ascii=ensure_ascii)
+    from core.model_repo import repository
+    repository().write(name, data)
+    return ""
 
-
-def _write_file(
-    name: str,
-    data: Any,
-    *,
-    atomic: bool = False,
-    indent: int = 2,
-    ensure_ascii: bool = True,
-) -> str:
-    """The FILE implementation — called by `model_repo.FileRepository`, not directly.
-
-    By default this is a plain in-place write (matches existing behaviour).
-    Pass `atomic=True` to write to a tempfile in the same directory and
-    rename into place — safer if a crash mid-write would corrupt the file.
-    """
-    ensure_model_dir()
-    path = model_file_path(name)
-    if not atomic:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=indent, ensure_ascii=ensure_ascii)
-        return path
-
-    # Atomic path: write to a sibling temp file then os.replace().
-    dirpath = os.path.dirname(path) or "."
-    fd, tmp = tempfile.mkstemp(prefix=f".{name}.", suffix=".json.tmp", dir=dirpath)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=indent, ensure_ascii=ensure_ascii)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-    return path
 

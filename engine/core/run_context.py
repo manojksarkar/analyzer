@@ -19,8 +19,9 @@ default directories while the run uses per-version ones. That exact ordering cau
 where an incremental run silently emitted only the diagrams it regenerated — see
 `tests/unit/test_phase_path_overrides.py`, which guards it.
 
-`--model-store` defaults to `db` (doc 10 step 9). `effective_model_store` degrades that to
-files when the machine cannot honour it, so the default is safe everywhere.
+The model lives in Postgres and nowhere else. `effective_model_store` is the check that a run
+can actually reach it, run ONCE in the orchestrator so a phase cannot answer differently from
+the run that spawned it.
 """
 from __future__ import annotations
 
@@ -32,14 +33,18 @@ from .paths import apply_cli_path_overrides
 _LOCK = threading.Lock()
 _VERSION_ID: Optional[str] = None
 _PROJECT_ID: Optional[str] = None
-_MODEL_STORE: str = "files"
+_SCRATCH_MODEL: bool = False
 
 # Flags this consumes, each taking one value.
-_FLAGS = ("--version-id", "--project-id", "--model-store")
+_FLAGS = ("--version-id", "--project-id")
+# ...and this one, which takes none. The narrowed parse's partial pass sets it: that model is
+# scratch for parse_merge, not a version's. Phases are separate processes, so it has to travel
+# on the command line like the run identity does.
+_SCRATCH_FLAG = "--model-scratch"
 
 
 def version_id() -> Optional[str]:
-    """The version this phase is working on, or None for a plain file-based run."""
+    """The version this phase is working on. Every real run has one."""
     return _VERSION_ID
 
 
@@ -47,22 +52,22 @@ def project_id() -> Optional[str]:
     return _PROJECT_ID
 
 
-def model_store_kind() -> str:
-    """``"files"`` (default) or ``"db"``."""
-    return _MODEL_STORE
+def scratch_model() -> bool:
+    """True when this run's model is scratch for a merge, not a version's."""
+    return _SCRATCH_MODEL
 
 
 def set_run_context(*, version: Optional[str] = None, project: Optional[str] = None,
-                    model_store: Optional[str] = None) -> None:
+                    scratch: Optional[bool] = None) -> None:
     """Set the context in-process (the orchestrator's route; phases use the CLI)."""
-    global _VERSION_ID, _PROJECT_ID, _MODEL_STORE
+    global _VERSION_ID, _PROJECT_ID, _SCRATCH_MODEL
     with _LOCK:
         if version is not None:
             _VERSION_ID = version
         if project is not None:
             _PROJECT_ID = project
-        if model_store is not None:
-            _MODEL_STORE = model_store
+        if scratch is not None:
+            _SCRATCH_MODEL = bool(scratch)
 
 
 def _create_version_row(version_id: str, project_id: str, commit: str) -> bool:
@@ -119,22 +124,19 @@ class DatabaseRequired(RuntimeError):
     """The run needs the database and cannot have it. Raised instead of quietly using files."""
 
 
-def effective_model_store(requested: str, version_id: Optional[str],
+def effective_model_store(version_id: Optional[str],
                           *, project_id: str = "", commit: str = "",
                           create_version: bool = False) -> str:
-    """Check that this run can actually reach the database. Raises if it cannot (step 11b).
+    """Check that this run can actually reach the database. Raises if it cannot.
 
-    Step 9 made `db` the default and degraded to files with a warning when it could not be
-    honoured. That was right while files were still a working backing. They no longer are: the
-    model, the parse artifacts and the phase hand-offs are all rows, so a run that silently
-    falls back produces a version that LOOKS generated and is missing from every table the API
-    reads. Failing at the start beats that.
+    There is nothing to fall back to. The model, the parse artifacts and the phase hand-offs
+    are all rows, so a run that could not reach the database and carried on would produce a
+    version that LOOKS generated and is missing from every table the API reads. Failing at the
+    start beats that.
 
     Resolve ONCE, in the orchestrator, and pass the result down — a phase that answers
     differently from its orchestrator leaves half a model in each store.
     """
-    if requested == "files":
-        return "files"                                  # explicit opt-out, still honoured
     if not version_id:
         why, fix = ("no version id was given", "pass --version-id <id>")
     else:
@@ -171,24 +173,22 @@ def effective_model_store(requested: str, version_id: Optional[str],
 
 
 def install_model_repository() -> str:
-    """Install the model repository implied by the context. Returns the kind installed.
+    """Install this run's model repository. Returns "db", or "" when there is nothing to install.
 
-    Falls back to files — loudly — when `db` is asked for but unusable, rather than failing the
-    phase: a run that cannot reach the database should say so and still produce a document from
-    the files it has, not die at import.
+    It used to fall back to model files when the database was out of reach. There is no file
+    backing any more, so there is nothing to fall back TO: a phase with no version id or no
+    database simply has no repository, and the first read says so by name. Silence here was the
+    old hazard — a run wrote a model to disk, said nothing, and left the version empty in every
+    table the API reads.
     """
     from . import model_repo
-    if _MODEL_STORE != "db":
-        model_repo.set_repository(None)                     # the file default
-        return "files"
+    if _SCRATCH_MODEL:
+        model_repo.set_repository(model_repo.ScratchRepository())
+        return "scratch"
     from .db import is_database_configured
     if not (_VERSION_ID and is_database_configured()):
-        import sys
-        why = "no --version-id" if not _VERSION_ID else "no database configured"
-        print(f"WARNING: --model-store db requested but {why}; using model files.",
-              file=sys.stderr)
         model_repo.set_repository(None)
-        return "files"
+        return ""
     model_repo.set_repository(model_repo.DbRepository(_VERSION_ID, _PROJECT_ID or ""))
     return "db"
 
@@ -197,22 +197,25 @@ def apply_cli_run_context(argv) -> list:
     """Apply path overrides + run identity from `argv`; return argv without those flags."""
     argv = apply_cli_path_overrides(argv)
     out, i = [], 0
-    version = project = store = None
+    version = project = None
+    scratch = False
     while i < len(argv):
         a = argv[i]
+        if a == _SCRATCH_FLAG:
+            scratch = True
+            i += 1
+            continue
         if a in _FLAGS and i + 1 < len(argv):
             val = argv[i + 1]
             if a == "--version-id":
                 version = val
-            elif a == "--project-id":
-                project = val
             else:
-                store = val
+                project = val
             i += 2                                          # drop the flag AND its value
             continue
         out.append(a)
         i += 1
-    set_run_context(version=version, project=project, model_store=store)
+    set_run_context(version=version, project=project, scratch=scratch)
     install_model_repository()
     return out
 

@@ -309,12 +309,12 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
             for u in changed_units
         }
 
-        # Only the FILE path consumes this. Given --version-id the engine reads its functions
-        # from the database and restricts itself from the stored plan, so writing
-        # functions_incremental.json there produces a file nothing opens — it was showing up in
-        # version dirs as unexplained leftovers.
-        from core.run_context import model_store_kind as _msk, version_id as _vid
-        if not (_msk() == "db" and _vid()):
+        # Nothing consumes this any more. Given --version-id the engine reads its functions
+        # from the database and restricts itself from the stored plan; the file was only ever
+        # for the file path, and writing it produced version dirs full of unexplained
+        # leftovers that nothing opened.
+        from core.run_context import version_id as _vid
+        if not _vid():
             os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(restricted, f, indent=2)
@@ -1074,8 +1074,8 @@ def run(model, output_dir, model_dir, config):
     #
     # The plan is read by the ENGINE rather than passed as ids: at 20k functions the list cannot
     # fit on a command line, which is the whole reason for D10-5.
-    from core.run_context import model_store_kind as _store_kind, version_id as _run_version
-    if _store_kind() == "db" and _run_version():
+    from core.run_context import version_id as _run_version
+    if _run_version():
         cmd.extend(["--version-id", _run_version()])
         if inc is not None:
             cmd.append("--restrict-from-plan")

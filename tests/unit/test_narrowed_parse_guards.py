@@ -27,13 +27,6 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 from incremental import engine as eng          # noqa: E402
 
 
-@pytest.fixture(autouse=True)
-def _restore_store_kind():
-    before = eng._MODEL_STORE
-    yield
-    eng._MODEL_STORE = before
-
-
 def _baseline(tmp_path, *, with_snapshot=True):
     """A baseline parse dir, optionally holding the two artifacts the gate looks for."""
     d = tmp_path / "base" / "parse"
@@ -59,7 +52,6 @@ def _call(tmp_path, base_parse_dir, **kw):
 class TestItRunsAtAll:
     def test_no_baseline_snapshot_falls_back_without_raising(self, tmp_path):
         """The NameError case: this used to blow up before reaching any decision."""
-        eng._MODEL_STORE = "files"
         assert _call(tmp_path, _baseline(tmp_path, with_snapshot=False)) is False
 
     def test_with_a_snapshot_it_gets_past_the_gate(self, tmp_path):
@@ -71,7 +63,6 @@ class TestItRunsAtAll:
         real run has a real repo and continues normally.
         """
         from incremental.git_ops import GitError
-        eng._MODEL_STORE = "files"
         with pytest.raises(GitError):
             _call(tmp_path, _baseline(tmp_path))
 
@@ -88,7 +79,6 @@ class TestDatabaseModeIsSupported:
         """Reaching the git diff is the proof it is no longer refused — it used to return False
         on the first line. GitError here just means tmp_path/repo is not a repository."""
         from incremental.git_ops import GitError
-        eng._MODEL_STORE = "db"
         with pytest.raises(GitError):
             _call(tmp_path, _baseline(tmp_path))
         written = [p.name for p in (tmp_path / "model").glob("*.json")]
@@ -101,18 +91,18 @@ class TestDatabaseModeIsSupported:
         src = inspect.getsource(eng._try_narrowed_parse)
         assert "not supported with --model-store db" not in src
 
-    def test_the_publisher_targets_the_repository_in_db_mode(self):
+    def test_the_publisher_targets_the_repository(self):
+        """The merged model must reach the version's rows, not a directory."""
         import inspect
         src = inspect.getsource(eng._write_parse_artifacts)
-        assert 'if _MODEL_STORE == "db":' in src
         assert "DbRepository" in src
+        assert "open(" not in src, "the merged parse artifacts must not be written as files"
 
 
 class TestStoreFirstSnapshot:
     def test_a_stored_snapshot_satisfies_the_gate_with_no_files(self, tmp_path):
         """C2's point: on a machine that did not build the baseline there are no files, so the
         gate has to accept the STORED snapshot."""
-        eng._MODEL_STORE = "files"
 
         class _Store:
             def read_parse_snapshot(self, _vid):
