@@ -33,8 +33,6 @@ def load_json(filepath: str) -> Dict:
         with open(filepath, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"Error: File not found: {filepath}", file=sys.stderr)
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in {filepath}: {e}", file=sys.stderr)
         sys.exit(1)

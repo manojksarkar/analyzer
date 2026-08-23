@@ -172,6 +172,14 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-22b (**behaviour diagram package replaced + LLM path rewired** — branch
+> `fix/behaviour-diagram`. All 7 modules under `engine/behaviour_diagram/` swapped for an external version;
+> it did not run as delivered (3 crash bugs) and its LLM imports pointed at `llm_client`, deleted in the
+> version3 refactor. Now on `llm_core.LlmClient` with token-report staging + domain anchoring. **Default
+> filter mode changed to `skip_within_unit`, which yields 0 diagrams on SampleCppProject** where the old
+> default gave 11 — read the View 3 note before assuming the view is broken. First tests for the package
+> (19). Full detail: §"behaviour diagram package replaced".)
+
 > Updated: 2026-08-22 (**the CSV-failing-silently work rebased onto the per-layer data dictionary**
 > — the two landed on `poc-4` in parallel and both rewrote the same merge function, so this is the
 > reconciliation, not new behaviour. `_merge_external_data_dictionary` is now a thin shim over
@@ -553,11 +561,10 @@
 > branch at all** — it was documented here (§5), in the docstring, and passed to
 > `plan_runs(filter_mode=filter_mode_arg)`, but `filter_mode_arg` was never assigned, so the flag was dead
 > and `--filter-mode X` made `--filter-mode` the project path. Branch added; flag **kept** per user
-> decision. **Still inert downstream, by design of what exists today:** `group_planner` forwards it to
-> Phase 3 and `run_views.py:89` writes `config["views"]["sequenceDiagrams"]["filterMode"]`, but **no view
-> reads that key** — `sequenceDiagrams` appears nowhere else in the repo and is not in `config.json`. The
-> value is accepted unvalidated (no vocabulary exists yet); the documented example is `single_per_function`.
-> Wire a consumer before relying on it. **Callers unaffected:** `api/services/pipeline_runner.py`,
+> decision. **Was inert downstream until 2026-08-22** — `group_planner` forwarded it to Phase 3 and
+> `run_views.py:89` wrote `config["views"]["sequenceDiagrams"]["filterMode"]`, but no view read that key.
+> The replacement `behaviour_diagram` package now consumes it (see §"behaviour diagram package replaced").
+> The value is still accepted **unvalidated** — unknown modes fall back to `skip_within_unit` silently. **Callers unaffected:** `api/services/pipeline_runner.py`,
 > `engine/incremental/{engine,generate}.py`, and `tests/conftest.py` were audited — all pass only real flags
 > and exactly one positional. **Second destructive bug found + fixed:** the `--clean` block ran **before**
 > `<project_path>` was validated, so `run.py --clean <typo'd path>` deleted `model/` and `output/` and *then*
@@ -1464,7 +1471,7 @@ python engine/run.py [options] <project_path>
 | `--macros <path>` | Macro file passed as `-D` flags to Clang in Phase 1, applied to **every** layer. CSV (`Name`, `Value`; header row) **or** JSON — toolchain dump (`macros_by_cu`), `{"NAME":"VALUE"}` map, `["NAME=VALUE"]` list, or `{"Layer1": {…}}`; shape is detected by content, not extension (`core/macro_input.py`). `Value` `"ne"` (any case) skips the entry; empty → `-DNAME`; function-like names are skipped + logged. Written to `model/clang_macros.json` (scope-keyed) so the Phase 3 flowchart engine picks them up. Sample: `engine/config/macros.csv`. |
 | `--macros-layer <layer> <path>` | Same formats, applied to the named layer only. Repeatable — once per layer. Unknown layer → exit 1, missing file → exit 2. Clang honours the last `-D`, so a layer value overrides a `--macros` global one. Config equivalents: `clang.macrosFile` / `clang.macrosByLayer`; `clang.macroScopes` maps a multi-CU dump's compilation units to layers. |
 | `--include-path-layer <layer> <dir>` | Add an extra `-I` include directory for the named layer. Repeatable — use once per directory. The directory is merged into `model/clang_include_paths.json` under the named layer key before Phase 1 runs, so Phase 1 (`clang_args_for`) and Phase 3 (`_resolve_layer_dirs`) pick it up automatically via existing layer-scoping. **No project-wide form** — an include dir always belongs to a layer. Unknown layer → exit 1. Missing directory → exit 1. Renamed from `--include-path` on 2026-08-18 (§17). |
-| `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`). Forwarded by `group_planner` to Phase 3, where `run_views.py` writes it into the in-memory config. **Currently inert — no view reads that key** (`sequenceDiagrams` exists nowhere else in the repo and is not in `config.json`); wire a consumer before relying on it. Value is not validated (no vocabulary defined yet). Had **no parse branch in `run.py` until 2026-08-11** — the flag was dead and `--filter-mode X` made `--filter-mode` the project path. |
+| `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run. Forwarded by `group_planner` to Phase 3, where `run_views.py` writes it into the in-memory config. **Live since 2026-08-22** — `SequenceDiagramGenerator._get_filter_mode` reads the key and `create_diagram_selector` maps it to a selector class. Vocabulary: `single_per_function`, `single_per_external_component`, `all_callers`, `multi_unit_functions`, `skip_within_unit` (**default**). Still **unvalidated** — an unknown value falls through the factory's `else` to `skip_within_unit` silently, so a typo degrades instead of erroring. Had **no parse branch in `run.py` until 2026-08-11** — the flag was dead and `--filter-mode X` made `--filter-mode` the project path. |
 | `--trace-prompts` | Print full LLM prompts (system + user) to stdout. Sets `LLM_TRACE_PROMPTS=1` env var. **Warning**: large runs emit tens of MB. |
 | `--quiet` | stderr handler raised to WARNING |
 | `--verbose` | stderr handler lowered to DEBUG |
@@ -2820,6 +2827,51 @@ component diagrams in [src/docx_exporter.py](src/docx_exporter.py)). Flowcharts
 Generates one `.mmd` per (current function, external caller) pair via
 `SequenceDiagramGenerator` in the
 [engine/behaviour_diagram/](engine/behaviour_diagram/) package.
+
+> **behaviour diagram package replaced — 2026-08-22** (branch `fix/behaviour-diagram`, off `poc-4`; commit
+> `9a22f0c` = the transcribed drop-in, later fixes uncommitted). All 7 modules (`generator`, `selector`,
+> `tracer`, `mermaid_builder`, `llm_call_description`, `cli`, `utils`) were replaced wholesale with an
+> external version; `__init__.py` was left as-is and still matches. What changed that callers care about:
+> **(1) `filterMode` is now consumed** — `_get_filter_mode` reads `views.sequenceDiagrams.filterMode`,
+> `create_diagram_selector` maps it to one of 5 selector classes. **Default changed** from the old
+> `default`→`AllExternalCallersDiagramSelector` to **`skip_within_unit`**, which emits a diagram only when
+> the target's own component spans 2+ units. On `SampleCppProject` (3 units, 3 separate components) that
+> means **0 diagrams by default** where the old code produced 11 — verified, not theoretical. The old mode
+> vocabulary (`all_external_callers`, `single_external_module`, `single_function`, `multi_unit_function`,
+> `default`) is **gone**; those strings now fall through to `skip_within_unit` silently.
+> **(2) `generate_all_diagrams` return shape changed** `List[str]` → `List[List[str]]` (one description
+> list per diagram). This **fixes a silent docx bug**: `_add_behavior_description_table` guards on
+> `isinstance(..., list)`, so the old string made the Requirements cell render **empty** in every Dynamic
+> Behaviour table. **(3) `skip_within_unit` bridges** — `tracer.trace_forward_within_component` threads an
+> `origin` arg so a skipped intra-unit hop re-attributes the downstream cross-unit edge to the last real
+> boundary instead of orphaning it. The reachability filter in `generate_diagram_for_caller` is now
+> redundant (its own comment says so) and prunes nothing.
+> **(4) LLM path rewired to `llm_core`** — the transcribed code imported `_ollama_available` / `_call_llm`
+> from `llm_client`, a module deleted in the version2→version3 refactor (it was `src/llm_client.py`, renamed
+> to `engine/llm_enrichment.py`; `_ollama_available`→`llm_provider_reachable`, `_call_ollama`→`_call_llm`).
+> Both imports failed → `except ImportError` → every description silently fell back to `"X calls Y"`.
+> `CallDescriptionGenerator` now builds a real `LlmClient` via `from_config(load_llm_config(config))` into
+> the `self._llm_client` field the code already declared but never used, gates on
+> `llm.descriptions and llm_provider_reachable(...)` (same pattern as `docx_exporter.py:404`), calls
+> `.generate()` inside `tokens.stage("behaviour.call_description")` so calls appear in the LLM report, and
+> passes `_get_domain_context(config)` as the system prompt for Task 3.14 anchoring. `except ImportError`
+> widened to `except Exception` — `llm_provider_reachable` **raises** `LlmConfigError` on a config missing
+> `llm.defaultModel`, which would otherwise kill the whole view.
+> **(5) A behaviour description is *call*-specific and is NOT the callee's function description.** Both the
+> old code and an interim fix here used `functions_data[calleeFn]["description"]` as a fallback; that is
+> wrong — it answers "what is this function" where the table asks "why does this caller call it", and the
+> docx already prints the function description at `docx_exporter.py:1072/1143/1726`. Fallback chain is now
+> **LLM call-description → `"X calls Y"`**, both call-shaped.
+> **Bugs fixed in the transcribed code** (it did not run as delivered): `generator.py:322` joined unit ids
+> with `_` while `mermaid_builder.py:247` splits on `/` → `IndexError` in **all 5 modes**;
+> `generator.get_selection_summary` never returned `summary`; `SkipWithinUnitDiagramSelector.get_selection_summary`
+> called `_get_units_in_call_chain`, which only exists on `MultiUnitFunctionDiagramSelector`.
+> **Tests:** [tests/unit/test_behaviour_diagram_package.py](tests/unit/test_behaviour_diagram_package.py) —
+> 19 tests, the package's first coverage. Mutation-checked: reintroducing the `_`/`/` bug fails 12 of 19.
+> Note `tests/unit/test_behaviour_diagram_generator.py`, described in the test-inventory table below, **does
+> not exist** — that row is stale.
+> **Known gap:** `generator.py` was transcribed from screenshots that ended at line 460; the closing
+> `return summary` is reconstructed, and anything after it is unknown.
 
 - Filtered to `allowed_modules` (only generates diagrams for functions inside
   the selected group, but uses the full model so external callers outside the

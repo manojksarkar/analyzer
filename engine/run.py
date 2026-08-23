@@ -30,9 +30,11 @@ Options:
                        while the model stays whole so derived content is unchanged.
   --filter-mode <mode> Override views.sequenceDiagrams.filterMode for this run.
                        Forwarded to Phase 3 (run_views), which writes it into the
-                       in-memory config. NOTE: no view reads that key yet, so the
-                       flag is currently inert — wire up a consumer before relying
-                       on it. Any string is accepted (no fixed vocabulary yet).
+                       in-memory config; behaviourDiagram's SequenceDiagramGenerator
+                       reads it to pick a diagram selector. One of:
+                       single_per_function, single_per_external_component,
+                       all_callers, multi_unit_functions, skip_within_unit
+                       (default). Unknown values silently fall back to the default.
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
   --to-phase N         Stop after phase N (1-4). Lets the incremental engine run
                        parse+derive only (--to-phase 2), compute impact, then
