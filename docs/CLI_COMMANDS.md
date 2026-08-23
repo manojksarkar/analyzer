@@ -127,6 +127,76 @@ copies in `.../output/<Component>/`.
 Add ` --no-llm` to either generate command for a fast, deterministic run with no LLM calls —
 structure is produced, prose and labels are mechanical. That is what the run above used.
 
+
+## 0b. The same commands with EVERY flag
+
+The four above are the short forms. These are the maximal ones — every flag each entry point
+accepts, on one line, so you can delete what you do not need rather than hunt for what exists.
+
+**Onboard** — `tools/new_project.py`:
+
+```
+python tools\new_project.py --project-id myproj --name "My Project" --repo-url D:\code\my-cpp --branch main --config my-config.json --version-id v1 --commit <full-40-char-sha> --force-config
+```
+
+`--use-defaults` replaces `--config` when you deliberately want this repo's sample tree; the two
+are alternatives, never both. `--force-config` overwrites a config that already exists.
+
+**Full generation** — `python -m incremental.generate`:
+
+```
+python -m incremental.generate --project-id myproj --branch main --commit <sha1> --version-id v1 --scope "group:Support" --config ..\my-config.json --repo-url D:\code\my-cpp --data-dict-id dd2024 --create-version --no-llm --force
+```
+
+**Incremental** — `python -m incremental.engine`, the same plus four of its own:
+
+```
+python -m incremental.engine --project-id myproj --branch main --commit <sha2> --version-id v2 --scope "group:Support" --base-version-id v1 --config ..\my-config.json --repo-url D:\code\my-cpp --data-dict-id dd2024 --create-version --no-llm --force --no-narrowed-parse --verify-parse
+```
+
+`--no-narrowed-parse` and `--verify-parse` are opposites of the normal case — the first forces a
+full re-parse, the second runs both and diffs them. Neither belongs in a routine run.
+
+### Where `--macros-layer` and friends went
+
+**They are not orchestrator flags.** `--data-dictionary-layer`, `--macros-layer` and
+`--include-path-layer` belong to `run.py`, and an orchestrated run gets the same inputs **from
+the config file** instead — because a layer owns its own inputs, so the layer name is never
+repeated in a separate map where a typo would silently match nothing:
+
+```json
+{
+  "layers": {
+    "Layer1": {
+      "path": "Layer1",
+      "dataDictionary": "dd_layer1.csv",
+      "macros": "macros.layer1.json",
+      "groups": { "Support": { "Math": "Math", "App": "App" } }
+    }
+  },
+  "clang": {
+    "clangArgs": ["-target", "arm-none-eabi", "-UPUBLIC"],
+    "macrosFile": "macros.json",
+    "macrosByLayer": { "Layer1": "macros.layer1.json" }
+  }
+}
+```
+
+Include directories are **discovered** for you — every directory under each layer's `path` is
+walked and merged into `model/clang_include_paths.json`. `--include-path-layer` only adds ones
+that live outside the tree, like a third-party SDK.
+
+**Driving a phase by hand** — `run.py`, which is where those flags do exist. Every flag it takes,
+in one command (you would never pass all of these at once — `--selected-group`,
+`--selected-layer` and `--selected-component` are mutually exclusive, and `--component-per-docx`
+cannot join `--selected-component`):
+
+```
+python run.py <checkout-path> --config ..\workspaces\myproj\config.json --version-id v2 --project-id myproj --model-root ..\workspaces\myproj\versions\v2\model --output-root ..\workspaces\myproj\versions\v2\output --baseline-version-id v1 --from-phase 3 --to-phase 4 --use-model --selected-group Support --component-per-docx --selected-unit Uart --filter-mode single_per_external_component --project-name "My Project" --output-name Support --data-dictionary dd.csv --data-dictionary-layer Layer1 dd_layer1.csv --macros macros.json --macros-layer Layer1 macros.layer1.json --include-path-layer Layer1 C:\ThirdParty\boost\include --only-files changed.txt --include-emulator --no-llm-summarize --clean --verbose --trace-prompts
+```
+
+Anything not on that list is rejected before Phase 1 starts, with a did-you-mean suggestion.
+
 ---
 
 ## 1. Setup (once per machine)
