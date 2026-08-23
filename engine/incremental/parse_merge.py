@@ -47,10 +47,25 @@ def _merge_keyed(baseline: Dict[str, Any], fresh: Dict[str, Any],
     """Generic by-file merge for a {key -> entry} artifact: for a DROPPED file use the
     fresh entry, for every other file keep the baseline entry. Fresh entries for non-dropped
     files are DISCARDED — a partial parse sees (incomplete) entities for everything its
-    affected TUs transitively #include, and only the dropped files were fully re-parsed."""
+    affected TUs transitively #include, and only the dropped files were fully re-parsed.
+
+    **File-less entries are the exception.** `_file_of` returns "" for an entry that has no
+    `entity_files` mapping and no `@file` in its key — dataDictionary entries added by the
+    external `--data-dictionary` CSV, the `PRIMITIVES` seed, and the canonical builtins
+    `_register_builtin_range` records. "" is never in `drop`, so the plain rule kept the
+    baseline copy and threw the fresh one away: a CSV added after the baseline never landed
+    at all, and an edited range lost to the stale baseline value — silently, on every
+    incremental run.
+
+    Since no file owns them, the by-file rule cannot arbitrate: take the fresh entry.
+    **Union, not replace** — a narrowed parse only calls `_register_builtin_range` for the
+    builtins its re-parsed TUs use, so dropping baseline file-less entries absent from
+    `fresh` would lose builtin ranges belonging to untouched TUs. The residual gap is a row
+    DELETED from the CSV: its entry survives until the next full parse."""
     out = {k: v for k, v in (baseline or {}).items() if _file_of(k, entity_files) not in drop}
     for k, v in (fresh or {}).items():
-        if _file_of(k, entity_files) in drop:
+        f = _file_of(k, entity_files)
+        if f in drop or not f:
             out[k] = v
     return out
 
@@ -110,6 +125,40 @@ def _merge_override_pairs(baseline_pairs: Iterable, fresh_pairs: Iterable,
         if ov and _file_of(ov, entity_files) in drop and tuple(pair) not in seen:
             out.append(list(pair)); seen.add(tuple(pair))
     return out
+
+
+def _merge_address_taken(baseline_recs, fresh_recs, entity_files, drop) -> List[list]:
+    """[[target_fid, registering_unit], …] — keep baseline records whose TARGET's file wasn't
+    re-parsed, then add fresh ones for targets in re-parsed files (dedup).
+
+    Without this a narrowed parse that doesn't touch the table's file loses the registration,
+    the function flips back to private, and the same source yields a different document.
+    """
+    out: List[list] = []
+    seen: Set[tuple] = set()
+    for rec in list(baseline_recs or []):
+        tgt = rec[0] if rec else None
+        if tgt and _file_of(tgt, entity_files) not in drop and tuple(rec) not in seen:
+            out.append(list(rec)); seen.add(tuple(rec))
+    for rec in list(fresh_recs or []):
+        tgt = rec[0] if rec else None
+        if tgt and _file_of(tgt, entity_files) in drop and tuple(rec) not in seen:
+            out.append(list(rec)); seen.add(tuple(rec))
+    return out
+
+
+def _apply_address_taken(functions: Dict[str, dict], records: List[list]) -> None:
+    """Re-attach addressTakenByUnits to the merged functions from the merged records."""
+    by_fid: Dict[str, Set[str]] = {}
+    for rec in records or []:
+        if len(rec) >= 2 and rec[0] in functions and rec[1]:
+            by_fid.setdefault(rec[0], set()).add(rec[1])
+    for fid, f in functions.items():
+        units = by_fid.get(fid)
+        if units:
+            f["addressTakenByUnits"] = sorted(units)
+        else:
+            f.pop("addressTakenByUnits", None)
 
 
 def _recompute_call_edges(functions: Dict[str, dict], override_pairs: List[list]) -> None:
@@ -172,6 +221,10 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
         if _norm(tu) in drop:
             tu_includes[tu] = inc
 
+    address_taken = _merge_address_taken(baseline.get("address_taken"), fresh.get("address_taken"),
+                                         entity_files, drop)
+    _apply_address_taken(functions, address_taken)
+
     _recompute_call_edges(functions, override_pairs)
 
     return {
@@ -194,6 +247,9 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
         # which is why the gate did not catch it: the damage needs two in a row.
         "func_keys": _merge_func_keys(baseline.get("func_keys") or {},
                                       fresh.get("func_keys") or {}, merged_entity_files, drop),
+        # Function-pointer table registrations, replayed because a narrowed parse may not
+        # re-parse the file holding the table. Same reasoning as func_keys above.
+        "address_taken": address_taken,
     }
 
 

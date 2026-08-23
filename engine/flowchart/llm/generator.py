@@ -41,8 +41,11 @@ BATCH_SIZE        — default nodes per LLM call.
 
 import logging
 import os
+import re
 from typing import Dict, List, Optional, Set, Tuple
 
+from cpp_tokens import render_call, short_name
+from llm_core import tokens as token_counter
 from llm_core.client import LlmClient
 from llm_core.structured_output import extract_and_validate
 from llm.prompts import SYSTEM_PROMPT, build_user_prompt
@@ -111,6 +114,8 @@ class LabelGenerator:
         self._max_retries = max_retries
         self._batch_size = batch_size
         self._enrichment = enrichment_config or {}
+        # Node ids that received a rule-based fallback label; reset per function.
+        self._fallback_ids: Set[str] = set()
         # Authoritative input-token budget for budget-aware passes (coherence,
         # CFG simplification). Resolved upstream via llm_core.budget.resolve_max_tokens
         # so it honours config.llm.maxContextTokens for both Ollama and OpenAI.
@@ -129,6 +134,11 @@ class LabelGenerator:
                      if n.node_type not in (NodeType.START, NodeType.END)]
         if not labelable:
             return
+
+        # Nodes that fell back to a rule-based label this function. Recorded at
+        # the point of use rather than sniffed from the label text afterwards,
+        # which missed ACTION fallbacks entirely.
+        self._fallback_ids = set()
 
         # Optional: LLM-guided simplification for large CFGs. Merges trivial
         # sequential ACTION nodes and drops boilerplate, shrinking the labeling
@@ -187,6 +197,15 @@ class LabelGenerator:
 
         self._apply_labels(cfg, label_map)
 
+        # Call-name enforcement runs LAST, after the coherence pass, so a
+        # coherence rewrite cannot strip a function name back out. It also
+        # normalises the fallback labels, whose raw code carries the call with
+        # its arguments.
+        appended = enforce_call_names(cfg)
+        if appended:
+            logger.info("'%s': appended missing call names on %d node(s)",
+                        func_entry.qualified_name, appended)
+
         # START / END get simple fixed labels
         for node in cfg.nodes.values():
             if node.node_type == NodeType.START:
@@ -195,7 +214,7 @@ class LabelGenerator:
                 node.label = "End"
 
         # Report fallback usage
-        fallback_count = sum(1 for n in labelable if _looks_like_fallback(n))
+        fallback_count = len(self._fallback_ids)
         if fallback_count > 0:
             logger.warning("'%s': %d/%d node(s) used fallback labels",
                            func_entry.qualified_name, fallback_count, len(labelable))
@@ -267,7 +286,8 @@ class LabelGenerator:
             '"drop": ["N12"]}'
         )
 
-        raw = self._client.generate(self._SIMPLIFY_SYSTEM, prompt, kind="cfg-simplify")
+        with token_counter.stage("flowchart.simplify"):
+            raw = self._client.generate(self._SIMPLIFY_SYSTEM, prompt, kind="cfg-simplify")
         if not raw:
             logger.debug("CFG simplification: no LLM response for '%s'",
                          func_entry.qualified_name)
@@ -531,7 +551,8 @@ class LabelGenerator:
                 prompt = base_prompt + _build_retry_note(last_failures)
 
             # ── Call LLM ──────────────────────────────────────────────
-            raw = self._client.generate(SYSTEM_PROMPT, prompt, kind="flowchart-label")
+            with token_counter.stage("flowchart.labels"):
+                raw = self._client.generate(SYSTEM_PROMPT, prompt, kind="flowchart-label")
 
             if raw is None:
                 no_response_attempts += 1
@@ -572,6 +593,7 @@ class LabelGenerator:
                 node = node_by_id.get(nid)
                 if node:
                     accumulated[nid] = _fallback_label(node)
+                    self._fallback_ids.add(nid)
             if not all_no_response:
                 # Only warn about fallback here; auto-halving path warns separately
                 logger.warning(
@@ -595,6 +617,8 @@ class LabelGenerator:
         "  4. Labels that are too literal (copy of raw code) or too abstract (generic phrase).\n"
         "  5. DECISION / LOOP_HEAD / SWITCH_HEAD labels that do not end with '?'.\n"
         "  6. Return and break labels that are not phrased as outcomes.\n"
+        "NEVER remove a function name from a label. Names are written Name() and must\n"
+        "stay; if you rephrase a label, carry every Name() through unchanged.\n"
         "Do NOT re-label nodes that are already good. Do NOT invent new information.\n"
         'Return ONLY a JSON object for labels you changed: {"node_id": "improved_label"}. '
         "Return {} if nothing needs changing. No markdown, no explanations."
@@ -648,6 +672,7 @@ class LabelGenerator:
             "  - DECISION / LOOP_HEAD / SWITCH_HEAD labels must end with '?'.\n"
             "  - Replace labels that are copies of raw code with readable prose.\n"
             "  - Replace vague labels ('Process data', 'Handle case') with specifics drawn from the raw node content.\n"
+            "  - Keep every Name() exactly as it appears; never drop a function name while rephrasing.\n"
             "  - Do NOT change node meaning; do NOT re-label already-good labels.\n\n"
             'Return ONLY: {"node_id": "improved_label", ...} or {} if nothing needs changing.'
         )
@@ -660,7 +685,8 @@ class LabelGenerator:
                          func_entry.qualified_name)
             return label_map
 
-        raw = self._client.generate(self._COHERENCE_SYSTEM, prompt, kind="flowchart-coherence")
+        with token_counter.stage("flowchart.coherence"):
+            raw = self._client.generate(self._COHERENCE_SYSTEM, prompt, kind="flowchart-coherence")
         if not raw:
             logger.debug("Coherence pass: no LLM response for '%s'",
                          func_entry.qualified_name)
@@ -727,6 +753,120 @@ class LabelGenerator:
         for node_id, label in label_map.items():
             if node_id in cfg.nodes:
                 cfg.nodes[node_id].label = label.strip()
+
+
+# ---------------------------------------------------------------------------
+# Call-name enforcement — deterministic, no LLM
+# ---------------------------------------------------------------------------
+
+# Longest label a repair may grow to. Beyond this the DOT node is unreadable
+# anyway and the missing names are better chased in the prompt.
+_MAX_REPAIRED_LABEL_LEN = 400
+
+
+def _is_identifier_shaped(token: str) -> bool:
+    """True if *token* can only be an identifier, never an ordinary English word.
+
+    A bare word that happens to match a call name is usually prose, not a
+    mention of the call: in "Validate the request with Validate()" the leading
+    "Validate" is the sentence's verb. Turning that into "Validate() the
+    request" mangles the label. Only tokens that cannot be read as prose —
+    qualified/member names, snake_case, or an internal capital — are safe to
+    convert from a bare word into a call.
+    """
+    if any(sep in token for sep in (".", "::", "->", "_")):
+        return True
+    return any(ch.isupper() for ch in token[1:])
+
+
+def _normalise_mention(label: str, name: str) -> Tuple[str, bool]:
+    """Rewrite mentions of *name* in *label* to the ``Name()`` form.
+
+    Returns ``(label, found)``. ``found`` means the label genuinely names the
+    call — either already parenthesised, or as an unambiguous bare identifier.
+    An ambiguous bare word (see :func:`_is_identifier_shaped`) does NOT count,
+    so the caller appends the name rather than editing prose.
+
+    Only the name token is ever touched; surrounding prose is never rewritten.
+    """
+    # Try the fully-qualified form first so `Ops::Replicate` isn't matched as
+    # the bare `Replicate` and left half-qualified.
+    tokens = [name]
+    leaf = short_name(name)
+    if leaf and leaf != name:
+        tokens.append(leaf)
+
+    for token in tokens:
+        esc = re.escape(token)
+
+        # `token(args)` / `token()` → `token()`. [^()]* keeps this to a single
+        # argument level, which is all a label realistically contains.
+        with_args = re.compile(esc + r'\s*\([^()]*\)')
+        label, n = with_args.subn(f"{token}()", label)
+        if n:
+            return label, True
+
+        # No parenthesised mention — a bare identifier still counts, but only
+        # when it cannot be read as an ordinary word.
+        if _is_identifier_shaped(token):
+            bare = re.compile(r'(?<![\w:.>])' + esc + r'\b(?!\s*\()')
+            label, n = bare.subn(f"{token}()", label)
+            if n:
+                return label, True
+
+    return label, False
+
+
+def enforce_call_names(cfg: ControlFlowGraph) -> int:
+    """Guarantee every node label names every function the node calls.
+
+    Two steps per node, both deterministic:
+
+      1. Normalise mentions already present — ``ServerReplicate(part, id)`` and
+         a bare ``ServerReplicate`` both become ``ServerReplicate()`` — so the
+         rendering is uniform even when the LLM complied in its own style.
+      2. Append names with no mention at all as a trailing ``Calls: X()``
+         segment.
+
+    The appended form is deliberately not a connector phrase: this pass cannot
+    know where the name belongs in the sentence, and inventing one would
+    produce exactly the mechanical "... via X()" filler the prompt forbids. A
+    high append count means the prompt is not landing — that is the thing to
+    fix, not this pass.
+
+    Returns the number of nodes that needed an append.
+    """
+    appended_nodes = 0
+
+    for node in cfg.nodes.values():
+        if node.node_type in (NodeType.START, NodeType.END):
+            continue
+
+        names = node.enriched_context.get("call_names") or []
+        if not names or not node.label:
+            continue
+
+        label = node.label
+        missing: List[str] = []
+        for name in names:
+            label, found = _normalise_mention(label, name)
+            if not found:
+                missing.append(render_call(name))
+
+        if missing:
+            addition = "<br/>Calls: " + ", ".join(missing)
+            if len(label) + len(addition) <= _MAX_REPAIRED_LABEL_LEN:
+                label += addition
+                appended_nodes += 1
+            else:
+                logger.debug(
+                    "Node %s: label too long to append missing call names %s",
+                    node.node_id, missing,
+                )
+
+        node.label = label
+
+    return appended_nodes
 
 
 # ---------------------------------------------------------------------------
@@ -1141,17 +1281,6 @@ def _parse_partial(
         accepted[nid] = label
 
     return accepted, failures
-
-
-# ---------------------------------------------------------------------------
-# Fallback detection helper
-# ---------------------------------------------------------------------------
-
-def _looks_like_fallback(node: CfgNode) -> bool:
-    label = node.label or ""
-    fallback_prefixes = ("Check: ", "Loop: ", "Switch on: ", "Case: ",
-                         "Handle exception: ")
-    return label.startswith(tuple(fallback_prefixes))
 
 
 # ---------------------------------------------------------------------------

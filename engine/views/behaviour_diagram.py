@@ -19,7 +19,7 @@ if str(_src) not in sys.path:
 from .registry import register
 
 from behaviour_diagram import SequenceDiagramGenerator
-from utils import log, mmdc_path, KEY_SEP, os_type
+from utils import log, mmdc_path, scoped_name, KEY_SEP, os_type
 
 
 def _project_root() -> str:
@@ -161,6 +161,13 @@ def run(model, output_dir, model_dir, config):
 
             docx_rows.setdefault(component_name, {}).setdefault(current_unit, []).append({
                 "currentFunctionName": current_function_name,
+                # fid identifies the function exactly; the exporter used to re-find it by
+                # short name within the unit, which picks the wrong one when a unit has two
+                # same-named methods (AddOperation::apply / MultiplyOperation::apply).
+                "currentFunctionId": fid,
+                "currentFunctionDisplay": scoped_name(
+                    func_qualified, (functions_data.get(fid) or {}).get("className", "")
+                ),
                 "externalUnitFunction": external_unit_external_function,
                 "pngPath": png_path,
                 "behaviorDescription": behaviour_descriptions[idx] if idx < len(behaviour_descriptions) else [],

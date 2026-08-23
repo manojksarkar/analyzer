@@ -1,0 +1,5 @@
+{
+  "tags": ["action", "call_names", "phrasing", "member_access", "return_value"],
+  "input_context": "Where the name goes depends on what the call does in the statement.\nN2 (ACTION): sz = functionJ();                 call_names: [\"functionJ()\"]\nN3 (ACTION): functionX()->timeSlot = False;    call_names: [\"functionX()\"]\nN4 (ACTION): sa = &functionA()->sa;            call_names: [\"functionA()\"]\nN5 (ACTION): ServerReplicate(part, id);        call_names: [\"ServerReplicate()\"]\nstruct_member_context: timeSlot — scheduling time slot for the unit",
+  "ideal_output": "{\"N2\": \"Get somethingZ by calling functionJ()\", \"N3\": \"Set the time slot in functionX() to False\", \"N4\": \"Update sa with the address of sa in functionA()\", \"N5\": \"Replicate partition state with ServerReplicate()\"}"
+}

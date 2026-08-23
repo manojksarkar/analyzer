@@ -122,6 +122,31 @@ def _escape_label(text):
     return t
 
 
+# One arrow carries every interface id for a unit pair (REQ-UD-05), so a busy edge stacks
+# 10+ ids in a single label. ELK lays every edge's label out in ONE column, so with a bare
+# <br/> join the ids of two DIFFERENT edges run together into a single wall of text and you
+# cannot see where one arrow's group ends and the next begins.
+#
+# So the whitespace goes BETWEEN groups, not between rows: ids of the SAME edge (same target
+# unit) stay tight, and each label is padded top and bottom so adjacent groups separate.
+#
+# Spacing lives in the GRAPH TEXT, not in layout hints: mermaid 10.9.5 silently IGNORES the
+# ELK spacing options. Rendering Sample-Core_Core with elk.spacing.edgeEdge / edgeLabel /
+# edgeNode / nodeNode + layered.spacing.* produced a byte-identical 1374x700 PNG, so no ELK
+# block is emitted \u2014 it would be dead config that reads as if it works.
+_ROW_SEP = "<br/>"        # within a group: no extra space
+_GROUP_PAD_ROWS = 2       # blank rows above and below each group
+
+
+def _edge_label(ifaces):
+    """Interface ids for one edge: tight rows, padded above and below to separate groups."""
+    ids = sorted(ifaces)
+    if not ids:
+        return ""
+    pad = [" "] * _GROUP_PAD_ROWS
+    return _escape_label(_ROW_SEP.join(pad + ids + pad))
+
+
 def _build_unit_diagram(
     unit_key,
     unit_info,
@@ -159,12 +184,24 @@ def _build_unit_diagram(
         if fid not in functions_data:
             continue
         f = functions_data[fid]
+        # Private functions are skipped by the interface TABLE (views/interface_tables.py),
+        # so drawing them here labelled the diagram with PIF_* ids that appear in no table.
+        # Happens when a function is annotated PRIVATE in source yet still has cross-unit
+        # callers — the explicit annotation wins in _fn_is_private, but this loop never
+        # checked visibility. Table and diagram now agree.
+        if (f.get("visibility") or "").lower() == "private":
+            continue
         # 3.15: only this unit's OWNED (caller) edges are drawn. Each caller edge is oriented by
         # f's own direction. Callee edges (functions this unit uses) are intentionally dropped —
         # they render in the partner (provider) unit's own diagram, so every relationship still
         # appears exactly once across the model, from the provider's perspective.
         for caller_fid in f.get("calledByIds", []) or []:
             _add_edge(unit_key, fid_to_unit.get(caller_fid), f.get("interfaceId", ""), _dir_of(f))
+        # A function published by a file-scope table has no caller function, so its
+        # relationship to the registering unit would otherwise never be drawn. In-body
+        # address-takes are already ordinary call edges above.
+        for registrar_unit in f.get("addressTakenByUnits", []) or []:
+            _add_edge(unit_key, registrar_unit, f.get("interfaceId", ""), _dir_of(f))
 
     caller_ids = {fr for (fr, to) in edges if to == this_id}
     callee_ids = {to for (fr, to) in edges if fr == this_id}
@@ -194,6 +231,12 @@ def _build_unit_diagram(
     internal_callees = sorted(callee_ids & internal_set)
     external_callees = sorted(callee_ids - internal_set)
 
+    # Blank <br/> lines padding the main node's label make it taller, which spreads its edge
+    # PORTS apart. Kept keyed to edge COUNT on purpose: re-keying it to label height was
+    # tried and rejected — for Sample-Core_Core (edges of 1/10/7 ids) padding of 10 and 18
+    # lines both rendered byte-identically to no padding at all, because once labels are tall
+    # the label column, not the node, sets the height. Only an absurd 36 lines moved it, and
+    # that renders the unit as a grotesque tall bar. Row spacing is handled by _LABEL_SEP.
     n_edges = len(edges)
     n_extra_lines = min(max(2, n_edges), 12)
     pad = "   "
@@ -244,7 +287,7 @@ config:
         partner = fr if to == this_id else to
         if partner not in internal_set:
             continue
-        label = _escape_label("<br/>".join(sorted(ifaces)))
+        label = _edge_label(ifaces)
         src, dst = (fr, to) if to == this_id else (fr, _callee_node_id(to))
         lines.append(f"    {src} -->|{label}| {dst}")
     lines.append("")
@@ -265,7 +308,7 @@ config:
         partner = fr if to == this_id else to
         if partner in internal_set:
             continue
-        label = _escape_label("<br/>".join(sorted(ifaces)))
+        label = _edge_label(ifaces)
         src, dst = (fr, to) if to == this_id else (fr, _callee_node_id(to))
         lines.append(f"  {src} -->|{label}| {dst}")
 

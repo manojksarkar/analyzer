@@ -36,6 +36,54 @@ def _filter_model_to_components(model: dict, allowed: set) -> dict:
     return filtered
 
 
+def _unit_names(model: dict, allowed_components=None) -> list:
+    """Unit names that this run will actually visit.
+
+    Unit keys are "Component|Unit". The model reaching here is filtered to the
+    *layer*, which is wider than the run's component scope — so a unit from a
+    sibling group would otherwise look valid while contributing nothing, because
+    the flowchart filter requires the component to match too.
+    """
+    from core.model_io import UNITS
+    lower = {c.lower() for c in (allowed_components or [])}
+    names = set()
+    for k in (model.get(UNITS) or {}):
+        if not k:
+            continue
+        parts = k.split("|")
+        if lower and parts[0].lower() not in lower:
+            continue
+        names.add(parts[-1])
+    return sorted(names)
+
+
+def _resolve_units(model: dict, requested: list, allowed_components=None) -> list:
+    """Map requested unit names onto the model's spelling, or exit with a listing.
+
+    A mistyped unit would otherwise filter the function set down to nothing and
+    the run would report success having generated no flowcharts at all — so an
+    unknown name is a hard error, with a suggestion when one is close.
+    """
+    import difflib
+    known = _unit_names(model, allowed_components)
+    by_lower = {u.lower(): u for u in known}
+    resolved, unknown = [], []
+    for u in requested:
+        match = by_lower.get(u.strip().lower())
+        if match:
+            resolved.append(match)
+        else:
+            unknown.append(u)
+    if unknown:
+        for u in unknown:
+            near = difflib.get_close_matches(u, known, n=3, cutoff=0.5)
+            hint = f" Did you mean {' or '.join(repr(n) for n in near)}?" if near else ""
+            print(f"Error: unknown --selected-unit {u!r}.{hint}")
+        print(f"Units in scope: {', '.join(known) if known else '(none)'}")
+        raise SystemExit(1)
+    return resolved
+
+
 def _load_model():
     from core.model_io import (
         load_model, FUNCTIONS, GLOBALS, UNITS, COMPONENTS, DATA_DICTIONARY, ModelFileMissing,
@@ -67,6 +115,10 @@ def main():
     for j in range(len(args) - 1):
         if args[j] == "--selected-component":
             selected_components.append(args[j + 1])
+    # Development aid: narrow the expensive per-function view work to these
+    # units. The model is left whole, so anything derived from it is unchanged.
+    selected_units = [args[j + 1] for j in range(len(args) - 1)
+                      if args[j] == "--selected-unit"]
     filter_mode_override = None
     if "--filter-mode" in args:
         i = args.index("--filter-mode")
@@ -137,6 +189,12 @@ def main():
                     layer_comps.update(g.keys())
             if layer_comps:
                 model = _filter_model_to_components(model, layer_comps)
+    if selected_units:
+        selected_units = _resolve_units(
+            model, selected_units, config.get("_analyzerAllowedComponents"))
+        config = dict(config)
+        config["_analyzerSelectedUnits"] = selected_units
+        print(f"[run_views] narrowed to unit(s): {', '.join(selected_units)}")
     run_views(model, output_dir, model_dir, config)
 
 

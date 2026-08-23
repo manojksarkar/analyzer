@@ -4,7 +4,8 @@ import os
 import re
 
 from .registry import register
-from utils import get_range, log, short_name, KEY_SEP
+from core.config import get_group_layer_name
+from utils import get_range, log, scoped_name, short_name, KEY_SEP
 
 
 def _iface_order(entry):
@@ -30,6 +31,27 @@ def _strip_ext(name):
     return base if ext else name
 
 
+def _resolve_layer(config):
+    """Layer owning the group this view run is rendering, or None.
+
+    `_analyzerSelectedGroup` is set by run_views from the resolved config key, so
+    an exact match is the normal path; the case-insensitive sweep mirrors
+    flowcharts._resolve_layer_name for callers that pass a differently-cased name.
+    """
+    group_name = config.get("_analyzerSelectedGroup")
+    if not group_name:
+        return None
+    exact = get_group_layer_name(config, group_name)
+    if exact:
+        return exact
+    target = str(group_name).casefold()
+    for layer_name, layer_cfg in (config.get("layers") or {}).items():
+        for grp in ((layer_cfg or {}).get("groups") or {}):
+            if str(grp).casefold() == target:
+                return layer_name
+    return None
+
+
 def _fid_to_unit(units_data):
     """functionId -> set of unit names (derived from model, not stored)."""
     out = {}
@@ -46,6 +68,7 @@ def _build_interface_tables(
     data_dictionary=None,
     *,
     allowed_components: set | None = None,
+    layer: str | None = None,
 ):
     # Only .cpp units; entries sorted by line; caller/callee units derived from calledByIds/callsIds
     fid_to_unit = _fid_to_unit(units_data)
@@ -69,11 +92,15 @@ def _build_interface_tables(
             if (f.get("visibility") or "").lower() == "private":
                 continue
             qn = f.get("qualifiedName", "")
+            # `name` stays SHORT — downstream code uses it as a lookup key (flowchart stems,
+            # behaviour rows), not only for display. `interfaceName` carries the class-qualified
+            # display form so two same-named methods in one unit (AddOperation::apply vs
+            # MultiplyOperation::apply) are distinguishable wherever a name is rendered.
             name = short_name(qn)
             loc = dict(f.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            interface_name = name or ""
+            interface_name = scoped_name(qn, f.get("className", ""))
             caller_units = {
                 u for cid in f.get("calledByIds", []) or []
                 for u in fid_to_unit.get(cid, []) if u
@@ -93,10 +120,18 @@ def _build_interface_tables(
             # documented once, from the provider (callee unit)'s perspective; a function's own
             # callee side is surfaced in those partner units' rows instead. callee_units is still
             # computed and emitted as the calleesUnits field below for completeness.
-            callers_fmt = sorted(set(u.replace(KEY_SEP, "/") for u in caller_units if _keep_unit(u)))
+            # A function reached only through a file-scope table has no caller to list, so
+            # name the unit(s) that register it — otherwise the cell reads "-" even though
+            # the relationship is real. In-body address-takes need nothing here: they became
+            # ordinary call edges and are already in caller_units.
+            registrar_units = {u for u in (f.get("addressTakenByUnits") or []) if u}
+            callers_fmt = sorted(set(
+                u.replace(KEY_SEP, "/")
+                for u in (caller_units | registrar_units) if _keep_unit(u)
+            ))
             source_dest = ', '.join(callers_fmt) if callers_fmt else "-"
             raw_params = f.get("parameters", [])
-            params = [{**p, "range": get_range(p.get("type", ""), dd)} for p in raw_params]
+            params = [{**p, "range": get_range(p.get("type", ""), dd, layer)} for p in raw_params]
             e = {
                 "interfaceId": f.get("interfaceId", ""),
                 "functionId": fid,
@@ -109,7 +144,7 @@ def _build_interface_tables(
                 "location": loc,
                 "parameters": params,
                 "returnType": f.get("returnType", ""),
-                "returnRange": get_range(f.get("returnType", ""), dd),
+                "returnRange": get_range(f.get("returnType", ""), dd, layer),
                 "direction": f.get("direction") or "In",
                 "reason": f.get("reason") or f.get("directionReason") or "",
                 "sourceDest": source_dest,
@@ -131,7 +166,7 @@ def _build_interface_tables(
             loc = dict(g.get("location", {}))
             if loc.get("file"):
                 loc["file"] = _strip_ext(loc["file"])
-            interface_name = name or ""
+            interface_name = scoped_name(qn, g.get("className", ""))
             ge = {
                 "interfaceId": g.get("interfaceId", ""),
                 "globalId": vid,
@@ -143,7 +178,7 @@ def _build_interface_tables(
                 "unitName": unit_name_display,
                 "location": loc,
                 "variableType": g.get("type", ""),
-                "range": get_range(g.get("type", ""), dd),
+                "range": get_range(g.get("type", ""), dd, layer),
                 "direction": g.get("direction") or "In/Out",
                 "reason": g.get("reason") or g.get("directionReason") or "",
                 "sourceDest": unit_key.replace(KEY_SEP, "/"),
@@ -161,6 +196,46 @@ def _build_interface_tables(
     return result
 
 
+def _range_coverage(interface_tables):
+    """How many Data Range cells got a real answer -> (resolved, total, {type: count}).
+
+    Reported as a single line rather than stored on each entry: the provenance has no
+    reader in the DOCX (nothing renders `directionReason` either), and a per-cell field
+    would ride on every row and churn the snapshot for an audit aid.
+    """
+    resolved = 0
+    total = 0
+    unresolved: dict = {}
+    for key, unit in interface_tables.items():
+        if key == "unitNames" or not isinstance(unit, dict):
+            continue
+        for e in unit.get("entries", []) or []:
+            cells = [(p.get("type", ""), p.get("range", ""))
+                     for p in (e.get("parameters") or [])]
+            if e.get("type") == "Global Variable":
+                cells.append((e.get("variableType", ""), e.get("range", "")))
+            else:
+                cells.append((e.get("returnType", ""), e.get("returnRange", "")))
+            for type_name, rng in cells:
+                total += 1
+                if rng and rng != "NA":
+                    resolved += 1
+                elif type_name:
+                    unresolved[type_name] = unresolved.get(type_name, 0) + 1
+    return resolved, total, unresolved
+
+
+def _format_range_coverage(resolved, total, unresolved, *, limit=8):
+    worst = sorted(unresolved.items(), key=lambda kv: (-kv[1], kv[0]))
+    shown = ", ".join(f"{t} x{n}" for t, n in worst[:limit])
+    if len(worst) > limit:
+        shown += f", +{len(worst) - limit} more"
+    msg = f"data ranges: {resolved}/{total} resolved"
+    if worst:
+        msg += f", {total - resolved} NA ({shown})"
+    return msg
+
+
 @register("interfaceTables")
 def run(model, output_dir, model_dir, config):
     units_data = model.get("units", {})
@@ -168,6 +243,11 @@ def run(model, output_dir, model_dir, config):
     global_variables_data = model.get("globalVariables", {})
     data_dict = model.get("dataDictionary", {})
     allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
+    # Ranges resolve inside the layer being documented: the layer's own dictionary
+    # entry wins, the global tier answers when it is silent, and another layer's
+    # same-named type is never consulted. None (no group selected) keeps the
+    # unscoped, pre-layer behaviour.
+    layer = _resolve_layer(config)
 
     interface_tables = _build_interface_tables(
         units_data,
@@ -175,6 +255,7 @@ def run(model, output_dir, model_dir, config):
         global_variables_data,
         data_dict,
         allowed_components=allowed_components,
+        layer=layer,
     )
     out_path = os.path.join(output_dir, "interface_tables.json")
     os.makedirs(output_dir, exist_ok=True)
@@ -184,3 +265,7 @@ def run(model, output_dir, model_dir, config):
     log("%s (%d units, %d functions, %d globals)" % (
         out_path, unit_count, len(functions_data), len(global_variables_data)
     ), component="interfaceTables")
+    _resolved, _total, _unresolved = _range_coverage(interface_tables)
+    if _total:
+        log(_format_range_coverage(_resolved, _total, _unresolved),
+            component="interfaceTables")

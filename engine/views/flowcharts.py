@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 from .registry import register
+from core.macro_input import args_for_scope, normalize_scoped_args
 from utils import KEY_SEP, log, safe_filename, os_type, render_dot_cached
 from core.subprocess_util import log_stderr_tail, run_streaming
 
@@ -753,6 +754,19 @@ def _maybe_slice_tall_png(png_path: str) -> int:
 
     return n_parts
 
+def _resolve_layer_name(config, group_name):
+    """Return the layer that owns group_name (case-insensitive), or None."""
+    if not group_name:
+        return None
+
+    for layer_name, layer in ((config or {}).get("layers") or {}).items():
+        groups = layer.get("groups") or {}
+        if group_name.lower() in [g.lower() for g in groups]:
+            return layer_name
+
+    return None
+
+
 def _resolve_layer_dirs(config, group_name, layer_paths):
     """
     Return the include dirs for the layer that owns group_name.
@@ -762,12 +776,10 @@ def _resolve_layer_dirs(config, group_name, layer_paths):
     all dirs across all layers when no group is selected or the group is not
     found in the config.
     """
-    if group_name:
-        layers_cfg = (config or {}).get("layers") or {}
-        for layer_name, layer in layers_cfg.items():
-            groups = layer.get("groups") or {}
-            if group_name.lower() in [g.lower() for g in groups]:
-                return layer_paths.get(layer_name) or []
+    layer_name = _resolve_layer_name(config, group_name)
+
+    if layer_name:
+        return layer_paths.get(layer_name) or []
 
     all_dirs: list = []
     seen: set = set()
@@ -838,6 +850,16 @@ def run(model, output_dir, model_dir, config):
         for m in ((config or {}).get("_analyzerAllowedComponents") or [])
     ]
 
+    # Development aid (--selected-unit): build flowcharts for these units only.
+    # This is the expensive per-function work, so narrowing it is what makes an
+    # iteration cheap. Nothing else is filtered — the model stays whole — and
+    # flowcharts already on disk for other units are left in place, so labelled
+    # units accumulate across runs.
+    allowed_units = [
+        u.lower()
+        for u in ((config or {}).get("_analyzerSelectedUnits") or [])
+    ]
+
     group_name = (config or {}).get("_analyzerSelectedGroup") or ""
 
     std = "c++14"  # fixed in code
@@ -896,9 +918,16 @@ def run(model, output_dir, model_dir, config):
     if os.path.isfile(clang_macros_file):
         try:
             with open(clang_macros_file, "r", encoding="utf-8") as f:
-                macro_args = json.load(f) or []
+                stored_macros = json.load(f)
 
-            for arg in macro_args:
+            # Scope-keyed since macros became per-layer; a flat list is the
+            # pre-scope shape and loads as global. Global defines first, then
+            # this group's layer — the order Phase 1 parsed with, and the one
+            # Clang needs (it honours the last -D for a name).
+            for arg in args_for_scope(
+                normalize_scoped_args(stored_macros),
+                _resolve_layer_name(config, group_name),
+            ):
                 if arg and arg not in clang_args:
                     clang_args.append(arg)
 
@@ -939,20 +968,26 @@ def run(model, output_dir, model_dir, config):
     # pass only those functions to the generator.
     functions_arg_path = functions_path
 
-    if allowed_components and os.path.isfile(functions_path):
+    if (allowed_components or allowed_units) and os.path.isfile(functions_path):
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
                 all_funcs = json.load(f)
 
             if isinstance(all_funcs, dict):
-                filtered = {
-                    fid: info
-                    for fid, info in all_funcs.items()
-                    if isinstance(fid, str)
-                    and KEY_SEP in fid
-                    and fid.split(KEY_SEP, 1)[0].lower()
-                    in allowed_components
-                }
+                def _in_scope(fid):
+                    if not isinstance(fid, str) or KEY_SEP not in fid:
+                        return False
+                    parts = fid.split(KEY_SEP)
+                    if allowed_components and parts[0].lower() not in allowed_components:
+                        return False
+                    if allowed_units:
+                        unit = parts[1].lower() if len(parts) > 1 else ""
+                        if unit not in allowed_units:
+                            return False
+                    return True
+
+                filtered = {fid: info for fid, info in all_funcs.items()
+                            if _in_scope(fid)}
 
                 orig_comps = sorted(
                     (config or {}).get("_analyzerAllowedComponents") or []
@@ -961,6 +996,10 @@ def run(model, output_dir, model_dir, config):
                 filename_key = (
                     group_name or "_".join(orig_comps)
                 )
+                if allowed_units:
+                    # distinct file, so a narrowed run never overwrites the
+                    # group's full function list
+                    filename_key = f"{filename_key}_units_{'_'.join(sorted(allowed_units))}"
 
                 group_functions_path = os.path.join(
                     model_dir_abs,

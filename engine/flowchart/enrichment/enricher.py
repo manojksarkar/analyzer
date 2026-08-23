@@ -14,8 +14,9 @@ generated labels are accurate and project-vocabulary-consistent.
 
 import logging
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
+from cpp_tokens import extract_call_names
 from models import CfgNode, ControlFlowGraph, FunctionEntry, NodeType
 from pkb.builder import ProjectKnowledgeBase
 from pkb.knowledge import ProjectKnowledge
@@ -45,6 +46,22 @@ class NodeEnricher:
         self._pkb = pkb
         self._src: Dict[str, List[str]] = source_lines_by_file
         self._knowledge: Optional[ProjectKnowledge] = knowledge
+        self._type_names: Set[str] = self._collect_type_names(knowledge)
+
+    @staticmethod
+    def _collect_type_names(knowledge: Optional[ProjectKnowledge]) -> Set[str]:
+        """Known struct/enum/typedef names, used to filter constructor calls.
+
+        `Point(1, 2)` and `process(1, 2)` are the same shape textually, so the
+        only way to keep constructors out of `call_names` is to recognise the
+        type by name.
+        """
+        if not knowledge:
+            return set()
+        names: Set[str] = set()
+        for attr in ("structs", "enums", "typedefs"):
+            names.update(getattr(knowledge, attr, {}) or {})
+        return names
 
     # ------------------------------------------------------------------
     # Public API
@@ -75,6 +92,14 @@ class NodeEnricher:
         calls = self._resolve_calls(node.raw_code, func_entry.calls_ids)
         if calls:
             ctx["function_calls"] = calls
+
+        # Every call in this node, whether or not it resolved in the PKB.
+        # `function_calls` above only covers callees that are in calls_ids AND
+        # indexed in the PKB, and the prompt caps it at 3 — so it is not a basis
+        # for "the label must name every call". This list is.
+        call_names = extract_call_names(node.raw_code, exclude=self._type_names)
+        if call_names:
+            ctx["call_names"] = call_names
 
         # Inline source comment near this node's lines
         comment = self._nearest_comment(src_lines, node.start_line)

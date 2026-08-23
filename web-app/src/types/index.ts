@@ -269,6 +269,8 @@ export interface AnalysisFunction {
   isVisible: boolean
   isNew: boolean
   description: string
+  /** Enclosing class/struct, namespaces dropped. Empty for free functions. */
+  className: string
 }
 
 export interface JobFunctions {

@@ -34,6 +34,8 @@ _spec.loader.exec_module(_mod)
 _strip_ext = _mod._strip_ext
 _fid_to_unit = _mod._fid_to_unit
 _build_interface_tables = _mod._build_interface_tables
+_range_coverage = _mod._range_coverage
+_format_range_coverage = _mod._format_range_coverage
 
 
 # ---------------------------------------------------------------------------
@@ -257,3 +259,60 @@ class TestBuildInterfaceTables:
         result = _build_interface_tables(units, {"f1": func1, "f2": func2}, {})
         names = [e["name"] for e in result["Mod|core"]["entries"]]
         assert names == ["earlier", "later"]
+
+
+# ---------------------------------------------------------------------------
+# _range_coverage / _format_range_coverage  (the Data Range coverage log)
+# ---------------------------------------------------------------------------
+
+def _tables(entries):
+    return {"unitNames": {"Mod|core": "core"}, "Mod|core": {"name": "core", "entries": entries}}
+
+
+class TestRangeCoverage:
+    def test_counts_parameters_and_return(self):
+        entries = [{
+            "type": "Function", "returnType": "int", "returnRange": "-0x80000000-0x7FFFFFFF",
+            "parameters": [{"type": "int", "range": "-0x80000000-0x7FFFFFFF"},
+                           {"type": "Point", "range": "NA"}],
+        }]
+        resolved, total, unresolved = _range_coverage(_tables(entries))
+        assert (resolved, total) == (2, 3)
+        assert unresolved == {"Point": 1}
+
+    def test_counts_globals(self):
+        entries = [{"type": "Global Variable", "variableType": "int[6]", "range": "NA"}]
+        resolved, total, unresolved = _range_coverage(_tables(entries))
+        assert (resolved, total) == (0, 1)
+        assert unresolved == {"int[6]": 1}
+
+    def test_void_counts_as_resolved(self):
+        entries = [{"type": "Function", "returnType": "void", "returnRange": "VOID",
+                    "parameters": []}]
+        resolved, total, unresolved = _range_coverage(_tables(entries))
+        assert (resolved, total, unresolved) == (1, 1, {})
+
+    def test_unit_names_key_is_skipped(self):
+        resolved, total, _ = _range_coverage({"unitNames": {"a": "b"}})
+        assert (resolved, total) == (0, 0)
+
+    def test_repeated_type_accumulates(self):
+        entries = [{"type": "Function", "returnType": "Rect", "returnRange": "NA",
+                    "parameters": [{"type": "Rect", "range": "NA"}]}]
+        _, _, unresolved = _range_coverage(_tables(entries))
+        assert unresolved == {"Rect": 2}
+
+
+class TestFormatRangeCoverage:
+    def test_all_resolved_omits_the_na_clause(self):
+        assert _format_range_coverage(65, 65, {}) == "data ranges: 65/65 resolved"
+
+    def test_lists_worst_offenders_first(self):
+        msg = _format_range_coverage(10, 15, {"Point": 1, "Rect": 4})
+        assert msg == "data ranges: 10/15 resolved, 5 NA (Rect x4, Point x1)"
+
+    def test_truncates_a_long_tail(self):
+        unresolved = {f"T{i}": 1 for i in range(12)}
+        msg = _format_range_coverage(0, 12, unresolved, limit=3)
+        assert msg.count(" x1") == 3
+        assert msg.endswith("+9 more)")

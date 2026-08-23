@@ -116,6 +116,17 @@ def _safe_fn(name: str) -> str:
     return _re.sub(r"[^\w\-.]", "_", name)
 
 
+def scoped_name(full_name: str, class_name: str = "") -> str:
+    """Class-qualified display name: MyClass::foo (mirrors utils.scoped_name).
+
+    Namespaces are dropped. Falls back to the bare name when className is absent, so
+    models parsed before className existed render as they did before.
+    """
+    base = ((full_name or "").split("::")[-1]).strip()
+    cls = (class_name or "").strip()
+    return f"{cls}::{base}" if cls and base else base
+
+
 def _strip_jsonc(text: str) -> str:
     """Strip // and /* */ comments + trailing commas from JSONC.
 
@@ -836,25 +847,35 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                 func_name = iface.get("name", "") or iface.get("interfaceName", "")
                 if not func_name:
                     continue
+                # Class-qualified for display; func_name stays short as a lookup key.
+                func_display = iface.get("interfaceName", "") or func_name
+                func_qn = iface.get("qualifiedName", "") or func_name
 
-                # Flowchart lookup (mirrors docx_exporter)
+                # Flowchart lookup (mirrors docx_exporter). Flowcharts are keyed by
+                # qualifiedName (flowchart/output/writer.py), so try that FIRST — looking up by
+                # short name alone meant class methods never resolved and silently rendered
+                # without a flowchart here, unlike the DOCX.
                 fc_mermaid = (
-                    flowcharts_map.get(unit_prefix, {}).get(func_name)
+                    flowcharts_map.get(unit_prefix, {}).get(func_qn)
+                    or flowcharts_map.get(unit_name_fc, {}).get(func_qn)
+                    or flowcharts_map.get(unit_prefix, {}).get(func_name)
                     or flowcharts_map.get(unit_name_fc, {}).get(func_name)
                 )
                 flowchart_entries: list[dict] = []
 
                 if fc_mermaid:
+                    safe_qn = _safe_fn(func_qn)
                     safe = _safe_fn(func_name)
                     params = iface.get("parameters") or []
                     params_str = ", ".join(
                         f"{p.get('type', '')} {p.get('name', '')}".strip() for p in params
                     )
                     ret = iface.get("returnType", "") or ""
-                    signature = f"{ret} {func_name}({params_str})".strip()
+                    signature = f"{ret} {func_display}({params_str})".strip()
                     flowchart_entries.extend(_flowchart_entries(
                         group_dir,
-                        [f"{unit_prefix}_{safe}", f"{unit_name_fc}_{safe}"],
+                        [f"{unit_prefix}_{safe_qn}", f"{unit_name_fc}_{safe_qn}",
+                         f"{unit_prefix}_{safe}", f"{unit_name_fc}_{safe}"],
                         fc_mermaid, signature, asset_base,
                     ))
 
@@ -877,22 +898,27 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                         c_prefix = c_unit_key.replace(KEY_SEP, "_").replace(" ", "_")
                         c_unit_name = callee_parts[1] if len(callee_parts) > 1 else ""
                         callee_fc = (
-                            flowcharts_map.get(c_prefix, {}).get(callee_fn)
+                            flowcharts_map.get(c_prefix, {}).get(callee_qn)
+                            or flowcharts_map.get(c_unit_name, {}).get(callee_qn)
+                            or flowcharts_map.get(c_prefix, {}).get(callee_fn)
                             or flowcharts_map.get(c_unit_name, {}).get(callee_fn)
                         )
                         if not callee_fc:
                             continue
                         rendered_private_fids.add(callee_fid)
+                        callee_display = scoped_name(callee_qn, callee.get("className", ""))
+                        csafe_qn = _safe_fn(callee_qn)
                         csafe = _safe_fn(callee_fn)
                         callee_params = callee.get("params") or callee.get("parameters") or []
                         cparams_str = ", ".join(
                             f"{p.get('type', '')} {p.get('name', '')}".strip()
                             for p in callee_params
                         )
-                        callee_sig = f"{callee.get('returnType', '')} {callee_fn}({cparams_str})".strip()
+                        callee_sig = f"{callee.get('returnType', '')} {callee_display}({cparams_str})".strip()
                         flowchart_entries.extend(_flowchart_entries(
                             group_dir,
-                            [f"{c_prefix}_{csafe}", f"{c_unit_name}_{csafe}"],
+                            [f"{c_prefix}_{csafe_qn}", f"{c_unit_name}_{csafe_qn}",
+                             f"{c_prefix}_{csafe}", f"{c_unit_name}_{csafe}"],
                             callee_fc, callee_sig, asset_base,
                         ))
 
@@ -908,8 +934,8 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                     output_name = (lbl + " result").strip() if lbl else ""
 
                 description = iface.get("description", "") or "-"
-                sec_id = f"{uk}-fn-{_safe_fn(func_name)}"
-                sec_title = f"{uname}-{func_name}"
+                sec_id = f"{uk}-fn-{_safe_fn(func_qn)}"
+                sec_title = f"{uname}-{func_display}"
 
                 if flowchart_entries:
                     unit_children.append(_sec(
@@ -942,26 +968,37 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
         for unit_name_beh, entries in sorted((behavior_rows.get(comp) or {}).items()):
             for row in entries:
                 current_fn = row.get("currentFunctionName", "") or ""
-                if current_fn in _hidden_by_mod_unit.get((comp, unit_name_beh), set()):
-                    continue
+                # Hide/resolve by fid — the short-name-per-unit set hid every same-named method
+                # in the unit, and the scan below returned whichever one came first.
+                current_fid = row.get("currentFunctionId", "") or ""
+                if current_fid:
+                    if current_fid in hidden_fids:
+                        continue
+                elif current_fn in _hidden_by_mod_unit.get((comp, unit_name_beh), set()):
+                    continue  # pre-currentFunctionId artifacts
                 ext = row.get("externalUnitFunction", "") or ""
-                subheader = f"{unit_name_beh} - {current_fn}"
+                current_display = row.get("currentFunctionDisplay", "") or current_fn
+                subheader = f"{unit_name_beh} - {current_display}"
                 if ext:
                     subheader += f" ({ext})"
 
                 # Input / output names from functions model
                 input_label = ""
                 output_label = ""
-                for fid, f in functions_data.items():
-                    fp = fid.split(KEY_SEP)
-                    if len(fp) < 3 or fp[0] != comp or fp[1] != unit_name_beh:
-                        continue
-                    qn = f.get("qualifiedName", "") or ""
-                    if (qn.split("::")[-1] if qn else "") != current_fn:
-                        continue
-                    input_label = (f.get("behaviourInputName") or "").strip()
-                    output_label = (f.get("behaviourOutputName") or "").strip()
-                    break
+                _beh_f = functions_data.get(current_fid) if current_fid else None
+                if _beh_f is None:
+                    for fid, f in functions_data.items():
+                        fp = fid.split(KEY_SEP)
+                        if len(fp) < 3 or fp[0] != comp or fp[1] != unit_name_beh:
+                            continue
+                        qn = f.get("qualifiedName", "") or ""
+                        if (qn.split("::")[-1] if qn else "") != current_fn:
+                            continue
+                        _beh_f = f
+                        break
+                if _beh_f is not None:
+                    input_label = (_beh_f.get("behaviourInputName") or "").strip()
+                    output_label = (_beh_f.get("behaviourOutputName") or "").strip()
                 if not input_label:
                     lbl = _readable_label(current_fn)
                     input_label = (lbl + " input").strip() if lbl else "Behaviour input"

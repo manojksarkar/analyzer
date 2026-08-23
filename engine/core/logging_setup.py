@@ -34,6 +34,12 @@ _LOCK = threading.Lock()
 _STDERR_HANDLER: Optional[logging.Handler] = None
 _FILE_HANDLER: Optional[logging.Handler] = None
 _LOG_FILE_PATH: Optional[str] = None
+_LOG_DIR: Optional[str] = None
+
+
+def _logs_root() -> str:
+    """The `logs/` directory this process writes into."""
+    return _LOG_DIR or os.path.join(os.getcwd(), "logs")
 
 _FORMAT = "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
 _DATEFMT = "%H:%M:%S"
@@ -65,7 +71,7 @@ def configure_logging(
         verbose:      DEBUG on stderr.
         log_dir:      override the directory entirely (absolute path).
     """
-    global _CONFIGURED, _STDERR_HANDLER, _FILE_HANDLER, _LOG_FILE_PATH
+    global _CONFIGURED, _STDERR_HANDLER, _FILE_HANDLER, _LOG_FILE_PATH, _LOG_DIR
 
     with _LOCK:
         if _CONFIGURED:
@@ -114,17 +120,23 @@ def configure_logging(
         logging.getLogger("requests").setLevel(logging.WARNING)
 
         _LOG_FILE_PATH = log_file_path or None
+        _LOG_DIR = log_dir
         _CONFIGURED = True
         atexit.register(_emit_token_report)
         return log_file_path
 
 
 def _emit_token_report() -> None:
-    """At-exit hook: dump LLM token usage so each subprocess records its own.
+    """At-exit hook: dump this process's LLM metrics.
 
-    `format_report()` already starts its output with "LLM token usage:" and
-    returns an empty string when nothing was recorded, so subprocesses that
-    never made an LLM call (e.g. run.py orchestrator, parser.py) stay silent.
+    `format_report()` returns an empty string when nothing was recorded, so
+    subprocesses that never made an LLM call (e.g. run.py orchestrator,
+    parser.py) stay silent.
+
+    Also writes the machine-readable copy into `logs/llm_stats/<run-id>/`, one
+    file per process. run.py merges the directory into a single report at the
+    end of the run, and `tools/llm_stats.py` compares two of those merges.
+    Writing happens once here, at exit — never per call.
     """
     try:
         from llm_core import tokens as _tok
@@ -157,8 +169,21 @@ def _emit_token_report() -> None:
             logging.getLogger("tokens").info(report)
         finally:
             logging.raiseExceptions = prev_raise
+        # The per-process stats file. After the restore, because this is not a logging call;
+        # a failure here is caught by the outer handler like everything else in this path.
+        _tok.write_json(llm_stats_dir(), process=os.path.basename(sys.argv[0] or ""))
     except Exception:
         pass
+
+
+def llm_stats_dir(run_id: str = "") -> str:
+    """Directory holding this run's per-process LLM stats files.
+
+    Keyed on ANALYZER_RUN_ID (set by run.py) so subprocesses of the same run
+    write into one place and separate runs never mix.
+    """
+    rid = run_id or os.environ.get("ANALYZER_RUN_ID") or "adhoc"
+    return os.path.join(_logs_root(), "llm_stats", rid)
 
 
 def _pick_stderr_level(quiet: bool, verbose: bool) -> int:

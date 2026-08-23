@@ -33,10 +33,11 @@ api/db/data/
 .coverage
 logs
 
-# Local config overrides (optional)
-backend/config/config.local.json
+# Local config overrides (optional) — dir was renamed backend/ -> engine/,
+# so these never actually matched; a machine-specific config.local.json
+# (e.g. ARM clangArgs on a firmware box) was staged by mistake.
 engine/config/config.local.json
-backend/config/last_run.json
+engine/config/last_run.json
 
 # Cache
 .flowchart_cache/

@@ -42,8 +42,8 @@
 >
 > **WORK STATUS / QUEUE — 2026-07-20 (SWE.3 content work; still open, separate track).**
 > - **DONE + removed from the active batch lists:** 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7,
->   flowcharts-in-DOCX, orphan-header handling, 3.14, 3.15, 3.18. **Remaining open:**
->   per-layer macros, function hide/unhide (Phase-3 JSON), 3.8, 3.9, 3.10, 3.11, 3.12,
+>   flowcharts-in-DOCX, orphan-header handling, 3.14, 3.15, 3.18, macro ingestion (2026-08-07).
+>   **Remaining open:** function hide/unhide (Phase-3 JSON), 3.8, 3.9, 3.10, 3.11, 3.12,
 >   3.13, 3.16, 3.19; 3.17 interim-landed (full precedence spec still pending).
 > - **2026-07-20 — unit-header value-column batch (3.20–3.22):** all fixed in
 >   `docx_exporter._build_unit_header_table` (exporter-only; **no parser/model change**, so no
@@ -195,10 +195,9 @@
 >   (`In` → arrow *towards* owner, `Out` → *away*); one interface = one arrow; mutual pairs = two arrows
 >   with the box drawn once. Diagram-only, no model change. See dated note below.
 > - **Pending — partial machinery exists in code, but the issues are NOT fixed** (audited 2026-07-15,
->   status corrected with user — do not read "code exists" as "done"): **macros ingestion** — `--macros`
->   is today a single **global** CSV applied to *all* layers (`run.py` → `-D` for Phase 1 +
->   `clang_macros.json` for the Phase-3 flowchart engine); the requirement is **per-layer macros**, which
->   is not yet supported → **pending**. **Function hide/unhide (task 4)** — `docx_exporter.py:1282-1568`
+>   status corrected with user — do not read "code exists" as "done"): ~~**macros ingestion**~~ →
+>   **DONE 2026-08-07**, see the dated note below (JSON + per-layer + API/UI wiring).
+>   **Function hide/unhide (task 4)** — `docx_exporter.py:1282-1568`
 >   already drops functions flagged `f["hidden"]` from the DOCX (interface-table rows, call edges, unit
 >   flowcharts); Phase-3 view JSON does NOT filter `hidden` (only Phase 4 does); exact pending scope still
 >   **TBD with user** → **pending**. **3.8 if/else** — the flowchart builder already renders DECISION
@@ -209,6 +208,562 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-22b (**behaviour diagram package replaced + LLM path rewired** — branch
+> `fix/behaviour-diagram`. All 7 modules under `engine/behaviour_diagram/` swapped for an external version;
+> it did not run as delivered (3 crash bugs) and its LLM imports pointed at `llm_client`, deleted in the
+> version3 refactor. Now on `llm_core.LlmClient` with token-report staging + domain anchoring. **Default
+> filter mode changed to `skip_within_unit`, which yields 0 diagrams on SampleCppProject** where the old
+> default gave 11 — read the View 3 note before assuming the view is broken. First tests for the package
+> (19). Full detail: §"behaviour diagram package replaced".)
+
+> Updated: 2026-08-22 (**the CSV-failing-silently work rebased onto the per-layer data dictionary**
+> — the two landed on `poc-4` in parallel and both rewrote the same merge function, so this is the
+> reconciliation, not new behaviour. `_merge_external_data_dictionary` is now a thin shim over
+> `_merge_dd_rows(path, layer)` and **passes the report lines through**, so the tests that drive the old
+> name still see them.
+> **(1) The merge report and the layer key had to be resolved by ONE rule.** The layered merge seeds a
+> row from the global tier when the bare slot is not this layer's; the report decides matched-vs-new
+> against a pre-loop snapshot. Written twice, those two answers drift. New `_dd_row_base(source, name,
+> target_key)` holds the rule once and is called twice per row — with the **live** dictionary to build
+> the entry from, and with the **snapshot** to file the report. `pre_existing` is now a shallow
+> `dict(data_dictionary)`, not a set of keys, because the layered lookup has to read each candidate's
+> `layer` and the loop stamps `layer` on what it writes. Shallow is enough: the loop rebinds
+> `data_dictionary[target_key]` to a fresh `dict(existing)` and never mutates a snapshot value in place.
+> **(2) `_csv_top_level_names` is keyed by layer** (`None` = the global tier), not one flat set. It
+> licenses `_reresolve_struct_field_ranges` to overwrite a measured field width, and flat it would have
+> let a **Layer2** CSV naming `BOOL32` rewrite a **Layer1** struct's `BOOL32` field — the layer-blending
+> the per-layer work exists to stop. Same pass now calls `get_range(ftype, data_dictionary,
+> entry.get("layer"))`; it was the last dictionary read still unscoped.
+> **(3) `tools/check_data_dictionary_csv.py` gained `--layer`.** Passes C and D looked names up by
+> BARE name, so against a layered model a correctly applied `--data-dictionary-layer` CSV reported
+> *"NOT ONE row from this CSV is in dataDictionary.json"* and exited 1 — the tool's loudest ERROR, on a
+> correct run. New `dd_key(dd, name, layer)` mirrors `_dd_target_key` + `_visible_to_layer` (layer key
+> first, then the bare name only if it is global or this layer's); pass D resolves through
+> `get_range(t, dd, layer)`. Omit the flag for a project-wide CSV and nothing changes.
+> **(4) `parse_merge._merge_keyed` needed no reconciliation** — file-less keys take fresh (the CSV fix)
+> and `_dd_store` registers `entity_files` for `qn@Layer` keys (the layer fix); they are disjoint.
+> New tests: `TestLayeredMergeReport` in `tests/unit/test_data_dictionary_csv.py` (3 — a layer row on a
+> global type is *matched* and leaves the global entry alone; duplicate layer rows on an unparsed type
+> count **once** as new under the `name@layer` key; another layer's CSV does not license a field
+> rewrite) — the layer-by-report interaction neither branch had a case for — and `TestAppliedPassLayerScoped`
+> in `tests/unit/test_check_data_dictionary_csv.py` (4). No snapshot regen needed.)
+
+> Updated: 2026-08-21 (**`tools/check_data_dictionary_csv.py` — pre-flight validator for the
+> `--data-dictionary` CSV, written while diagnosing "all SWE.3 data ranges are NA" on the client
+> project.** UNCOMMITTED, on `poc-4`. Reads the CSV exactly as `_merge_external_data_dictionary` does
+> and reports what that merge stays silent about. Four passes: **A** encoding (the merge opens
+> `encoding="utf-8"` and catches only `csv.Error`, so a cp1252 export aborts Phase 1 with an uncaught
+> `UnicodeDecodeError`), delimiter, header — a renamed/absent `Name` column or a title row above the
+> header makes `row.get("Name")` `None` for every row → *merged 0*, no other sign; **B** per-row —
+> duplicate `Name`s, rows with an empty `Name` and a non-child `Kind` (dropped by `if not name:
+> continue`, counted in **neither** `merged` nor `orphan_children`), unquoted commas past the header,
+> non-identifier Names (`get_range` strips `const`/`*`/`&` **before** the lookup), and top-level
+> `enum`/`struct` rows with no child rows below them — those reset `enumerators`/`fields` to `[]` and
+> **destroy the parsed list**; **C** applied? — the merge writes top-level rows *unconditionally*, so a
+> CSV name absent from `dataDictionary.json` proves the CSV never ran for that model; **D** NA audit —
+> resolves every parameter/return/global spelling through the real `utils.get_range` (imported, not
+> re-implemented) and buckets the NAs into *named in the CSV but still NA* / *unknown scalar — add these*
+> / *aggregate or derived, NA is correct*. Exit 1 on any ERROR.
+> `python tools/check_data_dictionary_csv.py <csv> --model-dir model [--quiet] [--limit N]`.
+> Tests: `tests/unit/test_check_data_dictionary_csv.py` (one case per failure mode).
+>
+> **Engine fixes landed with it** (same branch, all tested):
+> **(a) The merge report no longer lies** (`_merge_external_data_dictionary` +
+> `_format_csv_merge_report`). matched-vs-new is now decided against a `pre_existing = set(data_dictionary)`
+> snapshot taken **before** the row loop — testing `data_dictionary.get(name)` per row meant the 2nd row of
+> a duplicated Name saw the entry the 1st row had just written and was filed under *"matched a parsed
+> type"*, reporting a type absent from the source as a successful override. Two new report lines:
+> duplicated Names (last row wins) and rows dropped for an empty `Name` on a non-child `Kind` (a
+> merged-cell Excel export becomes a file of these; they were counted in **neither** `merged` nor
+> `orphan_children`). The function now **returns** its report lines as well as logging them, so the
+> counting is directly assertable.
+> **(b) Struct fields can no longer contradict their own type** — new `_reresolve_struct_field_ranges()`,
+> run after the CSV merge and before `write_model_file`. Field ranges are baked during the parse from the
+> canonical clang type, ~1300 lines before the CSV is read, so a `BOOL32` field kept `0-0xFFFFFFFF` while
+> the type entry said `0-1`. Re-answers only two cases: baked range is `"NA"`, or the field's base type was
+> named by the CSV (`_csv_top_level_names`) — a **measured width outranks anything name-derived**.
+> ⚠️ **Derived spellings are skipped unless CSV-named**: `get_range` answers a pointer from its pointee, so
+> the first cut stamped `-0x80-0x7F` on `Widget_t.name` (`const char *`) — a signed-char range on a string,
+> worse than the `NA` it replaced. Caught on the Sample; guarded by `_is_derived_type`.
+> **(c) Incremental no longer discards file-less dictionary entries** (`parse_merge._merge_keyed`) —
+> see the dedicated note below.
+> **Verified end-to-end** on SampleCppProject: full suite **975 passed / 4 skipped**; the two snapshots
+> (`interface_tables.json`, `unit_diagrams.json`) carry no struct-field ranges so **no snapshot regen was
+> needed**; a run with a deliberately broken CSV logs all four report lines with `BOOL32` counted **once**
+> as new despite two rows.
+>
+> **Not fixed, still live:** (1) types declared in include paths are never in the dictionary at all —
+> `visit_type_definitions` returns early unless `is_project_file()` (`parser.py:1004`), so the CSV is the
+> *only* source of a range for them — this is the design, not a bug; (2) there is **no `config.json` key**
+> for the data dictionary — CLI `--data-dictionary` or the API's `data_dict_id` only (the Phase 1 banner
+> *does* log the resolved path — that line already existed); (3) `api/routes/repositories.py:44` accepts
+> `.xlsx`/`.xls` uploads but `pipeline_runner.py:643` only ever builds `datadict/<id>.csv` and guards with
+> `if dd_path.is_file():` — **no xlsx→csv conversion exists anywhere in the repo**, so an Excel upload
+> silently omits the flag. Deprioritised: the client is not using xlsx today.)
+
+> Updated: 2026-08-21b (**incremental: a `--data-dictionary` CSV never reached an incremental run's model**
+> — `engine/incremental/parse_merge.py::_merge_keyed`. `_file_of()` returns `""` for an entry with no
+> `entity_files` mapping and no `@file` in its key: CSV-added dataDictionary entries, the `PRIMITIVES` seed,
+> and the canonical builtins `_register_builtin_range` records. `""` is never in `drop`, so the by-file rule
+> kept every baseline file-less entry and discarded every fresh one — **a CSV added after the baseline never
+> landed at all, and an edited range lost to the stale baseline value**, silently, on every incremental run.
+> The narrowed parse *does* receive the flag (`incremental/engine.py:184-185`), so the fresh model had the
+> right data; the merge threw it away. `dataDictId` is recorded in the manifest but never compared, and
+> `parseFingerprint` covers only clang args/std/toolchain — nothing forces a full re-parse when the CSV
+> changes. Fix: file-less keys are owned by no file, so the by-file rule cannot arbitrate them — take fresh.
+> **Union, not replace**, deliberately: a narrowed parse only registers the builtins its re-parsed TUs use,
+> so dropping baseline file-less entries absent from `fresh` would lose builtin ranges owned by untouched
+> TUs. **Residual, documented in the docstring:** a row DELETED from the CSV survives until the next full
+> parse; the exact alternative (folding a CSV content hash into `parseFingerprint`) forces a full re-parse
+> on every CSV edit and defeats the point of incremental. Tests:
+> `tests/unit/test_incremental_parse_merge.py::TestFileLessEntries`, incl. one pinning that a type WITH a
+> file still follows the baseline-wins rule.)
+
+> Updated: 2026-08-18 (**Per-layer data dictionary — closes backlog SH-3.** Branch
+> `feat/per-layer-data-dictionary` off `poc-4`. **The rule, decided with the user and general to every
+> per-layer input: resolving anything for layer `L` uses global + `L` only; another layer's inputs are
+> never consulted, and layers are never blended.** Macros (`args_for_scope`) and the Phase-3 flowchart
+> include dirs (`_resolve_layer_dirs`) already obeyed it; the data dictionary and the Phase-1 include
+> dirs did not.
+> **(1) Root cause.** `data_dictionary` is keyed by bare qualified name and written by straight
+> assignment, so two layers defining `UINT8`/`enum Status` meant **the last file parsed silently won,
+> for every layer** — from source alone, before any client CSV. `run_views._filter_model_to_components`
+> filters functions/globals/units/components and deliberately **not** `dataDictionary`, so every
+> layer's DOCX could show another layer's range.
+> **(2) Entries carry `layer`.** `parser.layer_for_rel_file()` resolves file → component → layer (the
+> same path `clang_args_for` uses, so a type's layer and its TU's `-D` set cannot disagree). New
+> `_dd_store()` keeps the bare key for the first writer and any same-layer redefinition (today's
+> last-wins, unchanged) and writes `qn@<layer>` for a *different* layer, following the existing
+> `typedef@qn:file:line` idiom. Builtins/`PRIMITIVES` are stamped `layer: None` = the global tier,
+> visible to everyone. `_log_dd_collisions()` prints one line per name defined in >1 layer — these were
+> invisible before, because the loser was overwritten.
+> **(3) `get_range(type, dd, layer=None, _depth=0)`.** The layer filter is applied at **all three**
+> lookup paths, because guarding only the direct hit lets the `qualifiedName` scan find the very entry
+> just rejected, and the alias recursion resolve one hop down against another layer: direct hit
+> (`utils.py:533`), qualifiedName scan (`:561`), alias recursion (`:549`/`:569` — `layer` is threaded).
+> That scan is also where the pre-existing first-match-wins ambiguity lived, so one filter fixes both.
+> `layer=None` keeps the pre-layer behaviour exactly, so every existing caller and test is unaffected.
+> **(4) Config carries PER-LAYER inputs only.** `layers.<L>.dataDictionary` and `layers.<L>.macros` sit
+> beside `path`/`groups`, so no layer name is repeated in a by-layer map where a typo matches nothing.
+> New `core.config` helpers: `layer_source()`, `layer_sources()`. `clang.macrosByLayer` still works,
+> deprecated; `layers.<L>.macros` wins for the same layer.
+> **Project-wide sources are CLI-only** (user decision, 2026-08-18): `--data-dictionary` / `--macros`.
+> A top-level `dataDictionary.file` key was built and then **removed** — every entry point already
+> passes the project-wide dictionary as a flag (`run.py`; API/incremental via `currentDataDictId` →
+> `--data-dictionary`, `incremental/generate.py:214`), so the key was a second silent source for one
+> input. **`clang.macrosFile` / `clang.macroScopes` are the deliberate exception and stay honoured in
+> code** — they are pre-existing (S3-1) and the API has **no** CLI path for macros: the main job path
+> runs `incremental/{generate,engine}.py` (`_build_cmd` is re-export only, `pipeline_runner.py:1253`)
+> and passes `--data-dictionary` but no macro flag, so the wizard's `preprocessor_definitions` reach
+> Clang *only* through `cfg["clang"]["macrosFile"]` (`pipeline_runner.py:460`). Dropping that key would
+> break the web macro feature end-to-end. Neither macro key appears in the shipped `config.json`.
+> The shipped config wires the **per-layer** keys to the committed examples (Layer1/Layer2 populated,
+> Layer3 left `""` to show both are optional) — empty/whitespace is treated as absent by
+> `layer_source()`. Values, not `//` comments: the file is `.json`, so comments light up every editor
+> with "Comments are not permitted in JSON" even though `load_config` strips them.
+> **(5) CLI `--data-dictionary-layer <layer> <path>`** mirrors `--macros-layer` (repeatable, unknown
+> layer → exit 1, missing file → exit 2). `_KNOWN_FLAGS` + the module docstring + `group_planner`'s
+> call sites moved together, as `test_cli.py`'s AST walk requires.
+> **(6) Phase-1 include paths were the same leak (was a deferred finding, promoted to a task).**
+> `parser.py` flattened **every** layer's dirs into the module-level `CLANG_ARGS`, discarding the layer
+> keys — masked in a single-layer run because run.py writes only the selected layer's dirs, so it bit
+> exactly the multi-layer run. They now live in `_LAYER_INCLUDE_ARGS` and are appended by
+> `clang_args_for()`, making that function the single per-TU resolution point for both includes and
+> defines. A file outside every layer still gets all dirs (no global include set exists to fall back
+> on; that is the pre-change behaviour and the only way an orphan header parses). Two consequences
+> handled: `parse_global_access` was parsing with raw `CLANG_ARGS` (so it already missed per-layer
+> macros) → now `clang_args_for(path)`; and `parseFingerprint` would no longer notice an include/macro
+> change → it now hashes the global args plus every layer's includes and defines, sorted.
+> **(7) Phase 4 needed no change** (the plan flagged it as unknown): `docx_exporter` reads ranges only
+> from the already-resolved `interface_tables.json`, and its unit-header table selects dd entries by
+> `location.file`, which is inherently layer-correct.
+> **(8) Narrowed-parse trap found + fixed.** `parse_merge._file_of` falls back to the text after `@`
+> when `entity_files` has no entry — for `qn@Layer2` that yields a *layer name*, which matches no
+> dropped file, so the entry would be kept from the baseline forever and never refresh. `_dd_store`
+> now registers `entity_files[key] = <real file>`.
+> **Known limit → new backlog SH-5:** `entity_hashes` / `_type_keys` stay bare-qn on purpose. They must
+> match `edges.json` `typeUsers`, which `visit_usage` keys by bare name and `impact_set` looks a changed
+> hash key up in directly — a `qn@Layer` hash key would find no users and silently skip regenerating
+> them. So two layers defining one type still share a hash (last definition wins) and a narrowed parse
+> can miss a change in the loser; fixing it means keying `type_users` by layer too.
+> **Verified:** full suite green (739 unit + pipeline), `tests/snapshots/Sample/interface_tables.json`
+> **unchanged**. A/B on `SampleCppProject` with both layers given a dictionary overriding `int`:
+> `model/dataDictionary.json` carries all three keys — `int` (global, libclang-measured, untouched by
+> either CSV), `int@Layer1`, `int@Layer2` — and the Layer1 run renders `L1-ONLY-RANGE` for all 114
+> occurrences, never Layer2's, while the default config still renders the ordinary
+> `-0x80000000-0x7FFFFFFF`. (Sample `Layer2/Platform` has 156 functions all marked `private`, so its
+> interface tables are empty — pre-existing, confirmed identical on a stashed baseline.)
+> **(9) CLI naming made consistent — `--include-path` → `--include-path-layer`.** Every other
+> layer-scoped flag says so in its name (`--macros-layer`, `--data-dictionary-layer`); `--include-path`
+> took a layer as its first argument and did not, so you could not tell from the name that it was
+> scoped. It has no project-wide sibling (an include dir always belongs to a layer), which is why the
+> suffix was originally omitted — but "suffix it if it takes a layer" is a rule a reader can apply from
+> the name alone, whereas "suffix it only when a global sibling exists" requires already knowing the
+> flag set. Straight rename, no deprecation alias: every caller is in-repo
+> (`api/services/pipeline_runner.py:660` is the only programmatic one), the flag was ~2 months old, and
+> `run.py`'s unknown-option handler already suggests the new name — `--include-path` scores **0.824**
+> against `--include-path-layer`, above the 0.7 `difflib` cutoff. An alias would be permanent cruft that
+> recreates the same "which one is current?" ambiguity. Internal `include_path_args` renamed to match.
+> Historical PROJECT_CONTEXT entries (2026-06-15 etc.) keep the old name deliberately — a dated log that
+> gets rewritten to match today's names stops being a record.
+> **Known inconsistency left alone (needs a decision):** `--include-path-layer` exits **1** on a missing
+> directory, while `--macros-layer` / `--data-dictionary-layer` exit **2** on a missing file. Aligning
+> them is a behaviour change, not a rename, so it was not folded in here.
+> New tests: `tests/unit/test_data_dictionary_layers.py` (18 — isolation asserted once per lookup path,
+> same-name-two-layers, global tier, collision bookkeeping) + `TestLayerSources` in
+> `tests/unit/test_core_config.py` (7). Samples: `engine/config/data_dictionary.layer{1,2}.example.csv`,
+> sharing `BufferSize_t` at different ranges, shipped **unreferenced** like the macro examples.)
+
+> Updated: 2026-08-13 (**`clang.clangArgs` is now a discoverable config key — the fix for cross-target parse
+> errors like `use of undeclared identifier '__builtin_arm_wfi'`.** No new plumbing: the key was already
+> honored by both parse paths (`engine/parser.py:251` appends it to `CLANG_ARGS`; `engine/views/flowcharts.py:813`
+> re-reads it for the Phase 3 flowchart subprocess) and overridable per project via `build_config.clang`
+> (`api/services/pipeline_runner.py:444`) — it just appeared in **no config file**, so nobody knew it existed.
+> Now present in `engine/config/config.json`, set to `["--target=arm-none-eabi"]`.
+> **Why it matters:** clang declares the ARM hint builtins (`__builtin_arm_wfi/wfe/sev/sevl/nop/yield`,
+> `isb/dsb/dmb`) **only when the target is ARM/AArch64**. CMSIS headers reach them via
+> `#define __WFI __builtin_arm_wfi`, so parsing firmware with a host (x86) libclang errors on every use.
+> Two fixes: (a) cross-target — `--target=arm-none-eabi` **alone is sufficient** (measured); add `-mcpu=<core>
+> -mthumb` so the preprocessor takes the same `#if` branches as the real build, since the bare triple defaults
+> to a generic ARMv4 core. On a project that includes libc headers this also drops the host system headers
+> (expect `'stdio.h' file not found` unless `--sysroot` / `-I` is added) — **not** an issue for
+> `SampleCppProject`, which has zero `#include <...>`; or (b) stub the builtins to no-ops through a
+> forced-include header, `["-include", "<abs path>"]`.
+> **Enabled in the base config**, which merges into every per-project config (`pipeline_runner.py:439-447`).
+> Verified safe on 2026-08-15 by parsing the e2e scope (`--selected-group "My Sample"`) both ways:
+> `functions.json` (141) and `dataDictionary.json` (91) come out **byte-identical**; the only delta is TUs with
+> errors, 6 → 5, i.e. the 4 ARM builtin errors gone. The 5 remaining are pre-existing `unknown type name 'VOID'`
+> in `Layer1/Signal/` + `Layer1/Diag/`, unrelated to the target. Override per project via `build_config.clang`,
+> or in `engine/config/config.local.json`.
+> **Trap:** changing `clangArgs` changes the parse fingerprint (`engine/incremental/fingerprint.py:30`),
+> so the next run is a **full reparse**, not an incremental one.
+> **Correction to an earlier claim in this entry** (it said clang's 20-error limit truncates the TU and drops
+> declarations — **it does not**). Measured with libclang on 2026-08-13: an undeclared identifier in a body, an
+> unknown return type, an unknown param type, a macro-mangled signature and a missing semicolon **all** leave
+> the `FUNCTION_DECL` in the AST. The error limit caps *diagnostic output*, not parsing, so `-ferror-limit=0`
+> buys log visibility, **not** recovered functions. The only tested shape that removes a function is an
+> **inactive `#if` branch — which emits zero errors**. Consequence for triage: clang errors in the log are not
+> evidence that a function is missing, and a missing function is usually a preprocessor/`-D` problem or
+> pipeline-level filtering (`not-project-file`, `dedup-hit`, `_DIAG_FUNCTIONISH_KINDS`), not a parse error.
+> **Fixtures encoding both halves** (`SampleCppProject/Layer1/Diag/`, picked up by the existing `Diag`
+> group — no config change, and outside the `tests/snapshots/Sample/` surface so snapshots are unaffected):
+> `ArmIntrinsics.h` (CMSIS-style `#define __WFI() __builtin_arm_wfi()`), `ArmIntrinsics.cpp` (4 errors on the
+> host target, 0 with `--target=arm-none-eabi`, **all 4 functions recorded either way**), and `ArmGuarded.cpp`
+> (`ArmEnterLowPower` behind an undefined `FEATURE_ARM_PM`: absent from the model with **no** diagnostic —
+> the live example for `_scan_unrecorded_functions`, fixed by `-DFEATURE_ARM_PM`, not by the target flag).
+> **Also fixed:** `.gitignore` listed `backend/config/config.local.json`, a path that has not existed since the
+> `backend/` → `engine/` rename, so local machine-specific overrides were never actually ignored → corrected to
+> `engine/config/config.local.json` (+ `last_run.json`). All three config loaders — `engine/core/config.py`,
+> `pipeline_runner._load_base_config`, `doc_render._load_config` — strip JSONC comments, so the inline comment
+> is safe; verified against all three, and `tests/unit/{test_core_config,test_utils,test_macro_input}.py` pass.)
+
+> Updated: 2026-08-12c (**Phase 1 parse diagnostics — a log trail for "why is this function missing from
+> `model/functions.json`?"** Branch `feat/phase1-parse-diagnostics`, `engine/parser.py` only.
+> Motivation: Phase 1 had **zero `.debug()` calls**, ~17 bare `print()` (which never reach
+> `logs/run_<date>.log`), and **discarded `tu.diagnostics` entirely** — so a function absent from the model
+> left no trail at all. The flowchart engine already read diagnostics
+> (`flowchart/ast_engine/parser.py::_log_diagnostics`), which is much of why Phase 3's logs felt usable.
+> **Design constraints that shaped this** (all deliberate, don't "fix" them):
+> (1) **Counters, not per-cursor logging.** `configure_logging` gives the file handler `DEBUG`
+> unconditionally, so a `logger.debug()` in `visit_definitions` would format + write millions of lines on
+> *every* run, `--verbose` or not. Everything accumulates in module-level `_diag_*` counters and is formatted
+> **once** by `_log_parse_summary()` at the end of `main()`.
+> (2) **DEBUG is bounded to per-FILE scale, never per-cursor** (one line per TU / per skipped file).
+> (3) **No new CLI flag** — user rejected one explicitly; `--verbose` already exists and the summary is
+> always-on anyway.
+> (4) **Nothing in `logs/` is read by code.** The summary is built from in-memory counters, never by re-reading
+> the log; Phases 2-4 still read `model/*.json` only. An earlier design wrote `model/parse_report.json` and was
+> rejected — `model/` is the DOCX data contract, not a diagnostics dump.
+> **Levels:** `CRITICAL` = the 4 fatal `sys.exit(2)` paths (bad macro CSV, data-dictionary CSV
+> missing/empty/unparseable) + a top-level `except BaseException` in `__main__` that logs the traceback and
+> **re-raises** (never swallows); `ERROR` = a TU that fails to load (run continues, model is *partial*);
+> `WARNING` = TUs that parsed *with* clang errors, functions declared but never defined, text-scan misses;
+> `INFO` = resolved-input banner, stage accounting, drop tallies, the ex-`print()` output-file lines;
+> `DEBUG` = per-TU ledger (`TU x.cpp: ok, N def(s), M clang error(s)`), full `CLANG_ARGS`, skipped files,
+> drop samples.
+> **Drop reasons** are recorded by a branch added at the **end** of the `visit_definitions` if/elif chain (so
+> it cannot intercept a cursor the existing branches would take), scoped by new cached `_under_project_base()`
+> so system-header cursors don't bury the signal: `not-project-file`, `dedup-hit`, `kind=<CursorKind>`.
+> **`declaration-only` is resolved late, not counted inline** — counting every declaration cursor gave a
+> useless `749` on SampleCppProject (nearly all *are* recorded via their `.cpp`, parsed later). Declarations
+> are collected into `_diag_decl_only` keyed by `get_function_key`, then filtered against `functions` at
+> summary time → **2 genuinely never-defined functions**. Keep this shape.
+> **Text reconciliation** (`_scan_unrecorded_functions`, `_FUNC_DEF_RE`) piggybacks the read loop
+> `_scan_defines` already runs over every project file, so it costs no extra I/O. It is the **only** way to see
+> a definition in an inactive `#if` branch — libclang creates no cursor, so there is no rejection to log.
+> **Known limitation:** line-based, so a signature split across lines (return type on its own line, as in
+> `Layer1/Diag/PreprocIfFunction.cpp`) is not matched; output is capped at `_DIAG_SAMPLE_CAP` and labelled a
+> heuristic hint list, never an input to anything.
+> **Also:** `is_project_file` is now **memoized** (`_compute_is_project_file` + `_project_file_cache`) — it was
+> doing `abspath`/`normcase`/`relpath` per cursor from 13 call sites. Safe because `MODULE_BASE_PATH`,
+> `_FILE_COMPONENT_MAP`, `_EXCLUDE_NAME_PATTERNS` are each assigned once at import and never mutated **in the
+> pipeline** — but tests re-point `MODULE_BASE_PATH`, so anything doing that must clear
+> `_project_file_cache` + `_under_base_cache` (the test file has a local `_clear_path_caches()` helper;
+> deliberately **not** a reset function in `parser.py`, which would be dead production code). Module-level `_log = get_logger("parser")` added at import: the macro-loading report at
+> import time previously had **no handler installed**, so those INFO lines were silently dropped. Emitted
+> strings are ASCII-only (standalone `python engine/parser.py` lacks run.py's UTF-8 forcing → em-dashes
+> mangled).
+> **Findings surfaced, deliberately NOT fixed** (each would change output): (a) SampleCppProject has **5 TUs
+> with `unknown type name 'VOID'`** (`Layer1/Signal/*`, `Layer1/Diag/{ForwardVoidDecl,VoidIsVoid}.cpp`) — real
+> preprocessor/macro gap; (b) the `declarationOnly` branch in `visit_definitions` is **dead code** — the outer
+> gate already requires `cursor.is_definition()`, so `elif fk not in functions` can never run, and
+> declaration-only functions never enter `functions.json` at all; (c) **two log directories** — `run.py` passes
+> `project_root=SCRIPT_DIR` (= `engine/`) to `configure_logging` while phase subprocesses auto-configure to
+> `cwd` (= repo root), so orchestrator and phase logs can land in different files (`engine/logs/*.log` are
+> 0 bytes; `logs/*.log` has the real content) and `paths().logs_dir` says `<root>/logs`.
+> (d) **the unit suite clobbers `model/clang_include_paths.json`** — `tests/unit/test_cli.py` invokes
+> `engine/run.py`, which rewrites that file before Phase 1; against its throwaway project the result is `{}`.
+> The real `model/` is left with **zero include dirs**, so the *next* parse silently resolves fewer headers and
+> drops call edges (`calledByIds`) — 64 of 292 entries changed on SampleCppProject, same count with the
+> unmodified parser, i.e. pre-existing and unrelated to this work. Found while A/B-verifying; cost an
+> investigation. **Any future A/B of parser output must confirm `clang_include_paths.json` is populated first**
+> (restore it, or re-run `run.py`) or the comparison is meaningless.
+> **Verification:** `model/functions.json` **byte-for-byte identical** A/B on SampleCppProject (292 entries) —
+> the gate split is behaviour-preserving; that comparison is the gate for any future change here. Unit suite
+> 697 passed (678 + 19 new in `tests/unit/test_parse_diagnostics.py`). Phase 1 timing: OLD 30.5-34.3s vs NEW
+> 27.0-39.5s over interleaved runs — libclang dominates and variance swamps the delta, so **no measurable
+> change**, no regression.)
+
+> Updated: 2026-08-12b (**LLM observability: every call is now timed and attributed to a pipeline stage.**
+> Motivation: nothing in the project reported LLM latency, so "which phase/view is slow, and is it our logic,
+> the server, or the throttle?" was unanswerable — the old report printed only `calls=N` + token counts, and
+> even that undercounted because failures never reached `record()`.
+> **`engine/llm_core/tokens.py` rewritten.** Records per HTTP *attempt*: latency, throttle seconds, outcome
+> (`ok`/`empty`/`error`), tokens. Adds `stage()` — a **contextvar** context manager, so a label set by a caller
+> follows the call down through helper layers without threading a parameter through every signature (no thread
+> pools anywhere in `engine/`, so nothing is lost to a fresh thread context). Also `write_json()`,
+> `merge_dir()`, `format_merged()`.
+> **`client.py`:** new `_attempt()` context manager wraps all four `_call_*` paths and records in `finally`, so
+> a timeout is counted with its full latency instead of vanishing; `_throttle()` measures the sleep;
+> `record_config()` captures provider/model/baseUrl/rateLimit/numCtx at construction.
+> **Stage labels:** `flowchart.labels` / `.coherence` / `.simplify`, `pkb.*` (5 scanner call sites),
+> `enrich.*` via a new `stage=` param on `llm_enrichment._call_llm` (defaults to `kind`; `kind` is NOT reused
+> for reporting because it drives behaviour — domain anchoring + blocklist scrubbing).
+> **Cross-process:** each phase is its own subprocess with its own counter, so `ANALYZER_RUN_ID` (set by
+> `run.py`) keys `logs/llm_stats/<run-id>/`, every process writes one file at exit
+> (`logging_setup._emit_token_report`), and `run.py` merges them into `logs/llm_stats_<run-id>.json` + prints
+> one table. Both new I/O paths are `try/except`-wrapped — reporting must never fail a run.
+> **`tools/llm_stats.py`** compares two saved runs, **config diff first** (the point is attributing a delta to
+> a specific config change — server, `rateLimitSeconds`, batch size), then per-stage deltas marked
+> better/worse. `python tools/llm_stats.py A.json [B.json]`.
+> **Bug found and fixed on the way:** `llm_enrichment._get_client` builds `LlmClient(...)` directly rather than
+> via `from_config`, so it never received `rateLimitSeconds` — Phase 2/4 enrichment silently ignored the config
+> key added earlier the same day. Now passed explicitly and added to `_client_cache_key`.
+> **Overhead:** ~10 µs/call (2 `perf_counter` reads + a dict update inside the lock the counter already took)
+> against multi-second calls; one JSON write per process at exit, never per call.
+> **Cost to anything grepping logs:** the report header changed from `LLM token usage:` to `LLM calls by
+> stage:`. Verified: 702 unit tests pass — one test needed fixing (`test_aux_desc_cache.py` fakes had closed
+> signatures that rejected the new `stage` kwarg). **Not yet done: unit tests for the new tokens/compare code,
+> and a real end-to-end run — every number seen so far is mocked or synthetic.**)
+
+> Updated: 2026-08-12 (**the OpenAI gateway throttle is now a config key, `llm.rateLimitSeconds`** — it was
+> the hardcoded `_OPENAI_RATE_LIMIT_SEC = 3.0` in [engine/llm_core/client.py](engine/llm_core/client.py).
+> **Why it matters:** the pause is in a `finally` inside `_OPENAI_LOCK`, so it fires after *every* OpenAI
+> call including failed ones, and the flowchart engine has **no parallelism at all** — every sleep is
+> wall-clock. Measured from `logs/run_*.log`: ~**1.5 label batches + ~0.25 coherence calls per function**
+> (212 batches / 139 functions on 2026-08-10), i.e. **~5.4 s of pure sleep per function** — ~12 min on a
+> 139-function run, ~45 min at 500. **Changes:** (1) `core.config.load_llm_config` parses optional
+> `rateLimitSeconds` (float ≥ 0, default 3.0, env `LLM_RATE_LIMIT_SECONDS`); explicit `null` raises with a
+> "use 0 to disable" hint rather than being read as auto. (2) `LlmClient.__init__` takes
+> `rate_limit_seconds`, stores `self._rate_limit`, and both OpenAI paths guard `if self._rate_limit > 0`.
+> (3) `from_config` threads it through — which is what gives `flowchart_engine._build_llm_client` the
+> setting for free. (4) Added to `engine/config/config.json` + the startup banner. Behaviour is unchanged
+> when the key is absent. **Note for anyone measuring the win:** `tokens.record()` sits on the success path
+> only, so timeouts/HTTP errors sleep but are never counted — the `calls=N` report understates the true
+> throttle cost. Tests: `TestRateLimit` in `tests/unit/test_llm_client.py` (6) + 7 in
+> `tests/unit/test_core_config.py`.)
+
+> Updated: 2026-08-11 (**`run.py` rejects unknown options and stray positionals instead of ignoring them**
+> — branch `fix/cli-strict-args`. Reported symptom: `python engine/run.py <proj> --phase 3` printed nothing
+> unusual and re-ran the whole pipeline **from Phase 1**. Root cause: the hand-rolled argv loop's final
+> `else` appended *anything* unmatched to `raw_args` (§5 "Argument parsing"), and only `raw_args[0]` was
+> ever read as `<project_path>` — so a mistyped flag after the path was silently dropped, and a mistyped
+> flag *before* it became the path (`Project path not found: …\--clen`). **Fix, all in
+> [engine/run.py](engine/run.py):** (1) new `elif a.startswith("-")` branch → `Unknown option: <flag>` +
+> a `difflib.get_close_matches(..., n=3, cutoff=0.7)` "did you mean" line + exit **1**. Cutoff is 0.7, not
+> difflib's 0.6 default: 0.6 pairs `--phase` with `--help` and `--verbos` with `--macros`, which reads as
+> noise beside the real match. (2) `len(raw_args) > 1` → `Unexpected extra argument(s): …`, exit 1 —
+> catches the orphaned value of a mistyped flag (`--phase 3` leaves a stray `3`). Runs **before** the path
+> check and before `--clean`, so nothing is deleted on a bad command line. (3) New **`--help` / `-h`**,
+> answered at the very top of the file (before `configure_logging`, `chdir`, and the config load) by
+> printing `__doc__` and exiting 0 — so help still works when the config is broken, and no log file is
+> created. The module docstring IS the help text, so it was completed to list every flag: `--llm-summarize`,
+> `--selected-layer`, `--selected-component`, `--component-per-docx`, `--filter-mode`, `--output-name`,
+> `--only-files` were all missing. Also escaped the `\` line-continuation in the `--macros-layer` example —
+> inside a non-raw docstring it was silently joining the two example lines. (4) New module-level
+> **`_KNOWN_FLAGS`** tuple feeds both the rejection and the suggestions; `tests/unit/test_cli.py` walks
+> run.py's AST and asserts it equals the set of flag literals the parse loop compares `a` against, so a new
+> branch without an entry fails the suite. **Bug found + fixed on the way:** **`--filter-mode` had no parse
+> branch at all** — it was documented here (§5), in the docstring, and passed to
+> `plan_runs(filter_mode=filter_mode_arg)`, but `filter_mode_arg` was never assigned, so the flag was dead
+> and `--filter-mode X` made `--filter-mode` the project path. Branch added; flag **kept** per user
+> decision. **Was inert downstream until 2026-08-22** — `group_planner` forwarded it to Phase 3 and
+> `run_views.py:89` wrote `config["views"]["sequenceDiagrams"]["filterMode"]`, but no view read that key.
+> The replacement `behaviour_diagram` package now consumes it (see §"behaviour diagram package replaced").
+> The value is still accepted **unvalidated** — unknown modes fall back to `skip_within_unit` silently. **Callers unaffected:** `api/services/pipeline_runner.py`,
+> `engine/incremental/{engine,generate}.py`, and `tests/conftest.py` were audited — all pass only real flags
+> and exactly one positional. **Second destructive bug found + fixed:** the `--clean` block ran **before**
+> `<project_path>` was validated, so `run.py --clean <typo'd path>` deleted `model/` and `output/` and *then*
+> exited 1 — a mistyped path cost a full re-parse. `--clean` now runs after the path check (and after the new
+> unknown-option/extra-positional checks), so no bad command line deletes anything. Guarded by
+> `test_clean_runs_only_after_project_path_is_validated`, which asserts the ordering **via AST** — a
+> functional test would have to destroy the real `model/`/`output/` to detect the regression.
+> Tests: 664 unit pass; `tests/unit/test_cli.py` gained `TestStrictArgValidation`,
+> `TestHelp`, `TestFilterMode`. Phase scripts (`parser.py`, `run_views.py`, `docx_exporter.py`) still swallow
+> unknown args the same way — **open follow-up**, they are only spawned by `group_planner` today.)
+
+> Updated: 2026-08-10 (**flowchart labels: every call is named, always as `Name()`.** Reported symptom: a
+> node that calls a function sometimes rendered as the call (`Call ServerReplicate(...)`), sometimes as pure
+> prose (`Replicate server state`) — a per-node coin flip. **Root cause: two contradictory rules in the same
+> system prompt.** `prompts.py` rule 2 said the label MUST name a callee ("Call ServerReplicate(...)"), while
+> the ABSTRACTION GUIDELINE listed that exact shape as its **Bad** example and dropped the name in the
+> **Good** rewrite. Three amplifiers: (a) the rule keyed off `called_functions`, which
+> `NodeEnricher._resolve_calls` only emits for callees in `calls_ids` that also resolve in the PKB, capped at
+> 3 — external/unresolved/4th-plus calls were never covered; (b) `_fallback_label` returns raw C++ for ACTION
+> nodes, and `_looks_like_fallback` prefix-sniffed `Check: `/`Loop: ` only, so ACTION fallbacks went
+> uncounted; (c) the coherence pass fixes labels "too literal *or* too abstract" (either direction) and only
+> runs at ≥5 labels, so small functions were never normalised.
+> **The rule now:** a label is descriptive prose naming **every** call, each written `Name()` — arguments
+> always stripped, uniform rendering, shorter against the 26-char DOT wrap. Phrasing is **not** a fixed
+> connector: `via X()` is wrong wherever the callee doesn't perform the action (in `functionX()->timeSlot =
+> False` it only returns the object being written). The prompt carries a **shape → phrasing table** — call
+> does the work → "with/using `Name()`"; call only supplies an object/value → "in `fnX()`" / "by calling
+> `fnJ()`" — plus an explicit *don't stamp one connector on every node*.
+> **New `engine/flowchart/cpp_tokens.py`** is the single definition of "a call": `CPP_KEYWORDS` (moved out of
+> `prompts.py`), `extract_call_names()` (source order, deduped, receiver kept: `doc.AddMember`, `Ops::fn`),
+> `render_call()`, `short_name()`. Excluded: keywords, casts, ALL-CAPS macros (logging/assert/`MAX`), lowercase
+> `assert`. **Constructors can't be told from calls textually** (`Point(1,2)` vs `process(1,2)`), so the
+> enricher passes known struct/enum/typedef names as `exclude=`. `NodeEnricher` now emits `ctx["call_names"]`
+> (complete) beside `function_calls` (PKB-described, capped) — the naming rule keys off the former.
+> **`generator.enforce_call_names(cfg)`** runs LAST in `label_cfg`, *after* the coherence pass so a rewrite
+> can't strip names back out: it normalises existing mentions to `Name()` and appends only missing ones as a
+> trailing `<br/>Calls: X()` segment (deliberately not a connector phrase — the pass can't know where the name
+> belongs in the sentence). **Prose-safety rule:** a bare word matching a call name is only converted when it
+> **cannot** be read as English (`_is_identifier_shaped`: qualified/member, snake_case, or an internal
+> capital). Otherwise "Validate the request" would become "Validate() the request"; ambiguous bare words count
+> as *absent* and get appended instead. Also: `_looks_like_fallback` replaced by a `self._fallback_ids` set
+> populated where fallbacks are applied; coherence prompt gained *never remove a function name*; DECISION
+> rule 3 no longer tells the model to drop the name via camelCase decomposition.
+> **No cache bump needed** — flowchart-level reuse is unimplemented (M2.4; `_CARRY_FIELDS` excludes
+> flowcharts, `generate.py` reports `carried: 0`), so flowcharts fully regenerate every run and `.dot_cache` is
+> content-addressed. `engine/few_shot_examples/labels/` updated (`02_action_sequence` had the old
+> name-dropping output; new `04_call_shapes`) — note **nothing reads that pool today**: `FewShotPool.select` is
+> called once, for `"descriptions"`. Tests: `tests/unit/test_call_name_labels.py`; 653 unit tests pass.
+> **Fixture:** `SampleCppProject` had **no `fn()->field` code at all**, so the hardest shape was unproven on
+> real input. Added `FlowSlot_t` + `flowSlotHandle()` and four functions to `Layer1/Flow/Flowcharts.{h,cpp}`
+> — `fnCallResultFieldWrite/Read/Address/Mixed` — covering write/read/address-of/branching, all called from
+> `runFlowTests()` so they have callers. `Layer1/Flow` is in the **Full** group; the e2e snapshots are group
+> **"My Sample"** (Core/Lib/Util), so `tests/snapshots/` is unaffected. Verified with a real LLM run
+> (qwen2.5-coder:14b): `flowSlotHandle()->timeSlot = slot` → *"Set time slot in flowSlotHandle() to value"*,
+> `&flowSlotHandle()->retryCount` → *"Return address of retry count in flowSlotHandle()"* — **zero repairs
+> fired**, and the struct member comments surfaced as "time slot"/"retry count" via `struct_member_context`.)
+
+> Updated: 2026-08-07 (**macro ingestion: JSON input + per-layer scoping + the API/UI path that was
+> silently dropping defines.** Branch `feat/macros-json-per-layer` off `poc-4`. Closes backlog **S3-1**.
+> **(1) One reader — `engine/core/macro_input.py`.** `--macros` took a 2-column CSV only; the client hands
+> over an armclang/`fromelf` dump: `{"metadata": {toolchain, macro_source, total_macros, fully_resolved},
+> "macros_by_cu": {"<cu>": {"<NAME>": {name, raw_value, expanded_value, computed_value|null,
+> is_fully_resolved, dependency_chain[], note|null}}}}` (schema confirmed with the user; one CU key in all
+> observed files). The module detects shape by **content, not extension** and reads: legacy CSV ·
+> toolchain dump · `{"NAME":"VALUE"}` map · `["NAME=VALUE"]` list (what the web wizard stores) ·
+> `{"Layer1": {…}}` scoped · a bare name→entry table. **Value precedence per macro:** resolved
+> `computed_value` (a plain number — cannot half-resolve) → `expanded_value` → `raw_value` → bare `-DNAME`.
+> **Unresolved macros are passed through as text, deliberately** (their `dependency_chain` names are often
+> defined by the project's own headers, which libclang *does* see; dropping the define would silently flip
+> an `#ifdef` branch) — counted + named in the load report. `ne` skip and empty→bare carry over from CSV;
+> **function-like names (`MAX(a,b)`) are skipped + logged**. A dump's `metadata.total_macros` is
+> cross-checked against what was read (mismatch ⇒ warning: we misread the file).
+> **(2) Scope is an opaque key, not "layer".** Defs are `{scope: {NAME: value}}` with `"*"` = all layers.
+> Today one list per layer; the user flagged that a layer may later need **several** macro sets (build
+> variants), so only scope *resolution* has to change when that lands. **Same-name collisions across lists
+> are reported, never silently reconciled** (`find_conflicts`) — the precedence strategy across lists is an
+> open question the user deferred.
+> **(3) Per-TU clang args (the actual S3-1 fix).** `CLANG_ARGS` was one module-level global for every TU, so
+> layer scoping only ever restricted *which files* got parsed. New `parser.clang_args_for(path)` resolves
+> file → component (`_FILE_COMPONENT_MAP`) → layer (`get_component_layer_name`) and appends global then
+> layer defines — Clang honours the **last** `-D`, so the layer overrides the global by position. Used at
+> both `index.parse` sites. `model/clang_macros.json` is now **scope-keyed** (`{"*": [...], "Layer1": [...]}`);
+> a flat list (pre-change shape) still loads as global via `normalize_scoped_args`. It is also written
+> **when empty** — a previous run's file used to survive a later macro-less run and keep feeding Phase 3.
+> `views/flowcharts.py` picks `"*"` + its group's layer via the new `_resolve_layer_name` (extracted from
+> `_resolve_layer_dirs`).
+> **(4) CLI:** `--macros <path>` unchanged (global); new repeatable **`--macros-layer <layer> <path>`**,
+> mirroring `--include-path`'s two-arg validation (unknown layer → exit 1, missing file → exit 2; that flag
+> is now `--include-path-layer` — see the 2026-08-18 entry). A second
+> flag rather than overloading `--macros` arity, which would have to guess layer-vs-path.
+> **(5) Config-driven sources — `clang.macrosFile` / `clang.macrosByLayer` / `clang.macroScopes`**
+> (CU→layer map for a multi-CU dump). Read by `parser.py` **before** the CLI flags, so a flag wins. This is
+> why the API needs no new flag plumbing: the real job path runs `engine/incremental/{generate,engine}.py`,
+> not `run.py` (only re-export uses `_build_cmd`), and every entry point already passes `--config`.
+> **(6) API/UI, previously broken end-to-end:** `build_config.preprocessor_definitions` never reached Clang
+> at all — `_write_project_config` forwards only `("clang","llm","views","docx")`. It now materializes them
+> (`_materialize_macros`: manual list → `workspaces/<pid>/macros.json`; upload → the stored file) and sets
+> `clang.macrosFile`. Uploads are **written to `workspaces/uploads/<id>/`** instead of a process-local dict
+> that lost them on restart (`resolve_upload` falls back to the directory), and `/repositories/uploads` now
+> validates extensions per kind (`.csv`/`.json` for defs). Wizard accepts `.csv,.json`; its "Drop Makefile
+> or CSV" copy promised a Makefile parser that **does not exist anywhere in the repo** — now "CSV or JSON".
+> **Verified** on `SampleCppProject` Phase 1: `Layer1/Diag/PreprocIfFunction.cpp` is gated on `SOME_THING`,
+> and `--macros-layer Layer2 <dump>` leaves it on the `#else` branch while `--macros-layer Layer1 <dump>`
+> takes the `#if` branch. Note that in the `#if` branch its symbol collides with `MultilineOvlyinit.cpp`'s
+> `_SOME_FUNCTION(GG *)` and is dropped by the **pre-existing** cross-TU dedupe on mangled name
+> (`get_function_key`, `parser.py:554`) — a fixture artifact (two files defining one symbol would not link),
+> not a regression.
+> **Sample lists (client schema, committed):** `engine/config/macros.layer1.example.json` (cu `fcore`) and
+> `macros.layer2.example.json` (cu `hil`) — two files, the real per-target setup, covering every macro type:
+> int/hex/shift/suffixed/big/negative/**zero**, value-less, unresolved (single + multi dep), string literal
+> with spaces, empty string, float, identifier value, function-like (skipped), `ne` (skipped). They share
+> `BUFFER_SIZE` at different values, which is the deferred cross-list collision case.
+> **Gotcha found while verifying:** `views.flowcharts` is **false** in the shipped config, so a plain full run
+> never exercises the Phase-3 macro consumer — enable it (`--config` with `views.flowcharts: true`) or the
+> check passes vacuously. With it on, the response file `model/.flowcharts_clang_args.txt` carries all 12
+> flags verbatim (argparse `fromfile_prefix_chars` reads one arg per line, so spaces and quotes survive), and
+> a `Layer2`-scoped set correctly reaches **zero** args for a `Layer1` group.
+> Tests: `tests/unit/test_macro_input.py` (27), `tests/unit/test_flowcharts_macro_scope.py` (12, Phase-3
+> scope selection), `tests/api/test_materialize_macros.py` (11, the wizard→file path). Full suite green;
+> plus a 40-check manual matrix (every shape, per-layer A/B, collisions, error exit codes, back-compat,
+> config-driven, full pipeline → DOCX + flowcharts). **No model-schema change** beyond `clang_macros.json`'s
+> shape → no snapshot regeneration.)
+
+> Updated: 2026-08-03c (**data ranges now measured by libclang instead of guessed from type names.**
+> `parser._range_from_clang_type` (canonical kind + `get_size()`) supplies typedef and struct-field
+> ranges; `_register_builtin_range` records every parameter/return/global/field builtin under its
+> CANONICAL spelling, so the dictionary answers exactly for the builtins a project actually uses.
+> `PRIMITIVES` seeding switched from assignment to `setdefault` — it was overwriting measured values
+> with a portable guess (`long` hardcoded 32-bit). `get_range_for_type` is now the last-resort fallback
+> only, is CASE-SENSITIVE (lowercasing made `Size_t` match `size_t` and gave a two-int struct a 64-bit
+> range), matches `size_t` by exact name rather than substring, and returns `0-1` for `bool` to match
+> `PRIMITIVES` (the test pinning `NA` was wrong and was updated). Ranges are deliberately NOT stored per
+> parameter in `functions.json`: parameters are collected before the CSV merge, so baking them would
+> break `--data-dictionary` override — see [§9 Where a data range comes from](#where-a-data-range-comes-from-precedence-2026-08-03).
+> Full suite incl. pipeline: 698 passed / 3 skipped, snapshot unchanged. SH-4 closed; only the array
+> case (`int[6]` → `NA`) remains open.)
+
+> Updated: 2026-08-03b (**root cause of the `NA` Data Range column: typedefs never recorded what they
+> alias.** `parser.visit_type_definitions` read `cursor.type.spelling` on a `TYPEDEF_DECL`, which is the
+> typedef type *itself* — so `typedef int UNIT;` stored `underlyingType: "UNIT"` and every typedef came
+> out self-referential with `range: "NA"`. New `parser._typedef_underlying` uses
+> `underlying_typedef_type` + strips elaborated keywords; anonymous enum/struct forms stay
+> self-referential deliberately (the unit header table resolves the enumerator list through that name).
+> `_maybe_add_typedef_for_struct` now stores `"NA"` instead of a range derived from the type's own name.
+> Full-project parse: `UNIT` → `int` → `-0x80000000-0x7FFFFFFF`, `UINT8` → `unsigned char` → `0-0xFF`
+> (via the dictionary, which only works because of the `get_range` fix below), `Size_t` poison gone.
+> **Sample snapshot unchanged** (`My Sample` group has no typedef'd signatures) — full suite incl.
+> pipeline: 669 passed / 3 skipped, generated `interface_tables.json` == committed snapshot. Tests:
+> `test_typedef_underlying.py`. Detail in [§10 Type collection](#type-collection-visit_type_definitions).)
+
+> Updated: 2026-08-03 (**data-dictionary range lookup: `"NA"` now means "unknown", not an answer**
+> — branch `fix/data-dictionary-range-lookup`. Phase 1 bakes a typedef's `range` with
+> `get_range_for_type()`, which never sees the dictionary, so an alias of a project type is stored
+> `"NA"` and a range supplied later by the external CSV never reached the interface tables.
+> `utils.get_range` now treats a `"NA"` direct hit as "keep looking" and resolves the alias chain, with
+> a `underlying != base` self-reference guard; it deliberately does **not** fall through to the
+> qualifiedName scan, because sibling `typedef@Name:file:line` entries can carry a garbage baked range
+> (Sample `Size_t` → `0-0xFFFFFFFFFFFFFFFF`, from a `"size_t" in base` substring match now logged as
+> backlog **SH-4**). Verified **0 diffs** across all 21 Sample signature types → no snapshot regen, no
+> SampleCppProject change. New tests: `test_utils.py::TestGetRangeBakedNA`, `test_data_dictionary_csv.py`
+> (also pinned `MODULE_BASE_PATH` in `test_define_conditional.py`'s fixture — `parser` is a module-level
+> singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
+> [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
 > Updated: 2026-08-14 (`db-with-increment-changes`: **doc 09 Phase 0/1 + B5a + C1 + B1(output) landed.**
 > Gates green throughout: `pytest tests/unit tests/api --skip-pipeline` **652 passed**, `verify_incremental` green.
 > **B0** — `job_max_concurrency` **default 2 → 1** ([settings.py:47](api/services/settings.py#L47)); the old default
@@ -418,8 +973,7 @@ entry below). Contract:
 > follow-up. Config: a new `docx.swe4` block (env-field defaults, testCasePolicy, generationMethod) under
 > `docx` so the API config-forward whitelist `("clang","llm","views","docx")` passes it through unchanged.
 > **Macros (confirmed 2026-07-22):** SWE.3 & SWE.4 **share the same macros, per layer** — SWE.4 reuses the
-> same parse/model, so the pending **per-layer-macros** work (today `--macros` is one global CSV) serves
-> both docs. **Still open (take to client):** Table B metadata fields (Alias Test ID · Risk · Test Method ·
+> same parse/model, so the per-layer-macros work (landed 2026-08-07, see the newest entry) serves both docs. **Still open (take to client):** Table B metadata fields (Alias Test ID · Risk · Test Method ·
 > Test Environment · Linked Work Items — only Table A was covered); how private callees' branches get
 > covered when callees are mocked. `docs/planning/SWE4_PLAN.md` updated + kept leadership-facing.)
 
@@ -574,7 +1128,13 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
       config.local.json       Local overrides (gitignored)
       abbreviations.txt       Abbreviation expansions for LLM prompts
       data_dictionary.csv     Sample data-dictionary CSV (--data-dictionary <path>)
+      data_dictionary.layer1.example.csv  Per-layer sample (layers.Layer1.dataDictionary)
+      data_dictionary.layer2.example.csv  Second sample — shares BufferSize_t at a
+                                          different range (the per-layer case). Both
+                                          shipped UNREFERENCED, like the macro examples.
       macros.csv              Sample macros CSV (--macros <path>)
+      macros.layer1.example.json   Sample toolchain macro list, client schema (cu "fcore")
+      macros.layer2.example.json   Second sample list (cu "hil") — the per-layer / two-file case
       puppeteer-config.json   Optional headless-chrome args for mmdc
     few_shot_examples/        Few-shot pools (descriptions / behaviour_names / globals)
     assets/                   DOCX cover assets (bottom_arc.png, copyright.png)
@@ -735,7 +1295,8 @@ validated first by `load_llm_config()`.
 failing field name when any required field is missing / empty / wrong type:
 `provider`, `baseUrl`, `defaultModel`, `timeoutSeconds`, `numCtx`, `retries`.
 Optional fields (`enrichment.*`, `descriptions`, `behaviourNames`,
-`maxContextTokens`, `cacheVersion`, `fewShotExamplesDir`, `customHeaders`)
+`maxContextTokens`, `cacheVersion`, `fewShotExamplesDir`, `customHeaders`,
+`rateLimitSeconds`)
 are type-checked the same way. `provider` is restricted to
 `"ollama"`|`"openai"`.
 
@@ -756,6 +1317,7 @@ LLM configuration (will be used for this run)
   maxContextTokens  : auto -> 7680
   timeoutSeconds    : 120
   retries           : 1
+  rateLimitSeconds  : 3.0  (ignored on ollama)
   apiKey            : (none)
   cacheVersion      : 1
   fewShotExamplesDir: few_shot_examples
@@ -860,6 +1422,12 @@ renamed to "component". Specific impacts:
 "layers": {
   "Layer1": {
     "path": "Layer1",          // relative to <project_path>
+    // Per-layer INPUTS live in the layer block, beside path/groups — so no layer
+    // name is repeated in a by-layer map where a typo would match nothing. Both
+    // optional; both are paths, never inline content. Shipped as "" (= absent) so
+    // the keys are discoverable without changing the default run. See §17.
+    "dataDictionary": "engine/config/data_dictionary.layer1.example.csv",
+    "macros":         "engine/config/macros.layer1.example.json",
     "groups": {
       "Sample": {              // group name (for --selected-group)
         "Core": "Sample/Core", // component → path (relative to layer path)
@@ -887,7 +1455,20 @@ renamed to "component". Specific impacts:
 
 `core.config.get_flat_groups(cfg)` flattens this into
 `{groupName: {componentName: resolvedPath}}` with layer paths prepended.
-Falls back to the old `layer` key for backwards compatibility.
+Falls back to the old `layer` key for backwards compatibility. `_resolve_layer_paths`
+reads only `path` + `groups`, so the per-layer input keys above are ignored there and
+adding more of them needs no change.
+
+Per-layer inputs are read via `core.config.layer_source(cfg, layer, key)` /
+`layer_sources(cfg, key)` → `{layer: path}`. Adding a third per-layer input costs one
+call, not a new schema. `clang.macrosByLayer` still works but is **deprecated** —
+`layers.<L>.macros` wins for the same layer.
+
+**Config is per-layer only.** The project-wide dictionary and macro list are CLI
+(`--data-dictionary`, `--macros`); there is no `dataDictionary.file` key. The single
+exception is `clang.macrosFile` / `clang.macroScopes`, still honoured in code because
+the API has no CLI path for macros (see §17, 2026-08-18) — but absent from the shipped
+`config.json`.
 
 ### Same-layer model filtering
 
@@ -1056,10 +1637,11 @@ python engine/run.py [options] <project_path>
 
 | Flag | Effect |
 |---|---|
-| `--clean` | Delete `model/` and `output/` before starting. In database mode it warns that the stored model **survives** — the directories are no longer where the model is. |
+| `--clean` | Delete `model/` and `output/` before starting. Runs **after** `<project_path>` is validated (since 2026-08-11) — it used to run first, so `--clean <typo'd path>` wiped both dirs and then aborted. In database mode it also warns that the stored model **survives** — the directories are no longer where the model is. |
 | `--model-store {files,db}` | Where the phases read/write the model. **Default `db`** since doc 10 step 9 — the orchestrators (`incremental/generate.py`, `incremental/engine.py`) default to it, so a UI job gets the database without `pipeline_runner` asking for it. `files` forces the legacy `model/*.json`. `core.run_context.effective_model_store` resolves `db` **once in the orchestrator** and degrades to files with the reason on stderr when there is no database, no version id, or no `versions` row (the API reserves that row at job start; `PgStore` never creates one, so a CLI run against an unreserved version would otherwise fail on the foreign key). |
 | `--version-id <id>` / `--project-id <id>` | The run identity every phase needs once the model is rows rather than files. Applied **before** `paths()` is snapshotted. |
 | `--dump-model-files` | Debug only: write the stored model back out as `model/*.json` so `tools/verify_model_parity.py` has something to compare against. No job uses it. |
+| `--help` / `-h` | Print the option list (the `run.py` module docstring) and exit 0. Handled at the top of the file, before `configure_logging`/`chdir`/config load, so it works even with a broken config and writes no log file. |
 | `--config <path>` | Use this config file instead of `engine/config/config.json` — a per-project/per-version config (carries the project's `layers`). Resolved+validated, then exported as `ANALYZER_CONFIG` **before** the import-time config load in `utils`, so every phase subprocess (env inherited) honors it. `config.local.json` is **not** merged on top (used as-is, for reproducibility); a set-but-missing path fails loud. Foundation for incremental per-project runs (§23, M1.1). |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
@@ -1069,11 +1651,13 @@ python engine/run.py [options] <project_path>
 | `--selected-component <name>` | Export a DOCX for the named component only. Repeatable — use once per component to bundle multiple into one DOCX. All named components must be in the same layer. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx` (`_` between names, `-` replaces spaces). Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`. |
 | `--component-per-docx` | Modifier: split group/layer runs into one DOCX per component instead of one per group. Compatible with `--selected-group`, `--selected-layer`, or no selection. Cannot be combined with `--selected-component`. See §4f. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
-| `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. External entries win on conflict. See `engine/config/data_dictionary.csv` for format. |
+| `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. **Project-wide**: its entries answer for every layer. External entries win on conflict. See `engine/config/data_dictionary.csv` for format. **CLI-only — no config key by design** (§17). |
+| `--data-dictionary-layer <layer> <path>` | Same format, scoped to one layer. Repeatable, once per layer. Unknown layer → exit 1, missing file → exit 2. A layer's entries answer **only** for that layer; another layer's dictionary is never consulted. Config equivalent: `layers.<name>.dataDictionary`. |
 | `--project-name <name>` | Override the project name written into `model/metadata.json` as `projectName`. Default: `os.path.basename(project_path)`. Propagates to `model_deriver` (interfaceId fallback segment, LLM knowledge base), flowchart engine, and LLM prompts. |
-| `--macros <path>` | CSV file (columns: `Name`, `Value`; first row is header) passed as `-D` flags to Clang in Phase 1. Rows where `Value` is `"ne"` (case-insensitive) are skipped. Empty `Value` → `-DNAME`; non-empty → `-DNAME=VALUE`. Macros are also written to `model/clang_macros.json` so the Phase 3 flowchart engine picks them up. Sample: `engine/config/macros.csv`. |
-| `--include-path <layer> <dir>` | Add an extra `-I` include directory for the named layer. Repeatable — use once per directory. The directory is merged into `model/clang_include_paths.json` under the named layer key before Phase 1 runs, so Phase 1 and Phase 3 (`_resolve_layer_dirs`) pick it up automatically via existing layer-scoping. Unknown layer → exit 1. Missing directory → exit 1. |
-| `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run (e.g. `single_per_function`) |
+| `--macros <path>` | Macro file passed as `-D` flags to Clang in Phase 1, applied to **every** layer. CSV (`Name`, `Value`; header row) **or** JSON — toolchain dump (`macros_by_cu`), `{"NAME":"VALUE"}` map, `["NAME=VALUE"]` list, or `{"Layer1": {…}}`; shape is detected by content, not extension (`core/macro_input.py`). `Value` `"ne"` (any case) skips the entry; empty → `-DNAME`; function-like names are skipped + logged. Written to `model/clang_macros.json` (scope-keyed) so the Phase 3 flowchart engine picks them up. Sample: `engine/config/macros.csv`. |
+| `--macros-layer <layer> <path>` | Same formats, applied to the named layer only. Repeatable — once per layer. Unknown layer → exit 1, missing file → exit 2. Clang honours the last `-D`, so a layer value overrides a `--macros` global one. Config equivalents: `clang.macrosFile` / `clang.macrosByLayer`; `clang.macroScopes` maps a multi-CU dump's compilation units to layers. |
+| `--include-path-layer <layer> <dir>` | Add an extra `-I` include directory for the named layer. Repeatable — use once per directory. The directory is merged into `model/clang_include_paths.json` under the named layer key before Phase 1 runs, so Phase 1 (`clang_args_for`) and Phase 3 (`_resolve_layer_dirs`) pick it up automatically via existing layer-scoping. **No project-wide form** — an include dir always belongs to a layer. Unknown layer → exit 1. Missing directory → exit 1. Renamed from `--include-path` on 2026-08-18 (§17). |
+| `--filter-mode <mode>` | Override `views.sequenceDiagrams.filterMode` for this run. Forwarded by `group_planner` to Phase 3, where `run_views.py` writes it into the in-memory config. **Live since 2026-08-22** — `SequenceDiagramGenerator._get_filter_mode` reads the key and `create_diagram_selector` maps it to a selector class. Vocabulary: `single_per_function`, `single_per_external_component`, `all_callers`, `multi_unit_functions`, `skip_within_unit` (**default**). Still **unvalidated** — an unknown value falls through the factory's `else` to `skip_within_unit` silently, so a typo degrades instead of erroring. Had **no parse branch in `run.py` until 2026-08-11** — the flag was dead and `--filter-mode X` made `--filter-mode` the project path. |
 | `--trace-prompts` | Print full LLM prompts (system + user) to stdout. Sets `LLM_TRACE_PROMPTS=1` env var. **Warning**: large runs emit tens of MB. |
 | `--quiet` | stderr handler raised to WARNING |
 | `--verbose` | stderr handler lowered to DEBUG |
@@ -1083,12 +1667,28 @@ inherit the same verbosity.
 
 ### Argument parsing
 
-Hand-rolled token-scanning loop in [run.py](run.py) (no `argparse`). Two
-historical bugs are guarded against here:
+Hand-rolled token-scanning loop in [run.py](engine/run.py) (no `argparse`).
+**Strict since 2026-08-11** — the loop has no silent fall-through: a token is a
+known flag, a `-`-prefixed unknown (rejected), or the single positional
+`<project_path>`. Four historical bugs are guarded against here:
 
 1. `--selected-group core` used to leave `core` as a positional after the flag
    was consumed. Fix: each flag explicitly consumes its value (`i += 1`).
 2. `--from-phase` is validated to 1–4 and exits with a clear error otherwise.
+3. **Unknown options** (`elif a.startswith("-")`) exit 1 with `Unknown option: <flag>`
+   plus a `difflib` "did you mean" line (`n=3, cutoff=0.7` — 0.6 suggests `--help`
+   for `--phase`). They used to fall into `raw_args` and be ignored, so
+   `run.py <proj> --phase 3` re-ran the whole pipeline from Phase 1 in silence.
+4. **Extra positionals** (`len(raw_args) > 1`) exit 1 — usually the orphaned value
+   of a mistyped flag. Checked before the path check and before `--clean`, so a bad
+   command line never deletes `model/`/`output/`.
+
+`_KNOWN_FLAGS` (module level) backs both the rejection and the suggestions.
+`tests/unit/test_cli.py` AST-compares it against the flag literals in the parse
+loop, so adding a branch without a `_KNOWN_FLAGS` entry fails the suite.
+
+The phase scripts (`parser.py`, `run_views.py`, `docx_exporter.py`) still ignore
+unknown args — open follow-up; they are only spawned by `group_planner` today.
 
 ### Plan + dispatch
 
@@ -1206,6 +1806,7 @@ Copy `config.local.json.example` → `config.local.json` and fill in `db` + `llm
     "summarize":         false,           // false = suppress Phase 2 hierarchy summarization
     // SECRETS below → put in config.local.json (gitignored), NOT here. baseUrl also if private.
     "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY
+    "rateLimitSeconds":  3.0,             // pause after every OpenAI call (>=0; 0 = off; ollama ignores)
     "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
 
     // version3 — token budgeting
@@ -1271,6 +1872,7 @@ Copy `config.local.json.example` → `config.local.json` and fill in `db` + `llm
 | `LLM_NUM_CTX` | `llm.numCtx` |
 | `LLM_RETRIES` | `llm.retries` |
 | `LLM_API_KEY` | `llm.apiKey` |
+| `LLM_RATE_LIMIT_SECONDS` | `llm.rateLimitSeconds` |
 
 Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 `USER_ID`, `SEND_SYSTEM_NAME` (handled inside `llm_core.headers`).
@@ -1429,7 +2031,8 @@ engine/llm_core/
   client.py              LlmClient + from_config — single HTTP client (ollama + openai)
   headers.py             build_openai_headers + resolve_api_key
   think.py               strip_think_section
-  tokens.py              process-wide token usage counter (record + format_report)
+  tokens.py              per-process LLM call metrics — latency/throttle/outcome/tokens,
+                         stage() attribution, format_report, write_json, merge_dir
   token_counter.py       TokenCounter (tiktoken wrapper + char/3.5 fallback) — version3
   budget.py              ContextBudget + TASK_RATIOS + resolve_max_tokens      — version3
   context_builder.py     ContextBuilder — callee/caller/types degradation ladder — version3
@@ -1469,8 +2072,11 @@ Shared pipeline:
 
 Hard rules baked in for the OpenAI route:
 - A class-level `_OPENAI_LOCK` serialises every OpenAI request process-wide.
-- Every OpenAI call is followed by `time.sleep(3.0)` (`_OPENAI_RATE_LIMIT_SEC`)
-  even on failure, because the corporate gateway throttles ~1 req/3s.
+- Every OpenAI call is followed by `time.sleep(llm.rateLimitSeconds)` even on
+  failure, because the corporate gateway throttles ~1 req/3s. Default `3.0`
+  (`_OPENAI_RATE_LIMIT_SEC`); `0` disables the pause entirely. Ollama never
+  sleeps. Cost: the engine is single-threaded, so this is ~1.5 batches +
+  ~0.25 coherence calls per function ≈ **5.4 s/function** on a flowchart run.
 
 Public properties (version3 adds `num_ctx`):
 `client.provider`, `client.model`, `client.num_ctx` — prefer these over
@@ -1679,13 +2285,47 @@ So legacy `from utils import load_config` still works.
 | `resolve_group(component)` | Component name → group name (from `_GROUP_MAP` built at import) |
 | `norm_path(path, base_path)` | Resolve relative paths against `base_path` |
 | `PRIMITIVES` dict | C++ primitive types → range string |
-| `get_range_for_type(type_str)` | Map type to range; falls back to `NA` |
-| `get_range(type_str, data_dictionary)` | Range lookup with typedef recursion (depth 10) |
+| `get_range_for_type(type_str)` | Map a **known primitive** to a range; anything else `NA`. **Case-sensitive** (2026-08-03) — lowercasing made `Size_t` match `size_t`; `size_t` is matched by exact name, not substring |
+| `get_range(type_str, data_dictionary)` | Range lookup with typedef recursion (depth 10). **`"NA"` on a dd entry means "unknown", not an answer** — see below |
 
 Note: `init_component_mapping` runs at import time using the on-disk config, so
 `make_*_key` works immediately. `parser.py` builds its own folder list from
 the same config via `get_flat_groups` (kept separate to avoid the analyzer's
 import order constraints).
+
+### `get_range` resolution order (2026-08-03)
+
+Ranges reaching the interface tables are resolved **lazily here**, not in Phase 1 —
+`interface_tables` is the only caller (parameters, `returnRange`, globals). Phase 1
+*bakes* a `range` into typedef/struct-field entries with `get_range_for_type()`, which
+never sees the dictionary, so an alias of a project type is stored as `"NA"` even when
+the underlying type has a range (e.g. one supplied later by the external CSV).
+
+Order, for the direct key hit (`dd[base]` / `dd[base.lower()]`):
+1. `range` present and ≠ `"NA"` → return it.
+2. `kind == "typedef"`, `underlyingType` set **and ≠ the entry's own name** → recurse
+   (depth 10); return the result only if it is not `"NA"`.
+3. Otherwise return the entry's own `"NA"` — **do not** fall through to the
+   qualifiedName scan.
+
+The qualifiedName scan (reached only when no key matches) applies the same precedence,
+and first-match still wins.
+
+Two traps this encodes:
+- **Self-referential aliases.** `_maybe_add_typedef_for_struct` stores
+  `underlyingType == the type's own name` (`UINT8 → UINT8`), so recursion needs the
+  `underlying != base` guard or it burns the depth budget doing O(n) scans.
+- **qualifiedName collisions.** The parser emits both `Name` and
+  `typedef@Name:file:line` for the same type (Sample: `GG`×4, `Size_t`, `Rect`,
+  `Widget_t`, `Mode_t`, `DB_TYPE`, `PUBLIC`). Letting a `"NA"` direct hit fall through
+  to the scan lets a *sibling* answer — and the sibling's baked range can be garbage:
+  `get_range_for_type` matches `"size_t" in base` on the lowercased name, so the struct
+  `Size_t {int width; int height;}` has a sibling carrying `0-0xFFFFFFFFFFFFFFFF`.
+  That substring rule is still in `get_range_for_type` (baked into parser output, so
+  fixing it needs a re-parse) — see `docs/BACKLOG.md`.
+
+Tests: `tests/unit/test_utils.py::TestGetRangeBakedNA`,
+`tests/unit/test_data_dictionary_csv.py`.
 
 ---
 
@@ -1710,11 +2350,14 @@ import order constraints).
     directory across all layers. No manual listing in `clang.clangArgs` needed
     for directories already declared in `layers` config.
   - Any extras from `config.clang.clangArgs`.
-  - **User macros** (when `--macros <path>` is set) — reads the 2-column CSV,
-    appends `-DNAME=VALUE` (or `-DNAME` for empty value) for each non-`ne` row,
-    then writes the list to `model/clang_macros.json` so `flowcharts.py` can
-    apply the same flags to the Phase 3 flowchart engine re-parser. Sample:
-    `engine/config/macros.csv` (`VOID,void`).
+  - **User macros** (`--macros <path>` global, `--macros-layer <layer> <path>` per
+    layer, or `clang.macrosFile` / `clang.macrosByLayer` in config) — read by
+    `core/macro_input.py` from CSV or any accepted JSON shape, then written to
+    `model/clang_macros.json` **scope-keyed** (`{"*": [...], "Layer1": [...]}`) so
+    `flowcharts.py` applies the same flags to the Phase 3 re-parser. Args are
+    resolved **per TU** by `clang_args_for(path)` (file → component → layer), not
+    baked into the global `CLANG_ARGS`. Sample: `engine/config/macros.csv`
+    (`VOID,void`).
 
 ### Visibility detection (`_detect_visibility`)
 
@@ -1777,7 +2420,76 @@ The initializer value is extracted by scanning the source line for `=`.
 Builds `data_dictionary`:
 - `STRUCT_DECL` / `CLASS_DECL` with field list
 - `ENUM_DECL` with enumerators and computed range
-- `TYPEDEF_DECL` with underlying type and range lookup
+- `TYPEDEF_DECL` with underlying type (`_typedef_underlying`) and range lookup
+
+**`_typedef_underlying(cursor)` (2026-08-03).** `cursor.type` on a `TYPEDEF_DECL` is
+the typedef type *itself*, so its spelling is the alias's own name — never what it
+aliases. Reading it (the pre-2026-08-03 behaviour) made **every** typedef
+self-referential with `range: "NA"`, so every typedef'd parameter printed `NA` in the
+Data Range column. Now uses `cursor.underlying_typedef_type`, then strips elaborated
+keywords (`struct `/`enum `/`union `/`class `) via `_ELABORATED_RE` so the value works
+as a dataDictionary key:
+
+| source | before | after |
+|---|---|---|
+| `typedef unsigned char UINT8;` | `UINT8` | `unsigned char` |
+| `typedef int UNIT;` | `UNIT` | `int` |
+| `typedef enum {…} Mode_t;` | `Mode_t` | `Mode_t` (from `enum Mode_t`) |
+| `typedef struct {…} Widget_t;` | `Widget_t` | `Widget_t` (from `struct Widget_t`) |
+
+The anonymous enum/struct forms stay self-referential **on purpose** — the unit header
+table looks `underlyingType` up in the dictionary to print the enumerator list
+(`docx_exporter._build_unit_header_table`, `api/services/doc_render.py:281`), and an
+elaborated `"enum Mode_t"` would miss.
+
+`_maybe_add_typedef_for_struct` stores `range: "NA"` rather than
+`get_range_for_type(qn)` — its `underlyingType` is the type's own *name*, so deriving a
+range from it reads a range out of a type name (`"size_t" in "Size_t"` stamped
+`0-0xFFFFFFFFFFFFFFFF` on a `{int width; int height;}` struct).
+
+### Where a data range comes from (precedence, 2026-08-03; layer scoping 2026-08-18)
+
+**Scope is resolved before precedence.** `get_range(type, dd, layer)` first decides *which
+entries may answer at all*: the layer's own (`name@<layer>`, or a bare entry stamped with
+that layer) and the global tier (`layer: None` — builtins, `PRIMITIVES`, the project-wide
+CSV). **Another layer's entry is never eligible**, at any of the three lookup paths. Only
+among the eligible entries does the order below apply. `layer=None` disables the filter
+entirely, which is what keeps every layer-unaware caller behaving as before.
+
+Highest wins. The order is enforced by *when* each source runs in Phase 1, not by
+branching logic:
+
+1. **External CSV** — merged last (`_merge_dd_rows`), so it overrides everything *within its
+   scope*. This is why ranges must NOT be frozen onto each parameter in `functions.json`:
+   parameters are collected before the merge, and a baked parameter range would make
+   `--data-dictionary` unable to override anything.
+2. **libclang** — `_range_from_clang_type(ctype)`: `get_canonical()` walks the typedef
+   chain to the real builtin, `get_size()` gives its width **for the parsed target**
+   (`long` = 4 bytes on Windows, 8 on Linux — the table below cannot express that).
+   `VOID` for void, `0-1` for bool, `NA` for structs/enums/pointers/floats.
+   `_register_builtin_range(ctype)` runs for every parameter / return type / global /
+   field and records the range under the type's **canonical** spelling
+   (`unsigned char`, `long`) — never the written spelling, which would let a `UINT8`
+   parameter overwrite the `UINT8` *typedef* entry with a primitive one and lose the
+   location the unit header table needs. It also refuses to shadow a non-primitive.
+3. **`PRIMITIVES` table** — seeded with `setdefault` (not assignment), so it fills gaps
+   without overwriting a measured value.
+4. **`get_range_for_type(name)`** — last resort for CSV-authored or unparsed types.
+5. `NA`.
+
+Consequence: the **dataDictionary is the single registry**; views keep resolving by type
+name (`get_range(p["type"], dd)`) and need no libclang, no schema change, and no
+`functions.json` churn.
+
+**Coverage log.** `interface_tables.run()` logs one line per group —
+`data ranges: 64/65 resolved, 1 NA (int[6] x1)` — via the pure helpers
+`_range_coverage` / `_format_range_coverage`. Deliberately a log, **not** a per-entry
+`rangeSource` field: nothing renders `directionReason` into the DOCX either, so a
+provenance field would ride on every row and churn the snapshot for an audit aid with no
+reader. To trace one type, see the precedence above or query `model/dataDictionary.json`
+directly.
+
+Tests: `tests/unit/test_typedef_underlying.py`.
 - Special pattern: `_maybe_add_typedef_for_struct` adds a typedef entry when
   the source uses `typedef struct { ... } Name;`
 
@@ -1836,15 +2548,144 @@ Final model key: `component|unit|qualifiedName|paramTypes`.
 - `qualifiedName` includes namespace + class.
 - `paramTypes` is the comma-joined list of normalised parameter type strings.
 
+> **Never change `get_qualified_name`.** Every fid is built from it, so any change re-keys
+> the whole model — breaking interface IDs, the fid-keyed hidden-function rows in
+> `api/db/json_db.py`, and every incremental baseline. To surface more of a symbol's scope,
+> add a separate field (see `className` below), never widen `qualifiedName`.
+
+### `className` — class scope for display (2026-08-08)
+
+Interface tables built every Name cell with `short_name()`, which keeps only the last `::`
+segment. `AddOperation::apply` and `MultiplyOperation::apply` — two real methods in unit
+`Cross|Dispatch` of SampleCppProject — both rendered as `apply`, indistinguishable.
+
+The class *is* in `qualifiedName`, but that string cannot be split back into namespace vs
+class parts (`pos::QosEventManager::_RateLimit` — is `pos` a namespace or an outer class?).
+So the class is captured separately at parse time, where the cursor's `semantic_parent`
+kinds are still known:
+
+- `parser.get_class_scope(cursor)` — walks `semantic_parent` keeping only `CLASS_DECL`,
+  `STRUCT_DECL`, `CLASS_TEMPLATE` and its partial specialization. Namespaces and
+  empty-spelling parents are dropped. Nested classes join as `Outer::Inner`; `""` for free
+  functions. Stored as `className` on functions and globals.
+- `utils.scoped_name(qualifiedName, className)` — the display form, `ClassName::foo`.
+  Falls back to `short_name()` when `className` is absent, so models parsed before this
+  existed render as they did rather than half-qualified.
+
+**`CLASS_TEMPLATE` is matched here but not by `get_qualified_name`** — a template class's
+method therefore has a *bare* `qualifiedName` (`run`, not `Foo::run`), with the class
+already lost upstream. `get_class_scope` recovers it, so the rendered name is still
+`Foo::run`. Template arguments are not in the spelling, so `Foo<int>::run` and
+`Foo<char>::run` both read `Foo::run`; mangled names still keep them apart in the model.
+
+**Where it shows:** interface-table cells, DOCX per-function headings, flowchart table
+titles + signatures, behaviour subheaders, and the API's `class_name` field for the hide
+list. **Where it does not:** flowchart diagram nodes and behaviour message arrows stay
+short — qualifying every arrow re-creates the label crowding the static diagram already
+suffers from.
+
+**`name` vs `interfaceName`.** Interface-table entries keep `name` **short**, because
+downstream code uses it as a lookup key (flowchart stems, behaviour rows); `interfaceName`
+carries the qualified display form. Don't collapse the two.
+
+Three genuine short-name collisions were fixed alongside (wrong-function bugs, not
+cosmetics): `doc_render` looked flowcharts up by short name although they are keyed by
+`qualifiedName`, so **class methods silently got no flowchart in the web preview**;
+behaviour Input/Output labels were resolved by first short-name match within a unit, so
+both `apply` sections got the first one's labels; and hiding was matched against a
+short-name-per-unit set, so hiding one `apply` suppressed every `apply` in the unit. All
+three now key on the fid or `qualifiedName`. Behaviour rows carry `currentFunctionId` and
+`currentFunctionDisplay` for this, with the old short-name path kept as a fallback for
+artifacts written before those fields existed.
+
+### Address-taken functions are public (2026-08-08)
+
+`_fn_is_private` (`model_deriver.py`) equates "public" with "has a caller in another file".
+A layered-firmware entry point reached only through a registration table has
+`calledByIds == []`, so it was relabelled `visibility: "private"`, given a `PIF_` id, and
+dropped from the interface table (`views/interface_tables.py`) and behaviour diagrams —
+missing from the very ASPICE artifact it belongs in. The parser detected **no** address-of-
+function usage at all.
+
+**Rule: a function named in a file-scope array/struct initializer is public.**
+
+```c
+static const fp_t table[] = { fn1, fn2 };   // detection point
+table[0]();                                 // the reason — NOT resolved
+```
+
+Which entry `table[0]()` reaches is statically unknowable and is deliberately not resolved
+(the long-standing documented limitation stands). Membership in the table is sufficient
+evidence on its own.
+
+The rule is by **shape, not by file**: a file-scope initializer counts even when the table
+sits in the same `.c` as the function — the canonical firmware pattern, which a cross-file
+rule would have missed entirely. An **in-body** take (`p = &helper;`) is different: it
+becomes an ordinary `call_graph` edge, so the existing cross-file caller rule applies
+unchanged and a locally-used comparator stays private.
+
+- `parser._walk_address_taken(cursor, on_hit, in_callee=False)` — a bare function name used
+  as a value is a take; the same name in **callee position** is not. clang wraps a call's
+  callee as `CALL_EXPR → UNEXPOSED_EXPR → DECL_REF_EXPR`, so the suppression flag propagates
+  through `_CALLEE_WRAPPER_KINDS`. **If it ever stops propagating, every direct call reads
+  as an address-take.** The exposure is the file-scope path (which ignores the file rule):
+  `static int g = compute();` would wrongly publish `compute`. Guarded by a fixture and a
+  test; only *resolved* `referenced` cursors count — never the spelling-match fallback used
+  for calls, or any identifier sharing a function's name would qualify.
+- Hooked in `visit_definitions` (both the file-scope `VAR_DECL` branch and each function
+  body) rather than `visit_calls`, so the rule lives in one place and the call visitor's hot
+  loop is untouched. `_get_var_init_value` only slices one declaration line, so a multi-line
+  table is invisible to it — the AST walk is what actually sees these.
+- `addressTakenByUnits` on the function = the registering unit **plus the units that read
+  the table**. The consumers matter more: the table usually lives in the same unit as the
+  function it publishes, and `_keep_unit` filters the own unit out of Source/Destination.
+  Readers are matched by the global's **qualified name**, not var id, so an `extern`
+  redeclaration in the consuming file (its own cursor, its own var id) still resolves.
+- `_fn_is_private` gains a third escape clause, ranked **below** the explicit `PRIVATE`
+  annotation — a source-level marking stays authoritative.
+- Consumed by `interface_tables` (Source/Destination) and `unit_diagrams` (edge).
+- Persisted to `model/address_taken.json` (`ADDRESS_TAKEN`, not in `ALL_MODEL_NAMES`) and
+  replayed by `incremental/parse_merge._merge_address_taken` + `_apply_address_taken`,
+  mirroring `override_pairs`. **Also added to `_PARSE_ARTIFACTS` (`incremental/engine.py`)
+  and `_PARSE_SNAPSHOT_FILES` (`incremental/generate.py`)** — miss either and a narrowed
+  parse silently demotes the function back to private, so the same source produces a
+  different document run to run.
+
+**Known consequence:** `_build_interface_index` numbers public and private separately, so
+each function flipped private→public shifts `IF_*_NN` for the rest of its unit. Client docs
+cite those IDs; a version diff will show the renumbering.
+
+Fixture: `SampleCppProject/Layer1/Poly/OpsTable.cpp` (table + ops, deliberately plain
+`static` not `PRIVATE`, plus an `opsSeed()` call-in-initializer false-positive guard) and
+`OpsClient.cpp` (a different unit consuming the table via `extern`). Verified: `opsAdd`/
+`opsSub` get `IF_` ids with Source/Destination `Cross/OpsClient`; `opsSeed` stays private.
+
 ### External data dictionary merge
 
-After `_scan_defines()` and before writing `dataDictionary.json`, if `--data-dictionary <path>` was passed (or `dataDictionaryPath` is set in config), `_merge_external_data_dictionary(path)` is called:
+After `_scan_defines()` and before writing `dataDictionary.json`, every source in `_dd_sources` is merged by `_merge_dd_rows(path, layer)` (`_merge_external_data_dictionary(path)` is the thin project-wide wrapper the tests drive). Sources in order — **config first, CLI second**, matching the macro block:
+
+1. `layers.<L>.dataDictionary` — config, scoped to that layer
+2. `--data-dictionary <path>` — CLI, project-wide
+3. `--data-dictionary-layer <layer> <path>` — CLI, repeatable, scoped
+
+**The project-wide dictionary is CLI-only — it has no config key, by design.** Every entry point already passes it as a flag: `run.py` from `--data-dictionary`, and the API/incremental path from `currentDataDictId` → `ws.datadict_path(...)` → `--data-dictionary` (`incremental/generate.py:214`). A config key would be a second, silent source for the same input. Config carries **per-layer** dictionaries only.
+
+A layer's rows never touch another layer's entries: `_dd_target_key()` writes the bare name only when the slot is free or already that layer's, and `name@<layer>` when the global tier or another layer holds it. So "last wins" applies **within one scope only**. In the API/incremental path the project-wide CSV still arrives from `currentDataDictId` → `ws.datadict_path(...)`. Because the merge happens inside Phase 1, these are a **silent no-op with `--from-phase 2+` or `--use-model`**; changing a CSV requires a re-parse.
 
 - Reads a CSV with columns: `Name, Kind, EntryName, Range, Comment`.
 - **Top-level rows** (non-empty `Name`): copy existing auto-parsed entry, overwrite `kind`/`range`/`comment` from CSV, reset `enumerators`/`fields` list if the kind uses them.
 - **Child rows** (empty `Name`, Kind=`enumerator` or `field`): carry forward the last non-empty `Name` as parent key and append `{name: EntryName, value/range, comment}` to the parent's list. Empty `Name` matches Excel merged-cell CSV exports.
 - External entries win on conflict. New entries (not in parsed source) are added as-is.
 - `location` and other auto-parsed fields are preserved on updated entries via `dict(existing)` copy.
+- A range set here reaches the interface tables through `utils.get_range`, including via an alias whose own range was baked `"NA"` — see [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03). `fields[].range` inside a struct entry is **re-answered after every CSV** by `_reresolve_struct_field_ranges()` — it is baked during the parse from the canonical clang type, long before the CSV is read, so a `BOOL32` field kept `0-0xFFFFFFFF` while the CSV set the `BOOL32` *type* to `0-1`. Only two cases are re-answered: baked range is `"NA"`, or the field's base type was named by a CSV **visible to that entry's layer** (`_csv_top_level_names`, keyed by layer) — a measured width outranks anything name-derived. Derived spellings (`*`, `&`, `[`, `(`) are skipped unless CSV-named, so a `const char *` keeps `NA` instead of taking a signed-char range from its pointee. The lookup is layer-scoped (`get_range(ftype, dd, entry.layer)`).
+- **Merge report** (`_format_csv_merge_report`): after the count, the parser prints which rows landed on a parsed type and which were **new, not found in source**. A typo'd or renamed type name is otherwise silently added as its own entry and looks identical to a successful override. Orphan child rows (no `Name` above them) are counted too, as are **duplicated Names** (last row wins, and the earlier entry's `enumerators`/`fields` are reset out from under it) and **rows dropped for an empty `Name` on a non-child `Kind`** — a merged-cell Excel export becomes a file of these, and they were previously counted in neither `merged` nor the orphan tally. matched-vs-new is decided against a snapshot taken **before** the row loop, so the second row of a duplicated Name cannot see what the first wrote and be mis-filed as a successful override. The function **returns** its lines as well as logging them, so the counting is assertable in tests. The line is prefixed `[<layer>]` for a layer-scoped source.
+  ```
+  data dictionary: merged 6 entries from data_dictionary.csv
+      4 matched a parsed type: DB_TYPE, Status, Color, GG
+      2 new, not found in source: MotorSpeed_t, Voltage_t
+      1 name(s) appear on more than one row (last row wins): BOOL32
+      3 row(s) dropped: empty Name on a row that is not Kind=enumerator/field
+  ```
 
 ### Outputs
 
@@ -2124,13 +2965,66 @@ Full logic and layout rules: `docs/spec/SWE3_SPEC.md` — Unit Diagrams (REQ-UD-
   once model-wide. 3.6 owner-orientation is unchanged; it now operates over the reduced
   (caller-only) edge set.
 - The main unit is **blue with a thick border** (`mainUnit` class); sibling units in the module subgraph are blue thin (`internal` class).
-- Edges labelled with `interfaceId` values, `<br/>`-separated for multi-edge.
+- Edges labelled with `interfaceId` values, **blank-line separated** for multi-edge
+  (`_edge_label` / `_LABEL_SEP` — see "Edge-label spacing" below).
 - Self-calls (callee in the same unit) produce no edge.
+- Functions published by a function-pointer table (`addressTakenByUnits`) also draw an
+  edge to the registering/consuming unit — they have no caller function, so without it
+  the relationship would never be drawn.
 - Project root resolved from `dirname(model_dir)` (NOT `output_dir`) so
   grouped output paths work.
 - PNG rendered by `mmdc` (mermaid-cli). 60s timeout per diagram.
 - Header uses the **ELK renderer** (`%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%`).
   See **"ELK renderer everywhere"** below for the rationale and the version caveats.
+
+#### Edge-label spacing — the ELK options are a no-op here (2026-08-08)
+
+Reported: *"function mapping is difficult to read in the Static Diagram, there is less
+space between the lines/labels."* REQ-UD-05 puts every interface id for a unit pair on ONE
+arrow, so a busy edge stacks 10+ ids in a single label; joined with a bare `<br/>` they
+render as contiguous rows with no leading.
+
+**Measured, do not re-litigate.** Rendering `Sample-Core_Core` (edges of 1 / 10 / 7 ids)
+through the pinned mermaid **10.9.5**:
+
+| variant | PNG |
+|---|---|
+| baseline | 1374 × 700 |
+| `elk.spacing.edgeEdge` + `edgeLabel` + `edgeNode` + `nodeNode` + `layered.spacing.*` | **1374 × 700 — byte-identical** |
+| blank-line label separator (text only) | 1374 × 1270 |
+| both | 1374 × 1270 |
+
+Mermaid 10.9.5 **silently ignores** the `elk.*` spacing options, so no config block was
+added — it would be dead weight that reads as if it does something. Spacing lives in the
+**graph text**, in `_edge_label(ifaces)`.
+
+**The whitespace goes between GROUPS, not between rows.** ELK lays every edge's label out in
+one column, so a uniform blank line between rows still let two arrows' ids run together —
+the reader could see each id but not where one arrow's group ended. Ids on the SAME arrow
+stay tight (`_ROW_SEP = "<br/>"`) and each label is padded above and below
+(`_GROUP_PAD_ROWS = 2`), so Mermaid's grey label background reads as one block per arrow.
+Padding rows are a single space; an empty string renders as no row at all.
+
+The blank-line node-padding hack (`n_extra_lines`) was deliberately **left keyed to edge
+count**. Re-keying it to label height was tried and rejected: padding of 10 and 18 lines
+both rendered byte-identically to none, because once labels are tall the label column —
+not the node — sets the height. Only an absurd 36 lines moved it, and that draws the unit
+as a grotesque tall bar.
+
+Not changed, per the user: no label splitting (REQ-UD-05 mandates the shared arrow), no id
+capping (the diagram stays complete), no DOCX width change, and diagram height is
+explicitly not a concern. A `to <partner>` header on each block was tried and **reverted**
+(`76fa866` / `fb281cb`) — the ask was spacing, not relabelling.
+
+**Private functions are now skipped when building edges.** `interface_tables.py` skips
+`visibility == "private"`, but this view never did, so a function annotated `PRIVATE` in
+source that still has cross-unit callers (explicit annotation wins in `_fn_is_private`) drew
+an edge labelled with a `PIF_*` id that appears in no table — e.g. `PIF_LAYER1_FULL_
+READWRITE_01/02`, `PIF_LAYER1_FULL_POINTRECT_01`, `PIF_LAYER1_FULL_TYPES_01`, all called
+from `App|Main`. Table and diagram now agree.
+
+`render_mermaid_cached` is content-addressed on the Mermaid text, so changed text
+re-renders automatically; no cache wipe needed.
 
 #### ELK renderer everywhere (2026-07-14)
 
@@ -2164,6 +3058,51 @@ component diagrams in [src/docx_exporter.py](src/docx_exporter.py)). Flowcharts
 Generates one `.mmd` per (current function, external caller) pair via
 `SequenceDiagramGenerator` in the
 [engine/behaviour_diagram/](engine/behaviour_diagram/) package.
+
+> **behaviour diagram package replaced — 2026-08-22** (branch `fix/behaviour-diagram`, off `poc-4`; commit
+> `9a22f0c` = the transcribed drop-in, later fixes uncommitted). All 7 modules (`generator`, `selector`,
+> `tracer`, `mermaid_builder`, `llm_call_description`, `cli`, `utils`) were replaced wholesale with an
+> external version; `__init__.py` was left as-is and still matches. What changed that callers care about:
+> **(1) `filterMode` is now consumed** — `_get_filter_mode` reads `views.sequenceDiagrams.filterMode`,
+> `create_diagram_selector` maps it to one of 5 selector classes. **Default changed** from the old
+> `default`→`AllExternalCallersDiagramSelector` to **`skip_within_unit`**, which emits a diagram only when
+> the target's own component spans 2+ units. On `SampleCppProject` (3 units, 3 separate components) that
+> means **0 diagrams by default** where the old code produced 11 — verified, not theoretical. The old mode
+> vocabulary (`all_external_callers`, `single_external_module`, `single_function`, `multi_unit_function`,
+> `default`) is **gone**; those strings now fall through to `skip_within_unit` silently.
+> **(2) `generate_all_diagrams` return shape changed** `List[str]` → `List[List[str]]` (one description
+> list per diagram). This **fixes a silent docx bug**: `_add_behavior_description_table` guards on
+> `isinstance(..., list)`, so the old string made the Requirements cell render **empty** in every Dynamic
+> Behaviour table. **(3) `skip_within_unit` bridges** — `tracer.trace_forward_within_component` threads an
+> `origin` arg so a skipped intra-unit hop re-attributes the downstream cross-unit edge to the last real
+> boundary instead of orphaning it. The reachability filter in `generate_diagram_for_caller` is now
+> redundant (its own comment says so) and prunes nothing.
+> **(4) LLM path rewired to `llm_core`** — the transcribed code imported `_ollama_available` / `_call_llm`
+> from `llm_client`, a module deleted in the version2→version3 refactor (it was `src/llm_client.py`, renamed
+> to `engine/llm_enrichment.py`; `_ollama_available`→`llm_provider_reachable`, `_call_ollama`→`_call_llm`).
+> Both imports failed → `except ImportError` → every description silently fell back to `"X calls Y"`.
+> `CallDescriptionGenerator` now builds a real `LlmClient` via `from_config(load_llm_config(config))` into
+> the `self._llm_client` field the code already declared but never used, gates on
+> `llm.descriptions and llm_provider_reachable(...)` (same pattern as `docx_exporter.py:404`), calls
+> `.generate()` inside `tokens.stage("behaviour.call_description")` so calls appear in the LLM report, and
+> passes `_get_domain_context(config)` as the system prompt for Task 3.14 anchoring. `except ImportError`
+> widened to `except Exception` — `llm_provider_reachable` **raises** `LlmConfigError` on a config missing
+> `llm.defaultModel`, which would otherwise kill the whole view.
+> **(5) A behaviour description is *call*-specific and is NOT the callee's function description.** Both the
+> old code and an interim fix here used `functions_data[calleeFn]["description"]` as a fallback; that is
+> wrong — it answers "what is this function" where the table asks "why does this caller call it", and the
+> docx already prints the function description at `docx_exporter.py:1072/1143/1726`. Fallback chain is now
+> **LLM call-description → `"X calls Y"`**, both call-shaped.
+> **Bugs fixed in the transcribed code** (it did not run as delivered): `generator.py:322` joined unit ids
+> with `_` while `mermaid_builder.py:247` splits on `/` → `IndexError` in **all 5 modes**;
+> `generator.get_selection_summary` never returned `summary`; `SkipWithinUnitDiagramSelector.get_selection_summary`
+> called `_get_units_in_call_chain`, which only exists on `MultiUnitFunctionDiagramSelector`.
+> **Tests:** [tests/unit/test_behaviour_diagram_package.py](tests/unit/test_behaviour_diagram_package.py) —
+> 19 tests, the package's first coverage. Mutation-checked: reintroducing the `_`/`/` bug fails 12 of 19.
+> Note `tests/unit/test_behaviour_diagram_generator.py`, described in the test-inventory table below, **does
+> not exist** — that row is stale.
+> **Known gap:** `generator.py` was transcribed from screenshots that ended at line 460; the closing
+> `return summary` is reconstructed, and anything after it is unknown.
 
 - Filtered to `allowed_modules` (only generates diagrams for functions inside
   the selected group, but uses the full model so external callers outside the
@@ -2230,8 +3169,31 @@ Wraps the **real flowchart engine** under `engine/flowchart/`. Steps:
 
 ## 13. The flowchart engine — `engine/flowchart/`
 
-A self-contained C++ → Mermaid CFG generator. Invoked as a subprocess by the
-`flowcharts` view but can also run standalone.
+A self-contained C++ → Graphviz **DOT** CFG generator (switched from Mermaid
+2026-07-27; the `FlowchartResult.mermaid_script` field name is kept for schema
+compat but carries DOT). Invoked as a subprocess by the `flowcharts` view but
+can also run standalone.
+
+### Label policy (2026-08-10)
+
+**A label is descriptive prose that names every function the node calls, each
+written `Name()` with arguments stripped.** Held constant: the content (every
+call present, uniform `Name()` form). Not constant: the phrasing — the name
+goes where the code puts it, because `via X()` misattributes the action
+whenever the callee only supplies an object rather than performing the work.
+
+| C++ shape | What the call does | Label |
+|---|---|---|
+| `sz = functionJ();` | supplies a value | Get somethingZ by calling `functionJ()` |
+| `functionX()->timeSlot = False;` | supplies the object written | Set the time slot in `functionX()` to False |
+| `sa = &functionA()->sa;` | supplies the object read | Update sa with the address of sa in `functionA()` |
+| `ServerReplicate(part, id);` | **is** the action | Replicate partition state with `ServerReplicate()` |
+
+Enforced in three places that must agree, all keyed off
+[cpp_tokens.py](engine/flowchart/cpp_tokens.py): the enricher declares
+`call_names`, the prompt requires every one of them, and
+`enforce_call_names` verifies/repairs afterwards. **Not named** (each has its
+own prompt rule): logging macros, assertions, casts, constructors.
 
 ### Subpackage layout
 
@@ -2240,6 +3202,8 @@ engine/flowchart/
   flowchart_engine.py        Main entry, orchestrates per-function pipeline
   project_scanner.py         Standalone scanner that builds project_knowledge.json
   config.py                  EngineConfig dataclass (CLI defaults)
+  cpp_tokens.py              Single definition of "a call": CPP_KEYWORDS,
+                             extract_call_names / render_call / short_name
   models.py                  CfgNode / CfgEdge / ControlFlowGraph / FunctionEntry / …
   ast_engine/
     parser.py                SourceExtractor + TranslationUnitParser
@@ -2295,6 +3259,12 @@ engine/flowchart/
    `tests/diagnose_assert.py`** — the linter has previously reverted this fix.
 6. **Enrichment** — `NodeEnricher.enrich(cfg, func_entry)` attaches PKB
    context (callee descriptions, type meanings, project-knowledge comments).
+   Also emits **`call_names`** — every call in the node via
+   `cpp_tokens.extract_call_names`, in source order, receiver kept
+   (`doc.AddMember`), with known type names excluded so constructors don't
+   register as calls. This is the list the label naming rule is written
+   against; `function_calls` is a PKB-resolved subset capped at 3 and carries
+   descriptions only.
 7. **Optional CFG simplification** (version3) — if
    `llm.enrichment.cfgSimplification=true` and the CFG has >15 labelable
    nodes, `LabelGenerator._simplify_cfg()` asks the LLM for a merge/drop
@@ -2333,9 +3303,27 @@ engine/flowchart/
    `_fits_coherence_budget()` using the authoritative
    `self._max_context_tokens` — no more `getattr(client, "_num_ctx", 8192)`
    fallback.
+9b. **Call-name enforcement** — `generator.enforce_call_names(cfg)`,
+    deterministic, no LLM. Runs **last**, after the coherence pass, so a
+    coherence rewrite can't strip a name back out. Two steps per node:
+    normalise existing mentions to `Name()` (arguments stripped, bare
+    identifiers parenthesised), then append names with no mention at all as a
+    trailing `<br/>Calls: X()` segment. The appended form is deliberately not
+    a connector phrase — the pass can't know where the name belongs in the
+    sentence, and inventing one produces the mechanical "… via X()" filler the
+    prompt forbids. **Prose safety:** a bare word is only converted when
+    `_is_identifier_shaped` says it can't be English (qualified/member,
+    snake_case, or an internal capital), otherwise "Validate the request"
+    becomes "Validate() the request"; ambiguous bare words count as absent and
+    are appended instead. Also normalises the raw-C++ fallback labels
+    (`result = add(result, a)` → `result = add()`). A per-function append count
+    is logged — a high count means the prompt isn't landing, which is the thing
+    to fix, not this pass.
 10. **Validation** — `validate_cfg(cfg)` then `validate_mermaid(script)`.
     Failures are logged at WARNING but don't abort the run.
-11. **Build Mermaid** — `build_mermaid(cfg)`.
+11. **Build DOT** — `build_dot(cfg)`. (`_escape` turns `<br/>` into the DOT
+    line-break sequence, which is how the enforcement pass's appended segment
+    renders.)
 
 ### `LIBCLANG_PATH` env var (feat/test-framework)
 

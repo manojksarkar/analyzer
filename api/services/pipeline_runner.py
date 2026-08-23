@@ -629,6 +629,14 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     if layers:
         cfg["layers"] = layers
 
+    # Preprocessor definitions -> a macro file the engine reads via clang.macrosFile.
+    # The wizard stores them as JSON (manual list or an upload reference); without
+    # this they never reached Clang at all.
+    macros_file = _materialize_macros(bc.get("preprocessor_definitions"), workspace_dir)
+    if macros_file:
+        cfg.setdefault("clang", {})
+        cfg["clang"]["macrosFile"] = str(macros_file)
+
     # noLlm — disable per-entity LLM (descriptions + behaviour names), mirroring
     # apply_no_llm. Phase summarization is disabled via --no-llm-summarize in _build_cmd.
     if no_llm:
@@ -658,6 +666,31 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     return out_path, analysis_cfg
+
+
+def _materialize_macros(defs: Any, workspace_dir: Path) -> Optional[Path]:
+    """Resolve build_config.preprocessor_definitions to a file on disk, or None.
+
+    `mode: "manual"` writes the wizard's ``["NAME=VALUE", ...]`` list next to the
+    per-project config; `mode: "upload"` returns the stored upload (CSV or any of
+    the JSON shapes engine/core/macro_input.py reads) as-is.
+    """
+    if not isinstance(defs, dict):
+        return None
+
+    mode = str(defs.get("mode") or "manual").lower()
+    if mode == "upload":
+        from ..routes.repositories import resolve_upload
+        return resolve_upload(str(defs.get("file_id") or ""))
+
+    entries = [str(d).strip() for d in (defs.get("defines") or []) if str(d).strip()]
+    if not entries:
+        return None
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    out_path = workspace_dir / "macros.json"
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(entries, f, indent=2)
+    return out_path
 
 
 def _convert_layers(arch_layers: list) -> dict:
@@ -774,7 +807,6 @@ def _build_cmd(
     to_phase: Optional[int] = None,
     use_model: bool = False,
     arch_layers: list = (),
-    project_name: str = "",
     model_root=None,
     output_root=None,
     model_store=None,
@@ -828,12 +860,12 @@ def _build_cmd(
                    / "datadict" / f"{ddid}.csv")
         if dd_path.is_file():
             cmd += ["--data-dictionary", str(dd_path)]
-    # The DOCX project name comes from the PROJECT, not the version (D-3): a version is
-    # an identifier, so re-exporting a different version must not change the document
-    # title. (The main generate path already passes project.name — this aligns re-export.)
-    if project_name:
-        cmd += ["--project-name", project_name]
-    # Extra include paths from architecture_layers.lib_paths (--include-path <layer> <abs_dir>)
+    # The DOCX project name is the job's VERSION TAG, not the project name. This reverses the
+    # earlier D-3 decision deliberately: re-exporting v1 and v2 now yields documents titled
+    # "v1.0" and "v2.1" rather than both carrying the project name.
+    if getattr(job, "version_tag", None):
+        cmd += ["--project-name", job.version_tag]
+    # Extra include paths from architecture_layers.lib_paths (--include-path-layer <layer> <abs_dir>)
     for layer in arch_layers:
         if not isinstance(layer, dict):
             continue
@@ -843,7 +875,7 @@ def _build_cmd(
         for lp in (layer.get("lib_paths") or []):
             lp = str(lp).strip()
             if lp:
-                cmd += ["--include-path", lname, str(checkout_dir / lp)]
+                cmd += ["--include-path-layer", lname, str(checkout_dir / lp)]
     cmd.append(str(checkout_dir))
     return cmd
 
@@ -1632,7 +1664,7 @@ def _do_reexport(db: Any, job_id: str) -> None:
             _store_kind = None
 
     cmd = _build_cmd(job, cdir, config_path, from_phase=4, use_model=True,
-                     arch_layers=arch_layers, project_name=(getattr(project, "name", "") or ""),
+                     arch_layers=arch_layers,
                      model_root=adir / "model", output_root=adir / "output",
                      model_store=_store_kind, version_id=_vid if _store_kind else None)
     if _execute_subprocess(db, job_id, cmd, phase_start=4):

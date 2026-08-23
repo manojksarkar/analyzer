@@ -191,7 +191,7 @@ All endpoints except `/auth/signin` and `/auth/refresh` require
 | POST | `/repositories/validate` | Validate repo URL + credentials |
 | GET | `/repositories/refs` | List branches and tags |
 | GET | `/repositories/commits` | List commits on a branch |
-| POST | `/repositories/upload` | Upload data dictionary / macros CSV |
+| POST | `/repositories/upload` | Upload data dictionary (`.csv`/`.xlsx`) or macros (`.csv`/`.json`) |
 
 ### Commits & Versions
 

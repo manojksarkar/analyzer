@@ -357,6 +357,7 @@ def list_functions(
                 "layer": f.layer, "group": f.group,
                 "is_visible": f.is_visible, "is_new": f.is_new,
                 "description": f.description,
+                "class_name": f.class_name,
             }
             for f in functions
         ],

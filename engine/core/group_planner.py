@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .orchestration import Phase
 from .paths import paths
@@ -93,7 +93,9 @@ def _unknown_group_message(names, groups_cfg: Dict[str, Any], group_names) -> st
 
 def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
                         data_dictionary_path: Optional[str] = None,
+                        data_dictionary_layer: Optional[List[Tuple[str, str]]] = None,
                         macros_path: Optional[str] = None,
+                        macros_layer: Optional[List[Tuple[str, str]]] = None,
                         selected_group: Optional[str] = None,
                         selected_layer: Optional[str] = None,
                         project_name: Optional[str] = None,
@@ -104,10 +106,15 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
     parser_args = [project_path]
     if data_dictionary_path:
         parser_args += ["--data-dictionary", data_dictionary_path]
+    for _layer, _path in (data_dictionary_layer or []):
+        parser_args += ["--data-dictionary-layer", _layer, _path]
     if macros_path:
         parser_args += ["--macros", macros_path]
+    for _layer, _path in (macros_layer or []):
+        parser_args += ["--macros-layer", _layer, _path]
     # One flag per group: a scope may name several (--scope group:App,Math), and the parser
-    # unions their layers. Group and layer selection stay mutually exclusive, as before.
+    # unions their layers. Group and layer selection stay mutually exclusive, as before —
+    # the `elif selected_layer` below depends on this staying an if/elif chain.
     _groups = ([selected_group] if isinstance(selected_group, str)
                else list(selected_group or []))
     if _groups:
@@ -138,7 +145,8 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
                         selected_group: Optional[str] = None,
                         filter_mode: Optional[str] = None,
                         extra_view_args: Optional[List[str]] = None,
-                        docx_args: Optional[List[str]] = None) -> List[Phase]:
+                        docx_args: Optional[List[str]] = None,
+                        selected_units: Optional[List[str]] = None) -> List[Phase]:
     views_args: List[str] = []
     if output_dir:
         views_args += ["--output-dir", output_dir]
@@ -146,6 +154,8 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
         views_args += ["--selected-group", selected_group]
     if filter_mode:
         views_args += ["--filter-mode", filter_mode]
+    for _unit in (selected_units or []):
+        views_args += ["--selected-unit", _unit]
     if extra_view_args:
         views_args += extra_view_args
     return [
@@ -167,12 +177,15 @@ def plan_runs(
     from_phase: int = 1,
     filter_mode: Optional[str],
     data_dictionary_path: Optional[str] = None,
+    data_dictionary_layer: Optional[List[Tuple[str, str]]] = None,
     macros_path: Optional[str] = None,
+    macros_layer: Optional[List[Tuple[str, str]]] = None,
     project_name: Optional[str] = None,
     output_name: Optional[str] = None,
     only_files: Optional[str] = None,
     baseline_version_id: Optional[str] = None,
     include_emulator: bool = False,
+    selected_units: Optional[List[str]] = None,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -248,7 +261,9 @@ def plan_runs(
                 project_path,
                 no_llm_summarize=no_llm_summarize,
                 data_dictionary_path=data_dictionary_path,
+                data_dictionary_layer=data_dictionary_layer,
                 macros_path=macros_path,
+                macros_layer=macros_layer,
                 selected_layer=derived_layer,
                 project_name=project_name,
                 only_files=only_files, baseline_version_id=baseline_version_id,
@@ -274,6 +289,7 @@ def plan_runs(
                 os.path.join(comp_out, "interface_tables.json"),
                 os.path.join(comp_out, f"software_detailed_design_{out_key}.docx"),
             ] + comp_sel_args,
+                selected_units=selected_units,
         )
         local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
         plans.append(RunPlan(
@@ -289,7 +305,7 @@ def plan_runs(
     if not group_names:
         if use_model:
             # Skip phases 1+2; runner indices 1,2 map to phases 3,4
-            phases = _view_export_phases(filter_mode=filter_mode)
+            phases = _view_export_phases(filter_mode=filter_mode, selected_units=selected_units)
             translated = max(1, from_phase - 2)
             plans.append(RunPlan(label="single run (use-model)",
                                  phases=phases,
@@ -297,11 +313,13 @@ def plan_runs(
         else:
             phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                          data_dictionary_path=data_dictionary_path,
+                                         data_dictionary_layer=data_dictionary_layer,
                                          macros_path=macros_path,
+                                         macros_layer=macros_layer,
                                          project_name=project_name, only_files=only_files,
                                          baseline_version_id=baseline_version_id,
                                          include_emulator=include_emulator) \
-                     + _view_export_phases(filter_mode=filter_mode)
+                     + _view_export_phases(filter_mode=filter_mode, selected_units=selected_units)
             plans.append(RunPlan(label="single run",
                                  phases=phases,
                                  runner_from_phase=from_phase))
@@ -321,7 +339,9 @@ def plan_runs(
         # Build-model plan covers phases 1+2 only.
         build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                             data_dictionary_path=data_dictionary_path,
+                                            data_dictionary_layer=data_dictionary_layer,
                                             macros_path=macros_path,
+                                            macros_layer=macros_layer,
                                             selected_group=_resolved_groups or resolved_selected,
                                             selected_layer=selected_layer,
                                             project_name=project_name, only_files=only_files,
@@ -356,6 +376,7 @@ def plan_runs(
             view_phases = _view_export_phases(
                 selected_group=g,
                 filter_mode=filter_mode,
+                selected_units=selected_units,
             )
             # Embed allowed components into the phase args to pass via CLI
             for phase in view_phases:
@@ -377,6 +398,7 @@ def plan_runs(
                         os.path.join(comp_out, "interface_tables.json"),
                         os.path.join(comp_out, f"software_detailed_design_{comp}.docx"),
                     ] + comp_sel_args,
+                selected_units=selected_units,
                 )
                 plans.append(RunPlan(label=f"Component: {comp}",
                                      phases=view_phases,
@@ -394,6 +416,7 @@ def plan_runs(
                     os.path.join(group_out, f"software_detailed_design_{out_key}.docx"),
                     "--selected-group", g,
                 ],
+                selected_units=selected_units,
             )
             plans.append(RunPlan(label=f"Group: {g}",
                                  phases=view_phases,

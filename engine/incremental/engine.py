@@ -275,11 +275,11 @@ def _read(model_dir: str, name: str) -> dict:
 # Parser-level artifacts captured per version under versions/<id>/parse/ (the blank
 # skeleton a narrowed parse merges against). Keys match parse_merge / snapshot.
 _PARSE_ARTIFACTS = ("functions", "globalVariables", "dataDictionary", "hashes",
-                    "edges", "tu_includes", "entity_files", "override_pairs", "metadata",
+                    "edges", "tu_includes", "entity_files", "override_pairs",
                     # func_keys was missing here, so a narrowed parse never republished it and
                     # the resulting version could not serve as a narrowed-parse baseline without
-                    # losing cross-TU call edges.
-                    "func_keys")
+                    # losing cross-TU call edges. address_taken arrives with the same duty.
+                    "func_keys", "address_taken", "metadata")
 
 
 def _load_parse_dir(d: str) -> Dict[str, Any]:

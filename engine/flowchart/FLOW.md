@@ -571,6 +571,17 @@ enricher.enrich(cfg, func_entry)
             match against PKB calls_ids
             → node.enriched_context["function_calls"]
                [{signature, description}]
+            NOTE: PKB-resolved subset, capped at 3 in the prompt —
+            descriptions only, NOT the basis of the naming rule.
+
+        cpp_tokens.extract_call_names(raw_code, exclude=type_names)
+            every call in the node, source order, deduped,
+            receiver kept (doc.AddMember, Ops::fn)
+            drops keywords / casts / ALL-CAPS macros / lowercase assert
+            exclude = knowledge struct+enum+typedef names (constructors)
+            → node.enriched_context["call_names"]
+               ["ServerReplicate", "doc.AddMember"]
+            This is what the "name every call" rule keys off.
 
         _nearest_comment(src_lines, node.start_line)
             scans source lines near node for // comment
@@ -785,7 +796,8 @@ _label_batch(batch, func_entry, base_context, source_code, ...)
 _coherence_pass(cfg, func_entry, label_map, ordered_nodes)
     builds ordered list of (node_id, label, type) in execution order
     one LLM call total:
-        SYSTEM: "fix inconsistent terminology, passive voice"
+        SYSTEM: "fix inconsistent terminology, passive voice,
+                 NEVER remove a function name from a label"
         prompt: all labels in execution order
         → changes dict {node_id: improved_label}
     merges changes back into label_map
@@ -795,11 +807,33 @@ _coherence_pass(cfg, func_entry, label_map, ordered_nodes)
 _apply_labels(cfg, label_map)
     cfg.nodes[id].label = label for each id
 
+━━━ Call-name enforcement (deterministic, no LLM) ━━━━━━━━━━━━━━━━━━━
+enforce_call_names(cfg)
+    Runs AFTER coherence — a coherence rewrite must not be able to
+    strip a name back out.
+    for each node with enriched_context["call_names"]:
+        _normalise_mention(label, name) per name:
+            "Name(args)" / "Name()"  → "Name()"        found
+            bare "Name", identifier-shaped → "Name()"  found
+            bare "Name", ambiguous with English prose  NOT found
+                (_is_identifier_shaped: qualified/member, snake_case,
+                 or an internal capital — otherwise "Validate the
+                 request" would become "Validate() the request")
+        missing names → append "<br/>Calls: X(), Y()"
+            capped at _MAX_REPAIRED_LABEL_LEN (400)
+            deliberately not a connector phrase: the pass cannot know
+            where the name belongs in the sentence
+    also normalises rule-based fallback labels:
+        "result = add(result, a)" → "result = add()"
+    INFO: "'func': appended missing call names on N node(s)"
+          (high N ⇒ fix the prompt, not this pass)
+
 START node → "Start: <function_short_name>"
 END node   → "End"
 
 Report fallback usage:
-    _looks_like_fallback(node): label starts with "Check: "/"Loop: " etc.
+    self._fallback_ids — recorded where _fallback_label() is applied,
+    so ACTION fallbacks are counted (the old prefix-sniffing missed them)
     WARNING if fallback_count > 0: "'func': N/M node(s) used fallback"
 ```
 
@@ -937,6 +971,8 @@ USER PROMPT per batch:
   │                                                                  │
   │ --- Nodes to Label ---                                           │
   │ [{node_id, type, raw_code,                                       │
+  │   call_names: ["Name()", …],         ← EVERY call — the label   │
+  │                                        must name all of them    │
   │   called_functions: [{sig: desc}],   ← enriched_context         │
   │   source_comment,                    ← enriched_context         │
   │   enum_context, macro_context,       ← enriched_context         │

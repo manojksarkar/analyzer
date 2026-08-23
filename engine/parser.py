@@ -16,11 +16,26 @@ from core.config import (
     app_config as _app_config,
     clang_config as _clang_config,
     default_clang_macro_defs,
+    layer_sources as _layer_sources,
+)
+from core.macro_input import (
+    MacroInputError,
+    args_for_scope as _args_for_scope,
+    find_conflicts as _find_macro_conflicts,
+    load_macro_defs as _load_macro_defs,
+    merge_macro_defs as _merge_macro_defs,
+    scoped_args as _scoped_macro_args,
 )
 from incremental.hashing import hash_cursor, hash_macro_text
 from incremental.edges import build_edges
 from incremental.parse_includes import build_closure, to_repo_relative
 from incremental.virtual_dispatch import spread_virtual_families
+from core.logging_setup import get_logger
+
+# Module level, not inside main(): the macro-loading report below runs at import
+# time, and get_logger() is what installs the handlers. Obtained later, those
+# early INFO lines would be emitted with no handler attached and silently dropped.
+_log = get_logger("parser")
 
 # Apply (and strip) --model-root before paths() is snapshotted or argv[1] is read as the
 # project path — an unconsumed flag would be mistaken for a positional (doc 09, C11b).
@@ -41,7 +56,9 @@ MODULE_BASE_PATH = os.path.abspath(proj_arg) if os.path.isabs(proj_arg) else os.
 
 # Scan for optional flags passed by group_planner.
 _data_dict_path: str | None = None
+_data_dict_layer_args: list = []  # (layer, path) from --data-dictionary-layer, repeatable
 _macros_path: str | None = None
+_macros_layer_args: list = []   # (layer, path) pairs from --macros-layer, repeatable
 _selected_group: str | None = None      # first one, kept for existing reads
 _selected_groups: list = []             # ALL of them: --selected-group is repeatable
 _selected_layers: list = []
@@ -55,6 +72,9 @@ while _i < len(sys.argv):
     if sys.argv[_i] == "--data-dictionary" and _i + 1 < len(sys.argv):
         _data_dict_path = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--data-dictionary-layer" and _i + 2 < len(sys.argv):
+        _data_dict_layer_args.append((sys.argv[_i + 1], sys.argv[_i + 2]))
+        _i += 3
     elif sys.argv[_i] == "--only-files" and _i + 1 < len(sys.argv):
         _only_files_path = sys.argv[_i + 1]
         _i += 2
@@ -64,6 +84,9 @@ while _i < len(sys.argv):
     elif sys.argv[_i] == "--macros" and _i + 1 < len(sys.argv):
         _macros_path = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--macros-layer" and _i + 2 < len(sys.argv):
+        _macros_layer_args.append((sys.argv[_i + 1], sys.argv[_i + 2]))
+        _i += 3
     elif sys.argv[_i] == "--selected-group" and _i + 1 < len(sys.argv):
         # Repeatable: a scope may name several groups (--scope group:App,Math), and taking
         # only the last would silently parse the wrong subset.
@@ -86,10 +109,13 @@ PROJECT_NAME = _project_name_override or os.path.basename(MODULE_BASE_PATH)
 
 from utils import (
     get_component_name as _get_component,
+    get_range,
     get_range_for_type,
     load_config,
     make_function_key,
     make_global_key,
+    make_unit_key,
+    KEY_SEP,
     PRIMITIVES,
 )
 
@@ -110,7 +136,7 @@ if _llvm and os.path.isfile(_llvm):
             os.environ["PATH"] = _llvm_bin_dir + os.pathsep + os.environ.get("PATH", "")
     cindex.Config.set_library_file(_llvm)
 
-from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups
+from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups, get_component_layer_name as _get_component_layer_name
 if _selected_layer:
     _components_groups = _get_layer_flat_groups(_config, _selected_layer)
 elif _selected_groups:
@@ -242,14 +268,17 @@ CLANG_ARGS = [
     f"-I{MODULE_BASE_PATH}",
     f"-I{_clang_inc}",
 ]
-# Extend with layer include dirs (scoped to selected layer when --selected-group/--selected-layer is set).
-_clang_args_seen = set(CLANG_ARGS)
-for _dirs in _layer_include_paths.values():
-    for _d in _dirs:
-        _a = f"-I{_d}"
-        if _a not in _clang_args_seen:
-            _clang_args_seen.add(_a)
-            CLANG_ARGS.append(_a)
+# Layer include dirs are NOT folded in here. Flattening every layer's dirs into one
+# global arg list is the same cross-layer leak the data dictionary had: in a run
+# spanning layers (no --selected-layer, or --component-per-docx across layers) every
+# TU saw every layer's headers, so a name defined in two layers resolved to whichever
+# -I sorted first. They are appended per TU by clang_args_for() instead, beside the
+# per-layer macro defines, so one function is the single place a file's layer is
+# resolved. Only the genuinely global dirs stay in CLANG_ARGS.
+_LAYER_INCLUDE_ARGS: dict = {
+    _lname: [f"-I{_d}" for _d in _dirs]
+    for _lname, _dirs in _layer_include_paths.items()
+}
 # Visibility-style macros (PRIVATE/PROTECTED/PUBLIC/__OVLYINIT) come from
 # `core.config.default_clang_macro_defs()` so the flowchart engine's
 # per-function re-parser reuses the same set.
@@ -263,40 +292,87 @@ if _extra:
     CLANG_ARGS.extend(_extra if isinstance(_extra, list) else [_extra])
 
 
-def _load_macros_as_clang_args(path: str) -> list:
-    """Read 2-column CSV (Name, Value) and return -D flags for Clang.
-
-    Rows where Value is 'ne' (case-insensitive) are skipped entirely.
-    Rows where Value is empty produce -DNAME (defined as 1).
-    Rows where Value is present produce -DNAME=VALUE.
-    """
-    args = []
-    with open(path, newline="", encoding="utf-8-sig") as _f:
-        reader = csv.DictReader(_f)
-        for row in reader:
-            name = (row.get("Name") or "").strip()
-            value = (row.get("Value") or "").strip()
-            if not name:
-                continue
-            if value.lower() == "ne":
-                continue
-            args.append(f"-D{name}={value}" if value else f"-D{name}")
-    return args
-
-
+# Macro -D flags, scope-keyed ("*" = every layer). The file may be a CSV or any
+# of the JSON shapes core.macro_input accepts; --macros is global and
+# --macros-layer pins a file to one layer. The resolved set is written to
+# model/clang_macros.json so the Phase 3 flowchart engine defines exactly what
+# Phase 1 did.
+# Sources are config first, CLI second, so a flag overrides the config and the
+# later file wins on a name collision. Config carries them because every entry
+# point (run.py, incremental generate/engine) passes --config, while only run.py
+# takes the flags: the API writes clang.macrosFile / clang.macrosByLayer into the
+# per-project config instead of threading a path through each script.
+_macro_sources: list = []
+_cfg_macros_file = _clang.get("macrosFile")
+if isinstance(_cfg_macros_file, str) and _cfg_macros_file.strip():
+    _macro_sources.append((None, _cfg_macros_file.strip()))
+for _cfg_layer, _cfg_path in (_clang.get("macrosByLayer") or {}).items():
+    if isinstance(_cfg_path, str) and _cfg_path.strip():
+        _macro_sources.append((_cfg_layer, _cfg_path.strip()))
+# `layers.<L>.macros` — the preferred spelling: the layer owns its own inputs, so
+# no layer name is repeated in a map where a typo would match nothing. Loaded after
+# macrosByLayer (deprecated), so it wins for the same layer.
+for _cfg_layer, _cfg_path in _layer_sources(_config, "macros").items():
+    _macro_sources.append((_cfg_layer, _cfg_path))
 if _macros_path:
-    _macro_args = _load_macros_as_clang_args(_macros_path)
-    _macro_args_seen = set(CLANG_ARGS)
-    for _ma in _macro_args:
-        if _ma not in _macro_args_seen:
-            _macro_args_seen.add(_ma)
-            CLANG_ARGS.append(_ma)
-    import logging as _logging
-    _logging.getLogger("parser").info("Loaded %d macro -D flag(s) from %s", len(_macro_args), _macros_path)
-    _macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
-    with open(_macros_json, "w", encoding="utf-8") as _mf:
-        json.dump(_macro_args, _mf, indent=2)
+    _macro_sources.append((None, _macros_path))
+_macro_sources += _macros_layer_args
 
+_MACRO_ARGS_BY_SCOPE: dict = {}
+if _macro_sources:
+    _macro_log = _log
+    _macro_defs: dict = {}
+    for _scope, _path in _macro_sources:
+        try:
+            _defs, _report = _load_macro_defs(
+                _path,
+                scope_map=(_clang.get("macroScopes") or {}),
+                default_scope=_scope,
+            )
+        except MacroInputError as _exc:
+            # Fatal: Phase 1 produces no model at all, so this is CRITICAL rather
+            # than ERROR (which is reserved for a single TU failing while the run
+            # continues with partial output).
+            _log.critical("macro input rejected: %s - Phase 1 aborted", _exc)
+            print(f"ERROR: {_exc}")
+            sys.exit(2)
+        for _line in _report.lines():
+            _macro_log.info("%s", _line)
+        # A name defined by two lists is reported, never silently reconciled —
+        # the precedence strategy across macro lists is still an open question.
+        for _c_scope, _c_name, _c_old, _c_new in _find_macro_conflicts(_macro_defs, _defs):
+            _macro_log.warning(
+                "macro %s redefined in scope %s: %s -> %s (last one wins)",
+                _c_name, _c_scope, _c_old, _c_new,
+            )
+        _macro_defs = _merge_macro_defs(_macro_defs, _defs)
+    _MACRO_ARGS_BY_SCOPE = _scoped_macro_args(_macro_defs)
+
+_macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
+if _MACRO_ARGS_BY_SCOPE or os.path.isfile(_macros_json):
+    # Written even when empty: otherwise a previous run's file survives and
+    # Phase 3 keeps defining macros this parse did not use.
+    with open(_macros_json, "w", encoding="utf-8") as _mf:
+        json.dump(_MACRO_ARGS_BY_SCOPE, _mf, indent=2)
+
+
+# Data-dictionary CSV sources as (layer|None, path), merged at the END of Phase 1.
+# Config first, CLI second, so a flag overrides the config and the later file wins on
+# a name collision. A layer's rows never touch another layer's entries (see
+# _dd_target_key), so "last wins" only ever applies within one scope.
+#
+# There is deliberately NO config key for the PROJECT-WIDE dictionary — it is
+# CLI-only (`--data-dictionary`). Config carries per-layer dictionaries only. Every
+# entry point already supplies the project-wide one as a flag: run.py from
+# `--data-dictionary`, and the API/incremental path from `currentDataDictId` ->
+# `ws.datadict_path(...)` -> `--data-dictionary` (incremental/generate.py). A config
+# key would be a second, silent source for the same thing.
+_dd_sources: list = []
+for _cfg_layer, _cfg_path in _layer_sources(_config, "dataDictionary").items():
+    _dd_sources.append((_cfg_layer, _cfg_path))
+if _data_dict_path:
+    _dd_sources.append((None, _data_dict_path))
+_dd_sources += _data_dict_layer_args
 
 
 def _detect_visibility(file_path: str, line_no: int, scan_lines: int = 5) -> str:
@@ -334,6 +410,118 @@ def get_component_name(file_path: str) -> str:
     except ValueError:
         return "unknown"
     return _FILE_COMPONENT_MAP.get(rel, "unknown")
+
+
+_FILE_LAYER_CACHE: dict = {}
+
+
+def layer_for_rel_file(rel_file: str) -> "str | None":
+    """Layer owning a repo-relative file, or None outside every configured layer.
+
+    Same file -> component -> layer resolution `clang_args_for` uses, so a type's
+    layer and its TU's `-D` set can never disagree. Cached per file because the
+    type visitor asks once per declaration, not once per file.
+    """
+    if not rel_file:
+        return None
+    norm = rel_file.replace("\\", "/")
+    if norm in _FILE_LAYER_CACHE:
+        return _FILE_LAYER_CACHE[norm]
+    component = get_component_name(os.path.join(MODULE_BASE_PATH, norm))
+    layer = (_get_component_layer_name(_config, component)
+             if component and component != "unknown" else None)
+    _FILE_LAYER_CACHE[norm] = layer
+    return layer
+
+
+# Cross-layer key collisions, reported once per name at the end of Phase 1.
+_dd_collisions: dict = {}
+
+
+def _dd_store(qn: str, entry: dict, layer: "str | None", loc: dict) -> str:
+    """Write a data-dictionary entry, keeping a colliding OTHER layer's entry alive.
+
+    The registry is keyed by bare qualified name, so two layers defining `Status`
+    or `UINT8` used to mean the last file parsed silently won — for every layer.
+    Layers partition: those are two different types and both must survive.
+
+    Bare `qn` stays the key for the first writer and for any same-layer
+    redefinition (today's last-wins, unchanged). A *different* layer is stored
+    under `qn@<layer>`, following the existing `typedef@qn:file:line` idiom. A
+    file outside every configured layer has no layer to qualify with, so it falls
+    back to `qn@file:line`, which is still unique.
+
+    Returns the key actually written.
+    """
+    entry["layer"] = layer
+    existing = data_dictionary.get(qn)
+    if existing is None or existing.get("layer") == layer:
+        data_dictionary[qn] = entry
+        return qn
+    if layer:
+        key = f"{qn}@{layer}"
+    else:
+        key = f"{qn}@{loc.get('file', '')}:{loc.get('line', '')}"
+    _dd_collisions.setdefault(qn, set()).update(
+        {existing.get("layer"), layer}
+    )
+    data_dictionary[key] = entry
+    # The narrowed-parse merge resolves an entry's file via entity_files, falling
+    # back to the text after "@" in the key. For `qn@Layer2` that fallback yields a
+    # LAYER name, which matches no dropped file, so the entry would be kept from the
+    # baseline forever and never refresh. Registering the real file keeps
+    # parse_merge._file_of on the entity_files path.
+    _file = loc.get("file")
+    if _file:
+        entity_files[key] = _file
+    return key
+
+
+def _log_dd_collisions() -> None:
+    """One line per name defined in more than one layer.
+
+    Nothing else surfaces these: before the layer key they were invisible by
+    construction, because the loser was overwritten.
+    """
+    for qn in sorted(_dd_collisions):
+        layers = sorted(str(x) for x in _dd_collisions[qn])
+        _log.info("  data dictionary: '%s' defined in %d layers (%s) — kept per layer",
+                  qn, len(layers), ", ".join(layers))
+
+
+_LAYER_ARGS_CACHE: dict = {}
+
+
+def clang_args_for(file_path: str) -> list:
+    """CLANG_ARGS plus the include dirs and macro defines in scope for this file's layer.
+
+    Args are resolved per TU because one run can span layers: the global ("*")
+    defines come first, then the layer's own, and Clang honours the *last* -D for
+    a name — so a layer value overrides the global one by position. Include dirs
+    follow the same rule (global + this layer only), so a TU can never be compiled
+    against another layer's headers. A file outside every configured component (an
+    orphan header, say) resolves to no layer and is parsed with the global set only.
+    """
+    if not _MACRO_ARGS_BY_SCOPE and not _LAYER_INCLUDE_ARGS:
+        return CLANG_ARGS
+    component = get_component_name(file_path)
+    layer = (_get_component_layer_name(_config, component)
+             if component and component != "unknown" else None)
+    cached = _LAYER_ARGS_CACHE.get(layer)
+    if cached is None:
+        # A file with no layer still needs headers to resolve, and there is no
+        # "global" include set to fall back on — so it gets every layer's dirs,
+        # which is the pre-change behaviour and the only way an orphan header parses.
+        if layer:
+            _inc = _LAYER_INCLUDE_ARGS.get(layer) or []
+        else:
+            _inc = [_a for _dirs in _LAYER_INCLUDE_ARGS.values() for _a in _dirs]
+        _seen: set = set(CLANG_ARGS)
+        _inc = [_a for _a in _inc if not (_a in _seen or _seen.add(_a))]
+        cached = CLANG_ARGS + _inc + _args_for_scope(_MACRO_ARGS_BY_SCOPE, layer)
+        _LAYER_ARGS_CACHE[layer] = cached
+    return cached
+
 
 index = cindex.Index.create()
 
@@ -385,6 +573,13 @@ _clang_overridden = _make_overridden_lookup()
 functions = {}
 globals_data = {}
 data_dictionary = {}
+# Top-level names each external CSV wrote, keyed by that CSV's layer (None = the
+# project-wide tier, visible to everyone). Filled by _merge_dd_rows, read by
+# _reresolve_struct_field_ranges to know which baked field ranges the author
+# deliberately overrode. Keyed by layer, not one flat set, for the same reason the
+# dictionary itself is: a Layer2 CSV naming a type must not license a rewrite of a
+# Layer1 struct's field of that name.
+_csv_top_level_names: dict = {}
 # Incremental (M1.2): entityKey -> token-sha256, for all four entity kinds.
 # Function/global keys are filled in build_metadata (need the model key); type and
 # macro keys are filled directly in their passes. Written to model/hashes.json.
@@ -420,6 +615,22 @@ entity_files = {}
 # a narrowed (--only-files) parse so calls to functions defined in UN-parsed files still
 # resolve to a call edge. Empty for a full parse (so behaviour is unchanged).
 _baseline_func_keys = {}
+# Address-of-function detections. A function whose address is taken is reachable even
+# though no CALL_EXPR names it, so `_fn_is_private` (which equates "public" with "has a
+# cross-file caller") would otherwise bury it. Split by SHAPE, not by file:
+#   _address_taken_at_file_scope: func_key -> {rel_file of the initializer}
+#       `static const fp_t table[] = { fn1, fn2 };` — a registration table IS the published
+#       interface, so this counts even when the table sits in the same .c as the function
+#       (the canonical firmware pattern).
+#   _address_taken_in_body: (taker_func_key, target_func_key)
+#       `pFunc = &helper;` — becomes a normal call edge. Only confers publicness when the
+#       taking site is in a different file, which keeps a locally-used comparator private.
+_address_taken_at_file_scope = defaultdict(set)
+_address_taken_in_body = set()
+# [[target_fid, registering_unit_key], …] — built in build_metadata and written to
+# model/address_taken.json so a narrowed parse (which may not re-parse the file holding the
+# table) can replay the registrations instead of silently demoting the function to private.
+_address_taken_fid = []
 component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
@@ -448,6 +659,206 @@ def _get_source_lines(file_path: str):
         except (OSError, IOError):
             _source_cache[file_path] = []
     return _source_cache[file_path]
+
+
+# ---------------------------------------------------------------------------
+# Parse diagnostics — why a function did or did not reach model/functions.json
+#
+# Purely observational: counters are incremented during the walk and formatted
+# into log lines once, at the end of main(). Nothing is logged per cursor — the
+# file handler captures DEBUG on every run (see core.logging_setup), so a
+# per-cursor log call would mean millions of formatted strings and disk writes.
+# Samples are capped so a pathological project cannot flood the log either.
+# ---------------------------------------------------------------------------
+
+_DIAG_SAMPLE_CAP = 10
+
+_diag_counts: dict = defaultdict(int)          # stage totals + drop-reason tallies
+_diag_drop_samples: dict = defaultdict(list)   # reason -> ["rel/path.cpp:12 name", ...]
+_diag_tu_failures: list = []                   # (rel_path, clang message)
+_diag_tu_errors: list = []                     # (rel_path, n_errors, first message)
+_diag_tu_defs: dict = {}                       # rel_path -> definitions contributed
+_diag_unrecorded: list = []                    # (rel_path, line, name) text-scan misses
+_diag_decl_only: dict = {}                     # func_key -> "rel:line name", resolved at summary
+
+
+def _rel_path(path: str) -> str:
+    """Repo-relative, forward-slashed path for log output."""
+    try:
+        return os.path.relpath(path, MODULE_BASE_PATH).replace("\\", "/")
+    except (ValueError, TypeError):
+        return str(path).replace("\\", "/")
+
+
+# Function-shaped cursor kinds that visit_definitions deliberately does NOT record.
+# Resolved via getattr so a libclang build missing one of them cannot break import.
+_DIAG_FUNCTIONISH_KINDS = {
+    _k for _k in (
+        getattr(cindex.CursorKind, "FUNCTION_TEMPLATE", None),
+        getattr(cindex.CursorKind, "CONSTRUCTOR", None),
+        getattr(cindex.CursorKind, "DESTRUCTOR", None),
+        getattr(cindex.CursorKind, "CONVERSION_FUNCTION", None),
+    ) if _k is not None
+}
+
+_diag_recorded_names: set = set()
+
+# A function-definition-shaped line: qualifiers/return type, a name, a parameter
+# list, then an optional `{`. Deliberately loose — this is a HINT generator, not a
+# parser, so false positives are expected. The character class excludes "(" so the
+# non-greedy prefix cannot run into the parameter list and backtrack.
+_FUNC_DEF_RE = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_ \t\*&:<>,]*?"
+    r"\b([A-Za-z_][A-Za-z0-9_]*)\s*"
+    r"\([^;()]*\)\s*(?:const\s*)?\{?\s*$"
+)
+
+# Control-flow keywords and the like, which match the shape but are not definitions.
+_FUNC_DEF_SKIP = {
+    "if", "for", "while", "switch", "catch", "return", "sizeof", "else", "do",
+    "case", "new", "delete", "throw", "typedef", "using", "namespace", "defined",
+}
+
+
+def _scan_unrecorded_functions(rel_file: str, lines: list) -> None:
+    """Text-level check for definitions libclang never reported.
+
+    This is the only way to see a function sitting in an inactive #if branch: the
+    preprocessor discards it, so no cursor is ever created and there is no rejection
+    event to record. A plain text scan still sees it.
+
+    Heuristic by design — regex over C++ yields false positives (macros, function
+    pointer declarations, calls). The output is a bounded hint list for a human,
+    labelled as such in the log, and is never an input to anything.
+    """
+    if len(_diag_unrecorded) >= _DIAG_SAMPLE_CAP:
+        return
+    for idx, raw in enumerate(lines, start=1):
+        line = raw.strip()
+        # Skip comments, preprocessor lines, and pathological lengths (a minified or
+        # generated line is not worth the backtracking risk).
+        if not line or len(line) > 300 or line.startswith(("//", "/*", "*", "#")):
+            continue
+        match = _FUNC_DEF_RE.match(line)
+        if not match:
+            continue
+        name = match.group(1)
+        if name in _FUNC_DEF_SKIP or name in _diag_recorded_names:
+            continue
+        _diag_unrecorded.append((rel_file, idx, name))
+        if len(_diag_unrecorded) >= _DIAG_SAMPLE_CAP:
+            return
+
+
+_under_base_cache: dict = {}
+
+
+def _under_project_base(file_path: str) -> bool:
+    """True when the path sits under MODULE_BASE_PATH, whatever the component map says.
+
+    Used only to scope drop diagnostics to the project. A function defined in a
+    system header is out of scope rather than "missing", and counting those would
+    bury the real signal. Cached for the same reason is_project_file is.
+    """
+    if not file_path:
+        return False
+    cached = _under_base_cache.get(file_path)
+    if cached is None:
+        try:
+            abs_path = os.path.normcase(os.path.abspath(file_path))
+            abs_base = os.path.normcase(os.path.abspath(MODULE_BASE_PATH))
+            cached = abs_path.startswith(abs_base)
+        except (OSError, ValueError, TypeError):
+            cached = False
+        _under_base_cache[file_path] = cached
+    return cached
+
+
+def _diag_drop(reason: str, cursor=None) -> None:
+    """Record one rejected cursor: always a counter, a sample only up to the cap."""
+    _diag_counts[reason] += 1
+    samples = _diag_drop_samples[reason]
+    if cursor is None or len(samples) >= _DIAG_SAMPLE_CAP:
+        return
+    try:
+        loc = cursor.location
+        samples.append(
+            f"{_rel_path(loc.file.name)}:{loc.line} {cursor.spelling or '(anonymous)'}"
+        )
+    except Exception:
+        pass
+
+
+def _log_parse_summary(n_funcs: int) -> None:
+    """The end-of-Phase-1 block: what was seen, what was dropped, and why.
+
+    Formatted from the in-memory counters above. Nothing here re-reads the log, and
+    nothing here is an input to a later phase — Phases 2-4 read model/*.json only.
+    """
+    counts = _diag_counts
+    _log.info(
+        "parse summary: %d file(s) walked, %d project, %d TU(s) ok, %d failed, "
+        "%d function(s) recorded",
+        counts["files_walked"], counts["files_project"],
+        counts["tus_ok"], counts["tus_failed"], n_funcs,
+    )
+
+    if _diag_tu_failures:
+        _log.error("%d TU(s) failed to load:", len(_diag_tu_failures))
+        for rel, msg in _diag_tu_failures[:_DIAG_SAMPLE_CAP]:
+            _log.error("  %s: %s", rel, msg)
+
+    if _diag_tu_errors:
+        _log.warning(
+            "%d TU(s) parsed WITH clang errors - definitions in them may be missing:",
+            len(_diag_tu_errors),
+        )
+        # Noisiest first: the TU with the most errors is the likeliest culprit.
+        for rel, n_err, first in sorted(_diag_tu_errors, key=lambda r: -r[1])[:_DIAG_SAMPLE_CAP]:
+            _log.warning("  %s: %d error(s), first: %s", rel, n_err, first)
+        if any("file not found" in (f or "").lower() for _, _, f in _diag_tu_errors):
+            _log.warning("  Hint: missing include - check --include-path-layer / clang_include_paths.json")
+        if any("unknown type name" in (f or "").lower() for _, _, f in _diag_tu_errors):
+            _log.warning("  Hint: undefined macro/typedef - check --macros / clang.clangArgs")
+
+    # A declaration whose definition never appeared anywhere in the parse is a real
+    # reason for a function to be absent from functions.json. Declarations that DID get
+    # a definition are silently dropped here -- they are the overwhelming majority and
+    # counting them would bury this signal.
+    never_defined = {k: v for k, v in _diag_decl_only.items() if k not in functions}
+    if never_defined:
+        _log.warning(
+            "%d function(s) declared but never defined in the parse scope:",
+            len(never_defined),
+        )
+        for desc in sorted(never_defined.values())[:_DIAG_SAMPLE_CAP]:
+            _log.warning("  %s", desc)
+    _log.debug(
+        "declarations seen: %d, of which never defined: %d",
+        len(_diag_decl_only), len(never_defined),
+    )
+
+    reasons = {k: v for k, v in counts.items() if k in _diag_drop_samples}
+    if reasons:
+        _log.info(
+            "cursors not recorded: %s",
+            ", ".join(f"{k} {v}" for k, v in sorted(reasons.items())),
+        )
+        for reason in sorted(_diag_drop_samples):
+            for sample in _diag_drop_samples[reason]:
+                _log.debug("  not recorded (%s): %s", reason, sample)
+
+    if _diag_unrecorded:
+        _log.warning(
+            "%d function-like definition(s) found in source text but NOT in the model "
+            "(heuristic - may include false positives):",
+            len(_diag_unrecorded),
+        )
+        for rel, line_no, name in _diag_unrecorded:
+            _log.warning("  %s:%d %s - in source, never seen by clang", rel, line_no, name)
+        _log.warning(
+            "  Likely an inactive #if branch, an unparsed file, or a macro-shaped line."
+        )
 
 
 def _preceding_comment(cursor) -> str:
@@ -499,8 +910,30 @@ def _inline_comment(cursor) -> str:
     return line[idx + 2:].strip()
 
 
+# Keyed on the raw path. Anything that reassigns MODULE_BASE_PATH must clear this and
+# _under_base_cache, or the cached verdicts go stale — the pipeline never does (set once
+# at import), but tests that re-point the module at a temp tree do.
+_project_file_cache: dict = {}
+
+
 def is_project_file(file_path: str) -> bool:
     """Return True if this path should be treated as project source for parsing.
+
+    Memoized. This is called once per cursor across every TU, but the set of
+    distinct paths is small (project files plus system headers), so the
+    abspath/normcase/relpath string work is paid once per path instead of once
+    per cursor. Safe to cache because every input it reads —
+    _EXCLUDE_NAME_PATTERNS, _FILE_COMPONENT_MAP, MODULE_BASE_PATH — is assigned
+    once at import and never mutated.
+    """
+    cached = _project_file_cache.get(file_path)
+    if cached is None:
+        cached = _project_file_cache[file_path] = _compute_is_project_file(file_path)
+    return cached
+
+
+def _compute_is_project_file(file_path: str) -> bool:
+    """Uncached body of is_project_file.
 
     Uses the flat _FILE_COMPONENT_MAP built from config + filesystem scan.
     A file is included iff it is under MODULE_BASE_PATH AND appears in the map.
@@ -536,6 +969,36 @@ def get_qualified_name(cursor):
     return "::".join(parts) if parts else cursor.spelling
 
 
+_CLASS_PARENT_KINDS = (
+    cindex.CursorKind.CLASS_DECL,
+    cindex.CursorKind.STRUCT_DECL,
+    cindex.CursorKind.CLASS_TEMPLATE,
+    cindex.CursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION,
+)
+
+
+def get_class_scope(cursor):
+    """Enclosing class/struct chain, namespaces dropped (e.g. 'Outer::Inner', '' for free functions).
+
+    Deliberately separate from get_qualified_name rather than derived from it: a
+    qualifiedName string can't be split back into namespace vs class parts, and
+    get_qualified_name must not change — make_function_key builds every fid from it,
+    so touching it re-keys the whole model.
+
+    CLASS_TEMPLATE is included here even though get_qualified_name omits it, so methods
+    of template classes get a class too. Template arguments aren't in the spelling, so
+    Foo<int>::run and Foo<char>::run both read 'Foo::run'; mangled names still keep them
+    apart in the model.
+    """
+    parts = []
+    parent = cursor.semantic_parent
+    while parent:
+        if parent.kind in _CLASS_PARENT_KINDS and parent.spelling:
+            parts.insert(0, parent.spelling)
+        parent = parent.semantic_parent
+    return "::".join(parts)
+
+
 def get_function_key(cursor):
     # Mangled disambiguates overloads; fallback to qualified@file:line for templates/extern C
     mangled = cursor.mangled_name
@@ -555,6 +1018,108 @@ def _get_type_key(cursor):
             rel = os.path.normpath(cursor.location.file.name).replace("\\", "/")
         return f"{rel}:{cursor.location.line}"
     return get_qualified_name(cursor)
+
+
+_ELABORATED_RE = re.compile(r"^(?:struct|enum|union|class)\s+")
+
+_SIGNED_INT_KINDS = {
+    cindex.TypeKind.SCHAR, cindex.TypeKind.CHAR_S, cindex.TypeKind.SHORT,
+    cindex.TypeKind.INT, cindex.TypeKind.LONG, cindex.TypeKind.LONGLONG,
+    cindex.TypeKind.INT128,
+}
+_UNSIGNED_INT_KINDS = {
+    cindex.TypeKind.UCHAR, cindex.TypeKind.CHAR_U, cindex.TypeKind.USHORT,
+    cindex.TypeKind.UINT, cindex.TypeKind.ULONG, cindex.TypeKind.ULONGLONG,
+    cindex.TypeKind.UINT128, cindex.TypeKind.CHAR16, cindex.TypeKind.CHAR32,
+}
+
+
+def _range_from_clang_type(ctype) -> str:
+    """Data range computed from the type itself, rather than guessed from its name.
+
+    `get_canonical()` walks the typedef chain down to the real builtin and
+    `get_size()` reports its width **for the target being parsed** — so `long` is
+    4 bytes on Windows and 8 on Linux, which the hardcoded PRIMITIVES table cannot
+    express. Returns "NA" for anything that is not a builtin (structs, enums,
+    pointers, floats); those are answered from their own dictionary entries.
+    """
+    if ctype is None:
+        return "NA"
+    try:
+        canon = ctype.get_canonical()
+        kind = canon.kind
+        if kind == cindex.TypeKind.VOID:
+            return "VOID"
+        if kind == cindex.TypeKind.BOOL:
+            return "0-1"
+        if kind in _SIGNED_INT_KINDS or kind in _UNSIGNED_INT_KINDS:
+            size = canon.get_size()
+            if size and size > 0:
+                bits = size * 8
+                if kind in _UNSIGNED_INT_KINDS:
+                    return f"0-0x{(1 << bits) - 1:X}"
+                return f"-0x{1 << (bits - 1):X}-0x{(1 << (bits - 1)) - 1:X}"
+    except Exception:
+        pass
+    return "NA"
+
+
+def _register_builtin_range(ctype) -> None:
+    """Record a builtin's target-correct range under its canonical name.
+
+    Called for every parameter / return type / global / field encountered, so the
+    dictionary answers for the builtins this project actually uses with a measured
+    width instead of the portable guess in PRIMITIVES (which is seeded afterwards
+    with setdefault, and so no longer overwrites this).
+
+    Only the CANONICAL spelling is registered ("unsigned char", "long"). Registering
+    the written spelling would let a parameter typed `UINT8` overwrite the UINT8
+    *typedef* entry with a primitive one, losing the location the unit header table
+    needs.
+    """
+    if ctype is None:
+        return
+    try:
+        canon = ctype.get_canonical()
+        name = (canon.spelling or "").strip()
+    except Exception:
+        return
+    if not name:
+        return
+    rng = _range_from_clang_type(canon)
+    if rng == "NA":
+        return
+    existing = data_dictionary.get(name)
+    if existing is not None and existing.get("kind") != "primitive":
+        return  # never shadow a project type that happens to share the name
+    # layer None: a builtin's width is a property of the target, not of a layer, so
+    # every layer may answer from it. This is the "global" tier of the lookup.
+    data_dictionary[name] = {"kind": "primitive", "range": rng, "layer": None}
+
+
+def _typedef_underlying(cursor) -> str:
+    """What a `typedef` actually aliases.
+
+    `cursor.type` on a TYPEDEF_DECL is the typedef type ITSELF, so its spelling is
+    the alias's own name ("UINT8"), never what it points at — which left every
+    typedef self-referential and its range "NA". `underlying_typedef_type` is the
+    accessor that answers the question (`typedef unsigned char UINT8;` -> "unsigned
+    char", `typedef int UNIT;` -> "int").
+
+    Elaborated spellings ("enum Mode_t", "struct Widget_t") are reduced to the bare
+    name so the result is usable as a dataDictionary key — that also keeps the
+    typedef-of-anonymous-enum/struct forms self-referential, which is what the unit
+    header table relies on to print the enumerator list.
+    """
+    underlying = ""
+    try:
+        u = cursor.underlying_typedef_type
+        underlying = (u.spelling or "").strip() if u is not None else ""
+    except Exception:
+        underlying = ""
+    if not underlying:
+        underlying = (cursor.type.spelling or "").strip() if cursor.type else ""
+    return _ELABORATED_RE.sub("", underlying).strip()
 
 
 def _maybe_add_typedef_for_struct(name: str, qn: str, loc: dict, rel_file: str):
@@ -591,8 +1156,16 @@ def _maybe_add_typedef_for_struct(name: str, qn: str, loc: dict, rel_file: str):
         "kind": "typedef",
         "name": name,
         "qualifiedName": qn,
+        # Key already carries file+line, so it is unique across layers; the stamp is
+        # what lets the lookup refuse it when resolving for a different layer.
+        "layer": layer_for_rel_file(rel_file),
         "underlyingType": underlying or "(opaque)",
-        "range": get_range_for_type(underlying or ""),
+        # underlyingType is the type's OWN name here (the alias names the struct it
+        # follows), so deriving a range from it would be reading a range out of a
+        # type name: get_range_for_type("Size_t") matches its "size_t" substring rule
+        # and stamps a 64-bit integer range on a {int width; int height;} struct.
+        # The struct entry under `qn` carries the real answer; leave this one unknown.
+        "range": "NA",
         "location": {"file": rel_file, "line": typedef_line},
     }
 
@@ -610,6 +1183,9 @@ def visit_type_definitions(cursor):
         rel_file = cursor.location.file.name.replace("\\", "/")
 
     loc = {"file": rel_file, "line": cursor.location.line}
+    # Which layer owns this declaration. Stamped on every entry so the lookup can
+    # refuse another layer's answer (layers partition; they do not inherit).
+    _layer = layer_for_rel_file(rel_file)
 
     if cursor.kind in (cindex.CursorKind.STRUCT_DECL, cindex.CursorKind.CLASS_DECL):
         if cursor.spelling or cursor.is_definition():
@@ -617,10 +1193,14 @@ def visit_type_definitions(cursor):
             fields = []
             for c in cursor.get_children():
                 if c.kind == cindex.CursorKind.FIELD_DECL and c.spelling:
+                    _register_builtin_range(c.type)
+                    _field_range = _range_from_clang_type(c.type)
+                    if _field_range == "NA":
+                        _field_range = get_range_for_type(c.type.spelling if c.type else "")
                     field_entry = {
                         "name": c.spelling,
                         "type": c.type.spelling if c.type else "",
-                        "range": get_range_for_type(c.type.spelling if c.type else ""),
+                        "range": _field_range,
                     }
                     cmt = _inline_comment(c)
                     if cmt:
@@ -639,7 +1219,15 @@ def visit_type_definitions(cursor):
             cmt = _preceding_comment(cursor)
             if cmt:
                 struct_entry["comment"] = cmt
-            data_dictionary[qn] = struct_entry
+            _dd_store(qn, struct_entry, _layer, loc)
+            # NOTE: entity_hashes / _type_keys stay keyed by BARE qn even when the
+            # dictionary entry above was layer-qualified. They must match edges.json
+            # `typeUsers`, which visit_usage keys by the bare type name — impact_set
+            # looks a changed hash key up there directly, so a `qn@Layer` hash key
+            # would find no users and silently skip regenerating them. Making these
+            # layer-aware means keying type_users by layer too; until then two layers
+            # defining one type share a hash (last definition wins), so a narrowed
+            # parse can miss a change in the loser. Tracked as backlog SH-5.
             # Incremental (M1.2): type hash keyed by qn; a definition wins over a forward decl.
             if cursor.is_definition() or qn not in entity_hashes:
                 entity_hashes[qn] = hash_cursor(cursor, comment=struct_entry.get("comment", ""))
@@ -677,7 +1265,7 @@ def visit_type_definitions(cursor):
         cmt = _preceding_comment(cursor)
         if cmt:
             enum_dict["comment"] = cmt
-        data_dictionary[qn] = enum_dict
+        _dd_store(qn, enum_dict, _layer, loc)
         # Incremental (M1.2): enum hash keyed by qn; a definition wins over a forward decl.
         if cursor.is_definition() or qn not in entity_hashes:
             entity_hashes[qn] = hash_cursor(cursor, comment=enum_dict.get("comment", ""))
@@ -687,24 +1275,36 @@ def visit_type_definitions(cursor):
     elif cursor.kind == cindex.CursorKind.TYPEDEF_DECL:
         if cursor.spelling:
             qn = get_qualified_name(cursor)
-            underlying = cursor.type.spelling if cursor.type else ""
+            underlying = _typedef_underlying(cursor)
             # If an enum already exists with the same name, keep it (enum has range),
             # but ALSO store the typedef as a separate entry (unique key) so it can appear in views.
             key = qn
             if qn in data_dictionary and data_dictionary[qn].get("kind") == "enum":
                 key = f"typedef@{qn}:{rel_file}:{loc.get('line', '')}"
+            # Range from the canonical type (exact, target-aware); the name table is
+            # only consulted when libclang has no answer — e.g. a typedef of a struct.
+            _td_range = _range_from_clang_type(cursor.underlying_typedef_type)
+            if _td_range == "NA":
+                _td_range = get_range_for_type(underlying or "")
+            _register_builtin_range(cursor.underlying_typedef_type)
             typedef_dict: dict = {
                 "kind": "typedef",
                 "name": cursor.spelling,
                 "qualifiedName": qn,
                 "underlyingType": underlying or "(opaque)",
-                "range": get_range_for_type(underlying or ""),
+                "range": _td_range,
                 "location": loc,
             }
             cmt = _preceding_comment(cursor)
             if cmt:
                 typedef_dict["comment"] = cmt
-            data_dictionary[key] = typedef_dict
+            if key == qn:
+                _dd_store(qn, typedef_dict, _layer, loc)
+            else:
+                # Already disambiguated against a same-named enum — that key carries
+                # file+line, so it cannot collide across layers.
+                typedef_dict["layer"] = _layer
+                data_dictionary[key] = typedef_dict
             # Incremental (M1.2): typedef hash keyed by qn; don't clobber a struct/enum
             # definition's hash that already owns this qn (e.g. typedef of a named enum).
             entity_hashes.setdefault(qn, hash_cursor(cursor, comment=typedef_dict.get("comment", "")))
@@ -839,6 +1439,51 @@ def _var_decl_should_record_as_function_not_global(cursor):
     return _var_decl_init_args_are_only_decl_refs(cursor)
 
 
+# A call's callee is its FIRST child, but clang wraps it: CALL_EXPR -> UNEXPOSED_EXPR ->
+# DECL_REF_EXPR. The "this is a callee, not an address-take" flag must therefore propagate
+# THROUGH these wrapper kinds — stopping one level down would read every direct call as an
+# address-take and turn the whole codebase public.
+_CALLEE_WRAPPER_KINDS = (
+    cindex.CursorKind.UNEXPOSED_EXPR,
+    cindex.CursorKind.PAREN_EXPR,
+)
+
+
+def _walk_address_taken(cursor, on_hit, in_callee=False):
+    """Call on_hit(func_key) for each project function whose ADDRESS is taken in this subtree.
+
+    A bare function name used as a value (`{ fn1, fn2 }`, `&fn`, `p = fn`) is an
+    address-take; the same name in callee position (`fn()`) is not.
+    """
+    kind = cursor.kind
+
+    if kind == cindex.CursorKind.DECL_REF_EXPR:
+        if not in_callee:
+            try:
+                ref = cursor.referenced
+                if (ref is not None
+                        and ref.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
+                        and ref.location.file
+                        and is_project_file(ref.location.file.name)):
+                    # Resolved cursors only — never the spelling-match fallback used for
+                    # calls, or any identifier sharing a function's name would count.
+                    on_hit(get_function_key(ref))
+            except Exception:
+                pass
+        return
+
+    children = list(cursor.get_children())
+    if kind == cindex.CursorKind.CALL_EXPR and children:
+        _walk_address_taken(children[0], on_hit, in_callee=True)
+        for child in children[1:]:
+            _walk_address_taken(child, on_hit, in_callee=False)
+        return
+
+    still_callee = in_callee and kind in _CALLEE_WRAPPER_KINDS
+    for child in children:
+        _walk_address_taken(child, on_hit, still_callee)
+
+
 def visit_definitions(cursor):
     is_function = cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
     is_global_var = (
@@ -854,12 +1499,23 @@ def visit_definitions(cursor):
 
         # Skip if already visited (from header included in another translation unit)
         if func_key in _visited_function_keys:
+            # Normally benign — the same definition seen through a second TU, and the
+            # first one is already recorded. Counted because it is NOT benign when two
+            # genuinely different functions collide on one key: the second is lost, and
+            # this tally is the only place that would show it.
+            _diag_drop("dedup-hit", cursor)
             for child in cursor.get_children():
                 visit_definitions(child)
             return
 
         # Mark as visited
         _visited_function_keys.add(func_key)
+        # In-body address-takes (`pFunc = &helper;`). Walked here rather than in visit_calls
+        # so the whole address-taken rule lives in one place and the call visitor's hot loop
+        # is untouched; _visited_function_keys already makes this once-per-function.
+        _walk_address_taken(
+            cursor, lambda target, _t=func_key: _address_taken_in_body.add((_t, target))
+        )
         # Record virtual override -> base relations for the D7 virtual-dispatch
         # over-approximation (build_metadata spreads caller edges across the family).
         # Queried via the C API on the canonical decl (out-of-line defs report none).
@@ -876,7 +1532,14 @@ def visit_definitions(cursor):
         params = []
         try:
             for arg in cursor.get_arguments():
+                # Seed the dictionary with this builtin's measured range, so the view's
+                # name lookup resolves it exactly (see _register_builtin_range).
+                _register_builtin_range(arg.type)
                 params.append({"name": arg.spelling or "", "type": arg.type.spelling if arg.type else ""})
+        except Exception:
+            pass
+        try:
+            _register_builtin_range(cursor.result_type)
         except Exception:
             pass
 
@@ -892,6 +1555,7 @@ def visit_definitions(cursor):
             "functionId": func_id,
             "functionName": cursor.spelling,
             "qualifiedName": get_qualified_name(cursor),
+            "className": get_class_scope(cursor),
             "mangledName": cursor.mangled_name or "",
             "componentName": component_name,
             "parameters": params,
@@ -915,6 +1579,26 @@ def visit_definitions(cursor):
             function_to_component[fk] = component_name
 
     elif is_global_var and cursor.spelling and cursor.location.file:
+        # File-scope initializer tables: `static const fp_t table[] = { fn1, fn2 };`.
+        # Nothing calls fn1 by name, but the table publishes it — so membership alone makes
+        # it public, regardless of which file the table is in. No attempt is made to resolve
+        # which function `table[0]()` reaches; that is statically unknowable.
+        # _get_var_init_value only slices ONE declaration line, so a multi-line table is
+        # invisible to it — the AST walk is what actually sees these.
+        try:
+            _rel_init = os.path.relpath(cursor.location.file.name, MODULE_BASE_PATH).replace("\\", "/")
+        except ValueError:
+            _rel_init = cursor.location.file.name.replace("\\", "/")
+        # Keep the table's NAME too: the units that read the table are its real consumers,
+        # and in the canonical case the table sits in the SAME unit as the function it
+        # publishes — where the registering unit alone is filtered out as self. Matched by
+        # qualified name, not var id, so an `extern` redeclaration in the consuming file
+        # (its own cursor, its own var id) still resolves to the same table.
+        _tbl_qn = get_qualified_name(cursor)
+        _walk_address_taken(
+            cursor,
+            lambda target, _f=_rel_init, _n=_tbl_qn: _address_taken_at_file_scope[target].add((_f, _n)),
+        )
         if _var_decl_should_record_as_function_not_global(cursor):
             func_id = f"{cursor.location.file.name}:{cursor.location.line}"
             component_name = get_component_name(cursor.location.file.name)
@@ -954,10 +1638,12 @@ def visit_definitions(cursor):
         else:
             var_id = f"{cursor.location.file.name}:{cursor.location.line}"
             value_str = _get_var_init_value(cursor)
+            _register_builtin_range(cursor.type)
             globals_data[var_id] = {
                 "variableId": var_id,
                 "variableName": cursor.spelling,
                 "qualifiedName": get_qualified_name(cursor),
+                "className": get_class_scope(cursor),
                 "componentName": get_component_name(cursor.location.file.name),
                 "type": cursor.type.spelling if cursor.type else "",
                 "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
@@ -965,6 +1651,32 @@ def visit_definitions(cursor):
             }
             if value_str:
                 globals_data[var_id]["value"] = value_str
+
+    elif cursor.location.file and _under_project_base(cursor.location.file.name):
+        # Nothing above recorded this cursor. When it is function-shaped, record WHY:
+        # this is the trail for "my function is missing from model/functions.json".
+        # Deliberately last in the chain so it cannot intercept a cursor either
+        # branch above would have taken. Counters only — no logging per cursor.
+        if is_function:
+            if not cursor.is_definition():
+                # Collected, NOT counted as a drop yet. Almost every declaration here is
+                # benign — the definition lives in a .cpp parsed later in the same run —
+                # so only after the full walk can we tell which declarations never got
+                # one. _log_parse_summary resolves that against `functions`.
+                try:
+                    _diag_decl_only.setdefault(
+                        get_function_key(cursor),
+                        f"{_rel_path(cursor.location.file.name)}:{cursor.location.line} "
+                        f"{cursor.spelling or '(anonymous)'}",
+                    )
+                except Exception:
+                    pass
+            else:
+                # A definition under the project base that is_project_file() still
+                # rejected — excludeNamePatterns, or absent from the component map.
+                _diag_drop("not-project-file", cursor)
+        elif cursor.kind in _DIAG_FUNCTIONISH_KINDS:
+            _diag_drop(f"kind={cursor.kind.name}", cursor)
 
     for child in cursor.get_children():
         visit_definitions(child)
@@ -1224,16 +1936,53 @@ def _collect_macro_defs(tu_cursor):
         _active_macro_lines.setdefault((cur.spelling, rel), set()).add(cur.location.line)
 
 
-def parse_file(path):
+def _record_tu_diagnostics(tu, rel: str) -> int:
+    """Count clang's own complaints about a TU that loaded. Returns the error count.
+
+    A TU can parse "successfully" and still be full of errors: one missing include
+    makes clang recover and hand back a partial AST, so definitions vanish with no
+    failure reported anywhere. Phase 1 discarded these entirely before, which is why
+    a missing function had no trail. Reporting them never changes what gets recorded.
+    """
     try:
-        tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        errors = [d for d in tu.diagnostics if d.severity >= cindex.Diagnostic.Error]
+    except Exception:
+        return 0
+    if not errors:
+        return 0
+    _diag_counts["tus_with_errors"] += 1
+    try:
+        first = errors[0].spelling
+    except Exception:
+        first = "(unavailable)"
+    _diag_tu_errors.append((rel, len(errors), first))
+    return len(errors)
+
+
+def parse_file(path):
+    rel = _rel_path(path)
+    _defs_before = len(functions)
+    try:
+        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
         visit_usage(tu.cursor)  # incremental (M1.2b): type/macro usage on the same TU
         _collect_macro_defs(tu.cursor)  # active #if/#else macro branch (for _scan_defines)
     except cindex.TranslationUnitLoadError as e:
-        print(f"Failed: {path}: {e}")
+        # ERROR, not CRITICAL: this TU is lost but the run continues, so the model
+        # comes out partial rather than absent.
+        _diag_counts["tus_failed"] += 1
+        _diag_tu_failures.append((rel, str(e)))
+        _log.error("TU failed to load: %s: %s", rel, e)
+        return
+    _diag_counts["tus_ok"] += 1
+    n_defs = len(functions) - _defs_before
+    _diag_tu_defs[rel] = n_defs
+    n_err = _record_tu_diagnostics(tu, rel)
+    # DEBUG is per-FILE, never per-cursor: the file handler captures DEBUG on every
+    # run, so this stays at roughly one line per TU.
+    _log.debug("TU %s: ok, %d def(s), %d clang error(s)", rel, n_defs, n_err)
 
 
 def parse_calls_and_globals(path):
@@ -1252,8 +2001,19 @@ def parse_calls_and_globals(path):
     19-file sample), so this is a ~1/3 cut that scales with the codebase.
     """
     try:
-        tu = index.parse(path, args=CLANG_ARGS, options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         visit_calls(tu.cursor)
+    except cindex.TranslationUnitLoadError:
+        pass
+
+
+def parse_global_access(path):
+    """Collect global read/write per function for direction (In/Out)."""
+    try:
+        # clang_args_for, not CLANG_ARGS: this pass must see the same defines and
+        # include dirs as the definition pass, or a layer-gated #ifdef makes the two
+        # walks disagree about which globals a function touches.
+        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         visit_global_access(tu.cursor)
     except cindex.TranslationUnitLoadError:
         pass
@@ -1261,6 +2021,21 @@ def parse_calls_and_globals(path):
 
 def build_metadata():
     base_path = os.path.abspath(MODULE_BASE_PATH)
+    # In-body address-takes become ordinary call edges (`pFunc = &helper` => taker -> helper),
+    # so calledByIds, Source/Destination, unit diagrams and behaviour diagrams all pick the
+    # relationship up with no further change. Same over-approximation shape as D7 below.
+    # Must run BEFORE spread_virtual_families and the call_graph -> ids mapping.
+    _n_addr_edges = 0
+    for _taker, _target in sorted(_address_taken_in_body):
+        if _taker not in functions or _target not in functions or _taker == _target:
+            continue
+        if _target not in call_graph[_taker]:
+            call_graph[_taker].append(_target)
+            _n_addr_edges += 1
+        if _taker not in reverse_call_graph[_target]:
+            reverse_call_graph[_target].append(_taker)
+    if _n_addr_edges:
+        print(f"  address-taken: linked {_n_addr_edges} in-body address-of-function edge(s)")
     # D7 virtual-dispatch over-approximation: link callers of any virtual-family member
     # to ALL members, so a call that may dynamically dispatch to any override impacts the
     # whole family (never stale) and calledByIds is accurate. Must run before the
@@ -1299,6 +2074,8 @@ def build_metadata():
             "description": f.get("description", ""),
         }
         functions_dict[fid]["visibility"] = f.get("visibility", "default")
+        if f.get("className"):
+            functions_dict[fid]["className"] = f["className"]
         if f.get("syntheticFromVarDecl"):
             functions_dict[fid]["syntheticFromVarDecl"] = True
         if f.get("declarationOnly"):
@@ -1328,6 +2105,8 @@ def build_metadata():
         if g.get("value"):
             g_entry["value"] = g["value"]
         g_entry["visibility"] = g.get("visibility", "default")
+        if g.get("className"):
+            g_entry["className"] = g["className"]
         global_variables_dict[vid] = g_entry
 
     # M4.4 narrowed parse: cross-TU callees live in files we did NOT re-parse, so they
@@ -1336,6 +2115,45 @@ def build_metadata():
     for _bk, _bfid in _baseline_func_keys.items():
         func_key_to_fid.setdefault(_bk, _bfid)
         _func_key_to_fid.setdefault(_bk, _bfid)
+
+    # File-scope address-takes have no caller FUNCTION — the taker is a table. Record the
+    # units that publish each function so `_fn_is_private` can keep it public and the
+    # interface table / unit diagram can name the registering unit.
+    # unit_key of every function that READS a global of a given qualified name — for a
+    # registration table, those units are its actual consumers.
+    _readers_by_global_name = defaultdict(set)
+    for _fk, _read_vars in global_access_reads.items():
+        _reader_fid = func_key_to_fid.get(_fk)
+        if not _reader_fid:
+            continue
+        _rp = _reader_fid.split(KEY_SEP)
+        if len(_rp) < 2:
+            continue
+        _reader_unit = KEY_SEP.join(_rp[:2])
+        for _v in _read_vars:
+            _g = globals_data.get(_v)
+            if _g and _g.get("qualifiedName"):
+                _readers_by_global_name[_g["qualifiedName"]].add(_reader_unit)
+
+    _address_taken_fid.clear()
+    for _target_key, _sites in _address_taken_at_file_scope.items():
+        _target_fid = func_key_to_fid.get(_target_key)
+        if not _target_fid or _target_fid not in functions_dict:
+            continue
+        _units = {make_unit_key(rf) for rf, _ in _sites if rf}
+        # The consuming units matter more than the registering one for Source/Destination:
+        # the table usually lives in the SAME unit as the function it publishes.
+        for _, _tbl_name in _sites:
+            _units |= _readers_by_global_name.get(_tbl_name, set())
+        _units = sorted(u for u in _units if u)
+        if not _units:
+            continue
+        functions_dict[_target_fid]["addressTakenByUnits"] = _units
+        for _u in _units:
+            _address_taken_fid.append([_target_fid, _u])
+    if _address_taken_fid:
+        print(f"  address-taken: {len(_address_taken_fid)} function/unit registration(s) "
+              f"from file-scope initializers")
 
     # M4.6: fid-level override->base pairs for the narrowed-parse virtual re-spread. base is
     # its fid when defined, else its (stable) mangled key as a grouping token.
@@ -1406,8 +2224,14 @@ def _collect_source_files():
             else:
                 continue
             path = os.path.join(root, f)
+            _diag_counts["files_walked"] += 1
             if is_project_file(path):
+                _diag_counts["files_project"] += 1
                 bucket.append(path)
+            else:
+                # Per-file, so bounded by file count rather than cursor count. This is
+                # where an excludeNamePatterns hit or a component-map gap shows up.
+                _log.debug("file skipped (not project file): %s", _rel_path(path))
     return sources + headers
 
 
@@ -1460,6 +2284,9 @@ def _scan_defines():
             rel_file = os.path.relpath(path, MODULE_BASE_PATH).replace("\\", "/")
         except ValueError:
             rel_file = path.replace("\\", "/")
+        # Piggyback: this loop already holds every project file's lines in memory, so
+        # the "definition in the text but not in the model" check costs no extra read.
+        _scan_unrecorded_functions(rel_file, lines)
         i = 0
         n = len(lines)
         while i < n:
@@ -1508,6 +2335,9 @@ def _scan_defines():
                 "kind": "define",
                 "name": name,
                 "qualifiedName": name,
+                # Key already carries file+line, so no cross-layer collision is
+                # possible here; the stamp scopes the lookup.
+                "layer": layer_for_rel_file(rel_file),
                 "value": e["value"],
                 "text": e["full"],
                 "location": {"file": rel_file, "line": e["line"]},
@@ -1520,8 +2350,91 @@ def _scan_defines():
             entity_files[f"{name}@{rel_file}"] = rel_file  # M4.3
 
 
-def _merge_external_data_dictionary(path: str) -> None:
-    """Merge a user-authored CSV into the component-level data_dictionary (external wins).
+def _format_csv_merge_report(matched_names, new_names, orphan_children,
+                             duplicate_names=None, blank_name_rows=0, *, limit=10):
+    """Lines telling the CSV author which rows actually landed on a parsed type.
+
+    "new, not found in source" is the one that matters: a typo'd or renamed type is
+    silently added as its own entry, so without this it looks exactly like a
+    successful override while the real type keeps its old range.
+
+    `duplicate_names` and `blank_name_rows` cover the two ways a row goes wrong
+    without changing any count above: a repeated Name (last one wins, and the
+    earlier entry's enumerators/fields are reset out from under it) and a row whose
+    Name cell is empty on a non-child Kind, which the merge loop drops outright.
+    """
+    def _names(names):
+        shown = ", ".join(names[:limit])
+        return shown + (f", +{len(names) - limit} more" if len(names) > limit else "")
+
+    lines = []
+    if matched_names:
+        lines.append(f"    {len(matched_names)} matched a parsed type: {_names(matched_names)}")
+    if new_names:
+        lines.append(f"    {len(new_names)} new, not found in source: {_names(new_names)}")
+    if duplicate_names:
+        lines.append(
+            f"    {len(duplicate_names)} name(s) appear on more than one row (last row wins): "
+            f"{_names(duplicate_names)}"
+        )
+    if blank_name_rows:
+        lines.append(
+            f"    {blank_name_rows} row(s) dropped: empty Name on a row that is not "
+            "Kind=enumerator/field"
+        )
+    if orphan_children:
+        lines.append(f"    {orphan_children} child row(s) skipped: no parent Name above them")
+    return lines
+
+
+def _dd_target_key(name: str, layer: "str | None") -> str:
+    """Key a CSV row should be written to for `layer`.
+
+    Mirrors the lookup rule so a merge and a read agree:
+      * no layer (project-wide CSV) -> the bare name, as before;
+      * layer already has an entry  -> update it in place;
+      * bare slot free or already this layer's -> the bare name;
+      * bare slot owned by the global tier or another layer -> `name@layer`,
+        leaving that entry untouched. This is what stops a layer's CSV from
+        rewriting a builtin's range for every other layer.
+    """
+    if not layer:
+        return name
+    qualified = f"{name}@{layer}"
+    if qualified in data_dictionary:
+        return qualified
+    existing = data_dictionary.get(name)
+    if existing is not None and existing.get("layer") != layer:
+        return qualified
+    return name
+
+
+def _dd_row_base(source: dict, name: str, target_key: str) -> "dict | None":
+    """The existing entry a CSV row builds on, looked up in `source`.
+
+    Called twice per row against two different dicts: the live dictionary, to build the
+    new entry from, and the pre-loop snapshot, to decide matched-vs-new. Those answers
+    differ exactly for a duplicated Name — where the live dictionary already holds what
+    the earlier row wrote — which is why the report cannot read the live one.
+    """
+    hit = source.get(target_key)
+    if hit is None and target_key != name:
+        # First row for this layer on a name the global tier already holds: seed from
+        # the global entry so location/fields survive, but never from another LAYER's.
+        _global = source.get(name)
+        if _global is not None and _global.get("layer") is None:
+            hit = _global
+    return hit
+
+
+def _merge_dd_rows(path: str, layer: "str | None" = None) -> list:
+    """Merge a user-authored CSV into data_dictionary (external wins).
+
+    `layer` scopes every row to one layer; None is the project-wide dictionary and
+    keeps the pre-layer behaviour exactly.
+
+    Returns the merge-report lines (also logged) so callers and tests can see which
+    rows landed.
 
     CSV columns: Name, Kind, EntryName, Range, Comment
     - Name (required for top-level rows): type key in dataDictionary.
@@ -1535,6 +2448,9 @@ def _merge_external_data_dictionary(path: str) -> None:
     This matches how Excel merged-cell exports look in CSV.
     """
     if not os.path.isfile(path):
+        # CRITICAL: aborts Phase 1, so there is no model at all — distinct from an ERROR,
+        # where one TU is lost and the run continues with partial output.
+        _log.critical("data dictionary CSV not found: %s - Phase 1 aborted", path)
         print(f"[parser] ERROR: data dictionary CSV not found: {path}", file=sys.stderr)
         sys.exit(2)
 
@@ -1542,6 +2458,7 @@ def _merge_external_data_dictionary(path: str) -> None:
         with open(path, newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             if reader.fieldnames is None:
+                _log.critical("data dictionary CSV is empty: %s - Phase 1 aborted", path)
                 print(f"[parser] ERROR: data dictionary CSV is empty: {path}", file=sys.stderr)
                 sys.exit(2)
 
@@ -1550,6 +2467,28 @@ def _merge_external_data_dictionary(path: str) -> None:
 
             parent_key: str | None = None
             merged = 0
+            # Which rows actually landed on something the parse found. A row naming a
+            # type that does not exist (typo, or a type renamed in the code) is added as
+            # a brand-new entry and would otherwise look identical to a successful
+            # override — the author would believe it applied.
+            #
+            # Snapshot the dictionary BEFORE the loop: testing `data_dictionary.get(name)`
+            # per row asks "is it there *now*", so the second row of a duplicated Name sees
+            # the entry the FIRST row just wrote and gets filed under "matched a parsed
+            # type" — reporting a type absent from the source as a successful override.
+            #
+            # A dict, not a set of keys, because the layered lookup (`_dd_row_base`) has to
+            # read each candidate's `layer` to tell the global tier from another layer's
+            # entry — and the loop stamps `layer` on the entries it writes. A SHALLOW copy
+            # is enough: the loop rebinds `data_dictionary[target_key]` to a fresh
+            # `dict(existing)` rather than mutating in place, and the only in-place writes
+            # (child rows appending to enumerators/fields) go to that fresh dict.
+            pre_existing = dict(data_dictionary)
+            matched_names: list = []
+            new_names: list = []
+            orphan_children = 0
+            blank_name_rows = 0
+            seen_names: dict = {}       # Name -> times seen, for the duplicate report
 
             for row in reader:
                 name     = (row.get("Name")      or "").strip()
@@ -1561,9 +2500,11 @@ def _merge_external_data_dictionary(path: str) -> None:
                 # Child rows: enumerator or field — attach to current parent.
                 if not name and kind in ("enumerator", "field"):
                     if parent_key is None or not entry_nm:
+                        orphan_children += 1
                         continue
                     entry = data_dictionary.get(parent_key)
                     if entry is None:
+                        orphan_children += 1
                         continue
                     if kind == "enumerator":
                         entry.setdefault("enumerators", [])
@@ -1587,15 +2528,32 @@ def _merge_external_data_dictionary(path: str) -> None:
 
                 # Top-level row: create or update a dictionary entry.
                 if not name:
+                    # An empty Name on a non-child Kind. Counted here because the merge
+                    # drops it and every other number in the report stays the same — a
+                    # merged-cell Excel export turns into a file of these.
+                    if any((kind, entry_nm, range_v, comment)):
+                        blank_name_rows += 1
                     continue
 
-                parent_key = name
                 kind = kind or "typedef"
+                seen_names[name] = seen_names.get(name, 0) + 1
+
+                target_key = _dd_target_key(name, layer)
+                parent_key = target_key
 
                 # Start from existing entry so unspecified sub-lists are preserved.
-                existing = data_dictionary.get(name, {})
+                existing = _dd_row_base(data_dictionary, name, target_key) or {}
+                if seen_names[name] == 1:
+                    # Decided against the PRE-LOOP snapshot, and only on a name's first
+                    # row: resolving this against the live dictionary meant the 2nd row
+                    # of a duplicated Name found what the 1st row had just written and
+                    # was filed under "matched a parsed type", reporting a type absent
+                    # from the source as a successful override.
+                    _prior = _dd_row_base(pre_existing, name, target_key)
+                    (matched_names if _prior is not None else new_names).append(name)
                 entry: dict = dict(existing)
                 entry["kind"] = kind
+                entry["layer"] = layer
                 if range_v:
                     entry["range"] = range_v
                 if comment:
@@ -1606,20 +2564,138 @@ def _merge_external_data_dictionary(path: str) -> None:
                 if kind in ("struct", "class"):
                     entry["fields"] = []
 
-                data_dictionary[name] = entry
+                data_dictionary[target_key] = entry
                 merged += 1
 
     except csv.Error as exc:
+        _log.critical("failed to parse data dictionary CSV %s: %s - Phase 1 aborted", path, exc)
         print(f"[parser] ERROR: failed to parse data dictionary CSV {path}: {exc}", file=sys.stderr)
         sys.exit(2)
 
-    print(f"  data dictionary: merged {merged} entries from {os.path.basename(path)}")
+    # Through the logger, not print(): this is the record of whether a client's CSV
+    # actually applied, so it has to survive in logs/run_<date>.log rather than
+    # scrolling past on the console. (The other Phase 1 summary lines are still
+    # print-only.)
+    from core.logging_setup import get_logger
+    _plog = get_logger("parser")
+    _scope = f" [{layer}]" if layer else ""
+    _plog.info(f"data dictionary{_scope}: merged {merged} entries from {os.path.basename(path)}")
+    _csv_top_level_names.setdefault(layer, set()).update(seen_names)
+    duplicate_names = [n for n, count in seen_names.items() if count > 1]
+    lines = _format_csv_merge_report(matched_names, new_names, orphan_children,
+                                     duplicate_names, blank_name_rows)
+    for line in lines:
+        _plog.info(line.strip())
+    # Returned as well as logged so the counting can be asserted directly in tests;
+    # main() ignores it and reads the log like everyone else.
+    return lines
+
+
+def _dd_base_name(type_str: str) -> str:
+    """The key `get_range` looks a type up under: no cv-qualifiers, no pointer/ref."""
+    base = (type_str or "").replace("const ", "").replace("volatile ", "").strip()
+    for sep in ("*", "&"):
+        if sep in base:
+            base = base.split(sep)[0].strip()
+    return base
+
+
+def _is_derived_type(type_str: str) -> bool:
+    """Pointer, reference, array or function-pointer spelling — not a scalar itself."""
+    return any(ch in (type_str or "") for ch in "*&[(")
+
+
+def _reresolve_struct_field_ranges() -> int:
+    """Re-answer struct/class field ranges from the completed dictionary.
+
+    A field's range is baked during the parse from the CANONICAL clang type
+    (`visit_type_definitions`), which happens long before the external CSV is read and
+    knows nothing about it. So a `BOOL32` field kept the width-derived
+    `0-0xFFFFFFFF` while the CSV set the BOOL32 *type* to `0-1` — both in the same
+    model, disagreeing, and only the field one reaching a struct table.
+
+    Two cases are re-answered, and only these two:
+
+      - the baked range is "NA" — libclang had no answer (a typedef of a project type,
+        or a type declared outside the project), but the dictionary may have one now;
+      - the field's base type was named by the CSV — the author deliberately overrode
+        it, and "external entries win on conflict" is the merge's existing contract.
+
+    Everything else keeps its baked range: a measured width is a fact about the target
+    being parsed and outranks anything inferred from a name.
+
+    This also closes a split-brain between a field and a *parameter* of the same type —
+    parameters are resolved through `get_range` at view time, fields never were.
+
+    Returns the number of fields changed (for the Phase 1 log).
+    """
+    changed = 0
+    # Global + own layer only, never another layer's — the rule every per-layer input
+    # follows. Cached per layer because the union is the same for every struct in it.
+    _global_csv = _csv_top_level_names.get(None, frozenset())
+    _visible_csv: dict = {}
+    for entry in data_dictionary.values():
+        if entry.get("kind") not in ("struct", "class"):
+            continue
+        _layer = entry.get("layer")
+        if _layer not in _visible_csv:
+            # For _layer None this is the global set unioned with itself.
+            _visible_csv[_layer] = _global_csv | _csv_top_level_names.get(_layer, frozenset())
+        csv_names = _visible_csv[_layer]
+        for field in entry.get("fields") or []:
+            # CSV-authored field rows carry no `type`, only a name/range the author gave.
+            ftype = field.get("type") or ""
+            if not ftype:
+                continue
+            baked = field.get("range") or "NA"
+            csv_named = _dd_base_name(ftype) in csv_names
+            if baked != "NA" and not csv_named:
+                continue
+            # `get_range` answers a pointer/array from its POINTEE, which is right for a
+            # `BOOL32 *` the author ranged but wrong for `const char *name` — that would
+            # stamp a signed-char range on a string where "NA" was the honest answer. An
+            # unknown derived type keeps NA; a CSV-named one still resolves, because
+            # naming the type is the author saying they mean it.
+            if not csv_named and _is_derived_type(ftype):
+                continue
+            # Layer-scoped like every other dictionary read: a Layer1 struct's field
+            # must not be answered by a Layer2 entry of the same type name.
+            resolved = get_range(ftype, data_dictionary, _layer)
+            if resolved and resolved != "NA" and resolved != baked:
+                field["range"] = resolved
+                changed += 1
+    return changed
+
+
+def _merge_external_data_dictionary(path: str) -> list:
+    """Project-wide CSV merge (no layer). Kept as the name the tests drive directly.
+
+    Passes the merge-report lines straight through, so a caller holding this name sees
+    the same report `_merge_dd_rows` returns.
+    """
+    return _merge_dd_rows(path, None)
 
 
 def main():
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
     plog = get_logger("parser")
+    # Resolved inputs, not the raw flags — when the parse scope is wrong, this block is
+    # what shows it. Same shape as the flowchart engine's startup banner.
+    _log.info("=" * 60)
+    _log.info("Phase 1 (parser) starting")
+    _log.info("  project name    : %s", PROJECT_NAME)
+    _log.info("  base path       : %s", MODULE_BASE_PATH)
+    _log.info("  selected layer  : %s", _selected_layer or "(all)")
+    _log.info("  selected group  : %s", _selected_group or "(all)")
+    _log.info("  component map   : %d file(s)", len(_FILE_COMPONENT_MAP))
+    _log.info("  exclude patterns: %s", ", ".join(_EXCLUDE_NAME_PATTERNS) or "(none)")
+    _log.info("  include dirs    : %d", sum(len(v) for v in _layer_include_paths.values()))
+    _log.info("  data dictionary : %s", _data_dict_path or "(none)")
+    _log.info("=" * 60)
+    _log.debug("CLANG_ARGS (global): %s", " ".join(CLANG_ARGS))
+    for _lname in sorted(_LAYER_INCLUDE_ARGS):
+        _log.debug("  include dirs [%s]: %d", _lname, len(_LAYER_INCLUDE_ARGS[_lname]))
     source_files = _collect_source_files()
     if _only_files_path:
         # Narrowed parse (M4.3): restrict to the listed TUs (repo-relative, one per line).
@@ -1689,23 +2765,64 @@ def main():
         _toolchain = cindex.conf.get_filename() or ""
     except Exception:
         _toolchain = ""
-    # base_path folds the commit-keyed checkout root out of the -I paths. Without it the
-    # fingerprint changes on every commit and the narrowed-parse gate refuses every time.
+    # WHAT goes in and WHAT comes out are two separate corrections, and the fingerprint is
+    # wrong without either one.
+    #
+    # WHAT GOES IN — every arg any TU could be parsed with, not just the global set: the
+    # per-layer include dirs and defines moved out of CLANG_ARGS into clang_args_for, and a
+    # fingerprint that ignored them would let an include-path or macro change slip past the
+    # narrowed-parse gate. Sorted so it does not depend on layer order.
+    #
+    # WHAT COMES OUT — base_path folds the commit-keyed checkout root out of the -I paths.
+    # Without it the fingerprint changes on EVERY commit, so the gate refuses every time and
+    # a narrowed parse never runs at all.
+    _fp_args = list(CLANG_ARGS)
+    for _lname in sorted(_LAYER_INCLUDE_ARGS):
+        _fp_args += _LAYER_INCLUDE_ARGS[_lname]
+    for _scope in sorted(_MACRO_ARGS_BY_SCOPE):
+        _fp_args += _MACRO_ARGS_BY_SCOPE[_scope]
     meta_header["parseFingerprint"] = parse_fingerprint(
-        CLANG_ARGS, std="", toolchain=str(_toolchain), base_path=base_path)
+        _fp_args, std="", toolchain=str(_toolchain), base_path=base_path)
     from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
-                               HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS)
+                               HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS,
+                               ADDRESS_TAKEN)
     write_model_file(METADATA, meta_header)
     write_model_file(FUNCTIONS, metadata["functions"])
     write_model_file(GLOBALS, metadata["globalVariables"])
-    # Add primitives (name as key)
+    # Add primitives (name as key). setdefault, NOT assignment: ranges measured from
+    # libclang during the parse (_register_builtin_range) are facts about the target
+    # and outrank this portable table, which e.g. hardcodes `long` as 32-bit.
     for name, info in PRIMITIVES.items():
-        data_dictionary[name] = {"kind": "primitive", "range": info["range"]}
+        data_dictionary.setdefault(
+            name, {"kind": "primitive", "range": info["range"], "layer": None})
+    # Recorded names for the text reconciliation inside _scan_defines below. Built from
+    # what is actually written out, so the comparison is against the real model. Entries
+    # carry qualifiedName only, so take the bare trailing name — that is what a text scan
+    # of the definition line can see.
+    _diag_recorded_names.update(
+        _bare
+        for _bare in (
+            (f.get("qualifiedName") or "").rsplit("::", 1)[-1]
+            for f in metadata["functions"].values()
+        )
+        if _bare
+    )
     # Add defines (kind=define)
     _scan_defines()
-    # Merge user-supplied data dictionary CSV (external entries win on conflict).
-    if _data_dict_path:
-        _merge_external_data_dictionary(_data_dict_path)
+    # Merge user-supplied data dictionary CSVs (external entries win on conflict).
+    # Project-wide sources land on the bare name; a layer's rows are scoped to that
+    # layer so they cannot answer for any other one.
+    for _dd_scope, _dd_path in _dd_sources:
+        _merge_dd_rows(_dd_path, _dd_scope)
+    _log_dd_collisions()
+    # After every CSV, so a field can pick up a range only the dictionary knows — and so
+    # a field can never contradict the entry for its own type.
+    _n_fields = _reresolve_struct_field_ranges()
+    if _n_fields:
+        from core.logging_setup import get_logger
+        get_logger("parser").info(
+            f"data dictionary: re-resolved {_n_fields} struct field range(s) "
+            "from the completed dictionary")
     write_model_file(DATA_DICTIONARY, data_dictionary)
 
     # Incremental (M1.2): entity hash snapshot for change detection.
@@ -1734,31 +2851,52 @@ def main():
     # the narrowed-parse virtual-dispatch re-spread across affected + un-parsed files.
     write_model_file(OVERRIDE_PAIRS, sorted(_override_pairs_fid))
 
+    # Address-taken registrations -> model/address_taken.json, so a narrowed parse that does
+    # not re-parse the table's file can replay them (otherwise the function flips back to
+    # private and the same source produces a different document run to run).
+    write_model_file(ADDRESS_TAKEN, sorted(_address_taken_fid))
+
     n_funcs = len(metadata["functions"])
     n_vars = len(metadata["globalVariables"])
     n_types = len(data_dictionary)
-    print("  model/metadata.json")
-    print(f"  model/functions.json ({n_funcs})")
-    print(f"  model/globalVariables.json ({n_vars})")
+    # Through the logger rather than print() so these survive in logs/run_<date>.log
+    # instead of scrolling past on the console.
+    _log.info("  model/metadata.json")
+    _log.info("  model/functions.json (%d)", n_funcs)
+    _log.info("  model/globalVariables.json (%d)", n_vars)
     kinds = {}
     for t in data_dictionary.values():
         k = t.get("kind", "?")
         kinds[k] = kinds.get(k, 0) + 1
     plural = lambda k: "classes" if k == "class" else k + "s"
     parts = [f"{v} {plural(k)}" for k, v in sorted(kinds.items())]
-    print(f"  model/dataDictionary.json ({n_types} types: {', '.join(parts)})")
-    print(f"  model/hashes.json ({len(entity_hashes)} entities)")
-    print(f"  model/edges.json ({len(edges['typeUsers'])} types used, {len(edges['macroUsers'])} macros used)")
+    _log.info("  model/dataDictionary.json (%d types: %s)", n_types, ", ".join(parts))
+    _log.info("  model/hashes.json (%d entities)", len(entity_hashes))
+    _log.info("  model/edges.json (%d types used, %d macros used)",
+              len(edges["typeUsers"]), len(edges["macroUsers"]))
     _n_inc = sum(len(v) for v in tu_includes.values())
-    print(f"  model/tu_includes.json ({len(tu_includes)} TUs, {_n_inc} in-repo include edges)")
+    _log.info("  model/tu_includes.json (%d TUs, %d in-repo include edges)",
+              len(tu_includes), _n_inc)
+
+    _log_parse_summary(n_funcs)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        # Deliberate exits (the CRITICAL paths above) already logged their reason.
+        raise
+    except BaseException:
+        # Without this an unhandled crash left nothing in the log but the orchestrator's
+        # "failed with exit code 1". Re-raised, never swallowed: turning a crash into a
+        # silent success would be far worse than having no traceback.
+        _log.critical("Phase 1 crashed - traceback follows", exc_info=True)
+        raise
     # DB mode: land this phase's buffered model writes (doc 10, step 3). Database writes are
     # buffered so the pieces persist together in one transaction, so without this the phase
     # exits and the buffer is lost — the next phase then finds no model at all. Deliberately
-    # AFTER main() returns, never in a finally: a phase that failed must not publish a
-    # half-built model. No-op in file mode and when nothing is pending.
+    # after main() RETURNS, never in a finally and never inside the try: a phase that failed
+    # must not publish a half-built model.
     from core.run_context import flush_model
     flush_model()

@@ -382,6 +382,22 @@ def short_name(full_name: str) -> str:
     return ((full_name or "").split("::")[-1]).strip()
 
 
+def scoped_name(full_name: str, class_name: str = "") -> str:
+    """Class-qualified display name: MyClass::foo, or just foo for a free function.
+
+    Namespaces are dropped — the class is what distinguishes same-named methods in a
+    table, and the namespace only makes the cell longer. The class comes from the
+    model's `className` (parser.get_class_scope) rather than by splitting full_name,
+    which can't be split back into namespace vs class parts.
+
+    Falls back to short_name() when className is absent, so models parsed before
+    className existed keep rendering as they did rather than half-qualified.
+    """
+    base = short_name(full_name)
+    cls = (class_name or "").strip()
+    return f"{cls}::{base}" if cls and base else base
+
+
 def path_is_under(base_path: str, candidate_path: str) -> bool:
     """True if candidate_path resolves to the project root or a path inside it.
 
@@ -469,11 +485,19 @@ PRIMITIVES = {
 
 
 def get_range_for_type(type_str: str) -> str:
-    """Map C++ type to range string for interface tables (VOID, 0-0xFF, NA, etc.)."""
-    t = (type_str or "").strip().lower()
+    """Map C++ type to range string for interface tables (VOID, 0-0xFF, NA, etc.).
+
+    Matching is CASE-SENSITIVE, because C++ is: lowercasing made `Size_t` (a
+    `{int width; int height;}` struct) indistinguishable from `size_t` and gave it a
+    64-bit integer range. A project type that merely resembles a primitive is "NA"
+    here and gets answered from the data dictionary instead.
+    """
+    t = (type_str or "").strip()
     if t == "void" or (t.startswith("void ") and "*" not in t):
         return "VOID"
-    base = t.replace("const ", "").replace("volatile ", "").strip().lower()
+    base = t.replace("const ", "").replace("volatile ", "").strip()
+    if base == "bool":
+        return "0-1"
     if base in ("uint8_t", "std::uint8_t", "param_uint8_t"):
         return "0-0xFF"
     if base in ("uint16_t", "std::uint16_t", "param_uint16_t"):
@@ -511,13 +535,41 @@ def get_range_for_type(type_str: str) -> str:
         return "0-0xFFFFFFFF"
     if base == "unsigned long long":
         return "0-0xFFFFFFFFFFFFFFFF"
-    if "size_t" in base and "*" not in base or base == "param_size_t":
+    # Exact names only. A substring test here ("size_t" in base) answers for any type
+    # whose NAME merely contains it — `Size_t`, `BufSize_t`, `PageSize_t` — declaring a
+    # `{int width; int height;}` struct to be a 64-bit integer. This function maps known
+    # primitives; anything else is "NA" and gets answered from the data dictionary.
+    if base in ("size_t", "std::size_t", "param_size_t") or base.endswith("::size_t"):
         return "0-0xFFFFFFFFFFFFFFFF"
     return "NA"
 
 
-def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
-    """Look up range from data dictionary (keyed by name); fallback to get_range_for_type."""
+def _visible_to_layer(entry: dict, layer) -> bool:
+    """Whether a dd entry is allowed to answer for `layer`.
+
+    Layers partition: an entry stamped with a DIFFERENT layer is not a worse
+    answer, it is the wrong type — a same-named type belonging to someone else.
+    An entry with no layer is the global tier (builtins, project-wide CSV) and
+    answers for everyone.
+
+    `layer=None` means the caller has no layer context, so nothing is filtered and
+    behaviour is exactly what it was before layers existed.
+    """
+    if layer is None:
+        return True
+    ent_layer = entry.get("layer")
+    return ent_layer is None or ent_layer == layer
+
+
+def get_range(type_str: str, data_dictionary: dict, layer=None, _depth: int = 0) -> str:
+    """Look up range from data dictionary (keyed by name); fallback to get_range_for_type.
+
+    `layer` scopes the lookup: the layer's own entry wins, the global tier answers
+    when the layer is silent, and another layer's entry is never consulted. The
+    filter is applied at ALL THREE lookup paths below — direct hit, qualifiedName
+    scan, and the alias recursion — because rejecting only the direct hit lets the
+    scan find the very entry that was just rejected.
+    """
     t = (type_str or "").strip()
     if not t:
         return "NA"
@@ -529,22 +581,63 @@ def get_range(type_str: str, data_dictionary: dict, _depth: int = 0) -> str:
     if "&" in base:
         base = base.split("&")[0].strip()
     base_lower = base.lower()
-    # Direct lookup (name/qualifiedName as key)
-    entry = dd.get(base) or dd.get(base_lower)
+    # Direct lookup: this layer's own key first (parser writes `name@layer` when a
+    # second layer defines a name the bare slot already holds), then the bare name
+    # if it is this layer's or global.
+    entry = None
+    if layer:
+        entry = dd.get(f"{base}@{layer}") or dd.get(f"{base_lower}@{layer}")
+    if entry is None:
+        _cand = dd.get(base) or dd.get(base_lower)
+        if _cand is not None and _visible_to_layer(_cand, layer):
+            entry = _cand
     if entry:
         r = entry.get("range")
-        if r:
+        if r and r != "NA":
             return r
+        # A typedef's own `range` is baked at parse time by get_range_for_type(), which
+        # never sees the data dictionary — so an alias of a project type is stored as
+        # "NA" even when the underlying type has a range (e.g. supplied later by the
+        # external CSV). Treat that "NA" as "unknown, keep looking" and resolve the
+        # alias chain here, at lookup time, when the dictionary is complete.
         if entry.get("kind") == "typedef" and _depth < 10:
             underlying = entry.get("underlyingType", "")
-            return get_range(underlying, dd, _depth + 1) if underlying else "NA"
-    # Search by qualifiedName
+            # `underlying == base` is the self-referential alias the parser emits for
+            # `typedef struct { ... } Name;` (underlyingType is the type's own name);
+            # recursing on it only burns depth.
+            if underlying and underlying != base:
+                # `layer` rides the whole alias chain: resolving UINT8 -> Handle_t must
+                # not pick up another layer's Handle_t one hop down.
+                resolved = get_range(underlying, dd, layer, _depth + 1)
+                if resolved and resolved != "NA":
+                    return resolved
+        # Nothing better found: the entry's own "NA" is the answer. Falling through to
+        # the qualifiedName scan here would let a *sibling* entry sharing this
+        # qualifiedName win (parser emits both `Name` and `typedef@Name:file:line`),
+        # which can surface a wrong range for the type actually asked about.
+        if r:
+            return r
+    # Search by qualifiedName — same precedence as the direct lookup above: a usable
+    # range wins, else resolve the alias, else fall back to this entry's own "NA"
+    # (first match still wins, so which entry answers does not change).
+    # The layer filter matters most here: this scan is what would otherwise reach the
+    # entry the direct lookup just refused, and it is also where the pre-existing
+    # first-match-wins ambiguity between two layers' same-named types lived.
     for ent in dd.values():
+        if not _visible_to_layer(ent, layer):
+            continue
         if ent.get("qualifiedName") == base or ent.get("qualifiedName", "").lower() == base_lower:
             r = ent.get("range")
-            if r:
+            if r and r != "NA":
                 return r
             if ent.get("kind") == "typedef" and _depth < 10:
                 underlying = ent.get("underlyingType", "")
-                return get_range(underlying, dd, _depth + 1) if underlying else "NA"
+                if underlying and underlying != base:
+                    resolved = get_range(underlying, dd, layer, _depth + 1)
+                    if resolved and resolved != "NA":
+                        return resolved
+                return r if r else "NA"
+            if r:
+                return r
+            # No usable range on this match: keep scanning (a later entry may carry one).
     return get_range_for_type(type_str)

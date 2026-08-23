@@ -66,6 +66,11 @@ FUNC_KEYS = "func_keys"
 # OVERRIDE_PAIRS = [[override_fid, base_fid|base_key], …] virtual override->base relations,
 # for the narrowed-parse virtual-dispatch re-spread (M4.6). Not in ALL_MODEL_NAMES.
 OVERRIDE_PAIRS = "override_pairs"
+# ADDRESS_TAKEN = [[target_fid, registering_unit_key], …] functions published by a file-scope
+# initializer table (`static const fp_t table[] = { fn1, fn2 };`). Nothing CALLS them by name,
+# so without this they read as private. A narrowed parse may not re-parse the file holding the
+# table, so the registrations are replayed from here. Not in ALL_MODEL_NAMES.
+ADDRESS_TAKEN = "address_taken"
 
 ALL_MODEL_NAMES = (
     METADATA,
