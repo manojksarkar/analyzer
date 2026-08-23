@@ -406,6 +406,13 @@ the period when files and the database were simultaneously live.
 **Not removed:** `FileRepository`. `clang_include_paths` is still a file by design, and it is the
 fallback that serves it.
 
+> **Superseded on 2026-08-23** (branch `integration/poc-4-db`). `FileRepository` IS removed, along
+> with `--model-store`, `--dump-model-files`, `FileStore` and `tools/verify_model_parity.py` - the
+> database is the only backing. `clang_include_paths` did not need the fallback to survive: it was
+> never written through the repository, the parser writes it directly as a process-boundary file.
+> An artifact with no name registered now RAISES instead of quietly becoming a file, which is how
+> `address_taken` spent the poc-4 merge in a directory nothing reads.
+
 ### Narrowed parse — landed, and on by default
 
 Parse is ~65% of a non-LLM run and scales with source volume, so this was the largest saving
@@ -419,6 +426,13 @@ PARTIAL model — and it is right: `--use-model --from-phase 4` re-export reads 
 model, so a partial persisted there would export a document holding only the changed files. The
 partial now runs under an explicit `--model-store files`; only the MERGED result is published,
 through the repository.
+
+> **Still true, enforced differently since 2026-08-23.** `--model-store` no longer exists. The
+> partial runs with `--model-scratch`, which installs a `ScratchRepository` (JSON in the run's
+> model dir) and - the part that matters - passes the phase **no version id at all**, so it has
+> nothing to write rows against even if the code tried. Recorded as **D-19** in PROJECT_CONTEXT.md.
+> Revisited for speed and left alone: it is ~10 small JSON files for the changed TUs, and a
+> Postgres round trip per artifact would be slower than the local disk write it replaced.
 
 Fixed: the merged skeleton publishes via `DbRepository`; `--verify-parse` reads the right backing
 (it was comparing two stale file copies and reporting a meaningless match); the baseline func-key

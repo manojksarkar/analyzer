@@ -438,8 +438,23 @@ python tools\verify_narrowed_parse.py
 ```
 python tools\verify_incremental_parity.py --fast
 ```
+```
+python tools\verify_db_sync.py
+```
+```
+python tools\verify_db_rebuild.py
+```
 
 Every one of these exists because something passed the unit tests and was still broken.
+
+The last two need a real database. `verify_db_sync` proves the persistence layer against
+**Postgres**, where the unit tests use SQLite — the dialect differences (JSONB, BigInteger
+identities, ON CONFLICT) are exactly what SQLite hides. `verify_db_rebuild` asks the question
+the whole migration exists to answer: could a *different machine* rebuild this version from
+the database alone?
+
+`verify_model_parity` is gone. It compared the database against `model/*.json`, and nothing
+writes those files any more — it could only have compared against stale leftovers.
 
 ---
 

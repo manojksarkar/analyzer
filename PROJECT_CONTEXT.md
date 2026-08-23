@@ -235,7 +235,35 @@
 > ONE file-writing path is deliberate — `ScratchRepository`, reached by `--model-scratch`, for the
 > narrowed parse's partial pass, which carries no version id so it cannot write rows by accident.
 > Gates: pytest 1334 passed / 10 skipped, verify_incremental, verify_narrowed_parse,
-> verify_flowchart_reuse, verify_incremental_parity --fast, verify_db_sync, verify_db_rebuild — all green.)
+> verify_flowchart_reuse, verify_incremental_parity --fast, verify_db_sync, verify_db_rebuild —
+> all green.
+>
+> **The rest of the JSON went with it.** `FileStore` (a second ArtifactStore writing
+> versions/<ver>/ as JSON, reachable only with no database - `make_store` now REFUSES instead);
+> `HashStore`/`EdgeStore`, which every run still CONSTRUCTED and never used once their readers
+> moved to the store; `VersionStore`'s `config.json` and `manifest.json` written beside the git
+> checkout; `functions_incremental.json` in the file-level flowchart branch; and four
+> `ArtifactStore` file defaults that PgStore overrides and no subclass could reach any more -
+> now `@abstractmethod`, so a future store cannot inherit a JSON writer by accident. The
+> manifest DISK FALLBACK in `_read_engine_manifest` went too, and it had been merging the file
+> OVER the database, so a version with both took the stale copy.
+>
+> **Deliberately still files, each for a reason that is not legacy:** the run's `output/`;
+> `logs/llm_stats_*.json` and the metrics jsonl; the per-run `config.json`, `macros.json` and
+> `clang_include_paths.json`, which cross a PROCESS BOUNDARY (the phases are separate processes
+> handed `--config`; the source of truth is the project row and the file is only the delivery);
+> and `ScratchRepository`.
+>
+> **D-19 (decision): the narrowed parse's partial output stays OUT of the database.** Doc 10
+> records that the migration tried to land it in the real version and backed out during
+> verification: `--use-model --from-phase 4` re-export reads the version's model, so a partial
+> persisted there exports a document holding only the changed files. That decision is now
+> enforced structurally rather than by a flag value - the partial phase runs with
+> `--model-scratch` and is handed NO version id, so it has nothing to write rows against. Moving
+> it into the database would also be slower, not faster: it is ~10 small JSON files for the
+> changed TUs only, and a Postgres round trip per artifact would replace a few milliseconds of
+> local disk. Parse is no longer where incremental time goes - LLM calls x `rateLimitSeconds`
+> is, which is why the report now separates model time from throttle time.)
 
 > Updated: 2026-08-22b (**behaviour diagram package replaced + LLM path rewired** — branch
 > `fix/behaviour-diagram`. All 7 modules under `engine/behaviour_diagram/` swapped for an external version;
