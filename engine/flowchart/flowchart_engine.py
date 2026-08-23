@@ -361,7 +361,7 @@ def _apply_cached_labels(cfg, key: str, config: EngineConfig) -> bool:
         return False
 
 
-def _store_labels(cfg, key: str, config: EngineConfig) -> None:
+def _store_labels(cfg, key: str, config: EngineConfig, fallback_ids=frozenset()) -> None:
     """Store the generated labels — unless any of them is a FALLBACK.
 
     When the LLM times out or returns nothing usable, the generator substitutes mechanical
@@ -375,12 +375,16 @@ def _store_labels(cfg, key: str, config: EngineConfig) -> None:
         return
     try:
         import json as _json
-        from llm.generator import _looks_like_fallback
         labelable = [n for n in cfg.nodes.values()
                      if n.node_type not in (NodeType.START, NodeType.END)]
         if not labelable:
             return
-        n_fallback = sum(1 for n in labelable if _looks_like_fallback(n))
+        # `fallback_ids` comes from the generator, which RECORDS the nodes it gave a
+        # rule-based label to. That replaced a caller-side heuristic that guessed from the
+        # label text (`_looks_like_fallback`), and the guess is gone — the import of it sat
+        # inside this try, so when it disappeared the whole guard silently stopped running
+        # and nothing was cached at all.
+        n_fallback = sum(1 for n in labelable if str(n.node_id) in fallback_ids)
         if n_fallback:
             logger.info("not caching labels: %d/%d node(s) fell back to mechanical labels, so "
                         "the LLM result is incomplete", n_fallback, len(labelable))
@@ -565,7 +569,7 @@ def _process_function(
         _lbl_key = _label_cache_key(source_code, config)
         if not _apply_cached_labels(cfg, _lbl_key, config):
             label_generator.label_cfg(cfg, func_entry, source_code, base_path)
-            _store_labels(cfg, _lbl_key, config)
+            _store_labels(cfg, _lbl_key, config, label_generator.fallback_node_ids)
 
         # 7. Validate CFG
         cfg_validation = validate_cfg(cfg)

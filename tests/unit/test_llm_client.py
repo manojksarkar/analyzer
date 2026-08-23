@@ -333,25 +333,25 @@ class TestConfigurableRateLimit:
     def test_default_is_the_gateway_safe_value(self):
         from llm_core.client import LlmClient, _OPENAI_RATE_LIMIT_SEC
         c = LlmClient(provider="openai", base_url="http://x", model="m")
-        assert c._rate_limit_sec == _OPENAI_RATE_LIMIT_SEC == 3.0
+        assert c._rate_limit == _OPENAI_RATE_LIMIT_SEC == 3.0
 
     def test_zero_disables_the_pause(self):
         from llm_core.client import LlmClient
         c = LlmClient(provider="openai", base_url="http://x", model="m",
                       rate_limit_seconds=0)
-        assert c._rate_limit_sec == 0
+        assert c._rate_limit == 0
 
     def test_negative_is_clamped_not_crashing(self):
         from llm_core.client import LlmClient
         c = LlmClient(provider="openai", base_url="http://x", model="m",
                       rate_limit_seconds=-5)
-        assert c._rate_limit_sec == 0
+        assert c._rate_limit == 0
 
     def test_from_config_threads_the_value(self):
         from llm_core.client import from_config
         c = from_config({"provider": "openai", "baseUrl": "http://x",
                          "defaultModel": "m", "rateLimitSeconds": 0})
-        assert c._rate_limit_sec == 0
+        assert c._rate_limit == 0
 
     def test_config_validation_accepts_zero_and_rejects_nonsense(self):
         from core.config import load_llm_config, LlmConfigError

@@ -152,12 +152,14 @@ class TestFallbacksAreNeverCached:
     """
 
     def test_a_fallback_label_blocks_the_write(self, monkeypatch):
+        """Which nodes fell back is now told to us by the generator, not guessed from the
+        label text — so the test declares it the same way the generator does."""
         cache = _Cache()
         monkeypatch.setattr(fe, "_label_cache", lambda cfg: cache)
         cfg = _cfg()
         cfg.nodes["n1"].label = "Reads the sensor"
         cfg.nodes["n2"].label = "Check: x > 0"        # mechanical fallback
-        fe._store_labels(cfg, "k", None)
+        fe._store_labels(cfg, "k", None, frozenset({"n2"}))
         assert cache.puts == [], "a fallback label was cached and would never be retried"
 
     def test_a_clean_result_is_cached(self, monkeypatch):

@@ -368,6 +368,10 @@ job_functions = Table(
     Column("is_visible", Boolean, default=True),
     Column("is_new", Boolean, default=False),
     Column("description", Text),
+    # Enclosing class/struct, namespaces dropped ("" for free functions). This table mirrors
+    # the Function domain model field for field, so a domain field with no column here fails
+    # every insert with "Unconsumed column names".
+    Column("class_name", String),
     Index("ix_job_functions_job", "job_id"),
 )
 

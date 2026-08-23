@@ -188,6 +188,13 @@ _KNOWN_FLAGS = (
     "--macros", "--macros-layer", "--include-path-layer",
     "--only-files", "--include-emulator",
     "--quiet", "--verbose", "--trace-prompts",
+    # The run-identity flags the database path needs. This list is an ALLOWLIST — anything
+    # missing from it is rejected before Phase 1 no matter how well its parse branch works,
+    # so a database run would stop at "Unknown option: --version-id". `test_cli.py
+    # ::test_known_flags_stays_in_sync_with_parse_branches` compares this against the parse
+    # branches by AST, which is what keeps the two from drifting apart again.
+    "--version-id", "--project-id", "--baseline-version-id",
+    "--model-store", "--model-root", "--output-root", "--dump-model-files",
 )
 
 clean_all               = False
@@ -493,22 +500,6 @@ if len(raw_args) > 1:
     log("Run `python engine/run.py --help` to see all options.", component="run", err=True)
     sys.exit(1)
 
-if clean_all:
-    for d in ("output", "model"):
-        path = os.path.join(SCRIPT_DIR, d)
-        if os.path.isdir(path):
-            shutil.rmtree(path)
-            log(f"Removed {d}/", component="run")
-    # Say what it does NOT do (doc 10, H4). --clean removes DIRECTORIES; with the model in the
-    # database, deleting model/ leaves the rows untouched, so "clean" would read as a fresh
-    # start while the next run still resolves a stored model. Deleting a version's rows is the
-    # API's job (it owns the versions row and its cascade), not a CLI flag's, so this warns
-    # rather than reaching into the database.
-    if model_store_arg == "db":
-        log("--clean removed the directories only: the model for this version is in the "
-            "database and is NOT deleted. Remove the version through the API to clear it.",
-            component="run")
-
 project_path = raw_args[0]
 resolved = os.path.abspath(project_path) if os.path.isabs(project_path) else os.path.join(SCRIPT_DIR, project_path)
 if not os.path.isdir(resolved):
@@ -524,6 +515,15 @@ if clean_all:
         if os.path.isdir(path):
             shutil.rmtree(path)
             log(f"Removed {d}/", component="run")
+    # Say what it does NOT do (doc 10, H4). --clean removes DIRECTORIES; with the model in the
+    # database, deleting model/ leaves the rows untouched, so "clean" would read as a fresh
+    # start while the next run still resolves a stored model. Deleting a version's rows is the
+    # API's job (it owns the versions row and its cascade), not a CLI flag's, so this warns
+    # rather than reaching into the database.
+    if model_store_arg == "db":
+        log("--clean removed the directories only: the model for this version is in the "
+            "database and is NOT deleted. Remove the version through the API to clear it.",
+            component="run")
 
 # ---------------------------------------------------------------------------
 # When --use-model is set, refuse early if model files are missing.

@@ -54,7 +54,14 @@ DB_BACKED_STANDALONE = frozenset(("knowledge_base", "incremental_plan", "tu_incl
 # `metadata` is here too. Its DURABLE fields (basePath / projectName / parseFingerprint) are
 # `versions` columns written by `persist_run_metadata`; this row is the in-run channel, which is
 # what Phase 4 and the flowchart engine actually read.
-DB_BACKED_PARSE = frozenset(("entity_files", "func_keys", "override_pairs", "metadata"))
+# `address_taken` arrived with the poc-4 merge and belongs to exactly this category: Phase 1
+# records which functions a file-scope initializer table publishes, and a LATER narrowed parse
+# replays them because it may not re-parse the file holding the table. Unregistered, the write
+# fell through to the file repository — so in database mode it landed in a directory nothing
+# reads, the version's snapshot had no address_taken, and function-pointer table entries went
+# back to reading as private on the next incremental run.
+DB_BACKED_PARSE = frozenset(("entity_files", "func_keys", "override_pairs", "metadata",
+                             "address_taken"))
 
 DB_BACKED = DB_BACKED_MODEL | DB_BACKED_STANDALONE | DB_BACKED_PARSE
 

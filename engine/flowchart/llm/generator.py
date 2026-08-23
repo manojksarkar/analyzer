@@ -125,6 +125,18 @@ class LabelGenerator:
     # Public API
     # ------------------------------------------------------------------
 
+    @property
+    def fallback_node_ids(self) -> Set[str]:
+        """Node ids that got a rule-based label on the LAST label_cfg() call.
+
+        Read by the label cache, which must never store a fallback: caching one would make a
+        transient LLM outage permanent — every later run hits the cache, never retries, and the
+        only symptom is flowcharts that quietly stayed mechanical forever. This set is
+        authoritative (the generator records what it did) where the old caller-side heuristic
+        guessed from the label text.
+        """
+        return frozenset(self._fallback_ids)
+
     def label_cfg(self, cfg: ControlFlowGraph,
                   func_entry: FunctionEntry,
                   source_code: str,

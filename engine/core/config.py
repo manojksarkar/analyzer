@@ -310,10 +310,13 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
                 f"llm.maxContextTokens must be positive (got {max_ctx})"
             )
 
-    # rateLimitSeconds: pause after every OpenAI call, including failed ones,
-    # because the corporate gateway throttles ~1 request per 3 seconds. 0
-    # disables the throttle entirely. Ollama is not gateway-throttled and
-    # never sleeps, so this is an OpenAI-only knob.
+    # rateLimitSeconds: pause after every OpenAI call, including failed ones, because the
+    # corporate gateway throttles ~1 request per 3 seconds. 0 disables the throttle entirely.
+    # Ollama is not gateway-throttled and never sleeps, so this is an OpenAI-only knob.
+    #
+    # The two on-prem deployments need opposite values (doc 09, B6): the API **gateway**
+    # enforces that global limit, while an on-prem **hosted model** has none and 3s per call
+    # would dominate the run. Default 3.0 keeps the gateway safe for anyone who does not set it.
     rate_limit_raw = _env_or("LLM_RATE_LIMIT_SECONDS",
                              llm.get("rateLimitSeconds", 3.0))
     if rate_limit_raw is None or rate_limit_raw == "":
@@ -367,23 +370,6 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
             f"llm.cacheVersion must be >= 1 (got {cache_version})"
         )
 
-    # rateLimitSeconds — pause after every OpenAI-shaped call (doc 09, B6).
-    # The two on-prem deployments need opposite values: the API **gateway** enforces a global
-    # ~1-call-per-3s limit, while an on-prem **hosted model** has none and 3s per call would
-    # dominate the run. Default 3.0 keeps the gateway safe for anyone who does not set it.
-    rate_raw = llm.get("rateLimitSeconds", 3.0)
-    try:
-        rate_limit_seconds = float(rate_raw)
-    except (TypeError, ValueError):
-        raise LlmConfigError(
-            f"llm.rateLimitSeconds must be a number of seconds (got {rate_raw!r}); "
-            f"use 0 for an endpoint with no rate limit"
-        )
-    if rate_limit_seconds < 0:
-        raise LlmConfigError(
-            f"llm.rateLimitSeconds must be >= 0 (got {rate_limit_seconds})"
-        )
-
     few_shot_dir = llm.get("fewShotExamplesDir", "few_shot_examples")
     if not isinstance(few_shot_dir, str) or not few_shot_dir.strip():
         raise LlmConfigError(
@@ -424,7 +410,6 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "rateLimitSeconds": rate_limit,
         "enrichment": enrichment,
         "cacheVersion": cache_version,
-        "rateLimitSeconds": rate_limit_seconds,
         "fewShotExamplesDir": few_shot_dir.strip(),
     }
 
