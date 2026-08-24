@@ -208,6 +208,32 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-24d (**generate reads branch and commit from the database** — branch
+> `integration/poc-4-db`. Five things a real run through the new CLI turned up.
+>
+> **The version identity was being typed twice.** `onboard` records the project's branch and the
+> version's commit; `generate` then asked for both again. `--branch` also defaulted to "main",
+> so a project on `br_trunk` died at the clone with `fatal: Remote branch main not found` — from
+> a flag the caller never typed. Both are optional now and resolved from `projects.default_branch`
+> and `versions.commit_sha`; `generate --project-id X --version-id v1` is the whole command.
+> Reproduced the failure first, then fixed it, then re-ran it.
+>
+> **A GitError reached the terminal as a traceback.** Now a message that names the branch and
+> says to pass --branch or re-onboard.
+>
+> **new_project's "Ready. Next:" still printed `cd engine; python -m incremental.generate ...`** —
+> the one message whose entire job is to say what to run next was naming an entry point that now
+> only prints a redirect.
+>
+> **Per-phase database behaviour verified**, not assumed: cleared a version's rows and rebuilt it
+> one phase at a time. entity_versions 0 -> 60 and model_edges 0 -> 18 at phase 1, model_units
+> 0 -> 2 at phase 2, unchanged through phases 3 and 4 (they only read). All four exited 0.
+>
+> **Non-git local paths do not work, for any run.** Confirmed empirically: a plain directory fails
+> at `fatal: Could not read from remote repository`. A commit is not optional anywhere — the
+> version's directory is named `<commit[:16]>`, the checkout is `git clone --branch` plus
+> `git checkout <sha>`, and baseline selection compares commits. Analysed only, no change made.)
+
 > Updated: 2026-08-24c (**phase-level flexibility confirmed intact and exposed** — branch
 > `integration/poc-4-db`. Two questions checked by running, not reading.
 >

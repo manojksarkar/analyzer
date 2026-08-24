@@ -101,6 +101,36 @@ def cmd_onboard(a) -> int:
     return _tool("new_project", argv)
 
 
+def _project_defaults(project_id: str, version_id: str):
+    """The branch and commit already recorded for this project and version.
+
+    `onboard` writes both - the project's `default_branch` and the version's `commit_sha` -
+    so asking for them again on every generate is asking the caller to repeat what the
+    database already knows. Worse, `--branch` defaulted to "main": a project on `br_trunk`
+    failed with `fatal: Remote branch main not found`, from a flag the caller never typed.
+    """
+    branch = commit = None
+    try:
+        from core.db import get_engine, is_database_configured
+        if not is_database_configured():
+            return None, None
+        import sqlalchemy as sa
+        from api.db.postgres import schema as sch
+        with get_engine().connect() as cx:
+            row = cx.execute(sa.select(sch.projects.c.default_branch)
+                             .where(sch.projects.c.id == project_id)).first()
+            if row:
+                branch = row[0]
+            if version_id:
+                row = cx.execute(sa.select(sch.versions.c.commit_sha)
+                                 .where(sch.versions.c.id == version_id)).first()
+                if row:
+                    commit = row[0]
+    except Exception:
+        pass                                # falls back to the flags; never fails a run
+    return branch, commit
+
+
 def cmd_generate(a) -> int:
     """Produce a version.
 
@@ -112,6 +142,17 @@ def cmd_generate(a) -> int:
     from incremental.generate import generate_full, AnalyzerRunFailed
     from incremental.engine import generate_incremental
     from core.run_context import DatabaseRequired
+    from incremental.git_ops import GitError
+
+    _branch, _commit = _project_defaults(a.project_id, a.version_id)
+    branch = a.branch or _branch or "main"
+    commit = a.commit or _commit
+    if not commit:
+        print(f"no --commit given, and version {a.version_id!r} has no commit recorded.\n"
+              f"  Either pass --commit <full-40-char-sha>, or reserve the version first:\n"
+              f"    python analyzer.py onboard --project-id {a.project_id} "
+              f"--version-id {a.version_id} --commit <sha>", file=sys.stderr)
+        return 2
 
     scope = _parse_scope(a.scope)
     common = dict(data_dict_id=a.data_dict, no_llm=a.no_llm, version_id=a.version_id,
@@ -119,9 +160,9 @@ def cmd_generate(a) -> int:
                   selected_units=a.unit)
     try:
         if a.full:
-            m = generate_full(a.project_id, a.branch, a.commit, scope, force=a.force, **common)
+            m = generate_full(a.project_id, branch, commit, scope, force=a.force, **common)
         else:
-            m = generate_incremental(a.project_id, a.branch, a.commit, scope,
+            m = generate_incremental(a.project_id, branch, commit, scope,
                                      base_version_id=a.base_version, force=a.force,
                                      narrowed_parse=not a.no_narrowed_parse,
                                      verify_parse=a.verify_parse, **common)
@@ -134,6 +175,16 @@ def cmd_generate(a) -> int:
         raise
     except DatabaseRequired as exc:
         print(f"\n{exc}", file=sys.stderr)
+        return 2
+    except GitError as exc:
+        # The commonest one by far is a branch that does not exist, and a traceback buries
+        # the one line that says so.
+        msg = str(exc)
+        print(f"\ngit could not fetch that commit:\n  {msg}", file=sys.stderr)
+        if "Remote branch" in msg and "not found" in msg:
+            print(f"\n  The branch {branch!r} is not in that repository. Pass the real "
+                  f"one with --branch,\n  or re-onboard so it is recorded as the "
+                  f"project's default.", file=sys.stderr)
         return 2
 
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
@@ -405,9 +456,12 @@ def build_parser() -> argparse.ArgumentParser:
                        description=cmd_generate.__doc__,
                        formatter_class=argparse.RawDescriptionHelpFormatter)
     s.add_argument("--project-id", required=True)
-    s.add_argument("--commit", required=True, help="the full 40-character sha")
     s.add_argument("--version-id", required=True, help="the version this run produces")
-    s.add_argument("--branch", default="main")
+    s.add_argument("--commit",
+                   help="the full 40-character sha. Default: the one recorded for this "
+                        "version when it was reserved.")
+    s.add_argument("--branch",
+                   help="default: the project's branch, as recorded by onboard")
     s.add_argument("--scope", default="project",
                    help='project (default) | layer:A,B | group:A,B | component:A,B. '
                         'Quote it when it names more than one thing.')

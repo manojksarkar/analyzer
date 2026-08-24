@@ -68,8 +68,18 @@ version  : v1 RESERVED for 1d04bb15d8
 **4. Generate.**
 
 ```
-python analyzer.py generate --project-id myproj --commit <sha> --version-id v1
+python analyzer.py generate --project-id myproj --version-id v1
 ```
+
+That is the whole command. **`--branch` and `--commit` are not needed** — `onboard` recorded
+both, so `generate` reads the branch off the project and the commit off the version you
+reserved. Pass them only to override:
+
+```
+python analyzer.py generate --project-id myproj --version-id v1 --branch br_trunk --commit <sha>
+```
+
+`--scope` defaults to `project`.
 
 ```
 version v1 (complete): commit 1d04bb15d8, decision=full, regenerated=18, reused=0,
@@ -83,11 +93,24 @@ invisible to it.
 git -C D:\code\my-cpp commit -am "change add()"
 ```
 
-**6. Generate again.** Same command — `generate` sees a usable baseline and takes the
-incremental path by itself.
+**6. Generate again — this is the incremental run.** The same command with a new version id.
+`generate` finds v1 as the baseline and takes the incremental path itself; there is no separate
+incremental command to remember.
 
 ```
-python analyzer.py generate --project-id myproj --commit <sha2> --version-id v2 --create-version
+python analyzer.py generate --project-id myproj --version-id v2 --commit <sha2> --create-version
+```
+
+`--commit` IS needed here, because v2 is a new version id with no commit recorded against it
+yet. `--create-version` reserves the row so you do not have to run `onboard` again.
+
+Two ways to do the same thing, if you prefer reserving first:
+
+```
+python analyzer.py onboard --project-id myproj --version-id v2 --commit <sha2>
+```
+```
+python analyzer.py generate --project-id myproj --version-id v2
 ```
 
 ```
@@ -104,6 +127,17 @@ Documents land in `workspaces/<pid>/versions/<version-id>/documents/`, with per-
 under `.../output/<Component>/`.
 
 ---
+
+## The incremental command
+
+It is `generate`. There is no second command:
+
+```
+python analyzer.py generate --project-id myproj --version-id v2 --commit <sha2> --create-version
+```
+
+Run that against a later commit of a project that already has a finished version, and you get an
+incremental run — only the changed translation units re-parsed, everything else reused.
 
 ## Incremental runs: you get them, you do not ask for them
 
@@ -196,8 +230,14 @@ python analyzer.py onboard --project-id myproj --name "My Project" --source D:\c
 | `--force-config` | replace a config that already exists |
 | `--version-id` / `--commit` | also reserve the first version. Both or neither. |
 
-**A local path must be a git repository.** The incremental model is built on commits, so a plain
-directory cannot be used:
+**A local path must be a git repository — for every run, not just incremental ones.** A plain
+directory fails at the clone with `fatal: Could not read from remote repository`, because a
+commit is not optional anywhere: the version's directory is named after it
+(`workspaces/<pid>/<commit[:16]>/`), the checkout is made by `git clone --branch <b>` and
+`git checkout <sha>`, and the baseline search compares commits. There is no code path that
+parses a directory without one.
+
+Making one is two commands and costs nothing:
 
 ```
 git -C D:\code\my-cpp init
@@ -209,8 +249,10 @@ git -C D:\code\my-cpp add -A
 git -C D:\code\my-cpp commit -m "initial"
 ```
 
-If `git init` gives you a `master` branch, pass `--branch master` everywhere or rename it — the
-branch name goes straight to `git clone --branch`, and one that does not exist fails the clone.
+Give `onboard` the real branch with `--branch`; it is recorded on the project and every later
+`generate` uses it. If you skip it, the default is `main`, and on a repo whose branch is
+something else the run stops at the clone with `Remote branch main not found` — the message
+names the branch and tells you to pass `--branch` or re-onboard.
 
 The source is **cloned**, not read in place, so uncommitted edits are invisible until you commit
 them. `warning: --depth is ignored in local clones` is normal: git never shallow-clones a local
@@ -226,8 +268,9 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 
 | Flag | Effect |
 |---|---|
-| `--project-id`, `--commit`, `--version-id` | required |
-| `--branch` | default `main` |
+| `--project-id`, `--version-id` | required |
+| `--commit` | the full 40-character sha. **Default: the one recorded for this version** when it was reserved. |
+| `--branch` | **Default: the project's branch**, as recorded by `onboard`. |
 | `--scope` | one of `project` (default), `layer:A,B`, `group:A,B`, `component:A,B` |
 | `--source` | clone from here if the commit is not checked out yet |
 | `--config` | use this config instead of the project's |
@@ -297,6 +340,26 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 
 It needs the version's commit still checked out, because flowcharts and line numbers are read
 from the source. If the checkout is gone it says so rather than producing an empty document.
+
+#### Running phases individually
+
+All four phases can be run on their own, and each writes to the database at its own boundary.
+Verified by clearing a version's rows and rebuilding it one phase at a time:
+
+| after | `entity_versions` | `model_units` | `model_edges` |
+|---|---|---|---|
+| (cleared) | 0 | 0 | 0 |
+| phase 1 — parse | **60** | 0 | **18** |
+| phase 2 — derive | 60 | **2** | 18 |
+| phase 3 — views | 60 | 2 | 18 |
+| phase 4 — export | 60 | 2 | 18 |
+
+Phase 1 lands the parsed skeleton and the call graph; phase 2 adds the derived units; phases 3
+and 4 only READ the model, which is why the counts stop moving. All four exited 0.
+
+Phases 3 and 4 have a first-class command — `reexport`, below. Phases 1 and 2 are the
+orchestrator's own split and are not exposed on the CLI: running them alone leaves a version
+half-built, which is what `generate` exists to avoid.
 
 #### Model once, documents many times
 

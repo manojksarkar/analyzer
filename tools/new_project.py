@@ -239,17 +239,19 @@ def main(argv=None) -> int:
                     "status": "in_review", "created_at": now})
                 print(f"version  : {args.version_id} RESERVED for {args.commit[:10]}")
 
+    # The next command, with THIS project's values filled in. It named the old entry
+    # point (`cd engine; python -m incremental.generate ...`), which no longer exists - so
+    # the one message whose whole job is to say what to run next named something that now
+    # only prints a redirect.
     print("\nReady. Next:")
-    print("  cd engine")
     if args.version_id:
-        cmd = (f"python -m incremental.generate --project-id {pid} --branch {args.branch} "
-               f"--commit {args.commit} --version-id {args.version_id} --scope project")
-        if args.repo_url:
-            cmd += f" --repo-url {args.repo_url}"
-        print(f"  {cmd}")
+        print(f"  python analyzer.py generate --project-id {pid} --branch {args.branch} "
+              f"--commit {args.commit} --version-id {args.version_id}")
+        print("\n  (--scope project is the default; add --scope \"group:X\" to narrow it.)")
     else:
-        print(f"  python tools/new_project.py --project-id {pid} --version-id v1 "
-              f"--commit <full-sha>      # reserve a version")
+        print(f"  python analyzer.py generate --project-id {pid} --branch {args.branch} "
+              f"--commit <full-sha> --version-id v1 --create-version")
+        print("\n  --create-version reserves the version row, so you need not come back here.")
     return 0
 
 
