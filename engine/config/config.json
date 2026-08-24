@@ -11,6 +11,12 @@
     "behaviourDiagram": false,
     "componentStaticDiagram": true
   },
+  "architectureDoc": {
+    "views": {
+      "layerStaticDiagram": true,
+      "componentDesignDiagram": true
+    }
+  },
   "layers": {
     "Layer1": {
       "path": "Layer1",

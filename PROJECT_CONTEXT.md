@@ -889,7 +889,20 @@ entry below). Contract:
 > Previous update: 2026-06-11 (feat/auto-clang-includes branch: `--selected-component` flag added — repeatable, accumulates a list; all components must be in the same layer; output to `output/<C1_C2>/`; new `get_component_layer_name` in `core.config`; `group_planner` has a fifth dispatch shape; `run_views` and `docx_exporter` both handle the new flag; see §5).
 > Previous update: 2026-06-09 (feat/auto-clang-includes branch: Phase 1 parsing scoped to selected layer — `--selected-group` passes itself to `parser.py` which derives the layer via `get_group_layer_name`; new `--selected-layer` flag parses one layer and generates DOCX for all its groups; both flags together are an error; `clang_include_paths.json` also scoped to the selected layer; new `get_group_layer_name` / `get_layer_flat_groups` helpers in `core.config`; see §4e, §5, §7).
 > Previous update: 2026-06-09 (feat/from-main branch: `module` → `component` rename throughout source + model + config; `modulesGroups` → `layers` two-level config schema; same-layer model filtering in Phase 3 + Phase 4; `SampleCppProject` restructured with Layer1 + Layer2/Platform; `model/modules.json` → `model/components.json`; new `get_flat_groups` / `get_layer_components` helpers in `core.config`; `--trace-prompts` + `--filter-mode` CLI flags; `model/clang_include_paths.json` written by `run.py` before any phase; see §5, §6, §7, §9, §10, §11, §12, §15).
-> Current active branch: `feat/web-app-api` (React web app + FastAPI API server, real pipeline integration; `web-app/` Vite+React+TS+Tailwind v4 app connected to real `api/` backend; supersedes `feat/frontend-app` mock-data app).
+> Previous update: 2026-08-19 (`feat/swe2-gen` branch: merged `poc-4` — see §25 — using the "ours +
+>   checkout" technique (`git merge -s ours poc-4` then `git checkout poc-4 -- .`) so the branch now
+>   fully carries `poc-4`'s `engine/`+`api/`+`web-app/` tree (its old `src/`/`ui/` Streamlit layout is
+>   retired, still reachable via pre-merge history) — then re-ported SWE.2 (Software Architecture
+>   Design) generation onto it: `engine/sad_views/` (layer static diagram + component design diagram
+>   views), `engine/run_sad_views.py`, `engine/architecture_docx_exporter.py`, and a
+>   `--doc-type swe3|swe2|both` flag through `run.py` / `core/group_planner.py`. Only the slice
+>   `docs/planning/SWE2_PLAN.md` itself calls buildable-now (Static Design + Layer/Component detail)
+>   was ported; the feature-list rollup, resource/config/calibration data, and requirements
+>   traceability sections remain that plan's own open items. See §25.)
+> Current active branch: `feat/swe2-gen` (carries everything `poc-4` had — React web app + FastAPI
+>   API server, real pipeline integration, `web-app/` Vite+React+TS+Tailwind v4 app connected to real
+>   `api/` backend — plus the re-ported SWE.2 generation from §25).
+> Previous active branch: `feat/web-app-api` (React web app + FastAPI API server, real pipeline integration; `web-app/` Vite+React+TS+Tailwind v4 app connected to real `api/` backend; supersedes `feat/frontend-app` mock-data app).
 > Previous active branch: `feat/frontend-app` (React frontend with mock data — superseded by `feat/web-app-api`).
 > Pipeline branch: `version4` (integration base off `main`: main code + version3 backend + production-redesign docs).
 > Validated against current source. Reading this file end-to-end is the
@@ -905,6 +918,9 @@ entry below). Contract:
 > - §19 covers the current FastAPI **API server** (`api/`). §21 documents an *older,
 >   superseded* version3/4 backend (kept for history).
 > - §22 orients you to the Production Redesign (POC→production design; docs in docs/production-redesign/).
+> - §25 covers the SWE.2 (Software Architecture Design) generation re-ported from `feat/swe2-gen`
+>   onto this engine/ layout: `engine/sad_views/`, `--doc-type` flag, and its relationship to
+>   `docs/planning/SWE2_PLAN.md`.
 > - All pre-existing sections have been updated in place where these branches changed behaviour.
 
 ---
@@ -4812,6 +4828,106 @@ signin.html → projects.html (no sidebar)
        ├─ Versions  → versions.html (56px)
        └─ Team      → team.html (220px)
 ```
+
+---
+
+## 25. SWE.2 (Software Architecture Design) generation — `engine/sad_views/`
+
+### Origin and relationship to `docs/planning/SWE2_PLAN.md`
+
+This branch (`feat/swe2-gen`) used to carry SWE.2 generation on the project's old, pre-`poc-4`
+flat `src/`/`ui/` (Streamlit) layout. On 2026-08-19 that branch merged `poc-4` (see the preamble
+"Previous update" note) and this feature was re-ported onto the resulting `engine/` layout.
+
+`poc-4` already had its own plan for this feature at `docs/planning/SWE2_PLAN.md`, targeting a
+fuller **"Software Architecture Design Specification"** — sections 2 (software-level, built by
+*rolling up* component/unit detail, including a product **feature list** derived from the
+codebase) and 3 (the same 8-part template per layer), plus Resource Management,
+Configuration/Calibration Data, and a Requirements/Traceability table. That plan's own readiness
+table marks the feature-list rollup, resource/config/calibration sections, and traceability as
+**"pending client discussion"** — not yet decided — while marking **Static Design** and
+**Layer/Component detail** as *"mostly derivable from the code + call graph"*, i.e. buildable now.
+
+**What actually shipped here is only that buildable slice**: per-layer static diagrams (§3.N.1)
+and per-component caller/callee design diagrams with an interface table (§3.N.3). It does **not**
+attempt the feature-list-driven software-level rollup, Resource Management, Configuration/
+Calibration Data, or Requirements/Traceability — those remain `SWE2_PLAN.md`'s own open items.
+Read that file (and its companion `docs/planning/DOC_GENERATION_PLAYBOOK.md`) before extending
+this feature toward the fuller document.
+
+### Files
+
+```
+engine/
+  sad_views/
+    __init__.py                 SAD_VIEW_REGISTRY dispatcher: run_sad_views(model, output_dir, model_dir, config)
+    registry.py                 @register("viewName") decorator
+    layer_static_diagram.py     "layerStaticDiagram" view — per-layer SVG (groups → components → units, 3 flat rows)
+    component_design_diagram.py "componentDesignDiagram" view — per-component SVG (same-layer callers/callees + unit boxes) + interface table
+  run_sad_views.py              Phase 3 entry point — loads the flat model via core.model_io.load_model(), calls run_sad_views()
+  architecture_docx_exporter.py Phase 4 entry point — builds "Software Architecture Design Specification.docx"
+```
+
+Registered as `layerStaticDiagram` / `componentDesignDiagram`, both enabled by default (disable
+via `config.architectureDoc.views.<name> = false`).
+
+### Adaptation from the old per-layer-model-dir version
+
+The pre-`poc-4` version this was ported from ran on a layout where each layer parsed into its own
+`model/LayerN/` directory (`core.model_io.layer_model_dir(layer_name)`, `load_merged_model()`).
+`poc-4` doesn't have that — every layer parses into **one flat `model/`** dir regardless of layer;
+layer membership of a component is resolved dynamically via `core.config.get_component_layer_name`
+etc. (see §6/§7). The port therefore:
+
+- Reads `model/functions.json` / `globalVariables.json` / `dataDictionary.json` **once**, from the
+  `model` dict already passed into `run(model, output_dir, model_dir, config)` — no per-layer
+  re-reads. `component_design_diagram.py`'s call-graph derivation
+  (`fid.split(KEY_SEP)[0]` to get a function's owning component) is format-independent and needed
+  no change.
+- Reads `model/knowledge_base.json` once (was per-layer) for `layer_static_diagram.py`'s component
+  descriptions. Its `component_summaries` keys are still layer-prefixed (e.g.
+  `"Layer2/Platform/Adc"`) because `location.file` in the model is relative to the project root,
+  which already includes the layer segment — so the lookup logic (`f"{layer_name}/{comp_path}"`)
+  ported unchanged.
+- Added `core.config.layers_config()` (didn't exist in `poc-4`; one-line accessor for the raw
+  `layers` config block, alongside the other typed accessors in §7).
+
+### `--doc-type` flag
+
+`engine/run.py` accepts `--doc-type <swe3|swe2|both>` (default `swe3`, the existing SDD/SWE.3
+behaviour — unchanged unless the flag is passed). `swe2` and `both` are new. Named after the
+ASPICE process IDs (matching `SWE2_PLAN.md` / `SWE4_PLAN.md` / `ROADMAP.md`), not the old branch's
+generic `sdd`/`add` naming.
+
+Wired as a **hardcoded phase pairing** in `core.group_planner.plan_runs()`
+(`DOC_TYPE_SWE3`/`DOC_TYPE_SWE2`/`DOC_TYPE_BOTH`, `_swe2_doc_phases()`) — mirroring exactly how the
+existing single SWE.3 exporter (`docx_exporter.py`) is wired, **not** the generalized
+`EXPORTER_REGISTRY`/doc-type-dispatch mechanism a forward-looking note elsewhere in this file once
+sketched for SWE.4: that mechanism was never actually implemented in `poc-4` (verified empty via
+`git grep`), so building it speculatively for a second document type wasn't justified.
+
+Key behaviour: **SWE.2 always covers the full model** (every configured layer), regardless of
+`--selected-group` / `--selected-layer` / `--selected-component`, which only narrow the SWE.3 side.
+When `--doc-type swe2` or `both` is combined with one of those narrowing flags, `plan_runs()`
+widens the *build* (Phase 1+2) to a full, unfiltered parse — the SWE.3 export step still narrows
+its own output normally. See `_build_model_phases(..., selected_group=None if generate_swe2 else
+resolved_selected, ...)` in each of `plan_runs()`'s three branches (component-selection, flat/
+no-layers, layers-present).
+
+Output: `output/swe2/layer_static_diagrams/` (SVGs, PNGs, `_layer_static_data.json`,
+`_component_design_data.json`) and `output/Software Architecture Design Specification.docx`.
+
+### Verified (2026-08-19)
+
+Ran `engine/run.py --doc-type swe2 SampleCppProject` end-to-end (real libclang parse, 297
+functions / 184 files) — produced a 39-heading, 28-table DOCX matching the intended structure
+(Introduction → 3.N Layer Design → 3.N.1 Static Design + Component Information table → 3.N.3
+Component Design, one subsection per component). Also verified `--doc-type both` and the default
+(no flag) path both still produce correct `RunPlan` lists via direct `plan_runs()` calls, and that
+the default SWE.3-only path is unaffected (`engine/run.py --use-model --selected-group "My Sample"
+SampleCppProject` still produced `software_detailed_design_My-Sample.docx` as before). Full
+`tests/unit/` suite passes unchanged (34/34 in `test_cli.py` + `test_core_group_planner.py`
+specifically, including the `_KNOWN_FLAGS`-stays-in-sync test that `--doc-type` now participates in).
 
 ---
 

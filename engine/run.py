@@ -23,6 +23,12 @@ Options:
                        all named components must live in the same layer.
   --component-per-docx One DOCX per component instead of one per group. Cannot be
                        combined with --selected-component.
+  --doc-type <type>    Which document(s) to generate: swe3 (default, Software
+                       Detailed Design), swe2 (Software Architecture Design —
+                       layer static diagrams + component design diagrams), or
+                       both. swe2 always covers the full model (every layer),
+                       regardless of --selected-group/--selected-layer/
+                       --selected-component, which only narrow the swe3 output.
   --selected-unit <name>
                        Narrow Phase 3 to the named unit(s) — flowcharts are built
                        for those units only. Repeatable. A development aid: the
@@ -179,7 +185,7 @@ _KNOWN_FLAGS = (
     "--use-model", "--skip-model",
     "--no-llm-summarize", "--llm-summarize",
     "--selected-group", "--selected-layer", "--selected-component", "--selected-unit",
-    "--component-per-docx", "--filter-mode",
+    "--component-per-docx", "--filter-mode", "--doc-type",
     "--from-phase", "--to-phase",
     "--data-dictionary", "--data-dictionary-layer",
     "--project-name", "--output-name",
@@ -198,6 +204,7 @@ selected_layer_arg      = None
 selected_components_arg = []
 selected_units_arg      = []   # dev aid: narrow Phase 3 to these unit(s)
 component_per_docx      = False
+doc_type_arg            = "swe3"
 filter_mode_arg         = None
 data_dictionary_arg     = None
 data_dictionary_layer_args = []   # list of (layer_name, path) tuples
@@ -256,6 +263,15 @@ while i < len(sys.argv):
         selected_units_arg.append(sys.argv[i])
     elif a == "--component-per-docx":
         component_per_docx = True
+    elif a == "--doc-type":
+        i += 1
+        if i >= len(sys.argv):
+            log("--doc-type requires a value: swe3, swe2, or both", component="run", err=True)
+            sys.exit(1)
+        doc_type_arg = sys.argv[i].lower()
+        if doc_type_arg not in ("swe3", "swe2", "both"):
+            log(f"--doc-type must be swe3, swe2, or both (got: {sys.argv[i]})", component="run", err=True)
+            sys.exit(1)
     elif a == "--filter-mode":
         i += 1
         if i >= len(sys.argv):
@@ -636,6 +652,7 @@ try:
         selected_layer=selected_layer_arg,
         selected_components=selected_components_arg,
         component_per_docx=component_per_docx,
+        doc_type=doc_type_arg,
         use_model=use_model,
         no_llm_summarize=no_llm_summarize,
         from_phase=from_phase,

@@ -494,6 +494,11 @@ def clang_config() -> Dict[str, Any]:
     return app_config().get("clang") or {}
 
 
+def layers_config() -> Dict[str, Any]:
+    """Return the raw `layers` block from config.json (or {} if absent)."""
+    return app_config().get("layers") or {}
+
+
 # ---------------------------------------------------------------------------
 # Default clang preprocessor flags shared by every libclang entry point
 # ---------------------------------------------------------------------------
