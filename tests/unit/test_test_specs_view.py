@@ -97,19 +97,91 @@ def test_callee_with_its_own_spec_is_mocked(model):
     assert "other()" in mocks and "far()" in mocks
 
 
-def test_callee_without_a_spec_is_inlined_not_mocked(model):
-    """A private helper has no spec, so it must run inline or its branches are
-    covered nowhere."""
+def test_same_unit_callee_without_a_spec_is_inlined_not_mocked(model):
+    """A private helper of this unit has no spec, so it must run inline or its
+    branches are covered nowhere."""
     assert "priv()" not in _specs(model)["pub"]["precondition"]["mockFunctions"]
 
 
-def test_mock_rule_matches_the_scope_set(model):
+def test_mock_rule_is_own_spec_or_different_unit(model):
     units, functions, globals_ = model
     spec_ids = _spec_function_ids(units, functions, None)
+    unit_of = {fid: uk for uk, u in units.items() for fid in u["functionIds"]}
     mocks = set(_specs(model)["pub"]["precondition"]["mockFunctions"])
     for cid in functions["C|U|pub"]["callsIds"]:
         expected = f"{functions[cid]['qualifiedName']}()"
-        assert (expected in mocks) is (cid in spec_ids)
+        stubbed = cid in spec_ids or unit_of.get(cid) != unit_of["C|U|pub"]
+        assert (expected in mocks) is stubbed
+
+
+# --- mock rule: the unit boundary ------------------------------------------
+# A unit test spec is not an integration test spec: nothing outside the unit under
+# test may execute, whether or not it has a spec of its own. An inline function is
+# defined in a header, gets no spec anywhere, and is included by many units -- so
+# "no spec" alone used to inline another unit's code into this one.
+
+@pytest.fixture
+def boundary():
+    """`pub` calls one of every kind of callee across the unit boundary."""
+    functions = {
+        "C|U|pub": _fn("pub", calls=["C|U|inl", "C|U|priv", "C|X|xinl",
+                                     "C|O|opriv", "loose", "unresolvable"]),
+        # this unit's own -> run inline
+        "C|U|inl": _fn("inl", file="U.h", line=2, reads=["g_inl"]),
+        "C|U|priv": _fn("priv", visibility="private", line=3, reads=["g_priv"]),
+        # outside the unit -> stubbed
+        "C|X|xinl": _fn("xinl", file="X.h", line=1, reads=["g_x"]),
+        "C|O|opriv": _fn("opriv", visibility="private", file="O.cpp", line=1),
+        "loose": _fn("loose", file="Vendor.h", line=1),   # parsed, but in no unit
+    }
+    units = {
+        "C|U": {"name": "U", "fileName": "U.cpp",
+                "functionIds": ["C|U|pub", "C|U|inl", "C|U|priv"]},
+        # a header with no .cpp beside it is still a unit of its own
+        "C|X": {"name": "X", "fileName": "X.h", "functionIds": ["C|X|xinl"]},
+        "C|O": {"name": "O", "fileName": "O.cpp", "functionIds": ["C|O|opriv"]},
+    }
+    globals_ = {g: {"qualifiedName": g, "type": "int"}
+                for g in ("g_inl", "g_priv", "g_x")}
+    return units, functions, globals_
+
+
+def _boundary_spec(boundary):
+    return _specs(boundary)["pub"]
+
+
+def test_inline_function_of_another_unit_is_mocked(boundary):
+    """`X.h` has no `.cpp`, so `xinl` gets no spec anywhere -- but it is another
+    unit's code and must not run inside this unit's test."""
+    assert "xinl()" in _boundary_spec(boundary)["precondition"]["mockFunctions"]
+
+
+def test_inline_function_of_the_same_unit_is_not_mocked(boundary):
+    """`U.h` and `U.cpp` are one unit, so `inl` is this unit's own code."""
+    assert "inl()" not in _boundary_spec(boundary)["precondition"]["mockFunctions"]
+
+
+def test_private_function_of_another_unit_is_mocked(boundary):
+    assert "opriv()" in _boundary_spec(boundary)["precondition"]["mockFunctions"]
+
+
+def test_callee_belonging_to_no_unit_is_mocked(boundary):
+    """Its file was never parsed, so it cannot be this unit's own code. Inlining it
+    is the failure the boundary exists to prevent."""
+    assert "loose()" in _boundary_spec(boundary)["precondition"]["mockFunctions"]
+
+
+def test_unresolvable_callee_is_left_out(boundary):
+    """The wiki: a library call that cannot be named does not reach the document."""
+    mocks = _boundary_spec(boundary)["precondition"]["mockFunctions"]
+    assert not any("unresolvable" in m for m in mocks)
+
+
+def test_globals_stop_at_the_unit_boundary(boundary):
+    """A stub never executes, so its globals are not preconditions of this spec --
+    while an inlined same-unit helper's globals are."""
+    names = {g["name"] for g in _boundary_spec(boundary)["precondition"]["globals"]}
+    assert names == {"g_inl", "g_priv"}
 
 
 # --- precondition ----------------------------------------------------------

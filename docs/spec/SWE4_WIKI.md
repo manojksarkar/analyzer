@@ -27,7 +27,9 @@ Appendix A  Reference
 
 - Every function that appears in the SWE.3 detailed design gets a spec.
 - **Except inline public functions** — those defined in a header. They get no spec of their own; they are
-  covered through the functions that call them.
+  covered through the functions **of their own unit** that call them. A caller in another unit mocks them
+  instead (see Precondition), so an inline function with no caller in its own unit is covered nowhere. Known
+  gap — closing it means giving inline functions a spec, which this section rules out.
 
 ---
 
@@ -45,11 +47,17 @@ three stay flat — where an entry has several values, they are separated by com
 
 ### Precondition
 
-- A callee is **mocked** only when it has a spec of its own — a function in a different unit, or a same-unit
-  function that appears in SWE.3. Its branches are covered by its own spec, so there is no need to run it here.
-- A callee with **no spec of its own is never mocked** — a same-unit private helper, or an inline public
-  function. It runs inline as part of the function under test; otherwise its branches would be exercised
-  nowhere and coverage could never reach 100%.
+- A callee is **mocked** when either holds: it **has a spec of its own**, or it belongs to a **different unit**
+  than the function under test. This is a *unit* test spec, not an integration test spec — nothing outside the
+  unit under test may execute, whether or not a spec covers it elsewhere.
+- Only a callee that is **this unit's own and has no spec** runs inline — a same-unit private helper, or a
+  same-unit inline public function. It must execute, or its branches are exercised nowhere and coverage could
+  never reach 100%.
+- A unit is a **path, not a file**: `Foo.h` and `Foo.cpp` are one unit, and a header with no `.cpp` beside it is
+  a unit of its own. So an inline public function counts as this unit's code only when it sits in this unit's
+  own header; from any other header it is mocked, however many units include it.
+- A stub does not execute, so nothing it calls is mocked either — a callee reached **only** through a mock is
+  not this spec's concern. Only callees reached through the code that really runs are listed.
 - Library calls that cannot be named are left out.
 - Every parameter is listed, with its type.
 - Every global the function reads or writes is listed — including through inlined private helpers — as

@@ -172,6 +172,41 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-23 (**SWE.4 mock rule gains the unit boundary — a cross-unit inline function is now mocked**
+> (`feat/swe4-v1`). The rule was "a callee is mocked **iff** it has a spec of its own", and
+> `_spec_function_ids()` drops every header-defined function *regardless of which unit owns it*. So an inline
+> public function living in **another** unit's header was inlined into this unit's spec — its branches, its
+> globals and its own callees folded in — and the same held for another unit's private function. That is an
+> integration test spec, not a unit one. The "otherwise its branches are exercised nowhere" rationale only ever
+> applied to **same-unit** helpers.
+> - **New rule (`_mocked_callee_ids`):** a callee is mocked when it **has a spec of its own** *or* it belongs to
+>   a **different unit** than the function under test. Only a callee that is this unit's own *and* has no spec
+>   runs inline — a same-unit private helper, or a same-unit inline header function.
+> - **Unit keys are path-based** (`model_deriver.py`, `make_unit_key`), so `Foo.h` + `Foo.cpp` are one unit and a
+>   **header with no `.cpp` beside it is a unit of its own** with its inline functions as members (Sample:
+>   `Signal|SignalInline`). That is what makes the boundary computable — but functions carry no unit membership,
+>   so `_unit_of()` builds the `fid -> unitKey` reverse index.
+> - **A callee in no unit is treated as OUTSIDE**, not inside: its file was never parsed, so it cannot be this
+>   unit's code, and defaulting the other way would silently inline it — the exact failure the rule exists to
+>   prevent. It still has to be nameable to reach the document, so an unresolvable library call drops out
+>   downstream, as the wiki says.
+> - **One walk, one boundary.** Precondition, Input, the globals scope and the `--verbose` trace each re-derived
+>   the stub set from `spec_ids`; they now share the single `mocked_ids` computed once in `_build_spec()`. With
+>   four copies of the boundary, a mocked callee's globals could still reach the Precondition.
+> - **A/B on the Sample (old vs new code, same model): 1 of 52 specs changed**, both halves correct —
+>   `hubCompute` gains `enumWithHelper()` (`Iface|Types`' **private** function, called cross-unit) and **loses**
+>   `nestedHelper()`, which was reachable only *through* `enumWithHelper`: a stub does not execute, so it never
+>   calls it. `hubValidate` (same unit, private) still runs inline. The Sample understates this — it has exactly
+>   one header-only unit and **nothing calls it**; the client's flash firmware, where header inline utils are
+>   everywhere, is the real target.
+> - **Known gap, now stated in the wiki:** an inline function with no caller in its own unit is covered nowhere
+>   — it gets no spec (wiki "Who gets a spec") and is mocked everywhere else. Closing it means giving inline
+>   functions a spec, which that section rules out.
+> - Docs: `docs/spec/SWE4_WIKI.md` Precondition + "Who gets a spec" rewritten. Tests: 8 new in
+>   `tests/unit/test_test_specs_view.py` (`boundary` fixture — cross-unit inline / same-unit inline / cross-unit
+>   private / no-unit / unresolvable / globals stop at the boundary); `test_mock_rule_matches_the_scope_set`
+>   renamed to `test_mock_rule_is_own_spec_or_different_unit`. Full `tests/unit` green.)
+
 > Updated: 2026-08-22b (**behaviour diagram package replaced + LLM path rewired** — branch
 > `fix/behaviour-diagram`. All 7 modules under `engine/behaviour_diagram/` swapped for an external version;
 > it did not run as delivered (3 crash bugs) and its LLM imports pointed at `llm_client`, deleted in the
@@ -473,9 +508,9 @@
 >   the graph away. New `serialize_cfg()` in `flowchart/models.py` + a `cfg` key in
 >   `flowchart/output/writer.py` carry `{entry, exits, nodes[type,label,rawCode,line], edges[label]}`
 >   alongside the DOT. Purely additive. Node `label` falls back to `rawCode` when labelling is off.
-> - **`views/test_specs.py`** — deterministic scaffold. `_spec_function_ids()` is **both** the scope filter
->   and the mock rule (a callee is mocked iff it has a spec of its own), so they cannot drift: `.cpp` unit +
->   not private + **not header-defined** (the wiki's "except inline public"). Precondition = 3 flat entries
+> - **`views/test_specs.py`** — deterministic scaffold. `_spec_function_ids()` is the scope filter (`.cpp` unit
+>   + not private + **not header-defined**, the wiki's "except inline public") and **one arm** of the mock rule;
+>   the unit-boundary arm was added 2026-08-23, see that entry. Precondition = 3 flat entries
 >   (mocks / params / globals as `type variable`, no values or ranges). Input = the **read** side with ranges
 >   via `get_range`, excluding out-parameters, write-only globals and `void` mocks. Out-parameter detection is
 >   a **documented heuristic** over the signature (`T*`/`T&` written, `const` read, `(*)` = callback input) —

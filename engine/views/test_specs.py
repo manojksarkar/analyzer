@@ -84,17 +84,17 @@ def _spec_function_ids(units_data, functions_data, allowed_components):
     component > unit):
 
     - the document's components -> which functions this document writes a spec for.
-    - the whole LAYER's components -> the mock rule. A callee is mocked if and only
-      if it is in that set. Anything outside it (a private helper, an inline public
-      function) has no spec of its own, so it must run inline or its branches are
-      exercised nowhere.
+    - the whole LAYER's components -> **one arm of** the mock rule: a callee in that
+      set has a spec of its own, so it is stubbed. It is not the whole rule -- a
+      callee outside the unit under test is stubbed whether or not it has a spec.
+      See `_mocked_callee_ids`.
 
-    The mock rule must not be narrowed to the document's components. A callee in
-    another component of the same layer still has a spec of its own, in that
-    component's document, so the tester stubs it. Narrowing it made every
-    cross-component callee look like an unspecced helper and silently inlined it:
-    dropped from Precondition, its return value dropped from Input, and its
-    `Successfully called mock functions` line dropped from Expected Results.
+    That arm must not be narrowed to the document's components. A callee in another
+    component of the same layer still has a spec of its own, in that component's
+    document, so the tester stubs it. Narrowing it made every cross-component callee
+    look like an unspecced helper and silently inlined it: dropped from Precondition,
+    its return value dropped from Input, and its `Successfully called mock functions`
+    line dropped from Expected Results.
 
     The layer is the ceiling, and it has to be stated explicitly: a run covers one
     layer, and a callee outside it belongs to a different deliverable. Passing None
@@ -143,19 +143,58 @@ def _layer_components(config, allowed_components):
     return scope or None
 
 
-def _mocked_callee_ids(func, functions_data, spec_ids):
-    """Every callee this spec stubs: the direct ones with a spec of their own, plus
-    those reached **through a callee that runs inline**.
+def _unit_of(units_data):
+    """`fid -> unit_key`. Functions carry no unit membership of their own, and the
+    mock rule turns on whether a callee is *this unit's* code, so it needs the
+    reverse index."""
+    index = {}
+    for unit_key, unit_info in units_data.items():
+        for fid in unit_info.get("functionIds", []) or []:
+            index[fid] = unit_key
+    return index
 
-    Follow the real execution path and stop at each stub. A callee with no spec of
-    its own is not mocked, so it really executes -- and a call it makes to a function
-    that *does* have a spec really happens, and must be stubbed here too. Looking at
-    direct callees only missed those: the tester never mocked them, so the real
-    function linked in and the test quietly stopped being a unit test.
 
-    Example: `utilChain` calls `utilNorm`, which has no spec and so runs inline;
+def _mocked_callee_ids(func, functions_data, spec_ids, unit_of, home_unit):
+    """Every callee this spec stubs, plus those reached **through a callee that
+    runs inline**.
+
+    A callee is stubbed when either is true:
+
+    - **it has a spec of its own** -- its branches are covered there, so running it
+      here would only duplicate that coverage; or
+    - **it belongs to a different unit** -- this is a unit test spec, not an
+      integration one, so nothing outside the unit under test may execute.
+
+    The second arm is what an "own spec" test alone cannot express. An inline public
+    function is defined in a header and so gets no spec anywhere (wiki, "Who gets a
+    spec"), but a header is included everywhere: one defined in *another* unit's
+    header was being inlined into this spec -- its branches, its globals and its own
+    callees folded into a unit test for code that does not belong to the unit. The
+    same held for another unit's private function. Both are now stubbed.
+
+    Only a callee that is **this unit's own and has no spec** runs inline: a
+    same-unit private helper, or a same-unit inline header function. Those must
+    execute, or their branches are exercised nowhere and coverage cannot reach 100%.
+
+    Follow the real execution path and stop at each stub. A callee that runs inline
+    really executes -- and a call *it* makes to something stubbable really happens,
+    and must be stubbed here too. Looking at direct callees only missed those: the
+    tester never mocked them, so the real function linked in and the test quietly
+    stopped being a unit test.
+
+    Example: `utilChain` calls `utilNorm`, a same-unit helper that runs inline;
     `utilNorm` calls `utilCompute`, which has its own spec. `utilCompute()` belongs
     in `utilChain`'s mock list even though `utilChain` never names it.
+
+    A callee whose unit cannot be resolved counts as **outside** the unit: its file
+    was never parsed, so it cannot be this unit's own code. Defaulting the other way
+    would silently inline it, which is the failure this rule exists to prevent. It
+    still has to be nameable to reach the document -- an unresolvable library call
+    drops out downstream, as the wiki says.
+
+    A unit key is path-based, so `Foo.h` and `Foo.cpp` are one unit: a header-only
+    file with no `.cpp` is a unit of its own, and its inline functions are cross-unit
+    to every caller outside it.
     """
     mocked, seen = set(), set()
     stack = list(func.get("callsIds") or [])
@@ -164,8 +203,8 @@ def _mocked_callee_ids(func, functions_data, spec_ids):
         if cid in seen:
             continue
         seen.add(cid)
-        if cid in spec_ids:      # a stub: it does not run, so do not walk into it
-            mocked.add(cid)
+        if cid in spec_ids or unit_of.get(cid) != home_unit:
+            mocked.add(cid)      # a stub: it does not run, so do not walk into it
             continue
         callee = functions_data.get(cid)
         if not callee:           # unnameable library call -- left out (wiki)
@@ -174,10 +213,10 @@ def _mocked_callee_ids(func, functions_data, spec_ids):
     return mocked
 
 
-def _mock_functions(func, functions_data, spec_ids):
-    """Callees to stub, written `name()` — exactly those with a spec of their own."""
+def _mock_functions(mocked_ids, functions_data):
+    """Callees to stub, written `name()`. See `_mocked_callee_ids` for the rule."""
     names = set()
-    for cid in _mocked_callee_ids(func, functions_data, spec_ids):
+    for cid in mocked_ids:
         callee = functions_data.get(cid)
         if not callee:
             continue
@@ -195,7 +234,7 @@ def _bare_type(type_str):
     return " ".join(t.split())
 
 
-def _mock_writeback_entries(func, functions_data, spec_ids, dd):
+def _mock_writeback_entries(func, mocked_ids, functions_data, dd):
     """Input entries for values a mocked callee writes back through a pointer.
 
     A stub does not just return — it fills in whatever it is handed. If the function
@@ -223,7 +262,7 @@ def _mock_writeback_entries(func, functions_data, spec_ids, dd):
             r.get("field", ""), r.get("var", ""))
 
     seen, out = set(), []
-    for cid in sorted(_mocked_callee_ids(func, functions_data, spec_ids)):
+    for cid in sorted(mocked_ids):
         callee = functions_data.get(cid)
         if not callee:
             continue
@@ -251,14 +290,14 @@ def _mock_writeback_entries(func, functions_data, spec_ids, dd):
     return out
 
 
-def _mock_return_entries(func, functions_data, spec_ids, dd):
+def _mock_return_entries(mocked_ids, functions_data, dd):
     """Input entries for mocked callees that return a value.
 
     A `void` mock has nothing to set, so it is named in the Precondition but
     does not appear in Input.
     """
     seen, out = set(), []
-    for cid in sorted(_mocked_callee_ids(func, functions_data, spec_ids)):
+    for cid in sorted(mocked_ids):
         callee = functions_data.get(cid)
         if not callee:
             continue
@@ -274,7 +313,7 @@ def _mock_return_entries(func, functions_data, spec_ids, dd):
     return out
 
 
-def _global_ids(func, which, functions_data, spec_ids):
+def _global_ids(func, which, functions_data, mocked_ids):
     """Global ids for 'reads' or 'writes': the function's own, plus those reached
     through the callees that run **inline**.
 
@@ -285,12 +324,13 @@ def _global_ids(func, which, functions_data, spec_ids):
     scopes it deliberately: globals are "the function's, plus its inlined helpers'".
 
     So walk the callee chain and stop at every mock boundary — the mirror of
-    `_mocked_callee_ids`. Recursing through the inlined callees, rather than reading
-    their transitive field, keeps that boundary honoured at any depth.
+    `_mocked_callee_ids`, and it must use that function's own answer rather than
+    re-deriving one. Recursing through the inlined callees, rather than reading their
+    transitive field, keeps the boundary honoured at any depth.
     """
     out = set(func.get(f"{which}GlobalIds") or [])
     seen = set()
-    stack = [cid for cid in (func.get("callsIds") or []) if cid not in spec_ids]
+    stack = [cid for cid in (func.get("callsIds") or []) if cid not in mocked_ids]
     while stack:
         cid = stack.pop()
         if cid in seen:
@@ -300,11 +340,11 @@ def _global_ids(func, which, functions_data, spec_ids):
         if not callee:
             continue
         out |= set(callee.get(f"{which}GlobalIds") or [])
-        stack.extend(c for c in (callee.get("callsIds") or []) if c not in spec_ids)
+        stack.extend(c for c in (callee.get("callsIds") or []) if c not in mocked_ids)
     return out
 
 
-def _trace_derivation(name, func, functions_data, global_variables_data, spec_ids,
+def _trace_derivation(name, func, functions_data, global_variables_data, mocked_ids,
                       precondition, input_entries):
     """Why each Precondition/Input entry is there -- and what was left out.
 
@@ -332,7 +372,7 @@ def _trace_derivation(name, func, functions_data, global_variables_data, spec_id
         if cid in seen:
             continue
         seen.add(cid)
-        if cid in spec_ids:
+        if cid in mocked_ids:
             via.setdefault(cid, through)
             continue
         callee = functions_data.get(cid)
@@ -406,12 +446,16 @@ def _global_name(gid, g):
 
 
 def _build_spec(fid, func, unit_key, unit_name, functions_data,
-                global_variables_data, spec_ids, dd):
+                global_variables_data, spec_ids, unit_of, dd):
     qn = func.get("qualifiedName", "")
     name = short_name(qn)
     params = func.get("parameters") or []
-    reads = _global_ids(func, "reads", functions_data, spec_ids)
-    writes = _global_ids(func, "writes", functions_data, spec_ids)
+    # One walk, one boundary. Precondition, Input, the globals scope and the trace
+    # all have to agree on where this spec stops executing -- when they each derived
+    # it separately, a mocked callee's globals could still reach the Precondition.
+    mocked_ids = _mocked_callee_ids(func, functions_data, spec_ids, unit_of, unit_key)
+    reads = _global_ids(func, "reads", functions_data, mocked_ids)
+    writes = _global_ids(func, "writes", functions_data, mocked_ids)
 
     # ---- Precondition: names only, no values, no ranges -------------------
     pre_globals = []
@@ -423,7 +467,7 @@ def _build_spec(fid, func, unit_key, unit_name, functions_data,
                             "type": g.get("type", ""),
                             "text": _decl(g.get("type", ""), _global_name(gid, g))})
     precondition = {
-        "mockFunctions": _mock_functions(func, functions_data, spec_ids),
+        "mockFunctions": _mock_functions(mocked_ids, functions_data),
         "parameters": [{"name": p.get("name", ""), "type": p.get("type", ""),
                         "text": _decl(p.get("type", ""), p.get("name", ""))}
                        for p in params],
@@ -446,10 +490,10 @@ def _build_spec(fid, func, unit_key, unit_name, functions_data,
         input_entries.append({"kind": "global", "globalId": gid, "name": gname,
                               "type": g.get("type", ""),
                               "text": _ranged(g.get("type", ""), gname, dd)})
-    input_entries += _mock_return_entries(func, functions_data, spec_ids, dd)
-    input_entries += _mock_writeback_entries(func, functions_data, spec_ids, dd)
+    input_entries += _mock_return_entries(mocked_ids, functions_data, dd)
+    input_entries += _mock_writeback_entries(func, mocked_ids, functions_data, dd)
 
-    _trace_derivation(name, func, functions_data, global_variables_data, spec_ids,
+    _trace_derivation(name, func, functions_data, global_variables_data, mocked_ids,
                       precondition, input_entries)
 
     # ---- Expected Results -------------------------------------------------
@@ -501,6 +545,7 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
     # spec for is scoped to its components. See _spec_function_ids.
     spec_ids = _spec_function_ids(units_data, functions_data, mock_components)
     doc_ids = _spec_function_ids(units_data, functions_data, allowed_components)
+    unit_of = _unit_of(units_data)
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                   for uk, u in units_data.items()}
 
@@ -517,7 +562,7 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
             if not func:
                 continue
             specs.append(_build_spec(fid, func, unit_key, unit_name, functions_data,
-                                     global_variables_data, spec_ids, dd))
+                                     global_variables_data, spec_ids, unit_of, dd))
         if specs:
             result[unit_key] = {"name": unit_name, "functions": specs}
     result["unitNames"] = {k: unit_names[k] for k in result if k != "unitNames"}
