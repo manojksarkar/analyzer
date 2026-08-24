@@ -172,6 +172,28 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-24 (**`feat/swe2-gen` rebased onto `poc-4` @ `c15ee42`** — picks up the 7
+> commits landed since this branch's base (`f8f79ef`): per-layer data dictionary/macros config
+> keys, `tools/check_data_dictionary_csv.py`, and the behaviour-diagram package replacement (see
+> the 2026-08-22/2026-08-22b entries below). Mechanics: `feat/swe2-gen`'s merge commit
+> (`687755f`) had a tree identical to its `poc-4` parent — the SWE.2 port commit (`7690b97`)
+> carried 100% of the real diff — so the rebase was done as a single cherry-pick of `7690b97`
+> onto updated `poc-4`, not a literal `git rebase` (which would have replayed 38 unrelated commits
+> from the pre-`poc-4` `feat/swe2-sad-all` history folded into that merge). **One real conflict**,
+> in `core/group_planner.py`'s no-layer branch: `poc-4` added a `data_dictionary_layer` parameter
+> threaded through `_build_model_phases()`; `7690b97` independently restructured that same branch
+> into `generate_swe3`/`generate_swe2` halves for `--doc-type`. Resolved by keeping `7690b97`'s
+> restructure and adding `data_dictionary_layer=data_dictionary_layer` to both
+> `_build_model_phases()` calls inside it. `config.json`, `core/config.py`, and `run.py` all
+> auto-merged clean (different regions: `architectureDoc` vs per-layer `dataDictionary`/`macros`
+> keys; `layers_config()` vs `layer_source()`/`layer_sources()`; `--doc-type` vs
+> `--data-dictionary-layer`/`--include-path-layer` respectively). Verified: `tests/unit/` — same
+> single pre-existing failure as plain `poc-4` (`test_cli.py`'s
+> `test_unknown_group_exits_2_and_lists_valid_groups`, caused by `python-docx` not being installed
+> in this sandbox, not by the rebase); direct `plan_runs(doc_type="both",
+> data_dictionary_layer=[...])` call confirmed `--data-dictionary-layer` reaches Phase 1's parser
+> args alongside the SWE.2 whole-model phase pair.)
+
 > Updated: 2026-08-22b (**behaviour diagram package replaced + LLM path rewired** — branch
 > `fix/behaviour-diagram`. All 7 modules under `engine/behaviour_diagram/` swapped for an external version;
 > it did not run as delivered (3 crash bugs) and its LLM imports pointed at `llm_client`, deleted in the
@@ -4890,7 +4912,10 @@ etc. (see §6/§7). The port therefore:
   which already includes the layer segment — so the lookup logic (`f"{layer_name}/{comp_path}"`)
   ported unchanged.
 - Added `core.config.layers_config()` (didn't exist in `poc-4`; one-line accessor for the raw
-  `layers` config block, alongside the other typed accessors in §7).
+  `layers` config block, alongside the other typed accessors in §7). Distinct from `poc-4`'s own
+  `layer_source()`/`layer_sources()` (added 2026-08-18, §7) — those resolve one named config key
+  (`dataDictionary`, `macros`) per layer; `layers_config()` just hands back the whole raw block for
+  `layer_static_diagram.py`/`component_design_diagram.py` to walk themselves.
 
 ### `--doc-type` flag
 
