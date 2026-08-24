@@ -32,6 +32,30 @@ PHASE_DERIVE = 2    # Phase 2: Derive model       -> model_deriver.py
 PHASE_VIEWS = 3     # Phase 3: Generate views     -> run_views.py
 PHASE_EXPORT = 4    # Phase 4: Export to DOCX     -> docx_exporter.py
 
+# Valid doc_type values for plan_runs(). Same spelling as `--doc-type` on the CLI.
+DOC_TYPE_SWE3 = "swe3"   # Software Detailed Design (existing default doc type)
+DOC_TYPE_SWE4 = "swe4"   # Software Unit Test Specification
+DOC_TYPE_ALL = "all"     # swe3 + swe4 (unchanged meaning; swe2 is opt-in)
+DOC_TYPE_SWE2 = "swe2"   # Software Architecture Design (layer + component diagrams)
+DOC_TYPE_BOTH = "both"   # swe3 + swe2
+_VALID_DOC_TYPES = (DOC_TYPE_SWE3, DOC_TYPE_SWE4, DOC_TYPE_ALL, DOC_TYPE_SWE2, DOC_TYPE_BOTH)
+
+
+def _split_doc_type(doc_type: str) -> Tuple[Optional[str], bool]:
+    """(the doc_type for the per-group view+export runs or None, whether SWE.2 is wanted).
+
+    SWE.2 is a whole-model document with its own view + exporter scripts, so it is planned
+    beside the SWE.3/SWE.4 runs rather than through `_view_export_phases`. `swe2` alone plans
+    no per-group runs at all.
+    """
+    if doc_type not in _VALID_DOC_TYPES:
+        raise ValueError(f"Unknown doc type {doc_type!r}. Valid: {', '.join(_VALID_DOC_TYPES)}")
+    if doc_type == DOC_TYPE_SWE2:
+        return None, True
+    if doc_type == DOC_TYPE_BOTH:
+        return DOC_TYPE_SWE3, True
+    return doc_type, False
+
 
 @dataclass
 class RunPlan:
@@ -198,6 +222,30 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
     return phases
 
 
+def _swe2_doc_phases(*, output_dir: Optional[str] = None) -> List[Phase]:
+    """Phases 3+4 for the SWE.2 Architecture Design doc (runs once, no group loop).
+
+    Whole-model, not per-group — the SAD views cover every configured layer
+    regardless of --selected-group/--selected-layer/--selected-component.
+    """
+    p = paths()
+    if output_dir is None:
+        output_dir = os.path.join(p.output_dir, "swe2")
+    docx_path = os.path.join(p.output_dir, "Software Architecture Design Specification.docx")
+    return [
+        Phase("Phase 3: Generate SWE.2 (SAD) views", "run_sad_views.py",
+              ["--output-dir", output_dir]),
+        Phase("Phase 4: Export SWE.2 (SAD) to DOCX", "architecture_docx_exporter.py",
+              [output_dir, docx_path]),
+    ]
+
+
+def _swe2_plan(runner_from_phase: int) -> RunPlan:
+    return RunPlan(label="SWE.2 Architecture Design",
+                   phases=_swe2_doc_phases(),
+                   runner_from_phase=runner_from_phase)
+
+
 def plan_runs(
     cfg: Dict[str, Any],
     *,
@@ -220,7 +268,7 @@ def plan_runs(
     baseline_version_id: Optional[str] = None,
     include_emulator: bool = False,
     selected_units: Optional[List[str]] = None,
-    doc_type: str = "swe3",
+    doc_type: str = DOC_TYPE_SWE3,
 ) -> List[RunPlan]:
     """Translate config + CLI flags into a flat list of RunPlan objects.
 
@@ -228,9 +276,10 @@ def plan_runs(
     (not a single plan) lets us emit one plan per group while keeping the
     runner itself dead-simple.
 
-    `doc_type` (swe3|swe4|all) is a dimension threaded to every view+export
+    `doc_type` (swe3|swe4|all|swe2|both) is a dimension threaded to every view+export
     step: it selects the Phase-3 view-set and the Phase-4 exporter(s). Default
-    swe3 keeps the pipeline byte-for-byte identical to before.
+    swe3 keeps the pipeline byte-for-byte identical to before. swe2/both add the
+    Software Architecture Design document as one extra plan after the per-scope runs.
 
     Raises ValueError if selected_group/selected_layer doesn't exist in config.
     """
@@ -238,6 +287,9 @@ def plan_runs(
     from .config import get_flat_groups
     groups_cfg = get_flat_groups(cfg)
     group_names = sorted(groups_cfg.keys()) if isinstance(groups_cfg, dict) else []
+
+    view_doc_type, generate_swe2 = _split_doc_type(doc_type)
+    generate_views = view_doc_type is not None
 
     # `selected_group` may be a single name or a LIST (--scope group:App,Math). Resolving only
     # the first silently generated one group and dropped the rest — the run succeeded and the
@@ -296,9 +348,10 @@ def plan_runs(
         # may legitimately span layers now that component ids carry theirs.
         derived_layer = list(dict.fromkeys(
             l for l in (get_component_layer_name(cfg, c) for c in selected_components) if l))
-        virtual_name = "_".join(selected_components)
 
         if not use_model:
+            # SWE.2 always needs the full model, so widen the parse scope when
+            # it's requested even though --selected-component narrows SWE.3.
             build_phases = _build_model_phases(
                 project_path,
                 no_llm_summarize=no_llm_summarize,
@@ -306,17 +359,21 @@ def plan_runs(
                 data_dictionary_layer=data_dictionary_layer,
                 macros_path=macros_path,
                 macros_layer=macros_layer,
-                selected_layer=derived_layer,
+                selected_layer=None if generate_swe2 else derived_layer,
                 project_name=project_name,
                 only_files=only_files, baseline_version_id=baseline_version_id,
                 include_emulator=include_emulator,
             )
             if from_phase <= 2:
+                label = ("Build model (all layers)" if generate_swe2 else
+                          f"Build model (layer(s) of {', '.join(selected_components)})")
                 plans.append(RunPlan(
-                    label=f"Build model (layer(s) of {', '.join(selected_components)})",
+                    label=label,
                     phases=build_phases,
                     runner_from_phase=from_phase,
                 ))
+
+        local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
 
         # `--component-per-docx` splits the selection into one document PER component
         # instead of one bundling them all. Every other scope already behaves that way
@@ -327,8 +384,7 @@ def plan_runs(
         # The model build above is shared either way — only the view+export step is
         # repeated, which is what makes the split nearly free.
         bundles = ([[c] for c in selected_components] if component_per_docx
-                   else [list(selected_components)])
-        local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
+                   else [list(selected_components)]) if generate_views else []
         for bundle in bundles:
             # `output_name` names ONE output; per-docx produces several, so the
             # component's own name has to key them or they would overwrite each other.
@@ -347,7 +403,7 @@ def plan_runs(
                     os.path.join(comp_out, f"software_detailed_design_{out_key}.docx"),
                 ] + comp_sel_args,
                 selected_units=selected_units,
-                doc_type=doc_type,
+                doc_type=view_doc_type,
                 swe4_args=[
                     os.path.join(comp_out, "test_specs.json"),
                     os.path.join(comp_out, f"software_unit_test_specification_{out_key}.docx"),
@@ -358,34 +414,54 @@ def plan_runs(
                 phases=view_phases,
                 runner_from_phase=local_from,
             ))
+
+        if generate_swe2:
+            plans.append(_swe2_plan(local_from))
         return plans
 
     # ------------------------------------------------------------------
     # No layer: single flat run, all 4 phases (backward compat)
     # ------------------------------------------------------------------
     if not group_names:
-        if use_model:
-            # Skip phases 1+2; runner indices 1,2 map to phases 3,4
-            phases = _view_export_phases(filter_mode=filter_mode, doc_type=doc_type,
-                                         selected_units=selected_units)
-            translated = max(1, from_phase - 2)
-            plans.append(RunPlan(label="single run (use-model)",
-                                 phases=phases,
-                                 runner_from_phase=translated))
-        else:
-            phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
-                                         data_dictionary_path=data_dictionary_path,
-                                         data_dictionary_layer=data_dictionary_layer,
-                                         macros_path=macros_path,
-                                         macros_layer=macros_layer,
-                                         project_name=project_name, only_files=only_files,
-                                         baseline_version_id=baseline_version_id,
-                                         include_emulator=include_emulator) \
-                     + _view_export_phases(filter_mode=filter_mode, doc_type=doc_type,
-                                           selected_units=selected_units)
-            plans.append(RunPlan(label="single run",
-                                 phases=phases,
-                                 runner_from_phase=from_phase))
+        if generate_views:
+            if use_model:
+                # Skip phases 1+2; runner indices 1,2 map to phases 3,4
+                phases = _view_export_phases(filter_mode=filter_mode, doc_type=view_doc_type,
+                                             selected_units=selected_units)
+                translated = max(1, from_phase - 2)
+                plans.append(RunPlan(label="single run (use-model)",
+                                     phases=phases,
+                                     runner_from_phase=translated))
+            else:
+                phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
+                                             data_dictionary_path=data_dictionary_path,
+                                             data_dictionary_layer=data_dictionary_layer,
+                                             macros_path=macros_path,
+                                             macros_layer=macros_layer,
+                                             project_name=project_name, only_files=only_files,
+                                             baseline_version_id=baseline_version_id,
+                                             include_emulator=include_emulator) \
+                         + _view_export_phases(filter_mode=filter_mode, doc_type=view_doc_type,
+                                               selected_units=selected_units)
+                plans.append(RunPlan(label="single run",
+                                     phases=phases,
+                                     runner_from_phase=from_phase))
+        elif not use_model and from_phase <= 2:
+            # SWE.2 only: nothing above built the model, and the SAD views need one.
+            plans.append(RunPlan(
+                label="Build model (all layers)",
+                phases=_build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
+                                           data_dictionary_path=data_dictionary_path,
+                                           data_dictionary_layer=data_dictionary_layer,
+                                           macros_path=macros_path,
+                                           macros_layer=macros_layer,
+                                           project_name=project_name, only_files=only_files,
+                                           baseline_version_id=baseline_version_id,
+                                           include_emulator=include_emulator),
+                runner_from_phase=from_phase))
+
+        if generate_swe2:
+            plans.append(_swe2_plan(max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1))
         return plans
 
     # ------------------------------------------------------------------
@@ -399,25 +475,29 @@ def plan_runs(
         target_groups = group_names
 
     if not use_model:
+        # SWE.2 always needs the full model, so widen the parse scope when it's
+        # requested even though --selected-group/--selected-layer narrowed SWE.3.
+        build_groups = [] if generate_swe2 else list(_resolved_groups)
+        build_layers = [] if generate_swe2 else list(_requested_layers)
         # Build-model plan covers phases 1+2 only.
         build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                             data_dictionary_path=data_dictionary_path,
                                             data_dictionary_layer=data_dictionary_layer,
                                             macros_path=macros_path,
                                             macros_layer=macros_layer,
-                                            selected_group=_resolved_groups or resolved_selected,
+                                            selected_group=build_groups or None,
                                             # every requested layer, not just the first
-                                            selected_layer=_requested_layers or selected_layer,
+                                            selected_layer=build_layers or None,
                                             project_name=project_name, only_files=only_files,
                                          baseline_version_id=baseline_version_id,
                                             include_emulator=include_emulator)
         # If the user wants to start at phase >= 3, the build step is skipped
         # entirely (use existing model on disk).
         if from_phase <= 2:
-            if _resolved_groups:
-                label = f"Build model (layer(s) of {', '.join(_resolved_groups)})"
-            elif selected_layer:
-                label = f"Build model ({selected_layer})"
+            if build_groups:
+                label = f"Build model (layer(s) of {', '.join(build_groups)})"
+            elif build_layers:
+                label = f"Build model ({', '.join(build_layers)})"
             else:
                 label = "Build model (all layers)"
             plans.append(RunPlan(label=label,
@@ -425,7 +505,7 @@ def plan_runs(
                                  runner_from_phase=from_phase))
 
     local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
-    for g in target_groups:
+    for g in (target_groups if generate_views else []):
         # Single-file mode: use allowed components from config, not from layer
         is_single_file = g.startswith("_single_file_")
         if is_single_file:
@@ -441,7 +521,7 @@ def plan_runs(
                 selected_group=g,
                 filter_mode=filter_mode,
                 selected_units=selected_units,
-                doc_type=doc_type,
+                doc_type=view_doc_type,
             )
             # Embed allowed components into the phase args to pass via CLI
             for phase in view_phases:
@@ -464,7 +544,7 @@ def plan_runs(
                         os.path.join(comp_out, f"software_detailed_design_{comp}.docx"),
                     ] + comp_sel_args,
                     selected_units=selected_units,
-                    doc_type=doc_type,
+                    doc_type=view_doc_type,
                     swe4_args=[
                         os.path.join(comp_out, "test_specs.json"),
                         os.path.join(comp_out, f"software_unit_test_specification_{comp}.docx"),
@@ -487,7 +567,7 @@ def plan_runs(
                     "--selected-group", g,
                 ],
                 selected_units=selected_units,
-                doc_type=doc_type,
+                doc_type=view_doc_type,
                 swe4_args=[
                     os.path.join(group_out, "test_specs.json"),
                     os.path.join(group_out, f"software_unit_test_specification_{out_key}.docx"),
@@ -497,5 +577,8 @@ def plan_runs(
             plans.append(RunPlan(label=f"Group: {g}",
                                  phases=view_phases,
                                  runner_from_phase=local_from))
+
+    if generate_swe2:
+        plans.append(_swe2_plan(local_from))
 
     return plans

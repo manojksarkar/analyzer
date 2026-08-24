@@ -17,6 +17,7 @@ from .config import (
     exporter_config,
     clang_config,
     components_groups,
+    layers_config,
 )
 from .model_io import (
     METADATA,
@@ -44,6 +45,9 @@ from .group_planner import (
     PHASE_DERIVE,
     PHASE_VIEWS,
     PHASE_EXPORT,
+    DOC_TYPE_SWE3,
+    DOC_TYPE_SWE2,
+    DOC_TYPE_BOTH,
 )
 
 __all__ = [
@@ -60,6 +64,7 @@ __all__ = [
     "exporter_config",
     "clang_config",
     "components_groups",
+    "layers_config",
     "METADATA",
     "FUNCTIONS",
     "GLOBALS",
@@ -84,4 +89,7 @@ __all__ = [
     "PHASE_DERIVE",
     "PHASE_VIEWS",
     "PHASE_EXPORT",
+    "DOC_TYPE_SWE3",
+    "DOC_TYPE_SWE2",
+    "DOC_TYPE_BOTH",
 ]
