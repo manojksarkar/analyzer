@@ -379,7 +379,7 @@ def _unreachable_help(host: str, port: int, exc: Exception) -> str:
             "itself:",
             "  * user / password in the `db` section of engine/config/config.local.json",
             "  * pg_hba.conf on the server must allow this client's address",
-            "  * the database may not exist yet -> python tools/db_setup.py",
+            "  * the database may not exist yet -> python analyzer.py setup",
         ]
     lines += ["", "Connection attempts give up after "
                   f"{CONNECT_TIMEOUT_SEC}s (raise DATABASE_CONNECT_TIMEOUT if the link is "

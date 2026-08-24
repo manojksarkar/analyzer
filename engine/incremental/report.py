@@ -41,7 +41,7 @@ def _llm_lines(counts: Dict[str, Any]) -> List[str]:
         return [_THIN,
                 "  LLM CALLS : accounting unavailable "
                 f"({counts['__unavailable__']})",
-                "              Run `python tools/db_setup.py` to apply migration 0007. Until "
+                "              Run `python analyzer.py setup` to apply the migration. Until "
                 "then the",
                 "              report cannot say how many LLM calls failed."]
     timing = {str(k).split("|", 1)[1]: v for k, v in counts.items()

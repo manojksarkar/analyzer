@@ -80,7 +80,7 @@ async def _db_startup_check() -> None:
         print("[api] *** NO DATABASE CONFIGURED — running the in-memory TEST backend. ***\n"
               "      Seed data only; every project, version and document is lost on restart.\n"
               "      Set DATABASE_URL, or add a `db` section to engine/config/config.local.json,\n"
-              "      then run tools/db_setup.py.", file=sys.stderr)
+              "      then run `python analyzer.py setup`.", file=sys.stderr)
         return
     sys.path.insert(0, str(Path(__file__).parent.parent / "engine"))
     from core.db import _redact

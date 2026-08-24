@@ -64,7 +64,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", default=None, help="restrict the per-version checks")
-    ap.add_argument("--out", default="check_db_report.txt")
+    ap.add_argument("--out", default=None,
+                    help="also write the report to this file (default: stdout only)")
     ap.add_argument("--quiet", action="store_true", help="findings only")
     args = ap.parse_args(argv)
 
@@ -285,10 +286,13 @@ def main(argv=None) -> int:
     text = "\n".join(lines)
     if not args.quiet or r.errors or r.warnings:
         print(text)
-    out = os.path.abspath(args.out)
-    with open(out, "w", encoding="utf-8") as fh:
-        fh.write(text + "\n")
-    print(f"\nwritten to {out}  ({os.path.getsize(out):,} bytes)")
+    # Only when asked. It used to drop check_db_report.txt into the working directory
+    # on every run, which for a command you run in order to LOOK at something is litter.
+    if args.out:
+        out = os.path.abspath(args.out)
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write(text + "\n")
+        print(f"\nwritten to {out}  ({os.path.getsize(out):,} bytes)")
     return 1 if (r.errors or r.warnings) else 0
 
 

@@ -967,59 +967,23 @@ def _parse_scope(s: str) -> Dict[str, Any]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Produce an incremental version (M2.3).")
-    ap.add_argument("--project-id", required=True)
-    ap.add_argument("--branch", required=True)
-    ap.add_argument("--commit", required=True)
-    ap.add_argument("--scope", default="project")
-    ap.add_argument("--base-version-id", default=None)
-    ap.add_argument("--data-dict-id", default=None)
-    ap.add_argument("--version-id", default=None)
-    ap.add_argument("--no-llm", action="store_true")
-    ap.add_argument("--force", action="store_true")
-    ap.add_argument("--no-narrowed-parse", dest="narrowed_parse", action="store_false",
-                    default=True,
-                    help="Force a FULL re-parse. Narrowed parse is ON by default: it re-parses "
-                         "only the affected TUs and merges them into the baseline skeleton, "
-                         "which is the single biggest non-LLM saving (parsing is ~65%% of a "
-                         "run). It falls back to a full parse by itself whenever it cannot "
-                         "prove the merge safe — changed compiler flags, a rename it cannot "
-                         "track, a baseline with no stored skeleton.")
-    ap.add_argument("--verify-parse", action="store_true",
-                    help="M4.5: with --narrowed-parse, also run a full parse and diff it against "
-                         "the narrowed result (logs mismatches; uses the full parse). Slow; for validation.")
-    ap.add_argument("--create-version", action="store_true",
-                    help="reserve the versions row if it does not exist (see generate.py).")
-    ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
-    ap.add_argument("--repo-url", default=None, help="clone URL (else resolved from the project record)")
-    args = ap.parse_args()
-    try:
-        m = generate_incremental(args.project_id, args.branch, args.commit,
-                                 _parse_scope(args.scope),
-                                 base_version_id=args.base_version_id,
-                                 data_dict_id=args.data_dict_id,
-                                 no_llm=args.no_llm, version_id=args.version_id,
-                                 force=args.force,
-                                 narrowed_parse=args.narrowed_parse,
-                                 verify_parse=args.verify_parse,
-                                 config_path=args.config, repo_url=args.repo_url,
-                                 create_version=args.create_version)
-    except AnalyzerRunFailed as exc:
-        # See generate.main(): exit 2 means the analyzer rejected the request and already
-        # explained why. Print a pointer, not a stack trace that buries the explanation.
-        if exc.returncode == 2:
-            print("\nStopped: see the error above. (No traceback — the "
-                  "analyzer already said what was wrong and how to fix it.)",
-                  file=sys.stderr)
-            raise SystemExit(2)
-        raise
-    except _DatabaseRequired as exc:
-        print(f"\n{exc}", file=sys.stderr)
-        raise SystemExit(2)
-    print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
-          f"decision={m['decision']}, baseline={m.get('baselineVersionId')}, "
-          f"regenerated={m['regenerated']}, reused={m['reused']}, "
-          f"carriedForward={m.get('carriedForward')}, documents={m.get('documents')}")
+    """Not an entry point any more — `analyzer.py` is the only one.
+
+    Two commands that both produced a version (this one for the first, engine.py for the
+    rest) was the single biggest source of "which do I run?". `analyzer.py generate`
+    resolves the baseline and picks, so there is nothing left to get wrong.
+    """
+    import sys as _sys
+    print(
+        "This is not a command any more. Use the analyzer CLI:\n"
+        "\n"
+        "    python analyzer.py generate --project-id <id> --commit <sha> --version-id <id>\n"
+        "\n"
+        "It decides full vs incremental from the data — with a usable baseline it re-parses\n"
+        "only the changed translation units, without one it does a full run.\n"
+        "    python analyzer.py generate --help",
+        file=_sys.stderr)
+    raise SystemExit(2)
 
 
 if __name__ == "__main__":

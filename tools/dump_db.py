@@ -66,7 +66,8 @@ def _version_column(table):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default="db_dump.txt", help="output file (default: db_dump.txt)")
+    ap.add_argument("--out", default=None,
+                    help="write to this file instead of stdout")
     ap.add_argument("--version", default=None, help="only rows for this version id")
     ap.add_argument("--project", default=None, help="only rows for this project id")
     ap.add_argument("--full", action="store_true", help="do not truncate payloads")
@@ -93,8 +94,14 @@ def main(argv=None) -> int:
     tables = list(s.metadata.sorted_tables)
     limit = 10 ** 9 if args.full else _MAX_VALUE
 
-    out_path = os.path.abspath(args.out)
-    with open(out_path, "w", encoding="utf-8") as fh:
+    # stdout unless a file is asked for. It used to always drop db_dump.txt into the
+    # working directory, which for a command whose whole job is to SHOW you something
+    # meant reading a file you did not ask to create.
+    import contextlib, io
+    out_path = os.path.abspath(args.out) if args.out else None
+    _buf = io.StringIO()
+    with (open(out_path, 'w', encoding='utf-8') if out_path
+          else contextlib.nullcontext(_buf)) as fh:
         def w(line=""):
             fh.write(line + "\n")
 
@@ -138,7 +145,11 @@ def main(argv=None) -> int:
         w()
 
         if args.counts:
-            print(f"wrote {out_path}")
+            # --counts stops here: the header above IS the summary.
+            if out_path:
+                print(f"wrote {out_path}")
+            else:
+                print(_buf.getvalue(), end="")
             return 0
 
         # --- rows -----------------------------------------------------------------------
@@ -180,8 +191,11 @@ def main(argv=None) -> int:
                 w(f"\n  … {counts[t.name] - cap} more row(s) not shown "
                   f"(--max-rows to raise, --full for everything)")
 
-    size = os.path.getsize(out_path)
-    print(f"wrote {out_path}  ({size:,} bytes)")
+    if out_path:
+        size = os.path.getsize(out_path)
+        print(f"wrote {out_path}  ({size:,} bytes)")
+    else:
+        print(_buf.getvalue(), end='')
     print("Empty tables are listed near the top — start there.")
     return 0
 

@@ -499,45 +499,23 @@ def _parse_scope(s: str) -> Dict[str, Any]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Produce a full-generation version (M1.3).")
-    ap.add_argument("--project-id", required=True)
-    ap.add_argument("--branch", required=True)
-    ap.add_argument("--commit", required=True)
-    ap.add_argument("--scope", default="project",
-                    help="project | layer:L | group:G | component:C1,C2")
-    ap.add_argument("--data-dict-id", default=None)
-    ap.add_argument("--version-id", default=None, help="(derived from the commit; kept for compat)")
-    ap.add_argument("--no-llm", action="store_true", help="skip LLM hierarchy summarization")
-    ap.add_argument("--force", action="store_true", help="(no-op; the commit dir is reused)")
-    ap.add_argument("--create-version", action="store_true",
-                    help="reserve the versions row if it does not exist. The API normally owns "
-                         "that row; without this a missing one is an error, so a mistyped "
-                         "--version-id fails instead of silently starting a new version.")
-    ap.add_argument("--config", default=None, help="per-project config.json to use as-is")
-    ap.add_argument("--repo-url", default=None, help="clone URL (else resolved from the project record)")
-    args = ap.parse_args()
-    try:
-        m = generate_full(args.project_id, args.branch, args.commit, _parse_scope(args.scope),
-                          data_dict_id=args.data_dict_id, no_llm=args.no_llm, force=args.force,
-                          version_id=args.version_id, config_path=args.config,
-                          repo_url=args.repo_url,
-                          create_version=args.create_version)
-    except AnalyzerRunFailed as exc:
-        # Exit 2 is the analyzer's USAGE code: it already printed the reason — an unknown group,
-        # a bad flag — in a form built to be acted on. A traceback here adds nothing and pushes
-        # that message fifteen lines up the terminal, which is exactly where it stops being read.
-        if exc.returncode == 2:
-            print("\nStopped: see the error above. (No traceback — the "
-                  "analyzer already said what was wrong and how to fix it.)",
-                  file=sys.stderr)
-            raise SystemExit(2)
-        raise
-    except _DatabaseRequired as exc:
-        print(f"\n{exc}", file=sys.stderr)
-        raise SystemExit(2)
-    print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "
-          f"decision={m['decision']}, regenerated={m['regenerated']}, "
-          f"documents={m.get('documents')}")
+    """Not an entry point any more — `analyzer.py` is the only one.
+
+    Two commands that both produced a version (this one for the first, engine.py for the
+    rest) was the single biggest source of "which do I run?". `analyzer.py generate`
+    resolves the baseline and picks, so there is nothing left to get wrong.
+    """
+    import sys as _sys
+    print(
+        "This is not a command any more. Use the analyzer CLI:\n"
+        "\n"
+        "    python analyzer.py generate --project-id <id> --commit <sha> --version-id <id>\n"
+        "\n"
+        "It decides full vs incremental from the data — with a usable baseline it re-parses\n"
+        "only the changed translation units, without one it does a full run.\n"
+        "    python analyzer.py generate --help",
+        file=_sys.stderr)
+    raise SystemExit(2)
 
 
 if __name__ == "__main__":

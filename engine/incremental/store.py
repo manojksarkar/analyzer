@@ -42,7 +42,7 @@ def make_store(project_id: str, workspaces_root: Optional[str] = None) -> "Artif
         raise RuntimeError(
             "no database is configured, and the artifacts of a version live nowhere else. "
             "Set the `db` section in engine/config/config.local.json (or DATABASE_URL), then "
-            "run `python tools/db_setup.py`.")
+            "run `python analyzer.py setup`.")
     from core.db import get_engine
     return PgStore(project_id, get_engine(), workspaces_root=workspaces_root)
 

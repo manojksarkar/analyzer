@@ -92,7 +92,7 @@ class TestEffectiveModelStore:
     @pytest.mark.parametrize("bad,fix", [
         (None, "--version-id"),
         # Was "INSERT the row first", pointing at a design document. It names the command now.
-        ("ver-nope", "tools/new_project.py"),
+        ("ver-nope", "analyzer.py onboard"),
     ])
     def test_the_message_says_how_to_fix_it(self, monkeypatch, bad, fix):
         """An operator hitting this at 2am should not have to read the source."""
@@ -199,7 +199,7 @@ class TestTheMissingVersionMessageIsActionable:
         with pytest.raises(run_context.DatabaseRequired) as exc:
             run_context.effective_model_store("v1", project_id="myproj", commit="a" * 40)
         msg = str(exc.value)
-        assert "tools/new_project.py" in msg
+        assert "analyzer.py onboard" in msg
         assert "--project-id myproj" in msg, "the message should carry the caller's own values"
         assert "--version-id v1" in msg
         assert "a" * 40 in msg
@@ -259,6 +259,11 @@ class TestCreateVersionIsOptIn:
 
 @pytest.mark.parametrize("name", ["generate.py", "engine.py"])
 def test_both_orchestrators_expose_create_version(name):
+    """The FLAG lives on analyzer.py now — the orchestrators are library functions. What must
+    survive is the parameter reaching effective_model_store, which is what actually reserves
+    the row."""
     src = _src(os.path.join("engine", "incremental", name))
-    assert '"--create-version"' in src
     assert "create_version=create_version" in src
+    cli = _src("analyzer.py")
+    assert '"--create-version"' in cli, "the CLI must still offer it"
+    assert "create_version=a.create_version" in cli, "and pass it through"

@@ -1,26 +1,43 @@
-# Running the analyzer from the command line
+# Running the analyzer
 
-Every command below was run against this branch before being written down. Each is on ONE line
-so it can be copied directly. Start at the repo root (`analyzer/`).
+There is one command. Everything below goes through it:
 
-The database is the **default** — you do not pass a flag to get it.
+```
+python analyzer.py <command>
+```
+
+```
+python analyzer.py --help
+```
+
+```
+python analyzer.py <command> --help
+```
+
+Start at the repo root (`analyzer/`). Every command on this page was run against this branch
+before being written down.
+
+There used to be four entry points — `tools/new_project.py`, `python -m incremental.generate`,
+`python -m incremental.engine`, `engine/run.py` — and knowing which one a job wanted was
+folklore. They are gone. The old ones now print a pointer here rather than quietly working, so
+there is no second way to do anything.
 
 ---
 
-## 0. A complete fresh run, start to finished documents
+## The whole thing, start to finish
 
-Six commands, from an empty database to two DOCX files and an incremental second version. The
-whole sequence was run end to end against a **local-path** C++ repo before being written down;
-the output shown is from that run.
+Six commands take you from an empty database to documents, and then to an incremental second
+version. Verified end to end on a local-path C++ repo.
 
-**Step 1 — schema.** Once per machine, and again after every `git pull`.
+**1. Schema.** Once per machine, and again after any `git pull` that brings a migration — a
+missing migration shows up as a feature that silently does nothing.
 
 ```
-python tools\db_setup.py
+python analyzer.py setup
 ```
 
-**Step 2 — write `my-config.json`.** Only `layers` is yours; `clang`, `views` and `llm` are
-merged in from `config.defaults.json` (see §2).
+**2. Write `my-config.json`.** Only `layers` is yours; `clang`, `views` and `llm` are merged in
+from `engine/config/config.defaults.json`.
 
 ```json
 {
@@ -30,139 +47,342 @@ merged in from `config.defaults.json` (see §2).
 }
 ```
 
-Paths are relative to the repo root, and the group's components map to directories under the
-layer's `path` — above, `Layer1/Math` and `Layer1/App`. The defaults leave **flowcharts off**;
-to turn them on add a `views` block, and run `python tools\doctor.py` first because flowcharts
-need Graphviz and mermaid:
+Paths are relative to the repo root, and a group's components map to directories under the
+layer's `path` — above, `Layer1/Math` and `Layer1/App`. Comments and trailing commas are fine.
 
-```json
-"views": { "interfaceTables": true, "unitDiagrams": true, "flowcharts": true }
-```
-
-**Step 3 — onboard the project and reserve the first version.** One command. Pick the line that
-matches where your C++ lives; `<sha1>` is the full 40-character sha from
-`git -C <your-cpp> rev-parse HEAD`.
-
-*C++ from a local path:*
+**3. Register the project** and reserve its first version. `--source` takes a git URL **or** a
+local path; `<sha>` is the full 40-character sha from `git -C <your-cpp> rev-parse HEAD`.
 
 ```
-python tools\new_project.py --project-id myproj --repo-url D:\code\my-cpp --branch main --config my-config.json --version-id v1 --commit <sha1>
+python analyzer.py onboard --project-id myproj --source D:\code\my-cpp --config my-config.json --version-id v1 --commit <sha>
 ```
 
-*C++ from a git URL:*
-
-```
-python tools\new_project.py --project-id myproj --repo-url https://github.com/me/my-cpp.git --branch main --config my-config.json --version-id v1 --commit <sha1>
-```
-
-Check the line it prints before going on — it is the fastest way to catch a wrong config:
+Read the line it prints back before going on — it is the fastest way to catch a wrong config:
 
 ```
 config   : ...\workspaces\myproj\config.json WRITTEN (from my-config.json + defaults)
            Layer1 / Support: Math, App
-version  : v1 RESERVED for c89f8c1637
+version  : v1 RESERVED for 1d04bb15d8
 ```
 
-**Step 4 — full generation.** This clones the commit, parses it, and writes the documents.
+**4. Generate.**
 
 ```
-cd engine
-```
-```
-python -m incremental.generate --project-id myproj --branch main --commit <sha1> --version-id v1 --scope project
+python analyzer.py generate --project-id myproj --commit <sha> --version-id v1
 ```
 
 ```
-version v1 (complete): commit c89f8c1637, decision=full, regenerated=18,
+version v1 (complete): commit 1d04bb15d8, decision=full, regenerated=18, reused=0,
 documents=['software_detailed_design_App.docx', 'software_detailed_design_Math.docx']
 ```
 
-**Step 5 — change some C++ and commit it.** The engine works off commits, so an uncommitted
-edit is invisible to it.
+**5. Change some C++ and commit it.** The engine works off commits, so an uncommitted edit is
+invisible to it.
 
 ```
 git -C D:\code\my-cpp commit -am "change add()"
 ```
-```
-git -C D:\code\my-cpp rev-parse HEAD
-```
 
-**Step 6 — the incremental run.** `--create-version` reserves the `v2` row itself, so there is
-no second `new_project.py` call. Narrowed parse is on by default.
+**6. Generate again.** Same command — `generate` sees a usable baseline and takes the
+incremental path by itself.
 
 ```
-python -m incremental.engine --project-id myproj --branch main --commit <sha2> --version-id v2 --scope project --create-version
+python analyzer.py generate --project-id myproj --commit <sha2> --version-id v2 --create-version
 ```
 
-From the verified run — one function changed, so one translation unit was re-parsed and most of
-the previous version was reused rather than regenerated:
-
 ```
-CHANGE CLASSIFICATION (this commit vs the baseline)
-  changed   : 1    (1 function)
-  unchanged : 17   (15 function, 2 global)
-REUSE ACCOUNTING (regenerated by the LLM  vs  reused/carried)
-  Functions : regenerated 3    / 16   -> reused 13 (81%)
-  Flowcharts: regenerated 1    / 16   function(s) -> carried 15 (93%)
-
-version v2 (complete): commit 667641841a, decision=incremental, baseline=v1,
-regenerated=3, reused=13, carriedForward=12
+version v2 (complete): commit 8b767ac90e, decision=incremental, regenerated=4, reused=12
 ```
 
-`narrowed parse: 1 affected TU(s) (--only-files)` in `logs/run_<date>.log` confirms only the
-changed translation unit was re-parsed.
-
-**Then check it.**
+Then look at what happened:
 
 ```
-cd ..
-```
-```
-python tools\check_db.py
+python analyzer.py report
 ```
 
-Documents land in `workspaces/myproj/versions/<version-id>/documents/`, and per-component
-copies in `.../output/<Component>/`.
+Documents land in `workspaces/<pid>/versions/<version-id>/documents/`, with per-component copies
+under `.../output/<Component>/`.
 
-Add ` --no-llm` to either generate command for a fast, deterministic run with no LLM calls —
-structure is produced, prose and labels are mechanical. That is what the run above used.
+---
 
+## There is no "full or incremental" to choose
 
-## 0b. The same commands with EVERY flag
+That was the old `generate` vs `engine` split, and picking wrong either wasted an hour
+re-parsing or failed outright.
 
-The four above are the short forms. These are the maximal ones — every flag each entry point
-accepts, on one line, so you can delete what you do not need rather than hunt for what exists.
+`generate` resolves the baseline and decides:
 
-**Onboard** — `tools/new_project.py`:
+| Situation | What it does |
+|---|---|
+| no earlier version, or none usable | full run — parses everything |
+| a usable ancestor version exists | incremental — re-parses only the changed translation units, reuses the rest |
+
+`--full` forces the long way round when you want to rule the baseline out of a comparison.
+
+---
+
+## Commands
+
+| Command | For |
+|---|---|
+| `setup` | create or upgrade the database schema |
+| `onboard` | register a project: row, workspace, config, first version |
+| `generate` | produce a version from a commit |
+| `reexport` | rebuild a version's documents from its stored model |
+| `status` | what the database holds |
+| `check` | check the database, reporting only what is wrong |
+| `report` | a version's generation report |
+| `doctor` | check prerequisites (clang, node, graphviz, browser) |
+| `check-llm` | ask the LLM gateway directly whether it answers |
+| `check-datadict` | validate a data-dictionary CSV before a run |
+| `llm-stats` | compare the LLM cost of two runs |
+| `verify` | run the correctness gates |
+
+### `setup`
 
 ```
-python tools\new_project.py --project-id myproj --name "My Project" --repo-url D:\code\my-cpp --branch main --config my-config.json --version-id v1 --commit <full-40-char-sha> --force-config
+python analyzer.py setup
+```
+```
+python analyzer.py setup --demo
 ```
 
-`--use-defaults` replaces `--config` when you deliberately want this repo's sample tree; the two
-are alternatives, never both. `--force-config` overwrites a config that already exists.
+`--demo` also seeds demo users and projects, for a fresh database you want to click around in.
 
-**Full generation** — `python -m incremental.generate`:
+### `onboard`
 
-```
-python -m incremental.generate --project-id myproj --branch main --commit <sha1> --version-id v1 --scope "group:Support" --config ..\my-config.json --repo-url D:\code\my-cpp --data-dict-id dd2024 --create-version --no-llm --force
-```
-
-**Incremental** — `python -m incremental.engine`, the same plus four of its own:
+Every flag it takes, in one line:
 
 ```
-python -m incremental.engine --project-id myproj --branch main --commit <sha2> --version-id v2 --scope "group:Support" --base-version-id v1 --config ..\my-config.json --repo-url D:\code\my-cpp --data-dict-id dd2024 --create-version --no-llm --force --no-narrowed-parse --verify-parse
+python analyzer.py onboard --project-id myproj --name "My Project" --source D:\code\my-cpp --branch main --config my-config.json --version-id v1 --commit <full-40-char-sha> --force-config
 ```
 
-`--no-narrowed-parse` and `--verify-parse` are opposites of the normal case — the first forces a
-full re-parse, the second runs both and diffs them. Neither belongs in a routine run.
+| Flag | Effect |
+|---|---|
+| `--project-id` | required |
+| `--name` | display name (default: the id) |
+| `--source` | git URL **or** local path. Omit when the commit is already checked out in the workspace. |
+| `--branch` | default `main` |
+| `--config` | this project's config.json |
+| `--use-defaults` | use this repo's SAMPLE tree instead. An alternative to `--config`, never both. |
+| `--force-config` | replace a config that already exists |
+| `--version-id` / `--commit` | also reserve the first version. Both or neither. |
 
-### Where `--macros-layer` and friends went
+**A local path must be a git repository.** The incremental model is built on commits, so a plain
+directory cannot be used:
 
-**They are not orchestrator flags.** `--data-dictionary-layer`, `--macros-layer` and
-`--include-path-layer` belong to `run.py`, and an orchestrated run gets the same inputs **from
-the config file** instead — because a layer owns its own inputs, so the layer name is never
-repeated in a separate map where a typo would silently match nothing:
+```
+git -C D:\code\my-cpp init
+```
+```
+git -C D:\code\my-cpp add -A
+```
+```
+git -C D:\code\my-cpp commit -m "initial"
+```
+
+If `git init` gives you a `master` branch, pass `--branch master` everywhere or rename it — the
+branch name goes straight to `git clone --branch`, and one that does not exist fails the clone.
+
+The source is **cloned**, not read in place, so uncommitted edits are invisible until you commit
+them. `warning: --depth is ignored in local clones` is normal: git never shallow-clones a local
+path, and the full history is what the baseline search wants anyway.
+
+### `generate`
+
+Every flag it takes, in one line:
+
+```
+python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 --branch main --scope "group:Support" --source D:\code\my-cpp --config my-config.json --data-dict dd2024 --create-version --no-llm --full --base-version v1 --no-narrowed-parse --verify-parse --force
+```
+
+| Flag | Effect |
+|---|---|
+| `--project-id`, `--commit`, `--version-id` | required |
+| `--branch` | default `main` |
+| `--scope` | one of `project` (default), `layer:A,B`, `group:A,B`, `component:A,B` |
+| `--source` | clone from here if the commit is not checked out yet |
+| `--config` | use this config instead of the project's |
+| `--data-dict <id>` | merge `workspaces/<pid>/datadict/<id>.csv` into the data dictionary |
+| `--create-version` | reserve the `versions` row if absent. Opt-in, so a mistyped `--version-id` fails instead of silently starting a new version. |
+| `--no-llm` | no LLM at all — structure only, mechanical prose and labels |
+| `--full` | force a full run even when a baseline exists |
+| `--base-version <id>` | force this baseline instead of the nearest ancestor |
+| `--no-narrowed-parse` | re-parse everything instead of only the changed translation units |
+| `--verify-parse` | run narrowed AND full, diff them, use the full one. Slow; for validation. |
+| `--force` | accepted; the commit dir is reused either way |
+
+`--full`, `--no-narrowed-parse` and `--verify-parse` are all "do it the slow way on purpose".
+None belongs in a routine run.
+
+### `reexport`
+
+Rebuild a version's documents from its **stored model** — no parsing, no LLM. This is what you
+run after changing a view or the DOCX template.
+
+```
+python analyzer.py reexport --project-id myproj --version-id v2
+```
+```
+python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 --unit Uart --unit Spi
+```
+
+| Flag | Effect |
+|---|---|
+| `--from-phase` | 3 = views + export (default), 4 = export only |
+| `--unit <name>` | render only this unit. Repeatable. A development aid. |
+
+It needs the version's commit still checked out, because flowcharts and line numbers are read
+from the source. If the checkout is gone it says so rather than producing an empty document.
+
+### `status`, `check`, `report`
+
+```
+python analyzer.py status
+```
+```
+python analyzer.py status --version v2 --out dump.txt
+```
+```
+python analyzer.py check
+```
+```
+python analyzer.py check --version v2 --quiet --out report.txt
+```
+```
+python analyzer.py report
+```
+```
+python analyzer.py report --version v2
+```
+
+`status` prints row counts (or one version in full). `check` reports **only what looks wrong** —
+a healthy database gives a few lines saying so, and each finding says what it means and how to
+fix it; this is the one to reach for first. `report` prints a version's generation report,
+newest by default.
+
+All three print to stdout; `--out` also writes a file.
+
+### `doctor`, `check-llm`, `check-datadict`
+
+```
+python analyzer.py doctor
+```
+```
+python analyzer.py doctor --quiet
+```
+```
+python analyzer.py check-llm
+```
+```
+python analyzer.py check-llm --raw --only description --max-tokens 256
+```
+```
+python analyzer.py check-datadict dd_layer1.csv --layer Layer1 --quiet
+```
+
+`doctor` checks clang, node, graphviz and the browser before a long run stops on a missing one.
+`check-llm` asks the gateway directly, so "no descriptions in the document" can be attributed to
+the model rather than the pipeline. `check-datadict` validates a CSV **before** a run — a
+malformed one used to be accepted in silence and the ranges simply never appeared.
+
+### `llm-stats`
+
+Every run writes `logs/llm_stats_<run-id>.json`. Pass two to see what a change did:
+
+```
+python analyzer.py llm-stats logs\llm_stats_A.json logs\llm_stats_B.json
+```
+
+It prints the config difference first, because a comparison you cannot attribute to a specific
+change is two columns of numbers.
+
+### `verify`
+
+```
+python analyzer.py verify
+```
+```
+python analyzer.py verify --list
+```
+```
+python analyzer.py verify incremental narrowed-parse
+```
+```
+python analyzer.py verify --fast --keep-going
+```
+
+| Gate | What it proves |
+|---|---|
+| `tests` | the unit + API suites |
+| `incremental` | a two-version run reuses and regenerates correctly |
+| `narrowed-parse` | a narrowed parse equals a full one |
+| `flowchart-reuse` | an incremental run carries flowcharts forward |
+| `parity` | an incremental document equals a full one |
+| `db-sync` | the model round-trips through real Postgres |
+| `db-rebuild` | a fresh node could rebuild a version from the database |
+
+They build their own fixtures and throwaway databases; none touch your data. It stops at the
+first failure unless you pass `--keep-going`. Every one exists because something passed the unit
+tests and was still broken.
+
+---
+
+## Scoping
+
+**Quote the value.** A scope naming more than one thing contains a comma, and some shells treat
+that as an argument separator — which surfaces as `expected one argument` and reads like a bug
+in the tool.
+
+```
+--scope project
+```
+```
+--scope "layer:Layer1"
+```
+```
+--scope "group:Support"
+```
+```
+--scope "group:Support,Access"
+```
+```
+--scope "component:App,Math"
+```
+
+**Groups and components are not the same thing**, and mixing them up is the most likely reason a
+scope is rejected. In the shipped sample config, `Support` is a *group* and `App` / `Math` are
+*components* inside it. If you name a component where a group belongs, the error says so and
+prints the corrected command. To see yours:
+
+```
+python -c "import json; cfg=json.load(open('workspaces/myproj/config.json')); [print(f'{g}: {list(c)}') for l in cfg['layers'].values() for g,c in (l.get('groups') or {}).items()]"
+```
+
+**One document or several?**
+
+| Scope | Documents produced |
+|---|---|
+| `project` | one per **component**, across the whole project |
+| `layer:L` | one per component in that layer |
+| `group:G` | one per component in that group |
+| `component:A,B` | **ONE combined document**, named `A_B` |
+
+`component:` bundles deliberately — that is how you produce a single document covering a chosen
+set. For App and Math as **separate** documents, scope to the group that holds them.
+
+**What a scope does and does not limit:** it selects which **documents** are produced. Parsing
+stays **layer-scoped**, because a function in one group can call into another group in the same
+layer and a model missing those callees would give you wrong call graphs. So with `App,Math` in
+`Layer1`, the stored model covers `Layer1` while the documents cover App and Math only.
+
+---
+
+## Per-layer inputs live in the config
+
+A real project rarely has one set of macros or one data dictionary. These are **config keys, not
+flags** — a layer owns its own inputs, so the layer name is never repeated in a separate map
+where a typo would silently match nothing:
 
 ```json
 {
@@ -182,495 +402,67 @@ repeated in a separate map where a typo would silently match nothing:
 }
 ```
 
-Include directories are **discovered** for you — every directory under each layer's `path` is
-walked and merged into `model/clang_include_paths.json`. `--include-path-layer` only adds ones
-that live outside the tree, like a third-party SDK.
+`engine/config/macros.layer1.example.json` is a working macro file. For a UI job you write none:
+the API materialises `workspaces/<pid>/macros.json` from the project's
+`preprocessor_definitions`.
 
-**Driving a phase by hand** — `run.py`, which is where those flags do exist. Every flag it takes,
-in one command (you would never pass all of these at once — `--selected-group`,
-`--selected-layer` and `--selected-component` are mutually exclusive, and `--component-per-docx`
-cannot join `--selected-component`):
-
-```
-python run.py <checkout-path> --config ..\workspaces\myproj\config.json --version-id v2 --project-id myproj --model-root ..\workspaces\myproj\versions\v2\model --output-root ..\workspaces\myproj\versions\v2\output --baseline-version-id v1 --from-phase 3 --to-phase 4 --use-model --selected-group Support --component-per-docx --selected-unit Uart --filter-mode single_per_external_component --project-name "My Project" --output-name Support --data-dictionary dd.csv --data-dictionary-layer Layer1 dd_layer1.csv --macros macros.json --macros-layer Layer1 macros.layer1.json --include-path-layer Layer1 C:\ThirdParty\boost\include --only-files changed.txt --include-emulator --no-llm-summarize --clean --verbose --trace-prompts
-```
-
-Anything not on that list is rejected before Phase 1 starts, with a did-you-mean suggestion.
+**Include directories are discovered**, not listed. Every directory under a layer's `path` is
+walked into `model/clang_include_paths.json` automatically — you only need to declare ones that
+live *outside* your tree, like a third-party SDK.
 
 ---
 
-## 1. Setup (once per machine)
+## When a run stops
 
-```
-python tools\db_setup.py
-```
-
-Creates or upgrades the schema from the `db` section of `engine/config/config.local.json`.
-**Re-run it after every `git pull`** — a pull can bring a new migration, and a missing one shows
-up as a feature that quietly does nothing rather than as an error.
-
-Optional health checks:
-
-```
-python tools\verify_db_sync.py
-```
-```
-python tools\doctor.py
-```
-```
-python tools\check_llm.py
-```
-
----
-
-## 2. Setup (once per project)
-
-Generating needs four things the engine does not create for itself: the `projects` row, the
-workspace directory, that project's `config.json`, and a `versions` row (the API reserves that
-at job start). `new_project.py` does all four.
-
-First write the project's `config.json`. Only `layers` is genuinely per-project — it tells the
-parser which code belongs to which layer — so that is all your file needs:
-
-```json
-{
-  "layers": {
-    "App": { "path": "src/app", "groups": { "Core": { "Uart": "uart", "Spi": "spi" } } },
-    "Lib": { "path": "src/lib", "groups": { "Util": { "Math": "math" } } }
-  }
-}
-```
-
-Paths under `layers` are **relative to the repo root**. Comments and trailing commas are fine.
-
-**`--config` is merged onto `config.defaults.json`, not copied over it** — the same recipe the
-API uses for a UI job. So `clang`, `views`, `llm` and everything else you leave out come from
-the defaults, and you only write down what differs. Add any of those sections to override them.
-
-One exception to the merge: **`layers` is replaced wholesale, never merged.** Your layers are
-the ones used, full stop — nothing from the sample tree survives underneath them. (Merging
-`layers` is what made a config naming only `Math` and `App` still generate `Outer`.)
-
-`new_project.py` prints the groups and components it wrote, so check that line before generating:
-
-```
-config   : ...\workspaces\myproj\config.json WRITTEN (from my-config.json + defaults)
-           Layer1 / Support: Math, App
-```
-
-If `workspaces/<pid>/config.json` already exists and differs from your `--config`, the command
-**stops** rather than quietly keeping the old one. Add `--force-config` to replace it.
-
-`--config` is checked **before anything is created**: a path that does not resolve prints
-`--config not found` and leaves no project row, no workspace, no config. And a project with no
-config is never handed the sample defaults silently — you either pass `--config` or ask for the
-sample tree by name with `--use-defaults`.
-
-### A. C++ source from a git URL
-
-```
-python tools\new_project.py --project-id myproj --repo-url https://git.example.com/my-cpp.git --branch main --config my-config.json
-```
-
-### B. C++ source from a local path
-
-`--repo-url` accepts a local path, because `git clone` does. Verified end to end — this is the
-form §0 was run with:
-
-```
-python tools\new_project.py --project-id myproj --repo-url D:\code\my-cpp-project --branch main --config my-config.json
-```
-
-Three things to know about the local form:
-
-**It must be a git repository.** The incremental model is built on commits (`--commit <sha>`,
-baseline selection, diffs between versions), so a plain directory with no history cannot be
-used. If yours is not one yet:
-
-```
-git -C D:\code\my-cpp-project init
-```
-```
-git -C D:\code\my-cpp-project add -A
-```
-```
-git -C D:\code\my-cpp-project commit -m "initial"
-```
-
-If `git init` gives you a `master` branch, either pass `--branch master` everywhere or rename
-it — `--branch` is passed straight to `git clone --branch`, and a name that does not exist
-fails the clone.
-
-**It is cloned, not read in place.** The commit is copied into
-`workspaces/<pid>/<sha[:16]>/`, which is deliberate — a version is pinned to a commit — but it
-means **uncommitted edits are invisible**. Commit before you generate.
-
-**`warning: --depth is ignored in local clones` is expected.** Git does not shallow-clone from
-a local path; you get the full history, which is what the incremental baseline search wants
-anyway. Harmless.
-
-### C. The commit is already checked out
-
-Put it at `workspaces/myproj/<first-16-chars-of-sha>/` and omit `--repo-url` entirely. An
-existing `.git` there is reused rather than re-cloned:
-
-```
-python tools\new_project.py --project-id myproj --branch main --config my-config.json
-```
-
-### Reserve the first version — in the SAME command
-
-Add `--version-id` and `--commit` to the call above. There is no need to run it twice:
-
-```
-python tools\new_project.py --project-id myproj --repo-url https://git.example.com/my-cpp.git --branch main --config my-config.json --version-id v1 --commit <full-40-char-sha>
-```
-
-`git rev-parse HEAD` gives the full sha.
-
-For **later** commits only the version part is needed, since the project already exists:
-
-```
-python tools\new_project.py --project-id myproj --version-id v2 --commit <second-sha>
-```
-
-**Or skip that too**: add `--create-version` to the generate command and it reserves the row
-itself. Opt-in rather than automatic, so a mistyped `--version-id` fails instead of quietly
-starting a brand-new version.
-
----
-
-## 3. Generate
-
-### First run — full generation
-
-```
-cd engine
-```
-```
-python -m incremental.generate --project-id myproj --branch main --commit <full-sha> --version-id v1 --scope project
-```
-
-Add ` --repo-url https://git.example.com/x.git` if the checkout is not there yet.
-Add ` --no-llm` for a fast, deterministic run with no LLM calls.
-
-### Second run — incremental
-
-Commit your C++ change first, then:
-
-```
-python -m incremental.engine --project-id myproj --branch main --commit <second-sha> --version-id v2 --scope project --create-version
-```
-
-`--create-version` reserves the `v2` row itself. Without it, reserve the row first with
-`new_project.py --project-id myproj --version-id v2 --commit <second-sha>` (§2).
-
-It selects the nearest ancestor version as its baseline. Add ` --base-version-id v1` to force one.
-
-**Narrowed parse is ON by default** — only changed translation units are re-parsed. The run log
-says so: `narrowed parse: 1 affected TU(s) (--only-files)`.
-
----
-
-## 4. Scoping
-
-**Quote the value.** A scope naming more than one thing contains a comma, and some shells treat
-that as an argument separator — which shows up as `argument --scope: expected one argument`.
-Quoting is always safe:
-
-```
---scope project
-```
-```
---scope "layer:Layer1"
-```
-```
---scope "group:Support"
-```
-```
---scope "group:Support,Access"
-```
-```
---scope "component:App,Math"
-```
-
-Several names are allowed for every kind — `group:Support,Access` generates both groups. A name
-that does not exist stops the run and lists the valid ones, rather than generating the subset
-that happened to resolve. If the name is a **component** rather than a group, the error says so
-and prints the corrected command.
-
-**Groups and components are not the same thing**, and mixing them up is the most likely reason
-a scope is rejected. In the shipped sample config, `Support` is a *group* and `App` / `Math` are
-*components* inside it. To see yours:
-
-```
-python -c "import json; cfg=json.load(open('workspaces/myproj/config.json')); [print(f'{g}: {list(c)}') for l in cfg['layers'].values() for g,c in (l.get('groups') or {}).items()]"
-```
-
-**One document or several?**
-
-| Scope | Documents produced |
+| Message | What to do |
 |---|---|
-| `project` | one per **component**, across the whole project |
-| `layer:L` | one per component in that layer |
-| `group:G` | one per component in that group |
-| `component:A,B` | **ONE combined document**, named `A_B` |
+| `no database is configured` | Add the `db` section to `engine/config/config.local.json`, then `python analyzer.py setup`. The model and every version artifact live there and nowhere else. |
+| `WorkspaceNotFound: no workspace for project 'x'` | `python analyzer.py onboard` — the directory, config and rows all come from there. |
+| `this run needs the database but there is no versions row for 'vX'` | Reserve it (the message prints the exact command), or add `--create-version`. |
+| `<pid> has no config yet, and no --config was given` | Pass `--config <your.json>`, or `--use-defaults` for the sample tree. |
+| `ALREADY EXISTS and differs from --config` | The project already has a config. `--force-config` replaces it. |
+| `--config not found: <path>` | The path does not resolve. Nothing was created; fix it and re-run. |
+| `<path> is not valid JSON` | The message prints the offending line and its neighbours. Comments and trailing commas are accepted, so it is usually a missing comma between entries or an unclosed brace. |
+| `bad --scope '...'` | The message lists the four accepted forms. |
+| `Unknown group(s) in the scope: X` | X is probably a **component**, not a group — the message says so and prints the corrected `--scope`. |
+| `clone --depth failed` | `--source` is wrong or unreachable, or the sha is not on that branch. |
+| `clone --depth failed: ... Filename too long` | Windows path limit. `git config --global core.longpaths true`, or move the workspace somewhere shorter. |
+| `narrowed parse unavailable: baseline has no parser-level snapshot` | The baseline predates the feature. It falls back to a full parse; the next run narrows. |
+| `LLM CALLS : accounting unavailable` | Run `python analyzer.py setup` — a migration is missing. |
+| `run metadata is empty` | Phase 1 stored nothing; the flowchart engine will not resolve source files. |
 
-`component:` bundles deliberately — that is how you produce a single document covering a chosen
-set. For App and Math as **separate** documents, scope to the group that holds them
-(`group:Support`, which also yields its other components) or to `project`.
+A rejected request stops with the explanation and **no traceback** — the last line you see is
+the one worth reading. A traceback means something genuinely broke, not that you typed the wrong
+scope.
 
-**What a scope does and does not limit:** it selects which **documents** are produced. Parsing
-stays **layer-scoped**, because a function in one group can call into another group in the same
-layer, and a model missing those callees would give you wrong call graphs. So with `App,Math`
-in `Layer1`, the stored model covers `Layer1` while the documents and `output/` cover App and
-Math only.
-
----
-
-## 5. Flags worth knowing
-
-| Flag | Effect |
-|---|---|
-| `--no-llm` | No LLM at all. Structure is produced; prose and labels are mechanical. |
-| `--no-narrowed-parse` | Force a full re-parse (incremental only). |
-| `--verify-parse` | Run narrowed AND full, diff them, use the full one. Slow; for validation. |
-| `--create-version` | Reserve the `versions` row if absent, instead of erroring. Opt-in, so a typo in `--version-id` still fails. |
-| `--data-dict-id <id>` | Merge `workspaces/<pid>/datadict/<id>.csv` into the data dictionary. |
-| `--config <path>` | Use a specific config instead of the per-project one. |
-| `--base-version-id <id>` | Force the baseline instead of letting it pick the nearest ancestor (incremental only). |
-| `--repo-url <url or path>` | Clone from here if the checkout is not present yet. |
-| `--force` | Accepted, no-op — the commit dir is reused either way. |
-
-`--project-id`, `--branch` and `--commit` are required on both orchestrators. `--version-id` is
-what every phase uses to find its rows, so a run without one stops rather than guessing.
+Full log: `logs/run_<date>.log`, one file per **day**, so it accumulates across runs.
 
 ---
 
-## 5b. Per-layer inputs
+## Reading the LLM cost
 
-A real project rarely has one set of macros or one data dictionary. Three flags take a **layer
-name and a path**, and they are repeatable — once per layer. They go on `run.py`, and the
-orchestrators pass them through from the config:
-
-```
---data-dictionary-layer Layer1 dd_layer1.csv
-```
-```
---macros-layer Layer1 engine\config\macros.layer1.example.json
-```
-```
---include-path-layer Layer1 C:\ThirdParty\boost\include
-```
-
-The un-suffixed `--data-dictionary <path>` and `--macros <path>` still apply to **every** layer.
-An unknown layer name is rejected with the list of valid ones rather than silently ignored.
-
-Macro files are JSON — `engine/config/macros.layer1.example.json` is a working example. For a
-UI job you do not write one: the API materialises `workspaces/<pid>/macros.json` from the
-project's `preprocessor_definitions`.
-
-Check a data dictionary CSV before feeding it to a run — a malformed one used to fail silently:
-
-```
-python tools\check_data_dictionary_csv.py <path-to.csv>
-```
-
----
-
-## 6. Checking the result
-
-```
-python tools\check_db.py
-```
-
-Reports **only what looks wrong** — a healthy database gives a few lines saying so, and each
-finding explains what it means and how to fix it. This is the one to reach for first.
-
-```
-python tools\check_db.py --version v2
-```
-```
-python tools\dump_db.py --counts
-```
-```
-python tools\dump_db.py --version v2
-```
-
-The run's own report lives on the version row:
-
-```
-SELECT report FROM versions WHERE id = 'v2';
-```
-
-It ends with an **LLM CALLS** block — how many calls the run made, how many produced nothing,
-and where the wall clock went:
+Every run's report ends with:
 
 ```
 LLM CALLS (a failed call means the caller fell back to a mechanical result)
   Total     : 185    answered 180 (97%)
+  Failed    : 5      empty 5, error 0  -> 2% of calls produced NOTHING
   Time      : 795s total  (240s waiting on the model, 555s in the rate-limit pause)
   Tokens    : 102000  (90000 prompt, 12000 completion)
 ```
 
-A non-zero "Failed" count means the document contains fallback text rather than real prose. If
-**Time** is mostly the pause rather than the model, `llm.rateLimitSeconds` is the lever — it is
-3.0 by default, which is right for a throttled gateway and pure waste for an on-prem hosted model
-with no limit. Set it to 0 there.
+A non-zero **Failed** count means the document contains fallback text rather than real prose.
 
-Every run also writes `logs/llm_stats_<run-id>.json` with the same numbers broken down per
-pipeline stage. To compare two runs — "did that change help?" — pass both:
-
-```
-python tools\llm_stats.py logs\llm_stats_A.json logs\llm_stats_B.json
-```
-
-It prints the config difference first, because a comparison you cannot attribute to a specific
-change is two columns of numbers.
+If **Time** is mostly the pause rather than the model, `llm.rateLimitSeconds` is the lever. It
+is `3.0` by default, which is right for a throttled corporate gateway and pure waste for an
+on-prem hosted model that has no limit — set it to `0` there. That one value is usually the
+largest speed difference available, and the Time line is how you tell whether it applies to you.
 
 ---
 
-## 7. Running a single phase
+## What `engine/run.py` is
 
-`run.py` drives the four phases. It needs the run identity, because in database mode a phase
-cannot infer which version it belongs to:
-
-```
-python run.py <checkout-path> --config ..\workspaces\myproj\config.json --version-id v2 --project-id myproj --output-root ..\workspaces\myproj\versions\v2\output --model-root ..\workspaces\myproj\versions\v2\model --from-phase 3
-```
-
-`--from-phase N` — 1 parse, 2 derive, 3 views, 4 export. `--to-phase N` stops after N.
-`--use-model` skips phases 1–2 and reuses the stored model (what re-export does).
-
-The model is persisted at each phase boundary, so resuming at 3 or 4 reads the database instead
-of re-parsing.
-
-**`run.py` rejects anything it does not recognise**, including a stray second path. `run.py x
---phase 3` used to drop both tokens silently and re-run the whole pipeline from Phase 1; now it
-stops with `Unknown option: --phase` and suggests the nearest real flag.
-
-### Narrowing Phase 3 to one unit
-
-While iterating on a single unit's diagrams, re-rendering the whole group is wasted time:
-
-```
-python run.py <checkout-path> --config ..\workspaces\myproj\config.json --version-id v2 --project-id myproj --use-model --selected-unit Uart
-```
-
-Repeatable, once per unit. It only affects Phase 3 — the model is untouched, so the documents
-are the ones the stored model implies. An unknown unit name stops the run and lists the real
-ones rather than rendering nothing, and when a model already exists that check happens **before
-Phase 1** instead of three phases later.
-
-`--selected-unit` is a development aid. It narrows what gets RENDERED; `--scope` is what decides
-which documents a version contains.
-
-### Every `run.py` flag
-
-You rarely type these — `--scope` on the orchestrator becomes the selection flags, and the
-orchestrator supplies the identity and roots. This is the whole list, for when you drive a phase
-by hand:
-
-| Flag | Effect |
-|---|---|
-| `--help`, `-h` | The option list. Handled before the config loads, so it works with a broken config. |
-| `--config <path>` | The config for this run, exported to every phase subprocess as `ANALYZER_CONFIG`. |
-| `--clean` | Delete `output/` and `model/` first. Runs **after** the path is validated, and warns that the stored model survives. |
-| `--from-phase N` / `--to-phase N` | Start at / stop after phase N. |
-| `--use-model`, `--skip-model` | Skip phases 1–2 and reuse the stored model. |
-| `--selected-group <name>` | One group. Repeatable. Phases 1–2 parse only its layer. |
-| `--selected-layer <name>` | One layer, every group in it. Repeatable. |
-| `--selected-component <name>` | One component. Repeatable — several bundle into ONE document. |
-| `--component-per-docx` | Split a group/layer run into one document per component. Not combinable with `--selected-component`. |
-| `--selected-unit <name>` | Narrow Phase 3 to this unit. Repeatable. Development aid. |
-| `--filter-mode <mode>` | Behaviour-diagram selection mode. |
-| `--project-name <name>` / `--output-name <name>` | Override the document title / the output folder name. |
-| `--data-dictionary <path>` / `--data-dictionary-layer <layer> <path>` | §5b. |
-| `--macros <path>` / `--macros-layer <layer> <path>` | §5b. |
-| `--include-path-layer <layer> <dir>` | §5b. |
-| `--only-files <listfile>` | Parse only the files listed. What the narrowed parse uses. |
-| `--include-emulator` | Include emulator sources in the parse. |
-| `--no-llm-summarize` / `--llm-summarize` | Phase-2 hierarchy summarization off / on (on by default). |
-| `--version-id <id>` / `--project-id <id>` | Which version this phase writes. Required in practice — the model is rows. |
-| `--baseline-version-id <id>` | The version whose parse snapshot a narrowed parse merges against. |
-| `--model-root <dir>` / `--output-root <dir>` | This run's model and output directories. |
-| `--model-scratch` | Internal: the narrowed parse's partial pass. Carries no version id, so it cannot write rows. |
-| `--quiet` / `--verbose` / `--trace-prompts` | Log level; `--trace-prompts` records every LLM prompt. |
-
----
-
-## 8. The gates
-
-Run after any engine change. Each builds its own throwaway fixture and SQLite database — none
-touch your real data.
-
-```
-pytest tests/unit tests/api
-```
-```
-python tools\verify_incremental.py
-```
-```
-python tools\verify_flowchart_reuse.py
-```
-```
-python tools\verify_narrowed_parse.py
-```
-```
-python tools\verify_incremental_parity.py --fast
-```
-```
-python tools\verify_db_sync.py
-```
-```
-python tools\verify_db_rebuild.py
-```
-
-Every one of these exists because something passed the unit tests and was still broken.
-
-Other tools, not part of the gate set:
-
-| Tool | For |
-|---|---|
-| `tools\seed_db.py` | Put a demo project + version into an empty database. |
-| `tools\verify_api_db.py` | The API's repositories round-trip on real Postgres. Needs a Postgres `DATABASE_URL`. |
-| `tools\verify_pg_readers.py` | Which versions still depend on a disk fallback. Reports per version. |
-| `tools\render_flowchart_pngs.py` | Re-render flowchart PNGs from stored DOT without a full run. |
-| `tools\diag_dialect.py` | Diagnose a SQLAlchemy dialect/driver problem when the database will not connect. |
-
-The last two need a real database. `verify_db_sync` proves the persistence layer against
-**Postgres**, where the unit tests use SQLite — the dialect differences (JSONB, BigInteger
-identities, ON CONFLICT) are exactly what SQLite hides. `verify_db_rebuild` asks the question
-the whole migration exists to answer: could a *different machine* rebuild this version from
-the database alone?
-
-`verify_model_parity` is gone. It compared the database against `model/*.json`, and nothing
-writes those files any more — it could only have compared against stale leftovers.
-
----
-
-## 9. When a run stops
-
-| Message | What to do |
-|---|---|
-| `WorkspaceNotFound: no workspace for project 'x'` | Run `tools\new_project.py` (§2) — the directory, config and rows all come from there. |
-| `this run needs the database but there is no versions row for 'vX'` | Reserve it — the message prints the exact command with your values — or re-run with `--create-version`. |
-| `no database is configured` | Add the `db` section to `config.local.json`, then `tools\db_setup.py`. The model and every version artifact live there and nowhere else, so a run without one stops rather than producing a version that is not there. |
-| `per-project config not found` | `new_project.py` writes it; check `workspaces/<pid>/config.json`. |
-| `ALREADY EXISTS and differs from --config` | The project already has a config. Add `--force-config` to replace it, or delete `workspaces/<pid>/config.json`. |
-| `--config not found: <path>` | The path does not resolve. Nothing was created — fix it and re-run the same command. |
-| `<pid> has no config yet, and no --config was given` | Pass `--config <your.json>`, or `--use-defaults` for this repo's sample tree. |
-| `clone --depth failed` | `--repo-url` is wrong or unreachable, or the sha is not on that branch. |
-| `clone --depth failed: ... Filename too long` | Windows path limit. `git config --global core.longpaths true`, or move the workspace to a shorter path. |
-| `warning: --depth is ignored in local clones` | Not an error. Local clones are never shallow; you get the full history. |
-| `argument --scope: expected one argument` | Quote it: `--scope "component:App,Math"`. The comma is being read as an argument separator. |
-| `Unknown group(s) in the scope: X` | X is probably a **component**, not a group — the message says so and prints the corrected `--scope`. |
-| `narrowed parse unavailable: baseline has no parser-level snapshot` | The baseline predates the feature. It falls back to a full parse; the next run narrows. |
-| `LLM CALLS : accounting unavailable` | Run `tools\db_setup.py` — a migration is missing. |
-| `run metadata is empty` | Phase 1 stored nothing; the flowchart engine will not resolve source files. |
-
-A rejected request stops with the explanation and **no traceback** — the last line you see
-is the one worth reading. A traceback means something genuinely broke, not that you typed
-the wrong scope.
-
-Full log: `logs/run_<date>.log` — one file per **day**, so it accumulates across runs.
+Still there, still runs the four phases, **not a front door**. It is what the orchestrator
+spawns per phase, the way a compiler spawns an assembler: it takes a version id, a project id
+and its roots, and would not know what to do without them. `reexport` is the supported way to
+drive phases 3 and 4 by hand.

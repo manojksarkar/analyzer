@@ -86,7 +86,7 @@ def _create_version_row(version_id: str, project_id: str, commit: str) -> bool:
             if not cx.execute(sa.select(s.projects.c.id)
                               .where(s.projects.c.id == project_id)).first():
                 import sys
-                print(f"WARNING: no project {project_id!r} — run tools/new_project.py first.",
+                print(f"WARNING: no project {project_id!r} — run `python analyzer.py onboard` first.",
                       file=sys.stderr)
                 return False
             cx.execute(sa.insert(s.versions), {
@@ -144,7 +144,7 @@ def effective_model_store(version_id: Optional[str],
         if not is_database_configured():
             why = "no database is configured"
             fix = ("set the `db` section in engine/config/config.local.json, then run "
-                   "`python tools/db_setup.py`")
+                   "`python analyzer.py setup`")
         elif not _version_row_exists(version_id):
             if create_version and project_id and commit:
                 if _create_version_row(version_id, project_id, commit):
@@ -159,7 +159,7 @@ def effective_model_store(version_id: Optional[str],
                 _pid = project_id or "<project-id>"
                 _sha = commit or "<full-40-char-sha>"
                 fix = (f"reserve it first —\n"
-                       f"    python tools/new_project.py --project-id {_pid} "
+                       f"    python analyzer.py onboard --project-id {_pid} "
                        f"--version-id {version_id} --commit {_sha}\n"
                        f"  or add --create-version to this command to do it in one step. "
                        f"(The API reserves the row itself when a job starts.)")

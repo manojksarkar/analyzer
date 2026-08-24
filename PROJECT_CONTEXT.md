@@ -208,6 +208,39 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-24 (**one CLI: `analyzer.py`** — branch `integration/poc-4-db`. There were four
+> front doors (`tools/new_project.py`, `python -m incremental.generate`, `python -m
+> incremental.engine`, `engine/run.py`) and knowing which one a job wanted was folklore. Worse,
+> two of them produced a version — `generate` for the first, `engine` for the rest — and picking
+> wrong either wasted an hour re-parsing or failed outright. **That choice is gone**: `analyzer.py
+> generate` always asks for incremental, and `generate_incremental` already resolves a baseline
+> and delegates to `generate_full` when there is no usable one, so the data decides. `--full`
+> forces the long way.
+>
+> Twelve commands, all with `--help`: setup, onboard, generate, reexport, status, check, report,
+> doctor, check-llm, check-datadict, llm-stats, verify. Every one is a thin wrapper — the CLI
+> decides nothing about how a version is produced, it parses arguments and calls the same
+> functions the API calls. `verify` runs the gates by name (`verify --list`), cheapest first,
+> stopping at the first failure unless `--keep-going`.
+>
+> The old entry points now PRINT A POINTER and exit 2 rather than quietly working: two ways to do
+> one thing is the confusion being removed, so leaving them functional would have defeated it.
+> `engine/run.py` keeps its CLI because it is what the orchestrator spawns per phase — it is not a
+> front door, and `reexport` is the supported way to drive phases 3-4 by hand. Every user-facing
+> message that named an old command (`core/db.py`, `run_context.py`, `report.py`, `store.py`,
+> `api/main.py`) now names the new one.
+>
+> Two fixes fell out of the audit: `check_db` and `dump_db` wrote `check_db_report.txt` /
+> `db_dump.txt` into the working directory on EVERY run — for commands whose whole job is to show
+> you something, that is litter; `--out` is now opt-in and both print to stdout. `tools/
+> diag_dialect.py` deleted (a one-off from a SQLAlchemy dialect incident, long since resolved).
+>
+> docs/CLI_COMMANDS.md rewritten from scratch around the one command, and audited mechanically in
+> both directions: every flag the CLI accepts appears in it, and every flag it shows exists.
+> Verified by running the whole walkthrough on a local-path repo — setup, onboard, generate (chose
+> FULL by itself), commit a change, generate again (chose INCREMENTAL by itself), reexport, status,
+> check, report — plus all six gates through `analyzer.py verify`. 1334 passed, 10 skipped.)
+
 > Updated: 2026-08-23 (**poc-4 merged onto the DB architecture; the file backing removed** — branch
 > `integration/poc-4-db`. Manoj's 34 commits (typedef/data ranges, per-layer data dictionary and macros,
 > class scope in interface names, `address_taken`, unit-diagram edge layout, call-name flowchart labels,

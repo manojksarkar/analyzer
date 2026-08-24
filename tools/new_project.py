@@ -254,4 +254,12 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Importable, not runnable. `analyzer.py onboard` calls main(argv) directly; two
+    # ways to onboard a project is exactly the confusion the single CLI removes.
+    import sys as _sys
+    print("This is not a command any more. Use the analyzer CLI:\n"
+          "\n"
+          "    python analyzer.py onboard --project-id <id> --source <url-or-path> --config <your.json>\n"
+          "\n"
+          "    python analyzer.py onboard --help", file=_sys.stderr)
+    raise SystemExit(2)
