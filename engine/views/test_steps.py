@@ -156,7 +156,20 @@ def _mocks_called(node, mock_names):
     return sorted(set(hits), key=lambda m: raw.index(m + "("))
 
 
-def _node_text(node, spec, mock_names, is_entry, ctx=None):
+def _spliced_called(node, splice):
+    """Executing cross-unit callees this node calls, in source order.
+
+    Same matcher as `_mocks_called`, different verdict: a mock is named and left
+    alone, a spliced callee is named *and its body is walked in*.
+    """
+    if not splice:
+        return []
+    raw = node.get("rawCode") or ""
+    hits = [n for n in splice if n + "(" in raw]
+    return sorted(set(hits), key=lambda m: raw.index(m + "("))
+
+
+def _node_text(node, spec, mock_names, is_entry, ctx=None, splice=None, home_unit=""):
     ntype = node.get("type", "")
     label = node.get("label") or node.get("rawCode") or ""
 
@@ -174,10 +187,18 @@ def _node_text(node, spec, mock_names, is_entry, ctx=None):
     else:
         base = _sentence(label)
 
+    # A dynamic behaviour spec attributes every cross-unit call to the units on
+    # each side; a function spec has no `splice` and reads exactly as before.
+    parts = []
+    spliced = _spliced_called(node, splice)
+    if spliced:
+        listed = ", ".join(splice[n]["label"] for n in spliced)
+        parts.append(f"{home_unit} calls {listed}" if home_unit else f"Call {listed}")
     called = _mocks_called(node, mock_names)
     if called:
-        listed = ", ".join(called)
-        prefix = f"Expect mock function {listed}"
+        parts.append(f"Expect mock function {', '.join(called)}")
+    if parts:
+        prefix = "; ".join(parts)
         return f"{prefix}; {base[0].lower() + base[1:]}" if base else _sentence(prefix)
     return base
 
@@ -217,12 +238,23 @@ def _leg_label(edge_label):
 # ---------------------------------------------------------------------------
 
 class _Walker:
-    def __init__(self, cfg, spec, mock_names):
+    def __init__(self, cfg, spec, mock_names, splice=None, home_unit="",
+                 suppress_entry=False, splice_stack=frozenset()):
         self.nodes, self.succ = _index(cfg)
         self.exits = set(cfg.get("exits") or [])
         self.pdom = _post_dominators(self.nodes, self.succ, self.exits)
         self.spec = spec
         self.mock_names = mock_names
+        # short name -> {label, fid, cfg}. Empty for a function spec, which is why
+        # nothing below changes its output.
+        self.splice = splice or {}
+        self.home_unit = home_unit
+        # `Issue function <name>` belongs to the spec's own entry, not to a callee
+        # body walked in underneath it.
+        self.suppress_entry = suppress_entry
+        # Function ids already on the splice path, so a cycle between units
+        # terminates instead of recursing forever.
+        self.splice_stack = splice_stack
         self.entry = cfg.get("entry")
         self.steps = []      # flat, each {number, text, nodeId, type}
         self.returns = []    # {step, text} -- one per RETURN, for Expected Results
@@ -279,12 +311,13 @@ class _Walker:
             if node is None:
                 return
             ntype = node.get("type", "")
-            is_entry = nid == self.entry
+            is_entry = nid == self.entry and not self.suppress_entry
 
             if ntype in ("DECISION", "LOOP_HEAD", "SWITCH_HEAD"):
                 idx += 1
                 number = self._add(prefix, idx, node,
-                                   _node_text(node, self.spec, self.mock_names, is_entry, ctx))
+                                   _node_text(node, self.spec, self.mock_names, is_entry,
+                                              ctx, self.splice, self.home_unit))
                 join = _ipdom(nid, self.pdom)
                 legs = self._branch_targets(nid, join)
                 leg_ctx = ({"SWITCH_HEAD": "switch", "LOOP_HEAD": "loop"}
@@ -299,11 +332,50 @@ class _Walker:
 
             idx += 1
             self._add(prefix, idx, node,
-                      _node_text(node, self.spec, self.mock_names, is_entry, ctx))
+                      _node_text(node, self.spec, self.mock_names, is_entry, ctx,
+                                 self.splice, self.home_unit))
+            # Walk the callee's own body in beneath this step. Only on a plain
+            # node: a branch head numbers its legs off `prefix + [idx]`, which the
+            # spliced steps would collide with, so those are attributed but not
+            # descended into.
+            for callee in _spliced_called(node, self.splice):
+                self._splice_body(callee, prefix + [idx])
             if ntype in _TERMINAL_TYPES:
                 return                 # control leaves this block
             nxt = [t for t, _ in self.succ.get(nid, [])]
             nid = nxt[0] if nxt else None
+
+    def _splice_body(self, callee_name, prefix):
+        """Nest a cross-unit callee's own control flow under the step that calls it.
+
+        This is what separates a dynamic behaviour spec from a function spec: the
+        function spec stubs this callee and stops, so its branches are asserted
+        nowhere in this document; here it really runs, so its flowchart is
+        transcribed in place and its returns become assertions of this spec.
+        """
+        info = self.splice.get(callee_name)
+        if not info or info["fid"] in self.splice_stack:
+            return                     # unknown, ambiguous, or already on the path
+        cfg = info.get("cfg") or {}
+        entry = cfg.get("entry")
+        if not entry:
+            return                     # no flowchart for it -- leave the call step alone
+        nodes, succ = _index(cfg)
+        # Skip the callee's START node: the calling step already says what is being
+        # entered, and START would render as "Issue function ...".
+        if (nodes.get(entry) or {}).get("type") == "START":
+            nxt = [t for t, _ in succ.get(entry, [])]
+            entry = nxt[0] if nxt else None
+            if not entry:
+                return
+        sub = _Walker(cfg, self.spec, self.mock_names, self.splice,
+                      info.get("unitName", ""), suppress_entry=True,
+                      splice_stack=self.splice_stack | {info["fid"]})
+        sub.walk(entry, None, prefix)
+        self.steps.extend(sub.steps)
+        self.returns.extend(sub.returns)
+        for name, nums in sub.write_steps.items():
+            self.write_steps.setdefault(name, []).extend(nums)
 
     def _emit_leg(self, prefix, leg_i, target, join, leg_label, seen, ctx=None):
         """One leg of a decision/switch: `2.1) True: ...`.
@@ -342,17 +414,22 @@ class _Walker:
         del before
 
 
-def build_steps(cfg, spec, mock_names=()):
+def build_steps(cfg, spec, mock_names=(), splice=None, home_unit=""):
     """(steps, returns, write_steps) for one function.
 
     `write_steps` maps a written global / out-parameter name to the step numbers
     that assign it, so Expected Results can say which step wrote it. Empty when
     there is no CFG.
+
+    `splice` is supplied only by a dynamic behaviour spec: short name ->
+    {label, fid, cfg} for each executing cross-unit callee, whose body is walked
+    in beneath the step that calls it. Absent for a function spec, which
+    therefore renders exactly as it did before.
     """
     if not cfg or not cfg.get("entry"):
         return [], [], {}
     names = [m[:-2] if m.endswith("()") else m for m in (mock_names or ())]
-    w = _Walker(cfg, spec, names)
+    w = _Walker(cfg, spec, names, splice, home_unit)
     w.walk(cfg["entry"], None, [])
     return w.steps, w.returns, w.write_steps
 
@@ -388,4 +465,74 @@ def attach(test_specs, output_dir):
                     if nums:
                         entry["steps"] = nums
                 filled += 1
+    return filled
+
+
+def _splice_map(spec, cfgs, functions_data, unit_of, unit_names):
+    """short name -> {label, fid, cfg} for the callees whose bodies run here.
+
+    Keyed by short name because that is what the node matcher can see in the
+    source (`sp.normalize(raw)` carries `normalize`, not the qualified name).
+    That makes collisions possible, and a collision would splice the WRONG body
+    into the spec -- a far worse failure than a missing splice. So a short name
+    claimed by more than one executing callee is dropped: the call is still
+    named in the step, it is simply not descended into.
+    """
+    by_name = {}
+    for fid in spec.get("executingFunctionIds") or []:
+        if unit_of.get(fid) == spec.get("unitKey"):
+            continue                    # same unit: not a cross-unit interaction
+        func = functions_data.get(fid) or {}
+        qn = func.get("qualifiedName", "")
+        name = (qn.split("::")[-1]).strip()
+        if not name:
+            continue
+        unit_key = unit_of.get(fid, "")
+        unit_name = unit_names.get(unit_key, unit_key)
+        by_name.setdefault(name, []).append(
+            {"label": "%s.%s" % (unit_name, qn or name), "fid": fid,
+             "unitName": unit_name, "cfg": cfgs.get(fid)})
+    return {name: entries[0] for name, entries in by_name.items()
+            if len(entries) == 1}
+
+
+def attach_dynamic(dynamic, output_dir, functions_data, unit_of, unit_names):
+    """Fill `testSteps` and `expected.returns` on every dynamic behaviour spec.
+
+    Same CFG pass as `attach`, with one difference: an executing cross-unit
+    callee has its own flowchart walked in under the calling step, so the
+    interaction reads as one flow instead of stopping at a stub.
+    """
+    if not dynamic:
+        return 0
+    cfgs = load_cfgs(output_dir)
+    if not cfgs:
+        return 0
+    filled = 0
+    for specs in dynamic.values():
+        for spec in specs:
+            cfg = cfgs.get(spec.get("functionId"))
+            if not cfg:
+                continue
+            splice = _splice_map(spec, cfgs, functions_data, unit_of, unit_names)
+            steps, returns, write_steps = build_steps(
+                cfg, spec, (spec.get("precondition") or {}).get("mockFunctions", ()),
+                splice, spec.get("unitName", ""))
+            if not steps:
+                continue
+            spec["testSteps"] = steps
+            spec["expected"]["returns"] = returns
+            for entry in (spec["expected"].get("globals") or []) + \
+                         (spec["expected"].get("outParameters") or []):
+                nums = write_steps.get(entry.get("name"))
+                if nums:
+                    entry["steps"] = nums
+            # Tell each cross-unit call which step performs it, so Expected
+            # Results can name it the way returns name theirs.
+            for call in spec["expected"].get("crossUnitCalls") or []:
+                label = call.get("text", "")
+                nums = [s["number"] for s in steps if label and label in s.get("text", "")]
+                if nums:
+                    call["steps"] = nums
+            filled += 1
     return filled

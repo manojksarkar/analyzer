@@ -588,12 +588,42 @@ def run(model, output_dir, model_dir, config):
         log("transcribed control flow into steps for %d function(s)" % filled,
             component="testSpecs")
 
+    # Dynamic Behaviour test specs: one per interaction, scoped to the component
+    # rather than the unit. Keyed beside the units, so every consumer that walks
+    # this file's top-level keys skips it by name.
+    from .dynamic_specs import DYNAMIC_KEY, build as _build_dynamic
+    dynamic = _build_dynamic(
+        model.get("units", {}),
+        model.get("functions", {}),
+        model.get("globalVariables", {}),
+        model.get("components", {}),
+        model.get("dataDictionary", {}),
+        allowed_components=allowed_components,
+        filter_mode=((config.get("views", {}) or {}).get("sequenceDiagrams", {}) or {})
+                    .get("filterMode", "skip_within_unit"),
+    )
+    test_specs[DYNAMIC_KEY] = dynamic
+    if dynamic:
+        from .test_steps import attach_dynamic as _attach_dynamic
+        units_data = model.get("units", {})
+        unit_of = {fid: uk for uk, u in units_data.items()
+                   for fid in (u.get("functionIds") or [])}
+        unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
+                      for uk, u in units_data.items()}
+        dyn_filled = _attach_dynamic(dynamic, output_dir, model.get("functions", {}),
+                                     unit_of, unit_names)
+        if dyn_filled:
+            log("transcribed %d interaction(s) with unit attribution" % dyn_filled,
+                component="testSpecs")
+
     os.makedirs(output_dir, exist_ok=True)
     out_path = os.path.join(output_dir, "test_specs.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(test_specs, f, indent=2)
+    _reserved = ("unitNames", DYNAMIC_KEY)
     spec_count = sum(len(v.get("functions", [])) for k, v in test_specs.items()
-                     if k != "unitNames")
-    unit_count = len([k for k in test_specs if k != "unitNames"])
-    log("%s (%d units, %d function specs)" % (out_path, unit_count, spec_count),
-        component="testSpecs")
+                     if k not in _reserved)
+    unit_count = len([k for k in test_specs if k not in _reserved])
+    dyn_count = sum(len(v) for v in dynamic.values())
+    log("%s (%d units, %d function specs, %d dynamic behaviour specs)"
+        % (out_path, unit_count, spec_count, dyn_count), component="testSpecs")

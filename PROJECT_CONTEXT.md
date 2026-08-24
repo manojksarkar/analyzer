@@ -394,18 +394,45 @@
 > affects SWE.3 too); Expected entry `1)` is conditional on mocks existing where the wiki says it is always the
 > mocks; returns carry a bracketed source expression from `48c3d44` the wiki does not describe; **the Graphviz
 > render timeout does not hold** — `utilChain` ran 79 min against `timeout=180` then failed, so any images-on
-> run can stall; **Dynamic Behaviour test specs** are unimplemented — `docs/spec/SWE4_WIKI.md` now carries a
-> section derived from the current behaviour-diagram engine (selection = public + external caller +
-> more than one in-component unit, one spec per function from its first external caller; the diagram is
-> the mock boundary, so in-component units execute and cross-component calls are mocked; LLM call
-> descriptions stay out of the tables; Test Case ID scheme still open), plus a worked example that is the
-> **target** form — Test Steps transcribe the interaction with unit attribution, NOT the arrow list the
-> engine emits today. To be reconciled with the client's own 180-line version on the shared page.
-> **The Sample fixture yields 0 behaviour diagrams and so 0 dynamic-behaviour specs**: 49/52 public
-> functions have an external caller but none has >1 in-component unit in its forward chain — the model
-> holds exactly ONE cross-unit intra-component edge (`Signal|SignalDriver|acquireAndNormalize` →
-> `Signal|Signal|SignalProcessor::normalize`) and that caller is derived private, so it is filtered out
-> before selection. Any fixture work on this path must add a public multi-unit intra-component chain.
+> run can stall.
+
+> Updated: 2026-08-24 (**Dynamic Behaviour test specs IMPLEMENTED** — SWE.4's second spec kind, one per
+> *interaction* instead of per function. Contract: `docs/spec/SWE4_WIKI.md` §"Dynamic Behaviour test specs".
+> **The whole idea: the boundary is the COMPONENT, not the unit.** `test_specs._build_spec` funnels
+> Precondition/Input/globals through one `mocked_ids` set ("one walk, one boundary"), so widening the
+> boundary is the entire derivation change and every builder (`_mock_functions`, `_global_ids`,
+> `_mock_return_entries`, `_mock_writeback_entries`, `_out_parameter_entries`) is REUSED untouched.
+> Both arms of the function-spec mock rule go: "has its own spec" is dropped **deliberately** (the callee
+> this section exists to exercise usually does have one), and "different unit" widens to "different
+> component". Two consequences, and they are the point: an in-component callee leaves the mock list so its
+> return leaves Input, and the globals walk passes THROUGH it so another unit's globals come into scope.
+> **New files:** `engine/views/dynamic_specs.py` (derivation; `_walk_boundary`, `select_targets`, `build`),
+> `tests/unit/test_dynamic_specs.py` (24 tests). **Changed:** `views/test_steps.py` gains `_spliced_called`,
+> `_Walker(splice, home_unit, suppress_entry, splice_stack)`, `_splice_body`, `_splice_map`,
+> `attach_dynamic`; `views/test_specs.py` builds+attaches after the function-spec pass and writes the
+> `dynamicSpecs` key; `swe4_exporter.py` renders `2.N.<U+1> Dynamic Behaviour` and asserts
+> `expected.crossUnitCalls`. **Selection is delegated** to `behaviour_diagram.selector.create_diagram_selector`
+> so SWE.3 §2.2 and SWE.4 cannot drift — a spec exists exactly where a diagram is drawn. It needs
+> `calledByIds` (the selector walks BACKWARD); a fixture with only `callsIds` selects nothing.
+> **`behaviorDescription` is deliberately NOT consumed** — with `llm.descriptions` on, BOTH call arrows are
+> LLM prose (`build_diagram_for_caller` :279/:295; only the two returns are hardcoded), and on the sample it
+> hallucinated: two different arrows opened with the same clause and never named the caller. Topology is read
+> from the call graph instead — same edges, never LLM-touched.
+> **Works with the stock config**: `DOC_TYPE_VIEWS[swe4]` forces `flowcharts` on, so `--doc-type swe4
+> --from-phase 3` emits dynamic specs even with `views.flowcharts`/`behaviourDiagram` false.
+> **Fixture (required — the path was dead):** new `SampleCppProject/Layer1/Signal/SignalDriver.h` + a call
+> from `Hub.cpp`, making `acquireAndNormalize` public WITH an external caller (component `Cross`). Before
+> this the whole fixture held exactly ONE cross-unit intra-component edge and its caller was derived private
+> — 0 behaviour diagrams, 0 dynamic specs, 49/52 public functions with an external caller but NONE with >1
+> in-component unit. Needs a FULL re-parse.
+> **Known limits** (both in the wiki's Status block): a **branch head is attributed but not spliced**
+> (`if (callee(...))` — a decision numbers its legs off the prefix the spliced steps would use), and callees
+> are matched by **short name**, so two executing callees sharing one are both left un-spliced rather than
+> risk splicing the wrong body. Test Case ID suffix `_DYN` is provisional. `swe4_audit.py` has no
+> component-boundary checks yet. Function-spec output is byte-identical — `build_steps` without `splice`
+> takes the original path, pinned by a test. Full unit suite: 0 failures.)
+
+> (Carried over from the correctness pass above:
 > `Access`/`Diag`/`Platform` yield 0 specs — every function private by the call-graph rule,
 > correct here but on real code that usually means entry points are not being detected.)
 

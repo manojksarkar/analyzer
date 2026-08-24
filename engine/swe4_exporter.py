@@ -86,6 +86,11 @@ def _expected_text(exp: dict, return_type: str = "") -> str:
     mocks = exp.get("mockFunctions") or []
     if mocks:
         entries.append("Successfully called mock functions " + ", ".join(mocks))
+    # Dynamic behaviour specs only: the cross-unit calls ARE the interaction under
+    # test, so they are asserted right after the mocks. A function spec has none --
+    # it stubs every one of them.
+    for c in exp.get("crossUnitCalls") or []:
+        entries.append(f"Successfully called {c.get('text', '')}{_steps_suffix(c)}")
     for r in exp.get("returns") or []:
         entries.append(f"{r.get('text', '')}{_steps_suffix(r)}")
     for w in (exp.get("outParameters") or []) + (exp.get("globals") or []):
@@ -222,7 +227,8 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
     # Group the per-unit specs by component (unit_key = "Component|Unit").
     by_component = {}
     for unit_key, unit_data in data.items():
-        if unit_key == "unitNames" or not isinstance(unit_data, dict):
+        # "dynamicSpecs" sits beside the units and is keyed by component, not unit.
+        if unit_key in ("unitNames", "dynamicSpecs") or not isinstance(unit_data, dict):
             continue
         functions = unit_data.get("functions") or []
         if not functions:
@@ -270,7 +276,13 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
 
     # 2 Software Unit Test Specification
     doc.add_heading("2 Software Unit Test Specification", level=1)
+    # Interaction specs, keyed by component and ordered so a rerun is identical.
+    dynamic_by_component = {
+        comp: sorted(specs, key=lambda s: (s.get("unitName", ""), s.get("name", "")))
+        for comp, specs in (data.get("dynamicSpecs") or {}).items()
+    }
     spec_total = 0
+    dyn_total = 0
     for comp_idx, component_name in enumerate(sorted_components, start=1):
         sec = f"2.{comp_idx}"
         doc.add_heading(f"{sec} {component_name.replace('-', ' ')}", level=2)
@@ -289,6 +301,23 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
                 _add_table_b(doc, spec, cfg_swe4, font_small)
                 spec_total += 1
 
+        # Dynamic Behaviour test specs -- one per interaction, after this
+        # component's units. Omitted entirely when the component has none, which
+        # is the common case (it needs a call chain spanning two of its units).
+        interactions = dynamic_by_component.get(component_name) or []
+        if interactions:
+            dyn_sec = f"{sec}.{len(units) + 1}"
+            doc.add_heading(f"{dyn_sec} Dynamic Behaviour", level=3)
+            for dyn_idx, spec in enumerate(interactions, start=1):
+                heading = "%s.%d %s - %s (%s)" % (
+                    dyn_sec, dyn_idx, spec.get("unitName", ""), spec.get("name", ""),
+                    spec.get("entryPoint", ""))
+                doc.add_heading(heading, level=4)
+                _add_table_a(doc, spec, cfg_swe4, font_small)
+                add_para(doc, "")
+                _add_table_b(doc, spec, cfg_swe4, font_small)
+                dyn_total += 1
+
     # 3 Code Metric, Coding Rule, Test Coverage (placeholder -- coverage tooling parked)
     doc.add_heading("3 Code Metric, Coding Rule, Test Coverage", level=1)
     add_para(doc, "[Code metrics, coding-rule compliance, and test-coverage results.]")
@@ -298,7 +327,8 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
     os.makedirs(os.path.dirname(os.path.abspath(docx_path)), exist_ok=True)
     doc.save(docx_path)
     from utils import log
-    log("%s (%d components, %d function specs)" % (docx_path, len(sorted_components), spec_total),
+    log("%s (%d components, %d function specs, %d dynamic behaviour specs)"
+        % (docx_path, len(sorted_components), spec_total, dyn_total),
         component="swe4_exporter")
     return (True, docx_path)
 

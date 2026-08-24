@@ -283,7 +283,8 @@ int FtlResolve(uint32_t lba, uint32_t* ppnOut)
 }
 ```
 
-Heading: `2.N.2.1 FtlMap - FtlResolve (HilCore - HilRead)`
+Headings, where the component has `U` units: `2.N.<U+1> Dynamic Behaviour`, then
+`2.N.<U+1>.1 FtlMap - FtlResolve (HilCore - HilRead)`.
 
 | Eval. Equipment Name | Precondition | Input | Test Steps | Expected Results | Test Platform |
 |---|---|---|---|---|---|
@@ -297,11 +298,17 @@ Table B is the function spec's, with the Test Case ID left open.
 
 ### Status
 
-**Not implemented.** The generated document leaves this sub-section empty, and it is empty by construction
-whenever behaviour diagrams are switched off. The example above is the **target** form; the diagram engine
-today emits only the arrow list, which is a subset of those Test Steps. The rules are read off the current
-engine; the client's own wiki page carries a longer version of this section still to be reconciled with them.
+**Implemented.** `engine/views/dynamic_specs.py` derives the specs, `views/test_steps.py::attach_dynamic`
+splices the callee flow, and the SWE.4 exporter writes the sub-section. Selection is delegated to the
+behaviour-diagram selector, so a spec exists exactly where SWE.3 draws a diagram.
 
-The sample fixture cannot exercise any of this: it holds exactly one cross-unit intra-component call
-(`SignalDriver.acquireAndNormalize` → `Signal.SignalProcessor::normalize`) and that caller is derived
-private, so it yields zero behaviour diagrams and zero dynamic-behaviour specs.
+Two limits worth knowing:
+
+- **A branch head is attributed but not descended into.** `if (FtlCacheGet(...))` names the call and the
+  units, but the callee's own flow is not spliced under it — a decision numbers its legs off the same
+  prefix the spliced steps would use. Only plain steps splice today.
+- **Callees are matched by short name.** Two executing callees sharing one short name are both left
+  un-spliced rather than risk splicing the wrong body.
+
+The client's own wiki page carries a longer version of this section still to be reconciled with the rules
+above. The Test Case ID suffix (`_DYN`) is provisional, pending the scheme decision.

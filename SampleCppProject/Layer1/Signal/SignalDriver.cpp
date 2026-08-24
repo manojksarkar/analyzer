@@ -1,4 +1,5 @@
 #include "Signal.h"
+#include "SignalDriver.h"
 
 // Separate translation unit that consumes SignalProcessor. This gives
 // SignalProcessor::reset / SignalProcessor::normalize a CROSS-FILE caller, so the
