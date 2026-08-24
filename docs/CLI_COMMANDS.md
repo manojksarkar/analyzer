@@ -357,9 +357,24 @@ Verified by clearing a version's rows and rebuilding it one phase at a time:
 Phase 1 lands the parsed skeleton and the call graph; phase 2 adds the derived units; phases 3
 and 4 only READ the model, which is why the counts stop moving. All four exited 0.
 
-Phases 3 and 4 have a first-class command — `reexport`, below. Phases 1 and 2 are the
-orchestrator's own split and are not exposed on the CLI: running them alone leaves a version
-half-built, which is what `generate` exists to avoid.
+**What a phase does NOT do.** A phase writes its own model rows and stops. Everything *around*
+them belongs to the orchestrator and does not happen if you invoke phases directly:
+
+| | written by |
+|---|---|
+| the model — entities, units, edges, parse snapshot | the **phases** |
+| `versions.base_path` (the flowchart engine resolves source files with it) | the orchestrator |
+| `version_output_files` (the stored render, what another node serves) | the orchestrator |
+| the manifest, the run report | the orchestrator |
+| fingerprints + the reuse index (what makes the NEXT run incremental) | the orchestrator |
+
+So running phases by hand is right for **iterating**, and wrong as a way to **produce a
+version** — the rows would be correct while `base_path` stayed stale, the stored render stayed
+old, and the next run found nothing to reuse.
+
+That is why phases 3 and 4 are exposed as `reexport` rather than as raw phase numbers: it does
+the orchestrator's part too, capturing the re-rendered views back into the database. Phases 1
+and 2 are not exposed at all — use `generate`.
 
 #### Model once, documents many times
 

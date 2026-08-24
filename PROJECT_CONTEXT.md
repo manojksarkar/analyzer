@@ -208,6 +208,32 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-24e (**re-export left the database holding the OLD render** — branch
+> `integration/poc-4-db`. Chasing "is per-phase execution correct?" properly turned up a real
+> defect in the new `reexport`.
+>
+> **The verdict on phases:** each phase writes its own model rows correctly and independently —
+> verified by clearing a version and rebuilding it a phase at a time (entity_versions 0 -> 60 and
+> edges 0 -> 18 at phase 1, units 0 -> 2 at phase 2, unchanged through 3 and 4, all exit 0). What
+> a phase does NOT do is everything the ORCHESTRATOR does around it: `versions.base_path`,
+> `version_output_files`, the manifest, the report, fingerprints and the reuse index. So invoking
+> phases by hand is right for iterating and wrong for producing a version — the model rows would
+> be correct while base_path stayed stale, the stored render stayed old, and the next run found
+> nothing to reuse.
+>
+> **The defect:** `reexport` ran run.py and stopped. It re-rendered `output/` on the local disk
+> and left `version_output_files` holding the PREVIOUS render, so the document served from the
+> database — or from any other node — silently stayed stale. The API's re-export path has always
+> called `_capture_reexport_output`; the CLI's did not. It now calls `store.capture_output` and
+> says what it stored. Proved it replaces rather than merges: wipe output/, re-export one
+> component -> 1 stored file; full re-export -> 2.
+>
+> This is the same class as the manifest disk fallback and the label cache that silently stored
+> nothing — a write that succeeds locally while the durable copy stays behind. Counting rows was
+> not enough to see it; the count was identical because the previous render was still on disk.
+>
+> 1334 passed, 10 skipped; verify incremental + parity green.)
+
 > Updated: 2026-08-24d (**generate reads branch and commit from the database** — branch
 > `integration/poc-4-db`. Five things a real run through the new CLI turned up.
 >

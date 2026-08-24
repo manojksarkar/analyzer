@@ -231,7 +231,23 @@ def cmd_reexport(a) -> int:
     for u in a.unit or []:
         argv += ["--selected-unit", u]
     argv.append(checkout)
-    return _script(os.path.join(_ROOT, "engine", "run.py"), argv)
+    rc = _script(os.path.join(_ROOT, "engine", "run.py"), argv)
+    if rc != 0:
+        return rc
+    # Capture the re-rendered views back into the database. Without this a re-export
+    # updated `output/` on THIS machine and left `version_output_files` holding the
+    # previous render — so the document served from the database, or from any other
+    # node, silently stayed stale. The API's re-export path has always done this
+    # (`_capture_reexport_output`); the CLI's did not.
+    try:
+        docs = store.capture_output(a.version_id, os.path.join(adir, "output"))
+        print(f"stored: {len(docs or [])} document(s) + the re-rendered views")
+    except Exception as exc:
+        print(f"WARNING: the documents were rebuilt on disk but could not be stored "
+              f"({exc}). The database still holds the previous render.",
+              file=sys.stderr)
+        return 1
+    return 0
 
 
 def _checkout_for(project_id: str, version_id: str):
