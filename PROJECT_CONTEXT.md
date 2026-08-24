@@ -208,6 +208,30 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-24c (**phase-level flexibility confirmed intact and exposed** — branch
+> `integration/poc-4-db`. Two questions checked by running, not reading.
+>
+> **Was any of Manoj's unit work lost in the merge?** No. Diffed every engine file against
+> origin/poc-4: the only unit-related lines poc-4 has that this branch does not are the four in
+> run.py's pre-check that were deliberately REWRITTEN to read units through the repository
+> instead of opening `model/units.json`, a file that stopped existing when the model became rows.
+> The SWE.4 work Manoj may be thinking of is on `feat/swe4-v1`, which is 22 commits ahead of
+> poc-4 and NOT merged into it — it adds `software_unit_test_specification_*.docx`, a different
+> deliverable, scoped per component exactly as SWE.3 is.
+>
+> **Does per-phase scoping still work with the model in the database?** Yes, fully. Verified end
+> to end: parse the whole project once (3 components, 3 documents), then re-render
+> `component:Math` alone (1 document), `group:Support` alone (2), and phase 4 by itself rebuilding
+> the DOCX from phase 3's `interface_tables.json` in 1.77s. Phases 3-4 read the model from
+> Postgres instead of `model/*.json`; nothing else about the flexibility changed.
+>
+> What was missing was only the CLI surface: `reexport` hard-coded the version's stored scope.
+> `--scope` now overrides it, which is the whole point of running the later phases alone — the
+> model covers a layer and you re-render one component of it for the cost of the views. Scoping
+> DOWN is free; scoping up beyond what the model holds is not possible and never was.
+>
+> 1334 passed, 10 skipped; verify incremental + parity green.)
+
 > Updated: 2026-08-24b (**`--unit` reaches the pipeline; re-export stopped changing the document
 > set** — branch `integration/poc-4-db`. Two findings from checking what Manoj's `--selected-unit`
 > actually does.

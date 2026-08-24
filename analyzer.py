@@ -164,12 +164,18 @@ def cmd_reexport(a) -> int:
             "--model-root", os.path.join(adir, "model"),
             "--output-root", os.path.join(adir, "output"),
             "--use-model", "--from-phase", str(a.from_phase)]
-    # The SAME scope the version was generated with, read back from its manifest. Without this
-    # a re-export silently produced a different document set: a project-scoped version came out
-    # as one Support.docx where generate had produced App.docx and Math.docx, because the scope
-    # is what decides per-group versus per-component.
+    # Default to the SAME scope the version was generated with. Without this a re-export
+    # silently produced a different document set: a project-scoped version came out as one
+    # Support.docx where generate had produced App.docx and Math.docx, because the scope is
+    # what decides per-group versus per-component.
+    #
+    # `--scope` overrides it, which is the point of running phases 3-4 on their own: the model
+    # covers a whole layer, and you re-render one component of it without touching the model.
     from incremental.generate import scope_to_args, per_component_docx_args
-    scope = (store.read_manifest(a.version_id) or {}).get("scope") or {"type": "project"}
+    if a.scope:
+        scope = _parse_scope(a.scope)
+    else:
+        scope = (store.read_manifest(a.version_id) or {}).get("scope") or {"type": "project"}
     argv += scope_to_args(scope) + per_component_docx_args(scope)
     for u in a.unit or []:
         argv += ["--selected-unit", u]
@@ -437,8 +443,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--version-id", required=True)
     s.add_argument("--from-phase", type=int, default=3, choices=(3, 4),
                    help="3 = views + export (default), 4 = export only")
+    s.add_argument("--scope",
+                   help="re-render a NARROWER slice than the version was generated with — the "
+                        "model already covers the layer, so this costs only the views. "
+                        "Default: the scope the version was generated with.")
     s.add_argument("--unit", action="append",
-                   help="render only this unit. Repeatable. A development aid.")
+                   help="narrow the per-function flowchart work to this unit. Repeatable.")
     s.set_defaults(fn=cmd_reexport)
 
     # -- status / check / report --------------------------------------------

@@ -292,10 +292,62 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 | Flag | Effect |
 |---|---|
 | `--from-phase` | 3 = views + export (default), 4 = export only |
-| `--unit <name>` | render only this unit. Repeatable. A development aid. |
+| `--scope` | re-render a **narrower** slice than the version was generated with |
+| `--unit <name>` | narrow the per-function flowchart work to this unit. Repeatable. |
 
 It needs the version's commit still checked out, because flowcharts and line numbers are read
 from the source. If the checkout is gone it says so rather than producing an empty document.
+
+#### Model once, documents many times
+
+This is the flexibility the file-based pipeline had, and it survived the move to the database
+intact — the model is rows now, so phases 3 and 4 read it from there instead of from
+`model/*.json`. Nothing else changed.
+
+Parse the **whole project** once:
+
+```
+python analyzer.py generate --project-id ph --commit <sha> --version-id v1
+```
+```
+Access/software_detailed_design_Access.docx
+App/software_detailed_design_App.docx
+Math/software_detailed_design_Math.docx
+```
+
+Then re-render any slice of it, without re-parsing anything:
+
+```
+python analyzer.py reexport --project-id ph --version-id v1 --scope "component:Math"
+```
+```
+Math/software_detailed_design_Math.docx
+```
+
+```
+python analyzer.py reexport --project-id ph --version-id v1 --scope "group:Support"
+```
+```
+App/software_detailed_design_App.docx
+Math/software_detailed_design_Math.docx
+```
+
+Omit `--scope` and you get the scope the version was generated with — the same documents
+`generate` produced.
+
+**Phase 4 alone** rebuilds only the DOCX, from the `interface_tables.json` phase 3 left behind.
+Under two seconds, and the right thing to run while iterating on the exporter or a template:
+
+```
+python analyzer.py reexport --project-id ph --version-id v1 --scope "component:Math" --from-phase 4
+```
+
+The one thing to know: phase 4 reads phase 3's output, so it needs that output to still be
+there. Wipe `output/` and `--from-phase 4` has nothing to export.
+
+Scoping down costs nothing extra — the model already covers the whole layer, so a narrower
+re-export is purely less view work. Scoping *up* beyond what the model holds is not possible;
+generate a wider version for that.
 
 ### `status`, `check`, `report`
 
