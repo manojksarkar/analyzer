@@ -115,7 +115,8 @@ def cmd_generate(a) -> int:
 
     scope = _parse_scope(a.scope)
     common = dict(data_dict_id=a.data_dict, no_llm=a.no_llm, version_id=a.version_id,
-                  config_path=a.config, repo_url=a.source, create_version=a.create_version)
+                  config_path=a.config, repo_url=a.source, create_version=a.create_version,
+                  selected_units=a.unit)
     try:
         if a.full:
             m = generate_full(a.project_id, a.branch, a.commit, scope, force=a.force, **common)
@@ -163,6 +164,13 @@ def cmd_reexport(a) -> int:
             "--model-root", os.path.join(adir, "model"),
             "--output-root", os.path.join(adir, "output"),
             "--use-model", "--from-phase", str(a.from_phase)]
+    # The SAME scope the version was generated with, read back from its manifest. Without this
+    # a re-export silently produced a different document set: a project-scoped version came out
+    # as one Support.docx where generate had produced App.docx and Math.docx, because the scope
+    # is what decides per-group versus per-component.
+    from incremental.generate import scope_to_args, per_component_docx_args
+    scope = (store.read_manifest(a.version_id) or {}).get("scope") or {"type": "project"}
+    argv += scope_to_args(scope) + per_component_docx_args(scope)
     for u in a.unit or []:
         argv += ["--selected-unit", u]
     argv.append(checkout)
@@ -415,6 +423,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="re-parse everything instead of only the changed translation units")
     s.add_argument("--verify-parse", action="store_true",
                    help="run narrowed AND full, diff them, use the full one. Slow; validation.")
+    s.add_argument("--unit", action="append", metavar="NAME",
+                   help="narrow the per-function FLOWCHART work to this unit. Repeatable. A "
+                        "speed aid while iterating — the model and every other view stay "
+                        "whole, and the documents are still the ones --scope asks for.")
     s.add_argument("--force", action="store_true", help="accepted; the commit dir is reused")
     s.set_defaults(fn=cmd_generate)
 

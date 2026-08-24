@@ -208,6 +208,29 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-24b (**`--unit` reaches the pipeline; re-export stopped changing the document
+> set** — branch `integration/poc-4-db`. Two findings from checking what Manoj's `--selected-unit`
+> actually does.
+>
+> **What it does:** narrows the per-function FLOWCHART work in Phase 3 and nothing else. Measured
+> A/B on the sample project — 70 flowchart PNGs without it, 35 with `--unit Utils`, exactly the
+> other unit's suppressed. The model, interface tables, unit diagrams and the DOCX set are all
+> untouched, so it is a speed aid for iterating on one unit, NOT a scope. `--scope unit:X` does
+> not exist and cannot without a unit filter in the DOCX exporter, which has none — the smallest
+> document unit is a component.
+>
+> **What was missing:** it was only reachable from `run.py`, never from a generate run — the
+> orchestrators did not thread it. Now threaded through `generate_full` and `generate_incremental`
+> to the one invocation that reaches Phase 3 (the `--to-phase 1` parses have no views to narrow),
+> and exposed as `analyzer.py generate --unit` / `reexport --unit`.
+>
+> **A defect in the new `reexport`:** it did not pass the version's scope, so a project-scoped
+> version came back as a single `Support.docx` where `generate` had produced `App.docx` and
+> `Math.docx`. Re-export now reads the scope from the version's stored manifest and rebuilds the
+> same document set. Caught by comparing output, not by reading code.
+>
+> 1334 passed, 10 skipped; verify incremental / narrowed-parse / flowchart-reuse / parity green.)
+
 > Updated: 2026-08-24 (**one CLI: `analyzer.py`** — branch `integration/poc-4-db`. There were four
 > front doors (`tools/new_project.py`, `python -m incremental.generate`, `python -m
 > incremental.engine`, `engine/run.py`) and knowing which one a job wanted was folklore. Worse,

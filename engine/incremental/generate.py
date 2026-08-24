@@ -271,6 +271,7 @@ def generate_full(
     repo_token: Optional[str] = None,
     config_path: Optional[str] = None,
     create_version: bool = False,
+    selected_units: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
 
@@ -364,6 +365,11 @@ def generate_full(
     # database (or the reverse) is the worst of both.
     base_cmd += scope_to_args(scope)
     base_cmd += per_component_docx_args(scope)
+    # Narrows the per-function FLOWCHART work in Phase 3 — the expensive part — while the
+    # model and every other view stay whole. A development aid for iterating on one unit,
+    # not a scope: the documents produced are still the ones `scope` asks for.
+    for _u in (selected_units or []):
+        base_cmd += ["--selected-unit", _u]
     if project_name:
         # Otherwise parser.py defaults projectName to the checkout dir basename
         # (commit[:16]) — the sha would surface in the DOCX cover + 1.1 Purpose.
