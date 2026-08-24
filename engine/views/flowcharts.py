@@ -784,6 +784,40 @@ def _resolve_script(project_root: str, script_path: str) -> str:
     )
 
 
+def _dynamic_only_function_ids(config, model_dir_abs):
+    """Function ids to build CFGs for when `views.dynamicOnly` is set, else None.
+
+    None means "no dynamic-only narrowing" and leaves the existing scope rules
+    alone. An empty set is meaningful and different: the run wants dynamic specs,
+    and this scope has no qualifying interaction, so no flowchart is worth building.
+
+    Reads the model files directly rather than the in-memory model because the
+    flowchart view is handed `model_dir` and works from the on-disk JSON. A missing
+    or unreadable file falls back to None -- narrowing is an optimisation, and
+    getting it wrong must never silently drop a spec's Test Steps.
+    """
+    if not ((config or {}).get("views", {}) or {}).get("dynamicOnly"):
+        return None
+    try:
+        import json as _json
+        loaded = {}
+        for name in ("units", "functions", "components"):
+            with open(os.path.join(model_dir_abs, f"{name}.json"), "r",
+                      encoding="utf-8") as f:
+                loaded[name] = _json.load(f) or {}
+    except (OSError, ValueError):
+        return None
+    from .dynamic_specs import needed_function_ids
+    allowed = {c.lower() for c in ((config or {}).get("_analyzerAllowedComponents") or [])}
+    fids = needed_function_ids(
+        loaded["units"], loaded["functions"], loaded["components"], allowed,
+        ((config or {}).get("views", {}) or {}).get("sequenceDiagrams", {})
+        .get("filterMode", "skip_within_unit"))
+    log("dynamicOnly: %d function(s) need a flowchart (of %d in the model)"
+        % (len(fids), len(loaded["functions"])), component="flowcharts")
+    return fids
+
+
 @register("flowcharts")
 def run(model, output_dir, model_dir, config):
     # No `views.flowcharts` gate here: `run_views` owns that decision and is the
@@ -937,7 +971,14 @@ def run(model, output_dir, model_dir, config):
     # pass only those functions to the generator.
     functions_arg_path = functions_path
 
-    if (allowed_components or allowed_units) and os.path.isfile(functions_path):
+    # views.dynamicOnly: this run wants Dynamic Behaviour specs only, so build CFGs
+    # for the handful of functions those specs actually transcribe rather than every
+    # function in scope. Selection reads the call graph and no CFG, so it can be
+    # answered here even though the flowchart pass runs before testSpecs.
+    dynamic_only_fids = _dynamic_only_function_ids(config, model_dir_abs)
+
+    if (allowed_components or allowed_units or dynamic_only_fids is not None) \
+            and os.path.isfile(functions_path):
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
                 all_funcs = json.load(f)
@@ -953,6 +994,8 @@ def run(model, output_dir, model_dir, config):
                         unit = parts[1].lower() if len(parts) > 1 else ""
                         if unit not in allowed_units:
                             return False
+                    if dynamic_only_fids is not None and fid not in dynamic_only_fids:
+                        return False
                     return True
 
                 filtered = {fid: info for fid, info in all_funcs.items()
@@ -969,6 +1012,8 @@ def run(model, output_dir, model_dir, config):
                     # distinct file, so a narrowed run never overwrites the
                     # group's full function list
                     filename_key = f"{filename_key}_units_{'_'.join(sorted(allowed_units))}"
+                if dynamic_only_fids is not None:
+                    filename_key = f"{filename_key}_dynamic"
 
                 group_functions_path = os.path.join(
                     model_dir_abs,

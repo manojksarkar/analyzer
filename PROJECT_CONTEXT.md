@@ -430,7 +430,24 @@
 > are matched by **short name**, so two executing callees sharing one are both left un-spliced rather than
 > risk splicing the wrong body. Test Case ID suffix `_DYN` is provisional. `swe4_audit.py` has no
 > component-boundary checks yet. Function-spec output is byte-identical — `build_steps` without `splice`
-> takes the original path, pinned by a test. Full unit suite: 0 failures.)
+> takes the original path, pinned by a test. Full unit suite: 0 failures.
+> **`views.dynamicOnly` (config, default false)** — emit Dynamic Behaviour specs and NOTHING else, for
+> iterating on them. Two hooks, both off the one flag: `test_specs.run` skips `_build_test_specs` (and the
+> `attach` pass), and `flowcharts._dynamic_only_function_ids` narrows the CFG pass to
+> `dynamic_specs.needed_function_ids` = each target + its spliced cross-unit callees. **That narrowing is
+> the actual point**: spec derivation costs 0.01-0.04s, the flowchart pass costs seconds-to-minutes
+> (`utilChain` 79 min), so suppressing function specs alone would save nothing. Sample: 2 CFGs instead of
+> 140 (`dynamicOnly: 2 function(s) need a flowchart (of 140 in the model)`), written to a distinct
+> `functions_<key>_dynamic.json` so a narrowed run never overwrites the group's full list. Legal because
+> `select_targets` reads the call graph and NO CFG, so it can answer before the flowchart pass even though
+> `DOC_TYPE_VIEWS` orders flowcharts first. `needed_function_ids` returns None (= no narrowing) on any
+> unreadable model file — narrowing is an optimisation and must never silently drop Test Steps.
+> **Note `views.flowcharts: false` is IGNORED for swe4** — `run_views` sets `enabled=True` for a forced view
+> before reading config, so the CFG pass cannot be switched off by that flag (`flowchartImages: false` IS
+> honoured, inside the view). **Two latent exporter bugs fixed** by this mode: `sorted_components` was keyed
+> off UNIT entries, so a component reaching the document through interactions alone emitted nothing
+> (now unions `dynamicSpecs` keys), and `by_component[name]` would KeyError on such a component (now
+> `.get(...) or []`). No test covers `dynamicOnly` yet.)
 
 > (Carried over from the correctness pass above:
 > `Access`/`Diag`/`Platform` yield 0 specs — every function private by the call-graph rule,

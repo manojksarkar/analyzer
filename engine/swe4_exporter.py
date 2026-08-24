@@ -236,7 +236,11 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
         component_name = unit_key.split(KEY_SEP, 1)[0]
         unit_name = unit_data.get("name", unit_key.split(KEY_SEP)[-1])
         by_component.setdefault(component_name, []).append((unit_key, unit_name, functions))
-    sorted_components = sorted(by_component.keys())
+    # A component can reach the document through its interactions alone -- with
+    # `views.dynamicOnly` there are no unit entries at all, and keying the section
+    # loop off the units would silently emit nothing.
+    sorted_components = sorted(
+        set(by_component) | set((data.get("dynamicSpecs") or {}).keys()))
 
     doc = Document()
     build_cover_page(doc, project_name, cover_group,
@@ -286,7 +290,7 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
     for comp_idx, component_name in enumerate(sorted_components, start=1):
         sec = f"2.{comp_idx}"
         doc.add_heading(f"{sec} {component_name.replace('-', ' ')}", level=2)
-        units = sorted(by_component[component_name], key=lambda t: t[1])
+        units = sorted(by_component.get(component_name) or [], key=lambda t: t[1])
         for unit_idx, (unit_key, unit_name, functions) in enumerate(units, start=1):
             doc.add_heading(f"{sec}.{unit_idx} {unit_name}", level=3)
             for fn_idx, spec in enumerate(

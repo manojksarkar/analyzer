@@ -12,7 +12,8 @@
     "flowcharts": false,
     "flowchartImages": false,
     "behaviourDiagram": false,
-    "componentStaticDiagram": true
+    "componentStaticDiagram": true,
+    "dynamicOnly": false
   },
   "layers": {
     "Layer1": {

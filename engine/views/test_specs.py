@@ -572,18 +572,27 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
 @register("testSpecs")
 def run(model, output_dir, model_dir, config):
     allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
-    test_specs = _build_test_specs(
-        model.get("units", {}),
-        model.get("functions", {}),
-        model.get("globalVariables", {}),
-        model.get("dataDictionary", {}),
-        allowed_components=allowed_components,
-        mock_components=_layer_components(config, allowed_components),
-    )
+    # views.dynamicOnly: emit Dynamic Behaviour specs and nothing else. Meant for
+    # iterating on them without rebuilding every function spec -- and, more to the
+    # point, without the flowchart pass those function specs drag in (the derivation
+    # below costs milliseconds; their CFGs are the expensive part, and `flowcharts`
+    # narrows itself the same way off this flag).
+    dynamic_only = bool((config.get("views", {}) or {}).get("dynamicOnly"))
+    if dynamic_only:
+        test_specs = {"unitNames": {}}
+    else:
+        test_specs = _build_test_specs(
+            model.get("units", {}),
+            model.get("functions", {}),
+            model.get("globalVariables", {}),
+            model.get("dataDictionary", {}),
+            allowed_components=allowed_components,
+            mock_components=_layer_components(config, allowed_components),
+        )
     # Test Steps + the per-return Expected entries come from the flowchart
     # engine's CFG (Phase 3 runs `flowcharts` before `testSpecs` for swe4).
     from .test_steps import attach as _attach_steps
-    filled = _attach_steps(test_specs, output_dir)
+    filled = _attach_steps(test_specs, output_dir) if not dynamic_only else 0
     if filled:
         log("transcribed control flow into steps for %d function(s)" % filled,
             component="testSpecs")

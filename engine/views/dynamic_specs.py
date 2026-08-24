@@ -309,3 +309,34 @@ def build(units_data, functions_data, global_variables_data, components_data,
                                    global_variables_data, unit_of, unit_names, dd)
         result.setdefault(spec["component"], []).append(spec)
     return result
+
+
+def needed_function_ids(units_data, functions_data, components_data,
+                        allowed_components=None, filter_mode="skip_within_unit"):
+    """Function ids whose control-flow graph a dynamic behaviour spec actually needs.
+
+    Only two kinds qualify: each interaction's target, and the cross-unit callees
+    whose bodies get spliced under it (`test_steps._splice_map` skips same-unit
+    callees, so those need no graph of their own).
+
+    This exists so the expensive Phase-3 CFG pass can be narrowed when a run only
+    wants dynamic specs -- on the sample that is 2 functions instead of 140, because
+    only 1 of 52 public functions qualifies for an interaction at all. Selection
+    reads the call graph and nothing else, so it can be answered BEFORE the
+    flowchart pass even though `DOC_TYPE_VIEWS` orders flowcharts first.
+    """
+    unit_of = {fid: uk
+               for uk, u in (units_data or {}).items()
+               for fid in (u.get("functionIds") or [])}
+    needed = set()
+    for fid, _caller in select_targets(units_data, functions_data, components_data,
+                                       unit_of, filter_mode, allowed_components):
+        func = functions_data.get(fid)
+        home_unit = unit_of.get(fid, "")
+        if not func or not home_unit:
+            continue
+        needed.add(fid)
+        executing, _mocked = _walk_boundary(func, functions_data, unit_of,
+                                            _component_of(home_unit))
+        needed |= {c for c in executing if unit_of.get(c, "") != home_unit}
+    return needed
