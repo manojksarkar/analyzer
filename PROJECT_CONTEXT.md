@@ -394,8 +394,19 @@
 > affects SWE.3 too); Expected entry `1)` is conditional on mocks existing where the wiki says it is always the
 > mocks; returns carry a bracketed source expression from `48c3d44` the wiki does not describe; **the Graphviz
 > render timeout does not hold** — `utilChain` ran 79 min against `timeout=180` then failed, so any images-on
-> run can stall; the wiki's new **Dynamic Behaviour test specs** section (180 lines, client-added) is
-> unimplemented. `Access`/`Diag`/`Platform` yield 0 specs — every function private by the call-graph rule,
+> run can stall; **Dynamic Behaviour test specs** are unimplemented — `docs/spec/SWE4_WIKI.md` now carries a
+> section derived from the current behaviour-diagram engine (selection = public + external caller +
+> more than one in-component unit, one spec per function from its first external caller; the diagram is
+> the mock boundary, so in-component units execute and cross-component calls are mocked; LLM call
+> descriptions stay out of the tables; Test Case ID scheme still open), plus a worked example that is the
+> **target** form — Test Steps transcribe the interaction with unit attribution, NOT the arrow list the
+> engine emits today. To be reconciled with the client's own 180-line version on the shared page.
+> **The Sample fixture yields 0 behaviour diagrams and so 0 dynamic-behaviour specs**: 49/52 public
+> functions have an external caller but none has >1 in-component unit in its forward chain — the model
+> holds exactly ONE cross-unit intra-component edge (`Signal|SignalDriver|acquireAndNormalize` →
+> `Signal|Signal|SignalProcessor::normalize`) and that caller is derived private, so it is filtered out
+> before selection. Any fixture work on this path must add a public multi-unit intra-component chain.
+> `Access`/`Diag`/`Platform` yield 0 specs — every function private by the call-graph rule,
 > correct here but on real code that usually means entry points are not being detected.)
 
 > Updated: 2026-08-18 (**Per-layer data dictionary — closes backlog SH-3.** Branch

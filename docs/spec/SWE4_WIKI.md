@@ -2,7 +2,7 @@
 
 **Contents:** [What is produced](#what-is-produced) · [Who gets a spec](#who-gets-a-spec) ·
 [Table A](#table-a--the-test-content) · [Table B](#table-b--the-metadata) ·
-[Worked example](#worked-example)
+[Worked example](#worked-example) · [Dynamic Behaviour test specs](#dynamic-behaviour-test-specs)
 
 ---
 
@@ -17,6 +17,7 @@ SWE.3 detailed design. Specifications only — no runnable test code, nothing is
    2.N  <Component>
         2.N.X  <Unit>
                <one spec per function: Table A + Table B>
+        Dynamic Behaviour test specs  (only when the component has dynamic behaviour)
 3  Code Metric, Coding Rule, Test Coverage
 Appendix A  Reference
 ```
@@ -188,3 +189,119 @@ inline and its branch shows up in the test steps as an ordinary decision rather 
 | Test Environment | Emulator |
 | Test Case Generation Method | Analysis of Requirements |
 | Linked Work Items | `-` |
+
+---
+
+## Dynamic Behaviour test specs
+
+A second kind of spec — one per **interaction**, not per function. It sits under its component, after that
+component's units, and exists **only when the component has dynamic behaviour**.
+
+The set is not decided here: **a dynamic-behaviour spec exists exactly where SWE.3 draws a behaviour
+diagram.** The two pair one-to-one, and the diagram is the spec's scope statement.
+
+### Which functions get one
+
+All four conditions hold — they are the behaviour-diagram selection rules:
+
+- The function is **public**. Private functions are dropped before selection.
+- It has an **external caller** — a caller in a different component, or, when one group is generated, any
+  caller outside that group.
+- Its forward call chain, followed **within its own component**, touches **more than one unit**. A function
+  that only calls into its own unit has no interaction to specify.
+- **One spec per function**, from its first external caller. A function called from several places gets one
+  spec, not one per caller.
+
+Nothing selected → the component has no Dynamic Behaviour sub-section at all.
+
+### Scope — the diagram is the boundary
+
+- The **entry point** is the external caller, named `<CallerUnit> - <callerFunction>`. The spec starts there,
+  not at the function under test.
+- **Every unit the diagram shows executes.** This is the one place the unit boundary widens: an in-component
+  callee that a function spec would mock runs for real here, because the interaction between those units is
+  exactly what is being verified.
+- **Everything the diagram does not show is mocked** — every call leaving the component, including calls back
+  into the caller's own component. Those edges are dropped from the trace, so they never execute.
+- **A same-unit hop is not an arrow, but it is still a step.** The diagram skips it and bridges to the next
+  cross-unit call; the code runs all the same, so it is transcribed like any other executing branch.
+
+### The tables
+
+Table A and Table B keep their columns. What changes:
+
+- **Precondition** — mocks are the **cross-component** callees, not the cross-unit ones. Parameters and globals
+  are those of the entry-point call.
+- **Test Steps** — transcribe the interaction the way a function spec transcribes a flowchart: in flow order,
+  nesting on decisions, every mock and every return its own step. The difference is **attribution** — a
+  cross-unit call is written `<Unit> calls <Unit>.<function>`, so every step says which unit is acting.
+  Arrows alone are not enough: a mock, or an assignment between two arrows, would have no step to sit in and
+  Expected Results could not name its step. The diagram's LLM-written call description is presentation only
+  and **never enters the spec** — these tables stay deterministic.
+- **Expected Results** — `1)` the mocks, then one entry per **cross-unit call** that must be observed — the
+  interaction is what this spec exists to verify — then the returns and the writes, ordered exactly as a
+  function spec orders them.
+- **Test Case ID** — **open.** It has to stay distinct from the `TC_<interfaceId>` of the same function's own
+  spec, and no scheme is agreed yet.
+
+### Worked example — an interaction
+
+One component, `FTL`, whose unit `FtlMap` is entered from `HIL` and fans out to a second `FTL` unit,
+`FtlCache`, while its `FIL` callee is mocked — the smallest shape that qualifies.
+
+```c
+// ---- component HIL, unit HilCore.cpp ----
+int HilRead(uint32_t lba, uint8_t* buf);        // external caller -> the entry point
+
+// ---- component FTL, unit FtlCache.cpp ----
+static uint32_t gCacheHits = 0;                 // written here, still in scope
+bool FtlCacheGet(uint32_t lba, uint32_t* ppnOut);
+void FtlCacheStore(uint32_t lba, uint32_t ppn); // increments gCacheHits
+
+// ---- component FIL, unit FilNand.cpp ----
+int  FilReadPage(uint16_t idx, MapEntry* e);    // different component -> mocked
+
+// ---- component FTL, unit FtlMap.cpp — the unit under test ----
+static uint16_t gEntryCount = 64;               // read
+static bool isValidLba(uint32_t lba);           // same unit -> no arrow, still a step
+
+int FtlResolve(uint32_t lba, uint32_t* ppnOut)
+{
+    if (!isValidLba(lba))         return -1;
+    if (FtlCacheGet(lba, ppnOut)) return 0;
+
+    MapEntry e;
+    for (uint16_t i = 0; i < gEntryCount; i++) {
+        if (FilReadPage(i, &e) != 0) return -2;
+        if (e.lba == lba) {
+            *ppnOut = e.ppn;
+            FtlCacheStore(lba, e.ppn);
+            return 0;
+        }
+    }
+    return -3;
+}
+```
+
+Heading: `2.N.2.1 FtlMap - FtlResolve (HilCore - HilRead)`
+
+| Eval. Equipment Name | Precondition | Input | Test Steps | Expected Results | Test Platform |
+|---|---|---|---|---|---|
+| Emulator | 1) Mock functions: `FilReadPage()`<br>2) Parameters: `uint32_t lba`, `uint32_t* ppnOut`<br>3) Globals: `uint16_t gEntryCount`, `uint32_t gCacheHits` | 1) `uint32_t lba[0-4294967295]`<br>2) `uint16_t gEntryCount[0-65535]`<br>3) `int FilReadPage()[-2147483648-2147483647]`<br>4) `uint32_t e.lba[0-4294967295]`<br>5) `uint32_t e.ppn[0-4294967295]` | 1) `HilCore` calls `FtlMap.FtlResolve` with `lba` and output buffer `ppnOut`.<br>2) Call `isValidLba` with `lba` and check whether it returns true.<br>&nbsp;&nbsp;2.1) True: continue to step 3.<br>&nbsp;&nbsp;2.2) False: `FtlMap` returns -1 to `HilCore`.<br>3) `FtlMap` calls `FtlCache.FtlCacheGet` with `lba` and `ppnOut`, and checks whether it returns true.<br>&nbsp;&nbsp;3.1) True: `FtlCache` has written the cached `ppn` into `ppnOut`; `FtlMap` returns 0 to `HilCore`.<br>&nbsp;&nbsp;3.2) False: continue to step 4.<br>4) Repeat for each index `i` from 0 while `i` is less than `gEntryCount`.<br>&nbsp;&nbsp;4.1) Expect mock function `FilReadPage` with input `i` and entry buffer `e`.<br>&nbsp;&nbsp;4.2) Check whether `FilReadPage` returned zero.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.2.1) True: continue to step 4.3.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.2.2) False: `FtlMap` returns -2 to `HilCore`.<br>&nbsp;&nbsp;4.3) Check whether the entry's `lba` is equal to `lba`.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.3.1) True: set `ppnOut` to the entry's `ppn`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4.3.1.1) `FtlMap` calls `FtlCache.FtlCacheStore` with `lba` and the entry's `ppn`; `gCacheHits` increases by one.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4.3.1.2) `FtlMap` returns 0 to `HilCore`.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.3.2) False: continue with the next index.<br>5) `FtlMap` returns -3 to `HilCore`.<br>6) Exit. | 1) Successfully called mock functions `FilReadPage()`<br>2) Successfully called `FtlCache.FtlCacheGet` in step 3<br>3) Successfully called `FtlCache.FtlCacheStore` in step 4.3.1.1<br>4) Successfully returned `-1` in step 2.2<br>5) Successfully returned `0` in step 3.1<br>6) Successfully returned `-2` in step 4.2.2<br>7) Successfully returned `0` in step 4.3.1.2<br>8) Successfully returned `-3` in step 5<br>9) Successfully updated `uint32_t* ppnOut` in range `[0-4294967295]` in steps 3.1, 4.3.1<br>10) Successfully updated `uint32_t gCacheHits` in range `[0-4294967295]` in step 4.3.1.1 | VectorCAST |
+
+Two things a function spec could not have produced. `FtlCacheGet` and `FtlCacheStore` are **not** in the
+Precondition — they are `FTL`'s own, in another unit, and here they run. And `gCacheHits` belongs to
+`FtlCache`, a unit that is not itself under test; it is in scope only because that unit executes.
+
+Table B is the function spec's, with the Test Case ID left open.
+
+### Status
+
+**Not implemented.** The generated document leaves this sub-section empty, and it is empty by construction
+whenever behaviour diagrams are switched off. The example above is the **target** form; the diagram engine
+today emits only the arrow list, which is a subset of those Test Steps. The rules are read off the current
+engine; the client's own wiki page carries a longer version of this section still to be reconciled with them.
+
+The sample fixture cannot exercise any of this: it holds exactly one cross-unit intra-component call
+(`SignalDriver.acquireAndNormalize` → `Signal.SignalProcessor::normalize`) and that caller is derived
+private, so it yields zero behaviour diagrams and zero dynamic-behaviour specs.
