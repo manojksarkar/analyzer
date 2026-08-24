@@ -38,6 +38,12 @@
       "compileCommands": "engine/config/compile_commands.core2.example.json"
     }
   },
+  "architectureDoc": {
+    "views": {
+      "layerStaticDiagram": true,
+      "componentDesignDiagram": true
+    }
+  },
   "layers": {
     "Layer1": {
       "path": "Layer1",
