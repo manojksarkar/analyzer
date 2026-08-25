@@ -372,10 +372,40 @@ their own boundaries, `versions.base_path` is written straight after Phase 1, an
 `config.json` is written before any phase starts. So re-exporting an interrupted version works,
 and it is the cheap way to look at one unit's images without re-parsing a large project.
 
-One consequence to know: an interrupted version's `pipeline_status` never reaches a terminal
-state, and `list_versions` only offers `complete` (or pre-lifecycle NULL) rows as baselines. So
-the interrupted version will **not** be used as a baseline — your next `generate` against a new
-commit will do a FULL run. If you want it to serve as a baseline, let it finish.
+```
+python analyzer.py reexport --project-id myproj --version-id v1 --unit Utils
+```
+
+`--from-phase 3` is the **default**, so adding it changes nothing — the two commands are
+identical. `reexport` can never re-parse: `--from-phase` accepts only 2, 3 and 4. There is no
+way for it to "start from the beginning".
+
+**Is it safe for the data?** Yes. Phases 3 and 4 only READ the model — verified by running a
+unit re-export against a completed version and comparing the tables before and after:
+
+```
+before   entities=60  units=2  edges=18
+after    entities=60  units=2  edges=18
+```
+
+What a re-export *does* change is `version_output_files` — the stored render — which is
+**replaced** with whatever is in `output/` when it finishes. Two things follow:
+
+* Leave `output/` alone and you keep what the interrupted run produced, plus the unit you
+  just rendered. Nothing is lost.
+* Wipe `output/` first and the stored set shrinks to only what you re-render. Not corruption,
+  but not what you want if you were only checking one unit.
+
+It also does **not** mark the version complete: `reexport` never writes the manifest, so an
+interrupted version stays interrupted.
+
+Two consequences of that last point:
+
+* the version will **not** be offered as a baseline (`list_versions` accepts only `complete`,
+  or a pre-lifecycle NULL), so your next `generate` against a new commit does a FULL run;
+* the documents a re-export rebuilds are complete in their tables — `--unit` narrows images
+  only, so interface tables are still produced for everything — but they carry fresh images
+  for the named unit and whatever was already on disk for the others.
 
 #### Re-derive without re-parsing
 
