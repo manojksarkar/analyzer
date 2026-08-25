@@ -38,6 +38,18 @@ from api.db.postgres import schema as s   # noqa: E402
 _FN_PAYLOAD_FIELDS = (
     "returnType", "returnExpr", "description", "behaviourInputName", "behaviourOutputName",
     "parameters", "phases", "readsGlobalIdsTransitive", "writesGlobalIdsTransitive",
+    # `params` is Phase 1's spelling; Phase 2 reads it, normalises it to `parameters` and
+    # pops it (model_deriver.py:449,1180). Storing only `parameters` therefore stored the
+    # field that does not exist yet: Phase 1 wrote `params`, this tuple dropped it, and
+    # Phase 2 -- reading the model back from the database -- found neither and computed an
+    # empty list. Every interface table then said VOID where the signature belonged, on
+    # 112 of 140 functions. Both spellings must survive the Phase 1 -> Phase 2 hand-off.
+    "params",
+    # Neither of these has a column or an edge, so this tuple is their only way through.
+    # `className` scopes a method to its class in the interface tables; `addressTakenByUnits`
+    # records which units publish a function through a pointer table, which is what keeps
+    # such an entry from reading as private on the next incremental run.
+    "className", "addressTakenByUnits",
     # `syntheticFromVarDecl` marks an entry the parser synthesised from a variable declaration
     # rather than a real function. It is not cosmetic: flowchart_engine.py filters on it —
     #     processable = [e for e in target_entries if not e.synthetic_from_var_decl]

@@ -2001,19 +2001,15 @@ def parse_calls_and_globals(path):
     19-file sample), so this is a ~1/3 cut that scales with the codebase.
     """
     try:
+        # clang_args_for, not CLANG_ARGS: both walks must see the same defines and include
+        # dirs as the definition pass, or a layer-gated #ifdef makes them disagree about
+        # which globals a function touches.
         tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
         visit_calls(tu.cursor)
-    except cindex.TranslationUnitLoadError:
-        pass
-
-
-def parse_global_access(path):
-    """Collect global read/write per function for direction (In/Out)."""
-    try:
-        # clang_args_for, not CLANG_ARGS: this pass must see the same defines and
-        # include dirs as the definition pass, or a layer-gated #ifdef makes the two
-        # walks disagree about which globals a function touches.
-        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        # BOTH visitors, on the one parse. Collapsing the two passes into this function
+        # dropped this call, and with it every global read/write in the model: direction
+        # became "Out: accesses no globals" for everything, and returnExpr -- captured by
+        # this same visitor on RETURN_STMT -- went with it.
         visit_global_access(tu.cursor)
     except cindex.TranslationUnitLoadError:
         pass
