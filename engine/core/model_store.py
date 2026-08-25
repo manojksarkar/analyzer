@@ -63,7 +63,11 @@ _FN_PAYLOAD_FIELDS = (
 # every global's description was dropped on the way into the database. Found by
 # tools/verify_model_parity.py on the first real run, which is exactly the class of bug an
 # allow-list invites: add a model field, forget this tuple, lose it silently.
-_GLOBAL_PAYLOAD_FIELDS = ("type", "value", "description")
+# `className` is the same omission the function list had: parser.py sets it on a global
+# declared inside a class (a static member), it has no column of its own, and without it
+# here the scope is lost on the way into the database. The sample project has no
+# class-scoped global, which is why nothing caught it.
+_GLOBAL_PAYLOAD_FIELDS = ("type", "value", "description", "className")
 
 
 # ---------------------------------------------------------------------------

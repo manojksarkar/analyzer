@@ -71,3 +71,20 @@ def test_global_access_has_exactly_one_top_level_entry_point():
     # translation unit, as opposed to the visitor's own recursion into children.
     tops = re.findall(r"visit_global_access\(tu\.cursor\)", src)
     assert len(tops) == 1, f"expected exactly one top-level global-access walk, found {len(tops)}"
+
+
+def test_globals_carry_their_class_scope():
+    """Same omission, the other allow-list. parser.py sets className on a global declared
+    inside a class; it has no column, so the payload is its only route. The sample project
+    has no class-scoped global, which is why this one stayed latent rather than showing up
+    in a document diff."""
+    from core.model_store import _GLOBAL_PAYLOAD_FIELDS
+    assert "className" in _GLOBAL_PAYLOAD_FIELDS
+
+
+def test_every_payload_allow_list_is_covered_here():
+    """If a third allow-list appears, this file should grow a case for it -- the whole
+    class of bug is 'a model field with no column, no edge, and no allow-list entry'."""
+    import core.model_store as ms
+    lists = [n for n in dir(ms) if n.endswith("_PAYLOAD_FIELDS")]
+    assert sorted(lists) == ["_FN_PAYLOAD_FIELDS", "_GLOBAL_PAYLOAD_FIELDS"], lists
