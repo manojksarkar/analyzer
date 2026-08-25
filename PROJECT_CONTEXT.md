@@ -235,7 +235,36 @@
 > unresolvable unit, before the strict/tolerant split fixed that. Unit narrowing genuinely reached
 > the flowchart engine for the first time here.
 >
-> 1343 passed, 10 skipped; verify flowchart-reuse / parity / incremental green.)
+> **Parity with poc-4, checked rather than assumed.** The question that matters is whether the
+> database filter picks the same functions poc-4's file filter picked — same behaviour, only the
+> storage changed. The selection logic now lives in one place, `flowchart_engine._apply_scope()`,
+> lifted out of `_load_inputs_from_db` so it can be exercised without a database.
+> `tests/unit/test_flowchart_scope_matches_poc4.py` carries poc-4's `_in_scope` verbatim from
+> `origin/poc-4:engine/views/flowcharts.py` and runs both over the same keys across 9 scope
+> combinations, including the cases that decide the edges: a component typed in a different case,
+> a signature with extra `|` separators, a key with no separator, and empty halves. Zero
+> divergence. Two source-text grep tests were retired in favour of it — matching an expression in
+> a file proves nothing once the expression moves; only one structural test remains, that the
+> loader still *routes through* the filter, since a filter nobody calls is the original bug.
+>
+> Verified on the live loader too, against `verdev1` (281 functions, 26 components, 92 units):
+> every scoped load returns exactly one component or one unit, lowercase spelling matches, and
+> **the 26 per-component loads sum to exactly 281** — the scope partitions the version precisely,
+> losing and duplicating nothing.
+>
+> **Also fixed here, both found by the suite and both artefacts of the integration merge
+> `8fca95b`, not of poc-4:** `engine/config/config.defaults.json` carried `llm.rateLimitSeconds`
+> TWICE (`3.0` then `3`) — both sides of the merge contributed one and both were kept. JSON takes
+> the last, so the effective value was and remains `3`; the duplicate is simply gone. And
+> `tests/e2e/test_flowcharts.py` parsed that file with a strict `json.load`, which cannot read the
+> JSONC the project writes — it now uses `core.config._strip_json_comments` like every other
+> reader. That parse error aborted COLLECTION of the whole e2e directory, which is why earlier
+> runs reported a clean suite without ever executing those tests.
+>
+> 1364 passed, non-e2e, plus the three gates green. The e2e directory now collects and shows 131
+> failures, all of them a Phase 1 parse failing in this environment: identical, 31-for-31, with
+> these changes stashed, so they pre-date this work and are untouched by it — they are a separate
+> thing to chase, not a regression.)
 
 > Updated: 2026-08-25 (**re-derive without re-parsing; unit narrowing made to work** — branch
 > `integration/poc-4-db`.

@@ -56,20 +56,18 @@ class TestOneLoaderBlock:
         src = _src(os.path.join("engine", "flowchart", "flowchart_engine.py"))
         assert "--version-id needs a configured database" in src
 
-    def test_component_filter_uses_the_key_prefix(self):
-        """Narrowing to the caller's components replaces the pre-filtered functions_<group>.json.
+    def test_the_scope_filter_is_reachable(self):
+        """The component and unit filters replace the pre-filtered functions_<group>.json:
+        the engine ignores --interface-json once it has a version id, so in database mode
+        it must narrow the loaded model itself.
 
-        Case-folded and plural since the scope-passing fix: a group covers several components,
-        and the planner's spelling need not match the caller's.
+        What the filter SELECTS is covered behaviourally, against poc-4's own filter, in
+        test_flowchart_scope_matches_poc4.py. Here we only check the loader still routes
+        through it -- a filter nobody calls is the bug this whole class guards against.
         """
         src = _src(os.path.join("engine", "flowchart", "flowchart_engine.py"))
-        assert 'k.split("|", 1)[0].lower() in comps' in src
-
-    def test_the_unit_filter_exists_too(self):
-        """Without it, --selected-unit narrowed nothing in database mode: the engine ignores
-        --interface-json when it has a version id, so the pre-filtered file never reached it."""
-        src = _src(os.path.join("engine", "flowchart", "flowchart_engine.py"))
-        assert 'k.split("|")[1].lower() in units' in src
+        assert "def _apply_scope(" in src
+        assert "functions, comps, units = _apply_scope(" in src
 
     def test_the_view_passes_the_scope(self):
         """The filters are useless if the caller never sends the scope. Every component's run

@@ -15,6 +15,7 @@ structural contract is that the content is a non-empty, valid Mermaid diagram.
 """
 import json
 import os
+import sys
 import re
 
 import pytest
@@ -46,8 +47,12 @@ FC_DIR = os.path.join(PROJECT_ROOT, "output", "flowcharts")
 _cfg_path = os.path.join(PROJECT_ROOT, "engine", "config", "config.defaults.json")
 if os.path.isfile(_cfg_path):
     import json as _json
+    # The defaults file is JSONC -- comments and trailing commas. Parse it the
+    # way the engine does, not with a strict loader.
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
+    from core.config import _strip_json_comments, _strip_trailing_commas
     with open(_cfg_path, encoding="utf-8") as _f:
-        _cfg = _json.load(_f)
+        _cfg = _json.loads(_strip_trailing_commas(_strip_json_comments(_f.read())))
     if not _cfg.get("views", {}).get("flowcharts"):
         pytest.skip("flowcharts disabled in config", allow_module_level=True)
 

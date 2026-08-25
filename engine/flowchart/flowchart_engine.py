@@ -402,6 +402,31 @@ def _store_labels(cfg, key: str, config: EngineConfig, fallback_ids=frozenset())
 
 
 
+def _apply_scope(functions, components=(), component="", units=()):
+    """Narrow the model to the run's scope, on the "Component|Unit|name|sig" key.
+
+    This is the selection poc-4 made in the view, which wrote a filtered
+    functions.json and passed it as --interface-json. In database mode there is
+    no such file, so the engine makes the same selection after loading. Both
+    halves are case-folded: the planner spells components as they appear in the
+    config, and the CLI takes whatever the caller typed.
+
+    Returns the surviving functions plus the two folded sets, which the caller
+    reuses for the log line.
+    """
+    comps = {c.lower() for c in (components or ())}
+    if not comps and component:
+        comps = {component.lower()}
+    if comps:
+        functions = {k: v for k, v in functions.items()
+                     if k.split("|", 1)[0].lower() in comps}
+    picked = {u.lower() for u in (units or ())}
+    if picked:
+        functions = {k: v for k, v in functions.items()
+                     if len(k.split("|")) > 1 and k.split("|")[1].lower() in picked}
+    return functions, comps, picked
+
+
 def _load_inputs_from_db(config: EngineConfig):
     """(ProjectMeta, functions) for `config.version_id`, optionally one component only.
 
@@ -426,19 +451,8 @@ def _load_inputs_from_db(config: EngineConfig):
                 functions = {k: v for k, v in functions.items() if k in keep}
                 logger.info("incremental: restricted to %d of %d function(s) from the stored "
                             "plan", len(functions), before)
-    # Component then unit, on the "Component|Unit|name|sig" key. Both are case-folded: the
-    # planner spells components as they appear in the config and the CLI takes whatever the
-    # caller typed.
-    comps = {c.lower() for c in (config.components or ())}
-    if not comps and config.component:
-        comps = {config.component.lower()}
-    if comps:
-        functions = {k: v for k, v in functions.items()
-                     if k.split("|", 1)[0].lower() in comps}
-    units = {u.lower() for u in (config.units or ())}
-    if units:
-        functions = {k: v for k, v in functions.items()
-                     if len(k.split("|")) > 1 and k.split("|")[1].lower() in units}
+    functions, comps, units = _apply_scope(
+        functions, config.components, config.component, config.units)
     meta = ProjectMeta(base_path=(row.base_path if row else "") or "",
                        project_name=(row.project_name if row else "") or "")
     _scope = ""
