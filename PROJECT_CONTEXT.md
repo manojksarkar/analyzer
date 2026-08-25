@@ -278,7 +278,55 @@
 > out-of-scope unit in `--scope`), so they now read differently: the out-of-scope error names the
 > component the unit IS in and suggests the `--scope` that reaches it, while a genuine typo keeps
 > its spelling suggestion. New `_unit_home()` does the lookup. Four tests pin both halves,
-> including that narrowing the one wording did not swallow the other.)
+> including that narrowing the one wording did not swallow the other.
+>
+> **The model lost 8 fields between Phase 1 and Phase 2 — the worst defect of the migration.**
+> Reported from a poc-4 vs integration/poc-4-db document comparison run on Manoj's machine
+> (reviewed at 87452f0): every interface-table row read VOID where the signature belonged.
+> Comparing the two `model_functions.json` dumps: `parameters` 112->0, `returnExpr` 122->0,
+> `className` 4->0, `addressTakenByUnits` 2->0, `readsGlobalIds` 12->0, `writesGlobalIds` 11->0,
+> and both transitive sets 35/31->0.
+>
+> **TWO independent root causes, neither of them the storage layer.** A persist->load probe with
+> a complete record showed the store drops only three fields, so it could not explain `returnExpr`
+> or the globals; instrumenting the live `persist_functions` showed Phase 1 never produced them.
+>
+>   1. `parse_calls_and_globals()` did ONE walk, not two. poc-4 ran `parse_calls` then
+>      `parse_global_access`; those were merged into one parse for speed, and the merged function
+>      calls `visit_calls` and NOT `visit_global_access`. The old `parse_global_access` was left
+>      in the file uncalled — which is how it hid, the code looked present. That visitor is the
+>      sole producer of `readsGlobalIds`/`writesGlobalIds` and, on `RETURN_STMT`, of
+>      `function_return_expr`: six of the eight fields, plus every direction collapsing to
+>      "Out: accesses no globals". Nothing failed; the run reported success.
+>   2. `_FN_PAYLOAD_FIELDS` listed `parameters`, but Phase 1 emits `params` (parser.py:2072) and
+>      Phase 2 is what renames it (model_deriver.py:449,1180). The allow-list dropped the only
+>      spelling that exists at hand-off time, so Phase 2 found neither and computed []. `className`
+>      and `addressTakenByUnits` have no column and no edge, so the payload was their only route
+>      and they were not listed either.
+>
+> After both fixes all 140 functions agree with poc-4 on all 18 fields VALUE for value, not merely
+> in presence. All 63 differing DOCX blocks trace to cause 2. Flowchart counts are back to poc-4's
+> 22/12/11 per component (from 139/139/139) — that half was already fixed in d1a09df, before the
+> review ran.
+>
+> **A sibling found by looking:** there are exactly two payload allow-lists and both had the same
+> hole — `_GLOBAL_PAYLOAD_FIELDS` omitted `className`, so a class-scoped global lost its scope.
+> Latent (the sample has none), fixed, and a test now pins the count of allow-lists so a third
+> arrives with its own coverage.
+>
+> **Still open, and #1 of them matters most:** `tests/conftest.py:92` drives
+> `run.py <proj> --clean --selected-group` with no `--version-id`, which DB-only mode now
+> requires — Phase 1 dies with "no model repository is installed for this run". That is the true
+> cause of all 131 e2e failures, which I had earlier called pre-existing environmental noise: true
+> but beside the point, since they share one fixable cause. Until it is fixed nothing in CI can
+> catch a regression of this class, which is exactly how eight fields went missing. Also open:
+> `tools/verify_model_parity.py` is gone (it compared file- vs DB-backed models, which cannot
+> exist now — the replacement worth building compares a version's model against the parse it came
+> from); doc 10 §10 still promises `--dump-model-files` and `--model-store files`, neither of
+> which exists; `tools/parity/capture_baseline.py:52` points at the renamed
+> `engine/config/config.json`; and `llm.descriptions`/`behaviourNames` ship `true` here where
+> poc-4 shipped `false` — consistent with "--no-llm must never be default" and left as is, but
+> it is a real divergence and the user's call to confirm.)
 
 > Updated: 2026-08-25 (**re-derive without re-parsing; unit narrowing made to work** — branch
 > `integration/poc-4-db`.
