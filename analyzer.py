@@ -194,10 +194,17 @@ def cmd_generate(a) -> int:
 
 
 def cmd_reexport(a) -> int:
-    """Rebuild a version's documents from its STORED model — phases 3 and 4 only.
+    """Rebuild a version's documents from its STORED model, without parsing.
 
-    No parsing and no LLM description work: the model is already rows. This is what you run
-    after changing a view or the DOCX template.
+    `--from-phase` chooses how far back to go:
+
+      2  re-derive — rebuild units, components and summaries from the stored parse skeleton,
+         then views and export. For a change to the deriver.
+      3  views + export (the default). For a change to a view.
+      4  export only. For a change to the DOCX template.
+
+    Phase 1 is never re-run: the parse is the expensive part and it is already rows. To
+    re-parse, run `generate`.
     """
     from incremental.store import make_store
     store = make_store(a.project_id)
@@ -214,7 +221,12 @@ def cmd_reexport(a) -> int:
     argv = ["--config", cfg, "--version-id", a.version_id, "--project-id", a.project_id,
             "--model-root", os.path.join(adir, "model"),
             "--output-root", os.path.join(adir, "output"),
-            "--use-model", "--from-phase", str(a.from_phase)]
+            "--from-phase", str(a.from_phase)]
+    # --use-model means 'skip phases 1 AND 2 and reuse the stored model'. For a
+    # re-derive we WANT phase 2 to run, so it must not be passed — with it, phase 2
+    # would be skipped and --from-phase 2 would quietly do nothing but re-render.
+    if a.from_phase >= 3:
+        argv.append("--use-model")
     # Default to the SAME scope the version was generated with. Without this a re-export
     # silently produced a different document set: a project-scoped version came out as one
     # Support.docx where generate had produced App.docx and Math.docx, because the scope is
@@ -511,8 +523,9 @@ def build_parser() -> argparse.ArgumentParser:
                        description=cmd_reexport.__doc__)
     s.add_argument("--project-id", required=True)
     s.add_argument("--version-id", required=True)
-    s.add_argument("--from-phase", type=int, default=3, choices=(3, 4),
-                   help="3 = views + export (default), 4 = export only")
+    s.add_argument("--from-phase", type=int, default=3, choices=(2, 3, 4),
+                   help="2 = re-derive (units, components, summaries) then views + export; "
+                        "3 = views + export (default); 4 = export only")
     s.add_argument("--scope",
                    help="re-render a NARROWER slice than the version was generated with — the "
                         "model already covers the layer, so this costs only the views. "

@@ -351,16 +351,27 @@ def run(model, output_dir, model_dir, config):
     cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
     if allowed_components:
         cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0].lower() in allowed_components]
+    # --selected-unit. Unit keys are "Component|Unit" and the flag carries the short
+    # name, matching how the flowchart view reads it. Checking images for one unit is
+    # the whole point of the flag, and a unit DIAGRAM is one of those images.
+    allowed_units = [u.lower() for u in (config.get("_analyzerSelectedUnits") or [])]
+    if allowed_units:
+        cpp_units = [uk for uk in cpp_units
+                     if KEY_SEP in uk and uk.split(KEY_SEP, 1)[1].lower() in allowed_units]
 
     # Incremental (M3.10): carry forward baseline diagrams + render only AFFECTED units.
     # No plan -> full: wipe and regenerate every unit (original behaviour).
     affected = _apply_incremental_unit_plan(model_dir, out_dir, functions_data, fid_to_unit, cpp_units)
     if affected is None:
-        for f in os.listdir(out_dir):
-            try:
-                os.unlink(os.path.join(out_dir, f))
-            except OSError:
-                pass
+        # A full run wipes and regenerates. NOT when narrowed to a unit: the other
+        # units' diagrams are still valid, and deleting them would leave the output
+        # dir holding one unit when the caller only asked to re-check one.
+        if not allowed_units:
+            for f in os.listdir(out_dir):
+                try:
+                    os.unlink(os.path.join(out_dir, f))
+                except OSError:
+                    pass
         units_to_render = sorted(cpp_units)
     else:
         units_to_render = sorted(uk for uk in cpp_units if uk in affected)

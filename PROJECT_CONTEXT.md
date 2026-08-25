@@ -208,6 +208,36 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-25 (**re-derive without re-parsing; unit narrowing made to work** — branch
+> `integration/poc-4-db`.
+>
+> **`reexport --from-phase 2`** re-runs derive -> views -> export from the stored parse skeleton.
+> Phase 1 is never re-run: parsing is the expensive part and it is already rows. `--use-model` is
+> now passed only for phases 3 and 4 — it means "skip phases 1 AND 2", so passing it with
+> `--from-phase 2` would have skipped the very phase being asked for. Verified by deleting a
+> version's `model_units` rows and watching them come back with
+> `Phase 1: Parse C++ source - skipped (--from-phase 2)` in the log.
+>
+> **`--unit` now narrows every image view, not just flowcharts.** Its purpose is checking one
+> unit's generated images, and unit diagrams and behaviour diagrams ignored it — so the flag
+> saved the flowchart time and then drew every other unit's diagrams anyway. Both views honour
+> `_analyzerSelectedUnits` now, with the same short-name matching, and a narrowed run does NOT
+> wipe other units' diagrams (they are still valid, and the caller asked to re-check one).
+>
+> **The bug that made it unusable:** documents are produced per component, so Phase 3 runs once
+> per component. `--selected-unit Utils` reached the App invocation as well as the Math one and
+> killed the whole run with `unknown --selected-unit 'Utils'` — AFTER Math's diagrams had been
+> rendered. A unit that is elsewhere is not an unknown unit. `_resolve_units` now takes
+> `strict`: run.py validates once against the whole run's scope (strict, unchanged - a unit
+> outside it still errors, and the two tests that guard this still pass untouched), while the
+> per-component view invocation narrows to nothing and says which component it skipped.
+>
+> Three cases now: in scope -> rendered; in another component of the same run -> skipped with a
+> message, run continues; nowhere or outside the requested scope -> hard error listing the real
+> units. All three verified end to end.
+>
+> 1334 passed, 10 skipped; verify incremental / flowchart-reuse / parity green.)
+
 > Updated: 2026-08-24e (**re-export left the database holding the OLD render** — branch
 > `integration/poc-4-db`. Chasing "is per-phase execution correct?" properly turned up a real
 > defect in the new `reexport`.

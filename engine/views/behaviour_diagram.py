@@ -89,6 +89,13 @@ def run(model, output_dir, model_dir, config):
             fid for fid in model.get("functions", {})
             if (functions_data.get(fid, {}).get("visibility") or "").lower() != "private"
         ]
+    # --selected-unit narrows the per-function image work here too. Same short-name
+    # matching as the flowchart and unit-diagram views.
+    allowed_units = [u.lower() for u in (config.get("_analyzerSelectedUnits") or [])]
+    if allowed_units:
+        functions = [fid for fid in functions
+                     if KEY_SEP in (fid_to_unit.get(fid) or "")
+                     and fid_to_unit[fid].split(KEY_SEP, 1)[1].lower() in allowed_units]
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
     total = len(functions)

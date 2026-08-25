@@ -287,31 +287,56 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 `--full`, `--no-narrowed-parse` and `--verify-parse` are all "do it the slow way on purpose".
 None belongs in a routine run.
 
-### Narrowing to a unit — what `--unit` does and does not do
+### Checking one unit's images with `--unit`
+
+Rendering every unit's diagrams to look at one of them is a slow way to check your work.
+`--unit` narrows the **image work** to the unit you name, on both `generate` and `reexport`:
 
 ```
-python analyzer.py generate --project-id myproj --commit <sha> --version-id v3 --unit Utils
+python analyzer.py reexport --project-id myproj --version-id v2 --unit Utils
 ```
 ```
-python analyzer.py reexport --project-id myproj --version-id v3 --unit Utils
+python analyzer.py generate --project-id myproj --version-id v3 --unit Utils
 ```
 
-It narrows the **per-function flowchart work** — the expensive part of Phase 3, where every
-function gets a CFG extracted and rendered. Measured on the sample project: **70 flowchart PNGs
-without it, 35 with `--unit Utils`**, with exactly the other unit's suppressed.
+It narrows all three image views — flowcharts, unit diagrams and behaviour diagrams. Measured on
+the sample project: **70 flowchart PNGs without it, 35 with `--unit Utils`**, and only
+`Math_Utils.mmd` instead of both unit diagrams.
 
-**It is a speed aid, not a scope.** Everything else stays whole:
+Other units' images already on disk are left alone, so what you get is the named unit's images
+freshly rendered beside whatever was there before — which is what you want when you are checking
+one unit repeatedly.
+
+**Three cases, three behaviours:**
+
+| You ask for | What happens |
+|---|---|
+| a unit in the scope you are running | rendered; everything else skipped |
+| a unit in another component of the same run | that component renders nothing and says so; the run continues |
+| a unit that exists nowhere, or outside the scope you asked for | hard error, listing the real units |
+
+The middle row is the one that used to be broken. Documents are produced per component, so
+Phase 3 runs once per component — `--unit Utils` reached the App run as well as the Math one and
+killed the whole thing with `unknown --selected-unit 'Utils'`, *after* Math's diagrams had been
+rendered. A unit that is simply elsewhere is not an unknown unit.
+
+### What `--unit` does not do
+
+**It is still not a document scope.** It narrows the IMAGES, and nothing else:
 
 | | with `--unit Utils` |
 |---|---|
+| flowcharts | **only that unit's** |
+| unit diagrams | **only that unit's** |
+| behaviour diagrams | **only that unit's** |
+| interface tables | unchanged — a table, not an image |
 | the model (phases 1–2) | unchanged — every unit still parsed |
-| interface tables, unit diagrams | unchanged — every unit still rendered |
 | the documents | unchanged — still whatever `--scope` asks for |
-| flowcharts | **only the named unit's** |
 
 So `--unit Utils` on a project-scoped run still produces `App.docx` and `Math.docx`; it just does
-not spend minutes drawing App's flowcharts while you are working on Math's. Flowcharts already on
-disk for other units are left in place, so labelled units accumulate across runs.
+not spend minutes drawing App's images while you are checking Math's. Other units' images already
+on disk are left in place, so what you get is the named unit's, freshly rendered, beside whatever
+was there before.
 
 **There is no unit-level document today.** `--scope unit:Utils` does not exist: the DOCX exporter
 has no unit filter, so a document covering one unit is not something the pipeline can currently
@@ -334,12 +359,32 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 
 | Flag | Effect |
 |---|---|
-| `--from-phase` | 3 = views + export (default), 4 = export only |
+| `--from-phase` | 2 = re-derive, then views + export; 3 = views + export (default); 4 = export only |
 | `--scope` | re-render a **narrower** slice than the version was generated with |
 | `--unit <name>` | narrow the per-function flowchart work to this unit. Repeatable. |
 
 It needs the version's commit still checked out, because flowcharts and line numbers are read
 from the source. If the checkout is gone it says so rather than producing an empty document.
+
+#### Re-derive without re-parsing
+
+Parsing is the expensive part and it is already rows, so there is never a reason to redo it for
+a change further down the pipeline. `--from-phase` says how far back to go:
+
+```
+python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 2
+```
+
+| `--from-phase` | Re-runs | Use it after changing |
+|---|---|---|
+| `2` | derive → views → export | the model deriver (units, components, summaries) |
+| `3` | views → export (default) | a view — interface tables, diagrams, flowcharts |
+| `4` | export | the DOCX exporter or a template |
+
+Phase 1 is never re-run by `reexport`. To re-parse, use `generate`.
+
+Verified: deleting a version's `model_units` rows and running `--from-phase 2` rebuilt them,
+with `Phase 1: Parse C++ source — skipped (--from-phase 2)` in the log.
 
 #### Running phases individually
 
