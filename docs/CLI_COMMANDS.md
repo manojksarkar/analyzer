@@ -366,6 +366,12 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 It needs the version's commit still checked out, because flowcharts and line numbers are read
 from the source. If the checkout is gone it says so rather than producing an empty document.
 
+**Which config a re-export uses.** The same one the version ran with, resolved the same way
+`generate` resolves it: `versions/<id>/config.json` when there is one, otherwise the project's
+`workspaces/<pid>/config.json`. A per-version copy is only written when there is no project
+config, or when `--no-llm` forced a rewrite — so after a normal run the version directory has
+**no** `config.json`, and that is correct rather than a sign something went wrong.
+
 **After a run you interrupted.** A generate that reached Phase 3 and was stopped with Ctrl+C has
 already written everything `reexport` needs: phases 1 and 2 flush the model to the database at
 their own boundaries, `versions.base_path` is written straight after Phase 1, and the version's

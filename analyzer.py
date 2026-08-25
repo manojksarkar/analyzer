@@ -209,7 +209,25 @@ def cmd_reexport(a) -> int:
     from incremental.store import make_store
     store = make_store(a.project_id)
     adir = store.artifact_dir(a.version_id)
+    # WHICH config this version ran with, resolved exactly as generate_full resolves it.
+    # A per-version config.json is written only when there is no per-project one, or when
+    # --no-llm forced a rewrite; a normal run uses workspaces/<pid>/config.json directly and
+    # leaves the version dir without one. Requiring the version copy meant re-export worked
+    # after a --no-llm run and failed after every real one.
     cfg = os.path.join(adir, "config.json")
+    if not os.path.isfile(cfg):
+        # WorkspaceNotFound when the project itself is unknown — a traceback there would
+        # bury the message below, which says what to do about it.
+        try:
+            from incremental.stores import Workspace, WorkspaceNotFound
+            _proj = os.path.join(Workspace(a.project_id).root, "config.json")
+            if os.path.isfile(_proj):
+                cfg = _proj
+        except WorkspaceNotFound:
+            print(f"there is no workspace for project {a.project_id!r}.\n"
+                  f"  Onboard it first:\n"
+                  f"    python analyzer.py onboard --project-id {a.project_id} --source <url-or-path> --config <your.json>", file=sys.stderr)
+            return 2
     if not os.path.isfile(cfg):
         # Name the versions that DO exist. The commonest cause by far is a typo or an
         # off-by-one in the version id, and a path the caller has never seen does not say
