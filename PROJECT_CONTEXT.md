@@ -264,7 +264,21 @@
 > 1364 passed, non-e2e, plus the three gates green. The e2e directory now collects and shows 131
 > failures, all of them a Phase 1 parse failing in this environment: identical, 31-for-31, with
 > these changes stashed, so they pre-date this work and are untouched by it — they are a separate
-> thing to chase, not a regression.)
+> thing to chase, not a regression.
+>
+> **`--scope` and `--unit` combine, and the wording when they conflict.** Asked whether
+> `--scope "component:App" --unit Utils` still considers the component: it does — `cmd_reexport`
+> passes `scope_to_args(scope)` AND `--selected-unit` both, and they AND, exactly as poc-4's
+> `_in_scope` ANDed them. Verified on `verdev1`: App 9, Math 7, `unit=Utils` 7,
+> `component=Math + unit=Utils` 7, `component=App + unit=Utils` **0**.
+>
+> That last combination exposed a bad message. `_resolve_units` already separates *unknown* from
+> *elsewhere* internally, then printed `unknown --selected-unit 'Utils'` for both. Utils is not
+> unknown — it is in Math. The two failures need different fixes (a typo is fixed in the name, an
+> out-of-scope unit in `--scope`), so they now read differently: the out-of-scope error names the
+> component the unit IS in and suggests the `--scope` that reaches it, while a genuine typo keeps
+> its spelling suggestion. New `_unit_home()` does the lookup. Four tests pin both halves,
+> including that narrowing the one wording did not swallow the other.)
 
 > Updated: 2026-08-25 (**re-derive without re-parsing; unit narrowing made to work** — branch
 > `integration/poc-4-db`.

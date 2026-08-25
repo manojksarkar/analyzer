@@ -57,6 +57,18 @@ def _unit_names(model: dict, allowed_components=None) -> list:
     return sorted(names)
 
 
+def _unit_home(model: dict, unit: str) -> list:
+    """Which component(s) a unit name lives in. For error messages only."""
+    from core.model_io import UNITS
+    key = unit.strip().lower()
+    homes = set()
+    for k in (model.get(UNITS) or {}):
+        parts = (k or "").split("|")
+        if len(parts) > 1 and parts[-1].lower() == key:
+            homes.add(parts[0])
+    return sorted(homes)
+
+
 def _resolve_units(model: dict, requested: list, allowed_components=None,
                    *, strict: bool = True) -> list:
     """Map requested unit names onto the model's spelling, or exit with a listing.
@@ -102,9 +114,18 @@ def _resolve_units(model: dict, requested: list, allowed_components=None,
         raise SystemExit(1)
     if elsewhere and strict:
         # Outside the whole run's scope: it will produce nothing anywhere, which is the case
-        # the hard error exists for.
+        # the hard error exists for. Do NOT call it unknown -- it exists, it is just not in
+        # the scope that was asked for, and the two need different fixes: a typo is fixed in
+        # the unit name, this one is fixed in --scope. Saying "unknown" for a unit the caller
+        # can see in their own source sends them looking for the wrong thing.
         for u in elsewhere:
-            print(f"Error: unknown --selected-unit {u!r}.")
+            homes = _unit_home(model, u)
+            where = f" It is in {', '.join(homes)}, which this run's scope excludes." if homes else ""
+            print(f"Error: --selected-unit {u!r} is not in this run's scope.{where}")
+        if elsewhere:
+            _homes = sorted({h for u in elsewhere for h in _unit_home(model, u)})
+            if _homes:
+                print(f"  Widen the scope to reach it, e.g. --scope \"component:{_homes[0]}\"")
         print(f"Units in scope: {', '.join(in_scope) if in_scope else '(none)'}")
         raise SystemExit(1)
     if elsewhere and not resolved:

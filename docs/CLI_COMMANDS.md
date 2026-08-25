@@ -313,18 +313,58 @@ Other units' images already on disk are left alone, so what you get is the named
 freshly rendered beside whatever was there before — which is what you want when you are checking
 one unit repeatedly.
 
-**Three cases, three behaviours:**
+**Four cases, four behaviours:**
 
 | You ask for | What happens |
 |---|---|
 | a unit in the scope you are running | rendered; everything else skipped |
 | a unit in another component of the same run | that component renders nothing and says so; the run continues |
-| a unit that exists nowhere, or outside the scope you asked for | hard error, listing the real units |
+| a unit outside the scope you asked for | hard error naming the component it IS in, and how to widen `--scope` |
+| a unit that exists nowhere | hard error, with a spelling suggestion and the real units listed |
 
-The middle row is the one that used to be broken. Documents are produced per component, so
+The second row is the one that used to be broken. Documents are produced per component, so
 Phase 3 runs once per component — `--unit Utils` reached the App run as well as the Math one and
 killed the whole thing with `unknown --selected-unit 'Utils'`, *after* Math's diagrams had been
 rendered. A unit that is simply elsewhere is not an unknown unit.
+
+The last two rows are separate for the same reason: they need different fixes. A typo is fixed in
+the unit name; an out-of-scope unit is fixed in `--scope`. Reporting both as "unknown" sent you
+hunting for a misspelling in a name you can read in your own source.
+
+#### `--unit` together with `--scope`
+
+They combine — **both** must match, which is what poc-4 did too. `--scope` picks the components,
+`--unit` narrows within them:
+
+```
+python analyzer.py reexport --project-id myproj --version-id v1 --scope "component:Math" --unit Utils
+```
+
+Measured on the sample project (`Utils` lives in `Math`, `Main` in `App`):
+
+| Command | Functions loaded |
+|---|---|
+| `--scope "component:App"` | 9 |
+| `--scope "component:Math"` | 7 |
+| `--unit Utils` alone | 7 |
+| `--scope "component:Math" --unit Utils` | 7 |
+| `--scope "component:App" --unit Utils` | 0 — rejected before anything runs |
+
+The last row is an empty intersection: `Utils` is not in `App`, so nothing would be produced. That
+is caught before Phase 1 rather than after a long run that renders nothing:
+
+```
+Error: --selected-unit 'Utils' is not in this run's scope. It is in Math, which this run's scope excludes.
+  Widen the scope to reach it, e.g. --scope "component:Math"
+Units in scope: Main
+```
+
+Omitting `--scope` entirely leaves the unit filter to search every component, which is usually
+what you want when checking one unit's images:
+
+```
+python analyzer.py reexport --project-id myproj --version-id v1 --unit Utils
+```
 
 ### What `--unit` does not do
 
