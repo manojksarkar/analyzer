@@ -1081,6 +1081,17 @@ def run(model, output_dir, model_dir, config):
     from core.run_context import version_id as _run_version
     if _run_version():
         cmd.extend(["--version-id", _run_version()])
+        # The SCOPE has to travel with it. The engine loads the model from the database
+        # and ignores --interface-json entirely, so the pre-filtered
+        # functions_<group>_units_X.json written above never reaches it — and that file
+        # is only written when model/functions.json exists, which in database mode it
+        # does not. Without these flags every component's run rendered the WHOLE
+        # version: 70 flowcharts across two components where 35 were wanted, and on a
+        # real project 2817 functions where 15 were.
+        for _c in sorted(allowed_components or []):
+            cmd.extend(["--component", _c])
+        for _u in sorted(allowed_units or []):
+            cmd.extend(["--unit", _u])
         if inc is not None:
             cmd.append("--restrict-from-plan")
     else:

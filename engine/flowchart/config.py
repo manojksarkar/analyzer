@@ -50,8 +50,17 @@ class EngineConfig:
     # `restrict_from_plan` makes the engine read `flowchartFids` from `incremental_plans` and
     # regenerate only those. That list cannot be passed on a command line at 20k functions, so
     # reading the plan is the only shape that avoids a file (D10-5).
+    #
+    # `units` narrows further, to the named units within those components. Both are
+    # applied to the model the engine loads from the database. Before they were passed,
+    # a version-id run loaded EVERY function in the version: the pre-filtered
+    # functions_<group>.json the caller used to write is skipped in database mode
+    # (there is no model/functions.json to filter), and nothing replaced it. Every
+    # component's output directory ended up holding the whole project's flowcharts.
     version_id: Optional[str] = None
-    component: Optional[str] = None
+    component: Optional[str] = None            # kept: one component, the original shape
+    components: tuple = ()                     # several, when a group covers more than one
+    units: tuple = ()
     restrict_from_plan: bool = False
 
     # LLM call settings

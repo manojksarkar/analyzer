@@ -300,8 +300,14 @@ python analyzer.py generate --project-id myproj --version-id v3 --unit Utils
 ```
 
 It narrows all three image views — flowcharts, unit diagrams and behaviour diagrams. Measured on
-the sample project: **70 flowchart PNGs without it, 35 with `--unit Utils`**, and only
-`Math_Utils.mmd` instead of both unit diagrams.
+the sample project: `--unit Utils` renders **16 flowchart PNGs in Math and none in App**, against
+35 across both without it, plus `Math_Utils.mmd` instead of both unit diagrams. The engine log
+says what it loaded:
+
+```
+loaded 7 function(s) from the database for v1 component=math unit=utils
+loaded 0 function(s) from the database for v1 component=app unit=__none__
+```
 
 Other units' images already on disk are left alone, so what you get is the named unit's images
 freshly rendered beside whatever was there before — which is what you want when you are checking
@@ -422,6 +428,21 @@ Two consequences of that last point:
 * the documents a re-export rebuilds are complete in their tables — `--unit` narrows images
   only, so interface tables are still produced for everything — but they carry fresh images
   for the named unit and whatever was already on disk for the others.
+
+#### If a run seems to process far too many functions
+
+The number the flowchart engine reports is the one to check:
+
+```
+loaded 7 function(s) from the database for v1 component=math unit=utils
+```
+
+If that count is the size of your whole project when you scoped to a component or a unit, the
+scope is not reaching the engine. That was a real bug up to 2026-08-25: in database mode the
+engine loads the model itself and ignores `--interface-json`, so the pre-filtered
+`functions_<group>.json` the view used to write never reached it — and that file is only written
+when `model/functions.json` exists, which under the database it does not. Every component's run
+rendered the whole version into its own output directory.
 
 #### Re-derive without re-parsing
 

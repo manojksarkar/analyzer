@@ -208,6 +208,35 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-08-25b (**the flowchart engine was rendering the WHOLE version for every
+> component** — branch `integration/poc-4-db`. Reported as "it processes 2817 functions where the
+> old JSON build processed 15", and it is the most serious defect the migration left behind.
+>
+> **Root cause.** With `--version-id` the engine loads the model from the database and ignores
+> `--interface-json` entirely. The scope used to travel inside that file: `views/flowcharts.py`
+> wrote a pre-filtered `functions_<group>[_units_X].json` and passed its path. That write is
+> guarded by `os.path.isfile(model/functions.json)` — a file that does not exist in database
+> mode — so it never happens, and nothing replaced it. `_load_inputs_from_db` had a `component`
+> filter but the view never passed `--component`, and no unit filter existed at all.
+>
+> Measured on SampleCppProject before the fix: `App/flowcharts` and `Math/flowcharts` each held
+> 35 PNGs covering BOTH units — 70 renders where 35 were wanted, every component's directory
+> holding the whole project. After: App 19 (Main only), Math 16 (Utils only), and the engine logs
+> `loaded 9 function(s) ... component=app`.
+>
+> **Fix:** `--component` is repeatable and `--unit` is new on the engine; both filter the loaded
+> model, case-folded. `flowcharts.py` passes the run's components and selected units whenever it
+> passes `--version-id`. The engine's "loaded N function(s)" line was promoted from debug to info
+> so the count is visible without turning logging up — it is the number that makes this class of
+> bug obvious.
+>
+> **A correction to the earlier entry:** the "70 -> 35 with --unit Utils" measurement recorded on
+> 2026-08-25 was wrong. It was not narrowing — it was the App component's Phase 3 CRASHING on the
+> unresolvable unit, before the strict/tolerant split fixed that. Unit narrowing genuinely reached
+> the flowchart engine for the first time here.
+>
+> 1343 passed, 10 skipped; verify flowchart-reuse / parity / incremental green.)
+
 > Updated: 2026-08-25 (**re-derive without re-parsing; unit narrowing made to work** — branch
 > `integration/poc-4-db`.
 >

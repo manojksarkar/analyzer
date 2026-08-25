@@ -105,9 +105,12 @@ def _parse_args() -> EngineConfig:
                    help="doc 10 step 7: read the model, project metadata, knowledge base and "
                         "header->TU map from the DATABASE for this version, instead of the "
                         "four --*-json paths. Requires a configured database.")
-    p.add_argument("--component", default=None,
-                   help="with --version-id: narrow the model to one component, using the "
-                        "(version_id, component) index instead of a pre-filtered file.")
+    p.add_argument("--component", default=None, action="append",
+                   help="with --version-id: narrow the model to this component. Repeatable "
+                        "— a group covers several. Without it a version-id run renders the "
+                        "WHOLE version into whichever output dir it was given.")
+    p.add_argument("--unit", default=None, action="append",
+                   help="with --version-id: narrow further to this unit. Repeatable.")
     p.add_argument("--restrict-from-plan", action="store_true",
                    help="with --version-id: regenerate only the functions named by this "
                         "version's incremental plan (flowchartFids). The list is too long for "
@@ -200,7 +203,9 @@ def _parse_args() -> EngineConfig:
         llm_num_ctx=args.llm_num_ctx,
         no_llm=args.no_llm,
         version_id=args.version_id,
-        component=args.component,
+        component=(args.component[0] if args.component else None),
+        components=tuple(args.component or ()),
+        units=tuple(args.unit or ()),
         restrict_from_plan=args.restrict_from_plan,
     )
 
@@ -421,14 +426,28 @@ def _load_inputs_from_db(config: EngineConfig):
                 functions = {k: v for k, v in functions.items() if k in keep}
                 logger.info("incremental: restricted to %d of %d function(s) from the stored "
                             "plan", len(functions), before)
-    if config.component:
+    # Component then unit, on the "Component|Unit|name|sig" key. Both are case-folded: the
+    # planner spells components as they appear in the config and the CLI takes whatever the
+    # caller typed.
+    comps = {c.lower() for c in (config.components or ())}
+    if not comps and config.component:
+        comps = {config.component.lower()}
+    if comps:
         functions = {k: v for k, v in functions.items()
-                     if k.split("|", 1)[0] == config.component}
+                     if k.split("|", 1)[0].lower() in comps}
+    units = {u.lower() for u in (config.units or ())}
+    if units:
+        functions = {k: v for k, v in functions.items()
+                     if len(k.split("|")) > 1 and k.split("|")[1].lower() in units}
     meta = ProjectMeta(base_path=(row.base_path if row else "") or "",
                        project_name=(row.project_name if row else "") or "")
-    logger.debug("loaded %d function(s) from the database for %s%s",
-                 len(functions), config.version_id,
-                 f" (component {config.component})" if config.component else "")
+    _scope = ""
+    if comps:
+        _scope += f" component={','.join(sorted(comps))}"
+    if units:
+        _scope += f" unit={','.join(sorted(units))}"
+    logger.info("loaded %d function(s) from the database for %s%s",
+                len(functions), config.version_id, _scope)
     return meta, functions
 
 

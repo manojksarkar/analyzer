@@ -57,9 +57,27 @@ class TestOneLoaderBlock:
         assert "--version-id needs a configured database" in src
 
     def test_component_filter_uses_the_key_prefix(self):
-        """Narrowing to one component replaces the pre-filtered functions_<group>.json."""
+        """Narrowing to the caller's components replaces the pre-filtered functions_<group>.json.
+
+        Case-folded and plural since the scope-passing fix: a group covers several components,
+        and the planner's spelling need not match the caller's.
+        """
         src = _src(os.path.join("engine", "flowchart", "flowchart_engine.py"))
-        assert 'k.split("|", 1)[0] == config.component' in src
+        assert 'k.split("|", 1)[0].lower() in comps' in src
+
+    def test_the_unit_filter_exists_too(self):
+        """Without it, --selected-unit narrowed nothing in database mode: the engine ignores
+        --interface-json when it has a version id, so the pre-filtered file never reached it."""
+        src = _src(os.path.join("engine", "flowchart", "flowchart_engine.py"))
+        assert 'k.split("|")[1].lower() in units' in src
+
+    def test_the_view_passes_the_scope(self):
+        """The filters are useless if the caller never sends the scope. Every component's run
+        rendered the WHOLE version before this — 70 flowcharts across two components where 35
+        were wanted."""
+        src = _src(os.path.join("engine", "views", "flowcharts.py"))
+        assert '"--component", _c' in src
+        assert '"--unit", _u' in src
 
 
 class TestKnowledgeLoaderIsShared:
