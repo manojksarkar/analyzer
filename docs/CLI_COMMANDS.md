@@ -366,6 +366,16 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 It needs the version's commit still checked out, because flowcharts and line numbers are read
 from the source. If the checkout is gone it says so rather than producing an empty document.
 
+**The LLM is on.** `--no-llm` exists on `generate` only, and only when you type it — it is not
+a default anywhere, and `reexport` does not accept it at all. A re-export runs Phase 3 with the
+LLM exactly as a generate would, using the same config the version ran with. Guarded by
+`tests/unit/test_llm_is_never_off_by_default.py`, which fails if the flag ever gains a default,
+appears on another command, or if `apply_no_llm` is ever called outside `if no_llm`.
+
+One shipped default worth knowing, unrelated to that flag: `llm.summarize` is **false** in
+`config.defaults.json`. That is Phase-2 hierarchy summarization, not the Phase-3 labels or the
+function descriptions — both of those are on.
+
 **Which config a re-export uses.** The same one the version ran with, resolved the same way
 `generate` resolves it: `versions/<id>/config.json` when there is one, otherwise the project's
 `workspaces/<pid>/config.json`. A per-version copy is only written when there is no project
