@@ -10,10 +10,10 @@
     "interfaceTables": true,
     "unitDiagrams": true,
     "flowcharts": false,
-    "flowchartImages": false,
     "behaviourDiagram": false,
     "componentStaticDiagram": true,
-    "dynamicOnly": false
+    "functionTestSpecs": true,
+    "dynamicBehaviourSpecs": true
   },
   "layers": {
     "Layer1": {

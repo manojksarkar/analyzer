@@ -237,7 +237,7 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
         unit_name = unit_data.get("name", unit_key.split(KEY_SEP)[-1])
         by_component.setdefault(component_name, []).append((unit_key, unit_name, functions))
     # A component can reach the document through its interactions alone -- with
-    # `views.dynamicOnly` there are no unit entries at all, and keying the section
+    # `views.functionTestSpecs` off there are no unit entries at all, and keying the section
     # loop off the units would silently emit nothing.
     sorted_components = sorted(
         set(by_component) | set((data.get("dynamicSpecs") or {}).keys()))

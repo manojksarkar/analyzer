@@ -572,13 +572,16 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
 @register("testSpecs")
 def run(model, output_dir, model_dir, config):
     allowed_components = {m.lower() for m in (config.get("_analyzerAllowedComponents") or [])}
-    # views.dynamicOnly: emit Dynamic Behaviour specs and nothing else. Meant for
-    # iterating on them without rebuilding every function spec -- and, more to the
-    # point, without the flowchart pass those function specs drag in (the derivation
-    # below costs milliseconds; their CFGs are the expensive part, and `flowcharts`
-    # narrows itself the same way off this flag).
-    dynamic_only = bool((config.get("views", {}) or {}).get("dynamicOnly"))
-    if dynamic_only:
+    # Which SWE.4 spec kinds this run emits. Two independent switches rather than
+    # one mode flag, so "function specs only" is expressible too. The flowchart
+    # pass DERIVES its scope from these same keys (see
+    # `flowcharts._spec_scope_function_ids`): Test Steps come only from a CFG, so
+    # asking a user to keep `views.flowcharts` in step by hand would only offer a
+    # way to request a document that cannot be built.
+    _views = config.get("views", {}) or {}
+    want_function_specs = _views.get("functionTestSpecs", True)
+    want_dynamic_specs = _views.get("dynamicBehaviourSpecs", True)
+    if not want_function_specs:
         test_specs = {"unitNames": {}}
     else:
         test_specs = _build_test_specs(
@@ -592,7 +595,7 @@ def run(model, output_dir, model_dir, config):
     # Test Steps + the per-return Expected entries come from the flowchart
     # engine's CFG (Phase 3 runs `flowcharts` before `testSpecs` for swe4).
     from .test_steps import attach as _attach_steps
-    filled = _attach_steps(test_specs, output_dir) if not dynamic_only else 0
+    filled = _attach_steps(test_specs, output_dir) if want_function_specs else 0
     if filled:
         log("transcribed control flow into steps for %d function(s)" % filled,
             component="testSpecs")
@@ -601,7 +604,7 @@ def run(model, output_dir, model_dir, config):
     # rather than the unit. Keyed beside the units, so every consumer that walks
     # this file's top-level keys skips it by name.
     from .dynamic_specs import DYNAMIC_KEY, build as _build_dynamic
-    dynamic = _build_dynamic(
+    dynamic = {} if not want_dynamic_specs else _build_dynamic(
         model.get("units", {}),
         model.get("functions", {}),
         model.get("globalVariables", {}),

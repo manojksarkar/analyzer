@@ -202,15 +202,21 @@ diagram.** The two pair one-to-one, and the diagram is the spec's scope statemen
 
 ### Which functions get one
 
-All four conditions hold — they are the behaviour-diagram selection rules:
+All five conditions hold. They are **the behaviour-diagram rules, in full** — SWE.3 and SWE.4 must report
+the same interactions for a component, so every test that decides whether a diagram reaches the SWE.3
+document decides whether a spec reaches this one:
 
 - The function is **public**. Private functions are dropped before selection.
-- It has an **external caller** — a caller in a different component, or, when one group is generated, any
-  caller outside that group.
+- It has an **external caller** — when one group is generated, a caller **outside that group**; otherwise a
+  caller in a different component. A component called only from a sibling component of its own group gets
+  no diagram, and so no spec.
 - Its forward call chain, followed **within its own component**, touches **more than one unit**. A function
   that only calls into its own unit has no interaction to specify.
-- **One spec per function**, from its first external caller. A function called from several places gets one
-  spec, not one per caller.
+- That chain carries **at least one cross-unit arrow**. An "external → target → Return" picture with
+  nothing in between is not an interaction.
+- **One spec per function**, entered from the **first** of those external callers — the same one the SWE.3
+  diagram names, not whichever the selector happened to pick. A function called from several places gets
+  one spec, not one per caller.
 
 Nothing selected → the component has no Dynamic Behaviour sub-section at all.
 
@@ -309,6 +315,11 @@ Two limits worth knowing:
   prefix the spliced steps would use. Only plain steps splice today.
 - **Callees are matched by short name.** Two executing callees sharing one short name are both left
   un-spliced rather than risk splicing the wrong body.
+
+Config: `views.dynamicBehaviourSpecs` emits this section, `views.functionTestSpecs` the per-function specs.
+They are independent, and neither depends on `views.flowcharts` — that draws the flowchart images only.
+Control-flow graphs are built for whatever the enabled spec kinds transcribe, so Test Steps cannot be
+switched off by accident.
 
 The client's own wiki page carries a longer version of this section still to be reconciled with the rules
 above. The Test Case ID suffix (`_DYN`) is provisional, pending the scheme decision.

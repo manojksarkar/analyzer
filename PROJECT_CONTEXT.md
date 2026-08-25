@@ -431,23 +431,40 @@
 > risk splicing the wrong body. Test Case ID suffix `_DYN` is provisional. `swe4_audit.py` has no
 > component-boundary checks yet. Function-spec output is byte-identical — `build_steps` without `splice`
 > takes the original path, pinned by a test. Full unit suite: 0 failures.
-> **`views.dynamicOnly` (config, default false)** — emit Dynamic Behaviour specs and NOTHING else, for
-> iterating on them. Two hooks, both off the one flag: `test_specs.run` skips `_build_test_specs` (and the
-> `attach` pass), and `flowcharts._dynamic_only_function_ids` narrows the CFG pass to
-> `dynamic_specs.needed_function_ids` = each target + its spliced cross-unit callees. **That narrowing is
-> the actual point**: spec derivation costs 0.01-0.04s, the flowchart pass costs seconds-to-minutes
-> (`utilChain` 79 min), so suppressing function specs alone would save nothing. Sample: 2 CFGs instead of
-> 140 (`dynamicOnly: 2 function(s) need a flowchart (of 140 in the model)`), written to a distinct
-> `functions_<key>_dynamic.json` so a narrowed run never overwrites the group's full list. Legal because
-> `select_targets` reads the call graph and NO CFG, so it can answer before the flowchart pass even though
-> `DOC_TYPE_VIEWS` orders flowcharts first. `needed_function_ids` returns None (= no narrowing) on any
-> unreadable model file — narrowing is an optimisation and must never silently drop Test Steps.
-> **Note `views.flowcharts: false` is IGNORED for swe4** — `run_views` sets `enabled=True` for a forced view
-> before reading config, so the CFG pass cannot be switched off by that flag (`flowchartImages: false` IS
-> honoured, inside the view). **Two latent exporter bugs fixed** by this mode: `sorted_components` was keyed
-> off UNIT entries, so a component reaching the document through interactions alone emitted nothing
-> (now unions `dynamicSpecs` keys), and `by_component[name]` would KeyError on such a component (now
-> `.get(...) or []`). No test covers `dynamicOnly` yet.)
+> **Config — `views.functionTestSpecs` + `views.dynamicBehaviourSpecs`, both default true.** Independent
+> switches (they replaced a short-lived `views.dynamicOnly`, which could not express "function specs
+> only"). `views.flowchartImages` was REMOVED and folded into `views.flowcharts` — it had exactly one
+> reader. **`views.flowcharts` now means "draw the flowchart images", nothing more.**
+> **Whether a CFG is built is NOT configurable, deliberately** — Test Steps have no other source, so a
+> user-facing switch would only offer a way to request an unbuildable document.
+> `flowcharts._spec_scope_function_ids` DERIVES it from the enabled spec kinds: functionTestSpecs on ->
+> None (no narrowing); dynamic only -> `dynamic_specs.needed_function_ids` (each target + its spliced
+> cross-unit callees); neither -> empty set. None vs empty set differ: None leaves component/unit scope
+> alone, empty builds nothing. Returns None on any unreadable model file — narrowing is an optimisation
+> and must never silently drop Test Steps. Narrowed lists go to `functions_<key>_specscope.json` so a
+> narrowed run never overwrites the group's full list. Verified all four combinations on Signal: CFGs
+> 4/2/4/0, function specs 2/0/2/0, dynamic specs 1/1/0/0. **That narrowing is the point** — spec
+> derivation costs 0.01-0.04s, the flowchart pass seconds-to-minutes (`utilChain` 79 min), so suppressing
+> function specs alone would save nothing. On the sample only 1 of 52 public functions qualifies, so five
+> of six groups need ZERO flowcharts. Legal to answer before the flowchart pass because `select_targets`
+> reads the call graph and no CFG, even though `DOC_TYPE_VIEWS` orders flowcharts first. Note swe4 with
+> `flowcharts:false` still builds CFGs while swe3 does not run the view at all — one rule, "build a CFG
+> when something needs it".
+> **SWE.3 and SWE.4 COUNTS MUST MATCH, and did not** (a real component reported 6 diagrams vs 9 specs).
+> The selector is NOT the whole rule — the SWE.3 path applies two further tests `select_targets` did not:
+> (a) `views/behaviour_diagram.py` re-reads "external caller" as **outside the GROUP**, not the component,
+> and `idx >= len(external_callers): break` drops the row — the .mmd IS still written to disk, so SWE.3
+> withholds work it did; (b) `generator.generate_all_diagrams` skips a diagram when `skip_within_unit and
+> not has_internal_call`. Both now applied in `select_targets`, and the entry point comes from the view's
+> own `external_callers[0]` (`_external_caller`) rather than the selector's pick, which can differ. Pinned
+> by `TestMatchesSwe3` (4 cases) — the fixture cannot guard this alone: all six sample groups match but
+> five are 0=0, and it has no in-group-caller case. **Diagnostic `tools/swe4_dynamic_diff.py`** names the
+> divergent functions and which filter drops each; reads only units/functions/components.json (no
+> pipeline, no CFG, ~1.4s), flags `--model/--group/--component/--config`.
+> **Two latent exporter bugs fixed:** `sorted_components` was keyed off UNIT entries, so a component
+> reaching the document through interactions alone emitted nothing (now unions `dynamicSpecs` keys), and
+> `by_component[name]` would KeyError on such a component (now `.get(...) or []`). `swe4_audit.py` still
+> has no component-boundary checks.)
 
 > (Carried over from the correctness pass above:
 > `Access`/`Diag`/`Platform` yield 0 specs — every function private by the call-graph rule,

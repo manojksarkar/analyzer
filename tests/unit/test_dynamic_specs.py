@@ -242,3 +242,54 @@ class TestEntryPoint:
 
     def test_malformed_key_passes_through(self):
         assert _entry_point("bare") == "bare"
+
+
+class TestMatchesSwe3:
+    """SWE.3 and SWE.4 must report the SAME interactions.
+
+    The selector alone is not the whole rule -- the SWE.3 path applies two further
+    tests before a diagram reaches its document. Each is pinned here, because a
+    divergence shows up as two documents disagreeing on how many dynamic
+    behaviours a component has, which is exactly what these guard against.
+    """
+
+    def test_caller_inside_the_group_is_not_external(self):
+        """`views/behaviour_diagram.py` re-reads external as *outside the group*.
+
+        `Ext` and `Sig` in one group means SWE.3 emits no row, so SWE.4 emits no
+        spec -- even though `Ext` is a different COMPONENT and the selector picks it.
+        """
+        both = {"ext", "sig"}
+        assert build(UNITS, FUNCTIONS, {}, COMPONENTS, {},
+                     allowed_components=both) == {}
+
+    def test_caller_outside_the_group_is_external(self):
+        specs = build(UNITS, FUNCTIONS, {}, COMPONENTS, {}, allowed_components={"sig"})
+        assert [s["name"] for s in specs["Sig"]] == ["drive"]
+
+    def test_entry_point_comes_from_the_group_scoped_list(self):
+        """SWE.3 names `external_callers[0]`, not the selector's pick. Two callers
+        in different components would otherwise disagree on the entry point."""
+        functions = dict(FUNCTIONS)
+        functions["Far|Other|far"] = _fn("far", visibility="public",
+                                         calls=["Sig|Drv|drive"])
+        functions["Sig|Drv|drive"] = dict(
+            functions["Sig|Drv|drive"],
+            calledByIds=["Far|Other|far", "Ext|Caller|entry"])
+        units = dict(UNITS)
+        units["Far|Other"] = {"name": "Other", "functionIds": ["Far|Other|far"],
+                              "fileName": "Other.cpp"}
+        components = dict(COMPONENTS, Far={"units": ["Far|Other"]})
+        specs = build(units, functions, {}, components, {}, allowed_components={"sig"})
+        assert specs["Sig"][0]["entryPoint"] == "Other - far"
+
+    def test_no_cross_unit_arrow_means_no_spec(self):
+        """`generate_all_diagrams` skips a diagram with no in-component arrow, so
+        an "external -> target -> Return" picture yields no spec either."""
+        functions = dict(FUNCTIONS)
+        # drive still reaches a second unit for the selector's unit count, but the
+        # in-component forward trace carries no arrow because Proc is gone.
+        functions["Sig|Drv|drive"] = dict(functions["Sig|Drv|drive"],
+                                          callsIds=["Oth|Far|remote"])
+        assert build(UNITS, functions, {}, COMPONENTS, {},
+                     allowed_components={"sig"}) == {}

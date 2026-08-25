@@ -121,12 +121,15 @@ def select_targets(units_data, functions_data, components_data,
     """
     try:
         from behaviour_diagram.selector import create_diagram_selector
+        from behaviour_diagram.tracer import CallChainTracer
     except ImportError:      # behaviour engine unavailable -- emit no dynamic specs
         return []
 
+    unit_to_component = _unit_to_component(components_data)
     selector = create_diagram_selector(
-        filter_mode, unit_of, _unit_to_component(components_data), functions_data,
-        "Unknown")
+        filter_mode, unit_of, unit_to_component, functions_data, "Unknown")
+    tracer = CallChainTracer(unit_of, unit_to_component, functions_data, "Unknown")
+    skip_within_unit = filter_mode == "skip_within_unit"
 
     targets = []
     for fid in sorted(unit_of):
@@ -136,10 +139,51 @@ def select_targets(units_data, functions_data, components_data,
         func = functions_data.get(fid)
         if not func or (func.get("visibility") or "").lower() == "private":
             continue
-        chosen = selector.select_diagrams_to_generate(fid)
-        if chosen:
-            targets.append((fid, chosen[0][0]))
+        if not selector.select_diagrams_to_generate(fid):
+            continue
+
+        # The selector alone is NOT the whole SWE.3 rule, and the two documents
+        # must report the same interactions. Two further tests decide whether a
+        # behaviour diagram reaches the SWE.3 document, and both are applied here
+        # so the counts cannot diverge:
+
+        # (1) generator.generate_all_diagrams skips a diagram whose traced chain
+        #     carries no cross-unit arrow inside the component -- an empty
+        #     "external -> target -> Return" picture is not an interaction.
+        if skip_within_unit and not tracer.trace_forward_within_component(
+                fid, unit_to_component.get(unit_key, "Unknown"), True):
+            continue
+
+        # (2) views/behaviour_diagram.py re-reads "external caller" as *outside the
+        #     selected group*, not merely outside the component, and drops the row
+        #     when nothing qualifies. The caller it names is that list's first
+        #     entry -- NOT the one the selector happened to choose -- so take it
+        #     from the same place or the two documents would disagree on the entry
+        #     point even where they agree on the count.
+        caller_fid = _external_caller(func, _component_of(unit_key), allowed_components)
+        if caller_fid is None:
+            continue
+        targets.append((fid, caller_fid))
     return targets
+
+
+def _external_caller(func, home_component, allowed_components):
+    """The caller SWE.3 names as the entry point, or None if it names none.
+
+    Mirrors `views/behaviour_diagram.py` exactly: when a group is selected,
+    "external" means outside that GROUP; otherwise outside the component. A
+    component whose only callers are sibling components of its own group gets no
+    behaviour diagram row there, so it gets no spec here either.
+    """
+    called_by = func.get("calledByIds") or []
+    if allowed_components:
+        outside = [c for c in called_by
+                   if c and KEY_SEP in c
+                   and c.split(KEY_SEP)[0].lower() not in allowed_components]
+    else:
+        outside = [c for c in called_by
+                   if c and KEY_SEP in c and c.split(KEY_SEP)[0] != home_component]
+    return outside[0] if outside else None
 
 
 def _entry_point(caller_fid):

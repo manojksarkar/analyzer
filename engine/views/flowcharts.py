@@ -742,16 +742,22 @@ def _resolve_layer_dirs(config, group_name, layer_paths):
 
 
 def _needs_flowchart_images(config) -> bool:
-    """`views.flowchartImages` -- draw the PNGs, or not. Independent of doc type.
+    """`views.flowcharts` -- draw the flowchart images, or not.
 
-    The flowchart stage always runs, because both documents need the control-flow
-    graph: SWE.3 draws it, SWE.4 transcribes it into Test Steps. Only the drawing is
-    optional, and it is where the time goes -- measured on the 45-function sample,
-    the CFG took 15s and the PNGs 89 minutes.
+    The control-flow graph itself is NOT gated here, because whether it is needed
+    is not a preference: SWE.3 draws it and SWE.4 transcribes it into Test Steps,
+    so the requirement is DERIVED from what the run emits (see
+    `_spec_scope_function_ids`). A user who asked for function test specs and set
+    `flowcharts: false` would otherwise have requested a document that cannot be
+    built -- every Test Steps cell would read "no control-flow graph".
 
-    Defaults to True so an existing config keeps rendering.
+    What IS a preference is the drawing, and that is where the time goes --
+    measured on the 45-function sample, the CFG took 15s and the PNGs 89 minutes.
+    This absorbed the old `views.flowchartImages`, which had no other reader.
+
+    Defaults to True so a config without the key keeps rendering.
     """
-    return (config or {}).get("views", {}).get("flowchartImages", True) is not False
+    return (config or {}).get("views", {}).get("flowcharts", True) is not False
 
 
 def _resolve_script(project_root: str, script_path: str) -> str:
@@ -784,20 +790,33 @@ def _resolve_script(project_root: str, script_path: str) -> str:
     )
 
 
-def _dynamic_only_function_ids(config, model_dir_abs):
-    """Function ids to build CFGs for when `views.dynamicOnly` is set, else None.
+def _spec_scope_function_ids(config, model_dir_abs):
+    """Function ids to build CFGs for, from the SWE.4 spec kinds enabled, else None.
 
-    None means "no dynamic-only narrowing" and leaves the existing scope rules
-    alone. An empty set is meaningful and different: the run wants dynamic specs,
-    and this scope has no qualifying interaction, so no flowchart is worth building.
+    Test Steps have exactly one source -- the control-flow graph -- so which specs a
+    run emits decides which flowcharts it needs. Asking the user to keep
+    `views.flowcharts` in step with that by hand only creates a way to get an
+    unbuildable document, so the requirement is DERIVED:
+
+      functionTestSpecs on   -> every function in scope needs one (None: no narrowing)
+      only dynamicBehaviour  -> just the interactions' targets + spliced callees
+      neither                -> nothing to build (an empty set, not None)
+
+    None and an empty set mean different things: None leaves the existing component
+    /unit scope rules alone, an empty set actively builds nothing.
 
     Reads the model files directly rather than the in-memory model because the
     flowchart view is handed `model_dir` and works from the on-disk JSON. A missing
     or unreadable file falls back to None -- narrowing is an optimisation, and
     getting it wrong must never silently drop a spec's Test Steps.
     """
-    if not ((config or {}).get("views", {}) or {}).get("dynamicOnly"):
-        return None
+    views = (config or {}).get("views", {}) or {}
+    function_specs = views.get("functionTestSpecs", True)
+    dynamic_specs = views.get("dynamicBehaviourSpecs", True)
+    if function_specs:
+        return None              # the widest need; no narrowing to do
+    if not dynamic_specs:
+        return set()             # no specs at all -> no flowchart earns its cost
     try:
         import json as _json
         loaded = {}
@@ -813,7 +832,7 @@ def _dynamic_only_function_ids(config, model_dir_abs):
         loaded["units"], loaded["functions"], loaded["components"], allowed,
         ((config or {}).get("views", {}) or {}).get("sequenceDiagrams", {})
         .get("filterMode", "skip_within_unit"))
-    log("dynamicOnly: %d function(s) need a flowchart (of %d in the model)"
+    log("spec scope: %d function(s) need a flowchart (of %d in the model)"
         % (len(fids), len(loaded["functions"])), component="flowcharts")
     return fids
 
@@ -971,13 +990,12 @@ def run(model, output_dir, model_dir, config):
     # pass only those functions to the generator.
     functions_arg_path = functions_path
 
-    # views.dynamicOnly: this run wants Dynamic Behaviour specs only, so build CFGs
-    # for the handful of functions those specs actually transcribe rather than every
-    # function in scope. Selection reads the call graph and no CFG, so it can be
-    # answered here even though the flowchart pass runs before testSpecs.
-    dynamic_only_fids = _dynamic_only_function_ids(config, model_dir_abs)
+    # Build CFGs for exactly what the enabled SWE.4 spec kinds transcribe. Selection
+    # reads the call graph and no CFG, so it can be answered here even though the
+    # flowchart pass runs before testSpecs.
+    spec_scope_fids = _spec_scope_function_ids(config, model_dir_abs)
 
-    if (allowed_components or allowed_units or dynamic_only_fids is not None) \
+    if (allowed_components or allowed_units or spec_scope_fids is not None) \
             and os.path.isfile(functions_path):
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
@@ -994,7 +1012,7 @@ def run(model, output_dir, model_dir, config):
                         unit = parts[1].lower() if len(parts) > 1 else ""
                         if unit not in allowed_units:
                             return False
-                    if dynamic_only_fids is not None and fid not in dynamic_only_fids:
+                    if spec_scope_fids is not None and fid not in spec_scope_fids:
                         return False
                     return True
 
@@ -1012,8 +1030,8 @@ def run(model, output_dir, model_dir, config):
                     # distinct file, so a narrowed run never overwrites the
                     # group's full function list
                     filename_key = f"{filename_key}_units_{'_'.join(sorted(allowed_units))}"
-                if dynamic_only_fids is not None:
-                    filename_key = f"{filename_key}_dynamic"
+                if spec_scope_fids is not None:
+                    filename_key = f"{filename_key}_specscope"
 
                 group_functions_path = os.path.join(
                     model_dir_abs,
@@ -1230,8 +1248,13 @@ def run(model, output_dir, model_dir, config):
         # The per-unit JSON (DOT script + serialized CFG) is already written above;
         # Test Steps and the per-return Expected entries come from that. Only the
         # images are skipped, and no document in this run embeds them.
-        log("%d flowchart(s) built; PNG render skipped "
-            "(views.flowchartImages is false)" % len(items), component="flowcharts")
+        # `items` is scanned off the output directory, so it counts flowcharts left
+        # by EARLIER runs too -- saying "built" claimed this run made all of them.
+        # A narrowed run (spec-kind scope, --selected-unit) can build 0 and still
+        # find dozens on disk; the engine's own "N file(s) written" line above is
+        # what this run produced.
+        log("%d flowchart(s) on disk; PNG render skipped "
+            "(views.flowcharts is false)" % len(items), component="flowcharts")
         return
 
     from core.progress import ProgressReporter
