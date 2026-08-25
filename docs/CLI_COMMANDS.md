@@ -366,6 +366,17 @@ python analyzer.py reexport --project-id myproj --version-id v2 --from-phase 4 -
 It needs the version's commit still checked out, because flowcharts and line numbers are read
 from the source. If the checkout is gone it says so rather than producing an empty document.
 
+**After a run you interrupted.** A generate that reached Phase 3 and was stopped with Ctrl+C has
+already written everything `reexport` needs: phases 1 and 2 flush the model to the database at
+their own boundaries, `versions.base_path` is written straight after Phase 1, and the version's
+`config.json` is written before any phase starts. So re-exporting an interrupted version works,
+and it is the cheap way to look at one unit's images without re-parsing a large project.
+
+One consequence to know: an interrupted version's `pipeline_status` never reaches a terminal
+state, and `list_versions` only offers `complete` (or pre-lifecycle NULL) rows as baselines. So
+the interrupted version will **not** be used as a baseline — your next `generate` against a new
+commit will do a FULL run. If you want it to serve as a baseline, let it finish.
+
 #### Re-derive without re-parsing
 
 Parsing is the expensive part and it is already rows, so there is never a reason to redo it for
