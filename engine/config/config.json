@@ -13,7 +13,11 @@
     "behaviourDiagram": false,
     "componentStaticDiagram": true,
     "functionTestSpecs": true,
-    "dynamicBehaviourSpecs": true
+    "dynamicBehaviourSpecs": true,
+    "utExport": {
+      "review": { "author": "", "reviewer": "" },
+      "environment": { "flags": [], "probepoint": [], "usercode": [] }
+    }
   },
   "layers": {
     "Layer1": {

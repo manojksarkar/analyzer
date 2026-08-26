@@ -43,7 +43,7 @@ EXPORTER_REGISTRY = {
 # alongside its own view; `flowcharts` registers first, so it also runs first.
 DOC_TYPE_VIEWS = {
     DOC_TYPE_SWE3: None,
-    DOC_TYPE_SWE4: ("flowcharts", "testSpecs"),
+    DOC_TYPE_SWE4: ("flowcharts", "testSpecs", "utExport"),
 }
 
 
