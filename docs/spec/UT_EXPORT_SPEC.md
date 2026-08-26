@@ -217,6 +217,65 @@ PUBLIC int coreNestedBranch(int a, int b) {
 **Only one stub is reached per path.** The spec's `mockFunctions` is the union across all paths;
 a per-path case narrows `stubs` to the callee actually executed — a refinement the split enables.
 
+### The hierarchy file for this group
+
+Layer `Layer1`, group `My Sample` — three components, one unit each:
+
+```jsonc
+{
+  "Macros": {
+    "HCoreMacros": [ /* … */ ],
+    "FCoreMacros": [ /* … */ ],
+    "NCoreMacros": [ /* … */ ]
+  },
+  "LayerMapping": {
+    "Layer1": {
+      "searchdirectories": [ "Layer1/Sample/Core", "Layer1/Sample/Lib", "Layer1/Sample/Util" ],
+      "Sections": [
+        {
+          "SectionID": "Sample-Core",
+          "SectionName": "Sample Core",
+          "Units": [
+            {
+              "unit_id": "Sample-Core|Core",
+              "Filename": "Core.cpp",
+              "FilePath": "Layer1/Sample/Core/Core.cpp",
+              "CoreType": "",
+              "IsHeader": false,
+              "Testcases": [ "TC_IF_LAYER1_CORE_06_01", "TC_IF_LAYER1_CORE_06_02",
+                             "TC_IF_LAYER1_CORE_06_03", "TC_IF_LAYER1_CORE_06_04" ]
+            },
+            {
+              "unit_id": "Sample-Core|Core.h",
+              "Filename": "Core.h",
+              "FilePath": "Layer1/Sample/Core/Core.h",
+              "CoreType": "",
+              "IsHeader": true,
+              "Corresponding_cpp": "Core.cpp",
+              "Corresponding_cpp_path": "Layer1/Sample/Core/Core.cpp",
+              "Testcases": []
+            }
+          ]
+        },
+        { "SectionID": "Lib",  "SectionName": "Lib",  "Units": [ /* Lib.cpp,  Lib.h  */ ] },
+        { "SectionID": "Util", "SectionName": "Util", "Units": [ /* Util.cpp, Util.h */ ] }
+      ]
+    }
+  }
+}
+```
+
+Every value above except `Macros` and `CoreType` comes straight from the model — `searchdirectories`
+from the group's configured component paths, `SectionID`/`SectionName` from the component,
+`unit_id`/`Filename`/`FilePath` from the unit, and the `Corresponding_cpp` pair from the unit's path
+(`Foo.h` and `Foo.cpp` are one unit, so the sibling is already known).
+
+> **One file or two — unresolved.** The hierarchy ends `Testcases → [Testcase] → "refer section 4"`,
+> which reads as full case objects nested under each Unit. But §4.1 describes a spec file whose
+> `cases` is a flat top-level array. Above, `Testcases` holds **ids** referencing the separate spec
+> file; the alternative is to inline the case objects there and drop the separate file. This is the
+> first Open item to settle — it decides whether the export writes one artifact or two.
+
 ### What the export produces
 
 First and last case in full; the middle two follow the same shape.
@@ -291,7 +350,9 @@ Three things this makes concrete:
 - [ ] `CoreType` — what H/F/N core mean, and how a unit is classified.
 - [ ] Whether `Macros` (HCore/FCore/NCoreMacros) maps onto our per-layer macros config.
 - [ ] `format_version` to target — the guide is `v0.1`, the sample says `"1.0"`.
-- [ ] Whether the hierarchy and the cases go in one file or two.
+- [ ] **One file or two** — does `Units[].Testcases` hold full case objects, or ids referencing a
+      separate spec file? The hierarchy implies nesting, §4.1 implies a flat `cases` array. Settle
+      this first; it decides how many artifacts the export writes. See §3.
 - [ ] `id` scheme vs our `TC_<interfaceId>` — the sample reads `"TC-ROUTER-001"`. Per-path cases
       (REQ-UE-04) also need a suffix scheme, and dynamic-behaviour cases need ids distinct from the
       same function's own spec — still unsettled in SWE.4 itself.
