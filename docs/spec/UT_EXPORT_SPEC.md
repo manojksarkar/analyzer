@@ -105,8 +105,8 @@ Both SWE.4 spec kinds are unit-test specifications — the two sections of one
 | `review` | not derivable from code | **config** — author/reviewer keys |
 | `target.ClassName` / `.FunctionName` | split `spec.qualifiedName` on `::` | ready |
 | `preconditions` | `spec.precondition.globals` + each global's `value` (initial value, in the model) | ready |
-| `stubs` | `spec.precondition.mockFunctions` | **needs enrichment** — REQ-UE-03 |
-| `expected` | `spec.expected` — `returns[]`, `outParameters[]`, `globals[]` | ready; stub-param expectations need REQ-UE-03 |
+| `stubs` | `spec.precondition.mocks` — signature + declaring header | ready |
+| `expected` | `spec.expected` — `returns[]`, `outParameters[]`, `globals[]` | ready |
 | `inputs` | `spec.input.entries[]` — typed, with ranges | ranges only — REQ-UE-04 |
 
 Hierarchy file:
@@ -122,14 +122,31 @@ Hierarchy file:
 | `CoreType` | H/F/N core concept, matching `Macros` | **?** — needs definition |
 | `Macros` (H/F/NCoreMacros) | our per-layer macros config | **?** — confirm the split |
 
-### REQ-UE-03 — Stubs need full signatures
+### REQ-UE-03 — Stubs need full signatures — **implemented**
 
-`views/test_specs.py::_mock_functions` returns bare strings (`"FilReadPage()"`). A `stubs` entry
-replaces a dependency, and `expected` asserts on stub params — neither is possible without the
-callee's return type, parameter types and declaring header. All three are on the callee's model
-entry; the view simply does not project them.
+`_mock_functions` returns bare strings (`"FilReadPage()"`), which is all Table A needs. A `stubs`
+entry replaces a dependency and `expected` asserts on stub params — neither is possible without the
+callee's return type, parameter types and declaring header.
 
-**Verification:** every `stubs[]` entry carries a return type and a typed parameter list.
+`views/test_specs.py::_mock_signatures` projects them into `precondition.mocks`, **alongside**
+`mockFunctions` rather than replacing it — that list has six consumers across the exporter, the
+step transcription and the dynamic specs. Both derive from the same `mocked_ids`, so they cannot
+disagree about which callees are stubbed. `dynamic_specs.py` carries the same field.
+
+`declaredIn` resolves through `_unit_headers`: a unit is a path, so its header is the `.cpp`
+sibling, and the component's `headerFiles` decides the extension rather than assuming `.h`. When the
+component declares no matching header the field is `""` — an empty string beats a guessed path a
+generator would fail to open.
+
+```jsonc
+"mocks": [ { "functionId": "Lib|Lib|libAdd|int,int", "name": "libAdd",
+             "qualifiedName": "libAdd", "returnType": "int",
+             "parameters": [ { "name": "a", "type": "int" }, { "name": "b", "type": "int" } ],
+             "declaredIn": "Layer1/Sample/Lib/Lib.h" } ]
+```
+
+**Verification:** `tests/unit/test_test_specs_view.py` — `mocks` mirrors `mockFunctions` one-to-one,
+carries return type and typed parameters, and resolves `declaredIn` from the component.
 
 ### REQ-UE-04 — One `cases[]` object per test case, not per function
 
@@ -270,11 +287,15 @@ from the group's configured component paths, `SectionID`/`SectionName` from the 
 `unit_id`/`Filename`/`FilePath` from the unit, and the `Corresponding_cpp` pair from the unit's path
 (`Foo.h` and `Foo.cpp` are one unit, so the sibling is already known).
 
-> **One file or two — unresolved.** The hierarchy ends `Testcases → [Testcase] → "refer section 4"`,
-> which reads as full case objects nested under each Unit. But §4.1 describes a spec file whose
-> `cases` is a flat top-level array. Above, `Testcases` holds **ids** referencing the separate spec
-> file; the alternative is to inline the case objects there and drop the separate file. This is the
-> first Open item to settle — it decides whether the export writes one artifact or two.
+> **One file or two — unresolved, and deferrable.** The hierarchy ends
+> `Testcases → [Testcase] → "refer section 4"`, which reads as full case objects nested under each
+> Unit. But §4.1 describes a spec file whose `cases` is a flat top-level array. Above, `Testcases`
+> holds **ids** referencing the separate spec file; the alternative is to inline the case objects
+> and drop the separate file.
+>
+> This does not block derivation: the case objects are identical either way. Build `cases` as a
+> plain list and leave packaging to a thin writer, and the choice stays a few lines at the end.
+> It only becomes expensive if nesting is wired into the derivation.
 
 ### What the export produces
 
@@ -295,7 +316,7 @@ First and last case in full; the middle two follow the same shape.
       "preconditions": {},
       "stubs": [
         { "name": "libAdd", "returnType": "int",
-          "parameters": [ { "name": "x", "type": "int" }, { "name": "y", "type": "int" } ],
+          "parameters": [ { "name": "a", "type": "int" }, { "name": "b", "type": "int" } ],
           "declaredIn": "Layer1/Sample/Lib/Lib.h",
           "returns": 7 }
       ],
@@ -351,8 +372,8 @@ Three things this makes concrete:
 - [ ] Whether `Macros` (HCore/FCore/NCoreMacros) maps onto our per-layer macros config.
 - [ ] `format_version` to target — the guide is `v0.1`, the sample says `"1.0"`.
 - [ ] **One file or two** — does `Units[].Testcases` hold full case objects, or ids referencing a
-      separate spec file? The hierarchy implies nesting, §4.1 implies a flat `cases` array. Settle
-      this first; it decides how many artifacts the export writes. See §3.
+      separate spec file? The hierarchy implies nesting, §4.1 implies a flat `cases` array.
+      Deferrable: it is a packaging choice, not a derivation one. See §3.
 - [ ] `id` scheme vs our `TC_<interfaceId>` — the sample reads `"TC-ROUTER-001"`. Per-path cases
       (REQ-UE-04) also need a suffix scheme, and dynamic-behaviour cases need ids distinct from the
       same function's own spec — still unsettled in SWE.4 itself.

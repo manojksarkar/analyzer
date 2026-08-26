@@ -44,6 +44,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "a",
@@ -120,6 +121,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "a",
@@ -202,6 +204,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "v",
@@ -291,6 +294,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "a",
@@ -388,6 +392,25 @@
           "globals": [],
           "mockFunctions": [
             "utilCompute()"
+          ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilCompute|int,int",
+              "name": "utilCompute",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilCompute",
+              "returnType": "int"
+            }
           ],
           "parameters": [
             {
@@ -503,6 +526,55 @@
             "libMultiply()",
             "libNormalize()"
           ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libAbs|int",
+              "name": "libAbs",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libAbs",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libMultiply|int,int",
+              "name": "libMultiply",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libMultiply",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libNormalize|int,int",
+              "name": "libNormalize",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "max",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libNormalize",
+              "returnType": "int"
+            }
+          ],
           "parameters": [
             {
               "name": "v",
@@ -611,6 +683,25 @@
           "mockFunctions": [
             "libAdd()"
           ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libAdd|int,int",
+              "name": "libAdd",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libAdd",
+              "returnType": "int"
+            }
+          ],
           "parameters": [
             {
               "name": "a",
@@ -692,6 +783,7 @@
             }
           ],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "v",
@@ -772,6 +864,25 @@
           "globals": [],
           "mockFunctions": [
             "libNormalize()"
+          ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libNormalize|int,int",
+              "name": "libNormalize",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "max",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libNormalize",
+              "returnType": "int"
+            }
           ],
           "parameters": [
             {
@@ -883,6 +994,76 @@
             "utilCompute()",
             "utilScale()"
           ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libAdd|int,int",
+              "name": "libAdd",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libAdd",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libNormalize|int,int",
+              "name": "libNormalize",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "max",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libNormalize",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilCompute|int,int",
+              "name": "utilCompute",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilCompute",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilScale|int,int",
+              "name": "utilScale",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "factor",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilScale",
+              "returnType": "int"
+            }
+          ],
           "parameters": [
             {
               "name": "a",
@@ -965,6 +1146,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "limit",
@@ -1122,6 +1304,59 @@
             "libNormalize()",
             "utilCompute()"
           ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libAdd|int,int",
+              "name": "libAdd",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libAdd",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libNormalize|int,int",
+              "name": "libNormalize",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "max",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libNormalize",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilCompute|int,int",
+              "name": "utilCompute",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilCompute",
+              "returnType": "int"
+            }
+          ],
           "parameters": [
             {
               "name": "a",
@@ -1258,6 +1493,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "x",
@@ -1389,6 +1625,42 @@
             "libNormalize()",
             "utilScale()"
           ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libNormalize|int,int",
+              "name": "libNormalize",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "max",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libNormalize",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilScale|int,int",
+              "name": "utilScale",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "factor",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilScale",
+              "returnType": "int"
+            }
+          ],
           "parameters": [
             {
               "name": "v",
@@ -1475,6 +1747,25 @@
           "globals": [],
           "mockFunctions": [
             "libNormalize()"
+          ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libNormalize|int,int",
+              "name": "libNormalize",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "max",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libNormalize",
+              "returnType": "int"
+            }
           ],
           "parameters": [
             {
@@ -1624,6 +1915,89 @@
             "utilCompute()",
             "utilScale()"
           ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libAdd|int,int",
+              "name": "libAdd",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libAdd",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Lib/Lib.h",
+              "functionId": "Lib|Lib|libMultiply|int,int",
+              "name": "libMultiply",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "libMultiply",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilChain|int",
+              "name": "utilChain",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilChain",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilCompute|int,int",
+              "name": "utilCompute",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilCompute",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilScale|int,int",
+              "name": "utilScale",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "factor",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilScale",
+              "returnType": "int"
+            }
+          ],
           "parameters": [
             {
               "name": "a",
@@ -1719,6 +2093,7 @@
             }
           ],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": []
         },
         "qualifiedName": "coreGetCount",
@@ -1803,6 +2178,7 @@
             }
           ],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "a",
@@ -1885,6 +2261,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "v",
@@ -1973,6 +2350,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "v",
@@ -2062,6 +2440,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "a",
@@ -2143,6 +2522,7 @@
         "precondition": {
           "globals": [],
           "mockFunctions": [],
+          "mocks": [],
           "parameters": [
             {
               "name": "n",
@@ -2251,6 +2631,55 @@
             "utilAbs()",
             "utilCompute()",
             "utilScale()"
+          ],
+          "mocks": [
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilAbs|int",
+              "name": "utilAbs",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilAbs",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilCompute|int,int",
+              "name": "utilCompute",
+              "parameters": [
+                {
+                  "name": "a",
+                  "type": "int"
+                },
+                {
+                  "name": "b",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilCompute",
+              "returnType": "int"
+            },
+            {
+              "declaredIn": "Layer1/Sample/Util/Util.h",
+              "functionId": "Util|Util|utilScale|int,int",
+              "name": "utilScale",
+              "parameters": [
+                {
+                  "name": "v",
+                  "type": "int"
+                },
+                {
+                  "name": "factor",
+                  "type": "int"
+                }
+              ],
+              "qualifiedName": "utilScale",
+              "returnType": "int"
+            }
           ],
           "parameters": [
             {

@@ -429,3 +429,46 @@ def test_written_out_parameter_is_asserted_as_a_whole():
     assert [e["name"] for e in entries] == ["w"]
     assert entries[0]["kind"] == "outParameter"
     assert entries[0]["text"].startswith("Widget_t * w")
+
+
+# --- mock signatures (UT_EXPORT_SPEC REQ-UE-03) -----------------------------
+
+def test_mocks_mirror_mock_functions(model):
+    """Both lists come from the same `mocked_ids`, so they must never disagree
+    about which callees are stubbed -- only about how much detail they carry."""
+    pre = _specs(model)["pub"]["precondition"]
+    assert [m["name"] + "()" for m in pre["mocks"]] == pre["mockFunctions"]
+
+
+def test_mock_carries_the_signature_needed_to_write_a_stub(model):
+    """`other()` alone cannot be stubbed: a generator needs the return type to
+    declare and the parameter types to match."""
+    mocks = {m["name"]: m for m in _specs(model)["pub"]["precondition"]["mocks"]}
+    assert mocks["other"]["returnType"] == "short"
+    assert mocks["far"]["returnType"] == "long"
+
+
+def test_mock_parameters_are_typed(model):
+    units, functions, globals_ = model
+    functions["C|U|other"]["parameters"] = [{"name": "n", "type": "size_t"}]
+    mocks = {m["name"]: m for m in _specs((units, functions, globals_))
+             ["pub"]["precondition"]["mocks"]}
+    assert mocks["other"]["parameters"] == [{"name": "n", "type": "size_t"}]
+
+
+def test_declaring_header_comes_from_the_component(model):
+    """A stub must be includable. The unit is a path, so its header is the `.cpp`
+    sibling -- but the extension comes from the component, not a guess."""
+    units, functions, globals_ = model
+    units["C|O"]["path"] = "src/C/O"
+    components = {"C": {"headerFiles": ["src/C/O.hpp"]}}
+    r = _build_test_specs(units, functions, globals_, {}, components_data=components)
+    mocks = {m["name"]: m for m in
+             r["C|U"]["functions"][0]["precondition"]["mocks"]}
+    assert mocks["far"]["declaredIn"] == "src/C/O.hpp"
+
+
+def test_declaring_header_is_empty_when_the_component_declares_none(model):
+    """Better an empty string than a guessed path a generator would fail to open."""
+    mocks = {m["name"]: m for m in _specs(model)["pub"]["precondition"]["mocks"]}
+    assert mocks["far"]["declaredIn"] == ""

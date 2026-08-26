@@ -226,6 +226,61 @@ def _mock_functions(mocked_ids, functions_data):
     return sorted(names)
 
 
+def _unit_headers(units_data, components_data):
+    """`unit_key -> the header declaring this unit's functions`, or absent.
+
+    A unit is a path, so its header is the sibling of its `.cpp`. The component's
+    `headerFiles` is the authority on which extension that is -- deriving it from
+    the unit path alone would guess `.h` for a `.hpp` project.
+    """
+    headers = {}
+    for unit_key, unit_info in units_data.items():
+        path = unit_info.get("path") or ""
+        if not path or KEY_SEP not in unit_key:
+            continue
+        component = unit_key.split(KEY_SEP, 1)[0]
+        for header in (components_data.get(component, {}) or {}).get("headerFiles") or ():
+            if header.rsplit(".", 1)[0] == path:
+                headers[unit_key] = header
+                break
+    return headers
+
+
+def _mock_signatures(mocked_ids, functions_data, unit_of, unit_headers):
+    """The same stubbed callees as `_mock_functions`, with their real signatures.
+
+    `mockFunctions` carries the document's display strings (`name()`), which is all
+    Table A needs. Writing a stub needs more: the return type to declare, the
+    parameter types to match, and the header to include. All three sit on the
+    callee's own model entry -- the view simply never projected them.
+
+    Derived from the same `mocked_ids`, so the two lists can never disagree about
+    which callees are stubbed. See docs/spec/UT_EXPORT_SPEC.md REQ-UE-03.
+    """
+    mocks = []
+    for cid in mocked_ids:
+        callee = functions_data.get(cid)
+        if not callee:
+            continue
+        qn = callee.get("qualifiedName", "")
+        name = short_name(qn) or ""
+        if not name:
+            continue
+        mocks.append({
+            "functionId": cid,
+            "name": name,
+            "qualifiedName": qn,
+            "returnType": callee.get("returnType", ""),
+            "parameters": [{"name": p.get("name", ""), "type": p.get("type", "")}
+                           for p in callee.get("parameters") or ()],
+            "declaredIn": unit_headers.get(unit_of.get(cid, ""), ""),
+        })
+    # Same order as `mockFunctions`, which sorts by the displayed name. `mocked_ids`
+    # is a set, so without an explicit key the output would not be reproducible.
+    mocks.sort(key=lambda m: (m["name"], m["functionId"]))
+    return mocks
+
+
 def _bare_type(type_str):
     """`const MapEntry *` -> `MapEntry`, the form the data dictionary is keyed by."""
     t = (type_str or "").strip()
@@ -446,7 +501,7 @@ def _global_name(gid, g):
 
 
 def _build_spec(fid, func, unit_key, unit_name, functions_data,
-                global_variables_data, spec_ids, unit_of, dd):
+                global_variables_data, spec_ids, unit_of, dd, unit_headers=None):
     qn = func.get("qualifiedName", "")
     name = short_name(qn)
     params = func.get("parameters") or []
@@ -468,6 +523,10 @@ def _build_spec(fid, func, unit_key, unit_name, functions_data,
                             "text": _decl(g.get("type", ""), _global_name(gid, g))})
     precondition = {
         "mockFunctions": _mock_functions(mocked_ids, functions_data),
+        # The same callees with their signatures, for consumers that must WRITE the
+        # stub rather than name it. Table A reads `mockFunctions`; see _mock_signatures.
+        "mocks": _mock_signatures(mocked_ids, functions_data, unit_of,
+                                  unit_headers or {}),
         "parameters": [{"name": p.get("name", ""), "type": p.get("type", ""),
                         "text": _decl(p.get("type", ""), p.get("name", ""))}
                        for p in params],
@@ -539,8 +598,9 @@ def _build_spec(fid, func, unit_key, unit_name, functions_data,
 
 def _build_test_specs(units_data, functions_data, global_variables_data,
                       data_dictionary=None, *, allowed_components=None,
-                      mock_components=None):
+                      mock_components=None, components_data=None):
     dd = data_dictionary or {}
+    unit_headers = _unit_headers(units_data, components_data or {})
     # Mockability is scoped to the LAYER; which functions this document writes a
     # spec for is scoped to its components. See _spec_function_ids.
     spec_ids = _spec_function_ids(units_data, functions_data, mock_components)
@@ -562,7 +622,8 @@ def _build_test_specs(units_data, functions_data, global_variables_data,
             if not func:
                 continue
             specs.append(_build_spec(fid, func, unit_key, unit_name, functions_data,
-                                     global_variables_data, spec_ids, unit_of, dd))
+                                     global_variables_data, spec_ids, unit_of, dd,
+                                     unit_headers))
         if specs:
             result[unit_key] = {"name": unit_name, "functions": specs}
     result["unitNames"] = {k: unit_names[k] for k in result if k != "unitNames"}
@@ -591,6 +652,7 @@ def run(model, output_dir, model_dir, config):
             model.get("dataDictionary", {}),
             allowed_components=allowed_components,
             mock_components=_layer_components(config, allowed_components),
+            components_data=model.get("components", {}),
         )
     # Test Steps + the per-return Expected entries come from the flowchart
     # engine's CFG (Phase 3 runs `flowcharts` before `testSpecs` for swe4).

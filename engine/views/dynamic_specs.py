@@ -37,9 +37,11 @@ from .test_specs import (
     _is_out_parameter,
     _mock_functions,
     _mock_return_entries,
+    _mock_signatures,
     _mock_writeback_entries,
     _out_parameter_entries,
     _ranged,
+    _unit_headers,
 )
 
 # Top-level keys in test_specs.json that are not unit entries. The document
@@ -226,7 +228,8 @@ def _cross_unit_calls(executing, unit_key, unit_of, unit_names, functions_data):
 
 
 def _build_dynamic_spec(fid, func, caller_fid, unit_key, unit_name, functions_data,
-                        global_variables_data, unit_of, unit_names, dd):
+                        global_variables_data, unit_of, unit_names, dd,
+                        unit_headers=None):
     """One Table A + Table B for one interaction.
 
     Precondition and Input are the function-spec builders, unchanged, fed the
@@ -253,6 +256,8 @@ def _build_dynamic_spec(fid, func, caller_fid, unit_key, unit_name, functions_da
                             "text": _decl(g.get("type", ""), gname)})
     precondition = {
         "mockFunctions": _mock_functions(mocked_ids, functions_data),
+        "mocks": _mock_signatures(mocked_ids, functions_data, unit_of,
+                                  unit_headers or {}),
         "parameters": [{"name": p.get("name", ""), "type": p.get("type", ""),
                         "text": _decl(p.get("type", ""), p.get("name", ""))}
                        for p in params],
@@ -340,6 +345,7 @@ def build(units_data, functions_data, global_variables_data, components_data,
                for fid in (u.get("functionIds") or [])}
     unit_names = {uk: u.get("name", uk.split(KEY_SEP)[-1] if KEY_SEP in uk else uk)
                   for uk, u in units_data.items()}
+    unit_headers = _unit_headers(units_data, components_data or {})
 
     result = {}
     for fid, caller_fid in select_targets(units_data, functions_data, components_data,
@@ -350,7 +356,8 @@ def build(units_data, functions_data, global_variables_data, components_data,
             continue
         spec = _build_dynamic_spec(fid, func, caller_fid, unit_key,
                                    unit_names.get(unit_key, unit_key), functions_data,
-                                   global_variables_data, unit_of, unit_names, dd)
+                                   global_variables_data, unit_of, unit_names, dd,
+                                   unit_headers)
         result.setdefault(spec["component"], []).append(spec)
     return result
 
