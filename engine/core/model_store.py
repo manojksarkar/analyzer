@@ -26,7 +26,7 @@ import os
 import sys
 from typing import Any, Dict, Optional
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, select
 
 from core.db_util import insert_chunked, insert_ignore
 
@@ -171,9 +171,15 @@ def load_functions(conn, version_id) -> Dict[str, dict]:
         fn.update(r.payload or {})
         funcs[r.entity_key] = fn
     me = s.model_edges
+    # By edge_id, which is insertion order, which is the order the parser discovered the
+    # calls -- i.e. source order within the function body. poc-4 kept that order in
+    # functions.json and the document shows it: utilBlend's Requirements cell lists
+    # utilHalve before utilClamp because that is how the body reads. Unordered, the
+    # database returned them either way round.
     for r in conn.execute(select(me.c.kind, me.c.src_key, me.c.dst_key, me.c.mode)
                           .where((me.c.version_id == version_id)
-                                 & me.c.kind.in_(["call", "global_access"]))):
+                                 & me.c.kind.in_(["call", "global_access"]))
+                          .order_by(me.c.edge_id)):
         if r.kind == "call":
             if r.src_key in funcs:
                 funcs[r.src_key]["callsIds"].append(r.dst_key)
@@ -278,7 +284,8 @@ def load_edges(conn, version_id) -> Dict[str, dict]:
     mu: Dict[str, list] = {}
     for r in conn.execute(select(me.c.kind, me.c.src_key, me.c.dst_key)
                           .where((me.c.version_id == version_id)
-                                 & me.c.kind.in_(["type_use", "macro_use"]))):
+                                 & me.c.kind.in_(["type_use", "macro_use"]))
+                          .order_by(me.c.edge_id)):        # same reason as above
         (tu if r.kind == "type_use" else mu).setdefault(r.dst_key, []).append(r.src_key)
     return {"typeUsers": tu, "macroUsers": mu}
 
@@ -509,6 +516,8 @@ def load_units(conn, version_id) -> Dict[str, dict]:
     from collections import defaultdict
     caller, callee = defaultdict(set), defaultdict(set)
     me = s.model_edges
+    # order-independent: these accumulate into sets and are sorted() below, so no ORDER BY
+    # -- unlike the model reads, where row order reaches the document.
     for r in conn.execute(select(me.c.src_key, me.c.dst_key)
                           .where((me.c.version_id == version_id) & (me.c.kind == "call"))):
         us, ud = _unit_of(r.src_key), _unit_of(r.dst_key)
@@ -874,5 +883,14 @@ def _entity_rows(conn, version_id, kind):
                 ev.c.is_visible, cb.c.payload)
          .select_from(ev.join(ent, ent.c.entity_id == ev.c.entity_id)
                       .outerjoin(cb, cb.c.content_hash == ev.c.content_hash))
-         .where((ev.c.version_id == version_id) & ent.c.kind.in_(kinds)))
+         .where((ev.c.version_id == version_id) & ent.c.kind.in_(kinds))
+         # ORDER MATTERS, and without this there was none: the database returned rows in
+         # whatever order it liked, while poc-4 read functions.json and got the order the
+         # parser produced -- file, then position in the file. Views that iterate the
+         # model without sorting inherit that order, so two functions could swap places
+         # in a document between runs, or against the file-backed build. coalesce rather
+         # than NULLS LAST so SQLite and Postgres agree on where the unlocated entities
+         # (file-scope macros) go.
+         .order_by(func.coalesce(ev.c.file, ""), func.coalesce(ev.c.line, 0),
+                   ent.c.entity_key))
     return conn.execute(q)
