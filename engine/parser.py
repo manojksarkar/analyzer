@@ -348,10 +348,29 @@ if _macro_sources:
         _macro_defs = _merge_macro_defs(_macro_defs, _defs)
     _MACRO_ARGS_BY_SCOPE = _scoped_macro_args(_macro_defs)
 
-_macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
+# MODEL_DIR, not <repo>/model. Two things were wrong with the hardcode, and the
+# quieter one was the worse:
+#
+#   * Phase 3 READS this file from the run's model dir (views/flowcharts.py, via
+#     model_dir_abs), so writing it to the repo root meant the flowchart engine never
+#     found it and built every CFG WITHOUT the -D defines Phase 1 parsed with. Silent:
+#     a version's model dir held only clang_include_paths.json and nothing complained.
+#   * <repo>/model is not tracked by git, and this write does not create it, so a fresh
+#     clone died here at import with FileNotFoundError. Existing working copies still
+#     had an empty model/ left over from file mode, which is why nobody hit it.
+#
+# run.py:582 removed the identical hardcode for clang_include_paths.json, for the
+# third reason: it is shared state, and two concurrent jobs with different layer
+# configs overwrite each other's defines. This one was left behind.
+#
+# MODEL_DIR is safe to use here: --model-root is applied at the top of this module
+# (apply_cli_run_context) BEFORE paths() is snapshotted, which is why the sibling read
+# of clang_include_paths.json a hundred lines up already works.
+_macros_json = os.path.join(MODEL_DIR, "clang_macros.json")
 if _MACRO_ARGS_BY_SCOPE or os.path.isfile(_macros_json):
     # Written even when empty: otherwise a previous run's file survives and
     # Phase 3 keeps defining macros this parse did not use.
+    os.makedirs(MODEL_DIR, exist_ok=True)
     with open(_macros_json, "w", encoding="utf-8") as _mf:
         json.dump(_MACRO_ARGS_BY_SCOPE, _mf, indent=2)
 
