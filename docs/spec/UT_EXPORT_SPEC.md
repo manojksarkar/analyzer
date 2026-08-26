@@ -167,10 +167,28 @@ What each case then needs beyond the split:
   `testSteps[].text` (*"Check whether sample < 0."*). The CFG has the structure; the view flattens
   it. Without it neither side can solve for values.
 
-Interim: one case per spec, ids unsuffixed. Target: one case per path.
+**Implemented** in `views/ut_export.py` → `output/<group>/ut_export.json`. The split is done; the
+values are not. Each input carries its declared range and `"value": null`, and `expected.return`
+stays the source expression (`"libAdd()"`, not `7`) — resolving it is the *same* step as choosing the
+inputs, so neither lands before path conditions do.
 
-**Verification:** case count equals the number of distinct paths, and every case's `expected.return`
-matches the return at its path's exit step.
+Three consequences of the union-over-paths mock list, worth knowing:
+
+- **`expected` names no called mocks.** The spec's mock list covers every path, so on any one path
+  most of it did not run. Asserting it would fail three times out of four on a four-way branch.
+- **`stubs` is not narrowed** to the callee a path reaches. Over-listing is harmless — an unused
+  stub is registered and never called — where over-asserting is not.
+- Which mock a path reaches *is* knowable: the transcription writes "expect mock function X" into a
+  step. But only as prose, so it waits on the same structural work as the predicates.
+
+**Every case id is `<specId>_<NN>`, uniformly** — including a spec with no return, which still gets
+`_01`. Interface ids already end in `_NN`, so a bare id would be ambiguous:
+`TC_IF_LAYER1_CORE_02` could be spec `02` with one path, or spec `CORE` path `02`. The suffix scheme
+itself is still provisional.
+
+**Verification:** `tools/ut_export_audit.py` cross-checks the export against the `test_specs.json`
+beside it — case count equals the path count, every `atStep` is a real step, and every case returns
+what the spec returns at that step. `tests/unit/test_ut_export.py` covers the rules directly.
 
 ### REQ-UE-05 — `environment` is configuration, not derivation
 

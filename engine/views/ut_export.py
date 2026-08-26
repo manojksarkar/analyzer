@@ -123,7 +123,11 @@ def _cases_for(spec, dd, review):
     }
     returns = (spec.get("expected") or {}).get("returns") or []
     if not returns:
-        case = {"id": base_id, "name": _case_name(spec.get("name", ""), None, "")}
+        # Suffixed like any other case. Interface ids already end in `_NN`, so a
+        # bare id here would be indistinguishable from a path index -- and every
+        # id then answers "which path?" the same way.
+        case = {"id": f"{base_id}_01",
+                "name": _case_name(spec.get("name", ""), None, "")}
         case.update(shared)
         case["expected"] = {"return": None}
         return [case]

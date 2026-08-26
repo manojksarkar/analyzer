@@ -57,8 +57,15 @@ def test_a_spec_with_no_return_still_yields_one_case():
     would leave the function untested rather than trivially tested."""
     cases = _cases(expected={"returns": []})
     assert len(cases) == 1
-    assert cases[0]["id"] == "TC_IF_01"
     assert cases[0]["expected"]["return"] is None
+
+
+def test_every_case_id_carries_a_path_suffix():
+    """Interface ids already end in `_NN`, so a bare id on a no-return spec is
+    indistinguishable from a path index: `TC_IF_LAYER1_CORE_02` could be spec 02
+    with one path, or spec CORE path 02. Suffixing uniformly removes the guess."""
+    assert _cases(expected={"returns": []})[0]["id"] == "TC_IF_01_01"
+    assert [c["id"] for c in _cases()] == ["TC_IF_01_01", "TC_IF_01_02"]
 
 
 def test_expected_asserts_no_called_mocks():
