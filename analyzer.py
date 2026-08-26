@@ -182,9 +182,19 @@ def cmd_generate(a) -> int:
         msg = str(exc)
         print(f"\ngit could not fetch that commit:\n  {msg}", file=sys.stderr)
         if "Remote branch" in msg and "not found" in msg:
-            print(f"\n  The branch {branch!r} is not in that repository. Pass the real "
-                  f"one with --branch,\n  or re-onboard so it is recorded as the "
-                  f"project's default.", file=sys.stderr)
+            # Say WHICH sense of "not there": for a local source the branch is usually
+            # present as a remote-tracking ref and `git branch -a` shows it, so "not in
+            # that repository" reads as plainly wrong and sends people hunting for a
+            # typo that does not exist.
+            print(f"\n  git resolves --branch against the source's LOCAL branches only "
+                  f"(refs/heads).\n  {branch!r} may still be there as a remote-tracking "
+                  f"ref -- `git branch -a` shows both. Check which:\n\n"
+                  f"      git -C <source> branch --format=%(refname:short)   # local\n"
+                  f"      git -C <source> branch -r                          # tracking\n\n"
+                  f"  If it shows only in the second, create it locally there:\n"
+                  f"      git -C <source> branch {branch} origin/{branch}\n"
+                  f"  or pass a branch that is local. Re-onboard to change the recorded "
+                  f"default.", file=sys.stderr)
         return 2
 
     print(f"\nversion {m['versionId']} ({m['status']}): commit {m['commit'][:10]}, "

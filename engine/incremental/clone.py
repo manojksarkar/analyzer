@@ -63,16 +63,29 @@ def shallow_clone(repo_url: str, dest_dir: str, *, ref: Optional[str] = None,
     because they parse the source and need the blobs."""
     os.makedirs(os.path.dirname(dest_dir) or ".", exist_ok=True)
     auth = _auth_url(repo_url, username, token)
-    args = ["clone", "--depth", str(max(1, int(depth)))]
+    # A plain local directory is not a shallow-capable transport: git ignores --depth
+    # ("--depth is ignored in local clones") and copies the whole object store anyway.
+    # --branch is worse than useless there -- it resolves ONLY against the source's
+    # refs/heads, so a branch the caller can see in `git branch -a`, but which the
+    # source holds as a remote-tracking ref, fails the clone outright:
+    #     fatal: Remote branch <name> not found in upstream origin
+    # The branch is only ever an optimisation to land a SHALLOW clone near the commit;
+    # the caller checks the commit out explicitly straight afterwards. A local clone
+    # brings every object with it, so that checkout succeeds whatever ref the commit
+    # sits on -- including one reachable from no local branch at all.
+    _local_path = bool(repo_url) and os.path.isdir(repo_url)
+    args = ["clone"]
+    if not _local_path:
+        args += ["--depth", str(max(1, int(depth)))]
     if blobless:
         args += ["--filter=blob:none", "--no-checkout"]
-    if ref:
+    if ref and not _local_path:
         args += ["--branch", ref]
     args += [auth, dest_dir]
     proc = _run(args)
     if proc.returncode != 0:
         msg = (proc.stderr or "").strip().replace(auth, _clean_url(repo_url))
-        raise GitError(f"clone --depth failed (exit {proc.returncode}): {msg}")
+        raise GitError(f"clone failed (exit {proc.returncode}): {msg}")
     _check(_run(["-C", dest_dir, "remote", "set-url", "origin", _clean_url(repo_url)]),
            "remote set-url")
 
