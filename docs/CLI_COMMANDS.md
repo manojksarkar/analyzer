@@ -233,7 +233,7 @@ python analyzer.py onboard --project-id myproj --name "My Project" --source D:\c
 **A local path must be a git repository — for every run, not just incremental ones.** A plain
 directory fails at the clone with `fatal: Could not read from remote repository`, because a
 commit is not optional anywhere: the version's directory is named after it
-(`workspaces/<pid>/<commit[:16]>/`), the checkout is made by `git clone --branch <b>` and
+(`workspaces/<pid>/<commit[:16]>/`), the checkout is made by `git clone` then
 `git checkout <sha>`, and the baseline search compares commits. There is no code path that
 parses a directory without one.
 
@@ -250,13 +250,40 @@ git -C D:\code\my-cpp commit -m "initial"
 ```
 
 Give `onboard` the real branch with `--branch`; it is recorded on the project and every later
-`generate` uses it. If you skip it, the default is `main`, and on a repo whose branch is
-something else the run stops at the clone with `Remote branch main not found` — the message
-names the branch and tells you to pass `--branch` or re-onboard.
+`generate` uses it when you do not pass one.
+
+**Re-onboarding an existing project honours `--source` and `--branch`, and says so.** They used
+to be dropped: an existing project row meant "nothing to do", so the row kept whatever the FIRST
+onboard recorded while the command exited 0. Since `generate` clones from the recorded
+`repo_url`, the run then fetched a repo you never named, and the failure landed at the clone
+blaming the wrong thing — `Remote branch <name> not found in upstream origin`, naming a branch
+that is present in the source you just passed and absent from the stale one. It now updates the
+row and prints the correction:
+
+```
+project  : myproj (already exists)
+           repo_url: 'https://old/thing' -> 'D:\code\my-cpp'  (UPDATED from the command line)
+```
+
+Only when you actually pass them, so a plain re-onboard for a new version keeps what is stored.
+To see what a project currently points at, `python analyzer.py status`.
+
+**A local source never fails on the branch.** `git clone --branch` resolves a name against the
+source's LOCAL branches only (`refs/heads`), so a branch your working copy holds as a
+remote-tracking ref — visible in `git branch -a`, and the usual state for anything you have not
+checked out — would fail the clone outright. A local path is not a shallow transport either:
+git ignores `--depth` and copies the whole object store regardless. So for a local path neither
+flag is passed; the commit is checked out explicitly straight afterwards, and it resolves
+whatever ref it sits on. Remote URLs still clone shallow on the named branch, which is what
+makes them quick.
+
+For a REMOTE url, a wrong `--branch` still stops the run at the clone. The message says which
+sense of "not found" and how to tell the two apart.
 
 The source is **cloned**, not read in place, so uncommitted edits are invisible until you commit
-them. `warning: --depth is ignored in local clones` is normal: git never shallow-clones a local
-path, and the full history is what the baseline search wants anyway.
+them. A local clone copies the full history, which is what the baseline search wants anyway.
+(`warning: --depth is ignored in local clones` used to appear here; `--depth` is no longer
+passed for a local path, so it does not.)
 
 ### `generate`
 
@@ -780,8 +807,9 @@ live *outside* your tree, like a third-party SDK.
 | `<path> is not valid JSON` | The message prints the offending line and its neighbours. Comments and trailing commas are accepted, so it is usually a missing comma between entries or an unclosed brace. |
 | `bad --scope '...'` | The message lists the four accepted forms. |
 | `Unknown group(s) in the scope: X` | X is probably a **component**, not a group — the message says so and prints the corrected `--scope`. |
-| `clone --depth failed` | `--source` is wrong or unreachable, or the sha is not on that branch. |
-| `clone --depth failed: ... Filename too long` | Windows path limit. `git config --global core.longpaths true`, or move the workspace somewhere shorter. |
+| `clone failed` | `--source` is wrong or unreachable, or the sha is not on that branch. |
+| `clone failed: ... Remote branch <name> not found in upstream origin` | Two different things wear this message. **The source may not be the one you passed** — a project that already existed kept its recorded `repo_url` until this was fixed, so check `python analyzer.py status` and re-onboard with `--source`. Otherwise, for a REMOTE url, `--branch` names a branch that repo does not have; the message prints how to tell a local branch from a remote-tracking one. Local paths no longer fail this way at all. |
+| `clone failed: ... Filename too long` | Windows path limit. `git config --global core.longpaths true`, or move the workspace somewhere shorter. |
 | `narrowed parse unavailable: baseline has no parser-level snapshot` | The baseline predates the feature. It falls back to a full parse; the next run narrows. |
 | `LLM CALLS : accounting unavailable` | Run `python analyzer.py setup` — a migration is missing. |
 | `run metadata is empty` | Phase 1 stored nothing; the flowchart engine will not resolve source files. |
