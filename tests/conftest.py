@@ -89,7 +89,9 @@ def pytest_collection_finish(session):
             PROJECT_ROOT + os.pathsep + existing_pypath if existing_pypath else PROJECT_ROOT
         )
 
-    cmd = [sys.executable, os.path.join(PROJECT_ROOT, "engine", "run.py"), SAMPLE_PROJECT, "--clean", "--selected-group", group]
+    # --doc-type all: SWE.3 *and* SWE.4. Without it the run defaults to swe3 and
+    # test_specs.json is never written, so the SWE.4 view has no e2e coverage.
+    cmd = [sys.executable, os.path.join(PROJECT_ROOT, "engine", "run.py"), SAMPLE_PROJECT, "--clean", "--selected-group", group, "--doc-type", "all"]
 
     out.write(f"  Command: {' '.join(cmd)}\n")
     out.flush()
