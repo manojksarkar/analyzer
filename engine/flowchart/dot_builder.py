@@ -153,7 +153,12 @@ def _analyze_loops(cfg: ControlFlowGraph) -> _LoopLayout:
     seen: Set[Tuple[str, str]] = set()
     for head, exit_targets in exits_by_head.items():
         body = body_by_head.get(head, set())
-        for tail in back_sources:
+        # sorted: back_sources is a set, and iterating it raw made the invisible
+        # push-down edges come out in a different order on every process -- the DOT,
+        # and so the stored flowchart JSON, was not reproducible run to run. Layout is
+        # unaffected (Graphviz reads them as constraints, not as a sequence). Shared
+        # with poc-4, which has the identical line; not something the migration caused.
+        for tail in sorted(back_sources):
             if tail not in body:
                 continue
             for exit_node in exit_targets:

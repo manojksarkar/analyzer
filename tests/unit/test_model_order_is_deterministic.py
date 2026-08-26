@@ -85,3 +85,33 @@ def test_no_unordered_model_edge_query_remains():
         preceding = src[max(0, m.start() - 400):m.start()]
         assert "order-independent:" in preceding, (
             "an unordered model_edges query with no justification:\n" + chunk[:200])
+
+
+def test_units_come_back_in_path_order():
+    """poc-4 writes units.json in the order the parser walked the files, which is path
+    order, and the interface-tables view iterates units as it finds them. Unordered, the
+    sections of interface_tables.json came out shuffled against the file-backed build."""
+    body = _fn_body("load_units")
+    head = body.split("functionIds", 1)[0]
+    assert ".order_by(" in head
+    assert "model_units.c.path" in head
+    assert "model_units.c.unit_key" in head     # tiebreak
+
+
+def test_a_units_function_list_follows_the_source():
+    """The entities that fill functionIds/globalVariableIds are read in the same order as
+    the model itself: file, then line."""
+    body = _fn_body("load_units")
+    tail = body.split("functionIds / globalVariableIds", 1)[1]
+    assert "ev.c.file" in tail and "ev.c.line" in tail
+
+
+def test_invisible_layout_edges_are_emitted_in_a_stable_order():
+    """back_sources is a set, so iterating it raw gave a different DOT -- and a different
+    stored flowchart JSON -- on every process, because string hashing is randomised per
+    run. Not a migration defect: poc-4 has the identical line and is equally unstable.
+    Layout is unaffected; Graphviz reads these as constraints, not as a sequence."""
+    with open(os.path.join(_ROOT, "engine", "flowchart", "dot_builder.py"),
+              encoding="utf-8") as fh:
+        src = fh.read()
+    assert "for tail in sorted(back_sources):" in src

@@ -496,7 +496,13 @@ def _unit_of(fid: str) -> Optional[str]:
 
 def load_units(conn, version_id) -> Dict[str, dict]:
     units: Dict[str, dict] = {}
-    for r in conn.execute(select(s.model_units).where(s.model_units.c.version_id == version_id)):
+    # By path, then unit_key: poc-4 writes units.json in the order the parser walked the
+    # files, which is path order, and the interface-tables view iterates units as it finds
+    # them -- so an unordered read reshuffled the sections of interface_tables.json.
+    for r in conn.execute(select(s.model_units)
+                          .where(s.model_units.c.version_id == version_id)
+                          .order_by(func.coalesce(s.model_units.c.path, ""),
+                                    s.model_units.c.unit_key)):
         units[r.unit_key] = {"name": r.name, "path": r.path, "fileName": r.file_name,
                              "functionIds": [], "globalVariableIds": [],
                              "callerUnits": [], "calleesUnits": [],
@@ -505,7 +511,11 @@ def load_units(conn, version_id) -> Dict[str, dict]:
     ev, ent = s.entity_versions, s.entities
     for r in conn.execute(select(ent.c.entity_key, ent.c.kind, ev.c.component, ev.c.unit)
                           .select_from(ev.join(ent, ent.c.entity_id == ev.c.entity_id))
-                          .where(ev.c.version_id == version_id)):
+                          .where(ev.c.version_id == version_id)
+                          # file, then line -- the same order _entity_rows uses, so a
+                          # unit lists its functions the way the source declares them.
+                          .order_by(func.coalesce(ev.c.file, ""),
+                                    func.coalesce(ev.c.line, 0), ent.c.entity_key)):
         uk = f"{r.component}|{r.unit}"
         if uk in units:
             if r.kind == "function":

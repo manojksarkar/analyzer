@@ -366,10 +366,21 @@
 > project's display name. Each side's `output/` is collected whole (DOCX text and tables, .mmd,
 > .json, PNG names) with timestamps, absolute paths and shas scrubbed, then compared.
 >
-> The `group:My Sample` scenario is verified MATCH — 84 artifacts, 3 documents, every block
-> equal. The other six (`group:Support`, `group:Full`, `layer:Layer1`, `component:Lib`,
-> `component:Util`, `project`) were still running when this was written; anything they turn up
-> belongs below this paragraph.
+> **All seven scenarios MATCH**, up to and including `project`: 777 artifacts, 26 documents,
+> every block equal. The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
+> detached poc-4 worktree with `--poc4`, and junction node_modules into that worktree so both
+> sides render mermaid identically.
+>
+> Three things must be equalised or every scenario "differs" for no reason, and all three are
+> written into the tool's docstring: the CONFIG (each branch spells it differently — poc-4 reads
+> `engine/config/config.json`, this branch takes `--config`), `--project-name` (poc-4 defaults it
+> to the checkout directory's basename, this branch to the project's display name), and the rule
+> that `--component-per-docx` cannot be combined with `--selected-component` — `run.py` refuses,
+> and `per_component_docx_args` returns `[]` for a component scope. Getting that last one wrong
+> is what failed both component scenarios on the first sweep; it was the harness, not the product.
+>
+> A poc-4 Phase 2 crash on the first sweep did NOT reproduce and was contention with a pytest run
+> started alongside it — worth recording because it looked like a real failure for a while.
 >
 > That first scenario found ONE defect, and it is a real one: **the database returned the model
 > in no particular order.** Of 84 artifacts and three documents, one block differed — `utilBlend`'s Requirements
@@ -387,7 +398,27 @@
 > `sorted()` before use. It says so in an `# order-independent:` comment, and the guard test in
 > `tests/unit/test_model_order_is_deterministic.py` accepts that justification rather than its
 > absence — opting out is a claim you have to write down. That guard is what found the third
-> query in the first place, after I had already fixed the two I knew about.)
+> query in the first place, after I had already fixed the two I knew about.
+>
+> **The sweep then found the rest of the same family.** `load_units` read `model_units` with no
+> ORDER BY, so the unit sections of `interface_tables.json` came out shuffled; poc-4 writes
+> units.json in PATH order (the order the parser walks the files) and `model_units` has a `path`
+> column, so that is now reproduced exactly, with `unit_key` as tiebreak. The entity join that
+> fills `functionIds`/`globalVariableIds` was unordered too — now file, then line, like
+> `_entity_rows`.
+>
+> **One difference was NOT ours, and saying so mattered.** `Iface/flowcharts/Flowcharts.json`
+> differed in 2 of 25 flowcharts, and only in the order of `style=invis` push-down edges — the
+> DOT is line-identical when sorted. `dot_builder.py` builds `back_sources` as a SET and iterates
+> it raw, and lines 140/156 are byte-identical on both branches, so the order changes per PROCESS
+> (string hashing is randomised per run) rather than per branch: two poc-4 runs disagree with each
+> other the same way. Demonstrated with PYTHONHASHSEED 1..6 flipping `{'N6','N7'}`. Pre-existing,
+> shared, not caused by the migration — fixed here anyway with `sorted()`, because a flowchart
+> JSON that changes every run is worthless for diffing and for reuse hashing. To get an exact
+> comparison the same one-line sort was applied to the poc-4 WORKTREE COPY, local only and
+> labelled as such; patching the reference to make it agree is normally how a real defect gets
+> hidden, and it was justified here only because the difference had already been proven to be
+> process-level set iteration and nothing semantic.)
 
 > Updated: 2026-08-25 (**re-derive without re-parsing; unit narrowing made to work** — branch
 > `integration/poc-4-db`.
