@@ -367,7 +367,18 @@
 > .json, PNG names) with timestamps, absolute paths and shas scrubbed, then compared.
 >
 > **All seven scenarios MATCH**, up to and including `project`: 777 artifacts, 26 documents,
-> every block equal. The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
+> every block equal.
+>
+> **What that sweep does NOT cover — behaviour diagrams.** The config turns `behaviourDiagram`
+> on and the view runs, but SampleCppProject produces ZERO diagrams from it: every component's
+> `_behaviour_pngs.json` comes out as `{"_docxRows": {}}` on BOTH branches. So the sweep
+> exercised the view's invocation and not its output, and "every view on" must not be read as
+> "every view verified". The gate is the default `skip_within_unit` filter mode, which needs the
+> target's FORWARD call chain to span more than one unit as well as an external caller; a
+> purpose-built three-component fixture (Alpha -> Beta -> Gamma, cross-unit call edges confirmed
+> present in the model) still produced zero on both branches, so the real gate is narrower than
+> that and is not yet pinned down. Anything about behaviour-diagram embedding in the DOCX is
+> therefore UNVERIFIED by this work, in either direction. The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
 > detached poc-4 worktree with `--poc4`, and junction node_modules into that worktree so both
 > sides render mermaid identically.
 >
