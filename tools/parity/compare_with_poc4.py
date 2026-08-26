@@ -55,6 +55,12 @@ POC4_ROOT = os.environ.get("POC4_WORKTREE") or os.path.join(
 SCRATCH = os.path.join(tempfile.gettempdir(), "parity-e2e")
 REPO = os.path.join(SCRATCH, "repo")
 PROJECT_NAME = "SampleCppProject"
+# Which C++ tree to compare with. The in-repo sample produces ZERO behaviour diagrams --
+# the selector needs a public function with an external caller whose forward chain spans
+# two units of its own component -- so point --sample at a tree that has one when you want
+# that view covered.
+SAMPLE_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "SampleCppProject")
 PY = sys.executable
 
 # name -> (poc-4 run.py args, --scope for analyzer.py)
@@ -66,6 +72,15 @@ SCENARIOS = {
     "component-lib":    (["--selected-component", "Lib"],    "component:Lib"),
     "component-util":   (["--selected-component", "Util"],   "component:Util"),
     "project":          ([],                                  "project"),
+    # Behaviour diagrams live in the Signal component of the richer sample tree
+    # (Cross|Hub calls Signal|SignalDriver::acquireAndNormalize).
+    "group-signal":     (["--selected-group", "Signal"],      "group:Signal"),
+    # ONE document spanning two components, which is the shape that used to lose
+    # behaviour-diagram rows: the caller sits in a sibling component, external to the
+    # generator and (before the fix) internal to the view.
+    "components-cross-signal": (["--selected-component", "Cross",
+                                 "--selected-component", "Signal"],
+                                "component:Cross,Signal"),
 }
 
 
@@ -94,7 +109,7 @@ def make_repo():
     """SampleCppProject as its own git repo -- a version is identified by a commit."""
     rmtree(REPO)
     os.makedirs(SCRATCH, exist_ok=True)
-    shutil.copytree(os.path.join(DB_ROOT, "SampleCppProject"), REPO)
+    shutil.copytree(SAMPLE_SRC, REPO)
     q = dict(check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["git", "-C", REPO, "init", "-q"], **q)
     subprocess.run(["git", "-C", REPO, "symbolic-ref", "HEAD", "refs/heads/main"], **q)
@@ -279,14 +294,17 @@ def compare(name, a, b):
 
 
 def main():
-    global POC4_ROOT
+    global POC4_ROOT, SAMPLE_SRC
     ap = argparse.ArgumentParser()
     ap.add_argument("scenarios", nargs="*", default=None,
                     help="which to run (default: all): " + ", ".join(SCENARIOS))
     ap.add_argument("--poc4", help="path to the poc-4 worktree (default: %(default)s)",
                     default=POC4_ROOT)
+    ap.add_argument("--sample", help="C++ tree to compare with (default: %(default)s)",
+                    default=SAMPLE_SRC)
     a = ap.parse_args()
     POC4_ROOT = a.poc4
+    SAMPLE_SRC = a.sample
     if not os.path.isdir(POC4_ROOT):
         print("no poc-4 worktree at %s.\n  Make one with:\n    git worktree add --detach %s origin/poc-4" % (POC4_ROOT, POC4_ROOT),
               file=sys.stderr)
