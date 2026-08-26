@@ -176,7 +176,34 @@ def main(argv=None) -> int:
         existing = cx.execute(sa.select(s.projects.c.id)
                               .where(s.projects.c.id == pid)).first()
         if existing:
-            print(f"project  : {pid} (already exists)")
+            # An existing row used to mean "nothing to do", which quietly dropped an
+            # explicitly passed --source / --branch: the row kept whatever the FIRST
+            # onboard recorded, and `generate` then cloned from a repo the caller never
+            # named. The failure surfaces far away and blames the wrong thing --
+            #     fatal: Remote branch <name> not found in upstream origin
+            # -- because that branch is missing from the OLD source, not from the one on
+            # the command line. Same trap the config guard below exists for.
+            #
+            # These are pointers the caller just supplied, not hand-editable content, so
+            # updating is what they asked for. Only when explicitly passed, so the plain
+            # re-onboard-for-a-new-version case still keeps what is stored, and only when
+            # different, so the common case stays quiet.
+            cur = cx.execute(sa.select(s.projects.c.repo_url, s.projects.c.default_branch)
+                             .where(s.projects.c.id == pid)).first()
+            changes = {}
+            if args.repo_url and args.repo_url != (cur.repo_url or ""):
+                changes["repo_url"] = args.repo_url
+            if args.branch and args.branch != (cur.default_branch or ""):
+                changes["default_branch"] = args.branch
+            if changes:
+                cx.execute(sa.update(s.projects)
+                           .where(s.projects.c.id == pid).values(**changes))
+                print(f"project  : {pid} (already exists)")
+                for k, v in changes.items():
+                    was = cur.repo_url if k == "repo_url" else cur.default_branch
+                    print(f"           {k}: {was!r} -> {v!r}  (UPDATED from the command line)")
+            else:
+                print(f"project  : {pid} (already exists)")
         else:
             cx.execute(sa.insert(s.projects), {
                 "id": pid, "name": args.name or pid, "repo_url": args.repo_url,
