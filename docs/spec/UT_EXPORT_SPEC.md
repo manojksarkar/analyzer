@@ -164,6 +164,118 @@ config verbatim; never synthesise them.
 
 ---
 
+## 3. Worked example
+
+`coreNestedBranch` — four paths and three stubbed callees, the smallest function that exercises both
+REQ-UE-03 and REQ-UE-04. Source at [Core.cpp:112](../../SampleCppProject/Layer1/Sample/Core/Core.cpp#L112):
+
+```c
+PUBLIC int coreNestedBranch(int a, int b) {
+    if (a > 0) {
+        if (b > 0) return libAdd(a, b);            // step 2.1.1.1
+        else       return utilCompute(a, -b);      // step 2.1.1.2
+    } else {
+        if (b > 0) return libNormalize(b, a < -100 ? 100 : -a);   // step 2.2.1.1
+        else       return 0;                       // step 2.2.1.2
+    }
+}
+```
+
+### What SWE.4 emits today — one spec, four returns
+
+```jsonc
+{
+  "testCaseId": "TC_IF_LAYER1_CORE_06",
+  "qualifiedName": "coreNestedBranch",
+  "precondition": { "mockFunctions": ["libAdd()", "libNormalize()", "utilCompute()"],
+                    "parameters": [ { "name": "a", "type": "int" },
+                                    { "name": "b", "type": "int" } ] },
+  "input": { "entries": [ { "kind": "parameter",  "name": "a", "text": "int a[-0x80000000-0x7FFFFFFF]" },
+                          { "kind": "parameter",  "name": "b", "text": "int b[-0x80000000-0x7FFFFFFF]" },
+                          { "kind": "mockReturn", "name": "libAdd()",       "type": "int" },
+                          { "kind": "mockReturn", "name": "libNormalize()", "type": "int" },
+                          { "kind": "mockReturn", "name": "utilCompute()",  "type": "int" } ] },
+  "expected": { "returns": [ { "step": "2.1.1.1", "expression": "libAdd()",       "source": "libAdd(a, b)" },
+                             { "step": "2.1.1.2", "expression": "utilCompute()",  "source": "utilCompute(a, -b)" },
+                             { "step": "2.2.1.1", "expression": "libNormalize()", "source": "libNormalize(b, …)" },
+                             { "step": "2.2.1.2", "expression": "0",              "source": "0" } ] },
+  "testSteps": [ { "number": "2",     "type": "DECISION", "text": "Check whether a > 0." },
+                 { "number": "2.1.1", "type": "DECISION", "text": "Check whether b > 0." },
+                 { "number": "2.2.1", "type": "DECISION", "text": "Check whether b > 0." } ]
+}
+```
+
+### The four paths
+
+| case | path conditions | inputs | stub reached | expected return |
+|---|---|---|---|---|
+| `…_01` | `a > 0`, `b > 0` | `a=1, b=1` | `libAdd` | the stub's value |
+| `…_02` | `a > 0`, `b ≤ 0` | `a=1, b=0` | `utilCompute` | the stub's value |
+| `…_03` | `a ≤ 0`, `b > 0` | `a=0, b=1` | `libNormalize` | the stub's value |
+| `…_04` | `a ≤ 0`, `b ≤ 0` | `a=0, b=0` | none | `0` |
+
+**Only one stub is reached per path.** The spec's `mockFunctions` is the union across all paths;
+a per-path case narrows `stubs` to the callee actually executed — a refinement the split enables.
+
+### What the export produces
+
+First and last case in full; the middle two follow the same shape.
+
+```jsonc
+{
+  "format_version": "1.0",
+  "environment": { "flags": [], "probepoint": [], "usercode": [] },
+  "cases": [
+    {
+      "id": "TC_IF_LAYER1_CORE_06_01",
+      "name": "coreNestedBranch returns libAdd(a, b) when a and b are both positive",
+      "level": "UT",
+      "trace": "",
+      "review": { "author": "", "reviewer": "" },
+      "target": { "ClassName": "", "FunctionName": "coreNestedBranch" },
+      "preconditions": {},
+      "stubs": [
+        { "name": "libAdd", "returnType": "int",
+          "parameters": [ { "name": "x", "type": "int" }, { "name": "y", "type": "int" } ],
+          "declaredIn": "Layer1/Sample/Lib/Lib.h",
+          "returns": 7 }
+      ],
+      "inputs":   [ { "name": "a", "type": "int", "value": 1 },
+                    { "name": "b", "type": "int", "value": 1 } ],
+      "expected": { "return": 7, "calls": [ "libAdd" ] }
+    },
+    {
+      "id": "TC_IF_LAYER1_CORE_06_04",
+      "name": "coreNestedBranch returns 0 when neither a nor b is positive",
+      "level": "UT",
+      "trace": "",
+      "review": { "author": "", "reviewer": "" },
+      "target": { "ClassName": "", "FunctionName": "coreNestedBranch" },
+      "preconditions": {},
+      "stubs": [],
+      "inputs":   [ { "name": "a", "type": "int", "value": 0 },
+                    { "name": "b", "type": "int", "value": 0 } ],
+      "expected": { "return": 0, "calls": [] }
+    }
+  ]
+}
+```
+
+Three things this makes concrete:
+
+- **`ClassName` is empty** for a free function. Only a `Class::method` qualified name fills it.
+- **The expected return is the stub's own value** on three of the four paths — `expression` is
+  `libAdd()`, not a literal. Choosing the stub's return value and stating the expected result are
+  therefore the same decision, not two.
+- **Inputs are solved, not guessed.** `a=1, b=1` comes from intersecting the path conditions
+  (`a > 0`, `b > 0`) with the declared range — which is why REQ-UE-04 needs those predicates
+  structurally rather than as English in `testSteps[].text`.
+
+> The **inner** shapes of `target`, `preconditions`, `stubs`, `inputs` and `expected` above are
+> assumed, and the `_NN` id suffix is provisional. Both are Open items.
+
+---
+
 ## Limitations
 
 - **`trace` is empty.** No requirements source exists yet (Polarion / SWE.1), the same gap that
