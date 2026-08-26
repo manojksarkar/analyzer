@@ -123,12 +123,21 @@ def run(model, output_dir, model_dir, config):
         component_name = unit_key.split(KEY_SEP)[0] if KEY_SEP in unit_key else ""
         current_unit = unit_names.get(unit_key, unit_key.split(KEY_SEP)[-1] if KEY_SEP in unit_key else unit_key)
         called_by_ids = functions_data.get(fid, {}).get("calledByIds", []) or []
-        if allowed_components:
-            # External = outside selected group
-            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0].lower() not in allowed_components]
-        else:
-            # Default behaviour: external = different component
-            external_callers = [c for c in called_by_ids if c and "|" in c and c.split("|")[0] != component_name]
+        # External = a DIFFERENT COMPONENT, which is exactly how the generator decided
+        # which diagrams to write (selector.get_external_callers_with_component compares
+        # caller_component != current_component). The two must agree, because the loop
+        # below pairs mmd_paths[idx] with external_callers[idx].
+        #
+        # This used to say "outside the selected components" whenever a scope was set,
+        # and the two definitions disagree the moment ONE DOCUMENT SPANS SEVERAL
+        # COMPONENTS -- `--scope "component:Alpha,Beta"`, or any group-level document.
+        # A caller in a sibling component was external to the generator (so it wrote the
+        # .mmd) but internal to the view, so external_callers came out empty, the loop
+        # broke at idx 0, and no row was recorded. The symptom is a directory full of
+        # .mmd/.png files beside a _behaviour_pngs.json holding {"_docxRows": {}}, and a
+        # document with an empty Dynamic Behaviour section.
+        external_callers = [c for c in called_by_ids
+                            if c and "|" in c and c.split("|")[0] != component_name]
 
         for idx, mmd_path in enumerate(mmd_paths):
             if idx >= len(external_callers):

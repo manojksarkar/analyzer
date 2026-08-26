@@ -378,7 +378,32 @@
 > purpose-built three-component fixture (Alpha -> Beta -> Gamma, cross-unit call edges confirmed
 > present in the model) still produced zero on both branches, so the real gate is narrower than
 > that and is not yet pinned down. Anything about behaviour-diagram embedding in the DOCX is
-> therefore UNVERIFIED by this work, in either direction. The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
+> therefore UNVERIFIED by this work, in either direction.
+>
+> **That gap immediately cost something.** Reported from a real project: the
+> behaviour_diagrams directory holds .mmd and .png files, `_behaviour_pngs.json` reads
+> `{"_docxRows": {}}`, and the document's Dynamic Behaviour section is empty. Reproduced with a
+> two-component fixture (Alpha calls into Beta; Beta must hold TWO units, because the default
+> `skip_within_unit` selector counts only units inside the target's OWN component — that is why
+> the first two fixture attempts produced nothing).
+>
+> **Root cause: the view and the generator disagreed about what "external" means.** The
+> generator decides which diagrams to write, and an external caller is one in a DIFFERENT
+> COMPONENT (`selector.get_external_callers_with_component`: `caller_component !=
+> current_component`). The view then paired the returned .mmd files with callers POSITIONALLY —
+> `if idx >= len(external_callers): break` — having recomputed the list as "outside the selected
+> components" whenever a scope was set. Those two definitions diverge the moment ONE DOCUMENT
+> SPANS SEVERAL COMPONENTS (`--scope "component:Alpha,Beta"`, or any group-level document): a
+> caller in a sibling component is external to the generator and internal to the view, so
+> `external_callers` came out empty, the loop broke at idx 0, and the row was never recorded —
+> after the files had already been written. The view now uses the generator's rule, and only
+> that rule.
+>
+> **poc-4 has the identical defect** — same fixture, `--selected-group Both` without
+> `--component-per-docx`, same `{"_docxRows": {}}` beside a written .mmd. Not something the
+> migration introduced; it surfaces here because a multi-component document is more reachable
+> (`per_component_docx_args` returns `[]` for a component scope, so `component:A,B` is one
+> document). Fixed on this branch only.) The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
 > detached poc-4 worktree with `--poc4`, and junction node_modules into that worktree so both
 > sides render mermaid identically.
 >
