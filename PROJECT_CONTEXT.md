@@ -325,8 +325,39 @@
 > from); doc 10 §10 still promises `--dump-model-files` and `--model-store files`, neither of
 > which exists; `tools/parity/capture_baseline.py:52` points at the renamed
 > `engine/config/config.json`; and `llm.descriptions`/`behaviourNames` ship `true` here where
-> poc-4 shipped `false` — consistent with "--no-llm must never be default" and left as is, but
-> it is a real divergence and the user's call to confirm.)
+> poc-4 shipped `false` — consistent with "--no-llm must never be default".
+>
+> **All three now closed.**
+>
+> **The e2e suite runs again (was 131 failures, now 0).** `tests/conftest.py` drove
+> `run.py <proj> --clean --selected-group` with no version, which DB-only mode requires. It now
+> drives the supported CLI — `analyzer.py onboard` then `analyzer.py generate --scope
+> "group:My Sample"` — against a scratch git repo made from SampleCppProject, because a version
+> is identified by a commit. Two consequences of deliberate product changes had to be absorbed,
+> both recorded in `tests/e2e_paths.py`: output lands under `workspaces/<pid>/versions/<vid>/
+> output/<Component>/` rather than `PROJECT_ROOT/output/<Group>/`, and documents are per
+> COMPONENT (`--component-per-docx` is the default for every non-component scope), so
+> `test_docx.py` reads the group's three documents through one Document-shaped facade and the
+> tests themselves are unchanged. Phase 1/2 write no files at all, so conftest materialises the
+> model with `dump_model_to_dir` for the model-shape tests. One snapshot was re-baselined
+> through `--update-snapshots`, NOT hand-edited: Core came back byte-identical, and Lib/Util
+> differ only in which side of the module box a consumer sits on — same edges, same interface
+> ids — which follows from the document unit changing from group to component. A trap worth
+> knowing: `tests/` and `tests/api/` are both packages, so putting `tests/` on `sys.path`
+> shadows the repo's real `api` — import `tests.e2e_paths`, with the REPO ROOT on the path.
+> 1511 tests, 133 of them e2e.
+>
+> **`verify db-sync` is now the model-parity gate** rather than a dialect check. It asserted
+> only `load_hashes() == what went in`; a field dropped on the way in changes no hash, which is
+> why it passed all through the eight-field loss, and its fixture named almost none of the
+> fields anyway. Its `f1` now carries every field a parsed function can have — both `params` and
+> `parameters` — and `_field_diffs` compares them value for value after the round-trip.
+> Confirmed by re-breaking the allow-list: it reports `f1.params: sent [...], got '<MISSING>'`
+> and fails. This is the replacement for the deleted `tools/verify_model_parity.py`, which
+> compared file- against DB-backed models and cannot come back in that form.
+>
+> **LLM defaults confirmed ON** by the user and now commented in `config.defaults.json` as a
+> decision rather than an inherited value.)
 
 > Updated: 2026-08-25 (**re-derive without re-parsing; unit narrowing made to work** — branch
 > `integration/poc-4-db`.

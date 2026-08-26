@@ -41,7 +41,12 @@ def is_valid_mermaid(text: str) -> bool:
     return bool(_MERMAID_HEADERS.search(_strip_fences(text)))
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-FC_DIR = os.path.join(PROJECT_ROOT, "output", "flowcharts")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+from tests.e2e_paths import COMPONENTS, output_for   # noqa: E402
+# One flowcharts directory per component, where a group-scoped run once had one.
+FC_DIRS = [_os.path.join(output_for(c), "flowcharts") for c in COMPONENTS]
+FC_DIR = next((d for d in FC_DIRS if _os.path.isdir(d)), FC_DIRS[0])
 
 # Skip entire module when flowcharts are disabled in config
 _cfg_path = os.path.join(PROJECT_ROOT, "engine", "config", "config.defaults.json")

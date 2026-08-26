@@ -4,18 +4,88 @@ CLI options and the pipeline subprocess are declared here (must be in root).
 All other fixtures (snapshots, JSON loaders) live in integration/conftest.py.
 """
 import os
+import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
 import pytest
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SAMPLE_PROJECT = os.path.join(PROJECT_ROOT, "SampleCppProject")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tests.e2e_paths import (                                    # noqa: E402
+    PROJECT_ROOT, SAMPLE_PROJECT, E2E_PID, E2E_VID, MODEL_DIR,
+)
 
 # Stores pipeline failure message if it failed; None means success or skipped.
 _pipeline_failure = None
+
+
+def _rmtree_force(path):
+    """rmtree that clears read-only bits (git pack files on Windows)."""
+    if not os.path.isdir(path):
+        return
+
+    def _retry(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+
+    kw = {"onexc": _retry} if sys.version_info >= (3, 12) else {"onerror": _retry}
+    shutil.rmtree(path, **kw)
+
+
+def _scratch_repo():
+    """SampleCppProject as a git repo of its own, returning (path, sha, branch).
+
+    A version is identified by a commit, so the sample needs one of its own rather than
+    borrowing the analyzer repo's HEAD -- which would change on every commit here and
+    make the e2e run's identity depend on unrelated work.
+    """
+    repo = os.path.join(tempfile.gettempdir(), "analyzer-e2e-sample")
+    # ignore_errors would leave the tree behind: git's pack files are read-only on
+    # Windows, so the delete fails silently and the copy below then hits FileExists.
+    _rmtree_force(repo)
+    shutil.copytree(SAMPLE_PROJECT, repo)
+    quiet = dict(check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["git", "-C", repo, "init", "-q"], **quiet)
+    subprocess.run(["git", "-C", repo, "symbolic-ref", "HEAD", "refs/heads/main"], **quiet)
+    subprocess.run(["git", "-C", repo, "add", "-A"], **quiet)
+    subprocess.run(["git", "-C", repo, "-c", "user.email=e2e@test", "-c", "user.name=e2e",
+                    "commit", "-q", "-m", "e2e sample"], **quiet)
+    sha = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
+                         capture_output=True, text=True).stdout.strip()
+    return repo, sha, "main"
+
+
+def _analyzer(*args, env=None):
+    """One analyzer CLI call, raising with its own output if it fails."""
+    r = subprocess.run([sys.executable, os.path.join(PROJECT_ROOT, "analyzer.py"), *args],
+                       cwd=PROJECT_ROOT, capture_output=True, text=True, env=env)
+    if r.returncode != 0:
+        raise RuntimeError("analyzer %s failed (exit %d):\n%s\n%s"
+                           % (args[0], r.returncode, r.stdout, r.stderr))
+    return r
+
+
+def _dump_model(out):
+    """Materialise the version's model as model/*.json for the model-shape tests.
+
+    Phases 1 and 2 write to the database; there is no model directory any more. The
+    model is still sourced from the database -- these files are a hand-off, the same
+    one the flowchart engine used before it read the database directly.
+    """
+    try:
+        for _p in (PROJECT_ROOT, os.path.join(PROJECT_ROOT, "engine")):
+            if _p not in sys.path:
+                sys.path.insert(0, _p)
+        from core.db import get_engine
+        from core import model_store
+        with get_engine().connect() as cx:
+            model_store.dump_model_to_dir(cx, E2E_VID, MODEL_DIR)
+    except Exception as exc:                    # not fatal: only the model tests need it
+        out.write("\n  (model dump unavailable: %s)\n" % exc)
 
 
 def pytest_addoption(parser):
@@ -89,7 +159,15 @@ def pytest_collection_finish(session):
             PROJECT_ROOT + os.pathsep + existing_pypath if existing_pypath else PROJECT_ROOT
         )
 
-    cmd = [sys.executable, os.path.join(PROJECT_ROOT, "engine", "run.py"), SAMPLE_PROJECT, "--clean", "--selected-group", group]
+    # The analyzer CLI, not run.py directly: a phase needs a version row to write into,
+    # and onboarding is what creates one. tests/e2e_paths.py has the full why.
+    repo, sha, branch = _scratch_repo()
+    _analyzer("onboard", "--project-id", E2E_PID, "--source", repo, "--use-defaults",
+              "--branch", branch, "--version-id", E2E_VID, "--commit", sha,
+              "--force-config", env=pipeline_env)
+    cmd = [sys.executable, os.path.join(PROJECT_ROOT, "analyzer.py"), "generate",
+           "--project-id", E2E_PID, "--version-id", E2E_VID, "--branch", branch,
+           "--commit", sha, "--scope", "group:" + group, "--no-llm"]
 
     out.write(f"  Command: {' '.join(cmd)}\n")
     out.flush()
@@ -129,6 +207,7 @@ def pytest_collection_finish(session):
         )
         out.write(f"\n  Pipeline: {label} ... FAILED ({elapsed}s)\n")
     else:
+        _dump_model(out)
         out.write(f"\n  Pipeline: {label} ... OK ({elapsed}s)\n")
 
     out.write(f"{sep}\n\n")

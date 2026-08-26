@@ -40,17 +40,65 @@ UTC = datetime.timezone.utc
 # One function calling another, one global, and their hashes - enough to put a row in every
 # table the manifest writes and to make the edge and content-blob paths real.
 FUNCTIONS = {
+    # f1 carries EVERY field a parsed function can, so the round-trip below is a real
+    # check on the whole schema rather than on the handful a small fixture happens to
+    # mention. Eight fields were once lost between Phase 1 and Phase 2 -- parameters,
+    # returnExpr, className, addressTakenByUnits and both pairs of global-access lists --
+    # and this gate passed throughout, because it only ever compared hashes and its
+    # fixture named almost none of them.
     "f1": {"name": "add", "qualifiedName": "Calc::add", "className": "Calc",
            "file": "src/calc.cpp", "line": 10, "endLine": 14, "unit": "Calc",
            "component": "App", "visibility": "public", "direction": "In",
+           "directionReason": "In: writes global(s) g_count.", "interfaceId": "IF_APP_01",
+           "isVisible": True, "returnType": "int", "returnExpr": "a + b",
+           # `params` is Phase 1's spelling and `parameters` is Phase 2's -- both must
+           # survive, because each phase reads the model the other one wrote.
+           "params": [{"name": "a", "type": "int"}, {"name": "b", "type": "int"}],
+           "parameters": [{"name": "a", "type": "int"}, {"name": "b", "type": "int"}],
+           "behaviourInputName": "a", "behaviourOutputName": "sum",
+           "addressTakenByUnits": ["Other"],
+           "readsGlobalIds": ["g1"], "writesGlobalIds": ["g1"],
+           "readsGlobalIdsTransitive": ["g1"], "writesGlobalIdsTransitive": ["g1"],
            "description": "Adds two numbers.", "callsIds": ["f2"], "calledByIds": []},
     "f2": {"name": "mul", "qualifiedName": "Calc::mul", "className": "Calc",
            "file": "src/calc.cpp", "line": 20, "endLine": 24, "unit": "Calc",
            "component": "App", "visibility": "private", "direction": "In",
+           "returnType": "int", "syntheticFromVarDecl": True,
            "description": "Multiplies two numbers.", "callsIds": [], "calledByIds": ["f1"]},
 }
 GLOBALS = {"g1": {"name": "g_count", "file": "src/calc.cpp", "line": 3, "unit": "Calc",
-                  "component": "App", "type": "int", "description": "Call counter."}}
+                  "component": "App", "type": "int", "value": "0", "className": "Calc",
+                  "description": "Call counter."}}
+
+# Fields that must come back EXACTLY as they went in. Deliberately not everything: `name`,
+# `unit`, `component` and the flat file/line/endLine are folded into entity keys and
+# location columns, so they are checked by the row counts rather than by value.
+FN_VERBATIM = ("qualifiedName", "className", "visibility", "direction", "directionReason",
+               "interfaceId", "returnType", "returnExpr", "params", "parameters",
+               "behaviourInputName", "behaviourOutputName", "addressTakenByUnits",
+               "readsGlobalIds", "writesGlobalIds", "readsGlobalIdsTransitive",
+               "writesGlobalIdsTransitive", "description", "callsIds", "calledByIds",
+               "syntheticFromVarDecl")
+GLOBAL_VERBATIM = ("type", "value", "className", "description")
+
+
+def _field_diffs(sent, got, fields):
+    """Which of `fields` did not survive the round-trip, and how."""
+    out = []
+    for key, original in sent.items():
+        back = got.get(key)
+        if back is None:
+            out.append(f"{key}: absent after reload")
+            continue
+        for f in fields:
+            if f not in original:
+                continue
+            a, b = original[f], back.get(f, "<MISSING>")
+            if isinstance(a, list) and isinstance(b, list):
+                a, b = sorted(a, key=repr), sorted(b, key=repr)
+            if a != b:
+                out.append(f"{key}.{f}: sent {a!r}, got {b!r}")
+    return out
 HASHES = {"f1": "h-one", "f2": "h-two", "g1": "h-three"}
 
 
@@ -102,6 +150,16 @@ def main() -> int:
     ok = loaded == HASHES
     print(f"\n  load_hashes() == what went in : {'YES' if ok else 'NO'} "
           f"({len(loaded)} vs {len(HASHES)} keys)")
+
+    # The model itself, field by field. Hashes matching only proves the hash rows are
+    # there; a field silently dropped on the way in changes no hash and broke nothing
+    # here for months.
+    diffs = (_field_diffs(FUNCTIONS, model["functions"], FN_VERBATIM)
+             + _field_diffs(GLOBALS, model["globals"], GLOBAL_VERBATIM))
+    print(f"  every model field survived        : {'YES' if not diffs else 'NO'}")
+    for d in diffs:
+        print(f"      ! {d}")
+    ok = ok and not diffs
     print("\nOK - model persisted to Postgres and reads back intact."
           if ok and ev > 0 else "\nMISMATCH - see above.")
     return 0 if (ok and ev > 0) else 1

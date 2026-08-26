@@ -14,7 +14,9 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+from tests.e2e_paths import MODEL_DIR     # noqa: E402  (DB dump, see e2e_paths)
 
 SAMPLE_COMPONENTS = {"Sample-Core", "Lib", "Util"}
 

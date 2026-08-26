@@ -22,7 +22,15 @@ except ImportError:
     pytest.skip("python-docx not installed", allow_module_level=True)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "My-Sample", "software_detailed_design_My-Sample.docx")
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from tests.e2e_paths import COMPONENTS, docx_for        # noqa: E402
+
+# poc-4 produced ONE document for the group; a group-scoped run now produces one per
+# component (--component-per-docx is the default for every non-component scope). The
+# content under test is the same content -- it is spread over three files instead of
+# one, so the fixtures below read across all of them.
+DOCX_PATHS = [docx_for(c) for c in COMPONENTS]
 
 COL_IF_ID    = 0
 COL_IF_NAME  = 1
@@ -38,11 +46,41 @@ PRIVATE_NAMES = {"coreHelper", "coreSwitch", "libClamp", "utilClip", "g_count"}
 # Fixtures
 # ---------------------------------------------------------------------------
 
+class _GroupDocuments:
+    """The group's documents behind one Document-shaped facade.
+
+    A group-scoped run writes one document per component where poc-4 wrote a single
+    combined one. These tests are about the GROUP's content -- which headings exist,
+    which interface rows are present -- not about how many files it arrived in, so
+    they read the concatenation and stay exactly as they were written.
+    """
+
+    def __init__(self, docs):
+        self._docs = list(docs)
+
+    @property
+    def paragraphs(self):
+        return [x for d in self._docs for x in d.paragraphs]
+
+    @property
+    def tables(self):
+        return [x for d in self._docs for x in d.tables]
+
+    @property
+    def inline_shapes(self):
+        return [x for d in self._docs for x in d.inline_shapes]
+
+    def __iter__(self):
+        return iter(self._docs)
+
+
 @pytest.fixture(scope="module")
 def docx(run_pipeline):
-    if not os.path.isfile(DOCX_PATH):
-        pytest.fail(f"DOCX not found: {DOCX_PATH}")
-    return Document(DOCX_PATH)
+    """Every design document the run produced, as one list."""
+    missing = [p for p in DOCX_PATHS if not os.path.isfile(p)]
+    if missing:
+        pytest.fail("DOCX not found: " + ", ".join(missing))
+    return _GroupDocuments(Document(p) for p in DOCX_PATHS)
 
 
 @pytest.fixture(scope="module")
@@ -68,12 +106,14 @@ def all_cell_text(all_interface_rows):
 # ---------------------------------------------------------------------------
 
 def test_docx_exists(run_pipeline):
-    assert os.path.isfile(DOCX_PATH), f"DOCX not found: {DOCX_PATH}"
+    for p in DOCX_PATHS:
+        assert os.path.isfile(p), f"DOCX not found: {p}"
 
 
 def test_docx_non_empty(docx):
-    text = "\n".join(p.text for p in docx.paragraphs)
-    assert len(text.strip()) > 100, "DOCX appears empty or near-empty"
+    for path, d in zip(DOCX_PATHS, docx):
+        text = "\n".join(p.text for p in d.paragraphs)
+        assert len(text.strip()) > 100, f"{os.path.basename(path)} is empty or near-empty"
 
 
 # ---------------------------------------------------------------------------
@@ -296,9 +336,13 @@ def test_behaviour_description_tables_present(docx, behaviour_diagram_on):
 def test_flowchart_tables_present(docx):
     """_add_flowchart_table uses 'Capacity(Density)' — distinct from the behaviour table."""
     import json
+    # The defaults file is JSONC. A strict loader raises on its comments -- parse it
+    # the way the engine does.
     cfg_path = os.path.join(PROJECT_ROOT, "engine", "config", "config.defaults.json")
+    _sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
+    from core.config import _strip_json_comments, _strip_trailing_commas
     with open(cfg_path, encoding="utf-8") as f:
-        cfg = json.load(f)
+        cfg = json.loads(_strip_trailing_commas(_strip_json_comments(f.read())))
     if not cfg.get("views", {}).get("flowcharts"):
         pytest.skip("flowcharts disabled in config")
     row_labels = {

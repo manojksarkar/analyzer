@@ -81,6 +81,10 @@
     }
   },
   "llm": {
+    // ON by default, and deliberately so: poc-4 shipped these false, and the choice to
+    // ship them true was confirmed rather than inherited. A default run costs LLM calls
+    // and time, and produces the richer document that is the point of the tool. Turn
+    // them off for one run with --no-llm; do not make that the default.
     "descriptions": true,
     "behaviourNames": true,
     "summarize": false,
