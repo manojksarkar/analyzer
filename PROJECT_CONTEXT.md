@@ -357,7 +357,37 @@
 > compared file- against DB-backed models and cannot come back in that form.
 >
 > **LLM defaults confirmed ON** by the user and now commented in `config.defaults.json` as a
-> decision rather than an inherited value.)
+> decision rather than an inherited value.
+>
+> **A poc-4 vs database DOCUMENT comparison, run scenario by scenario.** A `poc-4` worktree
+> (`c15ee42`) and this branch, the same SampleCppProject-as-a-git-repo, the same config written
+> in each branch's own spelling — every view on, LLM off, `--project-name` pinned on both sides
+> because poc-4 defaults it to the checkout dir basename while the database side uses the
+> project's display name. Each side's `output/` is collected whole (DOCX text and tables, .mmd,
+> .json, PNG names) with timestamps, absolute paths and shas scrubbed, then compared.
+>
+> The `group:My Sample` scenario is verified MATCH — 84 artifacts, 3 documents, every block
+> equal. The other six (`group:Support`, `group:Full`, `layer:Layer1`, `component:Lib`,
+> `component:Util`, `project`) were still running when this was written; anything they turn up
+> belongs below this paragraph.
+>
+> That first scenario found ONE defect, and it is a real one: **the database returned the model
+> in no particular order.** Of 84 artifacts and three documents, one block differed — `utilBlend`'s Requirements
+> cell, listing the functions it calls, had `utilClamp` before `utilHalve` where poc-4 had them
+> the other way round. Util.cpp calls `utilHalve` twice and then `utilClamp`, so poc-4 was
+> right, and it got that for free by reading `functions.json`, which carries the parser's order.
+> Neither database read asked for an order: `_entity_rows` had no ORDER BY (now file, then line,
+> then `entity_key`, with `coalesce` rather than NULLS LAST so SQLite and Postgres agree on the
+> unlocated entities), and the call/global-access and type/macro edge reads had none (now
+> `edge_id`, which is insertion order, which is the order the parser found the calls). Views
+> iterate the model without re-sorting, so it reached the documents — and it would have drifted
+> between two runs on the same data, which is worse than differing from poc-4 consistently.
+>
+> A third `model_edges` query is deliberately unordered: it accumulates into sets that are
+> `sorted()` before use. It says so in an `# order-independent:` comment, and the guard test in
+> `tests/unit/test_model_order_is_deterministic.py` accepts that justification rather than its
+> absence — opting out is a claim you have to write down. That guard is what found the third
+> query in the first place, after I had already fixed the two I knew about.)
 
 > Updated: 2026-08-25 (**re-derive without re-parsing; unit narrowing made to work** — branch
 > `integration/poc-4-db`.
