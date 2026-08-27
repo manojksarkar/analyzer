@@ -403,7 +403,35 @@
 > `--component-per-docx`, same `{"_docxRows": {}}` beside a written .mmd. Not something the
 > migration introduced; it surfaces here because a multi-component document is more reachable
 > (`per_component_docx_args` returns `[]` for a component scope, so `component:A,B` is one
-> document). Fixed on this branch only.) The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
+> document). Fixed on this branch only.
+>
+> **A SECOND, unrelated cause of the same symptom — and this one is ours, not poc-4's.**
+> Reported again from the real project: 8 diagram files on disk, 0 rows, after
+> `generate` (interrupted at phase 3) then `reexport --unit completion`.
+> `_behaviour_pngs.json` is the only thing the exporter reads, and the view rewrote it
+> UNCONDITIONALLY at the end of every run. Right for a full run, which regenerated
+> everything the component has; wrong under `--selected-unit`, where the view only looked at
+> the named units. On every component that does not hold that unit the filter leaves zero
+> functions, so the manifest written by the earlier full run is overwritten with `{}` — while
+> every `.mmd`/`.png` stays on disk, which is precisely why it reads as an exporter bug.
+>
+> **poc-4 cannot hit this: its behaviour view has NO unit filter at all** (`--selected-unit`
+> there narrows flowcharts only), so behaviour diagrams are always regenerated in full and the
+> unconditional write is always correct. The filter came from `87452f0` — my own commit, the
+> one that made `--unit` narrow every image view. In that same commit `unit_diagrams` got the
+> guard it needed ("A full run wipes and regenerates. NOT when narrowed to a unit") and
+> `behaviour_diagram` got the filter without the matching guard. Same commit, same reasoning
+> applied to one sibling and not the other.
+>
+> A narrowed run now merges: the named units are fully recomputed so their old entries are
+> dropped first (otherwise a unit whose diagram has since gone keeps a row pointing at a file
+> nobody writes), everything else is preserved, and a full run still replaces. Reproduced end
+> to end before fixing and verified after, including that re-exporting the diagram's own unit
+> still yields exactly one row rather than two.
+>
+> The testing lesson is specific: my earlier verification of `reexport --unit` passed because I
+> re-exported the unit that HAD the diagram — the single case that regenerates its own row and
+> so hides the wipe.) The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
 > detached poc-4 worktree with `--poc4`, and junction node_modules into that worktree so both
 > sides render mermaid identically.
 >
