@@ -191,6 +191,34 @@ def run(model, output_dir, model_dir, config):
             count += 1
 
     out_path = os.path.join(out_dir, "_behaviour_pngs.json")
+    # A full run REPLACES this manifest: it just regenerated everything the component
+    # has. A unit-narrowed run must MERGE. It only looked at the selected units, so
+    # every other unit's rows are still valid and their .mmd/.png are still on disk --
+    # and rewriting wholesale threw them away, leaving a directory full of images
+    # beside {"_docxRows": {}} and a document with an empty Dynamic Behaviour section.
+    #
+    # That is what `reexport --unit X` did to every component that does not hold X:
+    # zero functions survive the filter, so docx_rows is empty, and the manifest from
+    # the earlier full run was overwritten with it. The images stay, which is exactly
+    # what makes it look like the exporter is at fault.
+    #
+    # The selected units ARE fully recomputed, so drop their old entries first --
+    # otherwise a unit whose diagram has since gone would keep a stale row forever.
+    # unit_diagrams skips its output wipe under --selected-unit for the same reason.
+    if allowed_units:
+        try:
+            with open(out_path, encoding="utf-8") as _pf:
+                prior = json.load(_pf).get("_docxRows") or {}
+        except (OSError, ValueError):
+            prior = {}
+        merged = {}
+        for _comp, _units in prior.items():
+            kept = {u: rows for u, rows in _units.items() if u.lower() not in allowed_units}
+            if kept:
+                merged[_comp] = kept
+        for _comp, _units in docx_rows.items():
+            merged.setdefault(_comp, {}).update(_units)
+        docx_rows = merged
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"_docxRows": docx_rows}, f, indent=2)
 
