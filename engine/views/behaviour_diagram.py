@@ -75,6 +75,8 @@ def run(model, output_dir, model_dir, config):
         run_cmd_base.extend(["-p", puppeteer])
 
     docx_rows = {}  # component -> unit -> [ {externalUnitFunction, pngPath} ]
+    not_rendered = []          # diagrams --unit skipped that had no PNG to reuse
+    rowed_mmd = set()          # .mmd files this run recorded a row for
     # Only generate diagrams for functions within the selected group (if any),
     # but keep full-model context so external callers (outside the group) are captured.
     if allowed_components:
@@ -89,13 +91,24 @@ def run(model, output_dir, model_dir, config):
             fid for fid in model.get("functions", {})
             if (functions_data.get(fid, {}).get("visibility") or "").lower() != "private"
         ]
-    # --selected-unit narrows the per-function image work here too. Same short-name
-    # matching as the flowchart and unit-diagram views.
+    # --selected-unit narrows the RENDER, not the model walk.
+    #
+    # Deciding whether a function needs a behaviour diagram is free -- the selector
+    # returns nothing for almost every function, measured at ~0.01s across 2817 of them.
+    # The cost is mmdc, several seconds per PNG. So every function is still evaluated and
+    # every row still recorded; only the image rendering is skipped for units the caller
+    # did not name, reusing whatever PNG is already on disk.
+    #
+    # Narrowing the function list instead was wrong in a way that is easy to miss: the
+    # rows for every other unit simply vanished, this manifest is the ONLY thing the
+    # exporter reads to place a behaviour subsection, and the images stayed on disk -- so
+    # the document came out with an empty "Dynamic Behaviour" heading beside a directory
+    # that looked complete. It also could not repair itself: no --unit run could ever
+    # restore rows a previous --unit run had dropped, only a full run could.
+    #
+    # This way the manifest is complete by construction, `--unit` still skips the
+    # expensive work, and a narrowed run heals a manifest that was previously emptied.
     allowed_units = [u.lower() for u in (config.get("_analyzerSelectedUnits") or [])]
-    if allowed_units:
-        functions = [fid for fid in functions
-                     if KEY_SEP in (fid_to_unit.get(fid) or "")
-                     and fid_to_unit[fid].split(KEY_SEP, 1)[1].lower() in allowed_units]
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
     total = len(functions)
@@ -157,24 +170,37 @@ def run(model, output_dir, model_dir, config):
             if render_png and os.path.isfile(mmd_path):
                 png_base = os.path.splitext(os.path.basename(mmd_path))[0]
                 png = os.path.join(out_dir, f"{png_base}.png")
-                run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png, "-s", "2"]
-                try:
-                    if os_type == "Windows":
-                        r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False, shell=True)
+                # This is where --selected-unit actually saves the time: mmdc costs
+                # seconds per diagram. A unit the caller did not name keeps whatever PNG
+                # is already there, and still gets its row either way, so the document
+                # stays correct instead of losing the section entirely.
+                _unit = (fid_to_unit.get(fid) or "")
+                _short = _unit.split(KEY_SEP, 1)[1].lower() if KEY_SEP in _unit else ""
+                if allowed_units and _short not in allowed_units:
+                    if os.path.isfile(png):
+                        png_path = png                     # reuse, do not re-render
                     else:
-                        r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
-                    if r2.returncode == 0 and os.path.isfile(png):
-                        png_path = png
-                    elif r2.returncode != 0 and idx == 0:
-                        msg = (r2.stderr or r2.stdout or f"exit {r2.returncode}").strip()
-                        log("mmdc failed: %s" % msg, component="behaviourDiagram", err=True)
-                except FileNotFoundError:
-                    if idx == 0:
-                        log("mmdc not found. Run: npm install", component="behaviourDiagram", err=True)
-                except subprocess.TimeoutExpired:
-                    if idx == 0:
-                        log("mmdc timed out", component="behaviourDiagram", err=True)
+                        not_rendered.append(png_base)      # row still recorded, no image
+                else:
+                    run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png, "-s", "2"]
+                    try:
+                        if os_type == "Windows":
+                            r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False, shell=True)
+                        else:
+                            r2 = subprocess.run(run_cmd, capture_output=True, text=True, timeout=60, check=False)
+                        if r2.returncode == 0 and os.path.isfile(png):
+                            png_path = png
+                        elif r2.returncode != 0 and idx == 0:
+                            msg = (r2.stderr or r2.stdout or f"exit {r2.returncode}").strip()
+                            log("mmdc failed: %s" % msg, component="behaviourDiagram", err=True)
+                    except FileNotFoundError:
+                        if idx == 0:
+                            log("mmdc not found. Run: npm install", component="behaviourDiagram", err=True)
+                    except subprocess.TimeoutExpired:
+                        if idx == 0:
+                            log("mmdc timed out", component="behaviourDiagram", err=True)
 
+            rowed_mmd.add(os.path.basename(mmd_path))
             docx_rows.setdefault(component_name, {}).setdefault(current_unit, []).append({
                 "currentFunctionName": current_function_name,
                 # fid identifies the function exactly; the exporter used to re-find it by
@@ -191,48 +217,32 @@ def run(model, output_dir, model_dir, config):
             count += 1
 
     out_path = os.path.join(out_dir, "_behaviour_pngs.json")
-    # A full run REPLACES this manifest: it just regenerated everything the component
-    # has. A unit-narrowed run must MERGE. It only looked at the selected units, so
-    # every other unit's rows are still valid and their .mmd/.png are still on disk --
-    # and rewriting wholesale threw them away, leaving a directory full of images
-    # beside {"_docxRows": {}} and a document with an empty Dynamic Behaviour section.
-    #
-    # That is what `reexport --unit X` did to every component that does not hold X:
-    # zero functions survive the filter, so docx_rows is empty, and the manifest from
-    # the earlier full run was overwritten with it. The images stay, which is exactly
-    # what makes it look like the exporter is at fault.
-    #
-    # The selected units ARE fully recomputed, so drop their old entries first --
-    # otherwise a unit whose diagram has since gone would keep a stale row forever.
-    # unit_diagrams skips its output wipe under --selected-unit for the same reason.
-    if allowed_units:
-        try:
-            with open(out_path, encoding="utf-8") as _pf:
-                prior = json.load(_pf).get("_docxRows") or {}
-        except (OSError, ValueError):
-            prior = {}
-        merged = {}
-        for _comp, _units in prior.items():
-            kept = {u: rows for u, rows in _units.items() if u.lower() not in allowed_units}
-            if kept:
-                merged[_comp] = kept
-        for _comp, _units in docx_rows.items():
-            merged.setdefault(_comp, {}).update(_units)
-        docx_rows = merged
+    # A straight write, because docx_rows is now COMPLETE for this component: every
+    # function was evaluated, whether or not --unit named its owner. The merge this used
+    # to need existed only to stop a narrowed run deleting the other units' rows, and a
+    # narrowed run no longer produces a partial set. Rebuilding the whole manifest each
+    # time is also what removes a stale row whose diagram has since gone.
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"_docxRows": docx_rows}, f, indent=2)
 
-    # Diagram files with no row are invisible damage: the exporter places a behaviour
-    # subsection only from this manifest, so the document comes out with an empty
-    # "Dynamic Behaviour" heading while the directory looks perfectly healthy. It is the
-    # state a narrowed run leaves behind once an earlier run's rows have been lost, and
-    # nothing about it is self-evident from the output.
+    if not_rendered:
+        log("%d diagram(s) belong to units --unit did not name and had no PNG to reuse, "
+            "so their rows carry no image. Re-run without --unit to render them:"
+            % len(not_rendered), component="behaviourDiagram", err=True)
+        for b in not_rendered[:5]:
+            log("    %s" % b, component="behaviourDiagram", err=True)
+        if len(not_rendered) > 5:
+            log("    ... and %d more" % (len(not_rendered) - 5), component="behaviourDiagram", err=True)
+
+    # A .mmd with no ROW is invisible damage: the exporter places a behaviour subsection
+    # only from this manifest, so the document gets an empty "Dynamic Behaviour" heading
+    # while the directory looks healthy. Keyed on the .mmd files this run actually
+    # recorded, NOT on whether a PNG exists -- a row whose image was skipped by --unit is
+    # still a row, and reporting it as an orphan sent exactly the wrong message.
     orphans = []
     if os.path.isdir(out_dir):
-        rowed = {os.path.basename(str(r.get("pngPath") or ""))
-                 for units in docx_rows.values() for rows in units.values() for r in rows}
         for f in sorted(os.listdir(out_dir)):
-            if f.endswith(".mmd") and os.path.splitext(f)[0] + ".png" not in rowed:
+            if f.endswith(".mmd") and f not in rowed_mmd:
                 orphans.append(f)
     if orphans:
         log("%d behaviour diagram file(s) here have no entry in _behaviour_pngs.json, so "
@@ -242,12 +252,7 @@ def run(model, output_dir, model_dir, config):
             log("    %s" % f, component="behaviourDiagram", err=True)
         if len(orphans) > 5:
             log("    ... and %d more" % (len(orphans) - 5), component="behaviourDiagram", err=True)
-        if allowed_units:
-            log("  They belong to units this --unit run did not rebuild, and their rows are "
-                "gone. Re-run WITHOUT --unit to regenerate them.",
-                component="behaviourDiagram", err=True)
-        else:
-            log("  They are left over from an earlier run and nothing regenerated them.",
-                component="behaviourDiagram", err=True)
+        log("  They are left over from an earlier run and no function in this model "
+            "produces them any more.", component="behaviourDiagram", err=True)
 
     progress.done(summary="output/behaviour_diagrams/ (%d diagrams)" % count)
