@@ -86,3 +86,44 @@ def test_merge_semantics():
 
     # SignalDriver and Hub survive; the recomputed "Signal" unit is gone, as it should be
     assert merged == {"Signal": {"SignalDriver": [{"x": 1}]}, "Cross": {"Hub": [{"z": 3}]}}
+
+
+def _orphan_block():
+    with open(_VIEW, encoding="utf-8") as fh:
+        src = fh.read()
+    i = src.index("    orphans = []")
+    return src[i:src.index("progress.done(", i)]
+
+
+def test_diagram_files_with_no_row_are_reported():
+    """The merge cannot restore rows an earlier run already destroyed, and a narrowed run
+    regenerates only its own units -- so files can sit there covered by nothing. The
+    exporter places a subsection only from the manifest, so the document gets an empty
+    "Dynamic Behaviour" heading while the directory looks healthy. Silence there is what
+    made this take three rounds to find."""
+    block = _orphan_block()
+    assert "no entry in _behaviour_pngs.json" in block
+    assert "err=True" in block
+
+
+def test_the_narrowed_case_says_how_to_recover():
+    """Naming the fix matters: the rows are gone and only a full run rebuilds them."""
+    block = _orphan_block()
+    assert "if allowed_units:" in block
+    assert "WITHOUT --unit" in block
+
+
+def test_orphans_are_matched_by_the_rendered_png():
+    """A row points at a .png; the file on disk is a .mmd. Comparing the wrong pair would
+    report every diagram as an orphan on every healthy run."""
+    block = _orphan_block()
+    assert 'os.path.splitext(f)[0] + ".png"' in block
+    assert "pngPath" in block
+
+
+def test_orphan_detection_reads_the_merged_rows():
+    """It must run AFTER the merge, or a narrowed run would flag the units it correctly
+    carried forward."""
+    with open(_VIEW, encoding="utf-8") as fh:
+        src = fh.read()
+    assert src.index("docx_rows = merged") < src.index("    orphans = []")

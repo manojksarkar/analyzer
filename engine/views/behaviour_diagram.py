@@ -222,4 +222,32 @@ def run(model, output_dir, model_dir, config):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"_docxRows": docx_rows}, f, indent=2)
 
+    # Diagram files with no row are invisible damage: the exporter places a behaviour
+    # subsection only from this manifest, so the document comes out with an empty
+    # "Dynamic Behaviour" heading while the directory looks perfectly healthy. It is the
+    # state a narrowed run leaves behind once an earlier run's rows have been lost, and
+    # nothing about it is self-evident from the output.
+    orphans = []
+    if os.path.isdir(out_dir):
+        rowed = {os.path.basename(str(r.get("pngPath") or ""))
+                 for units in docx_rows.values() for rows in units.values() for r in rows}
+        for f in sorted(os.listdir(out_dir)):
+            if f.endswith(".mmd") and os.path.splitext(f)[0] + ".png" not in rowed:
+                orphans.append(f)
+    if orphans:
+        log("%d behaviour diagram file(s) here have no entry in _behaviour_pngs.json, so "
+            "they will NOT appear in the document:" % len(orphans),
+            component="behaviourDiagram", err=True)
+        for f in orphans[:5]:
+            log("    %s" % f, component="behaviourDiagram", err=True)
+        if len(orphans) > 5:
+            log("    ... and %d more" % (len(orphans) - 5), component="behaviourDiagram", err=True)
+        if allowed_units:
+            log("  They belong to units this --unit run did not rebuild, and their rows are "
+                "gone. Re-run WITHOUT --unit to regenerate them.",
+                component="behaviourDiagram", err=True)
+        else:
+            log("  They are left over from an earlier run and nothing regenerated them.",
+                component="behaviourDiagram", err=True)
+
     progress.done(summary="output/behaviour_diagrams/ (%d diagrams)" % count)
