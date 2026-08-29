@@ -147,8 +147,28 @@ def _merge_address_taken(baseline_recs, fresh_recs, entity_files, drop) -> List[
     return out
 
 
-def _apply_address_taken(functions: Dict[str, dict], records: List[list]) -> None:
-    """Re-attach addressTakenByUnits to the merged functions from the merged records."""
+def _apply_address_taken(functions: Dict[str, dict], records: List[list],
+                         entity_files: Dict[str, str], drop: Set[str]) -> None:
+    """Re-attach addressTakenByUnits to the merged functions from the merged records.
+
+    Clearing is restricted to functions whose DEFINING FILE was re-parsed. For those the
+    fresh records are authoritative, so a registration deleted from a re-parsed table must
+    disappear -- that is the deletion semantics this has to keep.
+
+    For every other function this run has no evidence either way, and popping the field was
+    destructive: `_merge_address_taken` can only carry a baseline record forward if the
+    baseline HAS one, so a missing baseline `address_taken` artifact looked exactly like a
+    deliberate removal. The field was then wiped from functions in files nobody touched,
+    even though the baseline's own functions.json still carried it.
+
+    That is not hypothetical. `address_taken` was only registered in DB_BACKED_PARSE in
+    421f4e5; any version generated in database mode before that wrote the artifact to a
+    file nothing reads, so its parse snapshot has none. Chaining an incremental run off
+    such a version silently flipped every function published only through a file-scope
+    pointer table to private -- `_fn_is_private` keeps those public via this field alone,
+    since no CALL_EXPR names them -- and they vanished from the interface tables, the unit
+    and behaviour diagrams, and the document.
+    """
     by_fid: Dict[str, Set[str]] = {}
     for rec in records or []:
         if len(rec) >= 2 and rec[0] in functions and rec[1]:
@@ -157,8 +177,9 @@ def _apply_address_taken(functions: Dict[str, dict], records: List[list]) -> Non
         units = by_fid.get(fid)
         if units:
             f["addressTakenByUnits"] = sorted(units)
-        else:
+        elif _file_of(fid, entity_files) in drop:
             f.pop("addressTakenByUnits", None)
+        # else: file not re-parsed, no evidence -- keep what the baseline carried.
 
 
 def _recompute_call_edges(functions: Dict[str, dict], override_pairs: List[list]) -> None:
@@ -223,7 +244,24 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
 
     address_taken = _merge_address_taken(baseline.get("address_taken"), fresh.get("address_taken"),
                                          entity_files, drop)
-    _apply_address_taken(functions, address_taken)
+    # A baseline with no address_taken records, whose own functions nonetheless carry
+    # addressTakenByUnits, is the poisoned shape: the artifact was never captured (it was
+    # registered in DB_BACKED_PARSE only in 421f4e5), so nothing can be carried forward
+    # from it and only the file-scoped guard above keeps those registrations alive. Say so
+    # -- silently inheriting it is how every pointer-table entry flipped private.
+    if not (baseline.get("address_taken") or []):
+        _stale = sorted(fid for fid, f in (baseline.get("functions") or {}).items()
+                        if f.get("addressTakenByUnits"))
+        if _stale:
+            from utils import log as _log
+            _log("baseline has no address_taken snapshot, but %d of its function(s) are "
+                 "published by a pointer table. Their registrations are preserved from the "
+                 "baseline model, not re-derived -- regenerate the baseline with --full if a "
+                 "table changed there. Affected: %s%s"
+                 % (len(_stale), ", ".join(_stale[:3]),
+                    "" if len(_stale) <= 3 else " ..."),
+                 component="incremental", err=True)
+    _apply_address_taken(functions, address_taken, entity_files, drop)
 
     _recompute_call_edges(functions, override_pairs)
 

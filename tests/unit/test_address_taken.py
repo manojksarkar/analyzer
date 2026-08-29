@@ -214,11 +214,42 @@ class TestIncrementalReplay:
 
     def test_apply_reattaches_units_to_functions(self):
         functions = {"Cross|OpsTable|opsAdd|int,int": {}, "Other|Mod|fn|": {}}
-        _apply_address_taken(functions, [["Cross|OpsTable|opsAdd|int,int", "Cross|OpsClient"]])
+        _apply_address_taken(functions, [["Cross|OpsTable|opsAdd|int,int", "Cross|OpsClient"]],
+                             self.ENTITY_FILES, {"layer1/poly/opstable.cpp"})
         assert functions["Cross|OpsTable|opsAdd|int,int"]["addressTakenByUnits"] == ["Cross|OpsClient"]
         assert "addressTakenByUnits" not in functions["Other|Mod|fn|"]
 
-    def test_apply_clears_a_stale_flag(self):
+    def test_apply_clears_a_stale_flag_for_a_reparsed_file(self):
+        """Deletion semantics: a registration removed from a table that WAS re-parsed must
+        disappear. The fresh records are authoritative for those files."""
         functions = {"Cross|OpsTable|opsAdd|int,int": {"addressTakenByUnits": ["Cross|Gone"]}}
-        _apply_address_taken(functions, [])
+        _apply_address_taken(functions, [], self.ENTITY_FILES, {"layer1/poly/opstable.cpp"})
         assert "addressTakenByUnits" not in functions["Cross|OpsTable|opsAdd|int,int"]
+
+    def test_apply_keeps_the_flag_when_the_file_was_not_reparsed(self):
+        """The regression this guards. `_merge_address_taken` can only carry a baseline
+        record forward if the baseline HAS one, so a MISSING baseline address_taken
+        artifact arrives here as an empty record list -- indistinguishable from a
+        deliberate removal. Clearing on that evidence wiped the field from functions in
+        files nobody touched.
+
+        It is not hypothetical: `address_taken` was registered in DB_BACKED_PARSE only in
+        421f4e5, so any version generated in database mode before that has no such parse
+        snapshot. Chaining an incremental run off one flipped every function published
+        solely through a file-scope pointer table to private -- `_fn_is_private` keeps
+        those public through this field alone, nothing CALLS them by name -- and they left
+        the interface tables, the diagrams and the document. Reproduced end to end before
+        the fix, and B == A == baseline after it.
+        """
+        functions = {"Cross|OpsTable|opsAdd|int,int":
+                     {"addressTakenByUnits": ["Cross|OpsClient"]}}
+        _apply_address_taken(functions, [], self.ENTITY_FILES, {"layer1/other/mod.cpp"})
+        assert functions["Cross|OpsTable|opsAdd|int,int"]["addressTakenByUnits"] == ["Cross|OpsClient"]
+
+    def test_apply_leaves_untouched_files_alone_while_clearing_reparsed_ones(self):
+        """Both halves in one merge, which is the shape a real narrowed parse produces."""
+        functions = {"Cross|OpsTable|opsAdd|int,int": {"addressTakenByUnits": ["Cross|OpsClient"]},
+                     "Other|Mod|fn|": {"addressTakenByUnits": ["Other|Gone"]}}
+        _apply_address_taken(functions, [], self.ENTITY_FILES, {"layer1/other/mod.cpp"})
+        assert functions["Cross|OpsTable|opsAdd|int,int"]["addressTakenByUnits"] == ["Cross|OpsClient"]
+        assert "addressTakenByUnits" not in functions["Other|Mod|fn|"]

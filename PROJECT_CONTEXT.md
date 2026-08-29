@@ -431,7 +431,53 @@
 >
 > The testing lesson is specific: my earlier verification of `reexport --unit` passed because I
 > re-exported the unit that HAD the diagram — the single case that regenerates its own row and
-> so hides the wipe.) The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
+> so hides the wipe.
+>
+> **Then the narrowing moved off the function list entirely.** `--unit` exists to re-check one
+> unit's images against an already-generated model, and it could not do that for behaviour
+> diagrams while it narrowed WHICH FUNCTIONS GET A ROW. Deciding whether a function needs a
+> diagram is free — the selector returns nothing for almost every function, measured at ~0.01s
+> across 2817, and 8 of 2817 qualify on the reported project; the cost is mmdc, seconds per PNG.
+> So every function is evaluated and every row recorded, and only the RENDER is skipped for units
+> the caller did not name, reusing whatever PNG is on disk. The manifest is complete by
+> construction, `--unit` still skips the expensive work, and a narrowed run now HEALS a manifest
+> an earlier one emptied — 0.14s against 5.6s for the full render. The merge became dead code and
+> went; the orphan check is keyed on the .mmd files a run recorded rather than on whether a PNG
+> exists, because a row whose image `--unit` skipped is still a row.)
+
+> Updated: 2026-08-29 (**a missing baseline `address_taken` snapshot silently made
+> pointer-table functions private** — reported against `integration/poc-4-db`, and confirmed
+> independently before touching anything.
+>
+> A function reached ONLY through a file-scope table (`static const fp_t t[] = { fx, fy };`) has
+> no named caller, so `calledByIds` is empty and `_fn_is_private` keeps it public through
+> `addressTakenByUnits` ALONE. `_merge_address_taken` is file-aware and correct: it carries a
+> baseline record forward when the target's file was not re-parsed. `_apply_address_taken` was
+> not — it popped the field whenever the merged records held nothing for a function, so a
+> MISSING baseline artifact was indistinguishable from a deliberate removal, and the field was
+> wiped from functions in files nobody had touched.
+>
+> Not hypothetical: `address_taken` was registered in `DB_BACKED_PARSE` only in 421f4e5, so any
+> version generated in database mode before that wrote it to a file nothing reads and has no such
+> parse snapshot. Chain an incremental run off one and every table-published function flips to
+> private with a `PIF_*` id, leaving the interface tables, the unit and behaviour diagrams, and
+> the document.
+>
+> Reproduced A/B on SampleCppProject's `Layer1/Poly/OpsTable.cpp` fixture: A (intact baseline)
+> kept `opsAdd`/`opsSub` public; B (same run, `fpv1`'s `address_taken` snapshot deleted first)
+> flipped both to `private` + `PIF_*` with `addressTakenByUnits` gone. After the fix
+> **B == A == baseline** on visibility, interface id AND `addressTakenByUnits`.
+>
+> The clear is now restricted to functions whose defining file was actually re-parsed, where the
+> fresh records ARE authoritative — deletion semantics verified separately by removing `opsSub`
+> from the table in a re-parsed file, which correctly sends it private while `opsAdd` stays. A
+> baseline that has no `address_taken` records while its own functions carry
+> `addressTakenByUnits` now logs a warning, because inheriting that silently is the whole
+> failure mode.
+>
+> Workaround for an already-poisoned version: re-run with `--full`, or point `--base-version` at
+> a version whose snapshot actually contains `address_taken.json`. Check with
+> `select name from parse_snapshots where version_id = '<baseline>'`.) The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
 > detached poc-4 worktree with `--poc4`, and junction node_modules into that worktree so both
 > sides render mermaid identically.
 >
