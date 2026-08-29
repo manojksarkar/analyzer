@@ -29,6 +29,10 @@ def main() -> int:
         funcs = model_store.load_functions(cx, a.version_id)
         snaps = [r[0] for r in cx.execute(sa.text(
             "select name from parse_snapshots where version_id=:v"), {"v": a.version_id})]
+        row = cx.execute(sa.text("select decision, baseline_version_id from versions "
+                                 "where id=:v"), {"v": a.version_id}).first()
+    decision = (row[0] if row else None) or "full"
+    baseline = row[1] if row else None
 
     n = len(funcs)
     if not n:
@@ -42,7 +46,19 @@ def main() -> int:
               ("readsGlobalIds", have("readsGlobalIds")),
               ("writesGlobalIds", have("writesGlobalIds")),
               ("addressTakenByUnits", have("addressTakenByUnits"))]
-    print(f"version {a.version_id}: {n} functions")
+    print(f"version {a.version_id}: {n} functions, parsed as {decision!r}"
+          + (f" off baseline {baseline!r}" if baseline else ""))
+    # The parse_merge fixes only ever touch a NARROWED parse. A full parse never calls
+    # merge_model (its one call site is _try_narrowed_parse), so a full version cannot
+    # have been damaged by them and does not need re-parsing when they land.
+    if decision == "full":
+        print("   -> full parse: unaffected by any parse_merge fix; no re-parse needed "
+              "for those.")
+    else:
+        print("   -> INCREMENTAL: this one went through parse_merge. If it predates the "
+              "address_taken fix (24214e4),")
+        print("      pointer-table functions may have been flipped private -- re-run it "
+              "with --full.")
     for name, c in checks:
         print(f"   {name:<22} {c}")
 
