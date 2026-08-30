@@ -78,6 +78,23 @@ def main() -> int:
     print("=" * 70)
     print("HOP 3  derived visibility")
     print("=" * 70)
+    # The decisive line: do the functions that DO have a table record come out public?
+    # If they do, the mechanism works end to end and anything still missing was never
+    # registered by the parser -- which makes it a detection question about the C++
+    # shape, not a storage or merge one.
+    pub = [k for k in with_field if rows.get(k, ("?",))[0] != "private"]
+    priv = [k for k in with_field if rows.get(k, ("?",))[0] == "private"]
+    print(f"  of the {len(with_field)} function(s) WITH a table record: "
+          f"{len(pub)} public, {len(priv)} private")
+    if priv:
+        print("  *** these have a record and are STILL private -- the deriver is at fault:")
+        for k in priv[:5]:
+            print(f"      {k}")
+    elif with_field:
+        print("  -> the address-taken mechanism works end to end for every function the")
+        print("     parser registered. Anything else that should be public was never")
+        print("     registered: a table shape the parser does not recognise.")
+    print()
     shown = 0
     suspects = []
     for fid, f in sorted(funcs.items()):
