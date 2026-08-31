@@ -54,8 +54,13 @@ layer's `path` — above, `Layer1/Math` and `Layer1/App`. Comments and trailing 
 local path; `<sha>` is the full 40-character sha from `git -C <your-cpp> rev-parse HEAD`.
 
 ```
-python analyzer.py onboard --project-id myproj --source D:\code\my-cpp --config my-config.json --version-id v1 --commit <sha>
+python analyzer.py onboard --project-id myproj --source D:\code\my-cpp --config my-config.json --branch main --version-id v1 --commit <sha>
 ```
+
+**Pass `--branch` even though it defaults to `main`.** It is recorded on the project and every
+later `generate` uses it, so a repo on any other branch fails at the clone with `Remote branch
+main not found` — from a command that never mentions `main`. Get it from
+`git -C <your-cpp> branch --show-current`.
 
 Read the line it prints back before going on — it is the fastest way to catch a wrong config:
 
@@ -73,13 +78,25 @@ python analyzer.py generate --project-id myproj --version-id v1
 
 That is the whole command. **`--branch` and `--commit` are not needed** — `onboard` recorded
 both, so `generate` reads the branch off the project and the commit off the version you
-reserved. Pass them only to override:
+reserved.
+
+Every flag spelled out, which is what you want when the defaults are not what you mean:
 
 ```
-python analyzer.py generate --project-id myproj --version-id v1 --branch br_trunk --commit <sha>
+python analyzer.py generate --project-id myproj --version-id v1 --branch main --commit <sha> --scope "group:Support" --unit Utils
 ```
 
-`--scope` defaults to `project`.
+| Flag | When you need it |
+|---|---|
+| `--branch` | the project's recorded branch is wrong for this run |
+| `--commit` | this version has no commit recorded yet, or you want a different one |
+| `--scope` | default is `project` — the whole thing. `layer:L`, `group:G`, `component:C1,C2` |
+| `--unit` | only re-render this unit's IMAGES. Repeatable. Not a scope — see below |
+
+`--unit` is a speed aid, not a filter on the document: the model stays whole and the documents
+are still the ones `--scope` asks for. It skips re-rendering diagrams for other units when they
+are already on disk, which is what makes checking one unit's images quick. On a first run there
+is nothing to reuse, so everything renders anyway and the document comes out complete.
 
 ```
 version v1 (complete): commit 1d04bb15d8, decision=full, regenerated=18, reused=0,
@@ -135,6 +152,22 @@ It is `generate`. There is no second command:
 ```
 python analyzer.py generate --project-id myproj --version-id v2 --commit <sha2> --create-version
 ```
+
+Every flag spelled out:
+
+```
+python analyzer.py generate --project-id myproj --version-id v2 --branch main --commit <sha2> --scope "group:Support" --unit Utils --create-version
+```
+
+| Flag | When you need it |
+|---|---|
+| `--commit` | **required here** — v2 is a new id with no commit recorded against it yet |
+| `--create-version` | **required here** — reserves the row, so you need not run `onboard` again |
+| `--branch` | the project's recorded branch is wrong for this run |
+| `--scope` | default `project`. Keep it the same as the baseline's, or the comparison is between different document sets |
+| `--unit` | re-render only this unit's images. Repeatable, and orthogonal to the incremental reuse |
+| `--base-version` | force a baseline instead of the nearest usable ancestor |
+| `--full` | force a full run, ruling the baseline out |
 
 Run that against a later commit of a project that already has a finished version, and you get an
 incremental run — only the changed translation units re-parsed, everything else reused.
