@@ -288,6 +288,33 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
                 shutil.copyfile(srcpng, os.path.join(out_dir, png))
 
         restricted = {fid: funcs[fid] for fid in sel}
+        # The engine restricts ITSELF from the stored plan, so the `sel.append(fid)`
+        # fallback above is only real if the plan learns about it. It did not, and the
+        # consequence is silent and wrong:
+        #
+        #   plan.flowchartFids = direct_fns - crossVersionFlowcharts, so a changed function
+        #   whose fingerprint was seen in an earlier version is excluded here. If that
+        #   version turns out to have NO flowchart for it, this view adds it back to `sel`
+        #   -- but the engine still reads flowchartFids, sees an empty list, renders
+        #   nothing, and the splice below falls through fresh -> x-ver -> BASELINE. The
+        #   document then carries the previous version's diagram for code that changed.
+        #
+        # Reproduced: a for-loop added to Math|Utils::add, incremental. The first such run
+        # renders correctly; a later run off the same baseline finds the fingerprint in the
+        # index, finds no flowchart at the source, and silently keeps the old picture.
+        #
+        # So publish the corrected set. One source of truth, and the engine restricts to
+        # exactly what this view decided.
+        if set(sel) != set(fids):
+            try:
+                from core.model_io import write_model_file
+                write_model_file(INCREMENTAL_PLAN, {**plan, "flowchartFids": sorted(set(sel))})
+                log("incremental: %d function(s) had no usable cross-version flowchart; "
+                    "added them back to the plan so the engine regenerates them"
+                    % (len(set(sel) - set(fids))), "flowcharts")
+            except Exception as exc:                       # never fail the run over this
+                log("incremental: could not republish the plan (%s); flowcharts for "
+                    "changed functions may be stale" % exc, "flowcharts", err=True)
         fresh_pairs = {
             (_stem(fid), funcs[fid].get("qualifiedName"))
             for fid in sel
