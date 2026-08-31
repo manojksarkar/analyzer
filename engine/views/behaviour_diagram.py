@@ -75,7 +75,6 @@ def run(model, output_dir, model_dir, config):
         run_cmd_base.extend(["-p", puppeteer])
 
     docx_rows = {}  # component -> unit -> [ {externalUnitFunction, pngPath} ]
-    not_rendered = []          # diagrams --unit skipped that had no PNG to reuse
     rowed_mmd = set()          # .mmd files this run recorded a row for
     # Only generate diagrams for functions within the selected group (if any),
     # but keep full-model context so external callers (outside the group) are captured.
@@ -170,17 +169,19 @@ def run(model, output_dir, model_dir, config):
             if render_png and os.path.isfile(mmd_path):
                 png_base = os.path.splitext(os.path.basename(mmd_path))[0]
                 png = os.path.join(out_dir, f"{png_base}.png")
-                # This is where --selected-unit actually saves the time: mmdc costs
-                # seconds per diagram. A unit the caller did not name keeps whatever PNG
-                # is already there, and still gets its row either way, so the document
-                # stays correct instead of losing the section entirely.
+                # This is where --selected-unit saves the time: mmdc costs seconds per
+                # diagram. Skip it ONLY when there is an existing PNG to reuse -- the point
+                # is to avoid RE-rendering what is already on disk, not to ship a document
+                # with an empty picture slot. On a first run nothing exists to reuse, so
+                # everything renders and the document is complete; on the next --unit run
+                # the named unit re-renders and the rest are reused, which is the case the
+                # flag exists for.
                 _unit = (fid_to_unit.get(fid) or "")
                 _short = _unit.split(KEY_SEP, 1)[1].lower() if KEY_SEP in _unit else ""
-                if allowed_units and _short not in allowed_units:
-                    if os.path.isfile(png):
-                        png_path = png                     # reuse, do not re-render
-                    else:
-                        not_rendered.append(png_base)      # row still recorded, no image
+                _reuse = (allowed_units and _short not in allowed_units
+                          and os.path.isfile(png))
+                if _reuse:
+                    png_path = png
                 else:
                     run_cmd = run_cmd_base + ["-i", mmd_path, "-o", png, "-s", "2"]
                     try:
@@ -224,15 +225,6 @@ def run(model, output_dir, model_dir, config):
     # time is also what removes a stale row whose diagram has since gone.
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"_docxRows": docx_rows}, f, indent=2)
-
-    if not_rendered:
-        log("%d diagram(s) belong to units --unit did not name and had no PNG to reuse, "
-            "so their rows carry no image. Re-run without --unit to render them:"
-            % len(not_rendered), component="behaviourDiagram", err=True)
-        for b in not_rendered[:5]:
-            log("    %s" % b, component="behaviourDiagram", err=True)
-        if len(not_rendered) > 5:
-            log("    ... and %d more" % (len(not_rendered) - 5), component="behaviourDiagram", err=True)
 
     # A .mmd with no ROW is invisible damage: the exporter places a behaviour subsection
     # only from this manifest, so the document gets an empty "Dynamic Behaviour" heading

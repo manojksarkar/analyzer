@@ -46,31 +46,44 @@ def test_the_function_list_is_not_narrowed_by_unit():
 
 
 def test_the_render_is_narrowed_by_unit():
-    """Where the time is actually spent."""
+    """Where the time is actually spent -- 9.35s rendering against 0.37s reusing."""
     src = _src()
     i = src.index("png = os.path.join(out_dir,")
-    block = src[i:i + 900]
-    assert "if allowed_units and _short not in allowed_units:" in block
+    block = src[i:i + 1100]
+    assert "allowed_units" in block
     assert "run_cmd_base" in block
 
 
 def test_an_existing_png_is_reused_rather_than_rerendered():
     src = _src()
-    i = src.index("if allowed_units and _short not in allowed_units:")
-    block = src[i:i + 400]
+    i = src.index("_reuse = (allowed_units")
+    block = src[i:i + 300]
     assert "os.path.isfile(png)" in block
     assert "png_path = png" in block
 
 
-def test_a_row_is_recorded_even_when_the_image_was_skipped():
-    """The whole point: the document keeps its heading and description. The exporter
-    already tolerates a row whose pngPath is missing."""
+def test_the_render_is_skipped_only_when_there_is_something_to_reuse():
+    """The correction that matters. Skipping whenever the unit was not named left a FIRST
+    run with .mmd files and no .png -- rows recorded, so the document carried behaviour
+    sections with empty picture slots. --unit is for avoiding a RE-render of what is
+    already on disk, not for shipping a document with holes in it.
+
+    So: reuse only when narrowed AND the PNG exists; otherwise render. A first run comes
+    out complete, and the next --unit run still reuses -- measured at 0.37s against 9.35s.
+    """
     src = _src()
-    i = src.index("if allowed_units and _short not in allowed_units:")
-    block = src[i:i + 400]
-    assert "not_rendered.append" in block
-    # and the append to docx_rows is NOT inside that branch
-    assert "docx_rows.setdefault" not in block
+    i = src.index("_reuse = (allowed_units")
+    block = src[i:i + 240]
+    assert "_short not in allowed_units" in block
+    assert "os.path.isfile(png)" in block
+
+
+def test_nothing_is_left_without_an_image():
+    """There is no longer a branch that records a row and renders nothing -- the state
+    that produced the report. If one comes back, so does the empty picture slot."""
+    src = _src()
+    assert "not_rendered" not in src
+    assert "had no PNG to reuse" not in src
 
 
 def test_the_manifest_is_written_whole():
@@ -79,12 +92,6 @@ def test_the_manifest_is_written_whole():
     src = _src()
     assert "merged" not in src and "prior" not in src
     assert 'json.dump({"_docxRows": docx_rows}, f, indent=2)' in src
-
-
-def test_skipped_renders_are_reported():
-    src = _src()
-    assert "had no PNG to reuse" in src
-    assert "Re-run without --unit to render them" in src
 
 
 def test_orphans_are_keyed_on_recorded_rows_not_on_the_png():
