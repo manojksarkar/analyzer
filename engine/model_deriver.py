@@ -376,6 +376,12 @@ def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
     # { fn1, … };`) is reachable through that table even though no CALL_EXPR names it, so
     # the cross-file-caller rule below would wrongly bury it. Ranked BELOW the explicit
     # PRIVATE annotation: a source-level marking stays authoritative.
+    # An explicit PUBLIC annotation is authoritative, exactly as PRIVATE is above. Without
+    # this, a marked entry point with no by-name caller -- an ISR, a registered callback, an
+    # API called only from outside the parsed tree -- falls through to the cross-file-caller
+    # rule and is buried as private, dropping it from the interface table and the document.
+    if (f.get("visibility") or "").lower() == "public":
+        return False
     if f.get("addressTakenByUnits"):
         return False
     return not _has_external_caller(f, functions_data, base_path)
