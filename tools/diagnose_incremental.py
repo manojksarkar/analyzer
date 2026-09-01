@@ -145,10 +145,11 @@ def main() -> int:
     print("=" * 74)
     if not dt:
         print("  the target has no flowchart JSON at all -- is views.flowcharts on?")
-    shown, stuck, png_stuck = 0, [], []
+    shown, stuck, png_stuck, examined = 0, [], [], 0
     for k in changed + added:
         if a.name and a.name.lower() not in k.lower():
             continue
+        examined += 1
         parts = k.split("|")
         fn = parts[2] if len(parts) > 2 else k
         cands = [key for key in dt if key[1] == fn]
@@ -186,6 +187,21 @@ def main() -> int:
     print("=" * 74)
     if not changed and not added:
         print("  HOP 1. The parse saw no change; nothing downstream can help.")
+    elif not examined:
+        # An empty examination is NOT a pass. Saying "all good" here is how this tool
+        # wasted a run: the name filter matched none of the changed functions and the
+        # verdict reported success anyway.
+        print("  NOTHING WAS EXAMINED.")
+        if a.name:
+            print("  --name %r matched none of the %d changed function(s). They are:"
+                  % (a.name, len(changed) + len(added)))
+            for k in (changed + added)[:12]:
+                print("      %s" % k)
+            print()
+            print("  Re-run WITHOUT --name to check them all, or copy a name from above.")
+        else:
+            print("  No changed function could be matched to a flowchart. Is"
+                  " views.flowcharts on for this run?")
     elif stuck:
         print("  HOP 3. %d function(s) changed in the parse but kept the baseline's DOT:"
               % len(stuck))
