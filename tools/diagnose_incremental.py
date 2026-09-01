@@ -59,6 +59,16 @@ def _flowchart_dots(pid, vid):
     return out
 
 
+def _output_components(pid, vid):
+    """Component directories this version actually rendered. A version's MODEL is whole,
+    but its OUTPUT only covers the scope that was generated -- so a changed function in a
+    component that is not here was never in this document to begin with."""
+    base = os.path.join(_version_dir(pid, vid), "output")
+    if not os.path.isdir(base):
+        return set()
+    return {d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))}
+
+
 def _pngs(pid, vid):
     out = {}
     base = os.path.join(_version_dir(pid, vid), "output")
@@ -139,6 +149,7 @@ def main() -> int:
     # ---- HOPS 3 and 4 -----------------------------------------------------------------
     db_, dt = _flowchart_dots(a.project_id, a.baseline), _flowchart_dots(a.project_id, a.target)
     pb, pt = _pngs(a.project_id, a.baseline), _pngs(a.project_id, a.target)
+    comps_b, comps_t = _output_components(a.project_id, a.baseline), _output_components(a.project_id, a.target)
     print()
     print("=" * 74)
     print("HOPS 3-4  per changed function: did the DOT and the PNG follow?")
@@ -146,17 +157,27 @@ def main() -> int:
     if not dt:
         print("  the target has no flowchart JSON at all -- is views.flowcharts on?")
     shown, stuck, png_stuck, examined = 0, [], [], 0
+    out_of_scope, no_entry = [], []
     for k in changed + added:
         if a.name and a.name.lower() not in k.lower():
             continue
         examined += 1
         parts = k.split("|")
         fn = parts[2] if len(parts) > 2 else k
+        comp = parts[0] if parts else ""
         cands = [key for key in dt if key[1] == fn]
         if not cands:
-            if shown < a.limit:
-                print("  %s: no flowchart entry in the target at all" % fn)
-                shown += 1
+            if comp and comps_t and comp not in comps_t:
+                out_of_scope.append((fn, comp))
+                if shown < a.limit:
+                    print("  %s: component %r is NOT in this version's output -- out of scope"
+                          % (fn, comp))
+                    shown += 1
+            else:
+                no_entry.append((fn, comp))
+                if shown < a.limit:
+                    print("  %s: component %r IS in scope but has no flowchart entry" % (fn, comp))
+                    shown += 1
             continue
         for key in cands:
             dot_b, dot_t = db_.get(key, ""), dt.get(key, "")
@@ -213,6 +234,27 @@ def main() -> int:
               % len(png_stuck))
         for s in png_stuck[:8]:
             print("      %s" % s)
+    elif out_of_scope and not stuck and not png_stuck and not no_entry:
+        # The commonest false alarm, and not a defect at all: a version's MODEL is whole
+        # but its OUTPUT covers only the scope that was generated. Editing a function in
+        # a component outside that scope changes the model and cannot change a document
+        # that never contained it.
+        print("  OUT OF SCOPE -- not a pipeline fault.")
+        print("  %d changed function(s) live in components this version did not render:"
+              % len(out_of_scope))
+        for fn, c in out_of_scope[:8]:
+            print("      %-46s component %r" % (fn, c))
+        print()
+        print("  rendered here : %s" % (", ".join(sorted(comps_t)) or "(none)"))
+        print("  -> re-run with a --scope that covers those components, e.g."
+              " --scope \"component:%s\"" % out_of_scope[0][1])
+    elif no_entry:
+        print("  %d changed function(s) are IN scope but have no flowchart entry:"
+              % len(no_entry))
+        for fn, c in no_entry[:8]:
+            print("      %-46s component %r" % (fn, c))
+        print("  The view never produced a diagram for them -- check views.flowcharts,")
+        print("  and whether they are private (tools/why_private.py).")
     else:
         print("  Every changed function got a new DOT and a new PNG. If the document still")
         print("  looks wrong, the export embedded something else -- or the file being read")
