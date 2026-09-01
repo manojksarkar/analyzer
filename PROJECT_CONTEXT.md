@@ -208,6 +208,91 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-01b (**SWE.4 ported onto the DB-native pipeline; explicit `PUBLIC` was being
+> ignored** — branch `feat/swe4-port`.
+>
+> **SWE.4 port.** `feat/swe4-v1` predates the Postgres cutover (it still carried `api/db/json_db.py`)
+> and `feat/swe4-ut-export` sits on top of it — the UT export is a SEPARATE branch, easy to miss.
+> Ported by copying the new files and 3-way-applying the deltas, NOT by merging: 22 new + 22 modified.
+> `parser.py`, `flowcharts.py`, `run.py`, `group_planner.py` merged clean. Five conflicts, each keeping
+> both sides: `flowchart_engine.py` (`NodeType` + `serialize_cfg`), `run_views.py` (`__none__` guard +
+> `doc_type`), `docx_exporter.py` (accepted the extraction into the new `docx_common.py`),
+> `tests/conftest.py` (**kept develop's DB-native e2e**, took only ut-export's `--doc-type all`; its own
+> version reverted e2e to a direct `engine/run.py` call and would have dropped DB coverage), `README.md`.
+> `engine/config/config.json` had to be hand-translated — develop renamed it `config.defaults.json`.
+>
+> **Two fixes the port needed, neither of them ported code.**
+> (1) `docx_common.load_model_json` opened `model/<name>.json` DIRECTLY — the Phase-4 bypass doc 10
+> step 5 removed. Left alone, SWE.4's exporter reads disk on a DB-backed run. Now `read_model_file`.
+> (2) `--doc-type` existed all through the engine (`run.py` → `group_planner` → exporter registry) but
+> was NOT exposed by `analyzer.py generate`, so the DB front door could never ask for SWE.4. Threaded
+> through `analyzer.py` → `incremental/generate.py` → `incremental/engine.py` (only the `--from-phase 2`
+> resume needs it; the `--to-phase 1` parses do not).
+>
+> **NO database work was required.** `test_specs.json` / `ut_export.json` ride `version_output_files`,
+> which is extension-driven (`persist_output_files`, `.json` included) — not view-specific. `documents
+> .process` is a free-text String, so SWE.4 needs no column. **Do not add a typed `view_test_specs`
+> table**: `view_interface_tables` and `view_behaviour_rows` are already declared in `schema.py` and
+> written by NOTHING — superseded by `version_output_files`, and they read as permanently-empty tables.
+>
+> **`_fn_is_private` ignored an explicit `PUBLIC`** (`model_deriver.py`, pre-existing on develop, NOT
+> from the port). Explicit `PRIVATE` short-circuits to private and `addressTakenByUnits` short-circuits
+> to public, but a `PUBLIC`-marked function fell through to the cross-file-caller rule — so a marked
+> entry point with no by-name caller (ISR, registered callback, API called from outside the tree) was
+> buried as private, given a `PIF_` id and DROPPED from the document. `_detect_visibility` had read it
+> correctly; line 444 then overwrote it. Fixed by making `PUBLIC` authoritative, symmetric with
+> `PRIVATE`. **Impact: 27 functions private→public (87→60 / 45→72) and 28 interface-ids renumber**, so
+> **`tests/snapshots/Sample/*.json` must be regenerated** (not done — needs a full pipeline run).
+> Verified on `Layer1/Poly/OpsTable` (the purpose-built fixture): `opsAdd`/`opsSub` public via the
+> address-taken table, `opsDispatch`/`opsSeedValue` public via the annotation, and `opsSeed` — called
+> from a file-scope initializer, not address-taken — correctly STAYS private.
+>
+> **Traceability gap (open, not a bug):** an address-take records only `addressTakenByUnits` (the
+> registering UNIT), never the pointer variable. Nothing links `opsAdd` to `g_opsTable`. The forward
+> direction (`g_opsTable[index]` → which entry) is genuinely unknowable; the backward one is not — the
+> initializer cursor is in hand when the address-take is detected.
+>
+> **Verified:** one `--doc-type all` run emits SWE.3 + SWE.4 + `ut_export.json` (9 cases from 4 specs,
+> 1 dynamic behaviour spec), status complete, 0 errors; `pytest tests/unit tests/api` green incl. 129
+> SWE.4/UT tests. **Dynamic behaviour specs need BOTH ends of the interaction in the model** — the
+> sample has exactly one (`Signal|acquireAndNormalize` ← `Cross|Hub|hubCompute`), so a scope holding
+> only one side yields 0; that is correct, not a defect.)
+
+> Updated: 2026-09-01 (**`llm_call_stats` timing columns were dead everywhere; `alembic upgrade head`
+> cannot build a fresh DB (KNOWN, deliberately NOT fixed)** — found by running a real local Postgres,
+> which the API tests' in-memory SQLite hides.
+>
+> **Fixed:** `schema.py` never received migration 0008's four columns — `llm_call_stats` declared only
+> `{version_id, phase, kind, outcome, n}` while 0008 adds `latency_seconds`, `throttle_seconds`,
+> `prompt_tokens`, `completion_tokens`. Both directions were dead: the WRITE in
+> `llm_core/callstats.py::flush` renders only the 5 declared columns, so `sa.insert()` **silently
+> discarded** the four values (proven — the insert reached Postgres and failed only on the FK), and
+> the READ in `load_timing_for_version` guards on `hasattr(cols, "latency_seconds")` → `{}`. So LLM
+> latency/token telemetry never persisted **anywhere, including boxes where the DB columns exist**,
+> and `except Exception: pass` in `flush` hid it. The four columns are now declared (0008's types +
+> `server_default="0"`); verified round-tripping through real Postgres.
+>
+> **KNOWN LIMITATION — do not run `alembic upgrade head` on an empty database.** It fails at 0002 with
+> `DuplicateTable: relation "parse_snapshots" already exists`. Cause: `0001_initial` calls
+> `metadata.create_all()`, and `metadata` is the schema as of TODAY — so on a fresh DB it creates all
+> 36 tables including everything 0002–0008 add. A baseline that references "now" cannot be replayed,
+> because replay happens at one moment and history did not. Deployed DBs never hit it (they walked the
+> chain as each revision landed) and the API tests never run alembic at all.
+> **Not fixed by decision (2026-09-01):** pre-production, no data worth preserving, and the migration
+> discipline is already not followed — `job_functions` and `version_output_files` are in `schema.py`
+> with **no creating migration**, so what a database contains depends on WHEN it was built, not on the
+> chain. Half-maintained migrations give false confidence. **To create a database, use
+> `python analyzer.py setup` (`tools/db_setup.py`) / `metadata.create_all()`, not the alembic chain.**
+> Revisit when there is production data to preserve; at that point `create_all` on a fresh prod DB
+> becomes the correctly-frozen 0001.
+>
+> **Local dev Postgres (no Docker, no admin):** portable PG 16.10 at `C:\Users\User\pgsql` — start with
+> `bin\pg_ctl -D <root>\data -l <root>\server.log -o "-p 5432" start`, stop with `... stop`. Not a
+> service; does not survive a reboot. pgAdmin 4 is bundled at `pgAdmin 4\runtime\pgAdmin4.exe`.
+> `engine/config/config.local.json` (gitignored) carries the `db` block — it must exist even though it
+> equals the compose default, because `core.db.is_database_configured()` deliberately does not count
+> that fallback, so without it `run.py` silently skips Postgres.)
+
 > Updated: 2026-08-25b (**the flowchart engine was rendering the WHOLE version for every
 > component** — branch `integration/poc-4-db`. Reported as "it processes 2817 functions where the
 > old JSON build processed 15", and it is the most serious defect the migration left behind.
