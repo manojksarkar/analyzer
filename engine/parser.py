@@ -654,6 +654,20 @@ component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
 global_access_writes = defaultdict(set)  # func_key -> set of var_id
+# func_key -> set of (base variable, its struct type, field) that the body READS.
+# SWE.4 needs it to tell which of a mocked callee's write-backs actually matter: a
+# stub can fill in any field of the struct it is handed, but only the fields this
+# function goes on to read can change its behaviour, and only those belong in Input.
+# Reads only -- a field the function assigns to is an output, not test setup.
+field_access_reads = defaultdict(set)
+# func_key -> set of pointer/reference PARAMETER names the body writes through,
+# either by dereference (`*out = x`) or by field (`w->id = x`). Both mean the same
+# thing to SWE.4: this out-parameter is an output. The wiki asserts the whole
+# parameter ("one entry per out-parameter written"), not individual fields, so no
+# per-field breakdown is kept. Without this the only evidence would be the
+# parameter's TYPE, which wrongly asserted "Successfully updated" for pointers a
+# function merely reads or calls through.
+param_writes = defaultdict(set)
 # First non-trivial return expression per function (for behaviour output naming)
 function_return_expr = {}
 
@@ -1706,22 +1720,39 @@ _ASSIGN_OPS = {"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="
 
 
 def _is_assign_op(cursor):
+    """(is_write, is_compound) for a BINARY_OPERATOR.
+
+    The operator is located as the first token past the end of the LHS child, NOT
+    as `tokens[1]`. A multi-token LHS is the common case in real code and the fixed
+    index silently missed every one of them:
+
+        g_count  = 5;   tokens [g_count, =, 5]     -> tokens[1] == "="   detected
+        w->id    = id;  tokens [w, ->, id, =, id]  -> tokens[1] == "->"  MISSED
+        g_a[i]   = 5;   tokens [g_a, [, i, ], =, 5]                      MISSED
+
+    A missed assignment is not merely lost: the walker then descends with
+    `is_write=False`, so the target is recorded as a READ. That corrupts
+    `writesGlobalIds` and the In/Out `direction` derived from it.
+    """
     if cursor.kind != cindex.CursorKind.BINARY_OPERATOR:
         return False, False
     try:
-        tokens = list(cursor.get_tokens())
-        # Tokens: [LHS, op, RHS] or [LHS, +, =, RHS] for +=
-        if len(tokens) >= 2:
-            op = tokens[1].spelling
-            if op == "=":
-                return True, False  # pure write
-            if op in _ASSIGN_OPS:
-                return True, True   # compound = both
-            # Tokenized as separate: + and = -> +=
-            if len(tokens) >= 3:
-                combined = tokens[1].spelling + tokens[2].spelling
-                if combined in _ASSIGN_OPS:
-                    return True, True
+        children = list(cursor.get_children())
+        if len(children) < 2:
+            return False, False
+        lhs_end = children[0].extent.end.offset
+        op_tokens = [t.spelling for t in cursor.get_tokens()
+                     if t.extent.start.offset >= lhs_end]
+        if not op_tokens:
+            return False, False
+        op = op_tokens[0]
+        if op == "=":
+            return True, False      # pure write
+        if op in _ASSIGN_OPS:
+            return True, True       # compound = both read and write
+        # Tokenized apart, e.g. `+` `=` -> `+=`
+        if len(op_tokens) >= 2 and (op + op_tokens[1]) in _ASSIGN_OPS:
+            return True, True
     except Exception:
         pass
     return False, False
@@ -1737,6 +1768,34 @@ def _is_inc_dec_op(cursor):
     except Exception:
         pass
     return False
+
+
+def _member_base(cursor):
+    """(variable name, struct type) a MEMBER_REF_EXPR is reached through.
+
+    Returns ("", "") when the base is not a plain variable — a call result
+    (`getSlot()->f`) has no name the test can set up, so it is not an input.
+    The type is stripped of `*`, `&` and `const` so `MapEntry *` matches the
+    `MapEntry` the data dictionary is keyed by.
+    """
+    children = list(cursor.get_children())
+    if not children:
+        return ("", "")
+    base = children[0]
+    # Unwrap the UNEXPOSED_EXPR / paren / cast layers clang puts over the reference.
+    while base.kind != cindex.CursorKind.DECL_REF_EXPR:
+        kids = list(base.get_children())
+        if not kids:
+            return ("", "")
+        base = kids[0]
+    ref = base.referenced
+    if not ref or ref.kind not in (cindex.CursorKind.VAR_DECL,
+                                   cindex.CursorKind.PARM_DECL):
+        return ("", "")
+    t = (ref.type.spelling if ref.type else "") or ""
+    for token in ("const", "volatile", "struct", "*", "&"):
+        t = t.replace(token, " ")
+    return (ref.spelling or "", " ".join(t.split()))
 
 
 def visit_global_access(cursor, current_key=None, is_write=False, is_compound=False):
@@ -1789,8 +1848,34 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
                     function_return_expr[current_key] = expr
             except Exception:
                 pass
+    elif kind == cindex.CursorKind.MEMBER_REF_EXPR and current_key:
+        # `e.lba` / `p->ppn`. `op.apply()` is also a MEMBER_REF_EXPR, so only a
+        # FIELD_DECL referent counts -- a method is not data the test can set up.
+        # A compound assign (`s->n += 1`) reads the field as well as writing it.
+        ref = cursor.referenced
+        if ref and ref.kind == cindex.CursorKind.FIELD_DECL \
+                and (not is_write or is_compound):
+            field = cursor.spelling or ""
+            base_var, base_type = _member_base(cursor)
+            if field and base_var and base_type:
+                field_access_reads[current_key].add((base_var, base_type, field))
+        # Keep walking: the base may itself contain reads (`a[i].f`, `g_t.f`), and a
+        # write must reach the base so the global behind `g_t.f = x` is recorded.
+        for child in cursor.get_children():
+            visit_global_access(child, current_key, is_write, is_compound)
+        return
     elif kind == cindex.CursorKind.DECL_REF_EXPR and current_key:
         ref = cursor.referenced
+        if is_write and ref and ref.kind == cindex.CursorKind.PARM_DECL:
+            # Reached with is_write=True through `*out = x` (the UNARY_OPERATOR
+            # deref falls through to the generic recursion, which preserves the
+            # flag) or through `w->id = x` (the MEMBER_REF_EXPR branch above
+            # recurses into its base with the flag still set).
+            # Only a pointer/reference parameter counts: assigning to a by-value
+            # parameter (`a = a - b`) writes a local copy the caller never sees.
+            ptype = (ref.type.spelling if ref.type else "") or ""
+            if ref.spelling and ("*" in ptype or "&" in ptype):
+                param_writes[current_key].add(ref.spelling)
         if ref and ref.kind == cindex.CursorKind.VAR_DECL:
             par = ref.semantic_parent
             if par and par.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE):
@@ -2205,6 +2290,17 @@ def build_metadata():
             functions_dict[fid]["readsGlobalIds"] = read_vids
         if write_vids:
             functions_dict[fid]["writesGlobalIds"] = write_vids
+
+        # Struct fields this function reads, for the SWE.4 mock write-back inputs.
+        fields_read = field_access_reads.get(func_key, set())
+        if fields_read:
+            functions_dict[fid]["readsFields"] = [
+                {"var": v, "structType": t, "field": f}
+                for v, t, f in sorted(fields_read)
+            ]
+        written_params = param_writes.get(func_key, set())
+        if written_params:
+            functions_dict[fid]["writesParams"] = sorted(written_params)
 
         # Direction: Get=Out, Set=In, both=In. No direct global access -> In.
         if write_raw:

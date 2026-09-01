@@ -157,7 +157,7 @@ def cmd_generate(a) -> int:
     scope = _parse_scope(a.scope)
     common = dict(data_dict_id=a.data_dict, no_llm=a.no_llm, version_id=a.version_id,
                   config_path=a.config, repo_url=a.source, create_version=a.create_version,
-                  selected_units=a.unit)
+                  selected_units=a.unit, doc_type=a.doc_type)
     try:
         if a.full:
             m = generate_full(a.project_id, branch, commit, scope, force=a.force, **common)
@@ -576,6 +576,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="narrow the per-function FLOWCHART work to this unit. Repeatable. A "
                         "speed aid while iterating — the model and every other view stay "
                         "whole, and the documents are still the ones --scope asks for.")
+    s.add_argument("--doc-type", default="swe3", choices=("swe3", "swe4", "all"),
+                   help="which document(s) to emit: swe3 (detailed design, default), "
+                        "swe4 (unit test specification), or all")
     s.add_argument("--force", action="store_true", help="accepted; the commit dir is reused")
     s.set_defaults(fn=cmd_generate)
 

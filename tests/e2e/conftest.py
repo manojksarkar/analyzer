@@ -63,6 +63,17 @@ def llm_summarize_off():
 
 
 @pytest.fixture(scope="session")
+def function_test_specs_on():
+    """Skip the requesting test when views.functionTestSpecs is disabled.
+
+    With it off the SWE.4 view emits no per-function specs, so spec-content
+    assertions have nothing to assert against.
+    """
+    if not _load_cfg().get("views", {}).get("functionTestSpecs", False):
+        pytest.skip("views.functionTestSpecs is off — no per-function specs emitted")
+
+
+@pytest.fixture(scope="session")
 def update_snapshots(request):
     return request.config.getoption("--update-snapshots")
 
@@ -89,6 +100,12 @@ def interface_tables(run_pipeline):
     if not merged:
         raise AssertionError("no interface_tables.json under " + OUTPUT_DIR)
     return merged
+
+
+@pytest.fixture(scope="session")
+def test_specs(run_pipeline):
+    with open(os.path.join(OUTPUT_DIR, "My-Sample", "test_specs.json"), encoding="utf-8") as f:
+        return json.load(f)
 
 
 @pytest.fixture(scope="session")

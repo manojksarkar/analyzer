@@ -186,7 +186,8 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
                   version_id: Optional[str] = None,
                   project_id: Optional[str] = None,
                   scratch_model: bool = False,
-                  selected_units: Optional[List[str]] = None) -> int:
+                  selected_units: Optional[List[str]] = None,
+                  doc_type: str = "swe3") -> int:
     """Run the analyzer as a subprocess.
 
     `scratch_model` sends this invocation's model to a scratch directory instead of the
@@ -205,6 +206,7 @@ def _run_analyzer(vcfg_path: str, scope: Dict[str, Any], no_llm: bool,
     elif version_id and project_id:
         # Each phase persists the model at its own boundary, against this version.
         cmd += ["--version-id", version_id, "--project-id", project_id]
+    cmd += ["--doc-type", doc_type]
     cmd += scope_to_args(scope)
     cmd += per_component_docx_args(scope)
     for _u in (selected_units or []):
@@ -558,7 +560,8 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                          repo_token: Optional[str] = None,
                          config_path: Optional[str] = None,
                          create_version: bool = False,
-                         selected_units: Optional[List[str]] = None) -> Dict[str, Any]:
+                         selected_units: Optional[List[str]] = None,
+                         doc_type: str = "swe3") -> Dict[str, Any]:
     """Produce an incremental version. Falls back to a FULL generation when there is
     no usable baseline (first version / no ancestor).
 
@@ -596,7 +599,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
                              workspaces_root=workspaces_root, data_dict_id=data_dict_id,
                              no_llm=no_llm, version_id=version_id, force=force,
                              repo_url=repo_url, repo_token=repo_token, config_path=config_path,
-                             selected_units=selected_units)
+                             selected_units=selected_units, doc_type=doc_type)
 
     base_vid = decision["chosenBaseVersionId"]           # real ver… id (from list_versions)
     base_commit = decision["chosenBaseCommit"]            # resolves the baseline's checkout dir
@@ -869,6 +872,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     # set; Phase 3 flowcharts restricted to impacted files (rest carried forward).
     rc = _run_analyzer(vcfg_path, scope, no_llm, dd_path, repo_dir, project_root,
                        extra_args=["--from-phase", "2"], project_name=project_name,
+                       doc_type=doc_type,
                        version_id=version_id, project_id=project_id,
                        # Only this invocation reaches Phase 3; the --to-phase 1 parses above
                        # have no views to narrow.

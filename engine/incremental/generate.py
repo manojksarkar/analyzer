@@ -272,6 +272,7 @@ def generate_full(
     config_path: Optional[str] = None,
     create_version: bool = False,
     selected_units: Optional[List[str]] = None,
+    doc_type: str = "swe3",
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
 
@@ -363,6 +364,9 @@ def generate_full(
     # doc 10: which backing the PHASES use for the model. Forwarded so every phase process
     # agrees with the orchestrator — a phase writing files while the orchestrator reads the
     # database (or the reverse) is the worst of both.
+    # Which document(s) this run emits (swe3|swe4|all). Threaded so the DB-native front
+    # door can ask for SWE.4; run.py defaults to swe3 when absent.
+    base_cmd += ["--doc-type", doc_type]
     base_cmd += scope_to_args(scope)
     base_cmd += per_component_docx_args(scope)
     # Narrows the per-function FLOWCHART work in Phase 3 — the expensive part — while the
