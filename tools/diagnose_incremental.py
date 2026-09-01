@@ -146,6 +146,39 @@ def main() -> int:
         print("      Re-run the target with --full: if the change appears then, the")
         print("      narrowed parse is at fault; if not, the commit lacks your edit.")
 
+    # ---- a NAMED function, whether or not it was detected as changed ------------------
+    # The question that actually matters is "I edited X -- what happened to it?", and X may
+    # not be in the changed set at all. Reporting only within `changed` cannot answer that,
+    # and silently looking past the one function asked about is how this tool sent us
+    # chasing five functions nobody had touched.
+    if a.name:
+        hits = [k for k in ht if a.name.lower() in k.lower()]
+        print()
+        print("=" * 74)
+        print("NAMED  %r" % a.name)
+        print("=" * 74)
+        if not hits:
+            print("  no function in the target model matches that name at all.")
+            near = [k for k in ht if a.name.lower()[:6] in k.lower()][:5]
+            if near:
+                print("  closest: %s" % ", ".join(near))
+        for k in sorted(hits)[:10]:
+            hb_, ht_ = hb.get(k), ht.get(k)
+            if k not in hb:
+                verdict = "NEW in the target"
+            elif hb_ != ht_:
+                verdict = "CHANGED  (source_hash differs)"
+            else:
+                verdict = "UNCHANGED  <== the parse sees identical source"
+            print("  %s" % k)
+            print("      baseline hash : %s" % (hb_ or "(absent)"))
+            print("      target   hash : %s" % (ht_ or "(absent)"))
+            print("      -> %s" % verdict)
+            if k in hb and hb_ == ht_:
+                print("      If you edited this function, the parse never saw the edit. Either the")
+                print("      commit does not contain it, or the narrowed parse did not re-parse")
+                print("      its file. Re-run the target with --full to tell those apart.")
+
     # ---- HOPS 3 and 4 -----------------------------------------------------------------
     db_, dt = _flowchart_dots(a.project_id, a.baseline), _flowchart_dots(a.project_id, a.target)
     pb, pt = _pngs(a.project_id, a.baseline), _pngs(a.project_id, a.target)
