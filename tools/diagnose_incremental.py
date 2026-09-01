@@ -146,6 +146,73 @@ def main() -> int:
         print("      Re-run the target with --full: if the change appears then, the")
         print("      narrowed parse is at fault; if not, the commit lacks your edit.")
 
+    # ---- HOP 0: what git says changed, vs what the parse noticed ----------------------
+    # The narrowed parse re-parses only the translation units it believes are affected. If
+    # it misses one, every function in that file keeps its baseline hash and looks
+    # unchanged forever -- no error, and nothing downstream can recover it. So compare the
+    # commit's own file list against the files whose functions actually moved.
+    import subprocess
+    with get_engine().connect() as cx:
+        shas = {r[0]: r[1] for r in cx.execute(sa.text(
+            "select id, commit_sha from versions where id in (:a, :b)"),
+            {"a": a.baseline, "b": a.target})}
+    sha_b, sha_t = shas.get(a.baseline), shas.get(a.target)
+    print()
+    print("=" * 74)
+    print("HOP 0  the commit's changed files vs the files the parse noticed")
+    print("=" * 74)
+    print("  %s = %s" % (a.baseline, (sha_b or "?")[:12]))
+    print("  %s = %s" % (a.target, (sha_t or "?")[:12]))
+    if sha_b and sha_t and sha_b == sha_t:
+        print("  the two versions are the SAME commit -- nothing can have changed.")
+    elif sha_b and sha_t:
+        checkout = None
+        wroot = os.path.join(_ROOT, "workspaces", a.project_id)
+        for cand in (sha_t[:16], sha_b[:16]):
+            d = os.path.join(wroot, cand)
+            if os.path.isdir(os.path.join(d, ".git")):
+                checkout = d
+                break
+        if not checkout:
+            print("  no checkout found under %s -- cannot read the diff." % wroot)
+        else:
+            r = subprocess.run(["git", "-C", checkout, "diff", "--name-only", sha_b, sha_t],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                print("  git diff failed: %s" % (r.stderr or "").strip()[:160])
+                print("  (the baseline commit may not be present in this checkout)")
+            else:
+                files = [f.strip() for f in r.stdout.splitlines() if f.strip()]
+                print("  git says %d file(s) changed between them" % len(files))
+                # which files DID produce a hash change?
+                noticed = set()
+                with get_engine().connect() as cx:
+                    q = ("select e.entity_key, v.file from entity_versions v "
+                         "join entities e on e.entity_id = v.entity_id "
+                         "where v.version_id = :v and e.kind = 'function'")
+                    fmap = {r2[0]: (r2[1] or "") for r2 in cx.execute(sa.text(q), {"v": a.target})}
+                for k in changed + added:
+                    f = fmap.get(k)
+                    if f:
+                        noticed.add(f.replace("\\", "/").lstrip("./"))
+                srcs = [f for f in files
+                        if os.path.splitext(f)[1].lower() in (".c", ".cpp", ".cc", ".h", ".hpp")]
+                silent = [f for f in srcs
+                          if not any(n.endswith(f) or f.endswith(n) for n in noticed)]
+                print("  of those, %d are C/C++ sources" % len(srcs))
+                print("  files whose functions the parse noticed : %d" % len(noticed))
+                if silent:
+                    print()
+                    print("  *** %d changed source file(s) produced NO function hash change:"
+                          % len(silent))
+                    for f in silent[:12]:
+                        print("        %s" % f)
+                    print("  Each was edited in the commit and produced no hash change.")
+                    print("  Expected for a file OUTSIDE the analysed layers -- it is never")
+                    print("  parsed. For a file inside them this is the narrowed parse missing")
+                    print("  it: re-run the target with --full and compare again. If the hashes")
+                    print("  move under --full, the narrowed parse is the fault.")
+
     # ---- a NAMED function, whether or not it was detected as changed ------------------
     # The question that actually matters is "I edited X -- what happened to it?", and X may
     # not be in the changed set at all. Reporting only within `changed` cannot answer that,
