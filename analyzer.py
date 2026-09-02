@@ -157,7 +157,7 @@ def cmd_generate(a) -> int:
     scope = _parse_scope(a.scope)
     common = dict(data_dict_id=a.data_dict, no_llm=a.no_llm, version_id=a.version_id,
                   config_path=a.config, repo_url=a.source, create_version=a.create_version,
-                  selected_units=a.unit)
+                  selected_units=a.unit, doc_type=a.doc_type)
     try:
         if a.full:
             m = generate_full(a.project_id, branch, commit, scope, force=a.force, **common)
@@ -282,6 +282,11 @@ def cmd_reexport(a) -> int:
     else:
         scope = (store.read_manifest(a.version_id) or {}).get("scope") or {"type": "project"}
     argv += scope_to_args(scope) + per_component_docx_args(scope)
+    # Same reasoning as `scope` above: a version generated as swe4/all must not come back
+    # as swe3 just because the re-export did not say. The manifest records what it was;
+    # --doc-type overrides. Older manifests have no docType, so swe3 stays the fallback.
+    doc_type = a.doc_type or (store.read_manifest(a.version_id) or {}).get("docType") or "swe3"
+    argv += ["--doc-type", doc_type]
     for u in a.unit or []:
         argv += ["--selected-unit", u]
     argv.append(checkout)
@@ -576,6 +581,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="narrow the per-function FLOWCHART work to this unit. Repeatable. A "
                         "speed aid while iterating — the model and every other view stay "
                         "whole, and the documents are still the ones --scope asks for.")
+    s.add_argument("--doc-type", default="swe3", choices=("swe3", "swe4", "all"),
+                   help="which document(s) to emit: swe3 (detailed design, default), "
+                        "swe4 (unit test specification), or all")
     s.add_argument("--force", action="store_true", help="accepted; the commit dir is reused")
     s.set_defaults(fn=cmd_generate)
 
@@ -593,6 +601,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "Default: the scope the version was generated with.")
     s.add_argument("--unit", action="append",
                    help="narrow the per-function flowchart work to this unit. Repeatable.")
+    s.add_argument("--doc-type", choices=("swe3", "swe4", "all"),
+                   help="which document(s) to rebuild. Default: whatever this version "
+                        "was generated with (from its manifest).")
     s.set_defaults(fn=cmd_reexport)
 
     # -- status / check / report --------------------------------------------

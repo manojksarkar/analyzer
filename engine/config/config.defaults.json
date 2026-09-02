@@ -9,7 +9,13 @@
     "unitDiagrams": true,
     "flowcharts": false,
     "behaviourDiagram": false,
-    "componentStaticDiagram": true
+    "componentStaticDiagram": true,
+    "functionTestSpecs": true,
+    "dynamicBehaviourSpecs": true,
+    "utExport": {
+      "review": { "author": "", "reviewer": "" },
+      "environment": { "flags": [], "probepoint": [], "usercode": [] }
+    }
   },
   "layers": {
     "Layer1": {
@@ -133,6 +139,17 @@
         "Unit Name",
         "Static Design"
       ]
+    },
+    "swe4": {
+      "evalEquipmentName": "Emulator",
+      "testPlatform": "VectorCAST",
+      "testEnvironment": "Emulator",
+      "priorityDefault": "Medium",
+      "introduction": {
+        "purpose": "This document provides the Software Unit Test Specification for the {project_name} software. It specifies, for each software unit, the preconditions, inputs, test steps and expected results required to verify the unit against its detailed design.",
+        "scopeIntro": "This document covers the unit test specifications for the following components of the {project_name} software:",
+        "scopeBody": "Each public function is specified by two tables: Table A carries the test content (Eval. Equipment Name, Precondition, Input, Test Steps, Expected Results, Test Platform) and Table B carries the test case metadata."
+      }
     }
   }
 }

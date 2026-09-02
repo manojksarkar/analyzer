@@ -184,6 +184,12 @@ def main():
         if i + 1 < len(args):
             allowed_components_str = args[i + 1]
             allowed_components_override = [m.strip() for m in allowed_components_str.split(",") if m.strip()]
+    from views.registry import DOC_TYPE_SWE3
+    doc_type = DOC_TYPE_SWE3
+    if "--doc-type" in args:
+        i = args.index("--doc-type")
+        if i + 1 < len(args):
+            doc_type = args[i + 1]
     if not os.path.isabs(output_dir):
         output_dir = os.path.join(PROJECT_ROOT, output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -252,7 +258,7 @@ def main():
         # would print `narrowed to unit(s): __none__`, which reads like a bug.
         if selected_units != ["__none__"]:
             print(f"[run_views] narrowed to unit(s): {', '.join(selected_units)}")
-    run_views(model, output_dir, model_dir, config)
+    run_views(model, output_dir, model_dir, config, doc_type=doc_type)
 
 
 if __name__ == "__main__":

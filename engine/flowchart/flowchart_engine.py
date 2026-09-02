@@ -52,7 +52,7 @@ from llm_core.client import LlmClient
 from llm.generator import LabelGenerator
 from dot_builder import build_dot
 from mermaid.validator import validate_cfg
-from models import FileResult, FlowchartResult, FunctionEntry, NodeType, ProjectMeta
+from models import FileResult, FlowchartResult, FunctionEntry, NodeType, ProjectMeta, serialize_cfg
 from output.writer import OutputWriter
 from pkb.builder import ProjectKnowledgeBase
 from pkb.knowledge import ProjectKnowledge, load_knowledge
@@ -617,10 +617,14 @@ def _process_function(
         # for compatibility with the writer/schema, but now carries a DOT script.
         flowchart_script = build_dot(cfg)
 
+        # 9. Carry the graph itself alongside its rendering. build_dot() flattens
+        # the CFG into a picture; SWE.4 transcribes the same graph into nested
+        # Test Steps and needs the node types and edge labels back.
         return FlowchartResult(
             function_key=key,
             qualified_name=qn,
             mermaid_script=flowchart_script,
+            cfg=serialize_cfg(cfg),
         )
 
     except Exception as exc:

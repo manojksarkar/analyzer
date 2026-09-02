@@ -272,6 +272,7 @@ def generate_full(
     config_path: Optional[str] = None,
     create_version: bool = False,
     selected_units: Optional[List[str]] = None,
+    doc_type: str = "swe3",
 ) -> Dict[str, Any]:
     """Produce a new full-generation version. Returns the manifest dict.
 
@@ -341,7 +342,8 @@ def generate_full(
         vcfg_path = os.path.join(_adir, "config.json")
     store.write_manifest(version_id, _manifest(
         version_id, branch, actual_commit, scope, data_dict_id,
-        decision="full", regenerated=0, reused=0, status="running", warnings=[]))
+        decision="full", regenerated=0, reused=0, status="running", warnings=[],
+        doc_type=doc_type))
 
     # 3. run the analyzer (full) against the workspace repo (stdout/stderr inherited).
     # Render STRAIGHT into this version's own output dir (doc 09, B1). Previously every run
@@ -363,6 +365,9 @@ def generate_full(
     # doc 10: which backing the PHASES use for the model. Forwarded so every phase process
     # agrees with the orchestrator — a phase writing files while the orchestrator reads the
     # database (or the reverse) is the worst of both.
+    # Which document(s) this run emits (swe3|swe4|all). Threaded so the DB-native front
+    # door can ask for SWE.4; run.py defaults to swe3 when absent.
+    base_cmd += ["--doc-type", doc_type]
     base_cmd += scope_to_args(scope)
     base_cmd += per_component_docx_args(scope)
     # Narrows the per-function FLOWCHART work in Phase 3 — the expensive part — while the
@@ -387,7 +392,7 @@ def generate_full(
         m = _manifest(
             version_id, branch, actual_commit, scope, data_dict_id,
             decision="full", regenerated=0, reused=0, status="failed",
-            warnings=[f"analyzer exited {rc}"])
+            warnings=[f"analyzer exited {rc}"], doc_type=doc_type)
         store.write_manifest(version_id, m)     # close the lifecycle: 'failed', not mid-phase
         raise AnalyzerRunFailed(f"analyzer run failed (exit {rc})", rc)
 
@@ -443,7 +448,8 @@ def generate_full(
     # 6. manifest + index
     manifest = _manifest(version_id, branch, actual_commit, scope, data_dict_id,
                          decision="full",
-                         regenerated=len(fps), reused=0, status="complete", warnings=[])
+                         regenerated=len(fps), reused=0, status="complete", warnings=[],
+                         doc_type=doc_type)
     manifest["documents"] = documents
     # AND to the store, which is what reaches Postgres (doc 09, C1). These are two different
     # stores keyed two different ways: `vstore` is the file VersionStore keyed by COMMIT,
@@ -487,10 +493,14 @@ def generate_full(
 
 
 def _manifest(version_id, branch, commit, scope, data_dict_id, *,
-              decision, regenerated, reused, status, warnings) -> Dict[str, Any]:
+              decision, regenerated, reused, status, warnings, doc_type="swe3") -> Dict[str, Any]:
     return {
         "versionId": version_id, "branch": branch, "commit": commit,
-        "scope": scope, "dataDictId": data_dict_id, "baselineVersionId": None,
+        # Recorded for the same reason as `scope`: a re-export that does not know which
+        # document(s) this version produced silently emits the swe3 default, dropping the
+        # SWE.4 unit-test specification from a version that had one.
+        "scope": scope, "docType": doc_type,
+        "dataDictId": data_dict_id, "baselineVersionId": None,
         "decision": decision,
         "regenerated": regenerated, "reused": reused,
         "status": status, "warnings": warnings, "createdAt": _now_iso(),

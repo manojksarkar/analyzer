@@ -37,6 +37,11 @@ Options:
                        single_per_function, single_per_external_component,
                        all_callers, multi_unit_functions, skip_within_unit
                        (default). Unknown values silently fall back to the default.
+  --doc-type <type>    Which document(s) to emit: swe3 (default; software
+                       detailed design), swe4 (unit test specification), or all.
+                       Doc type is a dimension, not a phase: Phases 1-3 are
+                       shared; Phase 4 dispatches one exporter per doc type
+                       (EXPORTER_REGISTRY). Default swe3 reproduces prior output.
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
   --to-phase N         Stop after phase N (1-4). Lets the incremental engine run
                        parse+derive only (--to-phase 2), compute impact, then
@@ -186,7 +191,7 @@ _KNOWN_FLAGS = (
     "--data-dictionary", "--data-dictionary-layer",
     "--project-name", "--output-name",
     "--macros", "--macros-layer", "--include-path-layer",
-    "--only-files", "--include-emulator",
+    "--only-files", "--include-emulator", "--doc-type",
     "--quiet", "--verbose", "--trace-prompts",
     # The run-identity flags the database path needs. This list is an ALLOWLIST — anything
     # missing from it is rejected before Phase 1 no matter how well its parse branch works,
@@ -226,6 +231,7 @@ baseline_version_id_arg = None   # narrowed parse: the version whose func-key ma
                                  # calls into files this run did not re-parse
 include_emulator_arg    = False  # opt out of the default *emul* file exclusion (3.1)
 include_path_layer_args = []   # list of (layer_name, abs_dir) tuples
+doc_type_arg            = "swe3"  # which document(s) to emit: swe3|swe4|all (default swe3)
 raw_args                = []
 
 i = 1
@@ -321,6 +327,15 @@ while i < len(sys.argv):
         baseline_version_id_arg = sys.argv[i]
     elif a == "--include-emulator":
         include_emulator_arg = True
+    elif a == "--doc-type":
+        i += 1
+        if i >= len(sys.argv):
+            log("--doc-type requires a value (swe3|swe4|all)", component="run", err=True)
+            sys.exit(1)
+        doc_type_arg = sys.argv[i].strip().lower()
+        if doc_type_arg not in ("swe3", "swe4", "all"):
+            log(f"--doc-type must be swe3, swe4, or all (got: {sys.argv[i]})", component="run", err=True)
+            sys.exit(1)
     elif a == "--project-name":
         i += 1
         if i >= len(sys.argv):
@@ -760,6 +775,7 @@ try:
         baseline_version_id=baseline_version_id_arg,
         include_emulator=include_emulator_arg,
         selected_units=selected_units_arg,
+        doc_type=doc_type_arg,
     )
 except ValueError as e:
     log(str(e), component="run", err=True)
@@ -771,7 +787,8 @@ except ValueError as e:
 # to_phase is None, plans are untouched.
 if to_phase is not None:
     from core.group_planner import RunPlan as _RunPlan
-    _SCRIPT_PHASE = {"parser.py": 1, "model_deriver.py": 2, "run_views.py": 3, "docx_exporter.py": 4}
+    _SCRIPT_PHASE = {"parser.py": 1, "model_deriver.py": 2, "run_views.py": 3,
+                     "docx_exporter.py": 4, "swe4_exporter.py": 4}
     _filtered = []
     for _plan in plans:
         _kept = [ph for ph in _plan.phases

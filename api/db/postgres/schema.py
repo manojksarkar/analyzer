@@ -24,7 +24,7 @@ digests, and text keys are debuggable and join cleanly.
 from __future__ import annotations
 
 from sqlalchemy import (
-    JSON, BigInteger, Boolean, Column, Date, DateTime, ForeignKey, Index,
+    JSON, BigInteger, Boolean, Column, Date, DateTime, Float, ForeignKey, Index,
     Integer, MetaData, String, Table, Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -553,6 +553,13 @@ llm_call_stats = Table(
     Column("kind", String, nullable=False),       # description | label | summary | behaviour | ...
     Column("outcome", String, nullable=False),    # ok | empty | error
     Column("n", Integer, nullable=False),
+    # Seconds, summed per (version, phase, kind, outcome) row alongside `n`. Split because
+    # "slow because the gateway throttled us" and "slow because the model was slow" are
+    # different problems with different fixes, and one number cannot tell them apart.
+    Column("latency_seconds", Float, nullable=False, server_default="0"),
+    Column("throttle_seconds", Float, nullable=False, server_default="0"),
+    Column("prompt_tokens", Integer, nullable=False, server_default="0"),
+    Column("completion_tokens", Integer, nullable=False, server_default="0"),
     Index("ix_llm_call_stats_version", "version_id"),
 )
 """How many LLM calls a run made, and how many of them came back usable.

@@ -82,6 +82,38 @@ class FlowchartResult:
     qualified_name: str
     mermaid_script: str
     error: Optional[str] = None
+    # Serialized ControlFlowGraph (see serialize_cfg). The DOT script above is a
+    # rendering; this is the graph itself, kept so consumers that need the
+    # structure rather than a picture — SWE.4 Test Steps — do not have to
+    # re-parse the source. None when the CFG could not be built.
+    cfg: Optional[Dict] = None
+
+
+def serialize_cfg(cfg: "ControlFlowGraph") -> Dict:
+    """ControlFlowGraph -> JSON-serializable dict.
+
+    Node text is the enriched/LLM `label` where one exists, falling back to the
+    raw source so a run with labelling disabled still carries usable text.
+    """
+    return {
+        "entry": cfg.entry_node_id,
+        "exits": list(cfg.exit_node_ids),
+        "nodes": [
+            {
+                "id": n.node_id,
+                "type": n.node_type.value,
+                "label": n.label or n.raw_code,
+                "rawCode": n.raw_code,
+                "line": n.start_line,
+                "endLine": n.end_line,
+            }
+            for n in cfg.nodes.values()
+        ],
+        "edges": [
+            {"source": e.source, "target": e.target, "label": e.label}
+            for e in cfg.edges
+        ],
+    }
 
 
 @dataclass

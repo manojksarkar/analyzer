@@ -167,7 +167,10 @@ def pytest_collection_finish(session):
               "--force-config", env=pipeline_env)
     cmd = [sys.executable, os.path.join(PROJECT_ROOT, "analyzer.py"), "generate",
            "--project-id", E2E_PID, "--version-id", E2E_VID, "--branch", branch,
-           "--commit", sha, "--scope", "group:" + group, "--no-llm"]
+           "--commit", sha, "--scope", "group:" + group, "--no-llm",
+           # --doc-type all: SWE.3 *and* SWE.4. Without it the run defaults to swe3 and
+           # test_specs.json is never written, so the SWE.4 view has no e2e coverage.
+           "--doc-type", "all"]
 
     out.write(f"  Command: {' '.join(cmd)}\n")
     out.flush()
