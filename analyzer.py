@@ -282,6 +282,11 @@ def cmd_reexport(a) -> int:
     else:
         scope = (store.read_manifest(a.version_id) or {}).get("scope") or {"type": "project"}
     argv += scope_to_args(scope) + per_component_docx_args(scope)
+    # Same reasoning as `scope` above: a version generated as swe4/all must not come back
+    # as swe3 just because the re-export did not say. The manifest records what it was;
+    # --doc-type overrides. Older manifests have no docType, so swe3 stays the fallback.
+    doc_type = a.doc_type or (store.read_manifest(a.version_id) or {}).get("docType") or "swe3"
+    argv += ["--doc-type", doc_type]
     for u in a.unit or []:
         argv += ["--selected-unit", u]
     argv.append(checkout)
@@ -596,6 +601,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "Default: the scope the version was generated with.")
     s.add_argument("--unit", action="append",
                    help="narrow the per-function flowchart work to this unit. Repeatable.")
+    s.add_argument("--doc-type", choices=("swe3", "swe4", "all"),
+                   help="which document(s) to rebuild. Default: whatever this version "
+                        "was generated with (from its manifest).")
     s.set_defaults(fn=cmd_reexport)
 
     # -- status / check / report --------------------------------------------

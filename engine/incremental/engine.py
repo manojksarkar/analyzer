@@ -932,7 +932,7 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     stats = {
         "versionId": version_id, "decision": "incremental", "status": "complete",
         "projectId": project_id, "branch": branch, "commit": target,
-        "scope": _scope_label(scope), "baselineVersionId": base_vid,
+        "scope": _scope_label(scope), "docType": doc_type, "baselineVersionId": base_vid,
         "baselineCommit": decision["chosenBaseCommit"], "changedFiles": decision.get("changedFiles"),
         "dataDictId": data_dict_id,
         "llmModel": llm.get("defaultModel"), "elapsedSeconds": time.perf_counter() - _t0,
