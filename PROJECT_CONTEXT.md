@@ -4951,6 +4951,20 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
     extent, **keyed by identity including the defining file/location** (so same-named macros/types in
     different files are distinct).
   - **One hash per entity** now; **per-artifact hashing is deferred**.
+  - **Never hash an empty token list.** `clang_tokenize` returns *no tokens* for some perfectly
+    valid cursors — a declaration produced by a macro expansion is the common trigger — with **no
+    error and a correct-looking extent**. `hash_cursor` used to hash `[]`, so every such entity got
+    `sha256("")`: one constant shared by all of them, classified **unchanged in every comparison
+    forever**, flowchart and LLM description carried forward from the first version, nothing logged.
+    Measured on one firmware project: **2069 of 2818 functions (73%)**, which silently disabled
+    incremental change detection for most of the codebase. `hash_cursor` now falls back to the
+    extent's **raw source text** (whitespace-split, so reformatting still is not a change), then to
+    **name + position** if the file cannot be read — the latter regenerates whenever the entity
+    moves, which is the sound direction (D7) rather than pinning it to "unchanged". Counts are
+    exposed as `hash_cursor.fallbacks` and logged at end of parse.
+    *Recovery:* baselines parsed before this fix hold the constant for those entities, so the first
+    run after it reclassifies them all as changed — a one-time large regeneration, and the correct
+    repair. `tools/why_unchanged.py` reports how many a stored version is carrying.
   - Classification: unchanged / changed / new / deleted; **move/rename = delete(old key) + add(new key)**.
   - *Why hash globals/macros/types separately:* changing a global/macro/type does **not** change a
     *using* function's tokens (a function still just writes `MAX` after `#define MAX` changes value), so

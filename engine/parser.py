@@ -2893,6 +2893,20 @@ def main():
     _log.info("  model/tu_includes.json (%d TUs, %d in-repo include edges)",
               len(tu_includes), _n_inc)
 
+    # Change detection is only as good as the hashes. libclang returns no tokens for
+    # some valid cursors (a macro-produced declaration, notably) and hash_cursor then
+    # hashes the extent's raw text instead. That is a correct hash, but the count is
+    # worth seeing: it was silently `sha256("")` for every one of them before, which
+    # pinned those entities to "unchanged" forever.
+    _fb = getattr(hash_cursor, "fallbacks", {}) or {}
+    if _fb.get("extent_text"):
+        _log.info("  %d entity hash(es) came from the extent's source text (libclang "
+                  "returned no tokens)", _fb["extent_text"])
+    if _fb.get("identity"):
+        _log.warning("  %d entity hash(es) could not be read from source at all and fall "
+                     "back to name+position — those entities re-generate whenever they "
+                     "move, which is the safe direction but not free", _fb["identity"])
+
     _log_parse_summary(n_funcs)
 
 
