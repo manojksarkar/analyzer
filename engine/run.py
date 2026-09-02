@@ -70,8 +70,8 @@ Options:
                        Same file formats, but applied to the named layer only.
                        Repeatable — use once per layer. Overrides --macros for
                        that layer's parse. Samples in engine/config/. Example:
-                         --macros-layer Layer1 engine/config/macros.layer1.example.json \\
-                         --macros-layer Layer2 engine/config/macros.layer2.example.json
+                         --macros-layer Layer1 engine/config/macros.core1.example.json \\
+                         --macros-layer Layer2 engine/config/macros.core2.example.json
   --only-files <path>  Parse only the translation units listed in this file, one
                        path per line (narrowed parse, used by the incremental engine).
   --include-emulator   Parse emulator/stub files too. By default files whose
@@ -648,6 +648,28 @@ for _lname, _layer in (cfg.get("layers") or {}).items():
         _dirnames[:] = [d for d in _dirnames if not d.startswith(".")]
         _dirs.append(_dirpath)
     _layer_inc[_lname] = _dirs
+
+# Merge include dirs from the build's own compile_commands.json (one per core).
+# The walk above can only guess the -I set; the build recorded the real one. Walked
+# dirs stay FIRST so this can only add search paths, never re-order resolution for
+# a tree that already parsed. No layer declares the block -> nothing happens.
+from core import compile_commands as _cc
+from core.config import validate_cores as _validate_cores
+for _err in _validate_cores(cfg):
+    log(_err, component="run", err=True)
+    sys.exit(1)
+_cc_sources = _cc.sources_from_layers(cfg, SCRIPT_DIR)
+if _selected_layer:
+    _cc_sources = [_s for _s in _cc_sources if _s.layer == _selected_layer]
+if _cc_sources:
+    _cc_by_layer, _cc_reports = _cc.load_sources(_cc_sources, resolved)
+    for _rep in _cc_reports:
+        for _line in _cc.format_report(_rep):
+            log(_line, component="run")
+    for _lname, _dirs in _cc_by_layer.items():
+        _bucket = _layer_inc.setdefault(_lname, [])
+        _known = set(_bucket)
+        _bucket.extend(_d for _d in _dirs if not (_d in _known or _known.add(_d)))
 
 # Validate and merge --include-path-layer <layer> <dir> entries.
 _known_layers = set((cfg.get("layers") or {}).keys())

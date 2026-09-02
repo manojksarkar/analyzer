@@ -208,6 +208,100 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-02 (**`compile_commands.json` ingest — INCLUDE PATHS ONLY, first cut** — branch
+> `poc-4`, uncommitted.
+>
+> **Why.** Until now the `-I` set was *guessed*: `run.py` walks every dir under every configured layer
+> into `model/clang_include_paths.json` (§4d) and macros come from a hand-authored CSV/JSON
+> (`core/macro_input.py`). The client build emits **four** compilation databases — one per **core**
+> (FCore / HCore / CMCore / NCore) — each carrying 50–100+ `-I` per TU and 9–12 `-D`, which is the
+> build's own ground truth. Nothing in the repo read them before this change.
+>
+> **Scope — deliberately includes only.** [engine/core/compile_commands.py](engine/core/compile_commands.py)
+> extracts `-I` / `-isystem` / `-iquote` (joined `-I../foo` and separate `-I ../foo` forms) and drops
+> everything else: `-D`, `-o`, `-c`, `-MMD`, `-W*`, `-O*`, `--target`, `-mcpu`, `-mfpu`, response files
+> (`@./WARNING_GUIDE/warnings_for_release.txt`). Macros are NOT taken yet — see "queued" below.
+>
+> **NEW TOP-LEVEL `cores` SECTION — this is the schema change to know about.** A core owns the three
+> inputs that describe one build: `dataDictionary`, `macros`, `compileCommands`. Layers then name the
+> cores they are built from:
+> ```
+> "cores":  {"Core1": {"dataDictionary": "…csv", "macros": "…json", "compileCommands": "…json"}},
+> "layers": {"Layer1": {"path": "Layer1", "cores": ["Core1"], "groups": {…}}}
+> ```
+> `compileCommands` is a path string, or an object when it needs `rootPrefix`.
+>
+> **Why the inputs moved off the layer.** They were never layer properties — a *core* is one build with
+> one macro set and one dictionary; a layer is the parse scope it feeds. Keeping them on the layer meant
+> two cores in one layer had nowhere to put their differing `-D` sets.
+>
+> **Nothing outside `core.config` learned about cores.** `layer_source(cfg, layer, key)` now resolves
+> **through the layer's core**, falling back to a layer-level `dataDictionary`/`macros` key — so
+> pre-`cores` configs and the `--macros-layer` / `--data-dictionary-layer` flags keep working, and the only
+> two consumers (`parser.py:315` and `:390`, via `layer_sources`) are **untouched**.
+>
+> **One core per layer today** (`config.MAX_CORES_PER_LAYER = 1`; user decision — multicore later).
+> `cores` is nonetheless stored as a **LIST**, so lifting the limit is a resolution change, not a config
+> migration. `validate_cores()` runs at startup: unknown core name → exit 1, **second core → exit 1** with
+> "not supported yet", never a silent merge — macros still resolve per LAYER, so core 2's `-D` flags would
+> otherwise leak into core 1's files (`_CONFIG_CMCORE` defined while compiling an NCore TU). The
+> include-path loader already merges several cores per layer, so that half is done.
+>
+> **The path problem, and how it is solved.** Every path in a database is rooted on the BUILD machine
+> (`directory` = `D:\workspace\…\01_SRC\02_HIL\01_BUILD\SAVONA\DS5`), so resolving `-I../../../../04_FIL/…`
+> against it yields a `D:/…` path that does not exist locally. `derive_root_prefix` recovers the mapping
+> instead of requiring it: for each dir it strips leading components until the remainder exists under the
+> project root, keeps the **deepest** surviving remainder (a long tail matching by accident is far less
+> likely than a short one), each dir votes for the prefix it implies, and the modal prefix wins. Ties break
+> on longer-prefix-then-lexicographic so a rerun reaches the same conclusion. `rootPrefix` in config skips
+> derivation entirely. **Derivation stats the filesystem**, so `format_report` logs what it concluded —
+> prefix, vote share, `unmapped` (never had the prefix), `not on disk` (mapped cleanly, absent) — and
+> **warns below 75 % agreement** (multi-root build or partial checkout). Never applied silently.
+>
+> **Wiring.** [run.py](engine/run.py) merges the result into `_layer_inc` right before
+> `clang_include_paths.json` is written, so **Phase 1 and Phase 3 pick it up unchanged** — no parser or
+> flowchart-engine edit. Walked dirs stay FIRST and compile_commands dirs are appended: append-only can
+> add search paths but can never re-order resolution for a tree that already parses. Honours
+> `--selected-layer`.
+>
+> **`posixpath`, not `os.path`.** A database written on Windows must resolve identically wherever the
+> analyzer runs; `os.path.normpath` would flip separators back on a Windows host. Both separator styles
+> appear in ONE real entry (`-I../../../../04_FIL/…` beside `-I..\..\05_CTRL\01.SFR\MMAP`).
+>
+> **Examples.** No real client database is in the repo. Two checked-in examples stand in —
+> `engine/config/compile_commands.core{1,2}.example.json` (24 + 71 entries) — with include paths pointing
+> into the real `SampleCppProject` tree so they actually resolve, build-machine `directory` values, both
+> separator styles, the full armclang flag soup, and deliberately one third-party absolute include + one
+> stale dir per core so the `unmapped` / `not on disk` report lines are exercised on real input.
+> **Generic `Core1`/`Core2` naming, not the client's FCore/HCore/CMCore/NCore** — the shipped defaults
+> point at a fixture, so real core names belong in the client's own config.
+> **They ARE wired** (Core1 → Layer1, Core2 → Layer2) — verified safe: every dir they name is already
+> collected by the layer walk, so enabling them adds **0 new dirs**, `clang_include_paths.json` is
+> unchanged and the Sample snapshots cannot move. Swap in real databases to make them do work.
+> The `data_dictionary.*` and `macros.*` examples were renamed `layer1/layer2` → `core1/core2` to match,
+> and are now referenced rather than shipped unused. ⚠ `workspaces/` and `logs/` are gitignored and still
+> hold the old `*.layer1.example.*` names in past run configs — re-running an old workspace config would
+> not find them.
+>
+> **Tests.** `tests/unit/test_compile_commands.py` — 28, including a guard that reads the REAL
+> `cores`/`layers.*.cores` wiring out of `config.defaults.json` (so dropping the block fails a test, not
+> just a run) and asserts the examples still resolve against `SampleCppProject`.
+>
+> **Queued, NOT done** (each needs its own decision):
+> (1) **`-D` merge** — build defines must **supplement** `macros.json`, never replace it: a database cannot
+> see header-defined macros. Precedence is free — `clang_args_for` already emits global-then-layer and
+> Clang honours the LAST `-D`, so appending build defines after the macros.json ones IS the override.
+> **This one matters most**: `_CONFIG_ASIC` / `_NAND_DENSITY=512` / `__CONTROLLER_TARGET__=37` gate `#if`
+> regions, so a missing `-D` preprocesses whole functions out and SWE.3 simply never lists them — silent
+> loss, no warning.
+> (2) **Header arg inheritance** — only `.cpp` are TUs; headers need a nearest-sibling-TU rule.
+> (3) **armclang flag allowlist** — `--target=arm-arm-none-eabi`, `-mcpu=cortex-m7`, `-mfpu=none`,
+> `-fshort-enums`. Must be measured, not guessed: dropping them changes builtin macros (`__ARM_ARCH`).
+> ⚠ `config.defaults.json` currently sets `--target=arm-none-eabi`, which **contradicts the real build's**
+> `arm-arm-none-eabi`.
+> (4) **Duplicate-TU policy** — the same `.cpp` compiles under several variants (bootloader vs main,
+> different `F2L_CONFIG_GROUP_*`).)
+
 > Updated: 2026-09-01b (**SWE.4 ported onto the DB-native pipeline; explicit `PUBLIC` was being
 > ignored** — branch `feat/swe4-port`.
 >
@@ -1334,8 +1428,8 @@
 > `_SOME_FUNCTION(GG *)` and is dropped by the **pre-existing** cross-TU dedupe on mangled name
 > (`get_function_key`, `parser.py:554`) — a fixture artifact (two files defining one symbol would not link),
 > not a regression.
-> **Sample lists (client schema, committed):** `engine/config/macros.layer1.example.json` (cu `fcore`) and
-> `macros.layer2.example.json` (cu `hil`) — two files, the real per-target setup, covering every macro type:
+> **Sample lists (client schema, committed):** `engine/config/macros.core1.example.json` (cu `fcore`) and
+> `macros.core2.example.json` (cu `hil`) — two files, the real per-target setup, covering every macro type:
 > int/hex/shift/suffixed/big/negative/**zero**, value-less, unresolved (single + multi dep), string literal
 > with spaces, empty string, float, identifier value, function-like (skipped), `ne` (skipped). They share
 > `BUFFER_SIZE` at different values, which is the deferred cross-list collision case.
@@ -1754,13 +1848,21 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
       config.local.json       Local overrides (gitignored)
       abbreviations.txt       Abbreviation expansions for LLM prompts
       data_dictionary.csv     Sample data-dictionary CSV (--data-dictionary <path>)
-      data_dictionary.layer1.example.csv  Per-layer sample (layers.Layer1.dataDictionary)
-      data_dictionary.layer2.example.csv  Second sample — shares BufferSize_t at a
-                                          different range (the per-layer case). Both
-                                          shipped UNREFERENCED, like the macro examples.
+      config.defaults.json.example  ANNOTATED twin of config.defaults.json: same data,
+                                          every key explained. Not loaded by anything;
+                                          a test asserts the two parse to identical data.
+      data_dictionary.core1.example.csv  Core1's sample (cores.Core1.dataDictionary)
+      data_dictionary.core2.example.csv  Core2's — shares BufferSize_t at a different
+                                          range (the per-scope case). Both now WIRED
+                                          via the `cores` section.
       macros.csv              Sample macros CSV (--macros <path>)
-      macros.layer1.example.json   Sample toolchain macro list, client schema (cu "fcore")
-      macros.layer2.example.json   Second sample list (cu "hil") — the per-layer / two-file case
+      macros.core1.example.json   Core1's toolchain macro list, client schema (cu "fcore")
+      macros.core2.example.json   Core2's list (cu "hil") — the two-file case
+      compile_commands.core1.example.json  Core1's compilation database (24 entries),
+                                          include paths pointing into SampleCppProject
+      compile_commands.core2.example.json  Core2's (71 entries). Build-machine
+                                          `directory` values, both separator styles,
+                                          armclang flag soup. See §4g.
       puppeteer-config.json   Optional headless-chrome args for mmdc
     few_shot_examples/        Few-shot pools (descriptions / behaviour_names / globals)
     assets/                   DOCX cover assets (bottom_arc.png, copyright.png)
@@ -2049,12 +2151,14 @@ renamed to "component". Specific impacts:
 "layers": {
   "Layer1": {
     "path": "Layer1",          // relative to <project_path>
-    // Per-layer INPUTS live in the layer block, beside path/groups — so no layer
-    // name is repeated in a by-layer map where a typo would match nothing. Both
-    // optional; both are paths, never inline content. Shipped as "" (= absent) so
-    // the keys are discoverable without changing the default run. See §17.
-    "dataDictionary": "engine/config/data_dictionary.layer1.example.csv",
-    "macros":         "engine/config/macros.layer1.example.json",
+    // Build INPUTS moved to the top-level `cores` section (2026-09-02): a core
+    // owns one macro set + one data dictionary + one compile_commands.json, and a
+    // layer names the cores it is built from. `layer_source()` resolves through
+    // the layer's core, falling back to a layer-level "dataDictionary"/"macros"
+    // key so pre-`cores` configs and --macros-layer still work unchanged.
+    // At most ONE core per layer today (config.MAX_CORES_PER_LAYER); a second
+    // exits 1 rather than merging two different -D sets. See §4g.
+    "cores": ["Core1"],
     "groups": {
       "Sample": {              // group name (for --selected-group)
         "Core": "Sample/Core", // component → path (relative to layer path)
@@ -2121,6 +2225,11 @@ Before Phase 1, `run.py` walks every directory under every configured layer
 path and writes the results to `model/clang_include_paths.json` as
 `{layerName: [dir1, dir2, ...]}`. Phase 1 (`parser.py`) reads this file and
 adds a `-I` flag for each directory so all layer headers are resolvable.
+
+Since 2026-09-02 that walk can be **supplemented by the build's own
+`compile_commands.json`** — see `core/compile_commands.py` and the dated entry
+above. Walked dirs stay first; compile_commands dirs are appended per layer.
+Inert unless a layer declares a `compileCommands` block.
 
 ### `SampleCppProject` restructure
 
