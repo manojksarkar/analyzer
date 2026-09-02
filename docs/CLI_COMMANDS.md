@@ -784,7 +784,7 @@ where a typo would silently match nothing:
 }
 ```
 
-`engine/config/macros.layer1.example.json` is a working macro file. For a UI job you write none:
+`engine/config/macros.core1.example.json` is a working macro file. For a UI job you write none:
 the API materialises `workspaces/<pid>/macros.json` from the project's
 `preprocessor_definitions`.
 

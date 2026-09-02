@@ -2,7 +2,9 @@
   "clang": {
     "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
     "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
-    "clangArgs": ["--target=arm-none-eabi"]
+    "clangArgs": [
+      "--target=arm-none-eabi"
+    ]
   },
   "views": {
     "interfaceTables": true,
@@ -13,15 +15,35 @@
     "functionTestSpecs": true,
     "dynamicBehaviourSpecs": true,
     "utExport": {
-      "review": { "author": "", "reviewer": "" },
-      "environment": { "flags": [], "probepoint": [], "usercode": [] }
+      "review": {
+        "author": "",
+        "reviewer": ""
+      },
+      "environment": {
+        "flags": [],
+        "probepoint": [],
+        "usercode": []
+      }
+    }
+  },
+  "cores": {
+    "Core1": {
+      "dataDictionary": "engine/config/data_dictionary.core1.example.csv",
+      "macros": "engine/config/macros.core1.example.json",
+      "compileCommands": "engine/config/compile_commands.core1.example.json"
+    },
+    "Core2": {
+      "dataDictionary": "engine/config/data_dictionary.core2.example.csv",
+      "macros": "engine/config/macros.core2.example.json",
+      "compileCommands": "engine/config/compile_commands.core2.example.json"
     }
   },
   "layers": {
     "Layer1": {
       "path": "Layer1",
-      "dataDictionary": "engine/config/data_dictionary.layer1.example.csv",
-      "macros": "engine/config/macros.layer1.example.json",
+      "cores": [
+        "Core1"
+      ],
       "groups": {
         "My Sample": {
           "Sample Core": "Sample/Core",
@@ -57,8 +79,9 @@
     },
     "Layer2": {
       "path": "Layer2",
-      "dataDictionary": "engine/config/data_dictionary.layer2.example.csv",
-      "macros": "engine/config/macros.layer2.example.json",
+      "cores": [
+        "Core2"
+      ],
       "groups": {
         "Platform": {
           "Gpio": "Platform/Gpio",
@@ -81,16 +104,11 @@
     },
     "Layer3": {
       "path": "Layer3",
-      "dataDictionary": "",
-      "macros": "",
+      "cores": [],
       "groups": {}
     }
   },
   "llm": {
-    // ON by default, and deliberately so: poc-4 shipped these false, and the choice to
-    // ship them true was confirmed rather than inherited. A default run costs LLM calls
-    // and time, and produces the richer document that is the point of the tool. Turn
-    // them off for one run with --no-llm; do not make that the default.
     "descriptions": true,
     "behaviourNames": true,
     "summarize": false,
@@ -103,10 +121,10 @@
     "fewShotExamplesDir": "few_shot_examples",
     "abbreviationsPath": "config/abbreviations.txt",
     "domainContextPath": "config/domain.txt",
-    "descriptionBlocklist": ["audio", "video"],
-    // Pause after every OpenAI-shaped call, PER PROCESS. 3 = the on-prem API gateway's
-    // global ~1-call-per-3s limit. Set 0 for an on-prem hosted model, which has no limit
-    // and where 3s per call would dominate the run.
+    "descriptionBlocklist": [
+      "audio",
+      "video"
+    ],
     "rateLimitSeconds": 3,
     "cacheVersion": 2,
     "enrichment": {

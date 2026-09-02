@@ -194,3 +194,83 @@ class TestLayerSources:
         """`dataDictionary`/`macros` sit beside `groups`; _resolve_layer_paths must ignore them."""
         from core.config import get_flat_groups
         assert get_flat_groups(self.CFG) == {"G1": {"C1": "Layer1/A"}}
+
+
+class TestCoresSection:
+    """`cores` owns the build inputs; layers name the cores they are built from."""
+
+    CFG = {
+        "cores": {
+            "Core1": {"dataDictionary": "dd1.csv", "macros": "m1.json"},
+            "Core2": {"macros": "m2.json"},
+        },
+        "layers": {
+            "Layer1": {"path": "Layer1", "cores": ["Core1"]},
+            "Layer2": {"path": "Layer2", "cores": ["Core2"]},
+            "Layer3": {"path": "Layer3", "cores": []},
+        },
+    }
+
+    def test_a_layer_resolves_its_inputs_through_its_core(self):
+        assert layer_source(self.CFG, "Layer1", "dataDictionary") == "dd1.csv"
+        assert layer_source(self.CFG, "Layer1", "macros") == "m1.json"
+
+    def test_a_key_the_core_does_not_define_is_absent(self):
+        assert layer_source(self.CFG, "Layer2", "dataDictionary") is None
+
+    def test_a_layer_with_no_core_resolves_nothing(self):
+        assert layer_source(self.CFG, "Layer3", "macros") is None
+
+    def test_a_layer_level_key_still_works_without_cores(self):
+        """The pre-`cores` schema, and the shape --macros-layer mirrors."""
+        old = {"layers": {"Layer1": {"path": "Layer1", "macros": "legacy.json"}}}
+        assert layer_source(old, "Layer1", "macros") == "legacy.json"
+
+    def test_the_core_wins_over_a_layer_level_key(self):
+        both = {"cores": {"Core1": {"macros": "core.json"}},
+                "layers": {"Layer1": {"cores": ["Core1"], "macros": "layer.json"}}}
+        assert layer_source(both, "Layer1", "macros") == "core.json"
+
+    def test_layer_sources_reports_every_layer_that_resolves(self):
+        assert layer_sources(self.CFG, "macros") == {"Layer1": "m1.json", "Layer2": "m2.json"}
+
+
+class TestValidateCores:
+
+    def test_a_clean_config_reports_nothing(self):
+        from core.config import validate_cores
+        assert validate_cores(TestCoresSection.CFG) == []
+
+    def test_an_unknown_core_name_is_reported(self):
+        from core.config import validate_cores
+        cfg = {"cores": {"Core1": {}}, "layers": {"Layer1": {"cores": ["Typo"]}}}
+        errors = validate_cores(cfg)
+        assert len(errors) == 1
+        assert "unknown core 'Typo'" in errors[0]
+
+    def test_a_second_core_in_one_layer_is_refused(self):
+        """Not yet supported: macros still resolve per layer, so core 2's -D
+        flags would silently apply to core 1's files."""
+        from core.config import validate_cores
+        cfg = {"cores": {"Core1": {}, "Core2": {}},
+               "layers": {"Layer1": {"cores": ["Core1", "Core2"]}}}
+        errors = validate_cores(cfg)
+        assert len(errors) == 1
+        assert "not supported yet" in errors[0]
+
+
+def test_the_annotated_example_matches_the_shipped_defaults():
+    """config.defaults.json.example is documentation ONLY if it stays in sync.
+
+    It is never loaded, so nothing else would catch it drifting into describing
+    a config that does not exist.
+    """
+    from core.config import _strip_json_comments, _strip_trailing_commas
+
+    config_dir = os.path.join(PROJECT_ROOT, "engine", "config")
+    with open(os.path.join(config_dir, "config.defaults.json"), encoding="utf-8") as fh:
+        shipped = json.load(fh)          # strict JSON: no comments allowed here
+    with open(os.path.join(config_dir, "config.defaults.json.example"), encoding="utf-8") as fh:
+        annotated = json.loads(_strip_trailing_commas(_strip_json_comments(fh.read())))
+
+    assert annotated == shipped

@@ -1,0 +1,307 @@
+{
+  // =========================================================================
+  // ANNOTATED REFERENCE for engine/config/config.defaults.json
+  //
+  // config.defaults.json itself is kept comment-free strict JSON. This file is
+  // its documented twin: same structure, same values, every key explained.
+  // It is NOT loaded by anything - edit config.defaults.json for shipped
+  // defaults, or engine/config/config.local.json (gitignored) for machine-local
+  // overrides, which are merged OVER these.
+  //
+  // Override the whole file for one run with ANALYZER_CONFIG=<path>.
+  // Read through core.config.app_config().
+  // =========================================================================
+
+  // -------------------------------------------------------------------------
+  // clang - how libclang is loaded and what every parse is told.
+  // -------------------------------------------------------------------------
+  "clang": {
+    // The libclang shared library. On Windows, parser.py also calls
+    // os.add_dll_directory(<llvm/bin>) so dependent DLLs resolve.
+    "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
+    // Clang's own builtin headers (stddef.h, stdint.h, ...). Added as -I.
+    "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
+    // Extra flags appended to every translation unit, after the derived ones.
+    // NOTE: the real client build uses --target=arm-arm-none-eabi (armclang).
+    // The value below does not match it; settle that when build -D flags are
+    // adopted, since the target changes builtin macros such as __ARM_ARCH.
+    // The PUBLIC/PRIVATE/PROTECTED/__OVLYINIT shims are NOT listed here - they
+    // are injected unconditionally by core.config.default_clang_macro_defs().
+    "clangArgs": ["--target=arm-none-eabi"]
+  },
+
+  // -------------------------------------------------------------------------
+  // views - which Phase 3 views run. Each name matches a @register("name") in
+  // engine/views/registry.py; a false view is skipped and writes no JSON.
+  // -------------------------------------------------------------------------
+  "views": {
+    "interfaceTables": true,
+    "unitDiagrams": true,
+    // Flowcharts and behaviour diagrams are OFF: both need external tooling
+    // (Graphviz / mmdc + a browser) that tools/doctor.py preflights.
+    "flowcharts": false,
+    "behaviourDiagram": false,
+    "componentStaticDiagram": true,
+    // SWE.4 views - unit test specs and the dynamic (CFG-walk) specs.
+    "functionTestSpecs": true,
+    "dynamicBehaviourSpecs": true,
+    // Fixed fields stamped into the SWE.4 UT export. Left blank so an
+    // unedited run cannot ship someone else's name as author/reviewer.
+    "utExport": {
+      "review": { "author": "", "reviewer": "" },
+      "environment": { "flags": [], "probepoint": [], "usercode": [] }
+    }
+  },
+
+  // -------------------------------------------------------------------------
+  // cores - one build target, and the inputs that describe it.
+  //
+  // A core is what actually owns these three: one build has one macro set, one
+  // data dictionary and one compilation database. Layers then name the cores
+  // they are built from (see "layers" below), so a path is never written twice
+  // and a typo'd core name fails loudly at startup instead of parsing a layer
+  // with no macros.
+  //
+  //   dataDictionary   CSV of type/range facts. Also settable per layer on the
+  //                    CLI with --data-dictionary-layer; --data-dictionary is
+  //                    the project-wide form and has no config key by design.
+  //   macros           -D definitions: CSV (Name,Value) or any JSON shape
+  //                    core/macro_input.py accepts (toolchain dump, NAME=VALUE
+  //                    list, {"NAME": "VALUE"} map, or scope-keyed). Value "ne"
+  //                    skips a row; an empty value means a bare -DNAME.
+  //                    A core's macros override the global "*" scope because
+  //                    Clang honours the LAST -D for a name.
+  //   compileCommands  the build's own compile_commands.json - see below.
+  //
+  // The real client build has four cores (FCore / HCore / CMCore / NCore), one
+  // database each. The two below are generic stand-ins wired to SampleCppProject.
+  // -------------------------------------------------------------------------
+  "cores": {
+    "Core1": {
+      "dataDictionary": "engine/config/data_dictionary.core1.example.csv",
+      "macros": "engine/config/macros.core1.example.json",
+
+      // Include paths taken from the build's own compile_commands.json, which
+      // is the only place the real -I set exists: the layer walk in run.py can
+      // only guess it, and a firmware tree carries 50-100+ include dirs per TU.
+      //
+      // A path string, or an object when derivation needs overriding:
+      //   "compileCommands": {"file": "...", "rootPrefix": "D:/build/01_SRC"}
+      //
+      // ONLY -I / -isystem / -iquote are read. Everything else in the database
+      // is ignored - -D, --target, -mcpu, -Werror, @response-files, -o, -c.
+      // Macros still come from "macros" above: a compilation database cannot
+      // see header-defined macros, so it supplements that file, never replaces it.
+      //
+      // Paths inside a database are rooted on the BUILD machine
+      // (D:\workspace\...), so core/compile_commands.py derives the prefix to
+      // strip: it drops leading components until the remainder exists under the
+      // project root, keeps the deepest match, and applies the prefix that wins
+      // a majority vote. "rootPrefix" skips derivation. The run logs what it
+      // concluded plus unmapped and not-on-disk counts, and warns below 75%
+      // agreement - usually a multi-root build or a partial checkout.
+      //
+      // These examples point at SampleCppProject, and every dir they name is
+      // already collected by the layer walk, so they add 0 new include dirs.
+      // Swap in the real databases to make them do work.
+      "compileCommands": "engine/config/compile_commands.core1.example.json"
+    },
+    "Core2": {
+      "dataDictionary": "engine/config/data_dictionary.core2.example.csv",
+      "macros": "engine/config/macros.core2.example.json",
+      "compileCommands": "engine/config/compile_commands.core2.example.json"
+    }
+  },
+
+  // -------------------------------------------------------------------------
+  // layers - the parse scope. There is no cross-layer communication, so Phase 1
+  // can be narrowed to one layer (--selected-layer / --selected-group) and a TU
+  // is never compiled against another layer's headers.
+  //
+  //   path    layer root, relative to the <project_path> CLI argument
+  //   cores   which cores this layer is built from, by name
+  //   groups  {group: {component: path | [paths]}}, relative to path. A group
+  //           is one output document; a component is one chapter in it.
+  //           Component names normalize spaces to '-'.
+  //
+  // "cores" is a LIST, but at most ONE core per layer is supported today
+  // (core.config.MAX_CORES_PER_LAYER) and a second one exits 1 rather than
+  // merging: two cores have different -D sets, and macros still resolve per
+  // LAYER, so the second core's flags would leak into the first core's files.
+  // The list shape means multicore later changes only the scope resolution -
+  // no config migration. The include-path loader already merges several cores
+  // per layer, so that half is done.
+  // -------------------------------------------------------------------------
+  "layers": {
+    "Layer1": {
+      "path": "Layer1",
+      "cores": ["Core1"],
+      "groups": {
+        "My Sample": {
+          "Sample Core": "Sample/Core",
+          "Lib": "Sample/Lib",
+          "Util": "Sample/Util"
+        },
+        // A component may map to a LIST of dirs - one chapter, several folders.
+        "Full": {
+          "Iface": [
+            "Direction",
+            "Types",
+            "Flow"
+          ],
+          "Cross": [
+            "Hub",
+            "Poly"
+          ]
+        },
+        "Support": {
+          "Math": "Math",
+          "App": "App",
+          "Outer": "Outer/Inner"
+        },
+        "Access": {
+          "Access": "Access"
+        },
+        "Signal": {
+          "Signal": "Signal"
+        },
+        "Diag": {
+          "Diag": "Diag"
+        }
+      }
+    },
+
+    "Layer2": {
+      "path": "Layer2",
+      "cores": ["Core2"],
+      "groups": {
+        "Platform": {
+          "Gpio": "Platform/Gpio",
+          "Uart": "Platform/Uart",
+          "Spi": "Platform/Spi",
+          "I2c": "Platform/I2c",
+          "Adc": "Platform/Adc",
+          "Display": "Platform/Display",
+          "Storage": "Platform/Storage",
+          "Network": "Platform/Network",
+          "Logger": "Platform/Logger",
+          "Config": "Platform/Config",
+          "EventBus": "Platform/EventBus",
+          "Timer": "Platform/Timer",
+          "Protocol": "Platform/Protocol",
+          "Scheduler": "Platform/Scheduler",
+          "Cache": "Platform/Cache"
+        }
+      }
+    },
+
+    // Declared but empty - no directory on disk, no core, no groups. Kept so
+    // the multi-layer paths stay exercised by a layer that contributes nothing.
+    "Layer3": {
+      "path": "Layer3",
+      "cores": [],
+      "groups": {}
+    }
+  },
+
+  // -------------------------------------------------------------------------
+  // llm - enrichment. Deterministic facts stay deterministic; the LLM only
+  // synthesises (descriptions, behaviour names, test cases) grounded in them.
+  // Calls are content-addressed and cached, so a rerun on unchanged input
+  // reproduces byte-identical output.
+  // -------------------------------------------------------------------------
+  "llm": {
+    // ON by default, and deliberately so: poc-4 shipped these false, and the
+    // choice to ship them true was confirmed rather than inherited. A default
+    // run costs LLM calls and time, and produces the richer document that is the
+    // point of the tool. Turn them off for one run with --no-llm; do not make
+    // that the default.
+    "descriptions": true,
+    "behaviourNames": true,
+    // Separate from descriptions - also switchable with --no-llm-summarize.
+    "summarize": false,
+
+    "provider": "ollama",
+    "baseUrl": "http://localhost:11434",
+    "defaultModel": "llama3.2",
+    "timeoutSeconds": 300,
+    // Context window handed to the model, in tokens.
+    "numCtx": 8192,
+    "retries": 1,
+
+    // Grounding inputs. domainContextPath is what keeps descriptions in the
+    // project's real vocabulary instead of inventing a domain.
+    "fewShotExamplesDir": "few_shot_examples",
+    "abbreviationsPath": "config/abbreviations.txt",
+    "domainContextPath": "config/domain.txt",
+    // Words that must never appear in a generated description - they were
+    // hallucinated from an unrelated domain.
+    "descriptionBlocklist": ["audio", "video"],
+
+    // Pause after every OpenAI-shaped call, PER PROCESS. 3 = the on-prem API
+    // gateway's global ~1-call-per-3s limit. Set 0 for an on-prem hosted model,
+    // which has no limit and where 3s per call would dominate the run.
+    "rateLimitSeconds": 3,
+
+    // Bump to invalidate every cached completion.
+    "cacheVersion": 2,
+
+    // Optional extra passes. All off: each multiplies calls per entity.
+    "enrichment": {
+      "twoPassDescriptions": false,
+      "selfReview": false,
+      "ensemble": false,
+      "cfgSimplification": false,
+      "variableEnrichment": false
+    },
+
+    // Budget the ContextBudget / TASK_RATIOS split works from.
+    "maxContextTokens": 127488,
+
+    // Sent with every request. "credential:" is a placeholder - put the real
+    // ticket in config.local.json, which is gitignored.
+    "customHeaders": {
+      "x-dep-ticket": "credential:",
+      "User-Type": "AD_ID",
+      "User-Id": "",
+      "Send-System-Name": "rvc-api-module"
+    }
+  },
+
+  "ui": {
+    "theme": "Light"
+  },
+
+  // -------------------------------------------------------------------------
+  // docx - boilerplate for the exported documents. {project_name} is
+  // substituted at export time.
+  // -------------------------------------------------------------------------
+  "docx": {
+    // SWE.3 - Software Detailed Design.
+    "introduction": {
+      "purpose": "This document provides the Software Detailed Design (SDD) for the {project_name} software. It describes the internal structure, interfaces, and behaviour of each software component. The document is intended for software engineers responsible for implementation and verification of the {project_name} system.",
+      "scopeIntro": "This document covers the software detailed design for the {project_name} system. The following component/s are within the scope of this document:",
+      "scopeBody": "For each component, this document provides the following:",
+      "scopeItems": [
+        "Component Name",
+        "Static Design (Component, units, global variables)",
+        "Unit Information",
+        "Unit Name",
+        "Static Design"
+      ]
+    },
+    // SWE.4 - Software Unit Test Specification. The first four values are
+    // stamped into every test-case table.
+    "swe4": {
+      "evalEquipmentName": "Emulator",
+      "testPlatform": "VectorCAST",
+      "testEnvironment": "Emulator",
+      "priorityDefault": "Medium",
+      "introduction": {
+        "purpose": "This document provides the Software Unit Test Specification for the {project_name} software. It specifies, for each software unit, the preconditions, inputs, test steps and expected results required to verify the unit against its detailed design.",
+        "scopeIntro": "This document covers the unit test specifications for the following components of the {project_name} software:",
+        "scopeBody": "Each public function is specified by two tables: Table A carries the test content (Eval. Equipment Name, Precondition, Input, Test Steps, Expected Results, Test Platform) and Table B carries the test case metadata."
+      }
+    }
+  }
+}

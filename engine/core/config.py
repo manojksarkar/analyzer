@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .paths import paths
 
@@ -634,13 +634,81 @@ def get_layer_flat_groups(cfg: Dict[str, Any], layer_name: str) -> Dict[str, Any
     return _resolve_layer_paths({layer_name: layer_cfg})
 
 
-def layer_source(cfg: Dict[str, Any], layer_name: str, key: str) -> Optional[str]:
-    """Return `layers.<layer_name>.<key>` as a stripped path, or None.
+# A layer may declare at most this many cores today. The config already stores
+# `cores` as a LIST so multicore needs no config migration when it lands - only
+# the scope resolution below changes. Until then a second core is refused rather
+# than merged: two cores in one layer have different -D sets (one build defines
+# _CONFIG_CMCORE, another does not), and merging them silently compiles a file
+# under another core's macros.
+MAX_CORES_PER_LAYER = 1
 
-    A layer owns its own inputs (`dataDictionary`, `macros`) beside `path` and
-    `groups`, so the layer name is never repeated in a separate by-layer map
-    where a typo would silently match nothing.
+
+def get_layer_cores(cfg: Dict[str, Any], layer_name: str) -> List[str]:
+    """Return the core names declared by `layers.<layer_name>.cores`."""
+    layer_cfg = (cfg.get("layers") or {}).get(layer_name)
+    if not isinstance(layer_cfg, dict):
+        return []
+    raw = layer_cfg.get("cores")
+    if isinstance(raw, str):          # tolerate a single name written unwrapped
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    return [str(c) for c in raw if str(c).strip()]
+
+
+def core_source(cfg: Dict[str, Any], core_name: str, key: str) -> Optional[str]:
+    """Return `cores.<core_name>.<key>` as a stripped path, or None."""
+    core_cfg = (cfg.get("cores") or {}).get(core_name)
+    if not isinstance(core_cfg, dict):
+        return None
+    raw = core_cfg.get(key)
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    return raw.strip()
+
+
+def validate_cores(cfg: Dict[str, Any]) -> List[str]:
+    """Return one message per problem with the `cores` / `layers.*.cores` wiring.
+
+    Empty list means the config is usable. Checked up front so a typo'd core name
+    fails loudly instead of parsing a layer with no macros and no dictionary.
     """
+    errors: List[str] = []
+    known = set((cfg.get("cores") or {}).keys())
+    for layer_name in (cfg.get("layers") or {}):
+        cores = get_layer_cores(cfg, layer_name)
+        for core in cores:
+            if core not in known:
+                errors.append(
+                    f"layers.{layer_name}.cores names unknown core {core!r}"
+                    + (f". Defined cores: {', '.join(sorted(known))}" if known
+                       else ". No `cores` section is defined"))
+        if len(cores) > MAX_CORES_PER_LAYER:
+            errors.append(
+                f"layers.{layer_name}.cores lists {len(cores)} cores "
+                f"({', '.join(cores)}); more than {MAX_CORES_PER_LAYER} per layer is "
+                "not supported yet - macros and the data dictionary still resolve "
+                "per layer, so a second core's -D flags would leak into the first's files")
+    return errors
+
+
+def layer_source(cfg: Dict[str, Any], layer_name: str, key: str) -> Optional[str]:
+    """Return the path a layer resolves `key` (`dataDictionary`, `macros`) to.
+
+    Resolution order:
+      1. the layer's core - `cores.<core>.<key>`, via `layers.<layer>.cores`
+      2. `layers.<layer_name>.<key>` directly (the pre-`cores` schema)
+
+    The inputs live on the CORE because that is what actually owns them: a core
+    is one build with one macro set and one dictionary, and a layer is the parse
+    scope it feeds. The layer-level fallback keeps older configs - and the
+    `--macros-layer` / `--data-dictionary-layer` flags that mirror them - working
+    unchanged, so nothing outside this function had to learn about cores.
+    """
+    for core in get_layer_cores(cfg, layer_name):
+        path = core_source(cfg, core, key)
+        if path:
+            return path
     layer_cfg = (cfg.get("layers") or {}).get(layer_name)
     if not isinstance(layer_cfg, dict):
         return None
