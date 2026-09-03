@@ -661,15 +661,33 @@ for _err in _validate_cores(cfg):
 _cc_sources = _cc.sources_from_layers(cfg, SCRIPT_DIR)
 if _selected_layer:
     _cc_sources = [_s for _s in _cc_sources if _s.layer == _selected_layer]
+_walk_counts = {_l: len(_d) for _l, _d in _layer_inc.items()}
+_cc_counts: dict = {}
+_cc_added: dict = {}
 if _cc_sources:
     _cc_by_layer, _cc_reports = _cc.load_sources(_cc_sources, resolved)
     for _rep in _cc_reports:
         for _line in _cc.format_report(_rep):
             log(_line, component="run")
+    # Compare on a case- and separator-normalized key: the walk yields native
+    # Windows paths (`...\Layer1\Math`) while the loader normalizes to forward
+    # slashes, so a raw string compare matches nothing and re-appends every dir
+    # the walk already found.
+    def _inc_key(_p):
+        return os.path.normcase(os.path.normpath(_p))
+
     for _lname, _dirs in _cc_by_layer.items():
         _bucket = _layer_inc.setdefault(_lname, [])
-        _known = set(_bucket)
-        _bucket.extend(_d for _d in _dirs if not (_d in _known or _known.add(_d)))
+        _known = {_inc_key(_d) for _d in _bucket}
+        _new = []
+        for _d in _dirs:
+            _k = _inc_key(_d)
+            if _k not in _known:
+                _known.add(_k)
+                _new.append(_d)
+        _bucket.extend(_new)
+        _cc_counts[_lname] = len(_dirs)
+        _cc_added[_lname] = len(_new)
 
 # Validate and merge --include-path-layer <layer> <dir> entries.
 _known_layers = set((cfg.get("layers") or {}).keys())
@@ -696,7 +714,22 @@ for _ip_layer, _ip_dir in include_path_layer_args:
 _clang_paths_file = os.path.join(_model_dir, "clang_include_paths.json")
 with open(_clang_paths_file, "w", encoding="utf-8") as _f:
     _json.dump(_layer_inc, _f, indent=2)
-log("Layer include paths collected.", component="run")
+# Say where each layer's -I dirs came from. Two sources feed this file and they
+# overlap: without the breakdown a run cannot show whether the build's database
+# was read at all, or whether it contributed anything the project walk missed.
+log("Layer include paths collected:", component="run")
+for _lname in sorted(_layer_inc):
+    _walk = _walk_counts.get(_lname, 0)
+    _from_cc = _cc_counts.get(_lname, 0)
+    _added = _cc_added.get(_lname, 0)
+    _extra = len(_layer_inc[_lname]) - _walk - _added      # --include-path-layer
+    _parts = [f"{_walk} from project walk"]
+    if _lname in _cc_counts:
+        _parts.append(f"{_from_cc} from compile_commands (+{_added} new)")
+    if _extra:
+        _parts.append(f"{_extra} from --include-path-layer")
+    log(f"  {_lname}: {' | '.join(_parts)} -> {len(_layer_inc[_lname])} total",
+        component="run")
 
 # Prerequisite preflight: fail fast (before a long run) if a REQUIRED external
 # dependency for THIS run's enabled views is missing — a clear message beats a
