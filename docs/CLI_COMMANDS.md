@@ -188,6 +188,23 @@ outright.
 
 `--full` forces the long way round when you want to rule the baseline out of a comparison.
 
+**Name the baseline yourself when you are regenerating.** Auto-selection picks the nearest
+ancestor, which is right for a normal "next commit" run, but it is easy to reason about wrongly:
+distance is measured in **commits, not version numbers**, so a version whose number is higher can
+sit at an *earlier* commit and lose. If you are re-running a commit that already has a version —
+to pick up a fix, or after changing scope — pass `--base-version <id>` and there is nothing to
+guess:
+
+```
+python analyzer.py generate --project-id myproj --version-id v7 --branch main --commit <sha> --scope "group:Support" --create-version --base-version v5
+```
+
+A version already **at** the target commit is never chosen automatically: git counts a commit as
+its own ancestor, so it would sit at distance 0, beat every real ancestor, find no changed files
+and copy itself forward. The run reports what it skipped. Passing such a version to
+`--base-version` still works — it is a deliberate choice — and warns that the result will be a
+copy.
+
 **How to confirm you got an incremental run.** The last line of the run says so, and `report`
 shows what it saved:
 
@@ -338,7 +355,7 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 | `--create-version` | reserve the `versions` row if absent. Opt-in, so a mistyped `--version-id` fails instead of silently starting a new version. |
 | `--no-llm` | no LLM at all — structure only, mechanical prose and labels |
 | `--full` | force a full run even when a baseline exists |
-| `--base-version <id>` | force this baseline instead of the nearest ancestor |
+| `--base-version <id>` | the version to build on, instead of the auto-chosen nearest ancestor. **Pass it whenever you regenerate a commit that already has a version.** Takes a version id (`v5`), not a commit sha. |
 | `--no-narrowed-parse` | re-parse everything instead of only the changed translation units |
 | `--verify-parse` | run narrowed AND full, diff them, use the full one. Slow; for validation. |
 | `--unit <name>` | narrow the per-function FLOWCHART work to this unit. Repeatable. See below — it is a speed aid, not a scope. |
@@ -346,6 +363,12 @@ python analyzer.py generate --project-id myproj --commit <sha> --version-id v2 -
 
 `--full`, `--no-narrowed-parse` and `--verify-parse` are all "do it the slow way on purpose".
 None belongs in a routine run.
+
+**Regenerating a commit that already has a version** — always name the baseline:
+
+```
+python analyzer.py generate --project-id myproj --version-id v7 --branch main --commit <sha> --scope "group:Support" --create-version --base-version v5
+```
 
 ### Checking one unit's images with `--unit`
 
