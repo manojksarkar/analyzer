@@ -258,6 +258,29 @@
 > prefix, vote share, `unmapped` (never had the prefix), `not on disk` (mapped cleanly, absent) — and
 > **warns below 75 % agreement** (multi-root build or partial checkout). Never applied silently.
 >
+> **⚠ Dedupe bug, found and fixed 2026-09-03 — read this before touching the merge.** The walk yields
+> NATIVE paths (`C:\…\Layer1\Math`, from `os.walk`); the loader normalizes to forward slashes
+> (`C:/…/Layer1/Math`). A raw string compare therefore matched **nothing**, so every compile_commands dir
+> was re-appended as a duplicate — Layer1 got 32 `-I` flags instead of 18. Harmless to clang, but the
+> counts were wrong and the arg list was double length. Both sides are now compared through
+> `os.path.normcase(os.path.normpath(...))`. The earlier "adds 0 new dirs" claim had been measured in a
+> scratch script that normalized, not through `run.py` — measure through the real path.
+>
+> **Per-layer provenance is now logged**, because the merge was otherwise invisible — a run could not show
+> whether the database had been read at all, or whether it contributed anything the walk missed:
+> ```
+>   Layer1: 17 from project walk | 15 from compile_commands (+1 new) -> 18 total
+>   Layer2: 17 from project walk | 16 from compile_commands (+0 new) -> 17 total
+> ```
+>
+> **`SampleCppProject/ExternalLib/` — the fixture that makes the merge provable.** It sits OUTSIDE every
+> layer root, so the walk (which only descends `layers.*.path`) structurally cannot reach it; only a core's
+> database can contribute it. `Layer1/Math/Utils.cpp` includes `ExtCrc.h` from it, so the include resolves
+> **only** because of the compile_commands `-I`. Verified A/B at the libclang level: with the dir →
+> no diagnostics; walk-only → `'ExtCrc.h' file not found`. The header declares one macro and one typedef
+> that nothing uses, and `ExternalLib` is in no group, so `is_project_file` rejects it and the MODEL IS
+> UNCHANGED. Do not "tidy" this directory into a layer — that destroys what it demonstrates.
+>
 > **Wiring.** [run.py](engine/run.py) merges the result into `_layer_inc` right before
 > `clang_include_paths.json` is written, so **Phase 1 and Phase 3 pick it up unchanged** — no parser or
 > flowchart-engine edit. Walked dirs stay FIRST and compile_commands dirs are appended: append-only can
