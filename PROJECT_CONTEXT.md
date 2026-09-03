@@ -4951,6 +4951,17 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
     extent, **keyed by identity including the defining file/location** (so same-named macros/types in
     different files are distinct).
   - **One hash per entity** now; **per-artifact hashing is deferred**.
+  - **A version AT the target commit is never the auto baseline.** Git calls a commit its own
+    ancestor, so a prior version at the target sits at distance 0 — nearer than any real
+    ancestor — and won `nearest_ancestor` every time. The run then found **zero changed files**,
+    re-parsed nothing, and wrote a verbatim copy of that version (same model, same hashes, same
+    flowcharts), logged only as `0 affected TU(s) — reused the baseline skeleton`. Regenerating a
+    commit is asked for precisely when the existing version at it is wrong, so the copy reproduced
+    the defect. `baseline._auto_candidates` now excludes them and the skip is reported in
+    `warnings`; an explicit `--base-version-id` at the target is still honoured, with a warning
+    saying the result will be a copy. `generate_incremental` already excluded the run's OWN
+    version id for this reason — that only covered a version reserved at its own commit, not a
+    *different* version id sitting at the same commit.
   - **Never hash an empty token list.** `clang_tokenize` returns *no tokens* for some perfectly
     valid cursors — a declaration produced by a macro expansion is the common trigger — with **no
     error and a correct-looking extent**. `hash_cursor` used to hash `[]`, so every such entity got
