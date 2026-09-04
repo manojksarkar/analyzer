@@ -20,17 +20,22 @@ Pure (plain dicts) so it is unit-testable; the engine supplies the two models + 
 """
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, Iterable, List, Set
 
 from incremental.virtual_dispatch import spread_virtual_families
 
 
 def _norm(p: str) -> str:
-    """Normalize a repo-relative path for set membership: forward slashes, and case-folded
-    on case-insensitive filesystems (Windows) so git-diff paths and entity_files line up."""
-    p = (p or "").replace("\\", "/").strip("/")
-    return p.lower() if os.name == "nt" else p
+    """Normalize a repo-relative path for set membership: forward slashes, case-folded.
+
+    Folds on every platform, not only Windows -- see `affected._norm` for why. The drop set
+    here is matched against `entity_files`, whose spellings come from libclang, against a
+    `changed` list whose spellings come from git. A baseline parsed on one platform and
+    merged on another would otherwise fail to drop the entity, leaving the baseline's copy
+    in place with its old hash and no error. Over-matching costs a re-parse; under-matching
+    is a stale document.
+    """
+    return (p or "").replace("\\", "/").strip("/").lower()
 
 
 def _file_of(key: str, entity_files: Dict[str, str]) -> str:

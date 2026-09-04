@@ -30,6 +30,28 @@ def _version_at(versions: List[Dict[str, Any]], commit: str) -> Optional[Dict[st
     return None
 
 
+def _auto_candidates(versions: List[Dict[str, Any]],
+                     target_commit: str) -> List[Dict[str, Any]]:
+    """Complete versions eligible to be chosen AUTOMATICALLY as the baseline.
+
+    A version already at the target commit is excluded. Git calls a commit its own
+    ancestor, so such a version has distance 0 -- the nearest possible ancestor, beating
+    every real one. The run then finds zero changed files, re-parses nothing, and the new
+    version is a verbatim copy of the old one: same model, same hashes, same flowcharts,
+    logged only as "0 affected TU(s) - reused the baseline skeleton".
+
+    That is never what generating a new version at a commit is asking for. It is asked
+    for precisely when the existing version at that commit is wrong -- generated before a
+    fix, at a different scope, or with stale outputs -- and copying it forward reproduces
+    exactly the defect the re-run was meant to clear.
+
+    `generate_incremental` already excludes the run's OWN version id for this reason;
+    that only covered a version reserved at its own commit, not a different version id
+    sitting at the same commit.
+    """
+    return [v for v in _complete(versions) if v.get("commit") != target_commit]
+
+
 def select_baseline(repo_dir: str,
                     versions: List[Dict[str, Any]],
                     target_commit: str,
@@ -40,12 +62,19 @@ def select_baseline(repo_dir: str,
     chosenBaseVersionId, chosenBaseCommit, chosenIsAncestor, chosenIsNearest,
     changedFiles, decision ("incremental"|"full"), warnings[].
     """
-    candidates = _complete(versions)
+    candidates = _auto_candidates(versions, target_commit)
     auto_commit = git_ops.nearest_ancestor(repo_dir, [v["commit"] for v in candidates], target_commit)
     auto_version = _version_at(versions, auto_commit) if auto_commit else None
     auto_vid = auto_version["versionId"] if auto_version else None
 
     warnings: List[str] = []
+    _same = [v.get("versionId") for v in _complete(versions)
+             if v.get("commit") == target_commit and v.get("versionId") != override_version_id]
+    if _same:
+        warnings.append(
+            "skipped %s as a baseline: already at the target commit, so the run would "
+            "have found no changed files and copied that version forward instead of "
+            "regenerating" % ", ".join(str(v) for v in _same if v))
 
     # No override: take the auto nearest-ancestor (or full when none).
     if not override_version_id:
@@ -68,6 +97,13 @@ def select_baseline(repo_dir: str,
     chosen_commit = chosen.get("commit")
     is_anc = git_ops.is_ancestor(repo_dir, chosen_commit, target_commit)
     is_nearest = bool(auto_commit) and chosen_commit == auto_commit
+    if chosen_commit == target_commit:
+        # Asked for explicitly, so honour it -- but say what it means. Zero changed files
+        # is not "nothing to do": it makes the new version a copy of the named one.
+        warnings.append(
+            f"base {override_version_id} is AT the target commit - no files differ, so "
+            f"nothing will be re-parsed or regenerated and this version will be a copy "
+            f"of {override_version_id}")
     if not is_anc:
         warnings.append(
             f"base {override_version_id} is not an ancestor of the target - this run will be "
