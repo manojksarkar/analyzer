@@ -94,6 +94,42 @@ def _carry_forward_flowcharts(base_fc, out_dir):
     return carried
 
 
+def _splice_function_pngs(src_fc_dir, out_dir, stem, qn) -> int:
+    """Replace one function's carried images with the source version's. Returns the count.
+
+    A flowchart too tall for a single image is written as `<stem>_<qn>_part_1_of_N.png`
+    ... `_part_N_of_N.png`, and then `<stem>_<qn>.png` does not exist at all. Copying only
+    that one name spliced nothing for those functions -- silently, since the carried
+    baseline images were already in place and a missing source file is not an error. The
+    result was a big flowchart keeping the previous version's picture while a small one
+    beside it updated, in the same unit, on the same run.
+
+    Carried images are removed first: a part count that SHRANK (3 pages down to 2) would
+    otherwise leave `_part_3_of_3.png` behind for the document to find.
+    """
+    if not (src_fc_dir and os.path.isdir(src_fc_dir) and os.path.isdir(out_dir)):
+        return 0
+    prefix = f"{stem}_{safe_filename(qn)}"
+
+    def mine(f):
+        # Exact name or a part of it -- never a longer function name that starts the same.
+        return f.endswith(".png") and (f == prefix + ".png"
+                                       or f.startswith(prefix + "_part_"))
+
+    for f in os.listdir(out_dir):
+        if mine(f):
+            try:
+                os.remove(os.path.join(out_dir, f))
+            except OSError:
+                pass
+    copied = 0
+    for f in os.listdir(src_fc_dir):
+        if mine(f):
+            shutil.copyfile(os.path.join(src_fc_dir, f), os.path.join(out_dir, f))
+            copied += 1
+    return copied
+
+
 def _prune_orphan_flowcharts(out_dir, valid_stems):
     """Move/rename cleanup (M3.x): drop carried flowchart artifacts for source-file stems
     no longer present in the current model (a deleted or RENAMED file), so the version's
@@ -281,11 +317,7 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
 
             xver_by_unit.setdefault(stem, {})[qn] = entry
 
-            png = f"{stem}_{safe_filename(qn)}.png"
-            srcpng = os.path.join(src_fc_dir, png) if src_fc_dir else ""
-
-            if srcpng and os.path.isfile(srcpng):
-                shutil.copyfile(srcpng, os.path.join(out_dir, png))
+            _splice_function_pngs(src_fc_dir, out_dir, stem, qn)
 
         restricted = {fid: funcs[fid] for fid in sel}
         # The engine restricts ITSELF from the stored plan, so the `sel.append(fid)`
@@ -433,10 +465,28 @@ def _merge_incremental_flowcharts(inc, out_dir):
 
     spliced = 0
 
+    # Which (unit, function) pairs the engine was actually asked to regenerate. Anything
+    # else found in out_dir is a CARRIED BASELINE entry, not engine output -- see below.
+    _fresh_pairs = inc.get("fresh_pairs")
+
     for unit in sorted(inc.get("changed_units") or []):
         out_json = os.path.join(out_dir, unit + ".json")
 
+        # `fresh` must mean "the engine regenerated this", and reading the file alone does
+        # not establish that. _carry_forward_flowcharts copies EVERY baseline JSON into
+        # out_dir first, and the engine overwrites only the units it regenerated something
+        # in. For a unit whose changed functions were all diverted to cross-version reuse
+        # the engine writes nothing, so out_json is still the baseline copy -- and every
+        # name in it then won the `fresh > x-ver > baseline` precedence below as though it
+        # were newly generated. The cross-version DOT could never take effect: its PNG was
+        # spliced in while its graph was overridden by the baseline's, so the stored
+        # flowchart and the picture in the document came from different versions.
+        #
+        # fresh_pairs is exactly the set the engine was handed, so intersect with it.
         fresh = _by_name(out_json)  # engine output: changed only
+        if _fresh_pairs is not None:
+            _names = {qn for (u, qn) in _fresh_pairs if u == unit}
+            fresh = {n: e for n, e in fresh.items() if n in _names}
 
         baseline = (
             _by_name(os.path.join(base_fc, unit + ".json"))

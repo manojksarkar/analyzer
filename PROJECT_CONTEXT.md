@@ -4951,6 +4951,21 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
     extent, **keyed by identity including the defining file/location** (so same-named macros/types in
     different files are distinct).
   - **One hash per entity** now; **per-artifact hashing is deferred**.
+  - **A cross-version splice must land BOTH halves — the DOT and every PNG.** Measured on a
+    real project (v5 baseline, v7 correct, v8 a second incremental off v5): one function's
+    stored graph came from v5 while its picture came from v7, and the function beside it got
+    both from v5. Two independent defects in `views/flowcharts.py`, each silent:
+    (a) `_merge_incremental_flowcharts` read `fresh` straight from `out_dir`, but
+    `_carry_forward_flowcharts` has already copied every BASELINE json there — for a unit
+    whose changed functions were *all* diverted to cross-version reuse the engine writes
+    nothing, so baseline entries posed as engine output and won the `fresh > x-ver >
+    baseline` precedence. A cross-version DOT could never take effect. Now intersected with
+    `fresh_pairs`, which is exactly what the engine was handed.
+    (b) the image copy handled one filename, `<stem>_<qn>.png`. A flowchart too tall for one
+    image is written `_part_1_of_N.png` … and no plain `.png` exists, so nothing was copied
+    and the carried baseline images stayed — a big flowchart kept the old picture while a
+    small one beside it updated, same unit, same run. `_splice_function_pngs` now takes every
+    part and clears the carried ones first, so a shrunken part count leaves no orphan page.
   - **A version AT the target commit is never the auto baseline.** Git calls a commit its own
     ancestor, so a prior version at the target sits at distance 0 — nearer than any real
     ancestor — and won `nearest_ancestor` every time. The run then found **zero changed files**,
