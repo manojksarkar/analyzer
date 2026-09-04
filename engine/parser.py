@@ -2893,6 +2893,24 @@ def main():
     _log.info("  model/tu_includes.json (%d TUs, %d in-repo include edges)",
               len(tu_includes), _n_inc)
 
+    # Path matching folds case on every platform (incremental/affected._norm), which is what
+    # lets a baseline parsed on Windows be compared on Linux. The one place that costs
+    # something is a repo holding two files whose paths differ only by case: on Linux those
+    # are separate translation units and the fold treats them as one. Rare enough to be
+    # worth naming rather than absorbing silently.
+    try:
+        from incremental.affected import case_collisions
+        _paths = set(tu_includes) | {h for hs in tu_includes.values() for h in (hs or [])}
+        _clash = case_collisions(_paths)
+        if _clash:
+            _log.warning("  %d path(s) in this repo differ only by CASE. Change detection "
+                         "folds case, so each such group is matched as one file — on Linux "
+                         "they are separate translation units:", len(_clash))
+            for _k, _spellings in list(_clash.items())[:5]:
+                _log.warning("      %s", " | ".join(_spellings))
+    except Exception:                       # never fail a parse over a diagnostic
+        pass
+
     # Change detection is only as good as the hashes. libclang returns no tokens for
     # some valid cursors (a macro-produced declaration, notably) and hash_cursor then
     # hashes the extent's raw text instead. That is a correct hash, but the count is

@@ -4951,6 +4951,21 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
     extent, **keyed by identity including the defining file/location** (so same-named macros/types in
     different files are distinct).
   - **One hash per entity** now; **per-artifact hashing is deferred**.
+  - **Path matching folds case on EVERY platform** (`incremental/affected._norm`,
+    `parse_merge._norm`). It used to fold only when `os.name == "nt"`, which cannot be right
+    for a project parsed on one platform and regenerated on another: libclang reports a path
+    as written, so a Windows parse records `01_SRC/x.cpp` where git says `01_src/x.cpp` —
+    matched on Windows, not matched on Linux, and the file then read as unchanged with its
+    entities keeping the baseline's hashes. These values are only ever set-membership keys
+    ("is this file affected / should it be dropped"); everything stored keeps its ORIGINAL
+    casing. So folding everywhere can only consider one file too many, which costs a
+    re-parse — the sound direction (D7) — where matching too few is a stale document. The
+    one real cost is a repo holding two paths differing only by case (separate TUs on
+    Linux): `affected.case_collisions` finds them and the parser logs them, so the
+    over-approximation is never silent.
+    *Not done:* canonicalising STORED paths to git's spelling. That changes model data and
+    would make existing baselines mismatch — deliberately deferred; the fold above delivers
+    the cross-platform correctness without touching stored data.
   - **A cross-version splice must land BOTH halves — the DOT and every PNG.** Measured on a
     real project (v5 baseline, v7 correct, v8 a second incremental off v5): one function's
     stored graph came from v5 while its picture came from v7, and the function beside it got
