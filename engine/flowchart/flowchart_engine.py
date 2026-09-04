@@ -442,6 +442,7 @@ def _load_inputs_from_db(config: EngineConfig):
         functions = model_store.load_functions(cx, config.version_id)
         row = cx.execute(select(_s.versions.c.base_path, _s.versions.c.project_name)
                          .where(_s.versions.c.id == config.version_id)).first()
+        _plan_applied = False
         if config.restrict_from_plan:
             plan = model_store.load_incremental_plan(cx, config.version_id) or {}
             fids = plan.get("flowchartFids")
@@ -449,10 +450,26 @@ def _load_inputs_from_db(config: EngineConfig):
                 keep = set(fids)
                 before = len(functions)
                 functions = {k: v for k, v in functions.items() if k in keep}
+                _plan_applied = True
                 logger.info("incremental: restricted to %d of %d function(s) from the stored "
                             "plan", len(functions), before)
+    # --unit must NOT narrow further once the plan has spoken. The plan already holds only
+    # the functions that CHANGED, and the view has carried the baseline's PNGs forward for
+    # everything else -- so dropping a changed function here does not skip work, it leaves
+    # LAST version's flowchart on disk for code that has since been edited. The document
+    # then shows a diagram that does not match the source, silently.
+    #
+    # Reproduced: a for-loop added to Math|Utils::add, incremental. Without --unit the PNG
+    # updates; with `--unit Main` it stays byte-identical to the baseline's.
+    #
+    # The component filter still applies -- Phase 3 runs once per component and each writes
+    # its own output directory.
+    _units = () if _plan_applied else config.units
+    if _plan_applied and config.units:
+        logger.info("incremental: --unit does not narrow this run; every changed function "
+                    "is re-rendered so no carried-forward flowchart goes stale")
     functions, comps, units = _apply_scope(
-        functions, config.components, config.component, config.units)
+        functions, config.components, config.component, _units)
     meta = ProjectMeta(base_path=(row.base_path if row else "") or "",
                        project_name=(row.project_name if row else "") or "")
     _scope = ""

@@ -5169,6 +5169,61 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
     extent, **keyed by identity including the defining file/location** (so same-named macros/types in
     different files are distinct).
   - **One hash per entity** now; **per-artifact hashing is deferred**.
+  - **Path matching folds case on EVERY platform** (`incremental/affected._norm`,
+    `parse_merge._norm`). It used to fold only when `os.name == "nt"`, which cannot be right
+    for a project parsed on one platform and regenerated on another: libclang reports a path
+    as written, so a Windows parse records `01_SRC/x.cpp` where git says `01_src/x.cpp` —
+    matched on Windows, not matched on Linux, and the file then read as unchanged with its
+    entities keeping the baseline's hashes. These values are only ever set-membership keys
+    ("is this file affected / should it be dropped"); everything stored keeps its ORIGINAL
+    casing. So folding everywhere can only consider one file too many, which costs a
+    re-parse — the sound direction (D7) — where matching too few is a stale document. The
+    one real cost is a repo holding two paths differing only by case (separate TUs on
+    Linux): `affected.case_collisions` finds them and the parser logs them, so the
+    over-approximation is never silent.
+    *Not done:* canonicalising STORED paths to git's spelling. That changes model data and
+    would make existing baselines mismatch — deliberately deferred; the fold above delivers
+    the cross-platform correctness without touching stored data.
+  - **A cross-version splice must land BOTH halves — the DOT and every PNG.** Measured on a
+    real project (v5 baseline, v7 correct, v8 a second incremental off v5): one function's
+    stored graph came from v5 while its picture came from v7, and the function beside it got
+    both from v5. Two independent defects in `views/flowcharts.py`, each silent:
+    (a) `_merge_incremental_flowcharts` read `fresh` straight from `out_dir`, but
+    `_carry_forward_flowcharts` has already copied every BASELINE json there — for a unit
+    whose changed functions were *all* diverted to cross-version reuse the engine writes
+    nothing, so baseline entries posed as engine output and won the `fresh > x-ver >
+    baseline` precedence. A cross-version DOT could never take effect. Now intersected with
+    `fresh_pairs`, which is exactly what the engine was handed.
+    (b) the image copy handled one filename, `<stem>_<qn>.png`. A flowchart too tall for one
+    image is written `_part_1_of_N.png` … and no plain `.png` exists, so nothing was copied
+    and the carried baseline images stayed — a big flowchart kept the old picture while a
+    small one beside it updated, same unit, same run. `_splice_function_pngs` now takes every
+    part and clears the carried ones first, so a shrunken part count leaves no orphan page.
+  - **A version AT the target commit is never the auto baseline.** Git calls a commit its own
+    ancestor, so a prior version at the target sits at distance 0 — nearer than any real
+    ancestor — and won `nearest_ancestor` every time. The run then found **zero changed files**,
+    re-parsed nothing, and wrote a verbatim copy of that version (same model, same hashes, same
+    flowcharts), logged only as `0 affected TU(s) — reused the baseline skeleton`. Regenerating a
+    commit is asked for precisely when the existing version at it is wrong, so the copy reproduced
+    the defect. `baseline._auto_candidates` now excludes them and the skip is reported in
+    `warnings`; an explicit `--base-version-id` at the target is still honoured, with a warning
+    saying the result will be a copy. `generate_incremental` already excluded the run's OWN
+    version id for this reason — that only covered a version reserved at its own commit, not a
+    *different* version id sitting at the same commit.
+  - **Never hash an empty token list.** `clang_tokenize` returns *no tokens* for some perfectly
+    valid cursors — a declaration produced by a macro expansion is the common trigger — with **no
+    error and a correct-looking extent**. `hash_cursor` used to hash `[]`, so every such entity got
+    `sha256("")`: one constant shared by all of them, classified **unchanged in every comparison
+    forever**, flowchart and LLM description carried forward from the first version, nothing logged.
+    Measured on one firmware project: **2069 of 2818 functions (73%)**, which silently disabled
+    incremental change detection for most of the codebase. `hash_cursor` now falls back to the
+    extent's **raw source text** (whitespace-split, so reformatting still is not a change), then to
+    **name + position** if the file cannot be read — the latter regenerates whenever the entity
+    moves, which is the sound direction (D7) rather than pinning it to "unchanged". Counts are
+    exposed as `hash_cursor.fallbacks` and logged at end of parse.
+    *Recovery:* baselines parsed before this fix hold the constant for those entities, so the first
+    run after it reclassifies them all as changed — a one-time large regeneration, and the correct
+    repair. `tools/why_unchanged.py` reports how many a stored version is carrying.
   - Classification: unchanged / changed / new / deleted; **move/rename = delete(old key) + add(new key)**.
   - *Why hash globals/macros/types separately:* changing a global/macro/type does **not** change a
     *using* function's tokens (a function still just writes `MAX` after `#define MAX` changes value), so

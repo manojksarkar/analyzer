@@ -9,7 +9,6 @@ and the baseline's closure map.
 """
 from __future__ import annotations
 
-import os
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 # Source files we treat as translation units (re-parsed) vs headers (only fan-out via closures).
@@ -18,10 +17,41 @@ _HEADER_EXTS = (".h", ".hpp", ".hh", ".hxx", ".h++", ".inc", ".ipp", ".tcc")
 
 
 def _norm(p: str) -> str:
-    """Normalize a repo-relative path for matching: forward slashes, and case-folded on
-    case-insensitive filesystems (Windows) so git-diff vs closure paths line up."""
-    p = (p or "").replace("\\", "/").strip("/")
-    return p.lower() if os.name == "nt" else p
+    """Normalize a repo-relative path for MATCHING: forward slashes, case-folded.
+
+    Case-folding used to be conditional on `os.name == "nt"`, which cannot be right for a
+    project built on one platform and regenerated on another. libclang reports a path as
+    it was written -- on the command line or in an `#include` -- so a Windows parse can
+    record `01_SRC/x.cpp` where git says `01_src/x.cpp`. On Windows both sides folded and
+    matched; on Linux neither did, so the file read as unchanged and its entities kept the
+    baseline's hashes. Silently: the same shape as every other bug in this area.
+
+    Folding on both platforms is sound in the direction that matters. On Linux `Foo.h` and
+    `foo.h` CAN be two files, and folding would treat them as one -- but this value is only
+    ever a set-membership key for "is this file affected / should it be dropped", so the
+    error is to consider one file too many. Parsing more is the safe side (doc 04, D7);
+    matching too few is what leaves a stale document. `case_collisions` reports when a repo
+    actually contains such a pair, so the over-approximation is never invisible.
+
+    Callers keep the ORIGINAL casing for anything they store or return -- this is the
+    comparison key, not the recorded path.
+    """
+    return (p or "").replace("\\", "/").strip("/").lower()
+
+
+def case_collisions(paths: Iterable[str]) -> Dict[str, List[str]]:
+    """{folded path -> the distinct spellings seen} for paths that differ ONLY by case.
+
+    Empty for virtually every repo. When it is not, `_norm` is conflating real files, and
+    on Linux those are genuinely separate translation units -- worth saying out loud rather
+    than silently over-parsing both forever.
+    """
+    seen: Dict[str, Set[str]] = {}
+    for p in paths:
+        clean = (p or "").replace("\\", "/").strip("/")
+        if clean:
+            seen.setdefault(clean.lower(), set()).add(clean)
+    return {k: sorted(v) for k, v in sorted(seen.items()) if len(v) > 1}
 
 
 def _is_tu(path: str) -> bool:
