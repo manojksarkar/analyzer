@@ -208,6 +208,43 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-05c (**`tools/audit_project.py` - a read-only audit of what a project
+> stored and every invariant the incremental design relies on** - branch `version7`.
+>
+> **Why a new tool.** `check_db.py` checks the rows are STRUCTURALLY sound - no orphans, no
+> dangling blobs, no missing snapshots. Every defect found this week passed all of that. They
+> were failures of CORRECTNESS: change detection that could not detect change, a baseline that
+> was not an ancestor, a stored blob that was not the hash it claimed, a changed function whose
+> flowchart never followed. This automates the measuring that found them.
+>
+> **Sections.** A version chain (terminal status; a baseline AT the target commit; orphaned and
+> missing baselines) - B change detection (the sha256("") empty-token hash as a count AND a
+> percentage; missing hashes; suspicious hash clusters) - C incremental correctness (a function
+> whose source_hash moved must have a different DOT; a DOT and its PNG must move together) -
+> D model completeness (file/component/unit/visibility/direction/content_hash present) -
+> E storage integrity (every blob re-hashed and compared to its content_hash; NULs; dangling
+> payload pointers) - F include map (headers per SOURCE file, headers excluded) - G output
+> (stored output files, documents on disk, a graph with no image).
+>
+> **Reads the stored copy, not disk.** Flowchart DOTs come from `version_output_files`, which
+> is what the API serves; PNGs come from disk, which is what the DOCX embedded. Comparing the
+> two is check C3 and is how the split-origin defect was found in the first place.
+>
+> **An empty check is not a pass.** Every finding prints what it EXAMINED, because a diagnostic
+> that reported success twice while examining an empty set cost two real runs on a
+> 2817-function project. A clean report says so explicitly rather than staying silent.
+>
+> **The report is for pasting back.** ASCII-only (a Windows console's cp1252 mangles anything
+> else), each finding carries WHY it matters and NEEDED TO FIX naming the follow-up tool, and
+> it contains no source code, no doc comments and no LLM-generated text - names, paths, hashes
+> and counts only, so a client codebase can be audited and the result shared.
+>
+> **Verified against two fixtures**, not just run: a `broken` project carrying one instance of
+> each real defect (same-commit baseline, empty-token hash, changed-but-stale flowchart,
+> DOT/PNG disagreement, tampered blob, thin include map) and a `clean` one carrying none.
+> Broken exits 1 with all six found; clean exits 0. The clean control matters - it caught a
+> mistake in the FIXTURE, where alpha's DOT moved while its PNG was held constant.)
+
 > Updated: 2026-09-05b (**phase summaries named model JSON files that are not written; the
 > SWE.4 cover page read "Software Project"** — branch `version7`.
 >
