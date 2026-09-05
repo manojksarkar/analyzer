@@ -208,6 +208,39 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-06 (**a flush deleted the artifacts it was not handed; the audit's model
+> checks did not know about hash-only rows** - branch `version7`.
+>
+> **`flush()` could drop `hashes`, `units`, `components` and `summaries`.** It calls
+> `clear_version` and then `persist_model`, so any coupled artifact absent from the flush is
+> DELETED. It completes a partial write from what is already stored - but the guard deciding
+> whether to load that named only four of the eight coupled artifacts (functions,
+> globalVariables, dataDictionary, edges). **Phase 2 rewrites exactly those four**, so the load
+> was skipped and the other four persisted as `{}`. For `hashes` that is not cosmetic:
+> `persist_functions` reads `source_hash` from it, so every function lands with a NULL hash and
+> change detection is dead for the NEXT run - while THIS run's document looks perfectly
+> correct. Now guarded on the whole `_PERSIST_KW` set. Seen as 4321 functions with no
+> source_hash after a fresh generate. Tests: `test_model_repo_flush_completes.py` (4);
+> restoring the four-name guard fails two of them.
+>
+> **Hash-only entity_versions rows are BY DESIGN and the audit was failing them.**
+> `persist_bare_entities` writes a row carrying only a `source_hash` for a hashed entity that
+> is not part of the model - a file-scope macro, or a function outside the generated scope - so
+> `classify` still sees its hash next run; `_entity_kind` gives a 3-pipe key `kind='function'`,
+> and `load_functions` skips them ("hash-only entity, not a real function"). Auditing them for
+> a file / component / unit / payload produced **2818 spurious failures on a healthy project**
+> and buried the one finding that mattered. `check_model_shape` now audits only rows WITH a
+> payload, reports the split as D0, and D6 checks `interface_id` instead of the field the
+> filter already guarantees.
+>
+> **New B4/B4b/B5.** B2 counted rows with no hash without saying which population they were in,
+> and the two are easy to confuse. B4 separates "real function with a payload and no hash" (a
+> lost `hashes` artifact) from a hash-only row; B5 then asks whether the hashed keys and the
+> payload keys describe the same functions on `component|unit|qualifiedName` - overlap means one
+> function stored twice under two parameter-type spellings (a keying bug), no overlap means the
+> hash-only rows are genuinely other entities (a lost artifact). Different fixes, and the report
+> now says which.)
+
 > Updated: 2026-09-05c (**`tools/audit_project.py` - a read-only audit of what a project
 > stored and every invariant the incremental design relies on** - branch `version7`.
 >

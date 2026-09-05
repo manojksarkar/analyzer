@@ -284,6 +284,56 @@ def check_hashes(ctx, rep):
                 examined="%d functions" % len(fns), examples=blank,
                 why="Change detection cannot run for an entity with no hash.")
 
+        # B2 counts rows with no hash. Knowing WHICH rows those are decides the fix, and
+        # the two populations are easy to confuse: a hash-only row (payload absent, hash
+        # present) is by design, while a real function with a payload and NO hash means the
+        # `hashes` artifact did not reach persist_functions. Cross-tabulate so the report
+        # says which, and check whether the hashed keys and the payload keys even describe
+        # the same functions -- a disjoint pair means the two sides are keyed differently,
+        # which is a completely different bug from a lost artifact.
+        real = {k: f for k, f in fns.items() if f.get("content_hash")}
+        bare = {k: f for k, f in fns.items() if not f.get("content_hash")}
+        real_no_hash = sorted(k for k, f in real.items() if not f["hash"])
+        bare_no_hash = sorted(k for k, f in bare.items() if not f["hash"])
+        rep.add(ERROR if real_no_hash else OK, "B4",
+                "%s: %d real function(s) have a payload but NO source_hash"
+                % (v["id"], len(real_no_hash)) if real_no_hash
+                else "%s: every real function has a source_hash" % v["id"],
+                examined="%d real, %d hash-only" % (len(real), len(bare)),
+                examples=real_no_hash,
+                why="persist_functions takes source_hash from the `hashes` artifact. A "
+                    "payload with no hash means `hashes` was empty or keyed differently "
+                    "when the model was persisted, so change detection is dead for the "
+                    "NEXT run even though this run's document is fine.",
+                ask="the B5 line below, which says whether the two key sets overlap.")
+        if bare_no_hash:
+            rep.add(WARN, "B4b",
+                    "%s: %d hash-only row(s) have no hash either" % (v["id"], len(bare_no_hash)),
+                    examined="%d hash-only rows" % len(bare),
+                    examples=bare_no_hash,
+                    why="A row carrying neither a payload nor a hash serves no purpose.")
+
+        # Do the hashed keys and the payload keys describe the same functions? Compare on
+        # component|unit|qualifiedName, ignoring the parameter-type tail, because that tail
+        # is the part Phase 1 and Phase 2 spell differently (`params` vs `parameters`).
+        if real_no_hash and bare:
+            def _stem3(k):
+                return "|".join(k.split("|")[:3])
+            overlap = {_stem3(k) for k in real} & {_stem3(k) for k in bare}
+            rep.add(WARN if overlap else INFO, "B5",
+                    "%s: %d function name(s) appear in BOTH the payload set and the "
+                    "hash-only set" % (v["id"], len(overlap)) if overlap
+                    else "%s: the payload set and the hash-only set are different functions"
+                         % v["id"],
+                    examined="%d real, %d hash-only" % (len(real), len(bare)),
+                    examples=sorted(overlap)[:_MAX_EXAMPLES],
+                    why="Overlap means ONE function was stored twice under two different "
+                        "keys -- the parameter-type tail is spelled differently by the two "
+                        "phases, so the hash never finds its function. No overlap means the "
+                        "hash-only rows are genuinely other entities (out of scope), and "
+                        "the missing hashes are a lost `hashes` artifact instead.",
+                    ask="this line decides between a key-spelling bug and a lost artifact.")
+
         dup = collections.Counter(f["hash"] for f in fns.values() if f["hash"])
         big = sorted(((h, n) for h, n in dup.items() if n > 3 and h != EMPTY_HASH),
                      key=lambda x: -x[1])
@@ -382,7 +432,23 @@ def check_incremental(ctx, rep):
 def check_model_shape(ctx, rep):
     rep.start("D. MODEL COMPLETENESS — is every field the document needs present?")
     for v in ctx.versions:
-        fns = ctx.functions(v["id"])
+        # HASH-ONLY rows are excluded, and that is not a loophole. `persist_bare_entities`
+        # deliberately writes an entity_versions row carrying ONLY a source_hash for a
+        # hashed entity that is not part of the model -- a file-scope macro, or a function
+        # outside the generated scope -- so `classify` can still see its hash next run.
+        # `load_functions` skips them for the same reason ("hash-only entity, not a real
+        # function"). Auditing them for a file or a component reported 2818 failures on a
+        # healthy project and buried the one finding that mattered.
+        allf = ctx.functions(v["id"])
+        fns = {k: f for k, f in allf.items() if f.get("content_hash")}
+        bare = len(allf) - len(fns)
+        rep.add(INFO, "D0",
+                "%s: %d real function(s) with a payload, %d hash-only row(s)"
+                % (v["id"], len(fns), bare),
+                examined="%d function rows" % len(allf),
+                why="A hash-only row is deliberate: a hashed entity outside the generated "
+                    "model, kept so change detection can still see it. Only the real ones "
+                    "are checked below.")
         if not fns:
             continue
         for code, field, level, why in (
@@ -394,8 +460,9 @@ def check_model_shape(ctx, rep):
                 ("D4", "visibility", WARN, "A function with no visibility cannot be placed "
                                            "in the public or private interface table."),
                 ("D5", "direction", WARN, "The interface table's Direction column."),
-                ("D6", "content_hash", ERROR, "No payload pointer: the entity reads back "
-                                              "with no parameters, description or phases.")):
+                ("D6", "interface_id", WARN, "An interface id is what the SWE.3 tables and "
+                                             "the traceability matrix reference the entry "
+                                             "by; a blank one drops it from both.")):
             missing = sorted(k for k, f in fns.items() if not f.get(field))
             rep.add(level if missing else OK, code,
                     "%s: %d function(s) with no %s" % (v["id"], len(missing), field)
