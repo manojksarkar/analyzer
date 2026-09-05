@@ -208,6 +208,44 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-05 (**a NUL character in one description killed Phase 2 after the whole LLM
+> run had been paid for** — branch `version7`.
+>
+> **Symptom.** A fresh onboard + generate reached the end of Phase 2, logged
+> `llm_enrichment: done in 1018.54s - 231 described`, wrote the model files, and then died in
+> `flush_model` -> `persist_functions` -> `_insert_blobs`:
+> ```
+> psycopg.errors.UntranslatableCharacter: unsupported Unicode escape sequence
+> DETAIL:  \u0000 cannot be converted to text.
+> CONTEXT: JSON data, line 1: ...d RPM task log entry and wrapped head index\u0000...
+> ```
+> 17 minutes and 3.7M tokens spent, nothing stored, exit 1. The `llm_description_cache` write had
+> already failed the same way a moment earlier and was swallowed ("continuing without it").
+>
+> **Cause.** PostgreSQL has no representation for a NUL in `text` OR in `jsonb`, so the driver
+> raises rather than truncating. Python strings and JSON files hold one happily, so a NUL that
+> enters in a doc comment, in a `returnExpr` sliced out of source, or in an LLM response crosses
+> the entire pipeline unnoticed — `model/functions.json` was written fine — and only the final
+> INSERT rejects it. Nothing upstream is wrong; the model on disk is still valid JSON.
+>
+> **Fix.** `db_util.scrub_nulls` removes NULs recursively (strings, list items, dict keys and
+> values) and both bulk helpers — `insert_ignore` and `insert_chunked` — run every row through
+> it, so no writer has to remember. A value needing no change is returned as the SAME object, so
+> the common path costs one `in` test per string and allocates nothing.
+>
+> **`_content_hash` scrubs BEFORE hashing** (`model_store.py`). Hashing the raw payload while
+> storing the scrubbed one would key a content-addressed blob on bytes the row does not contain,
+> and the same function would hash differently depending on whether its NUL had been removed yet
+> — so the reuse index would never match it again.
+>
+> **Counted, not silent.** `db_util.scrub_stats` accumulates the repairs and `PgRepository.flush`
+> logs them, because `model/*.json` still holds the character: without the line, a diff between
+> the JSON and the rows would look like corruption.
+>
+> Tests: `tests/unit/test_db_util_scrub_nulls.py` (12) — removal, nesting, dict keys, the
+> identity-preserving fast path, the counter, that only the NUL goes (tabs/newlines/non-ASCII
+> stay), and both hash properties. Neutering the scrub fails 7 of them. Full suite 1444 green.)
+
 > Updated: 2026-09-02 (**`compile_commands.json` ingest — INCLUDE PATHS ONLY, first cut** — branch
 > `poc-4`, uncommitted.
 >

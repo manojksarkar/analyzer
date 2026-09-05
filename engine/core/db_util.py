@@ -36,6 +36,73 @@ def _chunks(rows: List[Any], size: int = MAX_ROWS_PER_STATEMENT):
         yield rows[i:i + size]
 
 
+# PostgreSQL stores no NUL in `text` and none in `jsonb` — the type system has no
+# representation for it, so the driver raises rather than truncating:
+#
+#     psycopg.errors.UntranslatableCharacter: unsupported Unicode escape sequence
+#     DETAIL: \u0000 cannot be converted to text.
+#
+# Python strings and JSON files hold one happily, so a NUL that arrives in a doc comment,
+# a `returnExpr` sliced out of source, or an LLM response travels the whole pipeline
+# unnoticed and kills the run at the last step — after the parse and every LLM call have
+# been paid for. Seen on a real project: 17 minutes and 3.7M tokens spent, then Phase 2
+# died on `INSERT INTO content_blobs`, one NUL inside one description.
+#
+# A NUL is never meaningful in text we store, so drop it rather than failing. Doing it here
+# means no writer has to remember: both bulk helpers below go through it.
+_NUL = "\x00"
+
+# Counted, not silent — a run should be able to say the data was repaired.
+scrub_stats = {"strings": 0}
+
+
+def scrub_nulls(value: Any) -> Any:
+    """Return `value` with every NUL removed from every string inside it.
+
+    Recurses through dicts and lists so a JSONB payload is covered as well as a plain
+    column. Returns the ORIGINAL object when there is nothing to change, so the common
+    case costs one `in` test per string and allocates nothing.
+    """
+    if isinstance(value, str):
+        if _NUL not in value:
+            return value
+        scrub_stats["strings"] += 1
+        return value.replace(_NUL, "")
+    if isinstance(value, dict):
+        cleaned = None
+        for k, v in value.items():
+            ck, cv = scrub_nulls(k), scrub_nulls(v)
+            if ck is not k or cv is not v:
+                if cleaned is None:
+                    cleaned = dict(value)
+                if ck is not k:
+                    cleaned.pop(k, None)
+                cleaned[ck] = cv
+        return cleaned if cleaned is not None else value
+    if isinstance(value, list):
+        cleaned = None
+        for i, v in enumerate(value):
+            cv = scrub_nulls(v)
+            if cv is not v:
+                if cleaned is None:
+                    cleaned = list(value)
+                cleaned[i] = cv
+        return cleaned if cleaned is not None else value
+    return value
+
+
+def _scrubbed(rows: list) -> list:
+    """The rows with NULs removed. Same list object when nothing needed changing."""
+    out = None
+    for i, row in enumerate(rows):
+        clean = scrub_nulls(row)
+        if clean is not row:
+            if out is None:
+                out = list(rows)
+            out[i] = clean
+    return out if out is not None else rows
+
+
 def insert_ignore(conn, table, rows: list) -> None:
     """Bulk insert, skipping rows that collide (first writer wins).
 
@@ -46,6 +113,7 @@ def insert_ignore(conn, table, rows: list) -> None:
     """
     if not rows:
         return
+    rows = _scrubbed(rows)
     name = conn.engine.dialect.name
     if name == "postgresql":
         from sqlalchemy.dialects.postgresql import insert as _ins
@@ -70,5 +138,6 @@ def insert_chunked(conn, table, rows: list) -> None:
     """
     if not rows:
         return
+    rows = _scrubbed(rows)
     for chunk in _chunks(rows):
         conn.execute(_plain_insert(table), chunk)
