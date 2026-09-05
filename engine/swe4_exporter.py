@@ -23,7 +23,7 @@ from typing import Optional, Tuple
 from utils import KEY_SEP
 from core.paths import paths as _paths
 from docx_common import (
-    load_abbreviations, set_cell_font, add_para, add_toc, build_cover_page,
+    load_abbreviations, load_model_json, set_cell_font, add_para, add_toc, build_cover_page,
 )
 
 _p = _paths()
@@ -206,11 +206,12 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
     intro_cfg = cfg_swe4.get("introduction", {}) or {}
     abbreviations = load_abbreviations(PROJECT_ROOT, config)
 
-    project_name = "Software Project"
-    _meta_path = os.path.join(MODEL_DIR, "metadata.json")
-    if os.path.isfile(_meta_path):
-        with open(_meta_path, "r", encoding="utf-8") as _f:
-            project_name = json.load(_f).get("projectName", project_name)
+    # Through the gateway, as the SWE.3 exporter does (docx_exporter.py:1241). This opened
+    # MODEL_DIR/metadata.json directly, and that file has not existed since the file backing
+    # was removed -- `metadata` is DB_BACKED_PARSE and lands in `parse_snapshots`. The
+    # `os.path.isfile` guard turned that into silence rather than an error, so every SWE.4
+    # cover page read "Software Project" instead of the project's name.
+    project_name = (load_model_json("metadata") or {}).get("projectName") or "Software Project"
 
     from core.config import get_group_layer_name, get_component_layer_name
     if selected_components:

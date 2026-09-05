@@ -208,6 +208,46 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-05b (**phase summaries named model JSON files that are not written; the
+> SWE.4 cover page read "Software Project"** — branch `version7`.
+>
+> **The logs.** Phase 1 and Phase 2 printed `model/functions.json (2818)`,
+> `model/knowledge_base.json (...)`, `model/globalVariables.json (231)` and nine more like
+> them. Those files have not existed since the file backing was removed: `repository()` has
+> **no default any more** (model_repo.py:437 — a default is what used to make a misconfigured
+> run look successful), every artifact is registered in `DB_BACKED`, and `DbRepository.write`
+> never touches disk. The write went to Postgres and the line named a path nobody wrote. Cost
+> a reader real time asking whether the DB migration had been reverted.
+>
+> Each line now names the ARTIFACT and asks where it went — `model_io.artifact_location(name)`
+> -> `repository().describe(name)`. Accurate in every mode, including the narrowed parse's
+> scratch pass, which really does write files:
+> ```
+>   functions (2818) -> database (at flush)
+>   knowledge_base (functions=2744, ...) -> database
+>   metadata -> database (parse_snapshots)
+> ```
+> `artifact_location` never raises — a summary line must not be able to fail a run.
+>
+> **The bug the wording was hiding.** `swe4_exporter.py` opened `MODEL_DIR/metadata.json`
+> **directly**, behind an `os.path.isfile` guard. `metadata` is `DB_BACKED_PARSE` and lands in
+> `parse_snapshots`, so the guard was simply false on every database run and `project_name`
+> kept its `"Software Project"` default — **every SWE.4 cover page carried the wrong project
+> name**, silently, because a missing file read as "no name available". Now
+> `docx_common.load_model_json("metadata")`, which is what `docx_exporter.py:1241` (SWE.3) has
+> always done. This is the same Phase-4 bypass the port fixed for `docx_common` on 2026-09-01b;
+> this instance was missed.
+>
+> **Checked, not assumed:** every other file read in the SWE.4 code is an OUTPUT artifact
+> (`test_specs.py` writes its own json, `test_steps.py` reads the flowchart dir,
+> `ut_export.py` reads test_specs and writes ut_export) — those are real files by design and
+> are correct. `docx_common.load_model_json` already went through the gateway.
+>
+> Tests: `tests/unit/test_model_artifact_location.py` (6) — the label says database and never
+> a filename, buffered vs immediate vs parse_snapshots are distinguished, no repository does
+> not raise, scratch mode reports the real path, and both exporters resolve metadata through
+> the gateway. Suite 1450 green.)
+
 > Updated: 2026-09-05 (**a NUL character in one description killed Phase 2 after the whole LLM
 > run had been paid for** — branch `version7`.
 >

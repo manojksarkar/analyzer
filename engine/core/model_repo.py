@@ -110,6 +110,17 @@ class ModelRepository(ABC):
     def flush(self) -> None:
         """Persist anything buffered. No-op where a write already landed."""
 
+    def describe(self, name: str) -> str:
+        """Where a write of `name` actually lands, for a log line.
+
+        The phase summaries used to print `model/functions.json (2818)` unconditionally.
+        That file has not existed since the file backing was removed, so the line named a
+        path nobody wrote and sent a reader looking for it on disk. Asking the repository
+        keeps the log honest in every mode, including the narrowed parse's scratch pass,
+        which really does write files.
+        """
+        return "?"
+
 
 class ScratchRepository(ModelRepository):
     """JSON in the run's model dir, for output that must NOT reach a version.
@@ -145,6 +156,9 @@ class ScratchRepository(ModelRepository):
 
     def missing(self, *names):
         return [n for n in names if not os.path.isfile(_scratch_path(n))]
+
+    def describe(self, name):
+        return _scratch_path(name)
 
 
 def _scratch_path(name: str) -> str:
@@ -296,6 +310,13 @@ class DbRepository(ModelRepository):
             self._pending[name] = data
             self._stored = None                  # a later read must see the new value
             self._exists = None                  # and re-ask whether a model is there
+
+    def describe(self, name):
+        if name in DB_BACKED_PARSE:
+            return "database (parse_snapshots)"
+        if name in DB_BACKED_STANDALONE:
+            return "database"
+        return "database (at flush)"             # buffered until the phase boundary
 
     # -- standalone artifacts (own table, no coupling to the rest) ----------
     _STANDALONE_IO = {

@@ -176,3 +176,18 @@ def write_model_file(
     return ""
 
 
+def artifact_location(name: str) -> str:
+    """Where a write of `name` lands, as a short phrase for a log line.
+
+    Phase summaries named `model/<name>.json` whatever the run actually did. That file has
+    not existed since the file backing was removed, so the line pointed a reader at a path
+    nobody wrote — which is exactly the confusion it should have prevented. Never raises:
+    a summary line must not be able to fail a run.
+    """
+    try:
+        from core.model_repo import repository
+        return repository().describe(name)
+    except Exception:
+        return "?"
+
+
