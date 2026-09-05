@@ -402,9 +402,18 @@ class DbRepository(ModelRepository):
             return
         from core.db import get_engine
         from core import model_store
-        stored = self._load_stored() if any(
-            n not in pending for n in ("functions", "globalVariables", "dataDictionary", "edges")
-        ) else {}
+        # Complete the write from what is already stored whenever ANY coupled artifact is
+        # absent from this flush — not just the four the model is keyed on.
+        #
+        # `clear_version` below wipes the version's rows before persist_model rewrites them,
+        # so anything not supplied here is DELETED. The guard used to name only functions /
+        # globalVariables / dataDictionary / edges, which meant a phase that rewrote exactly
+        # those four — Phase 2 does — skipped the load, and `hashes`, `units`, `components`
+        # and `summaries` were persisted as {}. For `hashes` that is not a cosmetic loss:
+        # persist_functions takes source_hash from it, so every function lands with a NULL
+        # hash and change detection is dead for the NEXT run, silently, with the document
+        # from THIS run looking perfectly correct.
+        stored = self._load_stored() if any(n not in pending for n in _PERSIST_KW) else {}
         def _pick(name):
             return pending.get(name, stored.get(_PERSIST_KW[name]) or {})
         with get_engine().begin() as cx:          # one transaction: all-or-nothing (H2)
