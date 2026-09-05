@@ -28,7 +28,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import delete, func, insert, select
 
-from core.db_util import insert_chunked, insert_ignore
+from core.db_util import insert_chunked, insert_ignore, scrub_nulls
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
@@ -74,6 +74,14 @@ _GLOBAL_PAYLOAD_FIELDS = ("type", "value", "description", "className")
 # shared helpers
 # ---------------------------------------------------------------------------
 def _content_hash(payload: Dict[str, Any]) -> str:
+    """Hash of the payload AS IT WILL BE STORED.
+
+    The scrub has to happen on this side of the hash. `db_util` strips NULs on the way into
+    the database because Postgres can hold none, and hashing before that would key the row
+    on bytes the row does not contain — a content-addressed blob whose content_hash is not
+    the hash of its content, and a reuse index that never matches it again.
+    """
+    payload = scrub_nulls(payload)
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 

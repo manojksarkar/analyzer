@@ -400,6 +400,17 @@ class DbRepository(ModelRepository):
                 hashes=_pick("hashes"), units=_pick("units"),
                 components=_pick("components"), summaries=_pick("summaries"))
         self._stored = None
+        # NULs are stripped on the way in because Postgres can store none (db_util.scrub_nulls).
+        # Say when that happened: the model on disk still holds the character, so a diff
+        # between the JSON and the rows is explained rather than mysterious.
+        from core.db_util import scrub_stats
+        if scrub_stats["strings"]:
+            from core.logging_setup import get_logger
+            get_logger("model_repo").warning(
+                "%d stored string(s) contained a NUL character, removed on write — "
+                "PostgreSQL cannot represent one in text or jsonb. Usually a doc comment "
+                "or an expression sliced out of a source file with a stray NUL byte.",
+                scrub_stats["strings"])
 
 
 # ---------------------------------------------------------------------------
