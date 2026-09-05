@@ -2972,22 +2972,28 @@ def main():
     n_types = len(data_dictionary)
     # Through the logger rather than print() so these survive in logs/run_<date>.log
     # instead of scrolling past on the console.
-    _log.info("  model/metadata.json")
-    _log.info("  model/functions.json (%d)", n_funcs)
-    _log.info("  model/globalVariables.json (%d)", n_vars)
+    #
+    # Named by ARTIFACT and asked where it went, not printed as `model/<name>.json`. That
+    # file has not existed since the file backing was removed, so the old wording sent a
+    # reader looking on disk for something the run had put in Postgres.
+    from core.model_io import artifact_location as _where
+    _log.info("  metadata -> %s", _where("metadata"))
+    _log.info("  functions (%d) -> %s", n_funcs, _where("functions"))
+    _log.info("  globalVariables (%d) -> %s", n_vars, _where("globalVariables"))
     kinds = {}
     for t in data_dictionary.values():
         k = t.get("kind", "?")
         kinds[k] = kinds.get(k, 0) + 1
     plural = lambda k: "classes" if k == "class" else k + "s"
     parts = [f"{v} {plural(k)}" for k, v in sorted(kinds.items())]
-    _log.info("  model/dataDictionary.json (%d types: %s)", n_types, ", ".join(parts))
-    _log.info("  model/hashes.json (%d entities)", len(entity_hashes))
-    _log.info("  model/edges.json (%d types used, %d macros used)",
-              len(edges["typeUsers"]), len(edges["macroUsers"]))
+    _log.info("  dataDictionary (%d types: %s) -> %s", n_types, ", ".join(parts),
+              _where("dataDictionary"))
+    _log.info("  hashes (%d entities) -> %s", len(entity_hashes), _where("hashes"))
+    _log.info("  edges (%d types used, %d macros used) -> %s",
+              len(edges["typeUsers"]), len(edges["macroUsers"]), _where("edges"))
     _n_inc = sum(len(v) for v in tu_includes.values())
-    _log.info("  model/tu_includes.json (%d TUs, %d in-repo include edges)",
-              len(tu_includes), _n_inc)
+    _log.info("  tu_includes (%d TUs, %d in-repo include edges) -> %s",
+              len(tu_includes), _n_inc, _where("tu_includes"))
 
     # Path matching folds case on every platform (incremental/affected._norm), which is what
     # lets a baseline parsed on Windows be compared on Linux. The one place that costs

@@ -355,8 +355,9 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
 
     write_model_file(UNITS, units_data)
     write_model_file(COMPONENTS, components_data)
-    print(f"  model/units.json ({len(units_data)})")
-    print(f"  model/components.json ({len(components_data)})")
+    from core.model_io import artifact_location as _where
+    print(f"  units ({len(units_data)}) -> {_where('units')}")
+    print(f"  components ({len(components_data)}) -> {_where('components')}")
     return units_data, unit_by_file
 
 
@@ -1039,11 +1040,12 @@ def _generate_knowledge_base(
     }
     from core.model_io import write_model_file, KNOWLEDGE_BASE
     write_model_file(KNOWLEDGE_BASE, kb, ensure_ascii=False)
+    from core.model_io import artifact_location as _where
     print(
-        f"  model/knowledge_base.json (functions={len(functions_kb)}, "
+        f"  knowledge_base (functions={len(functions_kb)}, "
         f"enums={len(enums_kb)}, macros={len(macros_kb)}, "
         f"typedefs={len(typedefs_kb)}, structs={len(structs_kb)}, "
-        f"globals={len(globals_kb)})"
+        f"globals={len(globals_kb)}) -> {_where('knowledge_base')}"
     )
 
 
@@ -1101,7 +1103,8 @@ def main():
         print("Running LLM summarization (phases + hierarchy)...")
         summaries = _run_hierarchy_summarizer(base_path, project_name, functions_data, config, plan=_plan)
         _write(SUMMARIES, summaries, ensure_ascii=False)
-        print("  model/summaries.json")
+        from core.model_io import artifact_location as _where
+        print(f"  summaries -> {_where('summaries')}")
 
     _enrich_from_llm(base_path, functions_data, global_variables_data, config, only_globals=only_globals)
 
@@ -1187,8 +1190,9 @@ def main():
     from core.model_io import write_model_file as _write, FUNCTIONS, GLOBALS
     _write(FUNCTIONS, functions_data)
     _write(GLOBALS, global_variables_data)
-    print(f"  model/functions.json ({len(functions_data)})")
-    print(f"  model/globalVariables.json ({len(global_variables_data)})")
+    from core.model_io import artifact_location as _where
+    print(f"  functions ({len(functions_data)}) -> {_where('functions')}")
+    print(f"  globalVariables ({len(global_variables_data)}) -> {_where('globalVariables')}")
 
     # Always generate knowledge_base.json (Flowchart engine reads this)
     _generate_knowledge_base(base_path, project_name, functions_data, global_variables_data, data_dict, summaries)
