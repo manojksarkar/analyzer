@@ -159,3 +159,42 @@ class TestHashCursorNeverHashesNothing:
                 return iter([Tok("int"), Tok("x")])
 
         assert hash_cursor(Ok()) == hash_tokens(["int", "x"])
+
+
+class TestIdentityFallbackIsDeterministic:
+    """The last-resort hash must not depend on the process.
+
+    It fell back to `str(id(cursor))` -- a memory address. An entity reaching that branch
+    hashed differently on every run and so regenerated forever: the opposite failure to the
+    constant sha256("") it was written to avoid, and just as silent.
+    """
+
+    class _NoSource:
+        """A cursor whose file cannot be read at all: no tokens, no readable extent."""
+
+        def __init__(self, name="fn", line=7):
+            self.spelling = name
+            f = type("F", (), {"name": "/gone/x.cpp"})()
+            self.location = type("L", (), {"file": f, "line": line, "offset": 0})()
+            self.extent = type("E", (), {
+                "start": type("S", (), {"file": f, "offset": 0})(),
+                "end": type("N", (), {"file": f, "offset": 0, "line": line + 2})()})()
+
+        def get_tokens(self):
+            return iter(())
+
+    def test_two_cursors_for_the_same_entity_hash_the_same(self):
+        a, b = self._NoSource(), self._NoSource()
+        assert a is not b
+        assert hash_cursor(a) == hash_cursor(b), (
+            "the fallback depends on the object, so the hash changes every run")
+
+    def test_a_different_entity_still_hashes_differently(self):
+        assert hash_cursor(self._NoSource("alpha")) != hash_cursor(self._NoSource("beta"))
+
+    def test_moving_the_entity_moves_the_hash(self):
+        assert hash_cursor(self._NoSource(line=7)) != hash_cursor(self._NoSource(line=99))
+
+    def test_it_is_not_the_empty_hash(self):
+        import hashlib as _h
+        assert hash_cursor(self._NoSource()) != _h.sha256(b"").hexdigest()

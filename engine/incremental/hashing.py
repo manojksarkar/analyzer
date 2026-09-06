@@ -66,20 +66,30 @@ def _extent_text_tokens(cursor) -> list:
 
 
 def _identity_tokens(cursor) -> list:
-    """Last resort: the cursor's identity and position.
+    """Last resort: the entity's name and position, when its source cannot be read.
 
-    Deliberately NOT stable across edits elsewhere in the file — if the entity moves,
-    the hash moves and its outputs are regenerated. Over-regenerating is the sound
-    direction (doc 04, D7); the alternative is a constant hash, which pins the entity
-    to "unchanged" forever and silently serves a stale flowchart.
+    Deliberately NOT stable across edits elsewhere in the file — if the entity moves, the
+    hash moves and its outputs are regenerated. Over-regenerating is the sound direction
+    (doc 04, D7); the alternative is a constant hash, which pins the entity to "unchanged"
+    forever and silently serves a stale flowchart.
+
+    But it must still be DETERMINISTIC for a given entity in a given file. An earlier
+    version fell back to `str(id(cursor))` — a memory address, different in every process —
+    so an entity reaching that branch hashed differently on EVERY run and regenerated
+    forever. That is the opposite failure to the constant it was written to avoid, and just
+    as invisible. Nothing here may depend on the process.
     """
-    try:
-        loc = cursor.location
-        name = cursor.spelling or ""
-        path = os.path.basename(loc.file.name) if loc.file else ""
-        return ["\x00unhashable", path, name, str(loc.line), str(cursor.extent.end.line)]
-    except Exception:
-        return ["\x00unhashable", str(id(cursor))]
+    parts = ["<unhashable>"]
+    for get in (lambda: os.path.basename(cursor.location.file.name),
+                lambda: cursor.spelling,
+                lambda: str(cursor.location.line),
+                lambda: str(cursor.extent.end.line)):
+        try:
+            v = get()
+        except Exception:
+            v = None
+        parts.append(str(v) if v else "")
+    return parts
 
 
 def hash_cursor(cursor, *, comment: str = "") -> str:
