@@ -116,6 +116,14 @@ def _splice_function_pngs(src_fc_dir, out_dir, stem, qn) -> int:
         return f.endswith(".png") and (f == prefix + ".png"
                                        or f.startswith(prefix + "_part_"))
 
+    # Read the source list BEFORE deleting anything. If src and out resolve to the same
+    # directory -- a reuse index pointing a function at its own version -- deleting first
+    # would remove the images and then find nothing to copy back, losing them outright.
+    # Same directory means the images are already the ones wanted, so there is nothing to do.
+    src_names = [f for f in os.listdir(src_fc_dir) if mine(f)]
+    if os.path.normcase(os.path.abspath(src_fc_dir)) == os.path.normcase(os.path.abspath(out_dir)):
+        return len(src_names)
+
     for f in os.listdir(out_dir):
         if mine(f):
             try:

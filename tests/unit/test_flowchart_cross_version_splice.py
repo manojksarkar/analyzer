@@ -143,3 +143,36 @@ class TestSplitPngsAreSpliced:
         self._run_copy(out_dir, src_dir, stem, qn)
         assert open(os.path.join(out_dir, other), "rb").read() == b"keep", (
             "a prefix match must not consume a longer function name's images")
+
+
+class TestSpliceNeverDestroysWhatItCannotReplace:
+    """Read the source list BEFORE deleting the destination.
+
+    The splice removes the carried images first so a shrunken part count leaves no orphan
+    page. If src and out ever resolve to the SAME directory -- a reuse index pointing a
+    function at its own version -- deleting first removes the images and then finds nothing
+    to copy back. The function's pictures are gone, and the run reports success.
+    """
+
+    def test_same_directory_keeps_the_images(self, tmp_path):
+        d = str(tmp_path / "fc")
+        os.makedirs(d, exist_ok=True)
+        stem, qn = "MGCM_Completion", "GCM_SetGcEndTime"
+        names = [f"{stem}_{qn}_part_1_of_2.png", f"{stem}_{qn}_part_2_of_2.png"]
+        for n in names:
+            open(os.path.join(d, n), "wb").write(b"keep-" + n.encode())
+        _splice_function_pngs(d, d, stem, qn)
+        for n in names:
+            p = os.path.join(d, n)
+            assert os.path.isfile(p), f"{n} was deleted and never copied back"
+            assert open(p, "rb").read() == b"keep-" + n.encode()
+
+    def test_a_different_directory_still_replaces(self, tmp_path):
+        src, out = str(tmp_path / "src"), str(tmp_path / "out")
+        for p in (src, out):
+            os.makedirs(p, exist_ok=True)
+        stem, qn = "U", "f"
+        open(os.path.join(out, f"{stem}_{qn}.png"), "wb").write(b"old")
+        open(os.path.join(src, f"{stem}_{qn}.png"), "wb").write(b"new")
+        _splice_function_pngs(src, out, stem, qn)
+        assert open(os.path.join(out, f"{stem}_{qn}.png"), "rb").read() == b"new"
