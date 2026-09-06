@@ -100,12 +100,16 @@ class Report:
             out.append("            examined: %s" % examined)
             for e in examples:
                 out.append("            - %s" % e)
-            if why:
-                for line in _wrap(why, 62):
-                    out.append("            %s" % line)
-            if ask:
-                for line in _wrap("NEEDED TO FIX: " + ask, 62):
-                    out.append("            %s" % line)
+            # `why` and `ask` describe a FAILURE. Printing them under a passing check put
+            # "Phase 1 hashed these and the rows do not have them" directly beneath a line
+            # saying every hash survived -- a clean report should not read like a broken one.
+            if level != OK:
+                if why:
+                    for line in _wrap(why, 62):
+                        out.append("            %s" % line)
+                if ask:
+                    for line in _wrap("NEEDED TO FIX: " + ask, 62):
+                        out.append("            %s" % line)
         return "\n".join(out)
 
 
@@ -333,6 +337,45 @@ def check_hashes(ctx, rep):
                         "hash-only rows are genuinely other entities (out of scope), and "
                         "the missing hashes are a lost `hashes` artifact instead.",
                     ask="this line decides between a key-spelling bug and a lost artifact.")
+
+        # Phase 1 snapshots its OWN hashes.json into `parse_snapshots`, and nothing after
+        # Phase 1 rewrites it. That makes it the authoritative record of what the parse
+        # produced, and comparing it against entity_versions says WHERE a hash was lost:
+        # a snapshot holding hashes the rows do not have means a later flush destroyed
+        # them; a snapshot that is missing them too means the parse never made them.
+        from core import model_store as _ms
+        with ctx.eng.connect() as cx:
+            snap = _ms.load_parse_snapshot_file(cx, v["id"], "hashes.json") or {}
+        if not snap:
+            rep.skipped("B6", "%s: no hashes.json in parse_snapshots" % v["id"],
+                        "Phase 1's own record is missing, so where a hash was lost cannot "
+                        "be pinned down. Expected on a version that predates snapshotting.")
+        else:
+            snap_fn = {k for k in snap if k.count("|") >= 3}
+            have = {k for k, f in fns.items() if f["hash"]}
+            lost = sorted(snap_fn - have)
+            rep.add(ERROR if lost else OK, "B6",
+                    "%s: %d hash(es) Phase 1 produced are NOT in the stored rows"
+                    % (v["id"], len(lost)) if lost
+                    else "%s: every hash Phase 1 produced survived into the rows" % v["id"],
+                    examined="%d hashes in the snapshot, %d function rows carry one"
+                             % (len(snap_fn), len(have)),
+                    examples=lost,
+                    why="Phase 1 hashed these and the rows do not have them, so a LATER "
+                        "flush dropped them -- persist_model rewrites the version after "
+                        "clear_version, and anything the flush was not handed is deleted. "
+                        "This is the decisive split: the parse worked, the persist did not.",
+                    ask="the two counts on the examined line; they say whether the parse or "
+                        "the persist lost the hashes.")
+            extra = sorted(have - snap_fn)
+            if extra:
+                rep.add(WARN, "B6b",
+                        "%s: %d row hash(es) Phase 1 never produced" % (v["id"], len(extra)),
+                        examined="%d snapshot, %d rows" % (len(snap_fn), len(have)),
+                        examples=extra,
+                        why="A hash in the rows that the parse did not make came from "
+                            "somewhere else -- most likely a previous run's stored model "
+                            "being carried into this version's persist.")
 
         dup = collections.Counter(f["hash"] for f in fns.values() if f["hash"])
         big = sorted(((h, n) for h, n in dup.items() if n > 3 and h != EMPTY_HASH),
