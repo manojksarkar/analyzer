@@ -62,7 +62,7 @@ and SWE.1 are roadmap. The 6-process target above is the destination, not the cu
 - [ ] Real database (PostgreSQL)
 - [ ] Real progress bar during generation
 - [ ] In-app settings + re-run after a configuration change
-- [ ] Performance and LLM-usage optimisation
+- [ ] Performance and LLM-usage optimisation → see [production-redesign/07-llm-concurrency-scaling.md](../production-redesign/07-llm-concurrency-scaling.md)
 
 **V2** → SYS.2 (see [SYS2_PLAN.md](SYS2_PLAN.md)), plus SWE.1 and SYS.1 (discovery first)
 
