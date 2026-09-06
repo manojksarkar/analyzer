@@ -388,24 +388,55 @@ def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
     return not _has_external_caller(f, functions_data, base_path)
 
 
-def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict):
-    # Buckets are keyed by UNIT (component|unit), matching what the interface ID
-    # encodes — see _unit_of. Keying by file restarts numbering at 01 in each half
-    # of a .h + .cpp unit and produces duplicate IDs.
+def _iface_scope_key(data: dict, base_path: str, project_name: str, config: dict):
+    """The (layer, group, unit) CODE triple an interface id actually encodes.
+
+    ONE definition, used by the numbering and by the id itself, because they must agree and
+    twice they have not. Numbering was first keyed by FILE while the id encoded the unit, so
+    a .h + .cpp pair restarted at 01; that was fixed by keying on the unit. But the id does
+    not encode the unit — it encodes `_id_seg(unit)`, and `_id_seg` keeps only A-Z, dropping
+    digits and underscores. So `UHP_HmacCom` and `UHP_Hmac_Com2` both encode as UHPHMACCOM
+    while being numbered independently, and both emit _01, _02, _03.
+
+    Seen on a real project: four ids each used by two functions. In an ASPICE traceability
+    matrix a duplicate id makes two entries indistinguishable.
+
+    Deriving the bucket from the same expression as the id removes the class of mistake
+    rather than this instance of it.
+    """
+    fp = (data.get("location") or {}).get("file", "")
+    try:
+        rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
+    except ValueError:
+        rel = fp or ""
+    unit_key = make_unit_key(rel) if rel else KEY_SEP
+    parts = unit_key.split(KEY_SEP)
+    unit_code = _id_seg(parts[1]) if len(parts) > 1 else _id_seg(parts[0])
+    group_code = _id_seg(resolve_group(parts[0]))
+    layer_name = get_component_layer_name(config, parts[0]) if config else None
+    layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
+    return layer_code, group_code, unit_code
+
+
+def _build_interface_index(base_path: str, functions_data: dict, global_variables_data: dict,
+                           project_name: str = "", config: dict = None):
+    # Buckets are keyed by the CODE TRIPLE the interface id encodes, not by the unit key.
+    # Keying by anything the id does not distinguish restarts numbering at 01 for entries
+    # that will share an id prefix — first by file (fixed), then by unit (this).
     public_fns_by_unit = {}
     private_fns_by_unit = {}
     public_glbs_by_unit = {}
     private_glbs_by_unit = {}
     for fid, f in functions_data.items():
-        unit = _unit_of(f, base_path)
-        if not unit:
+        if not _unit_of(f, base_path):
             continue
+        unit = _iface_scope_key(f, base_path, project_name, config)
         bucket = private_fns_by_unit if _fn_is_private(f, functions_data, base_path) else public_fns_by_unit
         bucket.setdefault(unit, []).append((fid, f))
     for vid, g in global_variables_data.items():
-        unit = _unit_of(g, base_path)
-        if not unit:
+        if not _unit_of(g, base_path):
             continue
+        unit = _iface_scope_key(g, base_path, project_name, config)
         bucket = private_glbs_by_unit if (g.get("visibility") or "").lower() == "private" else public_glbs_by_unit
         bucket.setdefault(unit, []).append((vid, g))
 
@@ -440,12 +471,8 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
             rel = os.path.relpath(norm_path(fp, base_path), base_path).replace("\\", "/") if fp else fp
         except ValueError:
             rel = fp or ""
-        unit_key = make_unit_key(rel) if rel else KEY_SEP
-        key_parts = unit_key.split(KEY_SEP)
-        unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
-        group_code = _id_seg(resolve_group(key_parts[0]))
-        layer_name = get_component_layer_name(config, key_parts[0]) if config else None
-        layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
+        layer_code, group_code, unit_name_code = _iface_scope_key(
+            f, base_path, project_name, config)
         idx_code = f"{idx_by_id.get(fid, 0):02d}"
         if _fn_is_private(f, functions_data, base_path):
             f["visibility"] = "private"
@@ -1068,7 +1095,8 @@ def main():
     data_dict = read_model_file(DATA_DICTIONARY, required=False, default={})
 
     units_data, unit_by_file = _build_units_components(base_path, functions_data, global_variables_data)
-    idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data)
+    idx_by_id = _build_interface_index(base_path, functions_data, global_variables_data,
+                                       project_name, config)
     _enrich_interfaces(base_path, project_name, functions_data, global_variables_data, idx_by_id, config)
     # Propagate global access along call graph so outers inherit inner globals
     _propagate_global_access(functions_data)
