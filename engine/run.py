@@ -474,9 +474,10 @@ def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
 if sum(bool(x) for x in [selected_group_arg, selected_layer_arg, selected_components_arg]) > 1:
     log("--selected-group, --selected-layer, and --selected-component are mutually exclusive", component="run", err=True)
     sys.exit(1)
-if component_per_docx and selected_components_arg:
-    log("--component-per-docx cannot be combined with --selected-component", component="run", err=True)
-    sys.exit(1)
+# --component-per-docx + --selected-component used to be refused. It is the natural
+# combination: name the components you want, get one document each. Without it a
+# component scope was the only one that came back bundled, while project / layer /
+# group scopes all split per component.
 
 if len(raw_args) < 1:
     print("Usage: python engine/run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
@@ -644,26 +645,35 @@ if selected_components_arg:
         _resolved_components.append(_r)
     selected_components_arg = _resolved_components
     _comp_layers = {_c: _get_component_layer_name(cfg, _c) for _c in selected_components_arg}
-    _unique_layers = set(_comp_layers.values())
-    if len(_unique_layers) > 1:
-        _detail = ", ".join(f"{c!r}->{l}" for c, l in _comp_layers.items())
-        log(f"All --selected-component names must be in the same layer ({_detail})", component="run", err=True)
-        sys.exit(1)
-    _derived_layer_for_components = next(iter(_unique_layers))
+    # Components from DIFFERENT layers in one run are allowed: ids are layer-qualified,
+    # so the model keeps them apart, and every layer named here contributes its own
+    # include paths and -D set below. Order-preserving and de-duplicated so the parse
+    # scope is the union, not the first one found.
+    _layers_for_components = list(dict.fromkeys(l for l in _comp_layers.values() if l))
 else:
-    _derived_layer_for_components = None
+    _layers_for_components = []
 
-if selected_layer_arg:
-    _selected_layer = selected_layer_arg
-elif _resolved_group:
-    _selected_layer = _get_group_layer_name(cfg, _resolved_group)
-elif _derived_layer_for_components:
-    _selected_layer = _derived_layer_for_components
+# Every layer this run touches, not just the first. A scope may name several groups
+# (--scope group:A,B) or several components, and they may sit in different layers;
+# resolving one meant the others were parsed with NO include paths of their own -
+# their `#include`s failed and definitions went missing, quietly.
+if selected_layers_arg or selected_layer_arg:
+    _selected_layers = list(dict.fromkeys(selected_layers_arg or [selected_layer_arg]))
+elif selected_groups_arg or selected_group_arg:
+    _requested = selected_groups_arg or [selected_group_arg]
+    _selected_layers = []
+    for _g in _requested:
+        _rg = _resolve_group_name(_all_groups, _g)
+        _gl = _get_group_layer_name(cfg, _rg) if _rg else None
+        if _gl and _gl not in _selected_layers:
+            _selected_layers.append(_gl)
+elif _layers_for_components:
+    _selected_layers = list(_layers_for_components)
 else:
-    _selected_layer = None
+    _selected_layers = []
 _layer_inc: dict = {}
 for _lname, _layer in (cfg.get("layers") or {}).items():
-    if _selected_layer and _lname != _selected_layer:
+    if _selected_layers and _lname not in _selected_layers:
         continue
     if not isinstance(_layer, dict):
         continue
@@ -687,8 +697,8 @@ for _err in _validate_cores(cfg):
     log(_err, component="run", err=True)
     sys.exit(1)
 _cc_sources = _cc.sources_from_layers(cfg, SCRIPT_DIR)
-if _selected_layer:
-    _cc_sources = [_s for _s in _cc_sources if _s.layer == _selected_layer]
+if _selected_layers:
+    _cc_sources = [_s for _s in _cc_sources if _s.layer in _selected_layers]
 _walk_counts = {_l: len(_d) for _l, _d in _layer_inc.items()}
 _cc_counts: dict = {}
 _cc_added: dict = {}

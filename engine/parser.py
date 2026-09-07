@@ -94,7 +94,10 @@ while _i < len(sys.argv):
         _selected_group = _selected_groups[0]
         _i += 2
     elif sys.argv[_i] == "--selected-layer" and _i + 1 < len(sys.argv):
-        _selected_layer = sys.argv[_i + 1]
+        # Repeatable, like --selected-group: a run may span layers. Taking only the
+        # last parsed one layer and left the others' source unseen.
+        _selected_layers.append(sys.argv[_i + 1])
+        _selected_layer = _selected_layers[0]
         _i += 2
     elif sys.argv[_i] == "--project-name" and _i + 1 < len(sys.argv):
         _project_name_override = sys.argv[_i + 1]
@@ -137,8 +140,11 @@ if _llvm and os.path.isfile(_llvm):
     cindex.Config.set_library_file(_llvm)
 
 from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups, get_component_layer_name as _get_component_layer_name
-if _selected_layer:
-    _components_groups = _get_layer_flat_groups(_config, _selected_layer)
+if _selected_layers:
+    # UNION of every named layer, not just the first.
+    _components_groups = {}
+    for _l in _selected_layers:
+        _components_groups.update(_get_layer_flat_groups(_config, _l) or {})
 elif _selected_groups:
     # The UNION of the selected groups' layers. Parsing is layer-scoped (a group's callees can
     # live anywhere in its layer), and two groups may sit in DIFFERENT layers — resolving only
@@ -2797,7 +2803,7 @@ def main():
     _log.info("Phase 1 (parser) starting")
     _log.info("  project name    : %s", PROJECT_NAME)
     _log.info("  base path       : %s", MODULE_BASE_PATH)
-    _log.info("  selected layer  : %s", _selected_layer or "(all)")
+    _log.info("  selected layer  : %s", ", ".join(_selected_layers) or "(all)")
     _log.info("  selected group  : %s", _selected_group or "(all)")
     _log.info("  component map   : %d file(s)", len(_FILE_COMPONENT_MAP))
     _log.info("  exclude patterns: %s", ", ".join(_EXCLUDE_NAME_PATTERNS) or "(none)")

@@ -1181,13 +1181,14 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     elif selected_components:
         from core.config import get_component_layer_name, get_layer_flat_groups, app_config
         _cfg = app_config()
-        _derived_layer = get_component_layer_name(_cfg, selected_components[0])
-        if _derived_layer:
-            _layer_groups = get_layer_flat_groups(_cfg, _derived_layer)
+        _derived_layers = {l for l in (get_component_layer_name(_cfg, c)
+                                       for c in selected_components) if l}
+        if _derived_layers:
             layer_comps = set()
-            for _g in _layer_groups.values():
-                if isinstance(_g, dict):
-                    layer_comps.update(_g.keys())
+            for _l in _derived_layers:
+                for _g in get_layer_flat_groups(_cfg, _l).values():
+                    if isinstance(_g, dict):
+                        layer_comps.update(_g.keys())
             if layer_comps:
                 lower = {c.lower().replace(" ", "-") for c in layer_comps}
                 units_data = {k: v for k, v in units_data.items() if k.split("|")[0].lower() in lower}

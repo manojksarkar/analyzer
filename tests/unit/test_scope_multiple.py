@@ -136,3 +136,134 @@ class TestAComponentNameGetsAUsefulError:
         with pytest.raises(ValueError) as exc:
             self._plan(["App"])
         assert "Support" in str(exc.value) and "Access" in str(exc.value)
+
+
+class TestOneRunMaySpanLayers:
+    """Groups or components from DIFFERENT layers in one run.
+
+    Every layer named has to reach the parse: the model is built once, and a layer
+    left out of `--selected-layer` gets no include paths of its own, so its `#include`s
+    fail and its definitions go missing from the model with nothing in the log tying
+    the gap to the selection. Components across layers used to be refused outright;
+    now that component ids carry their layer the model keeps them apart, so the
+    restriction has no reason left.
+    """
+
+    CFG = {"layers": {
+        "L1": {"path": "Layer1", "groups": {"Support": {"Math": "Math"}}},
+        "L2": {"path": "Layer2", "groups": {"Platform": {"Gpio": "Gpio"},
+                                            "Extra": {"Cache": "Cache"}}},
+    }}
+
+    def _parser_args(self, **kw):
+        """The Phase-1 argv the planner would spawn."""
+        from core.group_planner import plan_runs
+        kw.setdefault("selected_group", None)
+        plans = plan_runs(self.CFG, project_path=".", use_model=False,
+                          no_llm_summarize=True, filter_mode=None, **kw)
+        for p in plans:
+            for ph in p.phases:
+                if ph.script == "parser.py":
+                    return ph.args
+        raise AssertionError("no parser phase was planned")
+
+    def _flag_values(self, args, flag):
+        return [args[i + 1] for i, a in enumerate(args) if a == flag]
+
+    def test_groups_from_two_layers_each_get_a_plan(self):
+        from core.group_planner import plan_runs
+        labels = [p.label for p in plan_runs(
+            self.CFG, project_path=".", use_model=True, no_llm_summarize=True,
+            filter_mode=None, selected_group=["L1.Support", "L2.Platform"])]
+        assert any("L1.Support" in l for l in labels), labels
+        assert any("L2.Platform" in l for l in labels), labels
+
+    def test_a_cross_layer_group_scope_parses_both_layers(self):
+        args = self._parser_args(selected_group=["L1.Support", "L2.Platform"])
+        assert self._flag_values(args, "--selected-group") == ["L1.Support", "L2.Platform"]
+
+    def test_two_layers_named_directly_both_reach_the_parser(self):
+        """`--scope layer:L1,L2` mapped to one flag, so L2 was never parsed."""
+        args = self._parser_args(selected_layer=["L1", "L2"])
+        assert self._flag_values(args, "--selected-layer") == ["L1", "L2"]
+
+    def test_a_single_layer_string_still_works(self):
+        args = self._parser_args(selected_layer="L2")
+        assert self._flag_values(args, "--selected-layer") == ["L2"]
+
+    def test_components_from_two_layers_are_planned_together(self):
+        """Refused outright before — 'All --selected-component names must be in the
+        same layer'."""
+        args = self._parser_args(selected_components=["L1.Math", "L2.Gpio", "L2.Cache"])
+        assert self._flag_values(args, "--selected-layer") == ["L1", "L2"], args
+
+    def test_a_layer_is_named_once_however_many_of_its_components_are_picked(self):
+        args = self._parser_args(selected_components=["L2.Gpio", "L2.Cache"])
+        assert self._flag_values(args, "--selected-layer") == ["L2"]
+
+    def test_the_bundle_output_name_keeps_every_component(self):
+        from core.group_planner import plan_runs
+        plans = plan_runs(self.CFG, project_path=".", use_model=True,
+                          no_llm_summarize=True, filter_mode=None, selected_group=None,
+                          selected_components=["L1.Math", "L2.Gpio"])
+        assert any("L1.Math" in p.label and "L2.Gpio" in p.label for p in plans), \
+            [p.label for p in plans]
+
+
+class TestAComponentScopeSplitsPerComponent:
+    """`--scope "component:A,B"` returns one document PER component.
+
+    It was the only scope that did not. project / layer / group all get
+    `--component-per-docx` from `per_component_docx_args`, but a component scope was
+    skipped because run.py REFUSED the flag alongside --selected-component — so
+    naming three components produced a single bundled `A_B_C` document while naming
+    the group they live in produced three. The model build is shared either way; only
+    the view+export step repeats.
+    """
+
+    CFG = {"layers": {
+        "L1": {"path": "Layer1", "groups": {"Support": {"Math": "Math"}}},
+        "L2": {"path": "Layer2", "groups": {"Platform": {"Gpio": "Gpio", "Uart": "Uart"}}},
+    }}
+    COMPS = ["L1.Math", "L2.Gpio", "L2.Uart"]
+
+    def _plans(self, per_docx, **kw):
+        from core.group_planner import plan_runs
+        return plan_runs(self.CFG, project_path=".", use_model=True, no_llm_summarize=True,
+                         filter_mode=None, selected_group=None,
+                         selected_components=self.COMPS, component_per_docx=per_docx, **kw)
+
+    def _labels(self, plans):
+        return [p.label for p in plans if p.label.startswith("Components:")]
+
+    def test_the_flag_gives_one_plan_per_component(self):
+        assert self._labels(self._plans(True)) == [
+            "Components: L1.Math", "Components: L2.Gpio", "Components: L2.Uart"]
+
+    def test_without_the_flag_they_are_still_bundled(self):
+        """Backwards compatible: the bundle is still reachable."""
+        assert self._labels(self._plans(False)) == ["Components: L1.Math, L2.Gpio, L2.Uart"]
+
+    def test_components_from_different_layers_split_the_same_way(self):
+        """L1.Math and L2.Gpio in one run, one document each."""
+        labels = self._labels(self._plans(True))
+        assert "Components: L1.Math" in labels and "Components: L2.Gpio" in labels
+
+    def test_every_scope_type_now_asks_for_per_component_documents(self):
+        from incremental.generate import per_component_docx_args
+        for scope in ({"type": "project"},
+                      {"type": "layer", "names": ["L1"]},
+                      {"type": "group", "names": ["L1.Support"]},
+                      {"type": "component", "names": ["L1.Math", "L2.Gpio"]}):
+            assert per_component_docx_args(scope) == ["--component-per-docx"], scope
+
+    def test_an_output_name_is_ignored_when_splitting(self):
+        """It names ONE output; several documents cannot share it without one
+        overwriting the others, so the component's own name keys them instead."""
+        labels = self._labels(self._plans(True, output_name="Bundle Name"))
+        assert labels == ["Components: L1.Math", "Components: L2.Gpio", "Components: L2.Uart"]
+
+    def test_an_output_name_still_applies_to_a_bundle(self):
+        plans = self._plans(False, output_name="Bundle Name")
+        docx = [a for p in plans for ph in p.phases for a in ph.args if a.endswith(".docx")]
+        assert any("Bundle-Name" in a for a in docx), docx

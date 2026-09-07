@@ -218,13 +218,14 @@ def scope_to_args(scope: Dict[str, Any]) -> List[str]:
 
 
 def per_component_docx_args(scope: Dict[str, Any]) -> List[str]:
-    """Generate one DOCX *per component* (the default) instead of one per group.
+    """Generate one DOCX *per component* — for EVERY scope type, including component.
 
-    Mutually exclusive with --selected-component (run.py errors if combined), so a
-    specific-component run gets nothing extra; project / layer / group scope all get
-    --component-per-docx. Groups with no components defined simply produce nothing."""
-    stype = (scope or {}).get("type", "project")
-    return [] if stype == "component" else ["--component-per-docx"]
+    A component scope used to be the exception, because run.py refused the flag
+    alongside --selected-component: `--scope "component:A,B"` came back as one
+    bundled `A_B` document while `--scope "group:G"` split G into one document per
+    component. Same flag now, same shape from every scope. Groups with no components
+    defined simply produce nothing."""
+    return ["--component-per-docx"]
 
 
 def resolve_run_config(config_path: Optional[str], *, no_llm: bool = False) -> Dict[str, Any]:

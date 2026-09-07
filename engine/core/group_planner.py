@@ -128,11 +128,16 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
     # the `elif selected_layer` below depends on this staying an if/elif chain.
     _groups = ([selected_group] if isinstance(selected_group, str)
                else list(selected_group or []))
+    _layers = ([selected_layer] if isinstance(selected_layer, str)
+               else list(selected_layer or []))
     if _groups:
         for _g in _groups:
             parser_args += ["--selected-group", _g]
-    elif selected_layer:
-        parser_args += ["--selected-layer", selected_layer]
+    elif _layers:
+        # One flag per layer, for the same reason as groups: a component bundle may
+        # span layers, and naming one leaves the others' source out of the parse.
+        for _l in _layers:
+            parser_args += ["--selected-layer", _l]
     if project_name:
         parser_args += ["--project-name", project_name]
     if only_files:  # narrowed parse (M4.4): parser parses only the listed TUs
@@ -287,7 +292,10 @@ def plan_runs(
     # ------------------------------------------------------------------
     if selected_components:
         from .config import get_component_layer_name
-        derived_layer = get_component_layer_name(cfg, selected_components[0])
+        # EVERY layer the bundle touches, not just the first component's - the bundle
+        # may legitimately span layers now that component ids carry theirs.
+        derived_layer = list(dict.fromkeys(
+            l for l in (get_component_layer_name(cfg, c) for c in selected_components) if l))
         virtual_name = "_".join(selected_components)
 
         if not use_model:
@@ -305,37 +313,51 @@ def plan_runs(
             )
             if from_phase <= 2:
                 plans.append(RunPlan(
-                    label=f"Build model (layer of {', '.join(selected_components)})",
+                    label=f"Build model (layer(s) of {', '.join(selected_components)})",
                     phases=build_phases,
                     runner_from_phase=from_phase,
                 ))
 
-        out_key = output_name.replace(" ", "-") if output_name else virtual_name
-        comp_out = os.path.join(p.output_dir, out_key)
-        comp_sel_args: List[str] = []
-        for c in selected_components:
-            comp_sel_args += ["--selected-component", c]
-        view_phases = _view_export_phases(
-            output_dir=comp_out,
-            filter_mode=filter_mode,
-            extra_view_args=comp_sel_args,
-            docx_args=[
-                os.path.join(comp_out, "interface_tables.json"),
-                os.path.join(comp_out, f"software_detailed_design_{out_key}.docx"),
-            ] + comp_sel_args,
-            selected_units=selected_units,
-            doc_type=doc_type,
-            swe4_args=[
-                os.path.join(comp_out, "test_specs.json"),
-                os.path.join(comp_out, f"software_unit_test_specification_{out_key}.docx"),
-            ] + comp_sel_args,
-        )
+        # `--component-per-docx` splits the selection into one document PER component
+        # instead of one bundling them all. Every other scope already behaves that way
+        # (`per_component_docx_args` passes the flag for project/layer/group), and the
+        # flag used to be REFUSED alongside --selected-component, which is why naming
+        # components was the one scope that came back bundled.
+        #
+        # The model build above is shared either way — only the view+export step is
+        # repeated, which is what makes the split nearly free.
+        bundles = ([[c] for c in selected_components] if component_per_docx
+                   else [list(selected_components)])
         local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
-        plans.append(RunPlan(
-            label=f"Components: {', '.join(selected_components)}",
-            phases=view_phases,
-            runner_from_phase=local_from,
-        ))
+        for bundle in bundles:
+            # `output_name` names ONE output; per-docx produces several, so the
+            # component's own name has to key them or they would overwrite each other.
+            out_key = (output_name.replace(" ", "-")
+                       if output_name and not component_per_docx else "_".join(bundle))
+            comp_out = os.path.join(p.output_dir, out_key)
+            comp_sel_args: List[str] = []
+            for c in bundle:
+                comp_sel_args += ["--selected-component", c]
+            view_phases = _view_export_phases(
+                output_dir=comp_out,
+                filter_mode=filter_mode,
+                extra_view_args=comp_sel_args,
+                docx_args=[
+                    os.path.join(comp_out, "interface_tables.json"),
+                    os.path.join(comp_out, f"software_detailed_design_{out_key}.docx"),
+                ] + comp_sel_args,
+                selected_units=selected_units,
+                doc_type=doc_type,
+                swe4_args=[
+                    os.path.join(comp_out, "test_specs.json"),
+                    os.path.join(comp_out, f"software_unit_test_specification_{out_key}.docx"),
+                ] + comp_sel_args,
+            )
+            plans.append(RunPlan(
+                label=f"Components: {', '.join(bundle)}",
+                phases=view_phases,
+                runner_from_phase=local_from,
+            ))
         return plans
 
     # ------------------------------------------------------------------
@@ -384,7 +406,8 @@ def plan_runs(
                                             macros_path=macros_path,
                                             macros_layer=macros_layer,
                                             selected_group=_resolved_groups or resolved_selected,
-                                            selected_layer=selected_layer,
+                                            # every requested layer, not just the first
+                                            selected_layer=_requested_layers or selected_layer,
                                             project_name=project_name, only_files=only_files,
                                          baseline_version_id=baseline_version_id,
                                             include_emulator=include_emulator)
