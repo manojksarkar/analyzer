@@ -24,7 +24,11 @@ except ImportError:
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import re as _re                                        # noqa: E402
 from tests.e2e_paths import COMPONENTS, docx_for        # noqa: E402
+_sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))), "engine"))
+from core.config import LAYER_SEP                       # noqa: E402
 
 # poc-4 produced ONE document for the group; a group-scoped run now produces one per
 # component (--component-per-docx is the default for every non-component scope). The
@@ -435,3 +439,49 @@ def test_component_static_diagram_content_present(docx):
         assert found, (
             f"Static Design section (para {h_idx}) has no component diagram image or Mermaid text"
         )
+
+
+# ---------------------------------------------------------------------------
+# The layer prefix is an internal key. It must not appear in the document.
+# ---------------------------------------------------------------------------
+
+_LAYER_PREFIX = _re.compile(r"\b" + _re.escape(LAYER_SEP.join(("Layer1", ""))).replace("Layer1", r"Layer\d+")
+                            + r"[A-Za-z0-9_\-]")
+
+
+def _all_document_text(doc):
+    """Every string a reader can see: body paragraphs and every table cell.
+
+    `docx` here is the _GroupDocuments facade, which already concatenates the
+    group's documents behind `.paragraphs` / `.tables`.
+    """
+    for p in doc.paragraphs:
+        yield p.text
+    for t in doc.tables:
+        for r in t.rows:
+            for c in r.cells:
+                yield c.text
+
+
+def test_no_layer_qualified_id_reaches_the_document(docx):
+    """`Layer1.Math` is how the MODEL keys a component, so two layers' same-named
+    components stay distinct. It is development plumbing and has no place in a
+    deliverable — the layer is already stated once, on the cover.
+
+    It leaked in two spots: Source/Destination cells read
+    `Layer1.App/Main, Layer1.Cross/Hub`, and the cover printed the layer twice as
+    `Layer1 Layer1.Math`. This scans the whole document rather than those two
+    places, so any new leak fails here.
+    """
+    leaks = [text.strip()[:120] for text in _all_document_text(docx)
+             if text and _LAYER_PREFIX.search(text)]
+    assert not leaks, ("layer-qualified ids reached the document:\n  "
+                       + "\n  ".join(sorted(set(leaks))[:10]))
+
+
+def test_source_destination_still_names_the_partner_units(all_interface_rows):
+    """Stripping the prefix must not empty the cell — `App/Main`, not `` or `-`."""
+    seen = [r.cells[6].text.strip() for r in all_interface_rows
+            if len(r.cells) > 6 and r.cells[6].text.strip() not in ("", "-")]
+    assert seen, "no Source/Destination cell named a partner unit"
+    assert any("/" in s for s in seen), f"expected Component/Unit labels, got {seen[:5]}"

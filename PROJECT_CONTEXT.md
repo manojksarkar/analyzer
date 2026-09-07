@@ -278,6 +278,25 @@
 >    only the last component's flags — misleading exactly when it is opened to check which
 >    layer's `-I`/`-D` a component got.
 >
+> 5. **The layer prefix was reaching the DOCX.** `Layer1.Math` is how the MODEL keys a
+>    component; it is development plumbing and has no place in a deliverable. It leaked in two
+>    spots — Source/Destination cells read `Layer1.App/Main, Layer1.Cross/Hub`
+>    (`interface_tables`, both the function and the global path), and the cover printed the
+>    layer twice as `Layer1 Layer1.Math` (the layer is already its own word there). New
+>    `_unit_label()` renders `Component/Unit` for display; the cover uses `display_name()`.
+>    Guarded by `tests/e2e/test_docx.py::test_no_layer_qualified_id_reaches_the_document`,
+>    which scans **every** paragraph and cell of every generated document rather than those two
+>    places, so a new leak anywhere fails it — verified against the pre-fix output. Audited
+>    SWE.3 **and** SWE.4: 0 leaks in all four documents.
+> 6. **`tools/check_unit_names.py`** — read-only, answers whether a tree has UNIT-key
+>    collisions. A unit key is `<componentId>|<basename>` with no directory, so
+>    `Ftl/Core/Table.cpp` and `Ftl/Cache/Table.cpp` merge into one `Ftl|Table` unit carrying
+>    both files' functions under the first file's name. `--path <checkout>` answers it before
+>    any parse (no DB); `--project-id P [--version-id V]` reads `model_units` after one.
+>    Filters `--layer/--component/--unit` take a bare name or a qualified id. Exit 1 on
+>    collisions. This is how to decide whether unit keys need qualifying too — measure the real
+>    tree rather than assume. SampleCppProject: 0 across 101 units.
+>
 > **Unrelated bug fixed on the way:** `generate_incremental` did not forward `create_version` to
 > `generate_full`, so `--create-version` failed on the no-baseline path — the FIRST version, the
 > only time the flag is needed. It exited 2 telling the caller to "add --create-version", which

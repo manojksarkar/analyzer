@@ -126,7 +126,7 @@ def _build_interface_tables(
             # ordinary call edges and are already in caller_units.
             registrar_units = {u for u in (f.get("addressTakenByUnits") or []) if u}
             callers_fmt = sorted(set(
-                u.replace(KEY_SEP, "/")
+                _unit_label(u)
                 for u in (caller_units | registrar_units) if _keep_unit(u)
             ))
             source_dest = ', '.join(callers_fmt) if callers_fmt else "-"
@@ -181,7 +181,7 @@ def _build_interface_tables(
                 "range": get_range(g.get("type", ""), dd, layer),
                 "direction": g.get("direction") or "In/Out",
                 "reason": g.get("reason") or g.get("directionReason") or "",
-                "sourceDest": unit_key.replace(KEY_SEP, "/"),
+                "sourceDest": _unit_label(unit_key),
                 "callerUnits": [],
                 "calleesUnits": [],
             }
@@ -235,6 +235,21 @@ def _format_range_coverage(resolved, total, unresolved, *, limit=8):
         msg += f", {total - resolved} NA ({shown})"
     return msg
 
+
+def _unit_label(unit_key: str) -> str:
+    """`Lib/Lib` — how a unit is NAMED IN THE DOCUMENT, not how it is keyed.
+
+    Unit keys carry the layer (`Layer1.Lib|Lib`) so two layers' same-named
+    components stay distinct in the model. That prefix is internal plumbing and has
+    no business in a deliverable: Source/Destination cells were reading
+    `Layer1.App/Main, Layer1.Cross/Hub`. The layer is already stated once on the
+    cover page, so repeating it in every cell adds nothing but noise.
+    """
+    from core.config import display_name
+
+    component, sep, unit = (unit_key or "").partition(KEY_SEP)
+    label = display_name(component)
+    return f"{label}/{unit}" if sep else label
 
 @register("interfaceTables")
 def run(model, output_dir, model_dir, config):

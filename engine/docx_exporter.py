@@ -1244,13 +1244,15 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
         "projectName", "Software Project")
     # Build a readable cover label for the group / component selection
     from core.config import get_group_layer_name, get_component_layer_name as _get_comp_layer
+    # display_name() throughout: the cover already prints the layer as its own word,
+    # so a qualified id would render it twice ("Layer1 Layer1.Math").
     if selected_components:
         _layer_name = _get_comp_layer(config, selected_components[0])
-        _comp_display = " / ".join(c.replace("-", " ") for c in selected_components)
+        _comp_display = " / ".join(display_name(c).replace("-", " ") for c in selected_components)
         _cover_group = f"{_layer_name} {_comp_display}" if _layer_name else _comp_display
     elif selected_group:
         _layer_name = get_group_layer_name(config, selected_group)
-        _group_display = selected_group.replace("-", " ")
+        _group_display = display_name(selected_group).replace("-", " ")
         _cover_group = f"{_layer_name} {_group_display}" if _layer_name else _group_display
     else:
         _cover_group = "All Components"
