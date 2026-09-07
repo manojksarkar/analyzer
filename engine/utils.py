@@ -10,10 +10,15 @@ import platform
 # Config loading lives in core.config (these are re-exports for backward
 # compatibility with existing call sites that still `from utils import ...`).
 from core.config import (  # noqa: E402,F401
+    LAYER_SEP,
     LlmConfigError,
+    display_name,
     format_llm_config_banner,
     load_config,
     load_llm_config,
+    make_qualified_id,
+    qualified_layer,
+    split_qualified_id,
 )
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
@@ -261,8 +266,8 @@ _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 _CONFIG_CACHE = load_config(_SCRIPT_DIR)  # _SCRIPT_DIR == engine/, which contains config/
 
 # Component mapping cache (initialized at import).
-_COMPONENT_OVERRIDES: dict = {}
-_GROUP_MAP: dict = {}  # component name -> group name
+_COMPONENT_OVERRIDES: dict = {}  # componentId -> folder path(s)
+_GROUP_MAP: dict = {}      # componentId -> groupId (both layer-qualified)
 
 
 def init_component_mapping(config: dict) -> None:
@@ -283,7 +288,11 @@ def init_component_mapping(config: dict) -> None:
         if not isinstance(grp, dict):
             continue
         for component, paths in grp.items():
-            _GROUP_MAP.setdefault(component, group_name)
+            # Keyed by the id `_resolve_component_from_rel` RETURNS (spaces already
+            # folded to `-`), not by the raw config key: they differ for any name with
+            # a space, and `resolve_group("Layer1.Sample-Core")` used to answer "" for
+            # every one of them.
+            _GROUP_MAP.setdefault(component.replace(" ", "-"), group_name)
             if not paths:
                 continue
             if isinstance(paths, str):
@@ -308,13 +317,23 @@ def init_component_mapping(config: dict) -> None:
 # Default initialization from on-disk config.
 init_component_mapping(_CONFIG_CACHE)
 
-def resolve_group(component: str) -> str:
-    """Return the layer group name for a component, or empty string if unknown."""
-    return _GROUP_MAP.get(component, "")
+def resolve_group(component_id: str) -> str:
+    """The qualified group id owning `component_id` (`Layer1.Support`), or "".
+
+    Both sides are layer-qualified, so a group name two layers share resolves to the
+    right one. Use `display_name()` on the result before showing or abbreviating it -
+    `_id_seg` over the qualified form would fold the layer into the group code.
+    """
+    return _GROUP_MAP.get(component_id, "")
 
 
 def _resolve_component_from_rel(rel_file: str) -> str:
-    """Resolve component name for a path relative to the project base."""
+    """Resolve the layer-qualified component id for a repo-relative path.
+
+    Returns `Layer1.Sample-Core`, not `Sample-Core`: the id is the first segment of
+    every unit, function and global key, and two layers may legitimately both define
+    a `Core`. Spaces fold to `-` here, which is why `_GROUP_MAP` is keyed the same way.
+    """
     path = rel_file.replace("\\", "/") if rel_file else ""
     if not path:
         return "unknown"
@@ -349,7 +368,8 @@ def _path_to_component_unit(rel_file: str) -> tuple:
 
 
 def make_unit_key(rel_file: str) -> str:
-    """Unit unique key: component|unitname (assumes single-name units, no path in key)."""
+    """Unit unique key: componentId|unitname (no path in the key, so unit names must
+    be unique inside a component - `model_deriver` warns when they are not)."""
     component, unitname = _path_to_component_unit(rel_file)
     return f"{component}{KEY_SEP}{unitname}"
 
@@ -361,18 +381,22 @@ def path_from_unit_rel(rel_file: str) -> str:
 
 
 def make_global_key(rel_file: str, full_name: str) -> str:
-    """Unique key: component|unitname|qualifiedName."""
+    """Unique key: componentId|unitname|qualifiedName."""
     component, unit = _path_to_component_unit(rel_file)
     return f"{component}{KEY_SEP}{unit}{KEY_SEP}{full_name}"
 
 
 def make_function_key(component: str, rel_file: str, full_name: str, parameters: list) -> str:
-    """Unique key: component|unitname|qualifiedName|paramTypes."""
-    path = rel_file.replace("\\", "/") if rel_file else ""
-    parts = path.split("/")
-    if not component and parts:
-        component = parts[0]
-    _, unit = _path_to_component_unit(rel_file)
+    """Unique key: componentId|unitname|qualifiedName|paramTypes.
+
+    The fallback for a caller that passes no component resolves it the same way every
+    other key does. It used to take the path's FIRST SEGMENT, which since component ids
+    carry their layer is the layer name (`Layer2`) rather than a component - two
+    different key spaces for the same function depending on the call site.
+    """
+    resolved_component, unit = _path_to_component_unit(rel_file)
+    if not component:
+        component = resolved_component
     param_types = ",".join((p.get("type") or "").strip() for p in (parameters or []))
     return f"{component}{KEY_SEP}{unit}{KEY_SEP}{full_name}{KEY_SEP}{param_types}"
 

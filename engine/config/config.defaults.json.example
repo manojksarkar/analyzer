@@ -175,6 +175,14 @@
       "path": "Layer2",
       "cores": ["Core2"],
       "groups": {
+        // Deliberately the SAME group name as Layer1's, holding the SAME component
+        // names ("Sample Core", "Lib"). Legal: ids are layer-qualified, so these are
+        // Layer2.My Sample / Layer2.Sample Core, distinct from Layer1's. The fixture
+        // for that is SampleCppProject/Layer2/Sample/.
+        "My Sample": {
+          "Sample Core": "Sample/Core",
+          "Lib": "Sample/Lib"
+        },
         "Platform": {
           "Gpio": "Platform/Gpio",
           "Uart": "Platform/Uart",

@@ -457,18 +457,19 @@ _set_run_context(version=version_id_arg, project=project_id_arg, scratch=model_s
 _install_model_repo()
 
 def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
-    """Resolve requested group name against config.layer, case-insensitive."""
-    if not requested:
-        return None
-    if not isinstance(groups, dict) or not groups:
-        return None
-    if requested in groups:
-        return requested
-    req_key = requested.casefold()
-    for k in groups.keys():
-        if isinstance(k, str) and k.casefold() == req_key:
-            return k
-    return None
+    """Resolve a requested group to its layer-qualified id, or exit.
+
+    Group ids carry their layer now, so a bare `Support` can name two groups when
+    two layers both have one. There is no right answer to pick, and picking the
+    first generated one layer's document under a name the user meant for the other,
+    so an ambiguous request stops here with both candidates printed.
+    """
+    from core.config import resolve_group_id, ambiguous_group_message
+    resolved, candidates = resolve_group_id(groups, requested)
+    if resolved is None and len(candidates) > 1:
+        log(ambiguous_group_message(requested, candidates), component="run", err=True)
+        sys.exit(2)
+    return resolved
 
 if sum(bool(x) for x in [selected_group_arg, selected_layer_arg, selected_components_arg]) > 1:
     log("--selected-group, --selected-layer, and --selected-component are mutually exclusive", component="run", err=True)
@@ -600,21 +601,48 @@ from core.config import (get_flat_groups as _get_flat_groups,
 from core.paths import paths as _paths_now
 _model_dir = _paths_now().model_dir
 os.makedirs(_model_dir, exist_ok=True)
+# Layer/group/component names must be unambiguous BEFORE anything flattens them.
+# get_flat_groups() below keys groups by name across every layer, so a name reused
+# by two layers silently drops one of them; the same is true of a component name
+# (its paths get merged) and of a path claimed by two components. Each of those
+# produced a quietly incomplete or layer-blended document, never an error.
+from core.config import validate_layer_names as _validate_layer_names
+_name_errors = _validate_layer_names(cfg)
+if _name_errors:
+    log("Ambiguous names in config `layers`:", component="run", err=True)
+    for _err in _name_errors:
+        log(f"  {_err}", component="run", err=True)
+    sys.exit(2)
+
 _all_groups = _get_flat_groups(cfg)
 _resolved_group = _resolve_group_name(_all_groups, selected_group_arg)
 
 # Validate --selected-component: all must exist and be in the same layer.
 if selected_components_arg:
+    # Component ids are layer-qualified (`Layer1.Math`). A bare `Math` is still
+    # accepted and resolved here, but only while ONE layer defines it - two layers
+    # may legitimately both have a `Math`, and quietly taking the first would parse
+    # the wrong layer, with the wrong -D set and data dictionary.
+    from core.config import resolve_component_id as _resolve_component_id
     _all_comp_names: set = set()
     for _g in _all_groups.values():
         if isinstance(_g, dict):
             _all_comp_names.update(_g.keys())
-    # Normalize to identifier form for comparison (spaces -> -)
-    _all_comp_names_norm = {c.replace(" ", "-") for c in _all_comp_names}
-    for _c in selected_components_arg:  # already normalized at collection
-        if _c not in _all_comp_names_norm:
-            log(f"Unknown component {_c!r}. Valid components: {', '.join(sorted(_all_comp_names_norm))}", component="run", err=True)
+    _all_comp_names_norm = sorted(c.replace(" ", "-") for c in _all_comp_names)
+    _resolved_components = []
+    for _c in selected_components_arg:  # already space-normalized at collection
+        _r, _cands = _resolve_component_id(_all_comp_names_norm, _c)
+        if _r is None and len(_cands) > 1:
+            log(f"Component {_c!r} is ambiguous - {len(_cands)} layers use that name: "
+                f"{', '.join(_cands)}. Qualify it with the layer (e.g. {_cands[0]!r}), "
+                f"or select the layer instead.", component="run", err=True)
+            sys.exit(2)
+        if _r is None:
+            log(f"Unknown component {_c!r}. Valid components: {', '.join(_all_comp_names_norm)}",
+                component="run", err=True)
             sys.exit(1)
+        _resolved_components.append(_r)
+    selected_components_arg = _resolved_components
     _comp_layers = {_c: _get_component_layer_name(cfg, _c) for _c in selected_components_arg}
     _unique_layers = set(_comp_layers.values())
     if len(_unique_layers) > 1:

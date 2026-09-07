@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tests.e2e_paths import (                                    # noqa: E402
-    PROJECT_ROOT, SAMPLE_PROJECT, E2E_PID, E2E_VID, MODEL_DIR,
+    PROJECT_ROOT, SAMPLE_PROJECT, E2E_PID, E2E_VID, MODEL_DIR, GROUP,
 )
 
 # Stores pipeline failure message if it failed; None means success or skipped.
@@ -137,7 +137,8 @@ def pytest_collection_finish(session):
         return
 
     project_name = os.path.basename(SAMPLE_PROJECT)
-    group = "My Sample"
+    # Qualified: Layer2 has a twin "My Sample" group, so the bare name is ambiguous.
+    group = GROUP
     label = f"{project_name} [{group}]"
 
     show_output = session.config.getoption("--show-pipeline-output", default=False)

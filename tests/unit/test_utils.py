@@ -300,12 +300,23 @@ class TestMakeUnitKey:
         init_component_mapping(utils._CONFIG_CACHE)
 
     def test_resolves_component_from_path(self):
+        """The component half is LAYER-QUALIFIED - `Layer1.Core`, not `Core`. Without
+        the layer, a `Core` in a second layer produced the identical unit key and the
+        two merged into one unit."""
         key = make_unit_key("Layer1/Sample/Core/core.cpp")
-        assert key.startswith("Core|")
+        assert key.startswith("Layer1.Core|")
 
     def test_unit_name_is_filename_without_extension(self):
         key = make_unit_key("Layer1/Sample/Core/core.cpp")
-        assert key == "Core|core"
+        assert key == "Layer1.Core|core"
+
+    def test_the_same_component_name_in_two_layers_gives_two_keys(self):
+        init_component_mapping({"layers": {
+            "Layer1": {"path": "Layer1", "groups": {"G": {"Core": "Sample/Core"}}},
+            "Layer2": {"path": "Layer2", "groups": {"G": {"Core": "Plat/Core"}}},
+        }})
+        assert make_unit_key("Layer1/Sample/Core/core.cpp") == "Layer1.Core|core"
+        assert make_unit_key("Layer2/Plat/Core/core.cpp") == "Layer2.Core|core"
 
     def test_unknown_path_returns_unknown(self):
         key = make_unit_key("Unknown/something.cpp")

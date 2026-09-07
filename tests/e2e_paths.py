@@ -36,11 +36,21 @@ SAMPLE_PROJECT = os.path.join(PROJECT_ROOT, "SampleCppProject")
 # Fixed so every path below is knowable before the pipeline has run.
 E2E_PID = "e2e-sample"
 E2E_VID = "e2ev1"
-GROUP = "My Sample"
+LAYER = "Layer1"
+# QUALIFIED on purpose: SampleCppProject/Layer2/Sample is a deliberate twin of
+# Layer1/Sample - same group name, same component names, same unit names - so a bare
+# "My Sample" is ambiguous and the run refuses it. This is the e2e's coverage of
+# qualified selection.
+GROUP = f"{LAYER}.My Sample"
 
 # The components "My Sample" covers, in config.defaults.json. Documents, interface
 # tables and unit diagrams are produced once per entry.
-COMPONENTS = ("Lib", "Sample-Core", "Util")
+#
+# LAYER-QUALIFIED, because that is what the ids are: two layers may each hold a
+# `Lib`, so the component that owns a file - and therefore the output directory,
+# the document name and the first segment of every model key - carries its layer.
+# Only the DOCX headings show the bare name.
+COMPONENTS = tuple(f"{LAYER}.{c}" for c in ("Lib", "Sample-Core", "Util"))
 
 VERSION_DIR = os.path.join(PROJECT_ROOT, "workspaces", E2E_PID, "versions", E2E_VID)
 OUTPUT_DIR = os.path.join(VERSION_DIR, "output")

@@ -627,8 +627,12 @@ def build_intro_section(config: dict, abbreviations: dict,
     scope_body = intro_cfg.get("scopeBody", "")
     scope_items: list[str] = intro_cfg.get("scopeItems") or []
 
+    # display_name(): component ids are layer-qualified (`Layer1.Core`), and this bullet
+    # list has to read exactly like the DOCX Scope section, which shows the bare name.
+    # Identity stays qualified everywhere it is a key — including meta.components below.
+    from core.config import display_name
     sorted_comps = sorted(components)
-    comp_bullets = "\n".join(f"• {c.replace('-', ' ')}" for c in sorted_comps)
+    comp_bullets = "\n".join(f"• {display_name(c).replace('-', ' ')}" for c in sorted_comps)
     scope_text = scope_intro
     if comp_bullets:
         scope_text += "\n" + comp_bullets

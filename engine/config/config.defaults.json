@@ -83,6 +83,10 @@
         "Core2"
       ],
       "groups": {
+        "My Sample": {
+          "Sample Core": "Sample/Core",
+          "Lib": "Sample/Lib"
+        },
         "Platform": {
           "Gpio": "Platform/Gpio",
           "Uart": "Platform/Uart",

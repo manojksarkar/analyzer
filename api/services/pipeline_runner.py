@@ -624,10 +624,21 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
             cfg.setdefault(key, {})
             cfg[key].update(bc[key])
 
-    # Convert architecture_layers to the layers schema
+    # Convert architecture_layers to the layers schema. Names have to be unambiguous
+    # BEFORE the engine sees them: the wizard hands over lists, the config is dicts keyed
+    # by name, and every collision - a name reused in one scope, or a group/component name
+    # reused across layers - used to resolve itself by silently dropping or merging one
+    # side. The result was a document quietly missing a group, or one component holding two
+    # layers' files and parsed with a single layer's -D set. Fail the job instead.
     layers = _convert_layers(project.architecture_layers or [])
     if layers:
         cfg["layers"] = layers
+    from core.config import validate_layer_names
+    name_problems = (_duplicate_wizard_names(project.architecture_layers or [])
+                     + validate_layer_names({"layers": layers}))
+    if name_problems:
+        raise ValueError("ambiguous architecture layer names - "
+                         + "; ".join(name_problems))
 
     # Preprocessor definitions -> a macro file the engine reads via clang.macrosFile.
     # The wizard stores them as JSON (manual list or an upload reference); without
@@ -746,6 +757,62 @@ def _convert_layers(arch_layers: list) -> dict:
                 groups[gname] = comps
         result[lname] = {"path": lpath, "groups": groups}
     return result
+
+
+def _duplicate_wizard_names(arch_layers: list) -> list:
+    """Names the list -> dict conversion in _convert_layers would silently swallow.
+
+    `architecture_layers` arrives as LISTS, and _convert_layers writes each entry
+    into a dict keyed by name: two layers, two groups in one layer, or two
+    components in one group sharing a name means the second one REPLACES the
+    first, and the wizard's selection is lost with no error anywhere.
+
+    Only same-scope duplicates are reported here, because those are the ones that
+    disappear before `layers` exists. Cross-layer collisions survive the
+    conversion and are reported by core.config.validate_layer_names instead.
+    """
+    from core.config import name_ident
+
+    problems: list = []
+    seen_layers: dict = {}
+    for layer in arch_layers or []:
+        if not isinstance(layer, dict):
+            continue
+        lname = str(layer.get("name") or "").strip()
+        if not lname:
+            continue
+        if name_ident(lname) in seen_layers:
+            problems.append(f"two layers are named {lname!r}")
+            continue
+        seen_layers[name_ident(lname)] = lname
+
+        seen_groups: dict = {}
+        for g in (layer.get("groups") or []):
+            if isinstance(g, str):
+                gname, comps = g.strip(), []
+            elif isinstance(g, dict):
+                gname, comps = str(g.get("name") or "").strip(), (g.get("components") or [])
+            else:
+                continue
+            if not gname:
+                continue
+            if name_ident(gname) in seen_groups:
+                problems.append(f"layer {lname!r} has two groups named {gname!r}")
+                continue
+            seen_groups[name_ident(gname)] = gname
+
+            seen_comps: dict = {}
+            for c in comps:
+                cname = c.strip() if isinstance(c, str) else (
+                    str(c.get("name") or "").strip() if isinstance(c, dict) else "")
+                if not cname:
+                    continue
+                if name_ident(cname) in seen_comps:
+                    problems.append(
+                        f"group {lname}/{gname} has two components named {cname!r}")
+                    continue
+                seen_comps[name_ident(cname)] = cname
+    return problems
 
 
 def _norm_rel(path: str) -> str:

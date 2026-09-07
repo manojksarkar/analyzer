@@ -18,7 +18,8 @@ import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 from tests.e2e_paths import MODEL_DIR     # noqa: E402  (DB dump, see e2e_paths)
 
-SAMPLE_COMPONENTS = {"Sample-Core", "Lib", "Util"}
+# Layer-qualified: the component id is what every model key starts with.
+SAMPLE_COMPONENTS = {"Layer1.Sample-Core", "Layer1.Lib", "Layer1.Util"}
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +149,7 @@ def test_units_json_not_empty(units):
 
 
 def test_sample_units_present(units):
-    for expected in ("Sample-Core|Core", "Lib|Lib", "Util|Util"):
+    for expected in ("Layer1.Sample-Core|Core", "Layer1.Lib|Lib", "Layer1.Util|Util"):
         assert expected in units, f"Expected unit {expected!r} missing from units.json"
 
 
@@ -169,15 +170,15 @@ def test_unit_function_ids_are_strings(units):
 
 def test_core_calls_lib_and_util(units):
     """Core unit must list Lib and Util as callees."""
-    core = units.get("Sample-Core|Core", {})
+    core = units.get("Layer1.Sample-Core|Core", {})
     callees = set(core.get("calleesUnits", []))
-    assert "Lib|Lib" in callees, "Core|Core should call Lib|Lib"
-    assert "Util|Util" in callees, "Core|Core should call Util|Util"
+    assert "Layer1.Lib|Lib" in callees, "Core|Core should call Lib|Lib"
+    assert "Layer1.Util|Util" in callees, "Core|Core should call Util|Util"
 
 
 def test_util_has_no_callees(units):
     """Util calls nobody — calleesUnits must be empty."""
-    util = units.get("Util|Util", {})
+    util = units.get("Layer1.Util|Util", {})
     assert not util.get("calleesUnits"), "Util|Util should have no callees"
 
 

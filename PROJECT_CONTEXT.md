@@ -208,6 +208,96 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-06 (**Group and component identity is LAYER-QUALIFIED** — branch
+> `fix/cross-layer-name-collisions` off `develop`, uncommitted. Two layers may hold a group or a
+> component with the same name — `FTL/Cache` and `HIL/Cache` are two different components, and a
+> real client layout. They used to silently merge, because every id was the bare config name and
+> everything downstream flattens across layers. A group id is now `Layer1.Support` and a component
+> id `Layer1.Cache`; `interfaceId` already worked this way (`IF_LAYER1_SUPPORT_MATH_01`), so this
+> is the same fact moved into the model keys.
+>
+> **What merged before** (each pinned in `tests/unit/test_name_collisions.py`):
+> 1. `_resolve_layer_paths` keys groups by name across EVERY layer with a plain assignment, so the
+>    second layer's `Support` replaced the first's — and the lost group's components then matched no
+>    file in `_build_file_component_map`, failed `is_project_file`, and **never entered the parse
+>    scope at all**. The document came out short, with no error.
+> 2. `utils.init_component_mapping` APPENDS path lists on a name clash, so one `Cache` owned files
+>    from both layers, `get_component_layer_name` returned only the first, and half those files were
+>    parsed with the other layer's `-D` set and data dictionary — the exact blending the per-layer
+>    data dictionary (2026-08-18) exists to prevent.
+> 3. `unit_key` is `<component>|<unit>`, so `Cache|Buf` from two layers was ONE unit carrying both
+>    files' functions. Function/global ids extend that key, so they collided too.
+> 4. Output dirs and document names are keyed by group, so two layers' `Support` wrote to
+>    `output/Support/` and one overwrote the other.
+>
+> **The shape.** `core.config` gains `LAYER_SEP = "."`, `make_qualified_id(layer, name)`,
+> `split_qualified_id`, `qualified_layer` and `display_name`, re-exported through `utils`. Key
+> ARITY is unchanged — `split(KEY_SEP)[0]` still yields the component — because only the component
+> STRING grew a prefix; nothing that parses keys had to learn a new shape, and `model_store`'s
+> `count("|")` heuristics still hold. The prefix is applied **always** when the config has `layers`,
+> not only when a name is actually duplicated, so one project's keys look like every other's and
+> adding a second layer never silently rewrites the first's. A legacy `layer`/`modulesGroups` config
+> has no layer to qualify with and keeps bare ids.
+>
+> `make_qualified_id` does NOT fold spaces: normalization already happens at
+> `safe_filename` / `_resolve_component_from_rel` / the output-dir naming, and repeating it here
+> would rename `My Sample` in the DOCX headings, which keep the configured spelling.
+>
+> **Display is separate from identity.** `display_name(id)` strips the prefix, and every place a
+> name is READ now calls it: DOCX component headings and the Scope bullet list, the Mermaid
+> component labels, the unit-diagram subgraph label and external-unit boxes
+> (`views/unit_diagrams.py`), the SWE.4 cover, scope and component headings, and
+> `api/services/doc_render.build_intro_section` (whose docstring promises the UI matches the DOCX).
+> `interfaceId` takes `display_name(resolve_group(...))` for its group code — `_id_seg` over the
+> qualified form would fold the layer's letters into the GROUP segment, while `layer_code` already
+> carries the layer separately. Everything that KEYS stays qualified, diagram filenames included —
+> that is what keeps two layers' same-named components in separate files.
+>
+> **Selection.** New `resolve_group_id(groups, requested)` / `resolve_component_id(...)` return
+> `(resolved, candidates)`. A qualified id resolves outright; a bare name resolves while only one
+> layer has it; when two layers have it there is no right answer, so `run.py` exits 2 and
+> `plan_runs` raises with both candidates and the fix (`--selected-group Layer1.Support`, or
+> `--selected-layer`). `get_group_layer_name` / `get_component_layer_name` read the prefix instead of
+> searching, and their bare-name fallback now returns a layer only on a UNIQUE match — first-match
+> was what sent a run at the wrong layer's macros.
+>
+> **`validate_layer_names` narrowed accordingly.** Cross-layer duplicate group/component names are
+> no longer reported — they are legal. What remains is what qualifying cannot fix: the same name
+> twice INSIDE one layer (identical prefix, so the paths still merge), one path claimed by two
+> components or nested inside another's (`_build_file_component_map` uses `setdefault` and walks
+> directories recursively), two layer names that collapse to one identifier, and a name containing
+> `LAYER_SEP` (ids split on the first separator, so it could not be taken apart again). Still wired
+> at all three front doors, each exiting before anything is written or parsed:
+> [run.py](engine/run.py) before the first `get_flat_groups`, `tools/new_project.py`
+> (= `analyzer.py onboard --config`) inside its "Nothing was created." guard, and
+> `api/services/pipeline_runner._write_project_config`, which also runs `_duplicate_wizard_names`
+> for the same-scope duplicates the wizard's list→dict conversion swallows before `layers` exists.
+>
+> **Incidental fix:** `_GROUP_MAP` was keyed by the RAW config name while
+> `_resolve_component_from_rel` returned the space-normalized one, so `resolve_group()` answered `""`
+> for every component whose name contains a space — `Sample Core` among them, which is why its
+> interface IDs carried no group segment. Now keyed by the id that is actually returned.
+> `make_function_key`'s no-component fallback took the path's FIRST SEGMENT, which is the layer
+> directory; it resolves the component properly now.
+>
+> **Every stored key changed** (`Core|Util` → `Layer1.Core|Util`). Snapshots were regenerated; a
+> version stored before this change cannot serve as an incremental baseline for a run after it —
+> the entity keys will not match, so it falls back to a full generation. One-time, by design.
+>
+> Verified end to end, not just by unit test: a config giving BOTH SampleCppProject layers a
+> `Support` group with `Math` and `Core` components ran the full four-phase pipeline and produced
+> `output/Layer1.Support/` and `output/Layer2.Support/` — two documents, where one used to overwrite
+> the other — with `components.json` holding four entries (`Layer1.Core`, `Layer1.Math`,
+> `Layer2.Core`, `Layer2.Math`) and both DOCX files showing the bare `2 Core` / `3 Math` headings.
+> Tests: `tests/unit/test_name_collisions.py` rewritten (39), e2e constants and snapshots moved to
+> qualified ids (`tests/e2e_paths.py`, `tests/e2e/*`). `pytest tests/unit tests/api --skip-pipeline`
+> and `pytest tests/e2e` both green.
+>
+> **Pre-existing bug fixed on the way:** the e2e `test_specs` fixture read
+> `output/My-Sample/test_specs.json`, a path a group-scoped run has never written (it writes one dir
+> per component), so every SWE.4 e2e test errored at setup. It now merges per component exactly as
+> the `interface_tables` fixture does.)
+
 > Updated: 2026-09-06 (**a flush deleted the artifacts it was not handed; the audit's model
 > checks did not know about hash-only rows** - branch `version7`.
 >
@@ -2786,8 +2876,16 @@ Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 ### Config rules
 
 - Group names and component names: **CapitalCamelCase or snake_case**, both are tolerated.
-- Each folder path should appear in exactly one component; the parser merges all
-  layers/groups into one big folder set so cross-layer calls are still discoverable.
+- **Two layers MAY use the same group or component name** — `FTL/Cache` and `HIL/Cache` are
+  two different components. Ids are layer-qualified (`Layer1.Cache`), so they no longer
+  collide; see the 2026-09-06 entry. Group and component names must be unique **within their
+  own layer**, each folder path must appear in exactly one component (nesting one
+  component's path inside another's counts as a clash), and no name may contain `.` (the id
+  separator). Enforced by `core.config.validate_layer_names`; `run.py` exits 2.
+  A component MAY share a name with a group (`Access`, `Signal`, `Diag` do).
+- **A bare group/component name is still accepted on the CLI** while only one layer has it.
+  When two do, `run.py` exits 2 naming both candidates rather than picking one —
+  `--selected-group Layer1.Support`, or `--selected-layer`, says which.
 - `selectedGroup` is **not** a config key — group selection is CLI-only.
 - Layer `"path"` is relative to `<project_path>`. Component paths inside a group
   are relative to the layer's path and are prepended by `get_flat_groups()`.
@@ -2841,7 +2939,28 @@ in `engine/utils.py` or one of the phase scripts.
 - `get_component_layer_name(cfg, component_name)` → the layer name that owns `component_name` (searches all layers/groups), or `None`. Comparison is space-normalized (both sides `.replace(" ", "-")`) so normalized identifiers match raw config keys. Used by `run.py` and `group_planner` to derive the layer from `--selected-component`.
 - `get_layer_flat_groups(cfg, layer_name)` → flat groups for a single named layer only (layer paths resolved). Used by `parser.py` to restrict `_COMPONENT_FOLDERS` when a layer is selected.
 - `_resolve_layer_paths(layers_cfg)` — internal helper that prepends
-  `layer.path` to each component path inside the layer's groups.
+  `layer.path` to each component path inside the layer's groups. Keys BOTH levels by
+  layer-qualified id (`Layer1.Support` → `Layer1.Math`), so two layers reusing a name are
+  two entries, not one overwriting the other.
+- **Layer-qualified identity** (dated entry 2026-09-06): `LAYER_SEP = "."`,
+  `make_qualified_id(layer, name)`, `split_qualified_id(id)`, `qualified_layer(id)`,
+  `display_name(id)`. All re-exported through `utils`. The id is what KEYS everything
+  (component, unit, function, global, output dir, diagram filename); `display_name` is what
+  the document SHOWS. Applied always when the config has `layers`, never for a legacy
+  `layer`/`modulesGroups` config. Key arity is unchanged — only the component string gained
+  a prefix.
+- `resolve_group_id(groups, requested)` / `resolve_component_id(components, requested)` →
+  `(resolved_or_None, candidates)`. Accepts the qualified id, or a bare name while exactly
+  one layer has it; two candidates means AMBIGUOUS and the caller must refuse
+  (`ambiguous_group_message` writes the message). Used by `run.py`, `group_planner` and
+  `run_views`.
+- `validate_layer_names(cfg)` → one message per name problem in `layers`, `[]` when clean.
+  **Cross-layer duplicate names are NOT reported** — they are legal. Reported: the same name
+  twice inside ONE layer, a path claimed by two components or nested inside another's, two
+  layer names that collapse to one identifier, and a name containing `LAYER_SEP`. `run.py`
+  exits 2 on any message before Phase 1; `tools/new_project.py` and
+  `api/services/pipeline_runner` refuse before writing anything. Comparison uses
+  `name_ident(name)` (`strip().replace(" ", "-").casefold()`).
 - `default_clang_macro_defs()` — returns the `-D` macro list shared by
   Phase 1 and the flowchart engine's per-function re-parser.
 
@@ -3614,6 +3733,16 @@ Groups all functions and globals by file path. Produces:
   and `includedHeaders` (read from local `#include` directives).
 - `model/components.json` — one entry per component containing its unit keys
   and `headerFiles` list. (Was `model/modules.json` in older versions.)
+
+The unit key is `<componentId>|<basename without extension>`, where the component id carries
+its layer (`Layer1.Core|Util`) — that is what keeps two layers' same-named components apart.
+It carries **no directory**, so a
+`.cpp` and its `.h` are one unit by design — and two files with the same stem in DIFFERENT
+directories of one component fold into one unit too, carrying both files' functions and globals
+but only the first's `path`/`fileName`. That is logged as a WARNING naming both files (compared
+on the extension-stripped path, so the `.cpp`/`.h` pair is not flagged) and **not repaired**: the
+key is the model's public identity, embedded in function/global IDs, snapshots and DB rows.
+Dated entry 2026-09-04.
 
 ### `_build_interface_index` / `_enrich_interfaces`
 
@@ -4549,12 +4678,35 @@ SampleCppProject/
       Storage/ Eeprom/ Flash/ StorCache/ — Storage components
       Timer/ TmrHw/ TmrMgr/            — Timer components
       Uart/ Uart{Buf,Clock,Debug,Dma,Error,Fifo,Flow,Init,Irq,Mode,...}/ — UART
+    Sample/                            — the CROSS-LAYER TWIN of Layer1/Sample (2026-09-06)
+      Core/   Core.cpp/.h              — group "My Sample", component "Sample Core"
+      Lib/    Lib.cpp/.h               — group "My Sample", component "Lib"
 ```
 
+**The `Layer2/Sample` twin is deliberate and must not be "tidied".** It reuses Layer1's
+group name (`My Sample`), component names (`Sample Core`, `Lib`), unit names (`Core`,
+`Lib`), function names (`coreAdd`, `coreSetResult`, `libAdd`, `libNormalize`, …), global
+names (`g_result`, `g_count`, `g_libTotal`, `g_libCalls`) and even its `Mode`/`Status`
+enum names. It is the fixture for layer-qualified identity: with bare names all of those
+collapsed into one component, one unit key and one set of function keys. The BODIES are
+different on purpose (saturating/byte-oriented rather than arithmetic) so a generated
+document shows at a glance which layer it describes. It is self-contained — it does NOT
+include Layer1's `Types/`, because a cross-layer include would undo the separation the
+fixture exists to demonstrate.
+
+Consequence: **`--selected-group "My Sample"` is now AMBIGUOUS** and exits 2. The e2e
+suite scopes to `Layer1.My Sample` (`tests/e2e_paths.GROUP`), which is also its coverage
+of qualified selection.
+
 `config.defaults.json`'s `layers` maps these to:
-- **Layer1**: groups `Sample` (Core/Lib/Util), `Full` (Iface/Cross), `Support`
-  (Math/App/Outer), `Access`, `Diag`
-- **Layer2**: group `Platform` (all 15 platform components)
+- **Layer1**: groups `My Sample` (Sample Core/Lib/Util), `Full` (Iface/Cross), `Support`
+  (Math/App/Outer), `Access`, `Signal`, `Diag`
+- **Layer2**: groups `My Sample` (Sample Core/Lib — the twin) and `Platform` (all 15
+  platform components)
+
+Group and component IDS are layer-qualified, so the two `My Sample` groups are
+`Layer1.My Sample` and `Layer2.My Sample`, and the two `Sample Core` components are
+`Layer1.Sample-Core` and `Layer2.Sample-Core`. See the 2026-09-06 entry.
 
 ### Key docs
 

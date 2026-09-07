@@ -4,7 +4,8 @@ import re
 import sys
 import json
 
-from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group, short_name
+from utils import (load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP,
+                   resolve_group, short_name, display_name)
 from core.config import get_component_layer_name
 from core.paths import paths as _paths
 from core.run_context import apply_cli_run_context
@@ -250,6 +251,32 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
             rel = fp.replace("\\", "/")
         unit_by_file[fp] = make_unit_key(rel)
 
+    # A unit key is `component|<basename without extension>` - it carries no directory.
+    # Two files with the same stem in DIFFERENT directories of one component therefore
+    # collapse to one key, and the merge below folds them into a SINGLE unit: it carries
+    # both files' functions and globals, but `path`/`fileName` of whichever came first.
+    # That is a wrong unit, silently. The .cpp/.h pair of one unit shares a stem on
+    # purpose, so compare the path without its extension - more than one of those under
+    # one key is the real collision.
+    # Reported, not repaired - the key is the model's public identity (function and global
+    # ids embed it, as do stored snapshots), so renaming it here would break every consumer.
+    _paths_by_unit: dict = {}
+    for fp, uk in unit_by_file.items():
+        try:
+            rel = os.path.relpath(fp, base_path).replace("\\", "/")
+        except ValueError:
+            rel = fp.replace("\\", "/")
+        _paths_by_unit.setdefault(uk, set()).add(path_from_unit_rel(rel))
+    _colliding = sorted(k for k, v in _paths_by_unit.items() if len(v) > 1)
+    if _colliding:
+        from core.logging_setup import get_logger as _gl
+        _log_units = _gl("model_deriver")
+        for uk in _colliding:
+            _log_units.warning(
+                "unit key %r is claimed by %d files in different directories (%s) - they "
+                "are merged into one unit; rename one file or split the component",
+                uk, len(_paths_by_unit[uk]), ", ".join(sorted(_paths_by_unit[uk])))
+
     units_data = {}
     for fp in sorted(all_files):
         base = os.path.basename(fp)
@@ -443,7 +470,10 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         unit_key = make_unit_key(rel) if rel else KEY_SEP
         key_parts = unit_key.split(KEY_SEP)
         unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
-        group_code = _id_seg(resolve_group(key_parts[0]))
+        # display_name(): the group id is layer-qualified now, and _id_seg over
+        # "Layer1.My Sample" would fold the layer's letters into the GROUP code -
+        # while layer_code already carries the layer as its own segment.
+        group_code = _id_seg(display_name(resolve_group(key_parts[0])))
         layer_name = get_component_layer_name(config, key_parts[0]) if config else None
         layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
         idx_code = f"{idx_by_id.get(fid, 0):02d}"
@@ -467,7 +497,10 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         unit_key = make_unit_key(rel) if rel else KEY_SEP
         key_parts = unit_key.split(KEY_SEP)
         unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
-        group_code = _id_seg(resolve_group(key_parts[0]))
+        # display_name(): the group id is layer-qualified now, and _id_seg over
+        # "Layer1.My Sample" would fold the layer's letters into the GROUP code -
+        # while layer_code already carries the layer as its own segment.
+        group_code = _id_seg(display_name(resolve_group(key_parts[0])))
         layer_name = get_component_layer_name(config, key_parts[0]) if config else None
         layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
         idx_code = f"{idx_by_id.get(vid, 0):02d}"

@@ -193,7 +193,8 @@ class TestLayerSources:
     def test_unknown_layer_keys_do_not_disturb_group_flattening(self):
         """`dataDictionary`/`macros` sit beside `groups`; _resolve_layer_paths must ignore them."""
         from core.config import get_flat_groups
-        assert get_flat_groups(self.CFG) == {"G1": {"C1": "Layer1/A"}}
+        # Ids are layer-qualified: two layers may legitimately both have a `G1`.
+        assert get_flat_groups(self.CFG) == {"Layer1.G1": {"Layer1.C1": "Layer1/A"}}
 
 
 class TestCoresSection:

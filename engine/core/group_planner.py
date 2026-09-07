@@ -46,27 +46,37 @@ class RunPlan:
 
 
 def _resolve_group_name(groups: Dict[str, Any], requested: Optional[str]) -> Optional[str]:
-    if not requested:
-        return None
-    if not isinstance(groups, dict) or not groups:
-        return None
-    if requested in groups:
-        return requested
-    req_key = requested.casefold()
-    for k in groups.keys():
-        if isinstance(k, str) and k.casefold() == req_key:
-            return k
-    return None
+    """The layer-qualified group id `requested` names, or None if no group matches.
+
+    Raises ValueError when the name matches groups in MORE than one layer. Two
+    layers sharing a group name is legal, so the request genuinely has two answers;
+    generating the first would hand back one layer's document under a name meant for
+    the other, which is exactly the silent-wrong-output this refuses to produce.
+    """
+    from .config import resolve_group_id, ambiguous_group_message
+    resolved, candidates = resolve_group_id(groups, requested)
+    if resolved is None and len(candidates) > 1:
+        raise ValueError(ambiguous_group_message(requested, candidates))
+    return resolved
 
 
 def _components_by_name(groups: Dict[str, Any]) -> Dict[str, str]:
-    """{component name (casefolded) -> the group it belongs to}."""
+    """{lookup name -> the qualified group id that owns it}.
+
+    Keyed under BOTH the qualified component id and its bare display name, because
+    this only ever feeds the "did you mean --scope component:?" hint and the caller
+    typed whichever spelling they had in mind. The qualified id is registered second
+    so it wins when a bare name is ambiguous across layers - the hint then names one
+    real group instead of a made-up one.
+    """
+    from .config import display_name, name_ident
     out = {}
     for gname, comps in (groups or {}).items():
         if isinstance(comps, dict):
             for cname in comps:
                 if isinstance(cname, str):
-                    out[cname.casefold()] = gname
+                    out.setdefault(name_ident(display_name(cname)), gname)
+                    out[name_ident(cname)] = gname
     return out
 
 
@@ -77,12 +87,13 @@ def _unknown_group_message(names, groups_cfg: Dict[str, Any], group_names) -> st
     real COMPONENT sitting inside one of those groups. Naming the right flag turns a dead end
     into a fix.
     """
+    from .config import name_ident
     comp_owner = _components_by_name(groups_cfg)
-    as_components = [n for n in names if n.casefold() in comp_owner]
-    unknown = [n for n in names if n.casefold() not in comp_owner]
+    as_components = [n for n in names if name_ident(n) in comp_owner]
+    unknown = [n for n in names if name_ident(n) not in comp_owner]
     lines = [f"Unknown group(s) in the scope: {', '.join(names)}."]
     if as_components:
-        pairs = ", ".join(f"{n} (in group {comp_owner[n.casefold()]})" for n in as_components)
+        pairs = ", ".join(f"{n} (in group {comp_owner[name_ident(n)]})" for n in as_components)
         lines.append(f"  {pairs} — these are COMPONENTS, not groups.")
         lines.append(f"  Use:  --scope \"component:{','.join(as_components)}\"")
     if unknown:

@@ -177,3 +177,31 @@ class TestNothingIsCreatedBeforeTheConfigIsResolved:
         (self.ws / "p1" / "config.json").write_text('{"layers": {}}', encoding="utf-8")
         with pytest.raises(AssertionError, match="database was touched"):
             NP.main(["--project-id", "p1", "--version-id", "v2", "--commit", "b" * 40])
+
+    def test_a_config_ambiguous_inside_one_layer_creates_nothing(self, tmp_path, capsys):
+        """One layer, two groups both claiming a `Math` component: the ids are identical,
+        so the paths merge and only the first group owns it. run.py refuses it too, but
+        only at generate time — by then the project row, the workspace and the config are
+        on disk and the message is a whole onboarding late."""
+        bad = tmp_path / "collide.json"
+        bad.write_text(json.dumps({"layers": {
+            "L1": {"path": "Layer1", "groups": {"A": {"Math": "Math"},
+                                                "B": {"Math": "Other"}}},
+        }}), encoding="utf-8")
+        rc = NP.main(["--project-id", "p1", "--config", str(bad)])
+        assert rc == 2
+        out = capsys.readouterr().out
+        assert "ambiguous names" in out and "component name 'math'" in out
+        assert "Nothing was created" in out
+        assert not self.ws.exists()
+
+    def test_two_layers_reusing_one_name_passes_the_gate(self, tmp_path):
+        """Legal: ids are layer-qualified, so `L1.Support` and `L2.Support` are two
+        different groups. The tripwire firing means the gate let it through."""
+        good = tmp_path / "good.json"
+        good.write_text(json.dumps({"layers": {
+            "L1": {"path": "Layer1", "groups": {"Support": {"Math": "Math"}}},
+            "L2": {"path": "Layer2", "groups": {"Support": {"Math": "Math"}}},
+        }}), encoding="utf-8")
+        with pytest.raises(AssertionError, match="database was touched"):
+            NP.main(["--project-id", "p1", "--config", str(good)])

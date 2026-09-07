@@ -31,7 +31,7 @@ PRIVATE_GLOBALS = {
 # ---------------------------------------------------------------------------
 
 def test_expected_units_present(interface_tables):
-    for key in ("Sample-Core|Core", "Lib|Lib", "Util|Util"):
+    for key in ("Layer1.Sample-Core|Core", "Layer1.Lib|Lib", "Layer1.Util|Util"):
         assert key in interface_tables, f"Unit '{key}' missing from interface_tables"
 
 
@@ -40,9 +40,9 @@ def test_unit_names_present(interface_tables):
 
 
 def test_unit_names_map(interface_tables):
-    assert interface_tables["unitNames"]["Sample-Core|Core"] == "Core"
-    assert interface_tables["unitNames"]["Lib|Lib"] == "Lib"
-    assert interface_tables["unitNames"]["Util|Util"] == "Util"
+    assert interface_tables["unitNames"]["Layer1.Sample-Core|Core"] == "Core"
+    assert interface_tables["unitNames"]["Layer1.Lib|Lib"] == "Lib"
+    assert interface_tables["unitNames"]["Layer1.Util|Util"] == "Util"
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ def test_callee_units_populated(core_entries):
     # coreAdd calls libAdd — Lib|Lib should be in calleesUnits
     entry = next((e for e in core_entries if e["name"] == "coreAdd"), None)
     assert entry is not None
-    assert "Lib|Lib" in entry["calleesUnits"], "coreAdd should list Lib|Lib in calleesUnits"
+    assert "Layer1.Lib|Lib" in entry["calleesUnits"], "coreAdd should list Lib|Lib in calleesUnits"
 
 
 # ---------------------------------------------------------------------------
