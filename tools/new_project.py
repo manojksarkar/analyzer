@@ -156,6 +156,21 @@ def main(argv=None) -> int:
         print("\nNothing was created.")
         return 2
 
+    # Ambiguous layer/group/component names, refused before anything is written. The engine
+    # keys groups and components by NAME across every layer, so a name used twice resolves
+    # itself by dropping or merging one side - a group's components vanish from the parse
+    # scope, or one component ends up holding two layers' files. run.py catches it at generate
+    # time, but by then the project row, the workspace and the config are already on disk and
+    # the message arrives a whole onboarding late.
+    from core.config import validate_layer_names
+    name_errors = validate_layer_names(cfg)
+    if name_errors:
+        print("--config has ambiguous names in `layers`:")
+        for err in name_errors:
+            print(f"  {err}")
+        print("\nNothing was created.")
+        return 2
+
     import sqlalchemy as sa
     from api.db.postgres import schema as s
     from core.db import database_url, get_engine, require_database, _redact, DatabaseUnavailable

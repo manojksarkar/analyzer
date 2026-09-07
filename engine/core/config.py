@@ -545,7 +545,14 @@ def default_clang_macro_defs() -> list:
 
 
 def _resolve_layer_paths(layers_cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Flatten layers into {groupName: {componentName: resolvedPaths}} with layer path prefix applied."""
+    """Flatten layers into {groupId: {componentId: resolvedPaths}}, layer path prefixed.
+
+    Both ids are LAYER-QUALIFIED (`Layer1.Support` / `Layer1.Math`). They used to be
+    the bare config names, and because this dict is keyed across every layer at once,
+    two layers sharing a group name meant one plain assignment overwrote the other and
+    its components never reached the parser at all. Qualifying makes them what they
+    always were: two different groups.
+    """
     result: Dict[str, Any] = {}
     for layer_name, layer in (layers_cfg or {}).items():
         if not isinstance(layer, dict):
@@ -556,13 +563,14 @@ def _resolve_layer_paths(layers_cfg: Dict[str, Any]) -> Dict[str, Any]:
                 continue
             resolved: Dict[str, Any] = {}
             for mod_name, paths in modules.items():
+                comp_id = make_qualified_id(layer_name, mod_name)
                 if isinstance(paths, str):
-                    resolved[mod_name] = f"{layer_path}/{paths}" if paths else layer_path
+                    resolved[comp_id] = f"{layer_path}/{paths}" if paths else layer_path
                 elif isinstance(paths, list):
-                    resolved[mod_name] = [f"{layer_path}/{p}" if p else layer_path for p in paths]
+                    resolved[comp_id] = [f"{layer_path}/{p}" if p else layer_path for p in paths]
                 else:
-                    resolved[mod_name] = paths
-            result[group_name] = resolved
+                    resolved[comp_id] = paths
+            result[make_qualified_id(layer_name, group_name)] = resolved
     return result
 
 
@@ -576,54 +584,146 @@ def get_flat_groups(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg.get("layer") or {}
 
 
-def get_layer_components(cfg: Dict[str, Any], group_name: str) -> set:
-    """Return all component names in the same layer as group_name.
+def get_layer_components(cfg: Dict[str, Any], group_id: str) -> set:
+    """Return all component IDS in the same layer as `group_id`.
+
+    Phase 3 and Phase 4 filter the model to this set so cross-component call edges
+    inside the layer stay visible. The layer comes from the id's own prefix, so a
+    group name another layer also uses can no longer drag that layer's components in.
+    A bare name is still accepted and resolved, for callers that have not qualified.
 
     For a flat (non-layered) config, returns all components across all groups.
-    Returns empty set if group not found.
+    Returns an empty set if the group is not found.
     """
-    layers = cfg.get("layers") or {}
-    for layer_cfg in layers.values():
-        groups = layer_cfg.get("groups") or {}
-        if group_name in groups:
-            components: set = set()
-            for grp in groups.values():
-                if isinstance(grp, dict):
-                    components.update(grp.keys())
-            return components
+    layer_name = get_group_layer_name(cfg, group_id)
+    if layer_name:
+        components: set = set()
+        for grp in get_layer_flat_groups(cfg, layer_name).values():
+            if isinstance(grp, dict):
+                components.update(grp.keys())
+        return components
     # Flat config (no layers): all components in all groups
-    flat = get_flat_groups(cfg)
     components = set()
-    for grp in flat.values():
+    for grp in get_flat_groups(cfg).values():
         if isinstance(grp, dict):
             components.update(grp.keys())
     return components
 
 
 
-def get_group_layer_name(cfg: Dict[str, Any], group_name: str) -> Optional[str]:
-    """Return the layer name that contains group_name, or None if not found."""
-    for layer_name, layer_cfg in (cfg.get("layers") or {}).items():
-        if group_name in ((layer_cfg or {}).get("groups") or {}):
-            return layer_name
-    return None
+def get_group_layer_name(cfg: Dict[str, Any], group_id: str) -> Optional[str]:
+    """The layer owning `group_id`, or None.
 
-
-def get_component_layer_name(cfg: Dict[str, Any], component_name: str) -> Optional[str]:
-    """Return the layer name that owns component_name, or None if not found.
-
-    Comparison is space-normalized (spaces replaced with -) so that a caller
-    using the identifier form ("My-Sample") matches a config key with spaces
-    ("My Sample").
+    A qualified id answers this by itself - that is the point of qualifying. The
+    search below runs only for a BARE name, and returns a layer only when exactly one
+    layer has it: with two candidates there is no right answer, and picking the first
+    is what used to send a run at the wrong layer's macros.
     """
-    norm = (component_name or "").replace(" ", "-")
+    layer = qualified_layer(group_id)
+    if layer and layer in (cfg.get("layers") or {}):
+        return layer
+    matches = [ln for ln, lc in (cfg.get("layers") or {}).items()
+               if group_id in ((lc or {}).get("groups") or {})]
+    return matches[0] if len(matches) == 1 else None
+
+
+def get_component_layer_name(cfg: Dict[str, Any], component_id: str) -> Optional[str]:
+    """The layer owning `component_id`, or None.
+
+    Read straight off a qualified id. A BARE name is still resolved by searching,
+    space-normalized ("My-Sample" matches a config key "My Sample"), but only when
+    exactly one layer has it: two layers with a `Cache` component is legal now, and
+    answering with the first would put one layer's files under the other's -D set and
+    data dictionary, which is the bug qualifying exists to end.
+    """
+    layer = qualified_layer(component_id)
+    if layer and layer in (cfg.get("layers") or {}):
+        return layer
+    norm = (component_id or "").replace(" ", "-")
+    matches = []
     for layer_name, layer_cfg in (cfg.get("layers") or {}).items():
         for grp in ((layer_cfg or {}).get("groups") or {}).values():
-            if isinstance(grp, dict):
-                for k in grp:
-                    if (k or "").replace(" ", "-") == norm:
-                        return layer_name
-    return None
+            if isinstance(grp, dict) and any((k or "").replace(" ", "-") == norm for k in grp):
+                matches.append(layer_name)
+                break
+    return matches[0] if len(matches) == 1 else None
+
+
+def resolve_group_id(groups: Dict[str, Any], requested: Optional[str]) -> tuple:
+    """Resolve a requested group to its qualified id.
+
+    Returns `(resolved_id_or_None, candidates)`. `candidates` holds every id the
+    request matched, so a caller can tell the three cases apart:
+
+      * one match   -> `(id, [id])`      generate that group
+      * none        -> `(None, [])`      unknown group, list what exists
+      * several     -> `(None, [a, b])`  AMBIGUOUS - two layers have this group name
+
+    The third case is the whole point. Group ids are layer-qualified now, so
+    `Support` may name `Layer1.Support` AND `Layer2.Support`; picking the first
+    silently generated one layer's document under the other's name. The caller
+    should refuse and print the candidates, and the user answers with either the
+    qualified id (`--selected-group Layer1.Support`) or `--selected-layer`.
+
+    Accepted spellings, in order: the exact id, the id case-insensitively, then
+    the bare group NAME (`Support`, `My Sample`, `my-sample`) matched against every
+    layer's groups. Comparison goes through `name_ident`, so spaces and case never
+    decide the answer.
+    """
+    if not requested or not isinstance(groups, dict) or not groups:
+        return None, []
+    if requested in groups:
+        return requested, [requested]
+
+    want = name_ident(requested)
+    exact = [k for k in groups if isinstance(k, str) and name_ident(k) == want]
+    if len(exact) == 1:
+        return exact[0], exact
+    if exact:
+        return None, sorted(exact)
+
+    bare = [k for k in groups
+            if isinstance(k, str) and name_ident(display_name(k)) == want]
+    if len(bare) == 1:
+        return bare[0], bare
+    return None, sorted(bare)
+
+
+def ambiguous_group_message(requested: str, candidates: List[str]) -> str:
+    """The message for a group name that two or more layers both use.
+
+    Names the qualified id rather than one entry point's flag: the same request
+    arrives as `analyzer.py generate --scope "group:..."` and as
+    `run.py --selected-group ...`, and quoting the wrong one sends the reader
+    looking for a flag their command does not have.
+    """
+    return (f"Group {requested!r} is ambiguous - {len(candidates)} layers use that name: "
+            f"{', '.join(candidates)}. Qualify it with the layer "
+            f"(e.g. {candidates[0]!r}), or select the layer instead.")
+
+
+def resolve_component_id(components, requested: Optional[str]) -> tuple:
+    """Resolve a requested component to its qualified id. Same contract as
+    `resolve_group_id` - `(resolved_or_None, candidates)`, several candidates
+    meaning two layers both define a component with that name."""
+    names = list(components or [])
+    if not requested or not names:
+        return None, []
+    if requested in names:
+        return requested, [requested]
+
+    want = name_ident(requested)
+    exact = [k for k in names if isinstance(k, str) and name_ident(k) == want]
+    if len(exact) == 1:
+        return exact[0], exact
+    if exact:
+        return None, sorted(exact)
+
+    bare = [k for k in names
+            if isinstance(k, str) and name_ident(display_name(k)) == want]
+    if len(bare) == 1:
+        return bare[0], bare
+    return None, sorted(bare)
 
 
 def get_layer_flat_groups(cfg: Dict[str, Any], layer_name: str) -> Dict[str, Any]:
@@ -654,6 +754,72 @@ def get_layer_cores(cfg: Dict[str, Any], layer_name: str) -> List[str]:
     if not isinstance(raw, list):
         return []
     return [str(c) for c in raw if str(c).strip()]
+
+
+# ---------------------------------------------------------------------------
+# Layer-qualified identity
+# ---------------------------------------------------------------------------
+#
+# Two layers may legitimately hold a group or a component with the SAME name -
+# `FTL/Cache` and `HIL/Cache` are two different components, not a mistake. Every
+# key the model builds starts from the component name (`unit_key` is
+# `<component>|<unit>`, function and global ids extend it), so a bare name made
+# them collide: the two layers' paths were merged into one component and one
+# layer's files were parsed with the other's -D set.
+#
+# The layer is therefore part of the IDENTITY, and only the identity: a group id
+# is `<Layer>.<Group>` and a component id is `<Layer>.<Component>`, while the
+# document still shows the bare name. `interfaceId` already worked this way
+# (`IF_LAYER1_SUPPORT_MATH_01`); this is the same fact, moved into the keys.
+#
+# The layer prefix is ALWAYS applied when the config has `layers`, whether or not
+# a name is actually duplicated, so one project's keys have the same shape as
+# every other's and adding a second layer never silently rewrites the first's.
+# A legacy `layer` / `modulesGroups` config has no layer to qualify with and
+# keeps bare ids.
+
+LAYER_SEP = "."
+
+
+def make_qualified_id(layer_name: Optional[str], name: str) -> str:
+    """`<Layer>.<Name>`, or the bare identifier when there is no layer.
+
+    The name half is passed through EXACTLY as configured, spaces included. Space
+    normalization already happens where it is needed - `safe_filename`,
+    `_resolve_component_from_rel`, the output-dir naming - and repeating it here
+    would rename `My Sample` in the DOCX headings, which keep the configured
+    spelling on purpose.
+    """
+    ident = (name or "").strip()
+    layer = (layer_name or "").strip()
+    return f"{layer}{LAYER_SEP}{ident}" if layer else ident
+
+
+def split_qualified_id(qualified: str) -> tuple:
+    """`("Layer1", "Core")` for a qualified id, `(None, "Core")` for a bare one.
+
+    Splits on the FIRST separator: the layer name cannot contain one (refused by
+    `validate_layer_names`), so anything after it belongs to the name.
+    """
+    text = (qualified or "").strip()
+    if LAYER_SEP not in text:
+        return None, text
+    layer, _, name = text.partition(LAYER_SEP)
+    return (layer or None), name
+
+
+def qualified_layer(qualified: str) -> Optional[str]:
+    """The layer a qualified group/component id belongs to, or None if bare."""
+    return split_qualified_id(qualified)[0]
+
+
+def display_name(qualified: str) -> str:
+    """The bare name to SHOW - `Layer1.Sample-Core` -> `Sample-Core`.
+
+    Never use this as a key: two layers can return the same string, which is the
+    whole reason the id carries the layer.
+    """
+    return split_qualified_id(qualified)[1]
 
 
 def core_source(cfg: Dict[str, Any], core_name: str, key: str) -> Optional[str]:
@@ -689,6 +855,154 @@ def validate_cores(cfg: Dict[str, Any]) -> List[str]:
                 f"({', '.join(cores)}); more than {MAX_CORES_PER_LAYER} per layer is "
                 "not supported yet - macros and the data dictionary still resolve "
                 "per layer, so a second core's -D flags would leak into the first's files")
+    return errors
+
+
+# ---------------------------------------------------------------------------
+# Name-space validation for `layers`
+# ---------------------------------------------------------------------------
+
+def name_ident(name: str) -> str:
+    """Identifier form of a config name - the form that survives downstream.
+
+    Two rules collapse names on their way into keys, filenames and filters: a
+    space becomes `-` everywhere a name becomes an identifier (see
+    `safe_filename`, `_resolve_component_from_rel`, `_filter_model_to_components`),
+    and every consumer that matches a group or component by name casefolds first
+    (`_resolve_group_name`, the DOCX same-layer filter). Names that collapse to
+    the same string here are indistinguishable to the pipeline, however different
+    they look in the JSON.
+    """
+    return (name or "").strip().replace(" ", "-").casefold()
+
+
+def _norm_cfg_path(path: str) -> str:
+    """Repo-relative path in comparison form: '/' separators, no wrapping slashes."""
+    return (path or "").replace("\\", "/").strip().strip("/").casefold()
+
+
+def _fmt_owner(owner: tuple) -> str:
+    """'Layer1/Support/Math' for a (layer, group, component) triple."""
+    return "/".join(str(x) for x in owner if x)
+
+
+def validate_layer_names(cfg: Dict[str, Any]) -> List[str]:
+    """Return one message per name problem in the `layers` block.
+
+    Empty list means the config is usable.
+
+    **Two layers reusing a group or component name is NOT a problem** and is not
+    reported: `FTL/Cache` and `HIL/Cache` are two different components, and every id
+    is layer-qualified (`make_qualified_id`) so they no longer collide. What remains
+    are the cases qualifying cannot fix, because the ambiguity is INSIDE one layer or
+    in the paths rather than the names:
+
+    * the same name twice in ONE layer - the layer prefix is identical, so
+      `utils.init_component_mapping` still merges the two path lists into a single
+      component and the first group listed takes it.
+    * one path claimed by two components, or nested inside another component's path -
+      `parser._build_file_component_map` uses `setdefault` and walks a directory
+      entry recursively, so the first component in config order takes every file and
+      the other silently gets none. This is the long-standing "each folder path
+      appears in exactly one component" rule, enforced.
+    * a name containing `LAYER_SEP` - ids are split on the FIRST separator, so a
+      layer or component whose own name carries one cannot be taken apart again.
+    * two layer names that collapse to the same identifier.
+
+    A component named after a group is fine (the shipped config has `Access`,
+    `Signal`, `Diag` as both) - the two are selected by different flags.
+    """
+    errors: List[str] = []
+    layers = cfg.get("layers")
+    if not isinstance(layers, dict) or not layers:
+        return errors
+
+    layer_names: Dict[str, List[str]] = {}
+    path_owners: Dict[str, List[tuple]] = {}
+    separator_hits: List[str] = []
+
+    for layer_name, layer_cfg in layers.items():
+        layer_names.setdefault(name_ident(layer_name), []).append(str(layer_name))
+        if LAYER_SEP in str(layer_name):
+            separator_hits.append(f"layer {layer_name!r}")
+        if not isinstance(layer_cfg, dict):
+            continue
+        layer_path = str(layer_cfg.get("path") or layer_name)
+
+        # Within ONE layer: group names, then component names across that layer's groups.
+        group_idents: Dict[str, List[str]] = {}
+        comp_idents: Dict[str, List[tuple]] = {}
+        for group_name, comps in (layer_cfg.get("groups") or {}).items():
+            group_idents.setdefault(name_ident(group_name), []).append(str(group_name))
+            if LAYER_SEP in str(group_name):
+                separator_hits.append(f"group {layer_name}/{group_name!r}")
+            if not isinstance(comps, dict):
+                continue
+            for comp_name, paths in comps.items():
+                comp_idents.setdefault(name_ident(comp_name), []).append((group_name, comp_name))
+                if LAYER_SEP in str(comp_name):
+                    separator_hits.append(f"component {layer_name}/{group_name}/{comp_name!r}")
+                if isinstance(paths, str):
+                    path_list = [paths]
+                elif isinstance(paths, list):
+                    path_list = [p for p in paths if isinstance(p, str)]
+                else:
+                    path_list = []
+                for p in (path_list or [""]):
+                    resolved = f"{layer_path}/{p}" if p else layer_path
+                    path_owners.setdefault(_norm_cfg_path(resolved),
+                                           []).append((layer_name, group_name, comp_name))
+
+        for ident, names in sorted(group_idents.items()):
+            if len(names) > 1:
+                errors.append(
+                    f"layer {layer_name!r} has {len(names)} groups that collapse to "
+                    f"{ident!r} ({', '.join(repr(n) for n in names)}); a group name must be "
+                    "unique WITHIN its layer - another layer may reuse it freely")
+        for ident, owners in sorted(comp_idents.items()):
+            if len(owners) > 1:
+                where = ", ".join(f"{layer_name}/{g}/{c}" for g, c in owners)
+                errors.append(
+                    f"component name {ident!r} is used {len(owners)} times in layer "
+                    f"{layer_name!r} ({where}); a component name must be unique WITHIN its "
+                    "layer - the paths are merged into one component and only the first "
+                    "group owns it. Another layer may reuse the name freely")
+
+    for ident, names in sorted(layer_names.items()):
+        if len(names) > 1:
+            errors.append(
+                f"layer names {', '.join(repr(n) for n in names)} collapse to the same "
+                f"identifier {ident!r}; rename one - the layer is the prefix of every "
+                "group and component id")
+
+    for path, owners in sorted(path_owners.items()):
+        distinct = sorted({_fmt_owner(o) for o in owners})
+        if len(distinct) > 1:
+            errors.append(
+                f"path {path!r} is claimed by {len(distinct)} components "
+                f"({', '.join(distinct)}); each path must belong to exactly one component - "
+                "the first one in config order takes every file and the rest get none")
+
+    sorted_paths = sorted(p for p in path_owners if p)
+    for i, outer in enumerate(sorted_paths):
+        prefix = outer + "/"
+        for inner in sorted_paths[i + 1:]:
+            if not inner.startswith(prefix):
+                break
+            outer_comps = {_fmt_owner(o) for o in path_owners[outer]}
+            inner_comps = {_fmt_owner(o) for o in path_owners[inner]}
+            if outer_comps == inner_comps:
+                continue                     # one component listing a path twice: harmless
+            errors.append(
+                f"path {inner!r} ({', '.join(sorted(inner_comps))}) is nested inside "
+                f"{outer!r} ({', '.join(sorted(outer_comps))}); a nested path is walked by "
+                "both components and the first in config order silently takes the files")
+
+    for hit in separator_hits:
+        errors.append(
+            f"{hit} contains {LAYER_SEP!r}, which separates the layer from the name in "
+            "every group and component id; rename it")
+
     return errors
 
 

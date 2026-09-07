@@ -5,7 +5,7 @@ import sys
 import json
 import subprocess
 from typing import Optional, Tuple, List, Dict, Any
-from utils import os_type, scoped_name
+from utils import display_name, os_type, scoped_name
 from core.paths import paths as _paths
 from docx_common import (
     load_model_json as _load_model_json,
@@ -549,7 +549,7 @@ def _build_component_static_structure_mermaid(
     unit_rows: sorted list of (unit_key, unit_name_display, interfaces) per component.
     """
     mod_id = "MOD"
-    mod_label = _escape_mermaid_label_for_structure(component_name)
+    mod_label = _escape_mermaid_label_for_structure(display_name(component_name))
     lines = [
         "%%{init: {'flowchart': {'ranksep': '0.4', 'nodesep': '0.3'}}}%%",
         "flowchart TB",
@@ -1292,7 +1292,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     _scope_intro = _intro_cfg.get("scopeIntro", "[Scope of the software detailed design.]")
     _add_para(doc, _scope_intro.replace("{project_name}", _project_name))
     for _comp in sorted_components:
-        _add_para(doc, f"• {_comp.replace('-', ' ')}")
+        _add_para(doc, f"• {display_name(_comp).replace('-', ' ')}")
     _scope_body = _intro_cfg.get("scopeBody", "")
     if _scope_body:
         _add_para(doc, _scope_body)
@@ -1323,7 +1323,10 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
     _docx_progress.start()
     for sec_idx, component_name in enumerate(sorted_components, start=0):
         sec_num = sec_idx + 2
-        component_display = component_name.replace("-", " ")
+        # `component_name` is the layer-qualified id (`Layer1.Sample-Core`) - it keys
+        # every lookup below and the diagram filenames, which is what keeps two layers'
+        # same-named components apart. Only the HEADING drops the layer.
+        component_display = display_name(component_name).replace("-", " ")
         _docx_progress.step(label=component_display)
         doc.add_heading(f"{sec_num} {component_display}", level=1)
 

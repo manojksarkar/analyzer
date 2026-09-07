@@ -6,7 +6,8 @@ import subprocess
 import sys
 
 from .registry import register
-from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type, render_mermaid_cached
+from utils import (KEY_SEP, display_name, log, mmdc_path, safe_filename, os_type,
+                   render_mermaid_cached)
 
 
 def _project_root() -> str:
@@ -245,7 +246,13 @@ def _build_unit_diagram(
         base_pid = base_pid if base_pid is not None else node_id
         for uk in units_data:
             if _unit_part_id(uk) == base_pid:
-                raw = unit_names.get(uk, uk) if base_pid == this_id else uk.replace(KEY_SEP, "/").replace("-", " ")
+                # An EXTERNAL unit falls back to its key as a label. Drop the layer
+                # prefix from the component half - the box is read, not looked up.
+                if base_pid == this_id:
+                    raw = unit_names.get(uk, uk)
+                else:
+                    _c, _, _u = uk.partition(KEY_SEP)
+                    raw = f"{display_name(_c)}/{_u}".replace("-", " ") if _u else display_name(_c)
                 box_label = (raw or "?").replace("]", "'").replace("[", "'")
                 if base_pid == this_id:
                     extra = "<br/>".join([f"{pad} " for _ in range(n_extra_lines)])
@@ -270,7 +277,11 @@ config:
         lines.append("  " + _node_line(pid).strip())
 
     # Internal module (yellow box)
-    mod_label = (this_component or "Internal").replace("-", " ").replace('"', "'").replace("]", "'").replace("[", "'")
+    # display_name(): `this_component` is the layer-qualified id (it keys the node ids
+    # and the filenames, which is what keeps two layers' same-named components apart);
+    # the box people read shows the bare component name.
+    _label_src = display_name(this_component) if this_component else "Internal"
+    mod_label = _label_src.replace("-", " ").replace('"', "'").replace("]", "'").replace("[", "'")
     lines.append(f'  subgraph internal_mod["{mod_label}"]')
     lines.append("    direction TB")
     lines.append("    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px")

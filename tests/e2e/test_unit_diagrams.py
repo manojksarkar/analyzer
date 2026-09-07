@@ -43,11 +43,13 @@ def _mmd_path(safe):
     return next((c for c in cands if _os.path.isfile(c)), cands[0])
 
 # short unit name  →  safe_filename (== the main-unit node id)
-#   unit_key "Sample Core|Core" → safe_filename → "Sample-Core_Core"
+#   unit_key "Layer1.Sample Core|Core" → safe_filename → "Layer1.Sample-Core_Core"
+# The layer rides along because it is part of the component id: two layers may each
+# have a `Core`, and the node id has to tell them apart.
 UNITS = {
-    "Core": "Sample-Core_Core",
-    "Lib":  "Lib_Lib",
-    "Util": "Util_Util",
+    "Core": "Layer1.Sample-Core_Core",
+    "Lib":  "Layer1.Lib_Lib",
+    "Util": "Layer1.Util_Util",
 }
 
 # subgraph label = the unit's component display name (config group component)
@@ -59,15 +61,18 @@ SUBGRAPH_LABELS = {
 
 # Partner nodes that MUST appear in each unit's diagram (its interface consumers).
 EXPECTED_PARTNERS = {
-    "Core": {"App_Main", "Cross_Hub"},
-    "Lib":  {"Sample-Core_Core", "App_Main", "Cross_Hub"},
-    "Util": {"Sample-Core_Core", "Lib_Lib", "App_Main", "Cross_Hub"},
+    "Core": {"Layer1.App_Main", "Layer1.Cross_Hub"},
+    "Lib":  {"Layer1.Sample-Core_Core", "Layer1.App_Main", "Layer1.Cross_Hub"},
+    "Util": {"Layer1.Sample-Core_Core", "Layer1.Lib_Lib",
+             "Layer1.App_Main", "Layer1.Cross_Hub"},
 }
 
 # Partner nodes that MUST NOT appear (units that do not consume the main unit).
 ABSENT_PARTNERS = {
-    "Core": {"Lib_Lib", "Util_Util"},   # Lib/Util never call Core
-    "Lib":  {"Util_Util"},              # Util does not call Lib's interface here
+    # Lib/Util never call Core
+    "Core": {"Layer1.Lib_Lib", "Layer1.Util_Util"},
+    # Util does not call Lib's interface here
+    "Lib":  {"Layer1.Util_Util"},
     "Util": set(),
 }
 

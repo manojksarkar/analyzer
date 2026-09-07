@@ -1,15 +1,15 @@
 {
-  "Lib|Lib": {
+  "Layer1.Lib|Lib": {
     "entries": [
       {
         "calleesUnits": [],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub",
-          "Sample-Core|Core"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub",
+          "Layer1.Sample-Core|Core"
         ],
         "direction": "Out",
-        "functionId": "Lib|Lib|libAdd|int,int",
+        "functionId": "Layer1.Lib|Lib|libAdd|int,int",
         "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_01",
         "interfaceName": "libAdd",
         "location": {
@@ -34,24 +34,58 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub, Sample-Core/Core",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub, Layer1.Sample-Core/Core",
         "type": "Function",
-        "unitKey": "Lib|Lib",
+        "unitKey": "Layer1.Lib|Lib",
+        "unitName": "Lib"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Layer1.Lib|Lib|libSubtract|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_02",
+        "interfaceName": "libSubtract",
+        "location": {
+          "endLine": 33,
+          "file": "Layer1/Sample/Lib/Lib",
+          "line": 31
+        },
+        "name": "libSubtract",
+        "parameters": [
+          {
+            "name": "a",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "libSubtract",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Lib|Lib",
         "unitName": "Lib"
       },
       {
         "calleesUnits": [
-          "Lib|Lib"
+          "Layer1.Lib|Lib"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub",
-          "Lib|Lib",
-          "Sample-Core|Core"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub",
+          "Layer1.Lib|Lib",
+          "Layer1.Sample-Core|Core"
         ],
         "direction": "Out",
-        "functionId": "Lib|Lib|libMultiply|int,int",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_02",
+        "functionId": "Layer1.Lib|Lib|libMultiply|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_03",
         "interfaceName": "libMultiply",
         "location": {
           "endLine": 39,
@@ -75,20 +109,20 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub, Sample-Core/Core",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub, Layer1.Sample-Core/Core",
         "type": "Function",
-        "unitKey": "Lib|Lib",
+        "unitKey": "Layer1.Lib|Lib",
         "unitName": "Lib"
       },
       {
         "calleesUnits": [],
         "callerUnits": [
-          "App|Main",
-          "Lib|Lib"
+          "Layer1.App|Main",
+          "Layer1.Lib|Lib"
         ],
         "direction": "Out",
-        "functionId": "Lib|Lib|libAbs|int",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_03",
+        "functionId": "Layer1.Lib|Lib|libAbs|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_04",
         "interfaceName": "libAbs",
         "location": {
           "endLine": 46,
@@ -107,19 +141,19 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main",
+        "sourceDest": "Layer1.App/Main",
         "type": "Function",
-        "unitKey": "Lib|Lib",
+        "unitKey": "Layer1.Lib|Lib",
         "unitName": "Lib"
       },
       {
         "calleesUnits": [],
         "callerUnits": [
-          "App|Main"
+          "Layer1.App|Main"
         ],
         "direction": "Out",
-        "functionId": "Lib|Lib|libMax|int,int",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_04",
+        "functionId": "Layer1.Lib|Lib|libMax|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_05",
         "interfaceName": "libMax",
         "location": {
           "endLine": 53,
@@ -143,24 +177,58 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main",
+        "sourceDest": "Layer1.App/Main",
         "type": "Function",
-        "unitKey": "Lib|Lib",
+        "unitKey": "Layer1.Lib|Lib",
+        "unitName": "Lib"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Layer1.Lib|Lib|libMin|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_06",
+        "interfaceName": "libMin",
+        "location": {
+          "endLine": 60,
+          "file": "Layer1/Sample/Lib/Lib",
+          "line": 55
+        },
+        "name": "libMin",
+        "parameters": [
+          {
+            "name": "a",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "libMin",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Lib|Lib",
         "unitName": "Lib"
       },
       {
         "calleesUnits": [
-          "Lib|Lib",
-          "Util|Util"
+          "Layer1.Lib|Lib",
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "Cross|Hub",
-          "Lib|Lib",
-          "Sample-Core|Core"
+          "Layer1.Cross|Hub",
+          "Layer1.Lib|Lib",
+          "Layer1.Sample-Core|Core"
         ],
         "direction": "Out",
-        "functionId": "Lib|Lib|libNormalize|int,int",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_05",
+        "functionId": "Layer1.Lib|Lib|libNormalize|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_07",
         "interfaceName": "libNormalize",
         "location": {
           "endLine": 65,
@@ -184,22 +252,51 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "Cross/Hub, Sample-Core/Core",
+        "sourceDest": "Layer1.Cross/Hub, Layer1.Sample-Core/Core",
         "type": "Function",
-        "unitKey": "Lib|Lib",
+        "unitKey": "Layer1.Lib|Lib",
+        "unitName": "Lib"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Layer1.Lib|Lib|libScaleShared|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_08",
+        "interfaceName": "libScaleShared",
+        "location": {
+          "endLine": 70,
+          "file": "Layer1/Sample/Lib/Lib",
+          "line": 67
+        },
+        "name": "libScaleShared",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "libScaleShared",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Lib|Lib",
         "unitName": "Lib"
       },
       {
         "calleesUnits": [
-          "Lib|Lib"
+          "Layer1.Lib|Lib"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub"
         ],
         "direction": "Out",
-        "functionId": "Lib|Lib|libLinearScale|int,int,int",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_06",
+        "functionId": "Layer1.Lib|Lib|libLinearScale|int,int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_LIB_09",
         "interfaceName": "libLinearScale",
         "location": {
           "endLine": 79,
@@ -228,27 +325,27 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Lib|Lib",
+        "unitKey": "Layer1.Lib|Lib",
         "unitName": "Lib"
       }
     ],
     "name": "Lib"
   },
-  "Sample-Core|Core": {
+  "Layer1.Sample-Core|Core": {
     "entries": [
       {
         "calleesUnits": [
-          "Lib|Lib"
+          "Layer1.Lib|Lib"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|coreAdd|int,int",
-        "interfaceId": "IF_LAYER1_CORE_01",
+        "functionId": "Layer1.Sample-Core|Core|coreAdd|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_01",
         "interfaceName": "coreAdd",
         "location": {
           "endLine": 53,
@@ -272,19 +369,137 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [
+          "Layer1.Sample-Core|Core"
+        ],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Layer1.Sample-Core|Core|coreCompute|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_02",
+        "interfaceName": "coreCompute",
+        "location": {
+          "endLine": 62,
+          "file": "Layer1/Sample/Core/Core",
+          "line": 55
+        },
+        "name": "coreCompute",
+        "parameters": [
+          {
+            "name": "x",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "coreCompute",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Layer1.Sample-Core|Core|coreLoopSum|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_03",
+        "interfaceName": "coreLoopSum",
+        "location": {
+          "endLine": 70,
+          "file": "Layer1/Sample/Core/Core",
+          "line": 64
+        },
+        "name": "coreLoopSum",
+        "parameters": [
+          {
+            "name": "n",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "coreLoopSum",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Layer1.Sample-Core|Core|coreCheck|Status",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_04",
+        "interfaceName": "coreCheck",
+        "location": {
+          "endLine": 74,
+          "file": "Layer1/Sample/Core/Core",
+          "line": 72
+        },
+        "name": "coreCheck",
+        "parameters": [
+          {
+            "name": "s",
+            "range": "-1-1",
+            "type": "Status"
+          }
+        ],
+        "qualifiedName": "coreCheck",
+        "reason": "Out: returns a value (Status).",
+        "returnRange": "-1-1",
+        "returnType": "Status",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Layer1.Sample-Core|Core|coreSumPoint|Point",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_05",
+        "interfaceName": "coreSumPoint",
+        "location": {
+          "endLine": 78,
+          "file": "Layer1/Sample/Core/Core",
+          "line": 76
+        },
+        "name": "coreSumPoint",
+        "parameters": [
+          {
+            "name": "p",
+            "range": "NA",
+            "type": "Point"
+          }
+        ],
+        "qualifiedName": "coreSumPoint",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [],
         "callerUnits": [
-          "App|Main"
+          "Layer1.App|Main"
         ],
         "direction": "In",
-        "functionId": "Sample-Core|Core|coreSetResult|int",
-        "interfaceId": "IF_LAYER1_CORE_02",
+        "functionId": "Layer1.Sample-Core|Core|coreSetResult|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_06",
         "interfaceName": "coreSetResult",
         "location": {
           "endLine": 82,
@@ -303,22 +518,22 @@
         "reason": "In: function name 'coreSetResult' contains 'Set' (writes/updates state).",
         "returnRange": "VOID",
         "returnType": "void",
-        "sourceDest": "App/Main",
+        "sourceDest": "Layer1.App/Main",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [
-          "Lib|Lib"
+          "Layer1.Lib|Lib"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|coreProcess|int,int",
-        "interfaceId": "IF_LAYER1_CORE_03",
+        "functionId": "Layer1.Sample-Core|Core|coreProcess|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_07",
         "interfaceName": "coreProcess",
         "location": {
           "endLine": 86,
@@ -342,23 +557,23 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [
-          "Lib|Lib",
-          "Util|Util"
+          "Layer1.Lib|Lib",
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|coreOrchestrate|int,int",
-        "interfaceId": "IF_LAYER1_CORE_04",
+        "functionId": "Layer1.Sample-Core|Core|coreOrchestrate|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_08",
         "interfaceName": "coreOrchestrate",
         "location": {
           "endLine": 94,
@@ -382,20 +597,49 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "In",
+        "functionId": "Layer1.Sample-Core|Core|coreSetMode|Mode",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_09",
+        "interfaceName": "coreSetMode",
+        "location": {
+          "endLine": 98,
+          "file": "Layer1/Sample/Core/Core",
+          "line": 96
+        },
+        "name": "coreSetMode",
+        "parameters": [
+          {
+            "name": "m",
+            "range": "0-1",
+            "type": "Mode"
+          }
+        ],
+        "qualifiedName": "coreSetMode",
+        "reason": "In: function name 'coreSetMode' contains 'Set' (writes/updates state).",
+        "returnRange": "0-1",
+        "returnType": "Mode",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|coreWhileCount|int",
-        "interfaceId": "IF_LAYER1_CORE_05",
+        "functionId": "Layer1.Sample-Core|Core|coreWhileCount|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_10",
         "interfaceName": "coreWhileCount",
         "location": {
           "endLine": 110,
@@ -414,23 +658,23 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [
-          "Lib|Lib",
-          "Util|Util"
+          "Layer1.Lib|Lib",
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|coreNestedBranch|int,int",
-        "interfaceId": "IF_LAYER1_CORE_06",
+        "functionId": "Layer1.Sample-Core|Core|coreNestedBranch|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_11",
         "interfaceName": "coreNestedBranch",
         "location": {
           "endLine": 127,
@@ -454,22 +698,22 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [
-          "Sample-Core|Core"
+          "Layer1.Sample-Core|Core"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|coreEarlyReturn|int",
-        "interfaceId": "IF_LAYER1_CORE_07",
+        "functionId": "Layer1.Sample-Core|Core|coreEarlyReturn|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_12",
         "interfaceName": "coreEarlyReturn",
         "location": {
           "endLine": 141,
@@ -488,24 +732,24 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [
-          "Lib|Lib",
-          "Sample-Core|Core",
-          "Util|Util"
+          "Layer1.Lib|Lib",
+          "Layer1.Sample-Core|Core",
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|corePipeline|int",
-        "interfaceId": "IF_LAYER1_CORE_08",
+        "functionId": "Layer1.Sample-Core|Core|corePipeline|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_13",
         "interfaceName": "corePipeline",
         "location": {
           "endLine": 149,
@@ -524,21 +768,21 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [
-          "Lib|Lib"
+          "Layer1.Lib|Lib"
         ],
         "callerUnits": [
-          "App|Main"
+          "Layer1.App|Main"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|coreDoWhileClamp|int,int",
-        "interfaceId": "IF_LAYER1_CORE_09",
+        "functionId": "Layer1.Sample-Core|Core|coreDoWhileClamp|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_14",
         "interfaceName": "coreDoWhileClamp",
         "location": {
           "endLine": 159,
@@ -562,22 +806,22 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main",
+        "sourceDest": "Layer1.App/Main",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [
-          "Lib|Lib",
-          "Util|Util"
+          "Layer1.Lib|Lib",
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "App|Main"
+          "Layer1.App|Main"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|coreMultiCallChain|int,int,int",
-        "interfaceId": "IF_LAYER1_CORE_10",
+        "functionId": "Layer1.Sample-Core|Core|coreMultiCallChain|int,int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_15",
         "interfaceName": "coreMultiCallChain",
         "location": {
           "endLine": 169,
@@ -606,19 +850,48 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main",
+        "sourceDest": "Layer1.App/Main",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "Out",
+        "functionId": "Layer1.Sample-Core|Core|coreLevelBudget|SharedLevel",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_16",
+        "interfaceName": "coreLevelBudget",
+        "location": {
+          "endLine": 179,
+          "file": "Layer1/Sample/Core/Core",
+          "line": 171
+        },
+        "name": "coreLevelBudget",
+        "parameters": [
+          {
+            "name": "lvl",
+            "range": "0-2",
+            "type": "SharedLevel"
+          }
+        ],
+        "qualifiedName": "coreLevelBudget",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [],
         "callerUnits": [
-          "App|Main"
+          "Layer1.App|Main"
         ],
         "direction": "Out",
-        "functionId": "Sample-Core|Core|coreGetCount|",
-        "interfaceId": "IF_LAYER1_CORE_11",
+        "functionId": "Layer1.Sample-Core|Core|coreGetCount|",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_17",
         "interfaceName": "coreGetCount",
         "location": {
           "endLine": 183,
@@ -631,17 +904,40 @@
         "reason": "Out: function name 'coreGetCount' contains 'Get' (reads/returns state).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main",
+        "sourceDest": "Layer1.App/Main",
         "type": "Function",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
+        "unitName": "Core"
+      },
+      {
+        "calleesUnits": [],
+        "callerUnits": [],
+        "direction": "In",
+        "functionId": "Layer1.Sample-Core|Core|coreReset|",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_18",
+        "interfaceName": "coreReset",
+        "location": {
+          "endLine": 188,
+          "file": "Layer1/Sample/Core/Core",
+          "line": 185
+        },
+        "name": "coreReset",
+        "parameters": [],
+        "qualifiedName": "coreReset",
+        "reason": "In: writes global(s) g_count, g_result directly.",
+        "returnRange": "VOID",
+        "returnType": "void",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core"
       },
       {
         "calleesUnits": [],
         "callerUnits": [],
         "direction": "In/Out",
-        "globalId": "Sample-Core|Core|g_result",
-        "interfaceId": "IF_LAYER1_CORE_12",
+        "globalId": "Layer1.Sample-Core|Core|g_result",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_CORE_19",
         "interfaceName": "g_result",
         "location": {
           "file": "Layer1/Sample/Core/Core",
@@ -651,9 +947,9 @@
         "qualifiedName": "g_result",
         "range": "-0x80000000-0x7FFFFFFF",
         "reason": "In/Out: global variables are bidirectional interfaces.",
-        "sourceDest": "Sample-Core/Core",
+        "sourceDest": "Layer1.Sample-Core/Core",
         "type": "Global Variable",
-        "unitKey": "Sample-Core|Core",
+        "unitKey": "Layer1.Sample-Core|Core",
         "unitName": "Core",
         "value": "0",
         "variableType": "int"
@@ -661,19 +957,19 @@
     ],
     "name": "Core"
   },
-  "Util|Util": {
+  "Layer1.Util|Util": {
     "entries": [
       {
         "calleesUnits": [
-          "Util|Util"
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "Lib|Lib",
-          "Sample-Core|Core",
-          "Util|Util"
+          "Layer1.Lib|Lib",
+          "Layer1.Sample-Core|Core",
+          "Layer1.Util|Util"
         ],
         "direction": "Out",
-        "functionId": "Util|Util|utilCompute|int,int",
+        "functionId": "Layer1.Util|Util|utilCompute|int,int",
         "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_01",
         "interfaceName": "utilCompute",
         "location": {
@@ -698,21 +994,21 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "Lib/Lib, Sample-Core/Core",
+        "sourceDest": "Layer1.Lib/Lib, Layer1.Sample-Core/Core",
         "type": "Function",
-        "unitKey": "Util|Util",
+        "unitKey": "Layer1.Util|Util",
         "unitName": "Util"
       },
       {
         "calleesUnits": [
-          "Util|Util"
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "Sample-Core|Core",
-          "Util|Util"
+          "Layer1.Sample-Core|Core",
+          "Layer1.Util|Util"
         ],
         "direction": "Out",
-        "functionId": "Util|Util|utilScale|int,int",
+        "functionId": "Layer1.Util|Util|utilScale|int,int",
         "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_02",
         "interfaceName": "utilScale",
         "location": {
@@ -737,20 +1033,20 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "Sample-Core/Core",
+        "sourceDest": "Layer1.Sample-Core/Core",
         "type": "Function",
-        "unitKey": "Util|Util",
+        "unitKey": "Layer1.Util|Util",
         "unitName": "Util"
       },
       {
         "calleesUnits": [],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub",
-          "Util|Util"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub",
+          "Layer1.Util|Util"
         ],
         "direction": "Out",
-        "functionId": "Util|Util|utilAbs|int",
+        "functionId": "Layer1.Util|Util|utilAbs|int",
         "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_03",
         "interfaceName": "utilAbs",
         "location": {
@@ -770,22 +1066,103 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Util|Util",
+        "unitKey": "Layer1.Util|Util",
         "unitName": "Util"
       },
       {
         "calleesUnits": [
-          "Util|Util"
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub"
+          "Layer1.Util|Util"
         ],
         "direction": "Out",
-        "functionId": "Util|Util|utilBlend|int,int,int",
+        "functionId": "Layer1.Util|Util|utilClamp|int,int,int",
         "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_04",
+        "interfaceName": "utilClamp",
+        "location": {
+          "endLine": 49,
+          "file": "Layer1/Sample/Util/Util",
+          "line": 46
+        },
+        "name": "utilClamp",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "lo",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "hi",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "utilClamp",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Util|Util",
+        "unitName": "Util"
+      },
+      {
+        "calleesUnits": [
+          "Layer1.Util|Util"
+        ],
+        "callerUnits": [
+          "Layer1.Util|Util"
+        ],
+        "direction": "Out",
+        "functionId": "Layer1.Util|Util|utilNorm|int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_05",
+        "interfaceName": "utilNorm",
+        "location": {
+          "endLine": 55,
+          "file": "Layer1/Sample/Util/Util",
+          "line": 51
+        },
+        "name": "utilNorm",
+        "parameters": [
+          {
+            "name": "v",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          },
+          {
+            "name": "max",
+            "range": "-0x80000000-0x7FFFFFFF",
+            "type": "int"
+          }
+        ],
+        "qualifiedName": "utilNorm",
+        "reason": "Out: returns a value (int).",
+        "returnRange": "-0x80000000-0x7FFFFFFF",
+        "returnType": "int",
+        "sourceDest": "-",
+        "type": "Function",
+        "unitKey": "Layer1.Util|Util",
+        "unitName": "Util"
+      },
+      {
+        "calleesUnits": [
+          "Layer1.Util|Util"
+        ],
+        "callerUnits": [
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub"
+        ],
+        "direction": "Out",
+        "functionId": "Layer1.Util|Util|utilBlend|int,int,int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_06",
         "interfaceName": "utilBlend",
         "location": {
           "endLine": 63,
@@ -814,21 +1191,21 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub",
         "type": "Function",
-        "unitKey": "Util|Util",
+        "unitKey": "Layer1.Util|Util",
         "unitName": "Util"
       },
       {
         "calleesUnits": [
-          "Util|Util"
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "App|Main"
+          "Layer1.App|Main"
         ],
         "direction": "Out",
-        "functionId": "Util|Util|utilLoopAccum|int",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_05",
+        "functionId": "Layer1.Util|Util|utilLoopAccum|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_07",
         "interfaceName": "utilLoopAccum",
         "location": {
           "endLine": 72,
@@ -847,23 +1224,23 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main",
+        "sourceDest": "Layer1.App/Main",
         "type": "Function",
-        "unitKey": "Util|Util",
+        "unitKey": "Layer1.Util|Util",
         "unitName": "Util"
       },
       {
         "calleesUnits": [
-          "Util|Util"
+          "Layer1.Util|Util"
         ],
         "callerUnits": [
-          "App|Main",
-          "Cross|Hub",
-          "Sample-Core|Core"
+          "Layer1.App|Main",
+          "Layer1.Cross|Hub",
+          "Layer1.Sample-Core|Core"
         ],
         "direction": "Out",
-        "functionId": "Util|Util|utilChain|int",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_06",
+        "functionId": "Layer1.Util|Util|utilChain|int",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_08",
         "interfaceName": "utilChain",
         "location": {
           "endLine": 80,
@@ -882,17 +1259,17 @@
         "reason": "Out: returns a value (int).",
         "returnRange": "-0x80000000-0x7FFFFFFF",
         "returnType": "int",
-        "sourceDest": "App/Main, Cross/Hub, Sample-Core/Core",
+        "sourceDest": "Layer1.App/Main, Layer1.Cross/Hub, Layer1.Sample-Core/Core",
         "type": "Function",
-        "unitKey": "Util|Util",
+        "unitKey": "Layer1.Util|Util",
         "unitName": "Util"
       },
       {
         "calleesUnits": [],
         "callerUnits": [],
         "direction": "In/Out",
-        "globalId": "Util|Util|g_utilBase",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_07",
+        "globalId": "Layer1.Util|Util|g_utilBase",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_09",
         "interfaceName": "g_utilBase",
         "location": {
           "file": "Layer1/Sample/Util/Util",
@@ -902,9 +1279,9 @@
         "qualifiedName": "g_utilBase",
         "range": "-0x80000000-0x7FFFFFFF",
         "reason": "In/Out: global variables are bidirectional interfaces.",
-        "sourceDest": "Util/Util",
+        "sourceDest": "Layer1.Util/Util",
         "type": "Global Variable",
-        "unitKey": "Util|Util",
+        "unitKey": "Layer1.Util|Util",
         "unitName": "Util",
         "value": "0",
         "variableType": "int"
@@ -913,8 +1290,8 @@
         "calleesUnits": [],
         "callerUnits": [],
         "direction": "In/Out",
-        "globalId": "Util|Util|g_utilBuf",
-        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_08",
+        "globalId": "Layer1.Util|Util|g_utilBuf",
+        "interfaceId": "IF_LAYER1_MYSAMPLE_UTIL_10",
         "interfaceName": "g_utilBuf",
         "location": {
           "file": "Layer1/Sample/Util/Util",
@@ -924,9 +1301,9 @@
         "qualifiedName": "g_utilBuf",
         "range": "NA",
         "reason": "In/Out: global variables are bidirectional interfaces.",
-        "sourceDest": "Util/Util",
+        "sourceDest": "Layer1.Util/Util",
         "type": "Global Variable",
-        "unitKey": "Util|Util",
+        "unitKey": "Layer1.Util|Util",
         "unitName": "Util",
         "value": "{0}",
         "variableType": "int[6]"
@@ -935,8 +1312,8 @@
     "name": "Util"
   },
   "unitNames": {
-    "Lib|Lib": "Lib",
-    "Sample-Core|Core": "Core",
-    "Util|Util": "Util"
+    "Layer1.Lib|Lib": "Lib",
+    "Layer1.Sample-Core|Core": "Core",
+    "Layer1.Util|Util": "Util"
   }
 }

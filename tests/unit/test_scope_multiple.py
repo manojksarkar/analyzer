@@ -110,7 +110,9 @@ class TestAComponentNameGetsAUsefulError:
             self._plan(["App", "Math"])
         msg = str(exc.value)
         assert "COMPONENTS, not groups" in msg
-        assert "in group Support" in msg
+        # The group id carries its layer, so the hint names WHICH Support - two
+        # layers may each have one.
+        assert "in group Layer1.Support" in msg
 
     def test_it_prints_the_corrected_command(self):
         with pytest.raises(ValueError) as exc:

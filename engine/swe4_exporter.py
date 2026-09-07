@@ -20,7 +20,7 @@ import sys
 import json
 from typing import Optional, Tuple
 
-from utils import KEY_SEP
+from utils import KEY_SEP, display_name
 from core.paths import paths as _paths
 from docx_common import (
     load_abbreviations, load_model_json, set_cell_font, add_para, add_toc, build_cover_page,
@@ -216,11 +216,11 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
     from core.config import get_group_layer_name, get_component_layer_name
     if selected_components:
         _layer = get_component_layer_name(config, selected_components[0])
-        _disp = " / ".join(c.replace("-", " ") for c in selected_components)
+        _disp = " / ".join(display_name(c).replace("-", " ") for c in selected_components)
         cover_group = f"{_layer} {_disp}" if _layer else _disp
     elif selected_group:
         _layer = get_group_layer_name(config, selected_group)
-        _disp = selected_group.replace("-", " ")
+        _disp = display_name(selected_group).replace("-", " ")
         cover_group = f"{_layer} {_disp}" if _layer else _disp
     else:
         cover_group = "All Units"
@@ -258,7 +258,7 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
     add_para(doc, intro_cfg.get("scopeIntro", "[Scope of the unit test specification.]")
              .replace("{project_name}", project_name))
     for _comp in sorted_components:
-        add_para(doc, f"• {_comp.replace('-', ' ')}")
+        add_para(doc, f"• {display_name(_comp).replace('-', ' ')}")
     _scope_body = intro_cfg.get("scopeBody", "")
     if _scope_body:
         add_para(doc, _scope_body)
@@ -290,7 +290,7 @@ def export_test_specs(json_path: str = None, docx_path: str = None,
     dyn_total = 0
     for comp_idx, component_name in enumerate(sorted_components, start=1):
         sec = f"2.{comp_idx}"
-        doc.add_heading(f"{sec} {component_name.replace('-', ' ')}", level=2)
+        doc.add_heading(f"{sec} {display_name(component_name).replace('-', ' ')}", level=2)
         units = sorted(by_component.get(component_name) or [], key=lambda t: t[1])
         for unit_idx, (unit_key, unit_name, functions) in enumerate(units, start=1):
             doc.add_heading(f"{sec}.{unit_idx} {unit_name}", level=3)

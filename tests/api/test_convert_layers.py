@@ -9,7 +9,9 @@ Mark: unit (pure function, no I/O)
 """
 import pytest
 
-from api.services.pipeline_runner import _convert_layers, _component_paths_from_files
+from api.services.pipeline_runner import (
+    _component_paths_from_files, _convert_layers, _duplicate_wizard_names,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -110,3 +112,57 @@ def test_convert_layers_skips_unnamed_layer_and_path_defaults_to_name():
     out = _convert_layers(arch)
     assert "" not in out
     assert out["L2"]["path"] == "L2"
+
+
+# ---------------------------------------------------------------------------
+# _duplicate_wizard_names — collisions the list -> dict conversion would swallow
+# ---------------------------------------------------------------------------
+
+def _one_layer(groups):
+    return [{"name": "L1", "path": "Layer1", "groups": groups}]
+
+
+def test_no_duplicates_reports_nothing():
+    arch = _one_layer([{"name": "G1", "components": [{"name": "A"}, {"name": "B"}]},
+                       {"name": "G2", "components": [{"name": "C"}]}])
+    assert _duplicate_wizard_names(arch) == []
+
+
+def test_two_layers_with_one_name_are_reported():
+    """_convert_layers writes result[lname], so the second layer replaces the first
+    outright — every group and component the wizard collected for it disappears."""
+    arch = [{"name": "L1", "path": "a", "groups": []},
+            {"name": "l1", "path": "b", "groups": []}]
+    assert _duplicate_wizard_names(arch) == ["two layers are named 'l1'"]
+
+
+def test_two_groups_with_one_name_in_a_layer_are_reported():
+    arch = _one_layer([{"name": "G1", "components": [{"name": "A"}]},
+                       {"name": "G1", "components": [{"name": "B"}]}])
+    problems = _duplicate_wizard_names(arch)
+    assert len(problems) == 1 and "two groups named 'G1'" in problems[0]
+
+
+def test_two_components_with_one_name_in_a_group_are_reported():
+    arch = _one_layer([{"name": "G1", "components": [{"name": "Core", "files": ["Layer1/x"]},
+                                                     {"name": "Core", "files": ["Layer1/y"]}]}])
+    problems = _duplicate_wizard_names(arch)
+    assert len(problems) == 1 and "two components named 'Core'" in problems[0]
+
+
+def test_names_differing_only_by_case_or_space_still_collide():
+    """They collapse to one identifier downstream, so they are the same name."""
+    arch = _one_layer([{"name": "My Group", "components": []},
+                       {"name": "my-group", "components": []}])
+    assert len(_duplicate_wizard_names(arch)) == 1
+
+
+def test_the_same_component_name_in_two_different_groups_is_left_to_the_engine():
+    """It survives the conversion (different dicts), so validate_layer_names reports
+    it — reporting it twice would just duplicate the message."""
+    arch = _one_layer([{"name": "G1", "components": [{"name": "Core"}]},
+                       {"name": "G2", "components": [{"name": "Core"}]}])
+    assert _duplicate_wizard_names(arch) == []
+
+    from core.config import validate_layer_names
+    assert validate_layer_names({"layers": _convert_layers(arch)})

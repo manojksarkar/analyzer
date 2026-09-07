@@ -83,3 +83,68 @@ def test_overlay_does_not_mutate_stored_config(tmp_path, monkeypatch):
     _, analysis_cfg = pr._write_project_config(_project(), tmp_path / "ws")
     assert "customHeaders" not in analysis_cfg["llm"]
     assert analysis_cfg["llm"]["numCtx"] == 8192
+
+
+# ---------------------------------------------------------------------------
+# Name collisions — refused before the engine ever sees the config
+# ---------------------------------------------------------------------------
+
+def _minimal_defaults(tmp_path):
+    _write_json(tmp_path / "engine" / "config" / "config.defaults.json", {"llm": {}})
+
+
+def test_two_layers_reusing_a_group_and_component_name_is_accepted(tmp_path, monkeypatch):
+    """`FTL/Cache` and `HIL/Cache` are two different components. Ids are layer-qualified,
+    so this is an ordinary config - it used to be refused, and before that it silently
+    dropped one layer's components."""
+    _minimal_defaults(tmp_path)
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    project = _project(architecture_layers=[
+        {"name": "L1", "path": "Layer1",
+         "groups": [{"name": "Support", "components": [{"name": "Cache", "files": []}]}]},
+        {"name": "L2", "path": "Layer2",
+         "groups": [{"name": "Support", "components": [{"name": "Cache", "files": []}]}]},
+    ])
+    _, analysis_cfg = pr._write_project_config(project, tmp_path / "ws")
+    assert sorted(analysis_cfg["layers"]) == ["L1", "L2"]
+
+
+def test_a_component_name_reused_inside_one_layer_fails_config_generation(tmp_path, monkeypatch):
+    """The layer prefix is the same on both, so the ids collide and the paths merge."""
+    _minimal_defaults(tmp_path)
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    project = _project(architecture_layers=[
+        {"name": "L1", "path": "Layer1", "groups": [
+            {"name": "G1", "components": [{"name": "Core", "files": []}]},
+            {"name": "G2", "components": [{"name": "Core", "files": []}]},
+        ]},
+    ])
+    with pytest.raises(ValueError, match="component name 'core'"):
+        pr._write_project_config(project, tmp_path / "ws")
+
+
+def test_a_duplicate_group_inside_one_layer_fails_config_generation(tmp_path, monkeypatch):
+    """This one never reaches `layers` at all — the list -> dict conversion drops it."""
+    _minimal_defaults(tmp_path)
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    project = _project(architecture_layers=[
+        {"name": "L1", "path": "Layer1", "groups": [
+            {"name": "G1", "components": [{"name": "A", "files": []}]},
+            {"name": "G1", "components": [{"name": "B", "files": []}]},
+        ]},
+    ])
+    with pytest.raises(ValueError, match="two groups named 'G1'"):
+        pr._write_project_config(project, tmp_path / "ws")
+
+
+def test_distinct_names_still_write_the_config(tmp_path, monkeypatch):
+    _minimal_defaults(tmp_path)
+    monkeypatch.setattr(pr, "get_settings", lambda: SimpleNamespace(repo_root=tmp_path))
+    project = _project(architecture_layers=[
+        {"name": "L1", "path": "Layer1",
+         "groups": [{"name": "G1", "components": [{"name": "Core", "files": []}]}]},
+        {"name": "L2", "path": "Layer2",
+         "groups": [{"name": "G2", "components": [{"name": "Plat", "files": []}]}]},
+    ])
+    _, analysis_cfg = pr._write_project_config(project, tmp_path / "ws")
+    assert sorted(analysis_cfg["layers"]) == ["L1", "L2"]

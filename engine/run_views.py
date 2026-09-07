@@ -219,13 +219,15 @@ def main():
             config["_analyzerAllowedComponents"] = allowed_components_override
             config["_analyzerSelectedGroup"] = selected_group
         if isinstance(groups, dict) and selected_group not in groups:
-            sk = selected_group.casefold()
-            for k in groups.keys():
-                if isinstance(k, str) and k.casefold() == sk:
-                    resolved = k
-                    break
+            # Group ids are layer-qualified; a bare name still resolves while only one
+            # layer has it. run.py and plan_runs already refuse an ambiguous one, so by
+            # the time Phase 3 runs there is at most one candidate left.
+            from core.config import resolve_group_id
+            _r, _ = resolve_group_id(groups, selected_group)
+            if _r:
+                resolved = _r
         if resolved != selected_group:
-            print(f"[run_views] --selected-group resolved to {resolved!r} (case-insensitive match)")
+            print(f"[run_views] --selected-group resolved to {resolved!r}")
         grp = (groups.get(resolved) if isinstance(groups, dict) else None)
         if isinstance(grp, dict):
             config = dict(config)

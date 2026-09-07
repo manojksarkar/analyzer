@@ -155,7 +155,7 @@ class TestRunPyCli:
 
         assert result.returncode == 2
         assert "COMPONENTS, not groups" in output
-        assert "in group Support" in output
+        assert "in group Layer1.Support" in output
         assert '--scope "component:App"' in output
 
 

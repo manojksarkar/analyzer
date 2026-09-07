@@ -1,0 +1,65 @@
+// DEMO CONFIG — every entry below is a DELIBERATE name problem. Point ANALYZER_CONFIG
+// (or run.py --config / analyzer.py onboard --config) at it to see
+// core.config.validate_layer_names refuse a run.
+//
+//   python engine/run.py --config engine/config/config.collisions.example.json \
+//     --selected-group Layer1.Support SampleCppProject
+//   -> exits 2, listing all four problems, before Phase 1 starts.
+//
+// What is NOT here, because it is NOT a problem: two layers using the same group or
+// component name. Ids are layer-qualified (`Layer1.Cache` vs `Layer2.Cache`), so
+// `FTL/Cache` and `HIL/Cache` are simply two different components. The cases below are
+// the ones qualifying cannot fix — the ambiguity is inside ONE layer, or in the paths.
+//
+// Layer/component paths are real SampleCppProject directories so the failure is the name
+// problem and nothing else. Nothing loads this file automatically; config.defaults.json
+// (the shipped config) is clean and must stay that way.
+//
+// Only `layers` is needed: the name gate runs before the LLM config is resolved, so this
+// file deliberately carries nothing else and cannot drift out of sync with the defaults.
+{
+  "layers": {
+    "Layer1": {
+      "path": "Layer1",
+      "cores": ["Core1"],
+      "groups": {
+        // (A) component "App" is claimed by two groups of THIS layer — same layer
+        //     prefix, so `Layer1.App` is one id and the two path lists merge.
+        "Support": {
+          "Math": "Math",
+          "App": "App"
+        },
+        "Access": {
+          "Access": "Access",
+          "App": "Outer/Inner"
+        },
+        // (B) two components claim the same folder.
+        "Signal": {
+          "Signal": "Signal",
+          "SignalAlso": "Signal"
+        },
+        // (C) "Deep" sits INSIDE the folder the "Math" component already owns.
+        // (D) a component name carrying the id separator cannot be split apart again.
+        "Full": {
+          "Iface": ["Direction", "Types"],
+          "Deep": "Math/Sub",
+          "Bad.Name": "Flow"
+        }
+      }
+    },
+    "Layer2": {
+      "path": "Layer2",
+      "cores": ["Core2"],
+      "groups": {
+        // Reusing Layer1's "Support" group name AND its "Math" component name is
+        // deliberate here — and legal. It must NOT be reported.
+        "Support": {
+          "Math": "Platform/Gpio"
+        },
+        "Platform": {
+          "Uart": "Platform/Uart"
+        }
+      }
+    }
+  }
+}
