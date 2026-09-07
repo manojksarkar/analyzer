@@ -77,3 +77,118 @@ class TestFlagSelection:
 
     def test_empty_file_yields_no_flags(self):
         assert args_for_scope(normalize_scoped_args({}), "Layer1") == []
+
+
+# ---------------------------------------------------------------------------
+# Layer-qualified ids and multi-layer runs (2026-09-06 / 2026-09-07)
+# ---------------------------------------------------------------------------
+
+class TestQualifiedAndMultiLayerScope:
+    """The flowchart subprocess gets ONE command line, so the layers this run covers
+    decide its `-I` dirs and its `-D` set.
+
+    `_resolve_layer_name` used to compare `group_name` against the config's BARE
+    group names. The day group ids gained their layer prefix (`Layer1.Support`) it
+    matched nothing and every run fell through to "all layers' dirs, global-only
+    macros" — more headers than the layer should see and none of its own defines,
+    silently. A component bundle was worse: its `group_name` is a virtual join of
+    component ids that names no group at all.
+    """
+
+    LAYER_PATHS = {"Layer1": ["/p/L1a", "/p/L1b"], "Layer2": ["/p/L2a"]}
+
+    def _names(self, group, comps=None):
+        from views.flowcharts import _resolve_layer_names
+        return _resolve_layer_names(CFG, group, comps)
+
+    def _dirs(self, group, comps=None):
+        from views.flowcharts import _resolve_layer_dirs
+        return _resolve_layer_dirs(CFG, group, self.LAYER_PATHS, comps)
+
+    def test_a_qualified_group_id_resolves_to_its_layer(self):
+        assert self._names("Layer1.My Sample") == ["Layer1"]
+        assert self._names("Layer2.Platform") == ["Layer2"]
+
+    def test_a_qualified_group_sees_only_its_own_layers_dirs(self):
+        """The regression: this returned every layer's dirs."""
+        assert self._dirs("Layer1.My Sample") == ["/p/L1a", "/p/L1b"]
+        assert self._dirs("Layer2.Platform") == ["/p/L2a"]
+
+    def test_a_qualified_group_gets_only_its_own_layers_macros(self):
+        from views.flowcharts import _macro_args_for_layers
+        flags = _macro_args_for_layers(normalize_scoped_args(STORED),
+                                       self._names("Layer1.My Sample"))
+        assert flags == ["-DPROJECT_WIDE=1", "-DSOME_THING=1", '-DFW_VERSION="UFS 3.1"']
+        assert "-DPLATFORM_EMBEDDED=1" not in flags
+
+    def test_a_legacy_bare_group_name_still_resolves(self):
+        assert self._names("My Sample") == ["Layer1"]
+        assert self._names("my sample") == ["Layer1"]
+
+    def test_a_component_bundle_spanning_layers_covers_both(self):
+        """`group_name` is a virtual join here and names no group; the layers come
+        from the component ids. They arrive CASEFOLDED, which is what made the
+        first attempt at this resolve to one layer."""
+        comps = ["layer1.my sample", "layer2.platform"]
+        assert self._names("Layer1.My Sample_Layer2.Platform", comps) == ["Layer1", "Layer2"]
+        assert self._dirs("Layer1.My Sample_Layer2.Platform", comps) == \
+            ["/p/L1a", "/p/L1b", "/p/L2a"]
+
+    def test_a_bundle_inside_one_layer_stays_in_that_layer(self):
+        comps = ["layer2.platform"]
+        assert self._names("Layer2.Platform_x", comps) == ["Layer2"]
+        assert self._dirs("Layer2.Platform_x", comps) == ["/p/L2a"]
+
+    def test_both_layers_macros_are_passed_for_a_cross_layer_bundle(self):
+        from views.flowcharts import _macro_args_for_layers
+        flags = _macro_args_for_layers(normalize_scoped_args(STORED), ["Layer1", "Layer2"])
+        assert flags[0] == "-DPROJECT_WIDE=1"            # global first
+        assert "-DSOME_THING=1" in flags and "-DPLATFORM_EMBEDDED=1" in flags
+
+    def test_a_macro_the_layers_disagree_on_is_reported(self, caplog):
+        """One command line cannot honour two values; say so rather than pick."""
+        from views.flowcharts import _macro_args_for_layers
+        scoped = {"*": [], "Layer1": ["-DCORE=1"], "Layer2": ["-DCORE=2"]}
+        with caplog.at_level("ERROR"):
+            flags = _macro_args_for_layers(scoped, ["Layer1", "Layer2"])
+        assert flags == ["-DCORE=1", "-DCORE=2"]         # clang honours the last
+        assert "defined differently" in caplog.text and "CORE" in caplog.text
+
+    def test_one_layer_never_warns(self, caplog):
+        from views.flowcharts import _macro_args_for_layers
+        with caplog.at_level("ERROR"):
+            _macro_args_for_layers(normalize_scoped_args(STORED), ["Layer1"])
+        assert "defined differently" not in caplog.text
+
+    def test_an_unscoped_run_still_falls_back_to_every_layer(self):
+        assert self._names("") == []
+        assert self._dirs("") == ["/p/L1a", "/p/L1b", "/p/L2a"]
+
+
+class TestClangArgsFileLocation:
+    """The response file records what a component was compiled with, so it has to
+    belong to that component's run.
+
+    It lived in the shared model dir — one path per VERSION — so once a run produced
+    one document per component, each flowchart invocation overwrote the previous
+    one's file. What survived on disk was the LAST component's flags, which is
+    actively misleading when you open it to check which layer's -I/-D a component
+    got. Verified on a real run: Layer1.Math's copy now holds 17 Layer1 paths and
+    -DBUFFER_SIZE=4096, Layer2.Sample-Core's holds 20 Layer2 paths and =8192.
+    """
+
+    def test_it_sits_in_the_runs_own_output_dir(self):
+        from views.flowcharts import clang_args_file
+        assert clang_args_file(os.path.join("out", "Layer1.Math")) == \
+            os.path.join("out", "Layer1.Math", ".flowcharts_clang_args.txt")
+
+    def test_two_components_get_two_different_paths(self):
+        """The whole point: no overwriting between per-component invocations."""
+        from views.flowcharts import clang_args_file
+        a = clang_args_file(os.path.join("out", "Layer1.Math"))
+        b = clang_args_file(os.path.join("out", "Layer2.Sample-Core"))
+        assert a != b
+
+    def test_it_is_not_in_the_shared_model_dir(self):
+        from views.flowcharts import clang_args_file
+        assert "model" not in clang_args_file(os.path.join("v1", "output", "Layer1.Math"))

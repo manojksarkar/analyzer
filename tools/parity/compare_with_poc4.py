@@ -16,8 +16,9 @@ Two things must be equalised or every scenario "differs" for no reason:
   * --project-name, which poc-4 defaults to the checkout directory's basename while this
     branch takes from the project's display name. Otherwise every cover page differs.
 
-And one rule to mirror: --component-per-docx cannot be combined with --selected-component
-(run.py refuses, and per_component_docx_args returns [] for a component scope).
+And one rule to mirror: poc-4 refuses --component-per-docx alongside --selected-component,
+so a component scenario withholds the flag from both sides (see _run_poc4). This branch
+accepts it now and would otherwise split per component, an intended divergence.
 
 Setup:
     git worktree add --detach <path> origin/poc-4
@@ -199,9 +200,12 @@ def run_poc4(scenario, sha):
     json.dump(cfg, open(cfg_path, "w", encoding="utf-8"), indent=2)
     rmtree(os.path.join(POC4_ROOT, "output"))
     rmtree(os.path.join(POC4_ROOT, "model"))
-    # --component-per-docx is mutually exclusive with --selected-component on both
-    # branches: run.py errors if combined, and per_component_docx_args returns [] for a
-    # component scope. Mirror that here or the poc-4 side just fails.
+    # poc-4 REFUSES --component-per-docx alongside --selected-component, so a component
+    # scenario must not pass it to that side. This branch accepts the combination now
+    # (2026-09-07) and splits per component, which would make every component scenario
+    # "differ" for a reason that is intended rather than a regression. Withholding the
+    # flag from BOTH sides keeps the comparison like-for-like: this branch still bundles
+    # without it, which is exactly what poc-4 does.
     per_comp = [] if "--selected-component" in args else ["--component-per-docx"]
     cmd = [PY, os.path.join(POC4_ROOT, "engine", "run.py"), REPO, "--clean",
            *per_comp, "--no-llm-summarize",

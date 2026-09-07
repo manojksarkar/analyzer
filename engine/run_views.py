@@ -36,6 +36,45 @@ def _filter_model_to_components(model: dict, allowed: set) -> dict:
     return filtered
 
 
+def _assert_components_in_model(model: dict, selected_components) -> None:
+    """Fail when a named component is not in the stored model at all.
+
+    Phase 1 parses whole LAYERS, so re-rendering a component the original run did
+    not name is free and supported — as long as its layer was parsed. A component
+    from a layer that was NOT is a different matter: there is nothing to render, and
+    the run used to finish with exit 0 and an empty document. That is the silent
+    wrong output this whole area exists to prevent, so it stops here instead.
+
+    Only for EXPLICIT `--selected-component` names, which the caller typed and can
+    fix. A group scope derives its components from config, where one may legitimately
+    have no parsed source (an empty directory), and failing the group for that would
+    refuse a run that is merely uninteresting.
+    """
+    from core.model_io import COMPONENTS
+
+    known = model.get(COMPONENTS)
+    if not isinstance(known, dict) or not known:
+        return                       # no component index to check against; say nothing
+
+    def _ident(name):
+        return (name or "").strip().replace(" ", "-").casefold()
+
+    have = {_ident(k) for k in known}
+    missing = [c for c in selected_components if _ident(c) not in have]
+    if not missing:
+        return
+
+    layers = sorted({(str(k).split(".", 1)[0] if "." in str(k) else "") for k in known} - {""})
+    raise SystemExit(
+        f"[run_views] {', '.join(repr(c) for c in missing)} "
+        f"{'is' if len(missing) == 1 else 'are'} not in this version's model.\n"
+        f"  The model covers {len(known)} component(s)"
+        + (f" in layer(s): {', '.join(layers)}.\n" if layers else ".\n")
+        + "  Phase 1 parses only the layers the ORIGINAL run selected, so a component\n"
+        "  outside them has nothing stored to render. Re-run `generate` with a scope\n"
+        "  that covers its layer, then re-export."
+    )
+
 def _unit_names(model: dict, allowed_components=None) -> list:
     """Unit names that this run will actually visit.
 
@@ -242,15 +281,18 @@ def main():
         from core.config import get_component_layer_name, get_layer_flat_groups
         config = dict(config)
         config["_analyzerAllowedComponents"] = sorted(selected_components)
-        derived_layer = get_component_layer_name(config, selected_components[0])
-        if derived_layer:
-            layer_groups = get_layer_flat_groups(config, derived_layer)
-            layer_comps: set = set()
-            for g in layer_groups.values():
+        _assert_components_in_model(model, selected_components)
+        # Union over every layer the bundle spans, so a cross-layer selection keeps
+        # both layers' components in the model instead of filtering one of them away.
+        derived_layers = {l for l in (get_component_layer_name(config, c)
+                                      for c in selected_components) if l}
+        layer_comps: set = set()
+        for _l in derived_layers:
+            for g in get_layer_flat_groups(config, _l).values():
                 if isinstance(g, dict):
                     layer_comps.update(g.keys())
-            if layer_comps:
-                model = _filter_model_to_components(model, layer_comps)
+        if layer_comps:
+            model = _filter_model_to_components(model, layer_comps)
     if selected_units:
         selected_units = _resolve_units(
             model, selected_units, config.get("_analyzerAllowedComponents"), strict=False)

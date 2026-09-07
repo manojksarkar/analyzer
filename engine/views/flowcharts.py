@@ -843,44 +843,130 @@ def _maybe_slice_tall_png(png_path: str) -> int:
 
     return n_parts
 
+def _resolve_layer_names(config, group_name, allowed_components=None) -> list:
+    """Every layer this Phase-3 run covers, in order. Empty means "could not tell".
+
+    Three shapes reach here and all of them must resolve, because the answer
+    decides which `-I` dirs and which `-D` set the flowchart subprocess is given:
+
+    * a GROUP id - layer-qualified since 2026-09-06 (`Layer1.Support`).
+      `get_group_layer_name` reads the prefix, and still resolves a bare legacy
+      name while only one layer has it.
+    * a COMPONENT BUNDLE (`--selected-component`) - `group_name` is then a virtual
+      join of the component ids (`Layer1.Math_Layer2.Gpio`), which names no group
+      at all. The layers come from the components themselves, and since 2026-09-07
+      a bundle may legitimately span more than one.
+    * neither - an unscoped run; the caller falls back to everything.
+
+    This used to compare `group_name` against the config's BARE group names, so
+    the day group ids gained their layer prefix it stopped matching anything:
+    every run fell through to "all layers' dirs, global-only macros" - more
+    headers than the layer should see, and none of its own -D flags. Silent, and
+    exactly the blending the per-layer inputs exist to prevent.
+    """
+    from core.config import get_group_layer_name, get_component_layer_name, qualified_layer
+
+    # `_analyzerAllowedComponents` reaches this module CASEFOLDED (they are compared
+    # against model keys that way), so the layer half of `layer2.gpio` will not match
+    # the configured `Layer2` by identity. Map it back before looking anything up -
+    # without this the component loop found nothing, fell through to the group lookup,
+    # and a two-layer bundle silently resolved to one layer.
+    by_fold = {str(l).casefold(): l for l in ((config or {}).get("layers") or {})}
+
+    out: list = []
+    # Components first: a bundle's own ids are the precise answer, and its
+    # `group_name` is a virtual name that no group lookup can resolve.
+    for comp in (allowed_components or []):
+        layer = by_fold.get(str(qualified_layer(comp) or "").casefold())
+        if not layer:
+            layer = get_component_layer_name(config, comp)
+        if layer and layer not in out:
+            out.append(layer)
+    if out:
+        return out
+
+    layer = get_group_layer_name(config, group_name) if group_name else None
+    return [layer] if layer else []
+
+
 def _resolve_layer_name(config, group_name):
-    """Return the layer that owns group_name (case-insensitive), or None."""
-    if not group_name:
-        return None
-
-    for layer_name, layer in ((config or {}).get("layers") or {}).items():
-        groups = layer.get("groups") or {}
-        if group_name.lower() in [g.lower() for g in groups]:
-            return layer_name
-
-    return None
+    """The single layer owning `group_name`, or None. Kept for callers that want
+    one answer; `_resolve_layer_names` is the general form."""
+    names = _resolve_layer_names(config, group_name)
+    return names[0] if len(names) == 1 else None
 
 
-def _resolve_layer_dirs(config, group_name, layer_paths):
+def _resolve_layer_dirs(config, group_name, layer_paths, allowed_components=None):
     """
-    Return the include dirs for the layer that owns group_name.
+    Include dirs for every layer this run covers.
 
-    When group_name is set, only the dirs from its layer are returned so the
-    flowchart engine does not see headers from unrelated layers. Falls back to
-    all dirs across all layers when no group is selected or the group is not
-    found in the config.
+    Only those layers' dirs are returned, so the flowchart engine does not see
+    headers from unrelated layers. Falls back to all dirs across all layers when
+    the run's layers cannot be determined at all.
     """
-    layer_name = _resolve_layer_name(config, group_name)
+    layer_names = _resolve_layer_names(config, group_name, allowed_components)
 
-    if layer_name:
-        return layer_paths.get(layer_name) or []
-
-    all_dirs: list = []
+    dirs_out: list = []
     seen: set = set()
-
-    for dirs in layer_paths.values():
-        for d in dirs:
+    for layer_name in (layer_names or list(layer_paths)):
+        for d in layer_paths.get(layer_name) or []:
             if d not in seen:
                 seen.add(d)
-                all_dirs.append(d)
+                dirs_out.append(d)
 
-    return all_dirs
+    return dirs_out
 
+
+def _macro_args_for_layers(scoped, layer_names) -> list:
+    """Global `-D` flags first, then each covered layer's, in order.
+
+    Clang honours the LAST -D for a repeated name, so a layer's value overrides
+    the global one by position - that is `args_for_scope`'s contract and this
+    keeps it. With more than one layer the same rule decides between them, which
+    cannot be right for both: one flowchart subprocess gets one command line. A
+    cross-layer selection that disagrees on a macro is warned about rather than
+    silently resolved, since the alternative is a diagram built with the wrong
+    branch taken.
+    """
+    from core.macro_input import GLOBAL_SCOPE
+
+    args = list(scoped.get(GLOBAL_SCOPE) or [])
+    layers = [l for l in (layer_names or []) if l and l != GLOBAL_SCOPE]
+
+    if len(layers) > 1:
+        seen_name_layer: dict = {}
+        clashes: list = []
+        for layer in layers:
+            for arg in scoped.get(layer) or []:
+                name = str(arg).lstrip("-D").split("=", 1)[0]
+                prev = seen_name_layer.get(name)
+                if prev and prev[1] != arg:
+                    clashes.append(f"{name} ({prev[0]}={prev[1]!r} vs {layer}={arg!r})")
+                seen_name_layer[name] = (layer, arg)
+        if clashes:
+            log("flowchart macros: %d macro(s) defined differently by the selected "
+                "layers; the LAST wins for every function in this run: %s"
+                % (len(clashes), "; ".join(sorted(clashes)[:5])),
+                component="flowcharts", err=True)
+
+    for layer in layers:
+        args.extend(scoped.get(layer) or [])
+    return args
+
+
+def clang_args_file(output_dir_abs: str) -> str:
+    """Where this run's clang response file goes: next to ITS OWN output.
+
+    The flags are handed to `flowchart_engine.py` as `@file` because a real project's
+    -I/-D list blows the Windows 8192-char command-line limit. The file doubles as the
+    record of what a component was actually compiled with.
+
+    It used to live in the shared model dir — one path per VERSION. With one document
+    per component (`--component-per-docx`) every invocation then overwrote the last, so
+    the file left on disk showed only the final component's flags. That is misleading
+    exactly when someone opens it to check which layer's -I and -D a component got.
+    """
+    return os.path.join(output_dir_abs, ".flowcharts_clang_args.txt")
 
 def _needs_flowchart_images(config) -> bool:
     """`views.flowcharts` -- draw the flowchart images, or not.
@@ -1056,7 +1142,8 @@ def run(model, output_dir, model_dir, config):
             for p in _resolve_layer_dirs(
                 config,
                 group_name,
-                layer_paths
+                layer_paths,
+                allowed_components,
             ):
                 arg = f"-I{p}"
 
@@ -1080,9 +1167,9 @@ def run(model, output_dir, model_dir, config):
             # pre-scope shape and loads as global. Global defines first, then
             # this group's layer — the order Phase 1 parsed with, and the one
             # Clang needs (it honours the last -D for a name).
-            for arg in args_for_scope(
+            for arg in _macro_args_for_layers(
                 normalize_scoped_args(stored_macros),
-                _resolve_layer_name(config, group_name),
+                _resolve_layer_names(config, group_name, allowed_components),
             ):
                 if arg and arg not in clang_args:
                     clang_args.append(arg)
@@ -1281,7 +1368,7 @@ def run(model, output_dir, model_dir, config):
     non_empty_clang_args = [str(a) for a in clang_args if a]
 
     if non_empty_clang_args:
-        args_file = os.path.join(model_dir_abs, ".flowcharts_clang_args.txt")
+        args_file = clang_args_file(output_dir_abs)
 
         with open(args_file, "w", encoding="utf-8") as f:
             for a in non_empty_clang_args:

@@ -208,6 +208,91 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-07 (**One run may now span several layers** — branch
+> `fix/cross-layer-name-collisions`, **UNCOMMITTED** on top of `a03fddd`. The identity commit
+> made two layers' same-named groups and components distinct; this makes a single run able to
+> select across them. Two separate defects:
+>
+> **1. Only the FIRST selected layer got include paths — the real bug.** `run.py` derived one
+> `_selected_layer` (from `selected_layer_arg`, else the first resolved group, else the first
+> component's layer) and filtered BOTH the include-path walk and the `compile_commands` merge to
+> it. A run naming groups in two layers therefore parsed both layers' source — `parser.py` has
+> unioned the layers of repeated `--selected-group` for a while — but handed clang the include
+> set of one. The other layer's `#include`s failed, its definitions never entered the model, and
+> nothing in the log connected the gap to the scope: the log simply printed one `Layer1: … -> 18
+> total` line and no second line. Now `_selected_layers` is an ordered, de-duplicated LIST built
+> from every named layer / every resolved group's layer / every selected component's layer, and
+> both filters test membership. The report prints one line per layer, which is also how you check
+> it worked.
+>
+> **2. `--selected-component` refused a cross-layer bundle.** `All --selected-component names
+> must be in the same layer` existed because bare component names could not tell two layers'
+> `Math` apart; with qualified ids there is nothing left to protect against, so the check is
+> gone. `plan_runs` derives the full layer SET for the bundle (it took
+> `selected_components[0]`'s layer), `_build_model_phases` emits one `--selected-layer` per
+> entry (it emitted one flag), and `parser.py`'s `--selected-layer` is repeatable and unions the
+> layers (it took the last). The Phase-3/4 model filters in `run_views._filter_model_to_components`
+> and `docx_exporter` union every selected component's layer too — filtering to the first
+> component's layer would have dropped the other layer's components straight back out.
+>
+> `--selected-group`, `--selected-layer` and `--selected-component` stay mutually exclusive;
+> what changed is that each of them may now name things in more than one layer.
+>
+> Verified on SampleCppProject: `--selected-component Layer1.Math --selected-component
+> Layer2.Gpio --selected-component Layer2.Sample-Core` exits 0, reports include paths for
+> **both** layers (Layer1 18, Layer2 20), and writes one document whose sections are
+> `2 Math | 3 Gpio | 4 Sample Core` with interface IDs from `IF_LAYER1_*` **and** `IF_LAYER2_*`.
+> Three groups across both layers likewise report both layers. Tests:
+> `tests/unit/test_scope_multiple.py::TestOneRunMaySpanLayers` (7). `pytest tests/unit tests/api
+> --skip-pipeline` and `pytest tests/e2e` both green.
+>
+> **Still one layer at a time:** per-layer inputs (`layer_source`, macros, the data dictionary)
+> resolve per layer as before — that was already correct and needed no change, since each layer
+> keeps its own `-D` set and dictionary within the same run.
+>
+> **Four follow-on fixes found while verifying this, each with its own regression test:**
+> 1. **The flowchart view stopped scoping to a layer at all.** `views/flowcharts._resolve_layer_name`
+>    compared `group_name` against the config's BARE group names, so the day group ids gained
+>    their prefix `Layer1.Support` matched nothing and every run fell through to "all layers'
+>    include dirs, global-only macros" — more headers than the layer should see and none of its
+>    own `-D`. Silent; no test caught it because extra `-I` is harmless and the Sample fixture's
+>    flowcharts do not depend on the per-layer defines. Now `_resolve_layer_names(...) -> list`
+>    reads the prefix, resolves a component BUNDLE from its own component ids (whose
+>    `group_name` is a virtual join naming no group), and `_macro_args_for_layers` emits global
+>    then each covered layer — **warning** when two selected layers define one macro
+>    differently, since one command line cannot honour both. `_analyzerAllowedComponents`
+>    arrive CASEFOLDED, which made the first attempt resolve a two-layer bundle to one layer.
+> 2. **`--component-per-docx` now combines with `--selected-component`** and
+>    `per_component_docx_args` returns it for EVERY scope. A component scope was the one shape
+>    that came back bundled while project/layer/group all split per component. This also removes
+>    the multi-layer macro ambiguity in practice: each component is its own Phase-3 invocation,
+>    so no invocation spans layers. `tools/parity/compare_with_poc4.py` still withholds the flag
+>    from both sides (poc-4 refuses it) — its behaviour was already right, only its comment stale.
+> 3. **A `--selected-component` absent from the stored model is refused**
+>    (`run_views._assert_components_in_model`). Phase 1 parses whole LAYERS, so re-rendering a
+>    component the original run did not name is supported — but one from a layer that was NOT
+>    parsed used to finish with exit 0 and an empty document. Explicit names only; a group scope
+>    derives its components from config where one may legitimately have no source.
+> 4. **`.flowcharts_clang_args.txt` moved to the run's own output dir** (`clang_args_file()`).
+>    It was one path per VERSION, so per-component runs overwrote it and the file on disk showed
+>    only the last component's flags — misleading exactly when it is opened to check which
+>    layer's `-I`/`-D` a component got.
+>
+> **Unrelated bug fixed on the way:** `generate_incremental` did not forward `create_version` to
+> `generate_full`, so `--create-version` failed on the no-baseline path — the FIRST version, the
+> only time the flag is needed. It exited 2 telling the caller to "add --create-version", which
+> they had. Pre-existing on `develop`.
+>
+> **Verified through `analyzer.py` against Postgres**, not just unit tests: onboard refuses a
+> broken config before writing anything; `--scope "group:My Sample"` is ambiguous and exits 2;
+> the twin groups each generate; `component:Layer1.Math,Layer2.Gpio,Layer2.Sample-Core` yields
+> one document per component with both layers' include paths; `reexport --from-phase 2` re-derives
+> the model byte-identically (28 components / 97 units, twins intact); `--from-phase 3` renders
+> any component in a parsed layer and refuses one outside; `--from-phase 4` refuses when the view
+> JSON is absent. All six `analyzer.py verify` gates pass — `parity` failed once on a native
+> `0xC0000409` crash AFTER the DOCX was written and passed clean on re-run, matching the
+> already-recorded flake; it is not proven fixed.)
+
 > Updated: 2026-09-06 (**Group and component identity is LAYER-QUALIFIED** — branch
 > `fix/cross-layer-name-collisions` off `develop`, uncommitted. Two layers may hold a group or a
 > component with the same name — `FTL/Cache` and `HIL/Cache` are two different components, and a
@@ -2521,7 +2606,7 @@ SampleCppProject/
 
 ### Layer-scoped Phase 1 parsing
 
-Previously, Phase 1 always parsed every file across all configured layers regardless of `--selected-group`. Since there is no cross-layer communication (only cross-group/cross-component within the same layer), this was wasted work.
+Previously, Phase 1 always parsed every file across all configured layers regardless of `--selected-group`. Since there is no cross-layer communication (only cross-group/cross-component within the same layer), this was wasted work. A selection naming several layers narrows to the UNION of them (2026-09-07), not to the first.
 
 **What changed:**
 
@@ -2555,14 +2640,14 @@ This is equivalent to running `--selected-group G` once per group in the layer, 
 
 ### New CLI flags
 
-**`--selected-component <name>`** (repeatable) — generate one DOCX covering the named component(s). Repeat the flag for each component; all must be in the same layer. Phase 1+2 parse that layer only. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx`. Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`.
+**`--selected-component <name>`** (repeatable) — generate a DOCX for the named component(s). Repeat the flag for each component. **They may sit in DIFFERENT layers** (2026-09-07); Phase 1+2 parse the union of their layers, each with its own include paths and `-D` set. Names are layer-qualified ids (`Layer1.Math`); a bare name is accepted while only one layer defines it. **Add `--component-per-docx` for one document per component** (`output/<C>/software_detailed_design_<C>.docx`) — that is what `analyzer.py --scope "component:…"` now passes. Without it they are bundled into one: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx`. Mutually exclusive with `--selected-group` and `--selected-layer`.
 
 ```bash
 python engine/run.py --selected-component Gpio SampleCppProject
 python engine/run.py --selected-component "Sample Core" --selected-component Lib SampleCppProject
 ```
 
-**`--component-per-docx`** — modifier flag (no value). When combined with `--selected-group`, `--selected-layer`, or no selection, splits output into **one DOCX per component** instead of one per group. Cannot be combined with `--selected-component`.
+**`--component-per-docx`** — modifier flag (no value). Splits output into **one DOCX per component** instead of one per group. Combines with every selection, `--selected-component` included (2026-09-07) — a component scope used to be the one shape that came back bundled while every other scope split.
 
 ```bash
 python engine/run.py --selected-group "My Sample" --component-per-docx SampleCppProject
@@ -2599,7 +2684,7 @@ Display contexts (DOCX section headings, log labels) keep the original name with
 
 ### `plan_runs` dispatch shapes (updated)
 
-`--component-per-docx` adds a new branching mode inside the existing per-group loop. When set, `plan_runs` iterates each group's components and emits one `RunPlan` per component (using `--selected-component`) instead of one per group.
+`--component-per-docx` adds a new branching mode inside the existing per-group loop. When set, `plan_runs` iterates each group's components and emits one `RunPlan` per component (using `--selected-component`) instead of one per group. Since 2026-09-07 it does the same inside the `--selected-component` branch: the named components are split into one view+export plan each, sharing the single model build.
 
 | `--component-per-docx` | CLI selection | Plans emitted |
 |---|---|---|
@@ -2644,7 +2729,7 @@ python engine/run.py [options] <project_path>
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
 | `--selected-group <name>` | Export only the named group. Phase 1+2 parse only that group's layer. Case-insensitive. Mutually exclusive with `--selected-layer` and `--selected-component`. |
 | `--selected-layer <name>` | Parse only the named layer (Phase 1+2) and generate DOCX for every group in it (Phase 3+4 per group). Mutually exclusive with `--selected-group` and `--selected-component`. |
-| `--selected-component <name>` | Export a DOCX for the named component only. Repeatable — use once per component to bundle multiple into one DOCX. All named components must be in the same layer. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx` (`_` between names, `-` replaces spaces). Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`. |
+| `--selected-component <name>` | Export a DOCX for the named component. Repeatable; they may span layers, and the parse scope is the union of their layers. With `--component-per-docx`: one document each, `output/<C>/`. Without it: bundled, `output/<C1_C2>/software_detailed_design_<C1_C2>.docx` (`_` between names, `-` replaces spaces). Mutually exclusive with `--selected-group` and `--selected-layer`. |
 | `--component-per-docx` | Modifier: split group/layer runs into one DOCX per component instead of one per group. Compatible with `--selected-group`, `--selected-layer`, or no selection. Cannot be combined with `--selected-component`. See §4f. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
 | `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. **Project-wide**: its entries answer for every layer. External entries win on conflict. See `engine/config/data_dictionary.csv` for format. **CLI-only — no config key by design** (§17). |
@@ -2721,10 +2806,10 @@ The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
 | `layers` present | no flag | all layers | DOCX per group (all groups) |
 | `layers` present | `--selected-group <G>` | G's layer only | DOCX for G only |
 | `layers` present | `--selected-layer <L>` | L only | DOCX per group in L |
-| `layers` present | `--selected-component C [--selected-component C2 …]` | C's layer only (all named components must be same layer) | 1 DOCX for C[_C2…] |
+| `layers` present | `--selected-component C [--selected-component C2 …]` | the union of the named components' layers | 1 DOCX for C[_C2…], or one EACH with `--component-per-docx` |
 | `layers` present | any of above + `--component-per-docx` | same as without flag | 1 DOCX **per component** instead of per group |
 
-`--selected-group`, `--selected-layer`, and `--selected-component` are mutually exclusive; combining any two exits with code 1. `--component-per-docx` cannot be combined with `--selected-component` (already at component granularity).
+`--selected-group`, `--selected-layer`, and `--selected-component` are mutually exclusive; combining any two exits with code 1. `--component-per-docx` combines with all three (2026-09-07): with `--selected-component` it splits the named components into one document each instead of bundling them.
 
 Phase 4 (`docx_exporter.py`) receives the group's `interface_tables.json`
 and DOCX path as positional args plus `--selected-group <G>` (group path) or

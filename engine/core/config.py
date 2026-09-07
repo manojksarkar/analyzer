@@ -622,8 +622,9 @@ def get_group_layer_name(cfg: Dict[str, Any], group_id: str) -> Optional[str]:
     layer = qualified_layer(group_id)
     if layer and layer in (cfg.get("layers") or {}):
         return layer
+    want = name_ident(group_id)
     matches = [ln for ln, lc in (cfg.get("layers") or {}).items()
-               if group_id in ((lc or {}).get("groups") or {})]
+               if any(name_ident(g) == want for g in ((lc or {}).get("groups") or {}))]
     return matches[0] if len(matches) == 1 else None
 
 
@@ -639,11 +640,11 @@ def get_component_layer_name(cfg: Dict[str, Any], component_id: str) -> Optional
     layer = qualified_layer(component_id)
     if layer and layer in (cfg.get("layers") or {}):
         return layer
-    norm = (component_id or "").replace(" ", "-")
+    want = name_ident(component_id)
     matches = []
     for layer_name, layer_cfg in (cfg.get("layers") or {}).items():
         for grp in ((layer_cfg or {}).get("groups") or {}).values():
-            if isinstance(grp, dict) and any((k or "").replace(" ", "-") == norm for k in grp):
+            if isinstance(grp, dict) and any(name_ident(k) == want for k in grp):
                 matches.append(layer_name)
                 break
     return matches[0] if len(matches) == 1 else None
