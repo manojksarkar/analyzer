@@ -595,10 +595,17 @@ def generate_incremental(project_id: str, branch: str, commit: str,
     _ver_commit = {v["versionId"]: v["commit"] for v in _versions}   # real ver id -> commit (dir)
     decision = select_baseline(repo_dir, _versions, target, base_version_id)
     if decision["decision"] == "full":
+        # create_version MUST be forwarded. Without it `--create-version` reached this
+        # delegation and stopped: no baseline means decision "full", which is exactly
+        # the first-version case the flag exists for, so generate_full defaulted it to
+        # False and `effective_model_store` refused with "there is no versions row".
+        # The flag therefore only ever worked on the incremental path, where you never
+        # need it.
         return generate_full(project_id, branch, commit, scope,
                              workspaces_root=workspaces_root, data_dict_id=data_dict_id,
                              no_llm=no_llm, version_id=version_id, force=force,
                              repo_url=repo_url, repo_token=repo_token, config_path=config_path,
+                             create_version=create_version,
                              selected_units=selected_units, doc_type=doc_type)
 
     base_vid = decision["chosenBaseVersionId"]           # real ver… id (from list_versions)
