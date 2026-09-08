@@ -1920,11 +1920,42 @@ def _record_tu_diagnostics(tu, rel: str) -> int:
     return len(errors)
 
 
+# Phase 1 previously parsed every TU three times — once each in parse_file,
+# parse_calls, parse_global_access — with byte-identical args/options every time.
+# That tripled the dominant cost of Phase 1 (the libclang parse itself, not the
+# Python AST walk) for zero benefit. The three passes MUST stay separate full
+# loops over source_files (main(), below): parse_calls resolves callees against
+# the completely-populated `functions` dict (see visit_calls's `called_key not in
+# functions` check) and visit_definitions dedups header-defined functions across
+# TUs via `_visited_function_keys` — both require every file's definitions pass to
+# have finished before any file's calls pass starts. So instead of merging the
+# loops, each file's TU is parsed once and cached for reuse by all three passes.
+_tu_cache: dict = {}
+_TU_PARSE_FAILED = object()
+
+
+def _get_tu(path):
+    """Parse `path` once; subsequent calls (from the calls/global-access passes)
+    reuse the cached TranslationUnit instead of re-invoking libclang."""
+    cached = _tu_cache.get(path)
+    if cached is _TU_PARSE_FAILED:
+        raise cindex.TranslationUnitLoadError(f"cached failure: {path}")
+    if cached is not None:
+        return cached
+    try:
+        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+    except cindex.TranslationUnitLoadError:
+        _tu_cache[path] = _TU_PARSE_FAILED
+        raise
+    _tu_cache[path] = tu
+    return tu
+
+
 def parse_file(path):
     rel = _rel_path(path)
     _defs_before = len(functions)
     try:
-        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        tu = _get_tu(path)
         _capture_tu_includes(tu, path)  # incremental (M4.0): per-TU include closure
         visit_definitions(tu.cursor)
         visit_type_definitions(tu.cursor)
@@ -1948,7 +1979,7 @@ def parse_file(path):
 
 def parse_calls(path):
     try:
-        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        tu = _get_tu(path)
         visit_calls(tu.cursor)
     except cindex.TranslationUnitLoadError:
         pass
@@ -1957,10 +1988,11 @@ def parse_calls(path):
 def parse_global_access(path):
     """Collect global read/write per function for direction (In/Out)."""
     try:
-        # clang_args_for, not CLANG_ARGS: this pass must see the same defines and
-        # include dirs as the definition pass, or a layer-gated #ifdef makes the two
-        # walks disagree about which globals a function touches.
-        tu = index.parse(path, args=clang_args_for(path), options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD)
+        # Reuses the same cached TU parse_file already produced (same clang_args_for
+        # args as every other pass), so this pass sees the same defines/include dirs
+        # as the definition pass — a layer-gated #ifdef can't make the two walks
+        # disagree about which globals a function touches.
+        tu = _get_tu(path)
         visit_global_access(tu.cursor)
     except cindex.TranslationUnitLoadError:
         pass
@@ -2681,6 +2713,7 @@ def main():
         p3.step()
         parse_global_access(path)
     p3.done()
+    _tu_cache.clear()  # all 3 passes are done with these TUs; free them before build_metadata
 
     metadata = build_metadata()
     model_dir = os.path.join(PROJECT_ROOT, "model")

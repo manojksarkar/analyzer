@@ -96,6 +96,41 @@ class TestLoadLlmConfig:
         monkeypatch.setenv("LLM_RATE_LIMIT_SECONDS", "0")
         assert load_llm_config(_cfg(rateLimitSeconds=3.0))["rateLimitSeconds"] == 0.0
 
+    def test_max_concurrency_defaults_to_one(self):
+        assert load_llm_config(_cfg())["maxConcurrency"] == 1
+
+    def test_max_concurrency_override(self):
+        assert load_llm_config(_cfg(maxConcurrency=8))["maxConcurrency"] == 8
+
+    def test_max_concurrency_below_one_raises(self):
+        with pytest.raises(LlmConfigError, match="maxConcurrency"):
+            load_llm_config(_cfg(maxConcurrency=0))
+
+    def test_max_concurrency_non_numeric_raises(self):
+        with pytest.raises(LlmConfigError, match="maxConcurrency"):
+            load_llm_config(_cfg(maxConcurrency="lots"))
+
+    def test_max_concurrency_env_var_overrides_config(self, monkeypatch):
+        monkeypatch.setenv("LLM_MAX_CONCURRENCY", "5")
+        assert load_llm_config(_cfg(maxConcurrency=1))["maxConcurrency"] == 5
+
+    def test_requests_per_second_derives_from_rate_limit_by_default(self):
+        assert load_llm_config(_cfg(rateLimitSeconds=4.0))["requestsPerSecond"] == 0.25
+
+    def test_requests_per_second_zero_when_rate_limit_disabled(self):
+        assert load_llm_config(_cfg(rateLimitSeconds=0))["requestsPerSecond"] == 0.0
+
+    def test_requests_per_second_explicit_override_wins(self):
+        assert load_llm_config(_cfg(rateLimitSeconds=3.0, requestsPerSecond=10.0))["requestsPerSecond"] == 10.0
+
+    def test_requests_per_second_negative_raises(self):
+        with pytest.raises(LlmConfigError, match="requestsPerSecond"):
+            load_llm_config(_cfg(requestsPerSecond=-1))
+
+    def test_requests_per_second_env_var_overrides_config(self, monkeypatch):
+        monkeypatch.setenv("LLM_REQUESTS_PER_SECOND", "7.5")
+        assert load_llm_config(_cfg())["requestsPerSecond"] == 7.5
+
 
 class TestLoadConfigAnalyzerConfigOverride:
     """`ANALYZER_CONFIG` env var injects a per-project/per-version config (M1.1)."""
@@ -146,6 +181,12 @@ class TestFormatLlmConfigBanner:
         banner = format_llm_config_banner(cfg)
         assert "sk-secret" not in banner
         assert "set" in banner
+
+    def test_banner_shows_concurrency(self):
+        cfg = load_llm_config(_cfg(maxConcurrency=8, requestsPerSecond=4.0))
+        banner = format_llm_config_banner(cfg)
+        assert "8 req in-flight" in banner
+        assert "4.0 req/s" in banner
 
 
 class TestLayerSources:

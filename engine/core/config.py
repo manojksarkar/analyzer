@@ -191,6 +191,12 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         rateLimitSeconds  - float >= 0, default 3.0 (pause after every OpenAI
                             call to satisfy the gateway throttle; 0 disables
                             it; ignored on Ollama)
+        maxConcurrency    - int >= 1, default 1 (requests in flight at once;
+                            1 preserves today's fully-serial behaviour)
+        requestsPerSecond - float >= 0, default derived from rateLimitSeconds
+                            as 1 / rateLimitSeconds (0 = unlimited); the
+                            authoritative aggregate-rate knob once
+                            maxConcurrency > 1
         enrichment        - dict of feature toggles (each must be a bool):
             twoPassDescriptions (default True)
             selfReview          (default False)
@@ -203,7 +209,7 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
     Environment variables (override the matching config field if set):
         LLM_PROVIDER, LLM_BASE_URL, LLM_DEFAULT_MODEL,
         LLM_TIMEOUT_SECONDS, LLM_NUM_CTX, LLM_RETRIES, LLM_API_KEY,
-        LLM_RATE_LIMIT_SECONDS
+        LLM_RATE_LIMIT_SECONDS, LLM_MAX_CONCURRENCY, LLM_REQUESTS_PER_SECOND
 
     Raises
     ------
@@ -319,6 +325,39 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
             f"llm.rateLimitSeconds must be >= 0 (got {rate_limit})"
         )
 
+    # maxConcurrency: requests in flight at once. Default 1 preserves
+    # today's fully-serial behaviour for anyone who doesn't opt in.
+    max_concurrency_raw = _env_or("LLM_MAX_CONCURRENCY", llm.get("maxConcurrency", 1))
+    try:
+        max_concurrency = int(max_concurrency_raw)
+    except (TypeError, ValueError):
+        raise LlmConfigError(
+            f"llm.maxConcurrency must be an integer (got {max_concurrency_raw!r})"
+        )
+    if max_concurrency < 1:
+        raise LlmConfigError(
+            f"llm.maxConcurrency must be >= 1 (got {max_concurrency})"
+        )
+
+    # requestsPerSecond: aggregate cap across all in-flight requests. Not
+    # given -> derive from rateLimitSeconds (1 / rateLimitSeconds) so existing
+    # configs that only set rateLimitSeconds keep the same effective ceiling
+    # once they raise maxConcurrency. 0 = unlimited.
+    rps_raw = _env_or("LLM_REQUESTS_PER_SECOND", llm.get("requestsPerSecond", None))
+    if rps_raw is None or rps_raw == "":
+        requests_per_second = (1.0 / rate_limit) if rate_limit > 0 else 0.0
+    else:
+        try:
+            requests_per_second = float(rps_raw)
+        except (TypeError, ValueError):
+            raise LlmConfigError(
+                f"llm.requestsPerSecond must be a number (got {rps_raw!r})"
+            )
+        if requests_per_second < 0:
+            raise LlmConfigError(
+                f"llm.requestsPerSecond must be >= 0 (got {requests_per_second})"
+            )
+
     # enrichment: every flag must be a bool
     enrich_raw = llm.get("enrichment", {}) or {}
     if not isinstance(enrich_raw, dict):
@@ -392,6 +431,8 @@ def load_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "apiKey": api_key,
         "maxContextTokens": max_ctx,
         "rateLimitSeconds": rate_limit,
+        "maxConcurrency": max_concurrency,
+        "requestsPerSecond": requests_per_second,
         "enrichment": enrichment,
         "cacheVersion": cache_version,
         "fewShotExamplesDir": few_shot_dir.strip(),
@@ -441,6 +482,8 @@ def format_llm_config_banner(llm_cfg: Dict[str, Any]) -> str:
         f"  retries           : {llm_cfg.get('retries')}",
         f"  rateLimitSeconds  : {llm_cfg.get('rateLimitSeconds')}  "
         f"({'used' if llm_cfg.get('provider') == 'openai' else 'ignored on ollama'})",
+        f"  Concurrency       : {llm_cfg.get('maxConcurrency', 1)} req in-flight, "
+        f"{llm_cfg.get('requestsPerSecond', 0)} req/s",
         f"  apiKey            : {api_key_display}",
         f"  cacheVersion      : {llm_cfg.get('cacheVersion')}",
         f"  fewShotExamplesDir: {llm_cfg.get('fewShotExamplesDir')}",

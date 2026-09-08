@@ -97,6 +97,7 @@
     "numCtx": 8192,
     "retries": 1,
     "rateLimitSeconds": 3.0,
+    "maxConcurrency": 1,
     "fewShotExamplesDir": "few_shot_examples",
     "abbreviationsPath": "config/abbreviations.txt",
     "domainContextPath": "config/domain.txt",

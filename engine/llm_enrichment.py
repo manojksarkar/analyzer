@@ -196,6 +196,8 @@ def _client_cache_key(llm_cfg: dict) -> str:
         str(llm_cfg.get("retries", "")),
         str(llm_cfg.get("timeoutSeconds", "")),
         str(llm_cfg.get("rateLimitSeconds", "")),
+        str(llm_cfg.get("maxConcurrency", "")),
+        str(llm_cfg.get("requestsPerSecond", "")),
     ])
 
 
@@ -221,6 +223,8 @@ def _get_client(config: dict) -> Optional["LlmClient"]:
         # so the throttle has to be threaded through explicitly — without this
         # the enrichment phases silently ignore llm.rateLimitSeconds.
         rate_limit_seconds=llm_cfg.get("rateLimitSeconds", 3.0),
+        max_concurrency=llm_cfg.get("maxConcurrency", 1),
+        requests_per_second=llm_cfg.get("requestsPerSecond"),
     )
     # Config that isn't visible to LlmClient but changes what we compare
     # between runs (see tools/llm_stats.py).

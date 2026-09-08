@@ -5,7 +5,9 @@ server is needed.
 """
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,7 +17,7 @@ pytestmark = pytest.mark.unit
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
 
-from llm_core.client import LlmClient, from_config
+from llm_core.client import LlmClient, _RateLimiter, from_config
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +257,84 @@ class TestRateLimit:
              patch("llm_core.client.time.sleep") as mock_sleep:
             client.generate("sys", "user")
         mock_sleep.assert_called_once_with(1.5)
+
+
+# ---------------------------------------------------------------------------
+# Concurrency (llm.maxConcurrency / llm.requestsPerSecond) — CC-1
+# ---------------------------------------------------------------------------
+
+class TestConcurrency:
+    def _client(self, **kwargs):
+        defaults = dict(provider="openai", base_url="http://host",
+                        model="gpt-4", timeout=5, num_ctx=2048)
+        defaults.update(kwargs)
+        return LlmClient(**defaults)
+
+    def test_default_max_concurrency_is_one(self):
+        assert self._client().max_concurrency == 1
+
+    def test_max_concurrency_floored_at_one(self):
+        assert self._client(max_concurrency=0).max_concurrency == 1
+
+    def test_semaphore_caps_in_flight_requests(self):
+        """max_concurrency=4 lets multiple requests overlap, never more than 4."""
+        client = self._client(max_concurrency=4, requests_per_second=0)
+        lock = threading.Lock()
+        state = {"current": 0, "high_water": 0}
+
+        def fake_post(*args, **kwargs):
+            with lock:
+                state["current"] += 1
+                state["high_water"] = max(state["high_water"], state["current"])
+            time.sleep(0.05)
+            with lock:
+                state["current"] -= 1
+            return _mock_openai_response("ok")
+
+        with patch("llm_core.client.requests.post", side_effect=fake_post):
+            with ThreadPoolExecutor(max_workers=12) as ex:
+                futures = [ex.submit(client.generate, "sys", "user") for _ in range(12)]
+                results = [f.result() for f in futures]
+
+        assert all(r == "ok" for r in results)
+        assert 2 <= state["high_water"] <= 4
+
+    def test_from_config_passes_concurrency_through(self):
+        client = from_config({
+            "provider": "openai", "baseUrl": "http://host", "defaultModel": "gpt-4",
+            "timeoutSeconds": 5, "numCtx": 2048, "retries": 1,
+            "maxConcurrency": 6, "requestsPerSecond": 2.0,
+        })
+        assert client.max_concurrency == 6
+
+
+class TestRateLimiter:
+    def test_unlimited_never_waits(self):
+        assert _RateLimiter(0).acquire() == 0.0
+
+    def test_admits_up_to_rate_without_waiting(self):
+        with patch("llm_core.client.time.monotonic", return_value=100.0):
+            limiter = _RateLimiter(3)
+            assert [limiter.acquire() for _ in range(3)] == [0.0, 0.0, 0.0]
+
+    def test_blocks_once_rate_is_reached(self):
+        clock = [100.0]
+
+        def fake_monotonic():
+            return clock[0]
+
+        def fake_sleep(seconds):
+            clock[0] += seconds
+
+        with patch("llm_core.client.time.monotonic", side_effect=fake_monotonic), \
+             patch("llm_core.client.time.sleep", side_effect=fake_sleep) as mock_sleep:
+            limiter = _RateLimiter(2)
+            limiter.acquire()
+            limiter.acquire()
+            waited = limiter.acquire()
+
+        assert waited > 0
+        mock_sleep.assert_called()
 
 
 # ---------------------------------------------------------------------------

@@ -431,6 +431,9 @@ def format_merged(report: Dict[str, Any]) -> str:
     rate = cfg.get("rateLimitSeconds")
     if rate is not None:
         caption += f"  rateLimit={rate}s"
+    conc = cfg.get("maxConcurrency")
+    if conc is not None and conc != 1:
+        caption += f"  maxConcurrency={conc}"
 
     head = (f"  {'stage':32s} {'calls':>6s} {'fail':>5s} {'avg':>7s} "
             f"{'max':>7s} {'http':>9s} {'throttle':>9s} {'tok/s':>7s}")

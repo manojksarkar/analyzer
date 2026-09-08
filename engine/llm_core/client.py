@@ -9,10 +9,15 @@ Both providers go through the same `generate(system, user)` interface and the
 same response post-processing (strip_think_section + token tracking).
 
 Hard rules baked in:
-  - OpenAI requests are serialised process-wide (1 in flight at a time) and
-    every OpenAI call — successful or not — is followed by a sleep, because
-    the corporate gateway throttles ~1 request per 3 seconds. The pause is
-    `llm.rateLimitSeconds` (default 3.0; 0 disables it). Ollama never sleeps.
+  - OpenAI requests default to being serialised process-wide (1 in flight at
+    a time) and every call — successful or not — is followed by a sleep,
+    because the corporate gateway throttles ~1 request per 3 seconds. The
+    pause is `llm.rateLimitSeconds` (default 3.0; 0 disables it). Ollama
+    never sleeps. Passing `max_concurrency > 1` (config `llm.maxConcurrency`)
+    switches to a bounded semaphore plus an aggregate `llm.requestsPerSecond`
+    limiter instead — see `_CONCURRENCY_SEM`/`_RateLimiter` below. The
+    default (`max_concurrency=1`) is a byte-for-byte no-op of the legacy
+    lock+sleep path.
   - Configurable retry. Default = 1 retry on (HTTP error | empty response).
   - All responses pass through strip_think_section() before being returned.
   - Token usage from both providers is recorded into llm.tokens.
@@ -35,6 +40,7 @@ import os
 import sys
 import threading
 import time
+from collections import deque
 from contextlib import contextmanager
 from typing import Dict, Iterator, Optional
 
@@ -118,13 +124,62 @@ def _trace_response(ordinal: int, response: Optional[str]) -> None:
     _safe_write(body)
 
 
-# Process-wide serialisation for OpenAI calls. Class-level so every instance
-# of LlmClient with provider="openai" shares it — even if multiple clients
-# are constructed by different phases.
+# Process-wide serialisation for OpenAI calls at the legacy max_concurrency=1
+# default. Class-level so every instance of LlmClient with provider="openai"
+# shares it — even if multiple clients are constructed by different phases.
 _OPENAI_LOCK = threading.Lock()
 # Default pause after each OpenAI call. Overridable per-client via
 # `rate_limit_seconds` (config key `llm.rateLimitSeconds`).
 _OPENAI_RATE_LIMIT_SEC = 3.0
+
+
+class _RateLimiter:
+    """Caps aggregate admissions to <= `requests_per_second` across all callers.
+
+    Unlike a plain "sleep after every call", this is shared state: every
+    thread calling `acquire()` on the same instance draws from the same
+    trailing 1-second window, so N concurrent callers are throttled together
+    (aggregate rate), not each paced independently (which would let aggregate
+    throughput scale with N and defeat the point of a shared-gateway limit).
+
+    `acquire()` is called *before* sending the request (admission control),
+    not after — that's what lets the semaphore's other permits keep working
+    while one caller waits its turn, instead of the old design where the
+    sleep sat inside the same lock that also serialised the HTTP call.
+    """
+
+    def __init__(self, requests_per_second: float) -> None:
+        self._rps = max(0.0, float(requests_per_second))
+        self._lock = threading.Lock()
+        self._timestamps: "deque[float]" = deque()
+
+    def acquire(self) -> float:
+        """Block until admitting one more request keeps us under the cap.
+
+        Returns the number of seconds spent waiting (0.0 if unlimited or
+        already under the cap).
+        """
+        if self._rps <= 0:
+            return 0.0
+        waited = 0.0
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                cutoff = now - 1.0
+                # <= (not <): when acquire() sleeps exactly until a slot's
+                # 1-second window elapses, `now` lands exactly on that slot's
+                # expiry instant, making it == cutoff. A strict `<` would
+                # never evict it, so sleep_for recomputes to 0 forever
+                # without freeing a slot — an infinite busy-loop.
+                while self._timestamps and self._timestamps[0] <= cutoff:
+                    self._timestamps.popleft()
+                if len(self._timestamps) < self._rps:
+                    self._timestamps.append(now)
+                    return waited
+                sleep_for = self._timestamps[0] + 1.0 - now
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+                waited += sleep_for
 
 
 class LlmClient:
@@ -144,6 +199,8 @@ class LlmClient:
         num_ctx: int = 8192,
         max_retries: int = 1,
         rate_limit_seconds: float = _OPENAI_RATE_LIMIT_SEC,
+        max_concurrency: int = 1,
+        requests_per_second: Optional[float] = None,
         # Legacy-compat args
         url: Optional[str] = None,
         use_openai_format: bool = False,
@@ -165,6 +222,23 @@ class LlmClient:
         self._rate_limit = max(0.0, float(rate_limit_seconds))
         self._api_key = api_key
         self._custom_headers = dict(custom_headers or {})
+
+        # Concurrency primitives (CC-1). max_concurrency=1 (the default)
+        # keeps the legacy _OPENAI_LOCK + unconditional-sleep code path
+        # untouched below — a deliberate branch, not an oversight, because a
+        # real shared rate limiter cannot reproduce "always sleep exactly
+        # rate_limit_seconds, even on the very first call" (a fresh bucket
+        # starts empty). Only opting into max_concurrency > 1 switches to the
+        # semaphore + aggregate _RateLimiter.
+        self._max_concurrency = max(1, int(max_concurrency))
+        self._concurrency_sem = threading.Semaphore(self._max_concurrency)
+        if requests_per_second is not None:
+            self._requests_per_second = max(0.0, float(requests_per_second))
+        elif self._rate_limit > 0:
+            self._requests_per_second = 1.0 / self._rate_limit
+        else:
+            self._requests_per_second = 0.0
+        self._rate_limiter = _RateLimiter(self._requests_per_second)
 
         # Endpoint resolution.
         # Legacy callers pass `url=` already pointing at the full endpoint
@@ -191,6 +265,8 @@ class LlmClient:
             numCtx=self._num_ctx,
             timeoutSeconds=self._timeout,
             retries=self._max_retries,
+            maxConcurrency=self._max_concurrency,
+            requestsPerSecond=self._requests_per_second,
         )
 
     # ------------------------------------------------------------------
@@ -237,6 +313,10 @@ class LlmClient:
     @property
     def model(self) -> str:
         return self._model
+
+    @property
+    def max_concurrency(self) -> int:
+        return self._max_concurrency
 
     @property
     def num_ctx(self) -> int:
@@ -486,28 +566,8 @@ class LlmClient:
             "temperature": self._temperature,
             "max_tokens": 2048,
         }
-        # Serialise across the whole process. Even if multiple threads call
-        # generate() concurrently, only one OpenAI request is in flight at a
-        # time, and we always sleep after to satisfy the gateway throttle.
         with self._attempt("openai") as m:
-            with _OPENAI_LOCK:
-                headers = build_openai_headers(
-                    api_key=self._api_key,
-                    config_headers=self._custom_headers,
-                )
-                try:
-                    resp = requests.post(
-                        self._endpoint,
-                        headers=headers,
-                        json=payload,
-                        timeout=self._timeout,
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-                finally:
-                    # Sleep on every attempt — including failures — so a tight
-                    # retry loop never bursts the gateway.
-                    self._throttle(m)
+            data = self._post_openai(payload, m)
             choices = data.get("choices") or []
             text = ""
             if choices:
@@ -529,22 +589,7 @@ class LlmClient:
             "max_tokens": 2048,
         }
         with self._attempt("openai") as m:
-            with _OPENAI_LOCK:
-                headers = build_openai_headers(
-                    api_key=self._api_key,
-                    config_headers=self._custom_headers,
-                )
-                try:
-                    resp = requests.post(
-                        self._endpoint,
-                        headers=headers,
-                        json=payload,
-                        timeout=self._timeout,
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-                finally:
-                    self._throttle(m)
+            data = self._post_openai(payload, m)
             choices = data.get("choices") or []
             text = ""
             if choices:
@@ -556,6 +601,52 @@ class LlmClient:
             m["completion"] = int(usage.get("completion_tokens") or 0)
             m["outcome"] = "ok" if text else "empty"
             return text or None
+
+    def _post_openai(self, payload: Dict, m: Dict) -> Dict:
+        """Issue the actual OpenAI HTTP POST, gated per `max_concurrency`.
+
+        max_concurrency=1 (the default): byte-for-byte the legacy behaviour —
+        one process-wide lock around the request, unconditional sleep of
+        `rate_limit_seconds` after every attempt (including failures) inside
+        that same lock. Kept as its own branch rather than folded into the
+        semaphore/rate-limiter path below because that path's admission
+        control legitimately behaves differently (see _RateLimiter) and must
+        not change the default's observable timing.
+
+        max_concurrency>1: a bounded semaphore caps how many requests are in
+        flight; a shared _RateLimiter gates admission *before* the request is
+        sent so the aggregate rate is capped across all callers, without the
+        sleep of one caller blocking another's HTTP round-trip.
+        """
+        headers = build_openai_headers(
+            api_key=self._api_key,
+            config_headers=self._custom_headers,
+        )
+        if self._max_concurrency <= 1:
+            with _OPENAI_LOCK:
+                try:
+                    resp = requests.post(
+                        self._endpoint,
+                        headers=headers,
+                        json=payload,
+                        timeout=self._timeout,
+                    )
+                    resp.raise_for_status()
+                    return resp.json()
+                finally:
+                    # Sleep on every attempt — including failures — so a tight
+                    # retry loop never bursts the gateway.
+                    self._throttle(m)
+        with self._concurrency_sem:
+            m["throttle"] += self._rate_limiter.acquire()
+            resp = requests.post(
+                self._endpoint,
+                headers=headers,
+                json=payload,
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+            return resp.json()
 
 
 # ---------------------------------------------------------------------------
@@ -574,6 +665,8 @@ def from_config(llm_cfg: Dict) -> LlmClient:
     num_ctx = int(llm_cfg.get("numCtx", 8192))
     retries = int(llm_cfg.get("retries", 1))
     rate_limit = float(llm_cfg.get("rateLimitSeconds", _OPENAI_RATE_LIMIT_SEC))
+    max_concurrency = int(llm_cfg.get("maxConcurrency", 1))
+    requests_per_second = llm_cfg.get("requestsPerSecond")
     custom_headers = llm_cfg.get("customHeaders") or {}
     api_key = resolve_api_key(llm_cfg)
     return LlmClient(
@@ -586,4 +679,6 @@ def from_config(llm_cfg: Dict) -> LlmClient:
         num_ctx=num_ctx,
         max_retries=retries,
         rate_limit_seconds=rate_limit,
+        max_concurrency=max_concurrency,
+        requests_per_second=requests_per_second,
     )
