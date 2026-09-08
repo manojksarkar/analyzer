@@ -45,6 +45,7 @@ import logging
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -814,12 +815,17 @@ class HierarchySummarizer:
                  llm_client,          # LlmClient instance
                  project_dir: str,
                  batch_size: int = 8,
-                 verbose: bool = False) -> None:
+                 verbose: bool = False,
+                 max_workers: int = 1) -> None:
         self._k = knowledge
         self._client = llm_client
         self._project_dir = project_dir
         self._batch_size = batch_size
         self._verbose = verbose
+        # CC-2: size the per-level worker pool from llm.maxConcurrency. Default
+        # 1 processes every level's units (batches/functions/files/components)
+        # one at a time, in the original submission order — a strict no-op.
+        self._max_workers = max(1, int(max_workers))
 
     # ------------------------------------------------------------------
     # Public entry
@@ -852,12 +858,17 @@ class HierarchySummarizer:
             logger.info("  All functions already have descriptions — skipping function summarization")
             return
 
-        logger.info("  Summarizing %d undocumented functions (batch=%d)...",
-                    len(unique), self._batch_size)
+        logger.info("  Summarizing %d undocumented functions (batch=%d, workers=%d)...",
+                    len(unique), self._batch_size, self._max_workers)
 
-        done = 0
-        for i in range(0, len(unique), self._batch_size):
-            batch = unique[i: i + self._batch_size]
+        # Batches partition `unique` by qualified_name (each function appears in
+        # exactly one batch), so batches are independent LLM calls — a flat
+        # CC-2 wave. Each batch's writes land on a disjoint set of `stored`
+        # entries, so applying them from worker threads (rather than funneling
+        # back through the main thread) never races.
+        batches = [unique[i: i + self._batch_size] for i in range(0, len(unique), self._batch_size)]
+
+        def _apply(batch):
             summaries = self._summarize_function_batch(batch)
             for fk in batch:
                 key = fk.qualified_name.split("::")[-1]  # short name for JSON key
@@ -866,10 +877,16 @@ class HierarchySummarizer:
                     # Update ALL entries with this qualified name
                     for stored in self._k.functions.values():
                         if stored.qualified_name == fk.qualified_name and not stored.description:
-                            stored.description = summary.strip().rstrip(".")+ "."
-            done += len(batch)
-            if done % 50 == 0 or done == len(unique):
-                logger.info("  Function summaries: %d/%d", done, len(unique))
+                            stored.description = summary.strip().rstrip(".") + "."
+            return len(batch)
+
+        done = 0
+        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
+            futures = [executor.submit(_apply, batch) for batch in batches]
+            for fut in as_completed(futures):
+                done += fut.result()
+                if done % 50 == 0 or done == len(unique):
+                    logger.info("  Function summaries: %d/%d", done, len(unique))
 
     def _summarize_function_batch(self,
                                    batch: List[FunctionKnowledge]) -> Dict[str, str]:
@@ -925,24 +942,32 @@ class HierarchySummarizer:
                         self._PHASE_MIN_LINES)
             return
 
-        logger.info("  Generating phases for %d function(s) (>= %d lines)...",
-                    len(eligible), self._PHASE_MIN_LINES)
+        logger.info("  Generating phases for %d function(s) (>= %d lines, workers=%d)...",
+                    len(eligible), self._PHASE_MIN_LINES, self._max_workers)
 
-        done = 0
-        for fk in eligible:
+        # One function's phase breakdown is independent of every other's — flat wave.
+        def _apply(fk):
             try:
                 phases = self._generate_phases(fk)
                 if phases:
-                    # Update all entries that share this qualified name
+                    # Update all entries that share this qualified name (unique
+                    # by construction — `eligible` is deduped by qualified_name,
+                    # so no other worker writes the same `stored` entries).
                     for stored in self._k.functions.values():
                         if stored.qualified_name == fk.qualified_name:
                             stored.phases = phases
             except Exception as exc:
                 logger.debug("  Phase generation failed for %s: %s",
                              fk.qualified_name, exc)
-            done += 1
-            if done % 20 == 0 or done == len(eligible):
-                logger.info("  Phases: %d/%d", done, len(eligible))
+
+        done = 0
+        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
+            futures = [executor.submit(_apply, fk) for fk in eligible]
+            for fut in as_completed(futures):
+                fut.result()
+                done += 1
+                if done % 20 == 0 or done == len(eligible):
+                    logger.info("  Phases: %d/%d", done, len(eligible))
 
     def _generate_phases(self, fk: FunctionKnowledge) -> List[Dict]:
         """Generate phase breakdown for one function via one LLM call."""
@@ -1009,14 +1034,25 @@ class HierarchySummarizer:
 
         pending = [(fp, fns) for fp, fns in sorted(by_file.items())
                    if fp not in self._k.file_summaries]   # incremental: skip carried-forward
-        logger.info("  Summarizing %d files (%d reused)...", len(pending), len(by_file) - len(pending))
-        for file_path, funcs in pending:
+        logger.info("  Summarizing %d files (%d reused, workers=%d)...",
+                    len(pending), len(by_file) - len(pending), self._max_workers)
+
+        # One file's summary is independent of every other file's — flat wave.
+        # Each worker writes a distinct `file_path` key, so concurrent dict
+        # writes never collide (and dict.__setitem__ is itself atomic under
+        # the GIL even if they did).
+        def _apply(file_path, funcs):
             try:
                 summary = self._summarize_one_file(file_path, funcs)
                 if summary:
                     self._k.file_summaries[file_path] = summary
             except Exception as exc:
                 logger.debug("  File summary failed for %s: %s", file_path, exc)
+
+        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
+            futures = [executor.submit(_apply, fp, fns) for fp, fns in pending]
+            for fut in as_completed(futures):
+                fut.result()
 
     def _summarize_one_file(self, file_path: str,
                              funcs: List[FunctionKnowledge]) -> str:
@@ -1051,15 +1087,22 @@ class HierarchySummarizer:
 
         pending = [(cp, fs) for cp, fs in sorted(by_component.items())
                    if cp not in self._k.component_summaries]   # incremental: skip carried-forward
-        logger.info("  Summarizing %d components (%d reused)...",
-                    len(pending), len(by_component) - len(pending))
-        for component_path, files in pending:
+        logger.info("  Summarizing %d components (%d reused, workers=%d)...",
+                    len(pending), len(by_component) - len(pending), self._max_workers)
+
+        # One component's summary is independent of every other's — flat wave.
+        def _apply(component_path, files):
             try:
                 summary = self._summarize_one_component(component_path, files)
                 if summary:
                     self._k.component_summaries[component_path] = summary
             except Exception as exc:
                 logger.debug("  Component summary failed for %s: %s", component_path, exc)
+
+        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
+            futures = [executor.submit(_apply, cp, fs) for cp, fs in pending]
+            for fut in as_completed(futures):
+                fut.result()
 
     def _summarize_one_component(self, component_path: str,
                                file_paths: List[str]) -> str:

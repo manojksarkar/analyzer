@@ -34,6 +34,7 @@ import logging
 import os
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -149,6 +150,10 @@ def _parse_args() -> EngineConfig:
     p.add_argument("--no-llm", action="store_true",
                    help="Skip the LLM entirely; emit fallback (non-LLM) node labels. "
                         "For deterministic, LLM-free runs (timing tests).")
+    p.add_argument("--llm-max-concurrency", type=int, default=None,
+                   help="Functions labeled concurrently (default: the resolved "
+                        "analyzer config's llm.maxConcurrency, itself defaulting "
+                        "to 1 — sequential, byte-identical to pre-CC-2 behaviour).")
     p.add_argument("--verbose", "-v", action="store_true",
                    help="Enable debug logging")
     p.add_argument("--quiet", "-q", action="store_true",
@@ -190,6 +195,7 @@ def _parse_args() -> EngineConfig:
         llm_batch_size=args.llm_batch_size,
         llm_num_ctx=args.llm_num_ctx,
         no_llm=args.no_llm,
+        max_concurrency=args.llm_max_concurrency,
     )
 
 
@@ -670,41 +676,74 @@ def run(config: EngineConfig) -> None:
     )
     writer = OutputWriter(config.out_dir)
 
-    # Process each source file
-    file_results: List[FileResult] = []
+    # CC-2: every function's CFG-build → enrich → label → coherence pipeline is
+    # independent of every other function's, so this is a flat wave — no
+    # leveling needed, unlike Phase 2 descriptions. Size the pool from
+    # --llm-max-concurrency, falling back to the resolved analyzer config's
+    # llm.maxConcurrency (default 1 — one function at a time, a strict no-op).
+    max_workers = config.max_concurrency
+    if not max_workers:
+        max_workers = (llm_cfg_resolved or {}).get("maxConcurrency", 1)
+    max_workers = max(1, int(max_workers))
+
+    # Flatten to (source_file, entry) tasks in the same deterministic order the
+    # old sequential double loop used. Results are collected by index and
+    # reattached to their FileResult in that fixed order regardless of which
+    # thread finishes first — determinism (PROJECT_CONTEXT.md) requires
+    # byte-identical output, and output order must not depend on scheduling.
+    tasks: List = [
+        (source_file, entry)
+        for source_file, entries in sorted(by_file.items())
+        for entry in entries
+    ]
+
     total_ok = 0
     total_err = 0
     total_funcs = len(processable)  # global denominator (functions actually processed)
     processed = 0                   # global running counter across all files
+    results_by_index: Dict[int, FlowchartResult] = {}
 
+    def _run_one(idx: int, entry) -> "tuple":
+        return idx, _process_function(
+            func_entry=entry,
+            pkb=pkb,
+            source_extractor=source_extractor,
+            tu_parser=tu_parser,
+            label_generator=label_generator,
+            config=config,
+            base_path=base_path,
+            project_knowledge=project_knowledge,
+            including_tus=including_tus,
+        )
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_run_one, idx, entry)
+            for idx, (_source_file, entry) in enumerate(tasks)
+        ]
+        for fut in as_completed(futures):
+            idx, result = fut.result()
+            results_by_index[idx] = result
+            processed += 1
+            if result.error:
+                total_err += 1
+                logger.warning("[%d/%d] ✗ %s: %s",
+                                processed, total_funcs, result.qualified_name, result.error)
+            else:
+                total_ok += 1
+                logger.debug("[%d/%d] ✓ %s: %d chars of Mermaid",
+                              processed, total_funcs, result.qualified_name,
+                              len(result.mermaid_script))
+
+    # Reassemble FileResults in the original deterministic order.
+    file_results: List[FileResult] = []
+    idx = 0
     for source_file, entries in sorted(by_file.items()):
         logger.debug("── File: %s  (%d function(s))", source_file, len(entries))
         fr = FileResult(source_file=source_file)
-
-        for entry in entries:
-            processed += 1
-            logger.info("[%d/%d] Processing: %s",
-                        processed, total_funcs, entry.qualified_name)
-            result = _process_function(
-                func_entry=entry,
-                pkb=pkb,
-                source_extractor=source_extractor,
-                tu_parser=tu_parser,
-                label_generator=label_generator,
-                config=config,
-                base_path=base_path,
-                project_knowledge=project_knowledge,
-                including_tus=including_tus,
-            )
-            fr.flowcharts.append(result)
-            if result.error:
-                total_err += 1
-                logger.warning("   ✗ Error: %s", result.error)
-            else:
-                total_ok += 1
-                logger.debug("   ✓ OK: %d chars of Mermaid",
-                             len(result.mermaid_script))
-
+        for _entry in entries:
+            fr.flowcharts.append(results_by_index[idx])
+            idx += 1
         file_results.append(fr)
 
     # Write output

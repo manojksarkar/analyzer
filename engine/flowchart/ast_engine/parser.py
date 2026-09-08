@@ -8,6 +8,7 @@ Source extraction and libclang TranslationUnit management.
 """
 
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -26,16 +27,23 @@ class SourceExtractor:
     def __init__(self, base_path: str) -> None:
         self._base_path = Path(base_path)
         self._cache: Dict[str, List[str]] = {}
+        # CC-2: functions from the same file run on different threads once
+        # flowchart_engine.py's run() parallelizes over the function list —
+        # guard the check-then-populate so two threads never both open and
+        # decode the same file (wasted work, not corruption: dict.__setitem__
+        # is atomic under the GIL either way, but this avoids the race).
+        self._lock = threading.Lock()
 
     def get_lines(self, relative_file: str) -> List[str]:
         """Return all lines for a source file (cached)."""
-        if relative_file not in self._cache:
-            abs_path = self._base_path / relative_file
-            if not abs_path.exists():
-                raise FileNotFoundError(f"Source file not found: {abs_path}")
-            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
-                self._cache[relative_file] = f.readlines()
-        return self._cache[relative_file]
+        with self._lock:
+            if relative_file not in self._cache:
+                abs_path = self._base_path / relative_file
+                if not abs_path.exists():
+                    raise FileNotFoundError(f"Source file not found: {abs_path}")
+                with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                    self._cache[relative_file] = f.readlines()
+            return self._cache[relative_file]
 
     def extract_by_lines(self, relative_file: str,
                          start_line: int, end_line: int) -> str:
@@ -91,6 +99,15 @@ class TranslationUnitParser:
         self._extra_args = extra_clang_args
         self._index = ci.Index.create()
         self._tu_cache: Dict[str, ci.TranslationUnit] = {}
+        # CC-2: flowchart_engine.py's run() parallelizes _process_function over
+        # the function list, so multiple threads can ask for the same (or a
+        # different) TU concurrently. libclang's C API gives no documented
+        # guarantee that concurrent clang_parseTranslationUnit calls against
+        # one shared CXIndex are safe, so every parse — not just the cache
+        # dict update — is serialized through this lock. This only serializes
+        # the libclang parse itself (fast, CPU-bound); the LLM label calls
+        # that dominate wall-clock still run concurrently outside this lock.
+        self._lock = threading.Lock()
 
     def _build_args(self) -> List[str]:
         # Pull the shared default macro defines from core.config so this
@@ -111,16 +128,17 @@ class TranslationUnitParser:
 
     def get_tu(self, abs_path: str) -> ci.TranslationUnit:
         """Return (cached) TranslationUnit for a source file."""
-        if abs_path not in self._tu_cache:
-            args = self._build_args()
-            logger.debug("Parsing TU: %s", abs_path)
-            tu = self._index.parse(abs_path, args=args,
-                                   options=self._PARSE_OPTIONS)
-            if tu is None:
-                raise RuntimeError(f"libclang failed to parse: {abs_path}")
-            self._log_diagnostics(tu, abs_path)
-            self._tu_cache[abs_path] = tu
-        return self._tu_cache[abs_path]
+        with self._lock:
+            if abs_path not in self._tu_cache:
+                args = self._build_args()
+                logger.debug("Parsing TU: %s", abs_path)
+                tu = self._index.parse(abs_path, args=args,
+                                       options=self._PARSE_OPTIONS)
+                if tu is None:
+                    raise RuntimeError(f"libclang failed to parse: {abs_path}")
+                self._log_diagnostics(tu, abs_path)
+                self._tu_cache[abs_path] = tu
+            return self._tu_cache[abs_path]
 
     def get_tu_full(self, abs_path: str) -> ci.TranslationUnit:
         """
@@ -128,19 +146,20 @@ class TranslationUnitParser:
         Used when we need to traverse the actual function body for CFG building.
         """
         cache_key = abs_path + "__full"
-        if cache_key not in self._tu_cache:
-            args = self._build_args()
-            logger.debug("Parsing full TU (with bodies): %s", abs_path)
-            options = (
-                ci.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
-                | ci.TranslationUnit.PARSE_INCOMPLETE
-            )
-            tu = self._index.parse(abs_path, args=args, options=options)
-            if tu is None:
-                raise RuntimeError(f"libclang failed to parse: {abs_path}")
-            self._log_diagnostics(tu, abs_path)
-            self._tu_cache[cache_key] = tu
-        return self._tu_cache[cache_key]
+        with self._lock:
+            if cache_key not in self._tu_cache:
+                args = self._build_args()
+                logger.debug("Parsing full TU (with bodies): %s", abs_path)
+                options = (
+                    ci.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
+                    | ci.TranslationUnit.PARSE_INCOMPLETE
+                )
+                tu = self._index.parse(abs_path, args=args, options=options)
+                if tu is None:
+                    raise RuntimeError(f"libclang failed to parse: {abs_path}")
+                self._log_diagnostics(tu, abs_path)
+                self._tu_cache[cache_key] = tu
+            return self._tu_cache[cache_key]
 
     @staticmethod
     def _log_diagnostics(tu: ci.TranslationUnit, path: str) -> None:

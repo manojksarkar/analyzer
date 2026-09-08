@@ -21,6 +21,8 @@ in llm_core.LlmClient.
 import os
 import re
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
 
 from utils import norm_path, short_name, load_llm_config
@@ -185,6 +187,14 @@ def extract_source_line(base_path: str, loc: dict) -> str:
 # ---------------------------------------------------------------------------
 
 _CLIENT_CACHE: Dict[str, "LlmClient"] = {}
+# CC-2 call sites (enrich_functions_rich, _enrich_behaviour_names_llm) call
+# _get_client() from worker threads. A plain check-then-set race here would
+# let two threads each construct their own LlmClient for the same config —
+# each with its OWN semaphore/rate limiter (llm_core.client.LlmClient keeps
+# those per-instance, not per-process), silently doubling the effective
+# concurrency/rate cap instead of enforcing one shared limit. Double-checked
+# locking keeps the common (already-cached) path lock-free.
+_CLIENT_CACHE_LOCK = threading.Lock()
 
 
 def _client_cache_key(llm_cfg: dict) -> str:
@@ -210,32 +220,38 @@ def _get_client(config: dict) -> Optional["LlmClient"]:
     cached = _CLIENT_CACHE.get(key)
     if cached is not None:
         return cached
-    client = LlmClient(
-        provider=llm_cfg["provider"],
-        base_url=llm_cfg["baseUrl"],
-        model=llm_cfg["defaultModel"],
-        api_key=llm_cfg.get("apiKey"),
-        custom_headers=llm_cfg.get("customHeaders") or {},
-        timeout=llm_cfg["timeoutSeconds"],
-        num_ctx=llm_cfg["numCtx"],
-        max_retries=llm_cfg["retries"],
-        # This path builds the client directly rather than via from_config(),
-        # so the throttle has to be threaded through explicitly — without this
-        # the enrichment phases silently ignore llm.rateLimitSeconds.
-        rate_limit_seconds=llm_cfg.get("rateLimitSeconds", 3.0),
-        max_concurrency=llm_cfg.get("maxConcurrency", 1),
-        requests_per_second=llm_cfg.get("requestsPerSecond"),
-    )
-    # Config that isn't visible to LlmClient but changes what we compare
-    # between runs (see tools/llm_stats.py).
-    from llm_core import tokens as _tokens
-    _tokens.record_config(
-        maxContextTokens=llm_cfg.get("maxContextTokens"),
-        enrichment=llm_cfg.get("enrichment"),
-        cacheVersion=llm_cfg.get("cacheVersion"),
-    )
-    _CLIENT_CACHE[key] = client
-    return client
+    with _CLIENT_CACHE_LOCK:
+        # Re-check inside the lock: another thread may have built this exact
+        # config's client while we were waiting.
+        cached = _CLIENT_CACHE.get(key)
+        if cached is not None:
+            return cached
+        client = LlmClient(
+            provider=llm_cfg["provider"],
+            base_url=llm_cfg["baseUrl"],
+            model=llm_cfg["defaultModel"],
+            api_key=llm_cfg.get("apiKey"),
+            custom_headers=llm_cfg.get("customHeaders") or {},
+            timeout=llm_cfg["timeoutSeconds"],
+            num_ctx=llm_cfg["numCtx"],
+            max_retries=llm_cfg["retries"],
+            # This path builds the client directly rather than via from_config(),
+            # so the throttle has to be threaded through explicitly — without this
+            # the enrichment phases silently ignore llm.rateLimitSeconds.
+            rate_limit_seconds=llm_cfg.get("rateLimitSeconds", 3.0),
+            max_concurrency=llm_cfg.get("maxConcurrency", 1),
+            requests_per_second=llm_cfg.get("requestsPerSecond"),
+        )
+        # Config that isn't visible to LlmClient but changes what we compare
+        # between runs (see tools/llm_stats.py).
+        from llm_core import tokens as _tokens
+        _tokens.record_config(
+            maxContextTokens=llm_cfg.get("maxContextTokens"),
+            enrichment=llm_cfg.get("enrichment"),
+            cacheVersion=llm_cfg.get("cacheVersion"),
+        )
+        _CLIENT_CACHE[key] = client
+        return client
 
 
 def llm_provider_reachable(config: dict) -> bool:
@@ -1078,10 +1094,13 @@ def enrich_functions_rich(
 ) -> dict:
     """Budget-aware function description enrichment with optional two-pass.
 
-    Pass 1 (always): bottom-up order, each function sees callee descriptions.
-    Pass 2 (when enrichment.twoPassDescriptions=true): same order, but now
-    both callee AND caller descriptions from Pass 1 are available. Uses a
-    refinement prompt that compares the prior description against caller context.
+    Pass 1 (always): bottom-up, wave by wave — every function in a wave has
+    all its callees already described in an earlier wave, so functions within
+    one wave are described concurrently (llm.maxConcurrency), and a wave
+    boundary is a hard sync point before the next wave starts.
+    Pass 2 (when enrichment.twoPassDescriptions=true): every function's
+    refinement is independent of every other's (context comes from Pass 1's
+    finished output only), so it runs as a single flat concurrent wave.
 
     Parameters
     ----------
@@ -1107,17 +1126,22 @@ def enrich_functions_rich(
     # are skipped. Compute the work set FIRST and bail out BEFORE building the O(model)
     # RepoMap + context infrastructure when nothing needs a description (0-change or
     # fully-cached run) — that infra build was ~20s on every Phase 2, even for 0 changes.
+    #
+    # `waves` (CC-2) keeps the topological levels separate instead of flattening them:
+    # every function in waves[i] has all its callees in waves[0..i-1] (already `processed`
+    # when the wave was computed), so a wave is exactly the set of functions that can be
+    # described concurrently — later waves need earlier waves' `result` entries for callee
+    # context, so a wave boundary is a hard synchronization point.
     func_by_id = dict(functions_data)
     calls_map = {key: set(f.get("callsIds", [])) for key, f in functions_data.items()}
-    processed, order, all_keys = set(), [], set(func_by_id)
+    processed, waves, all_keys = set(), [], set(func_by_id)
     while len(processed) < len(all_keys):
         ready = [k for k in all_keys - processed if calls_map.get(k, set()).issubset(processed)] \
             or list(all_keys - processed)
-        for key in ready:
-            order.append(key)
-            processed.add(key)
-    order = [k for k in order if not func_by_id.get(k, {}).get("description")]
-    if not order:
+        waves.append(ready)
+        processed.update(ready)
+    flat_order = [k for wave in waves for k in wave if not func_by_id.get(k, {}).get("description")]
+    if not flat_order:
         return {}
 
     from llm_core.token_counter import get_counter
@@ -1151,22 +1175,35 @@ def enrich_functions_rich(
     two_pass = bool(enrichment_cfg.get("twoPassDescriptions", True))
     self_review_enabled = bool(enrichment_cfg.get("selfReview", False))
 
-    # (func_by_id / calls_map / order were computed above, before the infra build.)
+    # (func_by_id / calls_map / waves were computed above, before the infra build.)
 
-    # ── Pass 1: initial descriptions (bottom-up) ──
-    result = {}
-    progress = ProgressReporter("LLM-description-pass1", total=len(order), logger=_log)
+    # CC-2: size the wave/pass worker pool from the same knob that sizes the
+    # client's concurrency semaphore (llm.maxConcurrency, default 1 — a strict
+    # no-op: max_workers=1 processes each wave/pass sequentially, one future
+    # at a time, byte-identical to the old for-loop).
+    max_workers = max(1, int(llm_cfg.get("maxConcurrency", 1)))
+
+    # ── Pass 1: initial descriptions (bottom-up, wave by wave) ──
+    # Only functions in the SAME wave are ever submitted together — every
+    # function in a wave has all its callees in strictly earlier, already-
+    # merged waves, so `result`/`source_hashes` are only ever read here for
+    # keys that are fully settled. Workers never write the shared dicts
+    # themselves; they return their payload and the main thread merges it in
+    # after `as_completed()`, so a wave boundary is a real synchronization
+    # point and there is no concurrent read/write on `result`/`source_hashes`.
+    result: Dict[str, dict] = {}
+    progress = ProgressReporter("LLM-description-pass1", total=len(flat_order), logger=_log)
     progress.start()
 
-    for key in order:
+    def _pass1_worker(key: str):
         f = func_by_id.get(key)
         if not f:
-            continue
+            return key, None
         loc = f.get("location", {})
         source = extract_source(base_path, loc)
         if not source:
             progress.step(label="skip")
-            continue
+            return key, None
 
         qn = f.get("qualifiedName", "")
         budget = ContextBudget(max_tokens=max_tokens, task="function_description", counter=counter)
@@ -1180,7 +1217,6 @@ def enrich_functions_rich(
 
         # Compute composite cache hash: source + sorted callee hashes
         source_hash = EntityCache.compute_hash(source)
-        source_hashes[key] = source_hash
         callee_hashes = [source_hashes[cid] for cid in calls_map.get(key, set()) if cid in source_hashes]
         cache_hash = EntityCache.compute_hash(
             source + "|pass1|" + (qn or ""),
@@ -1188,9 +1224,8 @@ def enrich_functions_rich(
         )
         cached = entity_cache.get(qn or key, cache_hash)
         if cached:
-            result[key] = {"description": cached}
             progress.step(label=short_name(qn) or "?")
-            continue
+            return key, {"description": cached, "_source_hash": source_hash}
 
         desc = get_rich_description(
             source, config,
@@ -1218,40 +1253,63 @@ def enrich_functions_rich(
             if reviewed:
                 desc = reviewed
 
-        result[key] = {"description": desc}
         if desc:
             entity_cache.put(qn or key, cache_hash, desc, metadata={"pass": 1})
         progress.step(label=short_name(qn) or "?")
+        return key, {"description": desc, "_source_hash": source_hash}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for wave in waves:
+            wave_keys = [k for k in wave if not func_by_id.get(k, {}).get("description")]
+            if not wave_keys:
+                continue
+            futures = [executor.submit(_pass1_worker, k) for k in wave_keys]
+            for fut in as_completed(futures):
+                key, payload = fut.result()
+                if payload is None:
+                    continue
+                source_hashes[key] = payload.pop("_source_hash")
+                result[key] = payload
 
     progress.done(summary=f"{len(result)} described (pass 1) — cache: {entity_cache.stats()}")
 
     # ── Pass 2: refine with full caller context ──
+    # Every function's refinement is independent of every other's — caller and
+    # callee context both come from Pass 1's already-final descriptions, never
+    # from another function's Pass-2 refinement — so this runs as a single flat
+    # wave at full concurrency instead of the wave-by-wave leveling Pass 1
+    # needs. Context is built from `pass1_result`, an immutable snapshot taken
+    # before submitting any worker: reading a live, concurrently-mutated
+    # `result` here would make each function's injected caller/callee text
+    # depend on unrelated workers' completion order, which is exactly the kind
+    # of race determinism (PROJECT_CONTEXT.md) forbids.
     if two_pass and result:
-        _log.info("Starting pass 2 — refining %d descriptions with caller context", len(order))
-        progress2 = ProgressReporter("LLM-description-pass2", total=len(order), logger=_log)
+        _log.info("Starting pass 2 — refining %d descriptions with caller context", len(flat_order))
+        progress2 = ProgressReporter("LLM-description-pass2", total=len(flat_order), logger=_log)
         progress2.start()
+        pass1_result = dict(result)
 
-        for key in order:
+        def _pass2_worker(key: str):
             f = func_by_id.get(key)
             if not f:
-                continue
-            prior = result.get(key, {}).get("description", "")
+                return key, None
+            prior = pass1_result.get(key, {}).get("description", "")
             if not prior:
                 progress2.step(label="skip")
-                continue
+                return key, None
 
             loc = f.get("location", {})
             source = extract_source(base_path, loc)
             if not source:
                 progress2.step(label="skip")
-                continue
+                return key, None
 
             qn = f.get("qualifiedName", "")
             budget = ContextBudget(
                 max_tokens=max_tokens, task="function_description_refined", counter=counter,
             )
             callee_text, caller_text, map_text, types_text, _ = _build_function_context(
-                key, func_by_id, calls_map, result, knowledge, builder, repo_map_builder, counter, budget,
+                key, func_by_id, calls_map, pass1_result, knowledge, builder, repo_map_builder, counter, budget,
             )
 
             # Pass 2 cache key includes caller IDs (caller context is what changes between passes)
@@ -1263,9 +1321,8 @@ def enrich_functions_rich(
             )
             cached = entity_cache.get(qn or key, pass2_hash)
             if cached:
-                result[key] = {"description": cached}
                 progress2.step(label=short_name(qn) or "?")
-                continue
+                return key, {"description": cached}
 
             refined = _get_refined_description(
                 source, config,
@@ -1292,9 +1349,16 @@ def enrich_functions_rich(
                     refined = reviewed
 
             if refined:
-                result[key] = {"description": refined}
                 entity_cache.put(qn or key, pass2_hash, refined, metadata={"pass": 2})
             progress2.step(label=short_name(qn) or "?")
+            return key, ({"description": refined} if refined else None)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_pass2_worker, k) for k in flat_order]
+            for fut in as_completed(futures):
+                key, payload = fut.result()
+                if payload is not None:
+                    result[key] = payload
 
         progress2.done(summary=f"{len(result)} refined (pass 2) — cache: {entity_cache.stats()}")
 

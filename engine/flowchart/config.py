@@ -52,3 +52,9 @@ class EngineConfig:
     # Ollama defaults to 2048 for many models; prompts >2048 tokens return empty.
     # Set to 8192 to safely handle all prompt sizes up to ~2500 tokens.
     llm_num_ctx: int = 8192
+
+    # CC-2: functions in flight at once (ThreadPoolExecutor over the function
+    # list in run()). None (the default) means "use the resolved analyzer
+    # config's llm.maxConcurrency" (itself defaulting to 1 — a strict no-op,
+    # one function at a time, in the original deterministic order).
+    max_concurrency: Optional[int] = None

@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group, short_name
 from core.config import get_component_layer_name
@@ -681,34 +682,44 @@ def _enrich_behaviour_names_llm(
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger
     abbreviations = load_abbreviations(SCRIPT_DIR, config)  # SCRIPT_DIR == engine/, which contains config/
-    order = list(functions_data.keys())
-    n = len(order)
-    progress = ProgressReporter("LLM-behaviour-names", total=n, logger=get_logger("model_deriver"))
-    progress.start()
-    for idx, fid in enumerate(order):
+
+    def _globals_list(gids):
+        out = []
+        for gid in gids:
+            g = (global_variables_data or {}).get(gid) or {}
+            out.append({
+                "name": (g.get("qualifiedName") or "").split("::")[-1],
+                "qualifiedName": g.get("qualifiedName", ""),
+                "type": g.get("type", ""),
+                "description": g.get("description", ""),
+            })
+        return out
+
+    # Eligible functions: independent of each other (each writes only its own
+    # behaviourInputName/OutputName), so this is a flat CC-2 wave — no leveling
+    # needed, unlike Phase 2 descriptions.
+    eligible = []
+    for fid in functions_data.keys():
         if only_fids is not None and fid not in only_fids:
             continue
         f = functions_data.get(fid)
         if not f or not _static_behaviour_name_is_poor(f):
             continue
+        eligible.append(fid)
+
+    n = len(eligible)
+    progress = ProgressReporter("LLM-behaviour-names", total=n, logger=get_logger("model_deriver"))
+    progress.start()
+
+    def _worker(fid):
+        f = functions_data[fid]
         loc = f.get("location") or {}
         source = extract_source(base_path, loc)
         if not source:
-            continue
+            return
         params = f.get("parameters") or f.get("params") or []
         reads_ids = f.get("readsGlobalIdsTransitive") or f.get("readsGlobalIds") or []
         writes_ids = f.get("writesGlobalIdsTransitive") or f.get("writesGlobalIds") or []
-        def _globals_list(gids):
-            out = []
-            for gid in gids:
-                g = (global_variables_data or {}).get(gid) or {}
-                out.append({
-                    "name": (g.get("qualifiedName") or "").split("::")[-1],
-                    "qualifiedName": g.get("qualifiedName", ""),
-                    "type": g.get("type", ""),
-                    "description": g.get("description", ""),
-                })
-            return out
         globals_read = _globals_list(reads_ids)
         globals_written = _globals_list(writes_ids)
         return_type = (f.get("returnType") or "").strip()
@@ -719,12 +730,20 @@ def _enrich_behaviour_names_llm(
             source, params, globals_read, globals_written, return_type, return_expr,
             draft_input, draft_output, config, abbreviations,
         )
+        # Each worker only ever writes its own function's dict — distinct fids
+        # never share a dict object, so concurrent writers never collide.
         if res.get("behaviourInputName"):
             f["behaviourInputName"] = res["behaviourInputName"]
         if res.get("behaviourOutputName"):
             f["behaviourOutputName"] = res["behaviourOutputName"]
         qn = (f.get("qualifiedName") or "").split("::")[-1]
         progress.step(label=qn or fid)
+
+    max_workers = max(1, int((config.get("llm") or {}).get("maxConcurrency", 1)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_worker, fid) for fid in eligible]
+        for fut in as_completed(futures):
+            fut.result()  # surface worker exceptions instead of swallowing them
     progress.done()
 
 
@@ -832,7 +851,8 @@ def _run_hierarchy_summarizer(
                 if cpath not in impacted_comps and summ:
                     knowledge.component_summaries[cpath] = summ
 
-    summarizer = HierarchySummarizer(knowledge, client, base_path)
+    max_workers = max(1, int((config.get("llm") or {}).get("maxConcurrency", 1)))
+    summarizer = HierarchySummarizer(knowledge, client, base_path, max_workers=max_workers)
     summarizer.summarize()
 
     # Write phases back into functions_data in place

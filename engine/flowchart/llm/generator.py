@@ -42,6 +42,7 @@ BATCH_SIZE        — default nodes per LLM call.
 import logging
 import os
 import re
+import threading
 from typing import Dict, List, Optional, Set, Tuple
 
 from cpp_tokens import render_call, short_name
@@ -114,12 +115,31 @@ class LabelGenerator:
         self._max_retries = max_retries
         self._batch_size = batch_size
         self._enrichment = enrichment_config or {}
-        # Node ids that received a rule-based fallback label; reset per function.
-        self._fallback_ids: Set[str] = set()
+        # Node ids that received a rule-based fallback label; reset per function
+        # (see the `_fallback_ids` property). One LabelGenerator instance is
+        # shared across every function once flowchart_engine.py's run() (CC-2)
+        # labels functions concurrently, so this can't be a plain instance
+        # attribute — two threads' label_cfg() calls would reset/read/mutate
+        # the same set. Thread-local storage keeps each thread's fallback set
+        # exactly as function-scoped as it already was under sequential
+        # execution, with no other code at the call sites needing to change.
+        self._fallback_tls = threading.local()
         # Authoritative input-token budget for budget-aware passes (coherence,
         # CFG simplification). Resolved upstream via llm_core.budget.resolve_max_tokens
         # so it honours config.llm.maxContextTokens for both Ollama and OpenAI.
         self._max_context_tokens = max_context_tokens
+
+    @property
+    def _fallback_ids(self) -> Set[str]:
+        ids = getattr(self._fallback_tls, "ids", None)
+        if ids is None:
+            ids = set()
+            self._fallback_tls.ids = ids
+        return ids
+
+    @_fallback_ids.setter
+    def _fallback_ids(self, value: Set[str]) -> None:
+        self._fallback_tls.ids = value
 
     # ------------------------------------------------------------------
     # Public API
