@@ -894,6 +894,25 @@
 > per component), so every SWE.4 e2e test errored at setup. It now merges per component exactly as
 > the `interface_tables` fixture does.)
 
+> Updated: 2026-09-08 (**Re-onboarding a version id now updates its commit sha** —
+> `tools/new_project.py` step 4, branch `fix/onboard-version-commit-sha` off `develop`. An
+> existing `versions` row meant "nothing to do", so re-onboarding the same `--version-id` with
+> a NEW `--commit` silently kept the OLD sha. `generate` defaults its commit to that column
+> ([analyzer.py:124-128](analyzer.py#L124-L128)), so the run checked out a commit the source
+> need not have and failed far from the cause — `fatal: reference is not a tree: <sha>`, naming
+> a sha the caller never typed — while passing `--commit` to `generate` by hand worked, which
+> made the tool look arbitrary. Reported from the office box. Identical to the trap already
+> fixed for `repo_url`/`default_branch` on the projects row directly above it, and fixed the
+> same way: an explicitly typed value wins and the change is PRINTED. Only `commit_sha` is
+> updated — `--branch` carries a default (`"main"`) and would overwrite a stored branch nobody
+> asked to change. Verified against Postgres end to end (onboard sha1 → re-onboard sha2 → row
+> = sha2, throwaway project deleted after); `pytest tests/unit tests/api --skip-pipeline` green.
+>
+> **Found while diagnosing, deliberately NOT fixed here:** `clone._do_checkout` trusts any dir
+> containing `.git` and never re-fetches, so a checkout dir left by an interrupted clone stays
+> permanently broken for that commit — every retry hits the same stale dir and dies with the
+> same `reference is not a tree`. Real, reproducible, but not the cause of the above.)
+
 > Updated: 2026-09-06 (**a flush deleted the artifacts it was not handed; the audit's model
 > checks did not know about hash-only rows** - branch `version7`.
 >

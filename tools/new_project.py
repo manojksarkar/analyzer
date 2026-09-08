@@ -271,9 +271,25 @@ def main(argv=None) -> int:
                   f"`git rev-parse HEAD` gives it.")
             return 2
         with eng.begin() as cx:
-            if cx.execute(sa.select(s.versions.c.id)
-                          .where(s.versions.c.id == args.version_id)).first():
+            cur_v = cx.execute(sa.select(s.versions.c.commit_sha)
+                               .where(s.versions.c.id == args.version_id)).first()
+            if cur_v:
+                # Same trap as the projects row above. An existing row meant "nothing to do",
+                # so re-onboarding a version id with a NEW --commit silently kept the OLD sha.
+                # `generate` defaults its commit to this column, so the run then checked out a
+                # commit the source need not have, and said so far from here:
+                #     fatal: reference is not a tree: <sha>
+                # -- naming a sha the caller never typed, while passing --commit to `generate`
+                # by hand worked. The sha is a pointer the caller just supplied, so an explicit
+                # one wins; only `commit_sha`, since --branch carries a default ("main") and
+                # would overwrite a stored branch nobody asked to change.
                 print(f"version  : {args.version_id} (already reserved)")
+                if (cur_v.commit_sha or "") != args.commit:
+                    cx.execute(sa.update(s.versions)
+                               .where(s.versions.c.id == args.version_id)
+                               .values(commit_sha=args.commit))
+                    print(f"           commit_sha: {(cur_v.commit_sha or '')[:10]!r} -> "
+                          f"{args.commit[:10]!r}  (UPDATED from the command line)")
             else:
                 cx.execute(sa.insert(s.versions), {
                     "id": args.version_id, "project_id": pid, "version": args.version_id,
