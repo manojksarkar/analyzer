@@ -43,7 +43,7 @@ in effective wall-clock per LLM call.
 | ID | Milestone | Scope | Status |
 |---|---|---|---|
 | **CC-1** | Client-layer concurrency primitives | `llm_core/client.py` — semaphore + rate limiter, config, thread-safety audit | **done** (2026-09-07) |
-| **CC-2** | Parallelize call sites (wave-based) | Phase 2 descriptions/behaviour-names/summaries, Phase 3 flowchart labeling | not started |
+| **CC-2** | Parallelize call sites (wave-based) | Phase 2 descriptions/behaviour-names/summaries, Phase 3 flowchart labeling | **done** (2026-09-09) |
 | **CC-3** | Self-hosted inference tier, containerized | vLLM/TGI container(s), multi-replica K8s Deployment + HPA | not started |
 | **CC-4a** | De-duplicate Phase 1's redundant re-parse | `engine/parser.py` — parse each TU once, reuse across all 3 passes | **done** (2026-09-08) |
 | **CC-4** | Containerized CPU-bound fan-out | Phase 1 parsing, Phase 3 `mmdc` rendering — process pool or worker pods | not started |
@@ -140,6 +140,27 @@ Checked directly against source in this session:
 ---
 
 ## 3. CC-2 — Parallelize the call sites (wave-based)
+
+**Status: done (2026-09-09).** Implemented as specified below (§3.1–§3.3), plus three
+thread-safety fixes the CC-1 audit (§2.2) didn't cover because nothing called `generate()`
+concurrently yet at the time: `llm_enrichment._CLIENT_CACHE` (module-level `LlmClient` cache) had
+a check-then-set race that could construct two clients — each with its own semaphore/rate limiter
+— for the same config, silently multiplying the configured cap; fixed with double-checked locking.
+`flowchart.llm.generator.LabelGenerator._fallback_ids` was a plain shared instance `set`, safe only
+under one-function-at-a-time processing; now `threading.local()`-backed via a property (call sites
+unchanged). `flowchart.ast_engine.parser.TranslationUnitParser` had a racy cache dict and no
+guarantee libclang tolerates concurrent `parse()` on one shared `Index`; both `get_tu()` and
+`get_tu_full()` now hold one lock per parser instance around the whole check-then-parse-then-cache
+sequence (serializes the fast libclang parse, not the LLM label call that dominates wall-clock).
+Verified byte-identical output at `maxConcurrency` 1 vs 4 (`SampleCppProject`, all 139 functions,
+`PYTHONHASHSEED` pinned — see §3.4). Full detail: `PROJECT_CONTEXT.md`'s `> Updated: 2026-09-09`
+entry and its `llm_core.client` section, "CC-2 call-site concurrency". **One pre-existing,
+unrelated bug surfaced while verifying determinism and was left unfixed (out of scope, belongs to
+`engine-flowchart`):** `dot_builder._analyze_loops` iterates a `set` (`back_sources`) when
+computing push-down edge order, so two *sequential*, non-concurrent runs in separate Python
+processes can already emit differently-ordered (but semantically identical) `[style=invis]` edges
+depending on `PYTHONHASHSEED` — this is not a CC-2 regression, it reproduces with `maxConcurrency=1`
+on both runs.
 
 Once CC-1 makes concurrent calls *safe*, each sequential `for` loop over independent work becomes
 a `ThreadPoolExecutor` loop. LLM calls are I/O-bound (network round-trip to the inference

@@ -172,6 +172,31 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-09 (**CC-2 landed — call sites actually parallelized**, per
+> `docs/production-redesign/07-llm-concurrency-scaling.md` §3. Every sequential `for` loop CC-1's
+> semaphore was built for now runs through a `ThreadPoolExecutor` sized from `llm.maxConcurrency`:
+> `llm_enrichment.enrich_functions_rich()` (Pass 1 wave-by-wave, Pass 2 one flat wave over a frozen
+> Pass-1 snapshot), `model_deriver._enrich_behaviour_names_llm()` (flat), `project_scanner
+> .HierarchySummarizer`'s 4 levels (flat per level, new `max_workers` ctor arg), and
+> `flowchart_engine.py`'s `run()` (flat over every function, new `--llm-max-concurrency` flag,
+> output reassembled by index so order never depends on scheduling). Default `maxConcurrency=1` is
+> a strict no-op everywhere — verified by running the flowchart engine on `SampleCppProject` at
+> concurrency 1 vs 4 with `PYTHONHASHSEED` pinned and diffing all 139 functions' DOT output
+> byte-for-byte identical (an unpinned hash seed alone made two *sequential*, non-concurrent runs
+> differ — an unrelated pre-existing `set`-iteration order issue in `dot_builder._analyze_loops`'s
+> `back_sources`, flagged to the user, not fixed here — out of scope for CC-2, belongs to
+> `engine-flowchart`). Found and fixed three thread-safety bugs while wiring the fan-out (none
+> were in CC-1's audit): `llm_enrichment._CLIENT_CACHE` could construct two `LlmClient`s (two
+> independent semaphores) for the same config under a race; `LabelGenerator._fallback_ids` was a
+> plain shared instance `set` (now `threading.local()`-backed via a property); `TranslationUnitParser`
+> had a racy cache dict AND no guarantee libclang tolerates concurrent `parse()` calls on one
+> shared `Index` (now one lock per parser instance, guarding the parse itself, not just the cache).
+> Full detail + the three-bug list: `PROJECT_CONTEXT.md`'s `llm_core.client` section, "CC-2
+> call-site concurrency". New tests: `tests/unit/test_llm_enrichment_concurrency.py`,
+> `test_hierarchy_summarizer_concurrency.py`, `test_flowchart_label_generator_concurrency.py`,
+> `test_translation_unit_parser_concurrency.py`. Full existing suite (`tests/unit`, `tests/e2e`)
+> re-verified green.)
+
 > Updated: 2026-09-08 (**CC-4a landed — Phase 1 no longer re-parses every TU three times**, per
 > `docs/production-redesign/07-llm-concurrency-scaling.md` §5. `engine/parser.py`'s `parse_file`,
 > `parse_calls`, `parse_global_access` each called `index.parse()` on every TU with byte-identical
@@ -1995,6 +2020,56 @@ landed this session) — opt in via `llm.maxConcurrency > 1`:
   (float>=0, default derived) — see §6. Wired through `from_config()` and
   `llm_enrichment._get_client()` (which builds a client directly, not via
   `from_config()`).
+
+**CC-2 call-site concurrency** (`docs/production-redesign/07-llm-concurrency-scaling.md` §3,
+landed 2026-09-09) — the actual `ThreadPoolExecutor` fan-out CC-1 only made *safe*. Sized from
+`llm.maxConcurrency` at every call site (default 1 = sequential, byte-identical to before —
+verified: `--llm-max-concurrency 4` vs `1` on the flowchart engine produced identical DOT output
+across all 139 `SampleCppProject` functions with `PYTHONHASHSEED` pinned):
+- `llm_enrichment.enrich_functions_rich()` — Pass 1 keeps its topological levels as `waves:
+  List[List[str]]` instead of flattening them; each wave runs through a shared
+  `ThreadPoolExecutor`, `as_completed()` before the next wave starts (a real sync point — later
+  waves read `result`/`source_hashes` for callee context). Workers never write those shared dicts
+  themselves; they return a payload and the **main thread** merges it in after each wave, so
+  `result` is only ever read mid-wave for keys that are fully settled from earlier waves. Pass 2
+  (refinement) runs as one flat wave — but it builds context from `pass1_result`, an **immutable
+  snapshot** taken before submitting any worker, not the live `result` dict: reading a
+  concurrently-mutated dict there would make each function's injected caller/callee text depend on
+  unrelated workers' completion order, breaking the determinism contract.
+- `model_deriver._enrich_behaviour_names_llm()` — flat wave (every function writes only its own
+  dict, no cross-function dependency).
+- `flowchart.project_scanner.HierarchySummarizer` — new `max_workers` ctor arg; each of the 4
+  levels (function-summary batches, per-function phases, file summaries, component summaries) is
+  independent within its level and runs as a flat wave; project summary (1 call) stays sequential.
+- `flowchart_engine.py`'s `run()` — flat `ThreadPoolExecutor` over every function (CFG build →
+  enrich → label → coherence is per-function independent); new `--llm-max-concurrency` CLI flag,
+  falling back to the resolved analyzer config's `llm.maxConcurrency`. Output is reassembled by
+  index into `FileResult`s in the original `sorted(by_file.items())` order, not completion order —
+  determinism requires output order to never depend on scheduling.
+- **Three thread-safety bugs found and fixed while wiring this up** (none were about the CFG/label
+  content itself, all about bookkeeping that assumed one-function-at-a-time):
+  - `llm_enrichment._CLIENT_CACHE` (module-level `LlmClient` cache) had a plain check-then-set race
+    — two threads racing on the same resolved config could each construct their **own**
+    `LlmClient`, each with its own semaphore/rate limiter, silently multiplying the configured
+    concurrency/rate cap instead of enforcing one shared limit. Fixed with double-checked locking
+    (`_CLIENT_CACHE_LOCK`).
+  - `flowchart.llm.generator.LabelGenerator._fallback_ids` was a plain instance `set`, reset at the
+    start of every `label_cfg()` call and mutated deep inside `_label_batch()` — safe only because
+    one `LabelGenerator` instance used to process one function at a time. Now that one instance is
+    shared across concurrently-labeled functions, this is `threading.local()`-backed via a
+    property (get/set look identical at every call site; only the storage changed).
+  - `flowchart.ast_engine.parser.TranslationUnitParser.get_tu()`/`get_tu_full()` — libclang gives
+    no documented guarantee that concurrent `clang_parseTranslationUnit` calls against one shared
+    `CXIndex` are safe, and the cache-dict check-then-set was itself racy. Both are now guarded by
+    one `threading.Lock` per parser instance — this serializes the libclang parse (fast, CPU-bound)
+    but not the LLM label call that dominates wall-clock. `ast_engine.parser.SourceExtractor` got
+    the same lock for its line-cache (belt-and-braces; a race there was wasted work, not
+    corruption, since dict writes are atomic under the GIL — but the file would've been opened
+    twice).
+- Tests: `tests/unit/test_llm_enrichment_concurrency.py`, `test_hierarchy_summarizer_concurrency.py`,
+  `test_flowchart_label_generator_concurrency.py`, `test_translation_unit_parser_concurrency.py`
+  (all new) — wave-sync correctness, pass-2-snapshot isolation, max-concurrency bounds, and the
+  default (`maxConcurrency=1`) proven to never let two calls overlap.
 
 Public properties (version3 adds `num_ctx`; CC-1 adds `max_concurrency`):
 `client.provider`, `client.model`, `client.num_ctx`, `client.max_concurrency`
