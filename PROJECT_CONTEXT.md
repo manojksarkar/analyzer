@@ -172,6 +172,61 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-08 (**CC-4a landed — Phase 1 no longer re-parses every TU three times**, per
+> `docs/production-redesign/07-llm-concurrency-scaling.md` §5. `engine/parser.py`'s `parse_file`,
+> `parse_calls`, `parse_global_access` each called `index.parse()` on every TU with byte-identical
+> `args`/`options` — three full libclang parses per file, and the libclang parse (not the Python
+> AST walk) is the dominant Phase 1 cost. New `_get_tu(path)` + `_tu_cache` dict parses each TU
+> once and all three passes reuse the same `TranslationUnit`; cache is cleared at the end of
+> `main()`. **Did NOT** merge the three loops into one per-file combined pass — that would be a
+> correctness bug, not a speedup: `visit_calls` resolves a callee against the **fully-populated**
+> `functions` dict (`called_key not in functions` at parser.py:1773), so pass 2 (calls) requires
+> pass 1 (definitions) to have finished for *every* file first, and `visit_definitions` dedups a
+> header-defined function seen through multiple TUs via a shared `_visited_function_keys` set that
+> assumes the fixed `source_files` iteration order — both break under per-file interleaving. So the
+> three passes still run as three separate full loops over `source_files`, in the original order;
+> only the redundant re-parse is gone. Measured on `SampleCppProject` (184 files / 296 functions):
+> Phase 1 wall time **7.22s → 3.12s** (~2.3×). Verified byte-identical `model/*.json` output
+> against a pre-change baseline (diffed every file; only `metadata.json`'s `generatedAt` timestamp
+> differed). This is a prerequisite/complement to the plan doc's **CC-4** (ProcessPoolExecutor
+> fan-out across TUs, still not started) — while scoping CC-4 the same two blockers above surfaced
+> as the reason a naive per-file `ProcessPoolExecutor` isn't a drop-in win: each worker would need
+> to return a per-file diff for the main process to merge in `source_files` order (reproducing
+> today's semantics), not mutate `functions`/`call_graph`/`_visited_function_keys` in place across
+> process boundaries. Documented as a scoping note in the plan doc's CC-4 section (§6) for whoever
+> picks that up next — it needs a CC-1/CC-2-grade detailed design, not the one-paragraph sketch
+> that was there before.)
+
+> Updated: 2026-09-07 (**CC-1 landed — LLM client concurrency primitives**, per
+> `docs/production-redesign/07-llm-concurrency-scaling.md`'s milestone tracker (CC-1 must land
+> first). `engine/llm_core/client.py`: new `_RateLimiter` (shared sliding-1s-window aggregate
+> admission control, gated *before* the HTTP POST) + a per-instance `threading.Semaphore` sized by
+> new ctor arg `max_concurrency` (default `1`). At the default, the OpenAI path is a **separate,
+> untouched branch** — same `_OPENAI_LOCK` + unconditional post-call `_throttle()` sleep as
+> before — because a real shared limiter can't reproduce "always sleep exactly rateLimitSeconds,
+> even on the first-ever call" (empty bucket ⇒ no wait), so it's kept as its own code path rather
+> than approximated; `tests/unit/test_llm_client.py::TestRateLimit` (pre-existing, **not modified**)
+> is the guardrail. New config `llm.maxConcurrency` (int>=1, default 1) / `llm.requestsPerSecond`
+> (float>=0, default `1/rateLimitSeconds`, `0`=unlimited) validated in `core/config.py`, env
+> `LLM_MAX_CONCURRENCY`/`LLM_REQUESTS_PER_SECOND`, startup banner gets a `Concurrency: N req
+> in-flight, R req/s` line. Wired through `client.from_config()` and
+> `llm_enrichment._get_client()` (built directly, not via `from_config()` — its cache key now
+> includes both new fields). Hit and fixed one real bug while writing the concurrency unit tests:
+> the sliding-window eviction used strict `<` against the cutoff, which at the exact instant
+> `acquire()`'s own sleep ends lands `now - 1.0 == oldest_timestamp`, evicts nothing, and
+> busy-loops forever recomputing a 0-second wait — changed to `<=`. Thread-safety audit (plan
+> §2.2): `EntityCache`/`ProgressReporter`/`tokens.record()` already lock-safe; `tokens.py`'s
+> `contextvars` stage attribution is **not** propagated into worker threads (future call sites
+> will land as `"unspecified"` stage under concurrency — accepted tradeoff, not fixed here, since
+> nothing calls `generate()` from multiple threads yet). `PkbCache`/`.mmdc_cache/` atomicity is
+> flowchart-engine territory, deferred to whoever picks up CC-4. **Not done / explicitly
+> out-of-scope this session:** CC-2 (parallelizing the call sites — nothing actually calls
+> `generate()` concurrently yet; CC-1 only makes it *safe* to) through CC-6 — see the plan doc.
+> Tests: `tests/unit/test_llm_client.py` (`TestConcurrency`, `TestRateLimiter` — new) and
+> `tests/unit/test_core_config.py` (new `maxConcurrency`/`requestsPerSecond` cases + banner
+> assertion); full existing suite re-verified green except the one pre-existing
+> `python-docx`-not-installed failure noted below.)
+
 > Updated: 2026-08-24 (**`feat/swe2-gen` rebased onto `poc-4` @ `c15ee42`** — picks up the 7
 > commits landed since this branch's base (`f8f79ef`): per-layer data dictionary/macros config
 > keys, `tools/check_data_dictionary_csv.py`, and the behaviour-diagram package replacement (see
@@ -1629,6 +1684,10 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     "summarize":         false,           // false = suppress Phase 2 hierarchy summarization
     "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY
     "rateLimitSeconds":  3.0,             // pause after every OpenAI call (>=0; 0 = off; ollama ignores)
+    "maxConcurrency":    1,               // CC-1 (production-redesign/07): requests in flight at once;
+                                           // 1 = today's fully-serial legacy lock+sleep path (byte-for-byte)
+    "requestsPerSecond": null,            // CC-1: aggregate cap once maxConcurrency>1; unset -> derives as
+                                           // 1/rateLimitSeconds (0 = unlimited); ignored at maxConcurrency=1
     "customHeaders":     { "x-dep-ticket": "credential:", "User-Type": "AD_ID", ... },
 
     // version3 — token budgeting
@@ -1695,6 +1754,8 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
 | `LLM_RETRIES` | `llm.retries` |
 | `LLM_API_KEY` | `llm.apiKey` |
 | `LLM_RATE_LIMIT_SECONDS` | `llm.rateLimitSeconds` |
+| `LLM_MAX_CONCURRENCY` | `llm.maxConcurrency` |
+| `LLM_REQUESTS_PER_SECOND` | `llm.requestsPerSecond` |
 
 Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 `USER_ID`, `SEND_SYSTEM_NAME` (handled inside `llm_core.headers`).
@@ -1720,7 +1781,8 @@ Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
   configuration — provider, baseUrl, model, numCtx, `maxContextTokens`
   (resolved, e.g. `auto -> 7680`), timeout, retries, apiKey status,
   `cacheVersion`, `fewShotExamplesDir`, and which enrichment flags are ON/OFF.
-  See §4b for an example.
+  See §4b for an example. CC-1 (below) adds a `Concurrency: N req in-flight,
+  R req/s` line so a run at the old serial default is visibly flagged as such.
 
 ---
 
@@ -1892,7 +1954,8 @@ Shared pipeline:
 3. **Token tracking** — every successful call records prompt+completion tokens
    into `llm_core.tokens` (process-wide counter dumped at exit).
 
-Hard rules baked in for the OpenAI route:
+Hard rules baked in for the OpenAI route, at the **default `max_concurrency=1`**
+(unchanged since version3):
 - A class-level `_OPENAI_LOCK` serialises every OpenAI request process-wide.
 - Every OpenAI call is followed by `time.sleep(llm.rateLimitSeconds)` even on
   failure, because the corporate gateway throttles ~1 req/3s. Default `3.0`
@@ -1900,9 +1963,42 @@ Hard rules baked in for the OpenAI route:
   sleeps. Cost: the engine is single-threaded, so this is ~1.5 batches +
   ~0.25 coherence calls per function ≈ **5.4 s/function** on a flowchart run.
 
-Public properties (version3 adds `num_ctx`):
-`client.provider`, `client.model`, `client.num_ctx` — prefer these over
-poking `_provider` / `_model` / `_num_ctx`.
+**CC-1 concurrency primitives** (`docs/production-redesign/07-llm-concurrency-scaling.md`,
+landed this session) — opt in via `llm.maxConcurrency > 1`:
+- `LlmClient(max_concurrency=N, requests_per_second=R)`: `N` sizes a
+  per-instance `threading.Semaphore` bounding requests in flight; `R`
+  (default derived as `1/rateLimitSeconds`, `0`=unlimited) is the aggregate
+  cap enforced by a new `_RateLimiter` (sliding 1-second window, shared
+  across every caller of that instance) whose `acquire()` gates admission
+  **before** the HTTP POST, not after.
+- **Why two separate code paths, not one formula:** at `max_concurrency<=1`
+  the OpenAI path is untouched — literally the same `_OPENAI_LOCK` +
+  unconditional post-call `_throttle()` sleep as before. A real shared rate
+  limiter cannot reproduce "always sleep exactly `rateLimitSeconds`, even on
+  the very first call" (a fresh bucket starts empty, so the first call
+  never waits) — so the legacy behaviour is preserved as its own branch in
+  `LlmClient._post_openai()` rather than approximated. This is deliberate,
+  not an oversight; `tests/unit/test_llm_client.py`'s `TestRateLimit` class
+  (pre-existing, unmodified) is the guardrail — it pins the exact
+  `time.sleep(rateLimitSeconds)` call sequence at the default.
+- Ollama path is untouched by CC-1 (no lock existed there before either);
+  left for a future milestone per the plan doc.
+- Thread-safety audit (plan §2.2, done this session): `EntityCache` and
+  `ProgressReporter` already lock-protected; `tokens.py`'s per-call `record()`
+  already lock-protected (its `contextvars`-based *stage attribution* — not
+  the counters — will still land calls as `"unspecified"` under a
+  `ThreadPoolExecutor` unless a future call-site change propagates the
+  context, which is an accepted, conscious tradeoff, not a bug).
+  `PkbCache` / `.mmdc_cache/` atomicity is flowchart-engine territory
+  (`engine-flowchart` skill) and is gated for whoever does CC-4, not CC-1.
+- Config: `llm.maxConcurrency` (int>=1, default 1) / `llm.requestsPerSecond`
+  (float>=0, default derived) — see §6. Wired through `from_config()` and
+  `llm_enrichment._get_client()` (which builds a client directly, not via
+  `from_config()`).
+
+Public properties (version3 adds `num_ctx`; CC-1 adds `max_concurrency`):
+`client.provider`, `client.model`, `client.num_ctx`, `client.max_concurrency`
+— prefer these over poking `_provider` / `_model` / `_num_ctx` / `_max_concurrency`.
 
 `from_config(llm_cfg)` builds an `LlmClient` from a `load_llm_config()` dict.
 Legacy positional args (`url=`, `use_openai_format=`) still accepted so the

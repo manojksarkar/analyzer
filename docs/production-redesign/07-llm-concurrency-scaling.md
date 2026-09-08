@@ -25,6 +25,9 @@ across the repo returns **zero hits** — there is no concurrency anywhere in th
   1,500–2,000 sequential LLM round-trips.
 - Non-LLM phases (libclang parsing in Phase 1, `mmdc` diagram rendering in Phase 3/4) are also
   single-threaded, but are a smaller share of the 8 hours since they carry no artificial throttle.
+  Phase 1 additionally had a real bug, not just missing concurrency: every TU was parsed **three
+  times** (`parse_file`/`parse_calls`/`parse_global_access` each ran `index.parse()` with identical
+  args) — fixed in CC-4a (§5), 2026-09-08.
 
 **Given:** self-hosting the LLM is now assumed possible (dedicated GPU capacity, sized as needed).
 That removes the *reason* for `_OPENAI_LOCK`'s conservatism — a self-hosted inference server with
@@ -39,9 +42,10 @@ in effective wall-clock per LLM call.
 
 | ID | Milestone | Scope | Status |
 |---|---|---|---|
-| **CC-1** | Client-layer concurrency primitives | `llm_core/client.py` — semaphore + rate limiter, config, thread-safety audit | not started |
+| **CC-1** | Client-layer concurrency primitives | `llm_core/client.py` — semaphore + rate limiter, config, thread-safety audit | **done** (2026-09-07) |
 | **CC-2** | Parallelize call sites (wave-based) | Phase 2 descriptions/behaviour-names/summaries, Phase 3 flowchart labeling | not started |
 | **CC-3** | Self-hosted inference tier, containerized | vLLM/TGI container(s), multi-replica K8s Deployment + HPA | not started |
+| **CC-4a** | De-duplicate Phase 1's redundant re-parse | `engine/parser.py` — parse each TU once, reuse across all 3 passes | **done** (2026-09-08) |
 | **CC-4** | Containerized CPU-bound fan-out | Phase 1 parsing, Phase 3 `mmdc` rendering — process pool or worker pods | not started |
 | **CC-5** | Orchestrator-level multi-container scale-out | Phase/shard-per-pod scatter-gather (K8s Jobs), replaces single-host subprocess model | not started |
 | **CC-6** | Call-volume reduction | Prompt batching, two-pass gating, cache-hit verification | not started |
@@ -55,6 +59,17 @@ end-state and depends on CC-3/CC-4. CC-6 is independent and can land at any poin
 ---
 
 ## 2. CC-1 — Client-layer concurrency primitives
+
+**Status: done (2026-09-07).** Implemented mostly as specified below, with one deliberate
+deviation: at `max_concurrency<=1` (the default), `LlmClient._post_openai()` keeps the legacy
+`_OPENAI_LOCK` + unconditional post-call `_throttle()` sleep as its own untouched branch, rather
+than routing it through `_RateLimiter` — a real shared-bucket limiter cannot reproduce "always
+sleep exactly `rateLimitSeconds`, even on the very first call" (an empty bucket never waits), so
+the no-op guarantee below is met by branching, not by one formula that behaves identically at both
+settings. Full detail, the bug found while testing it (a sliding-window off-by-one that
+busy-looped), and the thread-safety audit results: `PROJECT_CONTEXT.md`'s `> Updated: 2026-09-07`
+entry. CC-2 (parallelizing the call sites) has not started — CC-1 only makes concurrent calls
+*safe*.
 
 **File:** `engine/llm_core/client.py`. **Goal:** let N requests be in flight at once, sized to
 whatever the backend can actually absorb, instead of a hardcoded 1.
@@ -283,15 +298,50 @@ spec:
 
 ---
 
-## 5. CC-4 — Containerized fan-out for CPU-bound phases
+## 5. CC-4a — De-duplicate Phase 1's redundant re-parse (done)
+
+**Status: done (2026-09-08).** Before touching CC-4's fan-out, Phase 1 was measured directly (not
+assumed): `parse_file`, `parse_calls`, `parse_global_access` each called `index.parse()` on every
+TU with byte-identical `args`/`options` — every file was parsed from scratch **three times**, and
+the libclang parse (not the Python AST walk) is the dominant cost. Fix: `parser.py`'s new `_get_tu(path)`
+parses each TU once and caches it (`_tu_cache`, cleared at the end of `main()`); all three passes
+now reuse the same `TranslationUnit` object. The three passes still run as three separate full
+loops over `source_files`, in the original order — see CC-4's blockers below for why they can't be
+merged into one per-file loop.
+
+Measured on `SampleCppProject` (184 files / 296 functions): Phase 1 wall time **7.22s → 3.12s**
+(~2.3×). Verified byte-identical `model/*.json` output against a pre-change baseline (only
+`metadata.json`'s `generatedAt` timestamp differed).
+
+## 6. CC-4 — Containerized fan-out for CPU-bound phases
 
 Smaller win than CC-1–CC-3 but real at layer scale (184 files, dozens of units), and it's where
 "multiple container spawning" applies a second time, independent of the LLM tier:
 
-- **Phase 1 (libclang parsing):** one TU per process is embarrassingly parallel — no shared state
-  across TUs. In-process: `ProcessPoolExecutor(max_workers=os.cpu_count())` over the TU list. At
-  the container level: if Phase 1 is ever split out as its own K8s Job (see CC-5), it can fan out
-  as N pods each parsing a shard of the TU list, results merged before Phase 2 starts.
+- **Phase 1 (libclang parsing) — NOT embarrassingly parallel as originally scoped here.**
+  Correcting the claim below (measured while implementing CC-4a, not assumed): `parser.py`'s three
+  passes share plenty of mutable module state across files, not none. Two concrete blockers a
+  `ProcessPoolExecutor(max_workers=os.cpu_count())` over the TU list must solve, not paper over:
+  - `visit_calls` resolves a call's callee against the **fully-populated** `functions` dict
+    (`called_key not in functions` at parser.py:1773) — it must see every file's definitions,
+    not just its own worker's, or cross-TU calls to a function defined in a file processed by a
+    different worker silently drop from the call graph.
+  - `visit_definitions` dedups a header-defined function seen through multiple TUs via a shared
+    `_visited_function_keys` set (parser.py:1462) — first file to visit it wins, deterministically,
+    because `source_files` is processed in a fixed order. Split across worker processes (separate
+    address spaces), every worker would independently "first-see" and re-record the same header
+    function, and the merge order into the main process's `functions` dict would decide the
+    winner — silently, unless the merge explicitly replays `source_files` order.
+  - Net: a worker can't just mutate `functions`/`call_graph`/`_visited_function_keys`/etc. in
+    place — each worker must return a per-file result (the CC-4a-cached TU makes this natural:
+    parse once per file, run the pass-1 visitors, return the diff), and the main process merges
+    all workers' results **in `source_files` order** before pass 2 (calls) starts, exactly
+    reproducing today's single-process semantics. This is real design work, not a drop-in
+    `ProcessPoolExecutor`; scope it properly before starting, in the same spirit as CC-1/CC-2's
+    detailed designs (§2, §3) rather than CC-4's one-paragraph sketch.
+  - At the container level: if Phase 1 is ever split out as its own K8s Job (see CC-5), it can fan
+    out as N pods each parsing a shard of the TU list, results merged before Phase 2 starts — same
+    merge-in-order requirement applies across pods, not just in-process workers.
 - **Phase 3 diagram rendering (`mmdc`):** each invocation spawns a headless-Chromium subprocess
   (60 s timeout per diagram per `PROJECT_CONTEXT.md` §12) — CPU/memory-heavy and currently
   sequential. Because it's a real subprocess (not a Python-GIL-bound call), a
@@ -306,7 +356,7 @@ Smaller win than CC-1–CC-3 but real at layer scale (184 files, dozens of units
 
 ---
 
-## 6. CC-5 — Orchestrator-level multi-container scale-out
+## 7. CC-5 — Orchestrator-level multi-container scale-out
 
 The end state for "multiple container spawning": instead of one long-lived host running
 `engine/core/orchestration.py`'s subprocess-per-phase pipeline start-to-finish, shard the work
@@ -331,7 +381,7 @@ itself across pods:
 
 ---
 
-## 7. CC-6 — Call-volume reduction (independent, stack anytime)
+## 8. CC-6 — Call-volume reduction (independent, stack anytime)
 
 Cheaper before it's parallel is still cheaper after — these compound with CC-1–CC-5 rather than
 compete with them:
@@ -349,7 +399,7 @@ compete with them:
 
 ---
 
-## 8. Risk register
+## 9. Risk register
 
 | Risk | Mitigation |
 |---|---|
@@ -359,7 +409,7 @@ compete with them:
 | `llm.maxConcurrency=1` default doesn't get bumped in existing deployed configs, so CC-1 ships with zero user-visible speedup until config is updated | Document the new keys prominently in the startup banner (§2.1) so a run with the old default is visibly flagged as running serial |
 | CC-5's orchestrator change destabilizes the existing single-host pipeline | Scoped as optional/stretch (§6); CC-1–CC-4 are the load-bearing milestones for the <1h target |
 
-## 9. Roadmap linkage
+## 10. Roadmap linkage
 
 This plan is the detail behind `docs/planning/ROADMAP.md`'s V1.x line item "Performance and
 LLM-usage optimisation." Suggest updating that line to link here once CC-1 is underway, the same
