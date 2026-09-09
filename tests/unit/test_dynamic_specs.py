@@ -230,7 +230,7 @@ class TestSplice:
         """No `splice` argument -> byte-identical to the pre-existing behaviour."""
         steps, _, _ = build_steps(self.CFG_DRIVE, spec, ["refine()"])
         assert "calls" not in " ".join(s["text"] for s in steps)
-        assert any("Expect mock function refine" in s["text"] for s in steps)
+        assert any("mock function refine()" in s["text"] for s in steps)
 
 
 class TestEntryPoint:

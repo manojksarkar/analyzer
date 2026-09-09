@@ -193,23 +193,320 @@ def _spliced_called(node, splice):
     return sorted(set(hits), key=lambda m: raw.index(m + "("))
 
 
+def _call_args(raw, name):
+    """The top-level argument expressions of the FIRST `name(...)` call in `raw`.
+
+    Paren-balanced rather than split on commas, so a nested call
+    (`Foo(a, Bar(b, c))`) yields two arguments, not three. Returns [] when the
+    call is not found or its parentheses do not close inside this node's text --
+    a node holds whole statements, so an unbalanced tail means the match was a
+    substring of some other name and should be ignored.
+    """
+    i = raw.find(name + "(")
+    if i < 0:
+        return []
+    i += len(name)
+    depth, start, args = 0, i + 1, []
+    for j in range(i, len(raw)):
+        c = raw[j]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                args.append(raw[start:j])
+                return [a.strip() for a in args]
+        elif c == "," and depth == 1:
+            args.append(raw[start:j])
+            start = j + 1
+    return []
+
+
+def _statements(raw):
+    """Split a node's source into statements, on top-level semicolons only.
+
+    A node holds a RUN of statements (the flowchart engine groups up to five), so
+    wording has to be derived per statement, not for the node as a whole. A
+    semicolon inside parentheses -- `for (i = 0; i < n; i++)` -- does not split,
+    or a loop header would arrive as three fragments.
+    """
+    out, depth, cur = [], 0, ""
+    for c in raw or "":
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if c == ";" and depth == 0:
+            out.append(cur)
+            cur = ""
+            continue
+        cur += c
+    out.append(cur)
+    return [t.strip() for t in out if t.strip()]
+
+
+def _split_args(argstr):
+    """Top-level comma split, so `Bar(b, c)` stays one argument."""
+    out, depth, cur = [], 0, ""
+    for c in argstr or "":
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        if c == "," and depth == 0:
+            out.append(cur)
+            cur = ""
+            continue
+        cur += c
+    out.append(cur)
+    return [t.strip() for t in out if t.strip()]
+
+
+def _is_out_param_type(t):
+    """`T*`/`T&` is written through, `const T*` is read. Mirrors
+    `test_specs._is_out_parameter`, which decides the same question for the
+    function under test; a function pointer is a callback, not an output."""
+    t = t or ""
+    if "*" not in t and "&" not in t:
+        return False
+    if "(*" in t.replace(" ", ""):
+        return False
+    return "const" not in t
+
+
+# ---------------------------------------------------------------------------
+# Statement -> English
+# ---------------------------------------------------------------------------
+
+# Group `lhs` is the assignment target; the declared type falls away because
+# `_lhs_name` keeps only the last identifier. `==`, `!=`, `<=`, `>=` and the
+# compound operators are excluded, so a comparison is never read as assignment.
+_ASSIGN_RE = re.compile(r"^(?P<lhs>[\w\s*&\[\].>-]+?)(?<![=!<>+\-*/%|&^])=(?!=)(?P<rhs>.+)$", re.S)
+_CALL_RE = re.compile(r"^(?P<name>[A-Za-z_]\w*)\s*\((?P<args>.*)\)$", re.S)
+_INCDEC_RE = re.compile(r"^(?:(?P<pre>\+\+|--)\s*(?P<a>[\w.>\[\]-]+)"
+                        r"|(?P<b>[\w.>\[\]-]+)\s*(?P<post>\+\+|--))$")
+_COMPOUND_RE = re.compile(r"^(?P<lhs>[\w.>\[\]-]+)\s*(?P<op>[+\-*/%|&^]|<<|>>)=(?P<rhs>.+)$", re.S)
+
+# A statement that is nothing but one call: `HilNotify(ERR_RANGE);`.
+_CALL_STMT_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*\(.*\)\s*;?\s*$", re.S)
+
+_BRANCH_TYPES = ("DECISION", "LOOP_HEAD", "SWITCH_HEAD")
+
+# A statement opening with one of these is control flow, not something to
+# describe: the CFG has already given it its own node type. Without the guard
+# `for (int i = 0; ...)` is read as a call and described "Call function for()".
+_KEYWORDS = {"if", "else", "for", "while", "do", "switch", "case", "default",
+             "return", "goto", "break", "continue", "sizeof"}
+
+# `!= 0` -> "is not equal to 0". Longest first, so `>=` never matches as `>`.
+_COMPARISONS = (("!=", "is not equal to"), ("==", "is equal to"),
+                (">=", "is greater than or equal to"), ("<=", "is less than or equal to"),
+                (">", "is greater than"), ("<", "is less than"))
+
+
+def _lhs_name(lhs):
+    """`int clipped` -> `clipped`, `*half` -> `half`. The declared type and the
+    dereference are noise to a tester, who matches on the name."""
+    t = (lhs or "").strip()
+    parts = t.replace("*", " ").replace("&", " ").split()
+    return parts[-1] if parts else t
+
+
+def _describe(stmt):
+    """One statement as an English sentence, or None when no rule fits.
+
+    None matters: the caller then keeps the flowchart's own label rather than
+    inventing wording for a shape this does not understand.
+    """
+    stmt = " ".join((stmt or "").split())
+    if not stmt:
+        return None
+    if stmt.split("(")[0].strip().split(" ")[0] in _KEYWORDS:
+        return None
+    m = _INCDEC_RE.match(stmt)
+    if m:
+        name = m.group("a") or m.group("b")
+        op = m.group("pre") or m.group("post")
+        return ("Increment" if op == "++" else "Decrement") + f" {name} by one"
+    m = _COMPOUND_RE.match(stmt)
+    if m:
+        verb = {"+": "Increment", "-": "Decrement"}.get(m.group("op"))
+        lhs, rhs = m.group("lhs"), m.group("rhs").strip()
+        if verb:
+            return f"{verb} {lhs} by {rhs}"
+        return f"Set {lhs} to {lhs} {m.group('op')} {rhs}"
+    m = _ASSIGN_RE.match(stmt)
+    if m:
+        lhs, rhs = _lhs_name(m.group("lhs")), m.group("rhs").strip()
+        call = _CALL_RE.match(rhs)
+        if call:
+            args = ", ".join(_split_args(call.group("args")))
+            with_args = f" with {args}," if args else ""
+            return f"Call function {call.group('name')}(){with_args} storing the result in {lhs}"
+        return f"Set {lhs} to {rhs}"
+    call = _CALL_RE.match(stmt)
+    if call:
+        args = ", ".join(_split_args(call.group("args")))
+        return f"Call function {call.group('name')}()" + (f" with {args}" if args else "")
+    return None
+
+
+def _comparison(condition, name):
+    """The tail of a condition once the mocked call is taken out of it.
+
+    `FilReadPage(i, &e) != 0` -> "is not equal to 0". A bare `if (ready(x))` has
+    no operator at all, so the value simply has to be true. The source operator
+    is mirrored, never inverted into something friendlier -- get that backwards
+    and the True leg sends the tester down the opposite branch.
+    """
+    cond = " ".join((condition or "").split())
+    idx = cond.find(name + "(")
+    if idx >= 0:
+        args = _call_args(cond, name)
+        rendered = "%s(%s)" % (name, ", ".join(args))
+        tail = cond[idx:]
+        tail = tail.replace(rendered, "", 1) if rendered in tail else ""
+        cond = (cond[:idx] + tail).strip()
+    cond = cond.strip("() ").strip()
+    for op, phrase in _COMPARISONS:
+        if cond.startswith(op):
+            return ("%s %s" % (phrase, cond[len(op):].strip())).strip()
+    return "is true"
+
+
+def _mock_facts(raw, name, mock_sigs):
+    """What one mocked call takes in, hands back, and is assigned to.
+
+      `target`  the variable the call is assigned to -- `int sum = libAdd(a, b);`
+      `outputs` arguments the callee writes THROUGH -- `FilReadPage(i, &e)` -> `e`
+      `inputs`  the remaining arguments, which the code passes IN
+
+    Keeping `inputs` and `outputs` apart is the point. `&e` is not a value the
+    tester supplies, it is the slot the stub fills, so listing it beside `i` as
+    something the mock is "called with" would ask for a value that is a result.
+    Which side an argument falls on is read off the callee's own signature.
+    """
+    target = None
+    for stmt in _statements(raw):
+        if name + "(" not in stmt:
+            continue
+        m = _ASSIGN_RE.match(" ".join(stmt.split()))
+        if m and name + "(" in m.group("rhs"):
+            target = _lhs_name(m.group("lhs"))
+        break
+    sig = mock_sigs.get(name) or []
+    inputs, outputs = [], []
+    for pos, arg in enumerate(_call_args(raw, name)):
+        arg = arg.strip()
+        if not arg:
+            continue
+        param = sig[pos] if pos < len(sig) else None
+        if param and _is_out_param_type(param.get("type", "")):
+            bare = arg.lstrip("&").strip()
+            if re.fullmatch(r"[A-Za-z_]\w*", bare):
+                outputs.append(bare)
+            continue                 # never an input, whatever it looks like
+        inputs.append(arg)
+    return {"target": target, "inputs": inputs, "outputs": outputs}
+
+
+def _with_setting(facts):
+    """The ` with a, b, setting c` tail shared by two of the four shapes."""
+    tail = ""
+    if facts["inputs"]:
+        tail += " with " + ", ".join(facts["inputs"])
+    if facts["outputs"]:
+        tail += ", setting " + ", ".join(facts["outputs"])
+    return tail
+
+
+def _mock_clause(name, facts, kind, condition="", lead=True):
+    """One mocked call, in whichever of the four shapes its value calls for.
+
+    The shape follows what the returned value is USED for, because that decides
+    whether the tester has anything to fix and what to call it:
+
+      assigned       Update sum by mocking function libAdd()
+      is the return  Expect return value from the return of mock function f() with x, y inputs
+      picks a branch Derive value to return of mock function f() with i, setting e and check ...
+      discarded/void Mock function HilNotify() with ERR_RANGE
+    """
+    fn = "%s()" % name
+
+    def cap(word):
+        return word if lead else word[0].lower() + word[1:]
+
+    if facts["target"]:
+        sets = ", ".join([facts["target"]] + facts["outputs"])
+        return "%s %s by mocking function %s" % (cap("Update"), sets, fn)
+    if kind == "return":
+        ins = ", ".join(facts["inputs"])
+        tail = " with %s inputs" % ins if ins else ""
+        return "%s return value from the return of mock function %s%s" % (cap("Expect"), fn, tail)
+    if kind == "branch":
+        return "%s value to return of mock function %s%s and check it %s" % (
+            cap("Derive"), fn, _with_setting(facts), condition)
+    return "%s function %s%s" % (cap("Mock"), fn, _with_setting(facts))
+
+
+def _mock_sentence(raw, called, mock_sigs, kind="plain", condition=""):
+    """The mock clause for one node.
+
+    Several ASSIGNED mocks collapse into one parallel pair of lists, which is the
+    client's own wording. That reads correctly only while every mock contributes
+    exactly one variable; the moment one does not, the lists would differ in
+    length and pair silently wrong, so each mock keeps its own clause instead.
+    """
+    facts = [(m, _mock_facts(raw, m, mock_sigs)) for m in called]
+    if len(facts) > 1 and all(f["target"] and not f["outputs"] for _, f in facts):
+        names = ", ".join(f["target"] for _, f in facts)
+        fns = ", ".join("%s()" % m for m, _ in facts)
+        return "Update %s by mocking function %s" % (names, fns)
+    return "; ".join(_mock_clause(m, f, kind, condition, lead=(i == 0))
+                     for i, (m, f) in enumerate(facts))
+
+
+def _plain_text(node, ntype, label, called):
+    """A node's own wording, with every statement the mock clause already covers
+    left out so nothing is said twice.
+
+    A DECISION / LOOP_HEAD / SWITCH_HEAD carries a condition, not statements, so
+    it keeps the flowchart's phrasing. A plain node is described statement by
+    statement in source order; a statement `_describe` cannot read falls back to
+    the label, which is where the flowchart's own (LLM or raw) text comes in.
+    """
+    if ntype == "DECISION":
+        return _sentence("Check whether " + _strip_prefix(label, "Check:", "Check"))
+    if ntype == "LOOP_HEAD":
+        return _sentence("Repeat " + _strip_prefix(label, "Loop:", "Loop"))
+    if ntype == "SWITCH_HEAD":
+        return _sentence("Select on " + _strip_prefix(label, "Switch on:", "Switch on", "Switch"))
+    if ntype == "RETURN":
+        return _sentence(label)
+    stmts = [st for st in _statements(node.get("rawCode") or "")
+             if not any(m + "(" in st for m in called)]
+    if not stmts:
+        # Every statement here is a mocked call, so the mock clause is the step.
+        return "" if called else _sentence(label)
+    described = [_describe(st) for st in stmts]
+    if any(d is None for d in described):
+        return _sentence(label)          # a shape this does not understand
+    return _sentence("; ".join(described))
+
+
 def _node_text(node, spec, mock_names, is_entry, ctx=None, splice=None, home_unit=""):
     ntype = node.get("type", "")
     label = node.get("label") or node.get("rawCode") or ""
+    raw = node.get("rawCode") or ""
 
     if is_entry or ntype == "START":
         return _entry_text(spec)
     if ntype == "BREAK":
         # The CFG labels every break "Exit loop"; inside a switch that is wrong.
         return "Exit the switch." if ctx == "switch" else "Exit the loop."
-    if ntype == "DECISION":
-        base = _sentence("Check whether " + _strip_prefix(label, "Check:", "Check"))
-    elif ntype == "LOOP_HEAD":
-        base = _sentence("Repeat " + _strip_prefix(label, "Loop:", "Loop"))
-    elif ntype == "SWITCH_HEAD":
-        base = _sentence("Select on " + _strip_prefix(label, "Switch on:", "Switch on", "Switch"))
-    else:
-        base = _sentence(label)
+
+    called = _mocks_called(node, mock_names)
+    base = _plain_text(node, ntype, label, called)
 
     # A dynamic behaviour spec attributes every cross-unit call to the units on
     # each side; a function spec has no `splice` and reads exactly as before.
@@ -218,13 +515,38 @@ def _node_text(node, spec, mock_names, is_entry, ctx=None, splice=None, home_uni
     if spliced:
         listed = ", ".join(splice[n]["label"] for n in spliced)
         parts.append(f"{home_unit} calls {listed}" if home_unit else f"Call {listed}")
-    called = _mocks_called(node, mock_names)
     if called:
-        parts.append(f"Expect mock function {', '.join(called)}")
-    if parts:
-        prefix = "; ".join(parts)
-        return f"{prefix}; {base[0].lower() + base[1:]}" if base else _sentence(prefix)
-    return base
+        mock_sigs = {m.get("name"): m.get("parameters") or []
+                     for m in ((spec or {}).get("precondition") or {}).get("mocks") or []}
+        # What the returned value is USED for picks the wording. A branch head
+        # folds its own check into the mock clause, so `base` is dropped there.
+        if ntype in _BRANCH_TYPES:
+            cond = _strip_prefix(label, "Check:", "Check", "Loop:", "Loop").rstrip("?").strip()
+            kind, condition = "branch", _comparison(cond or raw, called[0])
+            base = ""
+        elif ntype == "RETURN":
+            kind, condition = "return", ""
+            base = ""
+        else:
+            kind, condition = "plain", ""
+        parts.append(_mock_sentence(raw, called, mock_sigs, kind, condition))
+    if not parts:
+        return base
+    prefix = "; ".join(parts)
+    if not base:
+        return _sentence(prefix)
+    # Source order decides whether the MOCK clause or the node's own wording
+    # leads: `gErrCount++; HilNotify(ERR);` reads "Increment gErrCount by one;
+    # mock function HilNotify() with ERR". A dynamic spec's unit attribution is
+    # not a statement and always leads, so it is exempt.
+    stmts = _statements(raw)
+    first_mock = next((i for i, st in enumerate(stmts)
+                       if any(m + "(" in st for m in called)), len(stmts))
+    first_plain = next((i for i, st in enumerate(stmts)
+                        if not any(m + "(" in st for m in called)), len(stmts))
+    if called and not spliced and first_plain < first_mock:
+        return f"{base.rstrip('.')}; {prefix[0].lower() + prefix[1:]}."
+    return f"{prefix}; {base[0].lower() + base[1:]}"
 
 
 def _norm(text):
