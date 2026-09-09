@@ -70,18 +70,18 @@ def test_decision_legs_are_sub_numbered_true_then_false(if_else):
     steps, _, _ = build_steps(if_else, SPEC)
     t = _texts(steps)
     assert t["2"] == "Check whether x < 0."
-    assert t["2.1"].startswith("True:")
-    assert t["2.2"].startswith("False:")
+    assert t["2.a"].startswith("True:")
+    assert t["2.b"].startswith("False:")
 
 
 def test_single_step_leg_is_inlined_after_the_label(if_else):
     t = _texts(build_steps(if_else, SPEC)[0])
-    assert t["2.1"] == "True: Return -1."
+    assert t["2.a"] == "True: Return -1."
 
 
 def test_every_return_gets_an_entry_naming_its_step(if_else):
     _, returns, _ = build_steps(if_else, SPEC)
-    assert {r["step"] for r in returns} == {"2.1", "2.2"}
+    assert {r["step"] for r in returns} == {"2.a", "2.b"}
     assert {r["text"] for r in returns} == {"Successfully returned -1",
                                             "Successfully returned 1"}
 
@@ -119,8 +119,8 @@ def test_nested_decision_nests_deeper():
                 ("N3", "NE", None), ("N5", "NE", None), ("N6", "NE", None)])
     steps, returns, _ = build_steps(cfg, SPEC)
     nums = _numbers(steps)
-    assert "2.2.1" in nums and "2.2.1.1" in nums and "2.2.1.2" in nums
-    assert {r["step"] for r in returns} == {"2.1", "2.2.1.1", "2.2.1.2"}
+    assert "2.b.1" in nums and "2.b.1.a" in nums and "2.b.1.b" in nums
+    assert {r["step"] for r in returns} == {"2.a", "2.b.1.a", "2.b.1.b"}
 
 
 # --- loop ------------------------------------------------------------------
@@ -134,7 +134,7 @@ def test_loop_body_nests_and_continuation_does_not():
     steps, _, _ = build_steps(cfg, SPEC)
     t = _texts(steps)
     assert t["2"].startswith("Repeat ")
-    assert "2.1" in t                      # body nests
+    assert "2.a" in t                      # body nests
     assert t["3"] == "Return sum."         # continuation resumes at top level
 
 
@@ -164,7 +164,7 @@ def switch():
 def test_switch_cases_keep_their_labels(switch):
     t = _texts(build_steps(switch, SPEC)[0])
     assert t["2"] == "Select on op."
-    assert t["2.1"].startswith("case 1:") and t["2.2"].startswith("default:")
+    assert t["2.a"].startswith("case 1:") and t["2.b"].startswith("default:")
 
 
 def test_break_inside_a_switch_says_switch_not_loop(switch):
@@ -197,6 +197,16 @@ def test_immediate_post_dominator_is_the_nearest_join(if_else):
     nodes, succ = _index(if_else)
     pdom = _post_dominators(nodes, succ, {"NE"})
     assert _ipdom("N2", pdom) == "NE"
+
+
+def test_step_levels_alternate_numeric_and_alphabetic():
+    """`4.a.3.b`, not `4.1.3.2` -- depth is readable at a glance."""
+    from views.test_steps import _number
+    assert _number([4]) == "4"
+    assert _number([4, 1]) == "4.a"
+    assert _number([4, 1, 3]) == "4.a.3"
+    assert _number([4, 1, 3, 2]) == "4.a.3.b"
+    assert _number([1, 27]) == "1.aa"           # past z, spreadsheet-style
 
 
 def test_missing_cfg_yields_no_steps():

@@ -5,9 +5,12 @@ numbered transcription docs/spec/SWE4_WIKI.md specifies:
 
     1) Issue function FtlLookup with inputs lba, mode.
     2) Check whether lba is a valid LBA.
-       2.1) True: continue to step 3.
-       2.2) False: return -1.
+       2.a) True: continue to step 3.
+       2.b) False: return -1.
     3) Return 0.
+
+Levels alternate numeric / alphabetic (`4`, `4.a`, `4.a.3`, `4.a.3.b`) so a deeply
+nested transcription stays readable where `4.1.3.2` does not.
 
 Structure is recovered with post-dominators: a decision's branches run until the
 node that every path through it reaches (its immediate post-dominator), and that
@@ -110,6 +113,27 @@ def _ipdom(nid, pdom):
 # ---------------------------------------------------------------------------
 # Wording
 # ---------------------------------------------------------------------------
+
+def _level(idx, depth):
+    """One level of a step number. Levels alternate numeric / alphabetic --
+    `4`, `4.a`, `4.a.3`, `4.a.3.b` -- which keeps a deep transcription readable
+    where `4.1.3.2` does not. Alphabetic levels carry past `z` the spreadsheet
+    way (`z`, `aa`, `ab`), so a block with 27 branches still numbers."""
+    if depth % 2 == 0:
+        return str(idx)
+    out, n = "", idx
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        out = chr(ord("a") + rem) + out
+    return out or "a"
+
+
+def _number(parts):
+    """Join one step number. `number` stays the single field every consumer
+    reads (`expected.returns[].step`, `globals[].steps`, ut_export's `atStep`),
+    so changing the format here changes every cross-reference with it."""
+    return ".".join(_level(v, d) for d, v in enumerate(parts))
+
 
 def _clean(text):
     """Strip the flowchart engine's rendering markup from a node label.
@@ -267,7 +291,7 @@ class _Walker:
 
     # -- emitting ----------------------------------------------------------
     def _add(self, prefix, idx, node, text):
-        number = ".".join(str(x) for x in (prefix + [idx]))
+        number = _number(prefix + [idx])
         self.steps.append({"number": number, "text": text,
                            "nodeId": node.get("id", ""), "type": node.get("type", "")})
         raw = node.get("rawCode") or ""
@@ -378,7 +402,7 @@ class _Walker:
             self.write_steps.setdefault(name, []).extend(nums)
 
     def _emit_leg(self, prefix, leg_i, target, join, leg_label, seen, ctx=None):
-        """One leg of a decision/switch: `2.1) True: ...`.
+        """One leg of a decision/switch: `2.a) True: ...`.
 
         A single-step leg is written inline after the label; a multi-step leg
         gets the label on its own line and nests its steps beneath it.
@@ -389,7 +413,7 @@ class _Walker:
         sub.steps, sub.returns = [], []
         sub.walk(target, join, prefix + [leg_i], seen, ctx)
 
-        number = ".".join(str(x) for x in (prefix + [leg_i]))
+        number = _number(prefix + [leg_i])
         if len(sub.steps) == 1:
             only = sub.steps[0]
             self.steps.append({"number": number, "text": f"{leg_label}: {only['text']}",

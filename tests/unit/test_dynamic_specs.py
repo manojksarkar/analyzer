@@ -201,7 +201,7 @@ class TestSplice:
     def test_callee_branches_are_nested_under_the_call(self, steps):
         numbers = [s["number"] for s in steps[0]]
         assert "2" in numbers            # the calling step
-        assert "2.1" in numbers          # the callee's decision, spliced in
+        assert "2.a" in numbers          # the callee's decision, spliced in
 
     def test_callee_returns_become_assertions_of_this_spec(self, steps):
         """A function spec stubs `refine`, so these branches are asserted nowhere."""
