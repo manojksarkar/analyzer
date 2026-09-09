@@ -36,6 +36,11 @@ class CfgNode:
     start_line: int
     end_line: int
     label: str = ""
+    # The `goto` label this node is the target of, when it is one. A label takes
+    # no node of its own -- `_process_label` points the name at the labelled
+    # statement -- so without this the name is lost after the CFG is built, and
+    # SWE.4's Test Steps cannot say `done:` at the step a jump lands on.
+    goto_label: str = ""
     enriched_context: Dict = field(default_factory=dict)
 
 
@@ -103,6 +108,7 @@ def serialize_cfg(cfg: "ControlFlowGraph") -> Dict:
                 "id": n.node_id,
                 "type": n.node_type.value,
                 "label": n.label or n.raw_code,
+                "gotoLabel": n.goto_label,
                 "rawCode": n.raw_code,
                 "line": n.start_line,
                 "endLine": n.end_line,

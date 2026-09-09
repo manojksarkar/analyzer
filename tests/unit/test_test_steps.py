@@ -387,3 +387,66 @@ def test_step_levels_alternate_numeric_and_alphabetic():
 def test_missing_cfg_yields_no_steps():
     assert build_steps(None, SPEC) == ([], [], {})
     assert build_steps({}, SPEC) == ([], [], {})
+
+
+# --- jumps ------------------------------------------------------------------
+
+@pytest.fixture
+def goto_exit():
+    """`if (limit <= 0) { status = -1; goto done; } ... done: return status;` --
+    the exit-label pattern, where the label is also reached by falling through."""
+    return _cfg([("N1", "START", "Start: fn", ""),
+                 ("N2", "DECISION", "Check: limit <= 0?", "if (limit <= 0)"),
+                 ("N3", "ACTION", "status = -1;", "status = -1;"),
+                 ("N4", "ACTION", "goto done", "goto done;"),
+                 ("N5", "ACTION", "status = compute(v);", "status = compute(v);"),
+                 ("N6", "RETURN", "Return status", "return status;"),
+                 ("NE", "END", "End", "")],
+                [("N1", "N2", None), ("N2", "N3", "Yes"), ("N2", "N5", "No"),
+                 ("N3", "N4", None), ("N4", "N6", None), ("N5", "N6", None),
+                 ("N6", "NE", None)])
+
+
+def test_a_goto_names_its_label_and_the_step_it_lands_on(goto_exit):
+    text = _texts(build_steps(goto_exit, SPEC)[0])["2.a.2"]
+    assert text == "Go to done label in step 3."
+
+
+def test_a_goto_whose_target_is_the_next_step_continues(goto_exit):
+    """Nothing is skipped, and "Go to step 3" printed directly above step 3 reads
+    like a mistake."""
+    cfg = _cfg([("N1", "START", "Start: fn", ""),
+                ("N2", "ACTION", "goto done", "goto done;"),
+                ("N3", "RETURN", "Return 0", "return 0;"),
+                ("NE", "END", "End", "")],
+               [("N1", "N2", None), ("N2", "N3", None), ("N3", "NE", None)])
+    assert _texts(build_steps(cfg, SPEC)[0])["2"] == "Continue to done label in step 3."
+
+
+def test_the_destination_names_the_label(goto_exit):
+    """A label takes no step of its own, so without this the jump can only be
+    followed in one direction."""
+    for n in goto_exit["nodes"]:
+        if n["id"] == "N6":
+            n["gotoLabel"] = "done"
+    assert _texts(build_steps(goto_exit, SPEC)[0])["3"] == "done: Return status."
+
+
+def test_a_cfg_without_the_label_field_still_words_the_jump(goto_exit):
+    """Stored before `gotoLabel` existed: the destination is simply unlabelled."""
+    steps = _texts(build_steps(goto_exit, SPEC)[0])
+    assert steps["2.a.2"] == "Go to done label in step 3."
+    assert steps["3"] == "Return status."
+
+
+def test_a_goto_is_transcribed_once(goto_exit):
+    """In the exit-label shape the label IS the branch's post-dominator, so the
+    leg already stops there -- the target must not be emitted twice."""
+    steps = build_steps(goto_exit, SPEC)[0]
+    assert [s["number"] for s in steps].count("3") == 1
+
+
+def test_gotoflag_is_not_read_as_a_goto():
+    from views.test_steps import _GOTO_RE
+    assert _GOTO_RE.match("goto done;").group(1) == "done"
+    assert _GOTO_RE.match("gotoFlag = 1;") is None

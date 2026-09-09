@@ -100,6 +100,22 @@ unchanged input read identically.
 - Every `return` is its own step, so Expected Results can point at it. The transcription ends where the
   function exits — no closing "verify the result" step.
 
+**Jumps**
+
+A bare `goto done.` says the flow moves, but not where. Both ends name the label.
+
+| Source | Step |
+|---|---|
+| `goto done;` | Go to `done` label in step 3. |
+| `goto done;`, target is the next step | Continue to `done` label in step 3. |
+| `done: return status;` | `done:` Return status. |
+
+- The label leads — it is what the tester matches in the code. The step number is where the flow goes.
+- `Continue to` when the target is the next step: nothing is skipped.
+- A label takes no step of its own; it prefixes the statement it labels.
+- An empty leg says where the block resumes — *"False: continue to step 3."*, not a bare *"continue."*
+- Jumps resolve only after the whole function is numbered: a `goto` points forward.
+
 **Wording — a callee that runs for real**
 
 | Source | Step |

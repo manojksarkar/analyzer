@@ -78,3 +78,22 @@ PUBLIC int utilChain(int v) {
     int scaled = utilScale(normed, 3);
     return scaled;
 }
+
+// goto with an exit label -- two branches jump to the same cleanup point. The
+// unit test steps must NAME the step the jump lands on, and the destination must
+// name the label back, instead of transcribing a bare `goto done`.
+PUBLIC int utilGotoGuard(int v, int limit) {
+    int status = 0;
+    if (limit <= 0) {
+        status = -1;
+        goto done;
+    }
+    status = utilClamp(v, -limit, limit);   // public, has its own spec -> mocked
+    if (status == 0) {
+        status = -2;
+        goto done;
+    }
+    status = utilDouble(status);            // private helper -> runs inline
+done:
+    return status;
+}
