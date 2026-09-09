@@ -23,6 +23,81 @@ def _line(label: str, value: Any) -> str:
     return f"  {label:<16}: {value}"
 
 
+def _llm_lines(counts: Dict[str, Any]) -> List[str]:
+    """The LLM section: how many calls a run made, and how many produced nothing.
+
+    Token counts already say what was SPENT. They do not say whether the spending bought
+    anything, and that gap hid a real failure: a run took 2062 seconds and produced mechanical
+    flowchart labels while the gateway answered every request correctly — the replies were being
+    destroyed after arrival. Tokens looked healthy throughout. "1 call in 3 returned nothing" is
+    the line that would have pointed straight at it.
+
+    `counts` is {(kind, outcome): n} flattened to {"kind|outcome": n} by the caller, summed
+    across every phase subprocess.
+    """
+    if not counts:
+        return []
+    if "__unavailable__" in counts:
+        return [_THIN,
+                "  LLM CALLS : accounting unavailable "
+                f"({counts['__unavailable__']})",
+                "              Run `python analyzer.py setup` to apply the migration. Until "
+                "then the",
+                "              report cannot say how many LLM calls failed."]
+    timing = {str(k).split("|", 1)[1]: v for k, v in counts.items()
+              if str(k).startswith("__timing__|")}
+    by_kind: Dict[str, Dict[str, int]] = {}
+    for key, n in counts.items():
+        if str(key).startswith("__timing__|"):
+            continue
+        kind, _, outcome = str(key).partition("|")
+        by_kind.setdefault(kind, {}).setdefault(outcome, 0)
+        by_kind[kind][outcome] += int(n or 0)
+
+    tot = {"ok": 0, "empty": 0, "error": 0}
+    for oc in by_kind.values():
+        for k in tot:
+            tot[k] += oc.get(k, 0)
+    calls = sum(tot.values())
+    if not calls:
+        return []
+
+    failed = tot["empty"] + tot["error"]
+    L = [_THIN, "  LLM CALLS (a failed call means the caller fell back to a mechanical result)"]
+    L.append(f"    Total     : {calls:<5}  answered {tot['ok']} ({_pct(tot['ok'], calls)})")
+    if failed:
+        L.append(f"    Failed    : {failed:<5}  empty {tot['empty']}, error {tot['error']}"
+                 f"  -> {_pct(failed, calls)} of calls produced NOTHING")
+    for kind in sorted(by_kind):
+        oc = by_kind[kind]
+        k_ok, k_empty, k_err = oc.get("ok", 0), oc.get("empty", 0), oc.get("error", 0)
+        k_tot = k_ok + k_empty + k_err
+        detail = f"ok {k_ok}"
+        if k_empty:
+            detail += f", empty {k_empty}"
+        if k_err:
+            detail += f", error {k_err}"
+        L.append(f"      {kind:<22} {k_tot:<5}  ({detail})")
+    if timing:
+        _lat, _thr = timing.get("latency_seconds", 0.0), timing.get("throttle_seconds", 0.0)
+        _wall = _lat + _thr
+        if _wall > 0:
+            L.append(f"    Time      : {_wall:.0f}s total  "
+                     f"({_lat:.0f}s waiting on the model, {_thr:.0f}s in the rate-limit pause)")
+            if _thr > _lat:
+                L.append("                Most of it was the THROTTLE, not the model — "
+                         "llm.rateLimitSeconds")
+                L.append("                is the lever, and 0 disables it on an endpoint "
+                         "with no limit.")
+        _pt, _ct = timing.get("prompt_tokens", 0), timing.get("completion_tokens", 0)
+        if _pt or _ct:
+            L.append(f"    Tokens    : {_pt + _ct:<5}  ({_pt} prompt, {_ct} completion)")
+    if failed:
+        L.append("    A non-zero failed count means the document contains fallback text or")
+        L.append("    mechanical labels. Check the log for 'empty response' / 'HTTP'.")
+    return L
+
+
 def build_report(stats: Dict[str, Any]) -> List[str]:
     """Build the report lines from a stats dict (see generate_incremental/full)."""
     decision = stats.get("decision", "full")
@@ -65,6 +140,22 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
              f"-> reused {fn.get('reused', 0)} ({_pct(fn.get('reused', 0), fn.get('total', 0))})")
     L.append(f"    Globals   : regenerated {gl.get('regenerated', 0):<4} / {gl.get('total', 0):<4} "
              f"-> reused {gl.get('reused', 0)} ({_pct(gl.get('reused', 0), gl.get('total', 0))})")
+    # Globals reuse legitimately runs much lower than functions, and a bare 0% reads like a
+    # broken feature. A global's LLM description embeds the DESCRIPTIONS of the functions that
+    # read and write it, so regenerating any of those genuinely changes the global's input —
+    # it must be regenerated too. With few globals and each touched by only one or two
+    # functions, a small change can invalidate all of them. Say so rather than leave the
+    # number to be misread.
+    #
+    # This note used to describe an intention the code did not implement: a global's fingerprint
+    # was its own source hash with NO dependencies, so a changed reader left it untouched and the
+    # reuse index handed back a description written against the reader's old behaviour. Globals
+    # now fold their accessors' hashes in, which is what makes the sentence below true.
+    if gl.get("total") and not gl.get("reused"):
+        L.append("                (0% is expected here: a global's description embeds its "
+                 "readers'/writers' descriptions,")
+        L.append("                 so every global touched by a regenerated function is "
+                 "regenerated too)")
     L.append(f"    Flowcharts: regenerated {fc.get('regenerated', 0):<4} / {fc.get('total', 0):<4} function(s) "
              f"-> carried {fc.get('carried', 0)} ({_pct(fc.get('carried', 0), fc.get('total', 0))})")
     if decision == "incremental":
@@ -77,6 +168,8 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
             L.append(f"    X-version : {xv_fn} function(s) + {xv_gl} global(s) + {xv_fc} flowchart(s) reused "
                      f"from a prior version via the content index (revert / cross-branch)")
 
+    L.extend(_llm_lines(stats.get("llmCalls") or {}))
+
     L.append(_THIN)
     docs = stats.get("documents") or []
     L.append(_line("Documents", ", ".join(docs) if docs else "(none)"))
@@ -88,9 +181,15 @@ def build_report(stats: Dict[str, Any]) -> List[str]:
     return L
 
 
-def emit_report(lines: List[str], version_dir: str = None, logger_name: str = "incremental") -> None:
-    """Log each line (-> logs/run_<date>.log + stderr) and persist to
-    <version_dir>/report.txt."""
+def emit_report(lines: List[str], version_dir: str = None, logger_name: str = "incremental",
+                *, write_file: bool = True) -> None:
+    """Log each line (-> logs/run_<date>.log + stderr) and, when asked, write report.txt.
+
+    `write_file=False` in database mode: the report is stored verbatim in `versions.report`,
+    and nothing reads the file — it was write-only. Every line still goes to the log, so the
+    run is no less inspectable on the machine that produced it, and now it is inspectable from
+    any other node too.
+    """
     try:
         from core.logging_setup import get_logger
         log = get_logger(logger_name)
@@ -99,7 +198,7 @@ def emit_report(lines: List[str], version_dir: str = None, logger_name: str = "i
     except Exception:
         for ln in lines:
             print(ln)
-    if version_dir:
+    if version_dir and write_file:
         try:
             with open(os.path.join(version_dir, "report.txt"), "w", encoding="utf-8") as fh:
                 fh.write("\n".join(lines) + "\n")

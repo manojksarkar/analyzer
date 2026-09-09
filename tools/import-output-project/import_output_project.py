@@ -3,16 +3,19 @@
 
 Point it at a per-commit workspace snapshot (which holds ``output/`` + ``model/``, with the
 project ``config.json`` one level up) *or* at a bare ``output/`` folder, and it creates a
-Project + Version + Commit + Documents (+ section bodies) in the JSON-backed DB
-(``api/db/data/*.json``) and copies the artifacts into the ``workspaces/<pid>/<commit[:16]>/``
+Project + Version + Commit + Documents (+ section bodies) in **Postgres** — the same database the
+API serves from — and copies the artifacts into the ``workspaces/<pid>/<commit[:16]>/``
 layout the render route expects. No pipeline re-run — the long-ago output becomes browsable
 in the web UI.
 
+Requires a reachable database (D-16): set ``DATABASE_URL`` or the ``db`` section of
+``engine/config/config.local.json``, and run ``tools/db_setup.py`` once.
+
     python tools/import-output-project/import_output_project.py <source> [options]
 
-Then start the API json-backed and open the web app:
+Then start the API and open the web app:
 
-    API_DB_BACKEND=json uvicorn api.main:app --reload
+    uvicorn api.main:app --reload
     (cd web-app && npm run dev)
 
 Sign in with a seeded user (e.g. admin@aspice.dev / secret) and open the new project.
@@ -32,12 +35,15 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Put the repo root on sys.path so ``import api...`` works from anywhere.
+# Put the repo root (and engine/, for core.db's DSN resolution) on sys.path so ``import api...``
+# works from anywhere.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
+if str(_REPO_ROOT / "engine") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "engine"))
 
-from api.db.json_db import JsonDatabase                       # noqa: E402
+from api.db.postgres.database import SqlDatabase              # noqa: E402
 from api.models.domain import Commit, Project, ProjectMember, Version  # noqa: E402
 from api.services import doc_render, pipeline_runner          # noqa: E402
 from api.services.settings import get_settings                # noqa: E402
@@ -243,9 +249,17 @@ def main(argv: list[str] | None = None) -> int:
     if model_dir:
         shutil.copytree(model_dir, dest / "model")
 
-    # Insert DB records into the JSON-backed store (persists to api/db/data/*.json).
-    db = JsonDatabase()
-    owner = db.users.get_by_email(args.owner_email)
+    # Insert DB records into Postgres — the same database the API serves from (D-16: Postgres is
+    # required; there is no JSON-backed store any more).
+    try:
+        db = SqlDatabase()
+        owner = db.users.get_by_email(args.owner_email)
+    except Exception as exc:                                   # noqa: BLE001
+        print(f"error: cannot reach the database: {type(exc).__name__}: {exc}\n"
+              f"       Set DATABASE_URL, or add a `db` section to "
+              f"engine/config/config.local.json, then run tools/db_setup.py.", file=sys.stderr)
+        shutil.rmtree(dest, ignore_errors=True)
+        return 1
     if not owner:
         print(f"error: owner user not found: {args.owner_email} "
               f"(seeded users incl. admin@aspice.dev / developer@aspice.dev)", file=sys.stderr)
@@ -306,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
           f"{', '.join(d.name for d in docs)}")
     print("Copied artifacts to:", dest)
     print("\nNext:")
-    print("  API_DB_BACKEND=json uvicorn api.main:app --reload")
+    print("  uvicorn api.main:app --reload")
     print("  (cd web-app && npm run dev)  then sign in and open the project.")
     return 0
 

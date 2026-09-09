@@ -10,10 +10,15 @@ import platform
 # Config loading lives in core.config (these are re-exports for backward
 # compatibility with existing call sites that still `from utils import ...`).
 from core.config import (  # noqa: E402,F401
+    LAYER_SEP,
     LlmConfigError,
+    display_name,
     format_llm_config_banner,
     load_config,
     load_llm_config,
+    make_qualified_id,
+    qualified_layer,
+    split_qualified_id,
 )
 
 # Separator for unique keys (function IDs, global IDs, unit keys). Avoid "/" for path confusion.
@@ -85,6 +90,24 @@ def mermaid_cache_key(mermaid: str, *, scale=None, puppeteer: bool = True) -> st
     return hashlib.sha256(src.encode("utf-8")).hexdigest()
 
 
+def _log_render_failure(tool: str, result, *, tail_lines: int = 15) -> None:
+    """Report why a renderer failed instead of returning a bare False (doc 09, A0).
+
+    Both renderers already captured stderr and discarded it, so a missing Chromium
+    or a bad DOT string surfaced only as a diagram that never appeared. Renders run
+    once per diagram, so the tail is kept short — enough to name the cause without
+    flooding the log when every render in a run fails the same way.
+    """
+    text = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "").strip()
+    if not text:
+        log(f"{tool} exited with code {getattr(result, 'returncode', '?')} (no output)",
+            component="render", err=True)
+        return
+    lines = text.splitlines()[-tail_lines:]
+    log(f"{tool} exited with code {getattr(result, 'returncode', '?')}: "
+        + " | ".join(lines), component="render", err=True)
+
+
 def _run_mmdc(project_root: str, mermaid: str, png_path: str, *,
               scale=None, puppeteer: bool = True, timeout: int = 90) -> bool:
     """Invoke mmdc on `mermaid` -> png_path (writes a temp .mmd it cleans up). Returns
@@ -109,9 +132,14 @@ def _run_mmdc(project_root: str, mermaid: str, png_path: str, *,
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False, shell=True)
             else:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+            log(f"mmdc could not run: {type(exc).__name__}: {exc}",
+                component="render", err=True)
             return False
-        return r.returncode == 0 and os.path.isfile(png_path)
+        if r.returncode != 0:
+            _log_render_failure("mmdc", r)
+            return False
+        return os.path.isfile(png_path)
     finally:
         try:
             os.remove(mmd_path)
@@ -138,7 +166,7 @@ def render_mermaid_cached(project_root: str, mermaid: str, png_path: str, *,
     if ok:                                             # populate the cache (best-effort, atomic)
         try:
             os.makedirs(cache_dir, exist_ok=True)
-            tmp = cache_png + ".tmp"
+            tmp = f"{cache_png}.{os.getpid()}.tmp"   # PID-unique: see stores._write_json
             shutil.copyfile(png_path, tmp)
             os.replace(tmp, cache_png)
         except OSError:
@@ -189,9 +217,14 @@ def _run_dot_render(project_root: str, dot: str, png_path: str, *,
             else:
                 r = subprocess.run(cmd, capture_output=True, text=True,
                                    timeout=timeout, check=False)
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+            log(f"render_dot.mjs could not run: {type(exc).__name__}: {exc}",
+                component="render", err=True)
             return False
-        return r.returncode == 0 and os.path.isfile(png_path)
+        if r.returncode != 0:
+            _log_render_failure("render_dot.mjs", r)
+            return False
+        return os.path.isfile(png_path)
     finally:
         try:
             os.remove(dot_path)
@@ -219,7 +252,7 @@ def render_dot_cached(project_root: str, dot: str, png_path: str, *,
     if ok:                                             # populate the cache (best-effort, atomic)
         try:
             os.makedirs(cache_dir, exist_ok=True)
-            tmp = cache_png + ".tmp"
+            tmp = f"{cache_png}.{os.getpid()}.tmp"   # PID-unique: see stores._write_json
             shutil.copyfile(png_path, tmp)
             os.replace(tmp, cache_png)
         except OSError:
@@ -233,8 +266,8 @@ _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 _CONFIG_CACHE = load_config(_SCRIPT_DIR)  # _SCRIPT_DIR == engine/, which contains config/
 
 # Component mapping cache (initialized at import).
-_COMPONENT_OVERRIDES: dict = {}
-_GROUP_MAP: dict = {}  # component name -> group name
+_COMPONENT_OVERRIDES: dict = {}  # componentId -> folder path(s)
+_GROUP_MAP: dict = {}      # componentId -> groupId (both layer-qualified)
 
 
 def init_component_mapping(config: dict) -> None:
@@ -255,7 +288,11 @@ def init_component_mapping(config: dict) -> None:
         if not isinstance(grp, dict):
             continue
         for component, paths in grp.items():
-            _GROUP_MAP.setdefault(component, group_name)
+            # Keyed by the id `_resolve_component_from_rel` RETURNS (spaces already
+            # folded to `-`), not by the raw config key: they differ for any name with
+            # a space, and `resolve_group("Layer1.Sample-Core")` used to answer "" for
+            # every one of them.
+            _GROUP_MAP.setdefault(component.replace(" ", "-"), group_name)
             if not paths:
                 continue
             if isinstance(paths, str):
@@ -280,13 +317,23 @@ def init_component_mapping(config: dict) -> None:
 # Default initialization from on-disk config.
 init_component_mapping(_CONFIG_CACHE)
 
-def resolve_group(component: str) -> str:
-    """Return the layer group name for a component, or empty string if unknown."""
-    return _GROUP_MAP.get(component, "")
+def resolve_group(component_id: str) -> str:
+    """The qualified group id owning `component_id` (`Layer1.Support`), or "".
+
+    Both sides are layer-qualified, so a group name two layers share resolves to the
+    right one. Use `display_name()` on the result before showing or abbreviating it -
+    `_id_seg` over the qualified form would fold the layer into the group code.
+    """
+    return _GROUP_MAP.get(component_id, "")
 
 
 def _resolve_component_from_rel(rel_file: str) -> str:
-    """Resolve component name for a path relative to the project base."""
+    """Resolve the layer-qualified component id for a repo-relative path.
+
+    Returns `Layer1.Sample-Core`, not `Sample-Core`: the id is the first segment of
+    every unit, function and global key, and two layers may legitimately both define
+    a `Core`. Spaces fold to `-` here, which is why `_GROUP_MAP` is keyed the same way.
+    """
     path = rel_file.replace("\\", "/") if rel_file else ""
     if not path:
         return "unknown"
@@ -321,7 +368,8 @@ def _path_to_component_unit(rel_file: str) -> tuple:
 
 
 def make_unit_key(rel_file: str) -> str:
-    """Unit unique key: component|unitname (assumes single-name units, no path in key)."""
+    """Unit unique key: componentId|unitname (no path in the key, so unit names must
+    be unique inside a component - `model_deriver` warns when they are not)."""
     component, unitname = _path_to_component_unit(rel_file)
     return f"{component}{KEY_SEP}{unitname}"
 
@@ -333,18 +381,22 @@ def path_from_unit_rel(rel_file: str) -> str:
 
 
 def make_global_key(rel_file: str, full_name: str) -> str:
-    """Unique key: component|unitname|qualifiedName."""
+    """Unique key: componentId|unitname|qualifiedName."""
     component, unit = _path_to_component_unit(rel_file)
     return f"{component}{KEY_SEP}{unit}{KEY_SEP}{full_name}"
 
 
 def make_function_key(component: str, rel_file: str, full_name: str, parameters: list) -> str:
-    """Unique key: component|unitname|qualifiedName|paramTypes."""
-    path = rel_file.replace("\\", "/") if rel_file else ""
-    parts = path.split("/")
-    if not component and parts:
-        component = parts[0]
-    _, unit = _path_to_component_unit(rel_file)
+    """Unique key: componentId|unitname|qualifiedName|paramTypes.
+
+    The fallback for a caller that passes no component resolves it the same way every
+    other key does. It used to take the path's FIRST SEGMENT, which since component ids
+    carry their layer is the layer name (`Layer2`) rather than a component - two
+    different key spaces for the same function depending on the call site.
+    """
+    resolved_component, unit = _path_to_component_unit(rel_file)
+    if not component:
+        component = resolved_component
     param_types = ",".join((p.get("type") or "").strip() for p in (parameters or []))
     return f"{component}{KEY_SEP}{unit}{KEY_SEP}{full_name}{KEY_SEP}{param_types}"
 

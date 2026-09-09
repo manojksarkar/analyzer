@@ -21,20 +21,26 @@ class SequenceDiagramGenerator:
     # Track the current/target component for color assignment
     current_component = None
 
-    def __init__(self, components_file: str, units_file: str, functions_file: str, config: Optional[Dict] = None):
+    def __init__(self, components_file, units_file, functions_file,
+                 config: Optional[Dict] = None):
         """
-        Initialize the generator with JSON data files.
+        Initialize the generator with model data (or, historically, paths to it).
+
+        Each of the three accepts EITHER an already-loaded dict or a path to the JSON file
+        (doc 10, step 5). The caller normally has the data already — run_views loads the model
+        through `core.model_io` before invoking any view — and in database mode the files do not
+        exist, so a path is no longer something a caller can always produce.
 
         Args:
-            components_file: Path to components.json
-            units_file: Path to units.json
-            functions_file: Path to functions.json
+            components_file: components data, or a path to components.json
+            units_file: units data, or a path to units.json
+            functions_file: functions data, or a path to functions.json
             config: Optional configuration dictionary for diagram generation
                     If not provided, uses default settings (single_per_external_component)
         """
-        self.components = load_json(components_file)
-        self.units = load_json(units_file)
-        self.functions = load_json(functions_file)
+        self.components = self._safe_load(components_file)
+        self.units = self._safe_load(units_file)
+        self.functions = self._safe_load(functions_file)
 
         # Build reverse lookup: function -> unit
         self.function_to_unit = self._build_function_to_unit_map()
@@ -59,6 +65,29 @@ class SequenceDiagramGenerator:
         self._call_description = CallDescriptionGenerator(config)
 
         # Current component will be set dynamically based on the function being analyzed
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _safe_load(path) -> Dict:
+        """Model data, from a dict passed straight through or a JSON file path.
+
+        Accepting a dict is what lets the caller hand over the model it already loaded through
+        `core.model_io` (doc 10, step 5) — in database mode there is no file to point at. Still
+        returns {} on any error, so a missing artifact degrades exactly as before.
+        """
+        if isinstance(path, dict):
+            return path
+        try:
+            if path and os.path.isfile(path):
+                return load_json(path)
+        except SystemExit:
+            # load_json exits on error; treat as empty for library use.
+            pass
+        except Exception:
+            pass
+        return {}
 
     def _get_filter_mode(self, config: Optional[Dict]) -> str:
         """

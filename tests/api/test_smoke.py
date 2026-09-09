@@ -230,7 +230,7 @@ def test_get_current_job(client, auth_header):
     assert r.status_code in (200, 404)
 
 
-def test_start_job_mocked(client, auth_header):
+def test_start_job_mocked(client, auth_header, db):
     """Start a job with the real pipeline stubbed out."""
     with patch("api.services.pipeline_runner.start") as mock_start:
         # Use a seeded commit SHA from p1
@@ -240,7 +240,7 @@ def test_start_job_mocked(client, auth_header):
 
         r2 = client.post(
             "/api/v1/projects/p1/jobs",
-            json={"commit_sha": sha},
+            json={"commit_sha": sha, "version_tag": "pg3-smoke-unique"},
             headers=auth_header,
         )
         # Either 202 (new job) or 409 (job already active)
@@ -248,6 +248,53 @@ def test_start_job_mocked(client, auth_header):
         if r2.status_code == 202:
             assert mock_start.called
             assert "job_id" in r2.json()
+            # PG-3: the real `ver…` id is reserved at job start (so the engine runs under it),
+            # not deferred to completion.
+            job = db.jobs.get(r2.json()["job_id"])
+            assert (job.version_id or "").startswith("ver"), job.version_id
+
+
+def test_start_job_requires_version(client, auth_header):
+    """version is mandatory (D-3): a missing version is a 400, not an auto-name."""
+    r = client.post(
+        "/api/v1/projects/p1/jobs",
+        json={"commit_sha": "abc123def456789012345678"},   # no version_tag
+        headers=auth_header,
+    )
+    assert r.status_code == 400
+    assert "version" in r.text.lower()
+
+
+def test_start_job_rejects_duplicate_version(client, auth_header):
+    """A version name already used in the project is rejected (409), never renamed."""
+    r = client.post(
+        "/api/v1/projects/p1/jobs",
+        json={"commit_sha": "abc123def456789012345678", "version_tag": "v1.0.0"},  # seed ver1
+        headers=auth_header,
+    )
+    assert r.status_code == 409
+    assert "VERSION_EXISTS" in r.text
+
+
+def test_start_job_reserves_version_row_before_insert(client, auth_header, db):
+    """Regression (PG FK ordering): analysis_jobs.version_id is a FK to versions.id, so the
+    version row must EXIST before the job row is inserted. Uses p2 (seed job2 is complete → no
+    active job) so this actually reaches db.jobs.create against BOTH backends — incl. SQLite with
+    FK enforcement ON, which is where a not-yet-reserved version would raise IntegrityError."""
+    import uuid as _uuid
+    with patch("api.services.pipeline_runner.start"):
+        tag = f"pg-fk-{_uuid.uuid4().hex[:8]}"
+        r = client.post(
+            "/api/v1/projects/p2/jobs",
+            json={"commit_sha": "d9c8b7a", "version_tag": tag},
+            headers=auth_header,
+        )
+        assert r.status_code == 202, r.text
+        job = db.jobs.get(r.json()["job_id"])
+        assert job is not None and (job.version_id or "").startswith("ver")
+        # The reserved draft version row exists under the job's id → the FK is satisfiable.
+        v = db.versions.get(job.version_id)
+        assert v is not None and v.status == "draft", (job.version_id, v)
 
 
 def test_start_job_requires_admin(client, dev_header):

@@ -22,7 +22,19 @@ except ImportError:
     pytest.skip("python-docx not installed", allow_module_level=True)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DOCX_PATH = os.path.join(PROJECT_ROOT, "output", "My-Sample", "software_detailed_design_My-Sample.docx")
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import re as _re                                        # noqa: E402
+from tests.e2e_paths import COMPONENTS, docx_for        # noqa: E402
+_sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))), "engine"))
+from core.config import LAYER_SEP                       # noqa: E402
+
+# poc-4 produced ONE document for the group; a group-scoped run now produces one per
+# component (--component-per-docx is the default for every non-component scope). The
+# content under test is the same content -- it is spread over three files instead of
+# one, so the fixtures below read across all of them.
+DOCX_PATHS = [docx_for(c) for c in COMPONENTS]
 
 COL_IF_ID    = 0
 COL_IF_NAME  = 1
@@ -38,11 +50,41 @@ PRIVATE_NAMES = {"coreHelper", "coreSwitch", "libClamp", "utilClip", "g_count"}
 # Fixtures
 # ---------------------------------------------------------------------------
 
+class _GroupDocuments:
+    """The group's documents behind one Document-shaped facade.
+
+    A group-scoped run writes one document per component where poc-4 wrote a single
+    combined one. These tests are about the GROUP's content -- which headings exist,
+    which interface rows are present -- not about how many files it arrived in, so
+    they read the concatenation and stay exactly as they were written.
+    """
+
+    def __init__(self, docs):
+        self._docs = list(docs)
+
+    @property
+    def paragraphs(self):
+        return [x for d in self._docs for x in d.paragraphs]
+
+    @property
+    def tables(self):
+        return [x for d in self._docs for x in d.tables]
+
+    @property
+    def inline_shapes(self):
+        return [x for d in self._docs for x in d.inline_shapes]
+
+    def __iter__(self):
+        return iter(self._docs)
+
+
 @pytest.fixture(scope="module")
 def docx(run_pipeline):
-    if not os.path.isfile(DOCX_PATH):
-        pytest.fail(f"DOCX not found: {DOCX_PATH}")
-    return Document(DOCX_PATH)
+    """Every design document the run produced, as one list."""
+    missing = [p for p in DOCX_PATHS if not os.path.isfile(p)]
+    if missing:
+        pytest.fail("DOCX not found: " + ", ".join(missing))
+    return _GroupDocuments(Document(p) for p in DOCX_PATHS)
 
 
 @pytest.fixture(scope="module")
@@ -68,12 +110,14 @@ def all_cell_text(all_interface_rows):
 # ---------------------------------------------------------------------------
 
 def test_docx_exists(run_pipeline):
-    assert os.path.isfile(DOCX_PATH), f"DOCX not found: {DOCX_PATH}"
+    for p in DOCX_PATHS:
+        assert os.path.isfile(p), f"DOCX not found: {p}"
 
 
 def test_docx_non_empty(docx):
-    text = "\n".join(p.text for p in docx.paragraphs)
-    assert len(text.strip()) > 100, "DOCX appears empty or near-empty"
+    for path, d in zip(DOCX_PATHS, docx):
+        text = "\n".join(p.text for p in d.paragraphs)
+        assert len(text.strip()) > 100, f"{os.path.basename(path)} is empty or near-empty"
 
 
 # ---------------------------------------------------------------------------
@@ -296,9 +340,13 @@ def test_behaviour_description_tables_present(docx, behaviour_diagram_on):
 def test_flowchart_tables_present(docx):
     """_add_flowchart_table uses 'Capacity(Density)' — distinct from the behaviour table."""
     import json
-    cfg_path = os.path.join(PROJECT_ROOT, "engine", "config", "config.json")
+    # The defaults file is JSONC. A strict loader raises on its comments -- parse it
+    # the way the engine does.
+    cfg_path = os.path.join(PROJECT_ROOT, "engine", "config", "config.defaults.json")
+    _sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
+    from core.config import _strip_json_comments, _strip_trailing_commas
     with open(cfg_path, encoding="utf-8") as f:
-        cfg = json.load(f)
+        cfg = json.loads(_strip_trailing_commas(_strip_json_comments(f.read())))
     if not cfg.get("views", {}).get("flowcharts"):
         pytest.skip("flowcharts disabled in config")
     row_labels = {
@@ -391,3 +439,49 @@ def test_component_static_diagram_content_present(docx):
         assert found, (
             f"Static Design section (para {h_idx}) has no component diagram image or Mermaid text"
         )
+
+
+# ---------------------------------------------------------------------------
+# The layer prefix is an internal key. It must not appear in the document.
+# ---------------------------------------------------------------------------
+
+_LAYER_PREFIX = _re.compile(r"\b" + _re.escape(LAYER_SEP.join(("Layer1", ""))).replace("Layer1", r"Layer\d+")
+                            + r"[A-Za-z0-9_\-]")
+
+
+def _all_document_text(doc):
+    """Every string a reader can see: body paragraphs and every table cell.
+
+    `docx` here is the _GroupDocuments facade, which already concatenates the
+    group's documents behind `.paragraphs` / `.tables`.
+    """
+    for p in doc.paragraphs:
+        yield p.text
+    for t in doc.tables:
+        for r in t.rows:
+            for c in r.cells:
+                yield c.text
+
+
+def test_no_layer_qualified_id_reaches_the_document(docx):
+    """`Layer1.Math` is how the MODEL keys a component, so two layers' same-named
+    components stay distinct. It is development plumbing and has no place in a
+    deliverable — the layer is already stated once, on the cover.
+
+    It leaked in two spots: Source/Destination cells read
+    `Layer1.App/Main, Layer1.Cross/Hub`, and the cover printed the layer twice as
+    `Layer1 Layer1.Math`. This scans the whole document rather than those two
+    places, so any new leak fails here.
+    """
+    leaks = [text.strip()[:120] for text in _all_document_text(docx)
+             if text and _LAYER_PREFIX.search(text)]
+    assert not leaks, ("layer-qualified ids reached the document:\n  "
+                       + "\n  ".join(sorted(set(leaks))[:10]))
+
+
+def test_source_destination_still_names_the_partner_units(all_interface_rows):
+    """Stripping the prefix must not empty the cell — `App/Main`, not `` or `-`."""
+    seen = [r.cells[6].text.strip() for r in all_interface_rows
+            if len(r.cells) > 6 and r.cells[6].text.strip() not in ("", "-")]
+    assert seen, "no Source/Destination cell named a partner unit"
+    assert any("/" in s for s in seen), f"expected Component/Unit labels, got {seen[:5]}"

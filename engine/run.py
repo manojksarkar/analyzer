@@ -4,7 +4,9 @@
 Options:
   -h, --help           Show this help and exit
   --clean              Delete output/ and model/ before running
-  --config <path>      Use this config file instead of engine/config/config.json
+  --selected-group <name>
+                       Export only the named modulesGroup
+  --config <path>      Use this config file instead of engine/config/config.defaults.json
                        (a per-project/per-version config carrying the project's
                        `layers`). Exported as ANALYZER_CONFIG so every phase
                        subprocess honors it. config.local.json is NOT merged on
@@ -41,6 +43,11 @@ Options:
                        single_per_function, single_per_external_component,
                        all_callers, multi_unit_functions, skip_within_unit
                        (default). Unknown values silently fall back to the default.
+  --doc-type <type>    Which document(s) to emit: swe3 (default; software
+                       detailed design), swe4 (unit test specification), or all.
+                       Doc type is a dimension, not a phase: Phases 1-3 are
+                       shared; Phase 4 dispatches one exporter per doc type
+                       (EXPORTER_REGISTRY). Default swe3 reproduces prior output.
   --from-phase N       Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export)
   --to-phase N         Stop after phase N (1-4). Lets the incremental engine run
                        parse+derive only (--to-phase 2), compute impact, then
@@ -69,8 +76,8 @@ Options:
                        Same file formats, but applied to the named layer only.
                        Repeatable — use once per layer. Overrides --macros for
                        that layer's parse. Samples in engine/config/. Example:
-                         --macros-layer Layer1 engine/config/macros.layer1.example.json \\
-                         --macros-layer Layer2 engine/config/macros.layer2.example.json
+                         --macros-layer Layer1 engine/config/macros.core1.example.json \\
+                         --macros-layer Layer2 engine/config/macros.core2.example.json
   --only-files <path>  Parse only the translation units listed in this file, one
                        path per line (narrowed parse, used by the incremental engine).
   --include-emulator   Parse emulator/stub files too. By default files whose
@@ -169,7 +176,7 @@ if "--config" in sys.argv:
 
 from utils import log, load_config
 from core import PhaseRunner, plan_runs
-from core.model_io import model_file_path as _mfp, FUNCTIONS, GLOBALS, UNITS, COMPONENTS
+from core.model_io import FUNCTIONS, GLOBALS, UNITS, COMPONENTS
 
 # ---------------------------------------------------------------------------
 # Parse flags
@@ -190,8 +197,15 @@ _KNOWN_FLAGS = (
     "--data-dictionary", "--data-dictionary-layer",
     "--project-name", "--output-name",
     "--macros", "--macros-layer", "--include-path-layer",
-    "--only-files", "--include-emulator",
+    "--only-files", "--include-emulator", "--doc-type",
     "--quiet", "--verbose", "--trace-prompts",
+    # The run-identity flags the database path needs. This list is an ALLOWLIST — anything
+    # missing from it is rejected before Phase 1 no matter how well its parse branch works,
+    # so a database run would stop at "Unknown option: --version-id". `test_cli.py
+    # ::test_known_flags_stays_in_sync_with_parse_branches` compares this against the parse
+    # branches by AST, which is what keeps the two from drifting apart again.
+    "--version-id", "--project-id", "--baseline-version-id",
+    "--model-root", "--output-root", "--model-scratch",
 )
 
 clean_all               = False
@@ -199,8 +213,10 @@ use_model               = False
 no_llm_summarize        = False
 from_phase              = 1
 to_phase                = None   # stop after this phase (1-4); None = run through phase 4
-selected_group_arg      = None
-selected_layer_arg      = None
+selected_group_arg      = None   # first, for messages
+selected_groups_arg     = []     # ALL: --selected-group is repeatable (--scope group:A,B)
+selected_layer_arg      = None   # first, for messages
+selected_layers_arg     = []     # ALL: repeatable, same reason as --selected-group
 selected_components_arg = []
 selected_units_arg      = []   # dev aid: narrow Phase 3 to these unit(s)
 component_per_docx      = False
@@ -212,9 +228,17 @@ macros_arg              = None
 macros_layer_args       = []   # list of (layer_name, path) tuples
 project_name_arg        = None
 output_name_arg         = None
+output_root_arg         = None   # B1: this run's own output dir (versions/<ver…>/output)
+model_root_arg          = None   # C11b: this run's own model dir (versions/<ver…>/model)
+model_scratch_arg       = False
+version_id_arg          = None   # C11a: persist the model to Postgres at each phase boundary
+project_id_arg          = None   # C11a: owning project (the store is project-scoped)
 only_files_arg          = None   # narrowed parse (M4.4): file listing the TUs to parse
+baseline_version_id_arg = None   # narrowed parse: the version whose func-key map resolves
+                                 # calls into files this run did not re-parse
 include_emulator_arg    = False  # opt out of the default *emul* file exclusion (3.1)
 include_path_layer_args = []   # list of (layer_name, abs_dir) tuples
+doc_type_arg            = "swe3"  # which document(s) to emit: swe3|swe4|all (default swe3)
 raw_args                = []
 
 i = 1
@@ -242,13 +266,15 @@ while i < len(sys.argv):
         if i >= len(sys.argv):
             log("--selected-group requires a group name", component="run", err=True)
             sys.exit(1)
-        selected_group_arg = sys.argv[i]
+        selected_groups_arg.append(sys.argv[i])
+        selected_group_arg = selected_groups_arg[0]
     elif a == "--selected-layer":
         i += 1
         if i >= len(sys.argv):
             log("--selected-layer requires a layer name", component="run", err=True)
             sys.exit(1)
-        selected_layer_arg = sys.argv[i]
+        selected_layers_arg.append(sys.argv[i])
+        selected_layer_arg = selected_layers_arg[0]
     elif a == "--selected-component":
         i += 1
         if i >= len(sys.argv):
@@ -309,8 +335,23 @@ while i < len(sys.argv):
             log("--only-files requires a file path", component="run", err=True)
             sys.exit(1)
         only_files_arg = sys.argv[i]
+    elif a == "--baseline-version-id":
+        i += 1
+        if i >= len(sys.argv):
+            log("--baseline-version-id requires a version id", component="run", err=True)
+            sys.exit(1)
+        baseline_version_id_arg = sys.argv[i]
     elif a == "--include-emulator":
         include_emulator_arg = True
+    elif a == "--doc-type":
+        i += 1
+        if i >= len(sys.argv):
+            log("--doc-type requires a value (swe3|swe4|all)", component="run", err=True)
+            sys.exit(1)
+        doc_type_arg = sys.argv[i].strip().lower()
+        if doc_type_arg not in ("swe3", "swe4", "all"):
+            log(f"--doc-type must be swe3, swe4, or all (got: {sys.argv[i]})", component="run", err=True)
+            sys.exit(1)
     elif a == "--project-name":
         i += 1
         if i >= len(sys.argv):
@@ -323,6 +364,48 @@ while i < len(sys.argv):
             log("--output-name requires a name argument", component="run", err=True)
             sys.exit(1)
         output_name_arg = sys.argv[i]
+    elif a == "--version-id":
+        # Which version this run is producing (doc 09, C11a). With it, each phase persists
+        # its model to Postgres at its own boundary instead of the whole model landing once
+        # at the end of the run. A flag, not an env var, for the same reasons as
+        # --output-root: the run's command line then records what it produced.
+        i += 1
+        if i >= len(sys.argv):
+            log("--version-id requires a value", component="run", err=True)
+            sys.exit(1)
+        version_id_arg = sys.argv[i]
+    elif a == "--project-id":
+        i += 1
+        if i >= len(sys.argv):
+            log("--project-id requires a value", component="run", err=True)
+            sys.exit(1)
+        project_id_arg = sys.argv[i]
+    elif a == "--model-scratch":
+        # The narrowed parse's partial pass. Its output covers only the changed translation
+        # units and is valid only after parse_merge, so it must not reach the version's rows.
+        # Not a storage choice — there is no way to point a real run at it.
+        model_scratch_arg = True
+    elif a == "--model-root":
+        # This run's own model dir (doc 09, C11b). Unlike --output-root this must also be
+        # forwarded to every PHASE: group_planner bakes absolute output paths into each
+        # phase's args, but model_dir is read from paths() inside each phase process.
+        i += 1
+        if i >= len(sys.argv):
+            log("--model-root requires a directory argument", component="run", err=True)
+            sys.exit(1)
+        model_root_arg = sys.argv[i]
+    elif a == "--output-root":
+        # Where this run's rendered output goes (doc 09, B1). The orchestrator points it at
+        # versions/<ver…>/output so a job never writes a shared dir another job can wipe.
+        # A flag rather than an env var: the run's own command line then records where its
+        # output went, and a per-version CONFIG would be wrong — that config is stored in
+        # versions.resolved_config, and a machine-specific absolute path must never go there
+        # (the mistake C3 exists to undo).
+        i += 1
+        if i >= len(sys.argv):
+            log("--output-root requires a directory argument", component="run", err=True)
+            sys.exit(1)
+        output_root_arg = sys.argv[i]
     elif a == "--include-path-layer":
         if i + 2 >= len(sys.argv):
             log("--include-path-layer requires two arguments: <layer> <dir>", component="run", err=True)
@@ -370,26 +453,47 @@ while i < len(sys.argv):
         raw_args.append(a)
     i += 1
 
+# Applied right after argv parsing and BEFORE anything reads paths(): group_planner builds
+# every phase's output path from paths().output_dir, and paths() memoises on first use.
+if output_root_arg:
+    from core.paths import set_output_dir
+    set_output_dir(output_root_arg)
+if model_root_arg:
+    from core.paths import set_model_dir
+    set_model_dir(model_root_arg)
+# The run identity, forwarded to every phase by Phase.command() (doc 10, step 3). Recorded
+# even in file mode: a phase being told which version it belongs to is useful regardless, and
+# it is what makes --from-phase N unambiguous.
+from core.run_context import (set_run_context as _set_run_context,
+                              install_model_repository as _install_model_repo)
+_set_run_context(version=version_id_arg, project=project_id_arg, scratch=model_scratch_arg)
+# set_run_context only RECORDS the identity; installing the repository is separate, and run.py
+# itself reads the model (the --selected-unit pre-check below), so it needs one too. Phase
+# subprocesses get the same treatment from their own apply_cli_run_context.
+_install_model_repo()
+
 def _resolve_group_name(groups: dict, requested: str | None) -> str | None:
-    """Resolve requested group name against config.layer, case-insensitive."""
-    if not requested:
-        return None
-    if not isinstance(groups, dict) or not groups:
-        return None
-    if requested in groups:
-        return requested
-    req_key = requested.casefold()
-    for k in groups.keys():
-        if isinstance(k, str) and k.casefold() == req_key:
-            return k
-    return None
+    """Resolve a requested group to its layer-qualified id, or exit.
+
+    Group ids carry their layer now, so a bare `Support` can name two groups when
+    two layers both have one. There is no right answer to pick, and picking the
+    first generated one layer's document under a name the user meant for the other,
+    so an ambiguous request stops here with both candidates printed.
+    """
+    from core.config import resolve_group_id, ambiguous_group_message
+    resolved, candidates = resolve_group_id(groups, requested)
+    if resolved is None and len(candidates) > 1:
+        log(ambiguous_group_message(requested, candidates), component="run", err=True)
+        sys.exit(2)
+    return resolved
 
 if sum(bool(x) for x in [selected_group_arg, selected_layer_arg, selected_components_arg]) > 1:
     log("--selected-group, --selected-layer, and --selected-component are mutually exclusive", component="run", err=True)
     sys.exit(1)
-if component_per_docx and selected_components_arg:
-    log("--component-per-docx cannot be combined with --selected-component", component="run", err=True)
-    sys.exit(1)
+# --component-per-docx + --selected-component used to be refused. It is the natural
+# combination: name the components you want, get one document each. Without it a
+# component scope was the only one that came back bundled, while project / layer /
+# group scopes all split per component.
 
 if len(raw_args) < 1:
     print("Usage: python engine/run.py [--clean] [--use-model|--skip-model] [--selected-group <name>]")
@@ -402,9 +506,10 @@ if len(raw_args) < 1:
     print("Run `python engine/run.py --help` to see all options.")
     sys.exit(1)
 
-# Exactly one positional is expected. A second one is almost always a flag value
-# that lost its flag (`--phase 3` leaves a stray `3`) or a second path — both mean
-# the command line does not say what the user thinks it says.
+# Exactly one positional is expected. A second one is almost always a flag value that lost
+# its flag (`--phase 3` leaves a stray `3`) or a second path — both mean the command line does
+# not say what the user thinks it says. Checked BEFORE --clean: a command line this ambiguous
+# should not delete anything.
 if len(raw_args) > 1:
     log(f"Unexpected extra argument(s): {', '.join(raw_args[1:])}", component="run", err=True)
     log(f"Only one <project_path> is accepted (got: {raw_args[0]}).", component="run", err=True)
@@ -426,17 +531,31 @@ if clean_all:
         if os.path.isdir(path):
             shutil.rmtree(path)
             log(f"Removed {d}/", component="run")
+    # Say what it does NOT do (doc 10, H4). --clean removes DIRECTORIES; with the model in the
+    # database, deleting model/ leaves the rows untouched, so "clean" would read as a fresh
+    # start while the next run still resolves a stored model. Deleting a version's rows is the
+    # API's job (it owns the versions row and its cascade), not a CLI flag's, so this warns
+    # rather than reaching into the database.
+    log("--clean removed the directories only: the model for this version is in the "
+        "database and is NOT deleted. Remove the version through the API to clear it.",
+        component="run")
 
 # ---------------------------------------------------------------------------
 # When --use-model is set, refuse early if model files are missing.
 # ---------------------------------------------------------------------------
 if use_model:
-    MODEL_FILES = (_mfp(FUNCTIONS), _mfp(GLOBALS), _mfp(UNITS), _mfp(COMPONENTS))
-    missing = [p for p in MODEL_FILES if not os.path.isfile(p)]
+    # Ask the REPOSITORY, not the filesystem (doc 10, step 8). "--use-model" means "reuse the
+    # model that already exists", and since step 2 that may be rows in the database rather than
+    # files — checking os.path.isfile refused a perfectly good stored model and exited 2.
+    from core.model_io import model_files_present as _present
+    missing = _present(FUNCTIONS, GLOBALS, UNITS, COMPONENTS)
     if missing:
-        log(f"--use-model set but model files missing: {missing[0]}", component="run", err=True)
+        log(f"--use-model set but the model is missing from the database: {missing[0]}",
+            component="run", err=True)
         sys.exit(2)
-    log("Using existing model/ (skipping Phase 1/2).", component="run")
+    log(f"Reusing the existing model from "
+        "the database (skipping Phase 1/2).",
+        component="run")
 
 # ---------------------------------------------------------------------------
 # Plan and run
@@ -492,44 +611,85 @@ import json as _json
 from core.config import (get_flat_groups as _get_flat_groups,
                          get_group_layer_name as _get_group_layer_name,
                          get_component_layer_name as _get_component_layer_name)
-_model_dir = os.path.join(SCRIPT_DIR, "model")
+# paths().model_dir, not SCRIPT_DIR: this hardcode ignored BOTH --model-root and
+# ANALYZER_DATA_ROOT, so clang_include_paths.json always landed in the repo model dir —
+# shared state two concurrent jobs with different layer configs would overwrite.
+# (C3 removes this file entirely; until then it must at least follow the run.)
+from core.paths import paths as _paths_now
+_model_dir = _paths_now().model_dir
 os.makedirs(_model_dir, exist_ok=True)
+# Layer/group/component names must be unambiguous BEFORE anything flattens them.
+# get_flat_groups() below keys groups by name across every layer, so a name reused
+# by two layers silently drops one of them; the same is true of a component name
+# (its paths get merged) and of a path claimed by two components. Each of those
+# produced a quietly incomplete or layer-blended document, never an error.
+from core.config import validate_layer_names as _validate_layer_names
+_name_errors = _validate_layer_names(cfg)
+if _name_errors:
+    log("Ambiguous names in config `layers`:", component="run", err=True)
+    for _err in _name_errors:
+        log(f"  {_err}", component="run", err=True)
+    sys.exit(2)
+
 _all_groups = _get_flat_groups(cfg)
 _resolved_group = _resolve_group_name(_all_groups, selected_group_arg)
 
 # Validate --selected-component: all must exist and be in the same layer.
 if selected_components_arg:
+    # Component ids are layer-qualified (`Layer1.Math`). A bare `Math` is still
+    # accepted and resolved here, but only while ONE layer defines it - two layers
+    # may legitimately both have a `Math`, and quietly taking the first would parse
+    # the wrong layer, with the wrong -D set and data dictionary.
+    from core.config import resolve_component_id as _resolve_component_id
     _all_comp_names: set = set()
     for _g in _all_groups.values():
         if isinstance(_g, dict):
             _all_comp_names.update(_g.keys())
-    # Normalize to identifier form for comparison (spaces -> -)
-    _all_comp_names_norm = {c.replace(" ", "-") for c in _all_comp_names}
-    for _c in selected_components_arg:  # already normalized at collection
-        if _c not in _all_comp_names_norm:
-            log(f"Unknown component {_c!r}. Valid components: {', '.join(sorted(_all_comp_names_norm))}", component="run", err=True)
+    _all_comp_names_norm = sorted(c.replace(" ", "-") for c in _all_comp_names)
+    _resolved_components = []
+    for _c in selected_components_arg:  # already space-normalized at collection
+        _r, _cands = _resolve_component_id(_all_comp_names_norm, _c)
+        if _r is None and len(_cands) > 1:
+            log(f"Component {_c!r} is ambiguous - {len(_cands)} layers use that name: "
+                f"{', '.join(_cands)}. Qualify it with the layer (e.g. {_cands[0]!r}), "
+                f"or select the layer instead.", component="run", err=True)
+            sys.exit(2)
+        if _r is None:
+            log(f"Unknown component {_c!r}. Valid components: {', '.join(_all_comp_names_norm)}",
+                component="run", err=True)
             sys.exit(1)
+        _resolved_components.append(_r)
+    selected_components_arg = _resolved_components
     _comp_layers = {_c: _get_component_layer_name(cfg, _c) for _c in selected_components_arg}
-    _unique_layers = set(_comp_layers.values())
-    if len(_unique_layers) > 1:
-        _detail = ", ".join(f"{c!r}->{l}" for c, l in _comp_layers.items())
-        log(f"All --selected-component names must be in the same layer ({_detail})", component="run", err=True)
-        sys.exit(1)
-    _derived_layer_for_components = next(iter(_unique_layers))
+    # Components from DIFFERENT layers in one run are allowed: ids are layer-qualified,
+    # so the model keeps them apart, and every layer named here contributes its own
+    # include paths and -D set below. Order-preserving and de-duplicated so the parse
+    # scope is the union, not the first one found.
+    _layers_for_components = list(dict.fromkeys(l for l in _comp_layers.values() if l))
 else:
-    _derived_layer_for_components = None
+    _layers_for_components = []
 
-if selected_layer_arg:
-    _selected_layer = selected_layer_arg
-elif _resolved_group:
-    _selected_layer = _get_group_layer_name(cfg, _resolved_group)
-elif _derived_layer_for_components:
-    _selected_layer = _derived_layer_for_components
+# Every layer this run touches, not just the first. A scope may name several groups
+# (--scope group:A,B) or several components, and they may sit in different layers;
+# resolving one meant the others were parsed with NO include paths of their own -
+# their `#include`s failed and definitions went missing, quietly.
+if selected_layers_arg or selected_layer_arg:
+    _selected_layers = list(dict.fromkeys(selected_layers_arg or [selected_layer_arg]))
+elif selected_groups_arg or selected_group_arg:
+    _requested = selected_groups_arg or [selected_group_arg]
+    _selected_layers = []
+    for _g in _requested:
+        _rg = _resolve_group_name(_all_groups, _g)
+        _gl = _get_group_layer_name(cfg, _rg) if _rg else None
+        if _gl and _gl not in _selected_layers:
+            _selected_layers.append(_gl)
+elif _layers_for_components:
+    _selected_layers = list(_layers_for_components)
 else:
-    _selected_layer = None
+    _selected_layers = []
 _layer_inc: dict = {}
 for _lname, _layer in (cfg.get("layers") or {}).items():
-    if _selected_layer and _lname != _selected_layer:
+    if _selected_layers and _lname not in _selected_layers:
         continue
     if not isinstance(_layer, dict):
         continue
@@ -542,6 +702,46 @@ for _lname, _layer in (cfg.get("layers") or {}).items():
         _dirnames[:] = [d for d in _dirnames if not d.startswith(".")]
         _dirs.append(_dirpath)
     _layer_inc[_lname] = _dirs
+
+# Merge include dirs from the build's own compile_commands.json (one per core).
+# The walk above can only guess the -I set; the build recorded the real one. Walked
+# dirs stay FIRST so this can only add search paths, never re-order resolution for
+# a tree that already parsed. No layer declares the block -> nothing happens.
+from core import compile_commands as _cc
+from core.config import validate_cores as _validate_cores
+for _err in _validate_cores(cfg):
+    log(_err, component="run", err=True)
+    sys.exit(1)
+_cc_sources = _cc.sources_from_layers(cfg, SCRIPT_DIR)
+if _selected_layers:
+    _cc_sources = [_s for _s in _cc_sources if _s.layer in _selected_layers]
+_walk_counts = {_l: len(_d) for _l, _d in _layer_inc.items()}
+_cc_counts: dict = {}
+_cc_added: dict = {}
+if _cc_sources:
+    _cc_by_layer, _cc_reports = _cc.load_sources(_cc_sources, resolved)
+    for _rep in _cc_reports:
+        for _line in _cc.format_report(_rep):
+            log(_line, component="run")
+    # Compare on a case- and separator-normalized key: the walk yields native
+    # Windows paths (`...\Layer1\Math`) while the loader normalizes to forward
+    # slashes, so a raw string compare matches nothing and re-appends every dir
+    # the walk already found.
+    def _inc_key(_p):
+        return os.path.normcase(os.path.normpath(_p))
+
+    for _lname, _dirs in _cc_by_layer.items():
+        _bucket = _layer_inc.setdefault(_lname, [])
+        _known = {_inc_key(_d) for _d in _bucket}
+        _new = []
+        for _d in _dirs:
+            _k = _inc_key(_d)
+            if _k not in _known:
+                _known.add(_k)
+                _new.append(_d)
+        _bucket.extend(_new)
+        _cc_counts[_lname] = len(_dirs)
+        _cc_added[_lname] = len(_new)
 
 # Validate and merge --include-path-layer <layer> <dir> entries.
 _known_layers = set((cfg.get("layers") or {}).keys())
@@ -568,7 +768,22 @@ for _ip_layer, _ip_dir in include_path_layer_args:
 _clang_paths_file = os.path.join(_model_dir, "clang_include_paths.json")
 with open(_clang_paths_file, "w", encoding="utf-8") as _f:
     _json.dump(_layer_inc, _f, indent=2)
-log("Layer include paths collected.", component="run")
+# Say where each layer's -I dirs came from. Two sources feed this file and they
+# overlap: without the breakdown a run cannot show whether the build's database
+# was read at all, or whether it contributed anything the project walk missed.
+log("Layer include paths collected:", component="run")
+for _lname in sorted(_layer_inc):
+    _walk = _walk_counts.get(_lname, 0)
+    _from_cc = _cc_counts.get(_lname, 0)
+    _added = _cc_added.get(_lname, 0)
+    _extra = len(_layer_inc[_lname]) - _walk - _added      # --include-path-layer
+    _parts = [f"{_walk} from project walk"]
+    if _lname in _cc_counts:
+        _parts.append(f"{_from_cc} from compile_commands (+{_added} new)")
+    if _extra:
+        _parts.append(f"{_extra} from --include-path-layer")
+    log(f"  {_lname}: {' | '.join(_parts)} -> {len(_layer_inc[_lname])} total",
+        component="run")
 
 # Prerequisite preflight: fail fast (before a long run) if a REQUIRED external
 # dependency for THIS run's enabled views is missing — a clear message beats a
@@ -609,47 +824,50 @@ except LlmConfigError as e:
     log(f"Invalid LLM config: {e}", component="run", err=True)
     sys.exit(2)
 
-# --selected-unit: fail before Phase 1 rather than in Phase 3. The unit names come
-# from model/units.json, so this is only possible when a model is already on disk —
-# which is the case for the runs the flag exists for (--use-model / --from-phase 3).
-# A cold run has nothing to check against yet, so validation falls through to
-# Phase 3, where the model has just been built.
+# --selected-unit: fail before Phase 1 rather than in Phase 3. The unit names come from the
+# stored model, so this is only possible when one already exists — which is the case for the
+# runs the flag exists for (--use-model / --from-phase 3). A cold run has nothing to check
+# against yet, so validation falls through to Phase 3, where the model has just been built.
+#
+# Read through the repository. This used to open model/units.json directly, and once the model
+# became rows that file was never there: the pre-check quietly never ran, and every mistyped
+# --selected-unit went back to failing in Phase 3 instead.
 if selected_units_arg:
-    _units_path = _mfp(UNITS)
-    if os.path.isfile(_units_path):
-        import json as _json
-        try:
-            with open(_units_path, encoding="utf-8") as _uf:
-                _unit_model = {UNITS: _json.load(_uf)}
-        except (OSError, ValueError):
-            _unit_model = None
-        if _unit_model:
-            from core.config import get_flat_groups as _gfg
-            _groups = _gfg(cfg) or {}
-            _grp = _groups.get(selected_group_arg) if selected_group_arg else None
-            if not isinstance(_grp, dict) and selected_group_arg:
-                _sk = selected_group_arg.casefold()
-                _grp = next((v for k, v in _groups.items()
-                             if isinstance(k, str) and k.casefold() == _sk), None)
-            if selected_components_arg:
-                _allowed = sorted(selected_components_arg)
-            elif isinstance(_grp, dict):
-                _allowed = sorted(k.replace(" ", "-") for k in _grp.keys())
-            else:
-                _allowed = None      # whole model in scope
-            import run_views as _rv
-            selected_units_arg = _rv._resolve_units(
-                _unit_model, selected_units_arg, _allowed)
-    else:
-        log("--selected-unit will be validated in Phase 3 (no model on disk yet)",
-            component="run")
+    _unit_model = None
+    try:
+        from core.model_io import read_model_file as _rmf
+        _units_data = _rmf(UNITS, required=False, default=None)
+        if _units_data:
+            _unit_model = {UNITS: _units_data}
+    except Exception:
+        _unit_model = None
+    if _unit_model:
+        from core.config import get_flat_groups as _gfg
+        _groups = _gfg(cfg) or {}
+        _grp = _groups.get(selected_group_arg) if selected_group_arg else None
+        if not isinstance(_grp, dict) and selected_group_arg:
+            _sk = selected_group_arg.casefold()
+            _grp = next((v for k, v in _groups.items()
+                         if isinstance(k, str) and k.casefold() == _sk), None)
+        if selected_components_arg:
+            _allowed = sorted(selected_components_arg)
+        elif isinstance(_grp, dict):
+            _allowed = sorted(k.replace(" ", "-") for k in _grp.keys())
+        else:
+            _allowed = None      # whole model in scope
+        import run_views as _rv
+        selected_units_arg = _rv._resolve_units(
+            _unit_model, selected_units_arg, _allowed)
+else:
+    log("--selected-unit will be validated in Phase 3 (no model stored yet)",
+        component="run")
 
 try:
     plans = plan_runs(
         cfg,
         project_path=resolved,
-        selected_group=selected_group_arg,
-        selected_layer=selected_layer_arg,
+        selected_group=selected_groups_arg or selected_group_arg,
+        selected_layer=selected_layers_arg or selected_layer_arg,
         selected_components=selected_components_arg,
         component_per_docx=component_per_docx,
         doc_type=doc_type_arg,
@@ -664,8 +882,10 @@ try:
         project_name=project_name_arg,
         output_name=output_name_arg,
         only_files=only_files_arg,
+        baseline_version_id=baseline_version_id_arg,
         include_emulator=include_emulator_arg,
         selected_units=selected_units_arg,
+        doc_type=doc_type_arg,
     )
 except ValueError as e:
     log(str(e), component="run", err=True)
@@ -677,7 +897,8 @@ except ValueError as e:
 # to_phase is None, plans are untouched.
 if to_phase is not None:
     from core.group_planner import RunPlan as _RunPlan
-    _SCRIPT_PHASE = {"parser.py": 1, "model_deriver.py": 2, "run_views.py": 3, "docx_exporter.py": 4}
+    _SCRIPT_PHASE = {"parser.py": 1, "model_deriver.py": 2, "run_views.py": 3,
+                     "docx_exporter.py": 4, "swe4_exporter.py": 4}
     _filtered = []
     for _plan in plans:
         _kept = [ph for ph in _plan.phases

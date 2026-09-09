@@ -106,6 +106,16 @@ class Version:
     decision: Optional[str] = None              # "incremental" | "full"
     regenerated: Optional[int] = None           # functions regenerated this run
     reused: Optional[int] = None                # functions reused (baseline + cross-version)
+    # Per-version NON-SECRET analysis config (defaults + build_config + layers), stored so a
+    # version is reproducible and self-describing. Secrets (db, llm credentials) are NEVER put
+    # here — they stay in engine/config/config.local.json. Maps to versions.resolved_config.
+    resolved_config: Optional[dict] = None
+    # Run metadata — was model/metadata.json (PG-5: that file goes away). basePath/projectName
+    # identify what was parsed; parse_fingerprint is the clang-flag guard the incremental
+    # narrowed-parse checks against a baseline.
+    base_path: Optional[str] = None
+    project_name: Optional[str] = None
+    parse_fingerprint: Optional[str] = None
 
 
 @dataclass
@@ -158,7 +168,9 @@ class AnalysisJob:
     scope: Optional[dict] = None        # {"type": "project|group|component", "names": [...]}
     no_llm: bool = False
     data_dict_id: Optional[str] = None
-    narrowed_parse: bool = False        # M4.4 opt-in: parse only affected TUs (large repos)
+    narrowed_parse: bool = True         # ON by default: re-parse only affected TUs and merge
+                                        # into the baseline skeleton (~8x on Phase 1). The
+                                        # engine defaults to it too; this field is the opt-OUT.
     regenerated: Optional[int] = None   # incremental accounting, set by the worker
     reused: Optional[int] = None
 

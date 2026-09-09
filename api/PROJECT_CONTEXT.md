@@ -4,6 +4,13 @@
 > (real `run.py`-backed worker, 70 routes, simulation→real) see [README.md](README.md) and
 > [PLAN.md](PLAN.md); a full refresh of this file is tracked in PLAN.md M4.
 >
+> **⚠ 2026-08-14 — storage moved to PostgreSQL** (branch `db-with-increment-changes`). `SqlDatabase`
+> is the only persistent backend; `JsonDatabase` and `api/db/data/*.json` are **deleted**;
+> `InMemoryDatabase` survives as a **test seam only**. Model, view outputs, reuse index, run
+> metadata and per-version resolved config live in Postgres. Anything below describing a JSON-backed
+> store is historical. Current state → root [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md) §6 + its
+> 2026-08-13 entry; next work → [docs/production-redesign/09](../docs/production-redesign/09-post-migration-consolidation-plan.md).
+>
 > **Contract safety-net:** the web-app's `npm run test:api` suite validates this server's
 > live responses against the zod schemas the UI expects (~46 endpoints). Run it against
 > this API to catch contract drift — see `web-app/TESTING.md`.
@@ -38,7 +45,7 @@ api/
 │
 ├── db/
 │   ├── in_memory.py         ← In-memory adapter + seed data
-│   ├── json_db.py           ← JSON-file adapter (persistent, write-through)
+│   ├── postgres/            ← SqlDatabase (THE backend; JSON adapter removed in PG-7b)
 │   └── session.py           ← ONE LINE to swap backend (reads API_DB_BACKEND)
 │
 ├── middleware/
@@ -166,7 +173,7 @@ IAnalysisJobRepository     IDocumentRepository        IDocumentAssignmentReposit
 IFunctionRepository        ICompareRepository         INotificationRepository
 ```
 
-Both `InMemoryDatabase` and `JsonDatabase` implement all 12.
+Both `SqlDatabase` (Postgres — the product backend) and `InMemoryDatabase` (test seam) implement all 12.
 
 ### Swapping the database — one line
 
@@ -398,7 +405,9 @@ All under `/api/v1`.  Full reference: `api/README.md`.
 
 ## 12. JSON Database adapter
 
-`api/db/json_db.py` — write-through persistence to `api/db/data/*.json`.
+`api/db/postgres/database.py` — `SqlDatabase`, the only persistent backend (D-16). The JSON adapter (`json_db.py` -> `api/db/data/*.json`) was deleted in the PG-7b cutover.
+
+**2026-08-23** — `_read_engine_manifest` no longer falls back to a commit-dir `manifest.json`. Nothing writes that file since the run accounting moved onto the `versions` row, and the merge had the FILE overriding the database, so a version carrying both took the stale copy. `_build_cmd` also stopped threading `--model-store`: re-export used to ask `model_is_persisted()` and pass the version id only if the answer was yes, because a version generated before the DB work had files instead. There is no file model to fall back to — a version whose rows are missing cannot be re-exported at all, and saying so beats re-exporting nothing. The DOCX title now comes from `job.version_tag` rather than the project name (reverses D-3), and `job_functions` gained a `class_name` column in migration 0008.
 
 - On first run: seeds from same dummy data as `InMemoryDatabase`, writes files.
 - On subsequent runs: loads from disk.

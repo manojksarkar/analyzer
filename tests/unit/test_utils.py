@@ -88,25 +88,43 @@ class TestLoadConfig:
     def test_loads_json_with_comments(self, tmp_path):
         cfg_dir = tmp_path / "config"
         cfg_dir.mkdir()
-        (cfg_dir / "config.json").write_text('{\n  "key": "value" // comment\n}\n')
+        (cfg_dir / "config.defaults.json").write_text('{\n  "key": "value" // comment\n}\n')
         result = utils.load_config(str(tmp_path))
         assert result["key"] == "value"
 
     def test_loads_json_with_trailing_comma(self, tmp_path):
         cfg_dir = tmp_path / "config"
         cfg_dir.mkdir()
-        (cfg_dir / "config.json").write_text('{"a": 1,}')
+        (cfg_dir / "config.defaults.json").write_text('{"a": 1,}')
         result = utils.load_config(str(tmp_path))
         assert result["a"] == 1
 
     def test_local_override_merges(self, tmp_path):
         cfg_dir = tmp_path / "config"
         cfg_dir.mkdir()
-        (cfg_dir / "config.json").write_text('{"a": 1, "b": 2}')
+        (cfg_dir / "config.defaults.json").write_text('{"a": 1, "b": 2}')
         (cfg_dir / "config.local.json").write_text('{"b": 99}')
         result = utils.load_config(str(tmp_path))
         assert result["a"] == 1
         assert result["b"] == 99
+
+    def test_local_override_deep_merges_nested(self, tmp_path):
+        # config.local.json overrides ONE nested key without wiping siblings — this is
+        # what lets secrets (llm.baseUrl / llm.customHeaders) live in the local file while
+        # provider/model stay in config.defaults.json. A shallow update would drop provider.
+        cfg_dir = tmp_path / "config"
+        cfg_dir.mkdir()
+        (cfg_dir / "config.defaults.json").write_text(
+            '{"llm": {"provider": "openai", "defaultModel": "m", '
+            '"customHeaders": {"User-Id": "u"}}}')
+        (cfg_dir / "config.local.json").write_text(
+            '{"llm": {"baseUrl": "https://gw/v1", "customHeaders": {"x-tok": "secret"}}}')
+        result = utils.load_config(str(tmp_path))
+        assert result["llm"]["provider"] == "openai"          # kept from defaults
+        assert result["llm"]["defaultModel"] == "m"           # kept from defaults
+        assert result["llm"]["baseUrl"] == "https://gw/v1"    # added by local
+        assert result["llm"]["customHeaders"]["User-Id"] == "u"      # kept (nested sibling)
+        assert result["llm"]["customHeaders"]["x-tok"] == "secret"   # added by local
 
     def test_missing_config_returns_empty(self, tmp_path):
         result = utils.load_config(str(tmp_path))
@@ -282,12 +300,23 @@ class TestMakeUnitKey:
         init_component_mapping(utils._CONFIG_CACHE)
 
     def test_resolves_component_from_path(self):
+        """The component half is LAYER-QUALIFIED - `Layer1.Core`, not `Core`. Without
+        the layer, a `Core` in a second layer produced the identical unit key and the
+        two merged into one unit."""
         key = make_unit_key("Layer1/Sample/Core/core.cpp")
-        assert key.startswith("Core|")
+        assert key.startswith("Layer1.Core|")
 
     def test_unit_name_is_filename_without_extension(self):
         key = make_unit_key("Layer1/Sample/Core/core.cpp")
-        assert key == "Core|core"
+        assert key == "Layer1.Core|core"
+
+    def test_the_same_component_name_in_two_layers_gives_two_keys(self):
+        init_component_mapping({"layers": {
+            "Layer1": {"path": "Layer1", "groups": {"G": {"Core": "Sample/Core"}}},
+            "Layer2": {"path": "Layer2", "groups": {"G": {"Core": "Plat/Core"}}},
+        }})
+        assert make_unit_key("Layer1/Sample/Core/core.cpp") == "Layer1.Core|core"
+        assert make_unit_key("Layer2/Plat/Core/core.cpp") == "Layer2.Core|core"
 
     def test_unknown_path_returns_unknown(self):
         key = make_unit_key("Unknown/something.cpp")

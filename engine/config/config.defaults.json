@@ -1,0 +1,184 @@
+{
+  "clang": {
+    "llvmLibPath": "C:\\Program Files\\LLVM\\bin\\libclang.dll",
+    "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
+    "clangArgs": [
+      "--target=arm-none-eabi"
+    ]
+  },
+  "views": {
+    "interfaceTables": true,
+    "unitDiagrams": true,
+    "flowcharts": false,
+    "behaviourDiagram": false,
+    "componentStaticDiagram": true,
+    "functionTestSpecs": true,
+    "dynamicBehaviourSpecs": true,
+    "utExport": {
+      "review": {
+        "author": "",
+        "reviewer": ""
+      },
+      "environment": {
+        "flags": [],
+        "probepoint": [],
+        "usercode": []
+      }
+    }
+  },
+  "cores": {
+    "Core1": {
+      "dataDictionary": "engine/config/data_dictionary.core1.example.csv",
+      "macros": "engine/config/macros.core1.example.json",
+      "compileCommands": "engine/config/compile_commands.core1.example.json"
+    },
+    "Core2": {
+      "dataDictionary": "engine/config/data_dictionary.core2.example.csv",
+      "macros": "engine/config/macros.core2.example.json",
+      "compileCommands": "engine/config/compile_commands.core2.example.json"
+    }
+  },
+  "architectureDoc": {
+    "views": {
+      "layerStaticDiagram": true,
+      "componentDesignDiagram": true
+    }
+  },
+  "layers": {
+    "Layer1": {
+      "path": "Layer1",
+      "cores": [
+        "Core1"
+      ],
+      "groups": {
+        "My Sample": {
+          "Sample Core": "Sample/Core",
+          "Lib": "Sample/Lib",
+          "Util": "Sample/Util"
+        },
+        "Full": {
+          "Iface": [
+            "Direction",
+            "Types",
+            "Flow"
+          ],
+          "Cross": [
+            "Hub",
+            "Poly"
+          ]
+        },
+        "Support": {
+          "Math": "Math",
+          "App": "App",
+          "Outer": "Outer/Inner"
+        },
+        "Access": {
+          "Access": "Access"
+        },
+        "Signal": {
+          "Signal": "Signal"
+        },
+        "Diag": {
+          "Diag": "Diag"
+        }
+      }
+    },
+    "Layer2": {
+      "path": "Layer2",
+      "cores": [
+        "Core2"
+      ],
+      "groups": {
+        "My Sample": {
+          "Sample Core": "Sample/Core",
+          "Lib": "Sample/Lib"
+        },
+        "Platform": {
+          "Gpio": "Platform/Gpio",
+          "Uart": "Platform/Uart",
+          "Spi": "Platform/Spi",
+          "I2c": "Platform/I2c",
+          "Adc": "Platform/Adc",
+          "Display": "Platform/Display",
+          "Storage": "Platform/Storage",
+          "Network": "Platform/Network",
+          "Logger": "Platform/Logger",
+          "Config": "Platform/Config",
+          "EventBus": "Platform/EventBus",
+          "Timer": "Platform/Timer",
+          "Protocol": "Platform/Protocol",
+          "Scheduler": "Platform/Scheduler",
+          "Cache": "Platform/Cache"
+        }
+      }
+    },
+    "Layer3": {
+      "path": "Layer3",
+      "cores": [],
+      "groups": {}
+    }
+  },
+  "llm": {
+    "descriptions": true,
+    "behaviourNames": true,
+    "summarize": false,
+    "provider": "ollama",
+    "baseUrl": "http://localhost:11434",
+    "defaultModel": "llama3.2",
+    "timeoutSeconds": 300,
+    "numCtx": 8192,
+    "retries": 1,
+    "maxConcurrency": 1,
+    "fewShotExamplesDir": "few_shot_examples",
+    "abbreviationsPath": "config/abbreviations.txt",
+    "domainContextPath": "config/domain.txt",
+    "descriptionBlocklist": [
+      "audio",
+      "video"
+    ],
+    "rateLimitSeconds": 3,
+    "cacheVersion": 2,
+    "enrichment": {
+      "twoPassDescriptions": false,
+      "selfReview": false,
+      "ensemble": false,
+      "cfgSimplification": false,
+      "variableEnrichment": false
+    },
+    "maxContextTokens": 127488,
+    "customHeaders": {
+      "x-dep-ticket": "credential:",
+      "User-Type": "AD_ID",
+      "User-Id": "",
+      "Send-System-Name": "rvc-api-module"
+    }
+  },
+  "ui": {
+    "theme": "Light"
+  },
+  "docx": {
+    "introduction": {
+      "purpose": "This document provides the Software Detailed Design (SDD) for the {project_name} software. It describes the internal structure, interfaces, and behaviour of each software component. The document is intended for software engineers responsible for implementation and verification of the {project_name} system.",
+      "scopeIntro": "This document covers the software detailed design for the {project_name} system. The following component/s are within the scope of this document:",
+      "scopeBody": "For each component, this document provides the following:",
+      "scopeItems": [
+        "Component Name",
+        "Static Design (Component, units, global variables)",
+        "Unit Information",
+        "Unit Name",
+        "Static Design"
+      ]
+    },
+    "swe4": {
+      "evalEquipmentName": "Emulator",
+      "testPlatform": "VectorCAST",
+      "testEnvironment": "Emulator",
+      "priorityDefault": "Medium",
+      "introduction": {
+        "purpose": "This document provides the Software Unit Test Specification for the {project_name} software. It specifies, for each software unit, the preconditions, inputs, test steps and expected results required to verify the unit against its detailed design.",
+        "scopeIntro": "This document covers the unit test specifications for the following components of the {project_name} software:",
+        "scopeBody": "Each public function is specified by two tables: Table A carries the test content (Eval. Equipment Name, Precondition, Input, Test Steps, Expected Results, Test Platform) and Table B carries the test case metadata."
+      }
+    }
+  }
+}

@@ -1,0 +1,518 @@
+# DB-Native Pipeline
+
+> Removing `model/*.json` entirely: all four phases **and** the flowchart engine read and write
+> their model from the database. Postgres in production, SQLite for local/internal testing —
+> one code path, selected by config.
+> Companion: [07-postgresql-migration-plan.md](07-postgresql-migration-plan.md) ·
+> [09-post-migration-consolidation-plan.md](09-post-migration-consolidation-plan.md)
+
+- [0. Where we are](#0-where-we-are)
+- [1. Goal and scope](#1-goal-and-scope)
+- [2. Decisions](#2-decisions)
+- [3. Architecture](#3-architecture)
+- [4. Schema changes](#4-schema-changes)
+- [5. The flowchart engine](#5-the-flowchart-engine)
+- [6. Incremental feature](#6-incremental-feature)
+- [7. Configuration: no environment variables](#7-configuration-no-environment-variables)
+- [8. Hazards found during analysis](#8-hazards-found-during-analysis)
+- [9. Work order](#9-work-order)
+- [10. Verification](#10-verification)
+- [11. Open items](#11-open-items)
+
+## 0. Where we are
+
+Doc 09's storage work is complete and validated on the office box: the model, parse skeleton, view
+outputs, run accounting and report are all in Postgres, `verify_model_parity` reports **OK for
+all**, and an incremental run produces a document identical to a full run of the same commit.
+
+But the *files are still there*, because the four phases are separate processes that hand JSON to
+each other:
+
+```
+Phase 1 parser.py        ──writes──> functions.json ─┐
+Phase 2 model_deriver.py ──reads ───────────────────┘──writes──> functions.json ─┐
+Phase 3 run_views.py     ──reads ───────────────────────────────────────────────┘
+Phase 4 docx_exporter.py ──reads ───────────────────────────────────────────────┘
+```
+
+`--prune-model-files` (C11c) deletes them *after* a run. This doc removes them from the run itself.
+
+## 1. Goal and scope
+
+**Goal:** no JSON file is read or written as pipeline state. The database is the only channel.
+
+**In scope**
+
+| | |
+|---|---|
+| `versions/<ver>/model/` | 15 files → gone |
+| `versions/<ver>/parse/` | 10 files → gone (already in `parse_snapshots`) |
+| `manifest.json`, `metadata.json`, `report.txt` | gone (already on the `versions` row) |
+| `config.json` (per version) | source of truth becomes `versions.resolved_config`; materialized to a temp file only for `run.py --config`, which needs a path |
+| `knowledge_base.json` | → new table |
+| `incremental_plan.json` | → new table |
+| `clang_include_paths.json` | derived in memory, never written |
+| `functions_<group>.json`, `functions_incremental.json` | gone — replaced by an indexed query |
+| `.flowchart_cache/llm_descriptions`, `aux_descriptions` | → `llm_description_cache` table (§5.3 correction: relocated, **not** removed — the full-generation path has no other protection) |
+| `.flowchart_cache/pkb_*.json` | **dropped** — derived from `functions.json`, holds nothing unique |
+| flowchart engine **inputs** | all five read from the database |
+
+**Out of scope this round** (deliberate — revisit as one piece for the whole project)
+
+| | |
+|---|---|
+| `versions/<ver>/output/**` | `.mmd`, flowchart `.json`, `interface_tables.json` — unchanged. Note the consequence: **the flowchart engine still writes JSON output**, only its inputs convert. |
+| `documents/*.docx`, PNGs | files by design (D-14) |
+| the git checkout | files — libclang needs real source |
+| `.mmdc_cache`, `.dot_cache` | rendered PNG binaries; belong with the `output/` work |
+
+## 2. Decisions
+
+| # | Decision | Rationale |
+|---|---|---|
+| D10-1 | Postgres is **required**; SQLite is a supported backend for local/internal testing | the dev machine has no Postgres, and the gates must be runnable there |
+| D10-2 | **One code path** for both backends | the schema is already `JSON().with_variant(JSONB(), "postgresql")`, and `_insert_ignore` is the only dialect branch. If a new query needs a second branch, pick a portable construct instead |
+| D10-3 | **No environment variable is ever a source of our configuration** — config file + CLI flags only | §7 |
+| D10-4 | The flowchart engine becomes **DB-only**; no file-based input mode, not even for debugging | one path; debug against the SQLite dev database |
+| D10-5 | The flowchart engine **reads the incremental plan itself**, by `version_id` | the restricted fid list is far too long for a command line; this is the only shape that avoids a file |
+| D10-6 | Any future cache table is named `*_cache` | so that class of data can later move to a cache server without renaming. **Note: this work adds none** — see §5.3 |
+| D10-7 | The disk LLM cache is **deleted, not migrated** | [04 §13](04-incremental-changes-implementation.md#13-caches-in-the-database-post-migration-doc-09-c12) already establishes it duplicates the reuse index. Correcting an earlier draft of this doc, which proposed a new table — §5.3 |
+| D10-8 | A phase's input is an explicit `--version-id`, not "whatever is in `model/`" | required for phases to remain individually runnable once files are gone; also removes today's ambiguity |
+
+## 3. Architecture
+
+### The seam
+
+```
+Phase 1/2/3/4 + flowchart engine
+            │
+    core/model_io.py            ← 51 of 76 model read/write sites already pass through here
+            │
+    ModelRepository
+       ├── DbRepository         Postgres or SQLite, keyed by version_id
+       └── FileRepository       today's behaviour, kept only during the transition
+```
+
+Function signatures above the seam do not change: a phase keeps calling
+`read_model_file(FUNCTIONS)` and gets the same dict. That is what protects behaviour while the
+implementation moves.
+
+`core/model_store.py` (moved down from `incremental/` — `core/` may not import from `incremental/`)
+already holds `persist_model` / `load_model`; the repository is a thin façade over it.
+
+### Phase contract
+
+Every phase gains `--version-id`, applied before `paths()` is snapshotted (the ordering bug that
+caused the missing-diagram regression — see doc 09 and `tests/unit/test_phase_path_overrides.py`):
+
+```bash
+python engine/run.py --from-phase 3 --version-id ver8130ed2e
+python engine/model_deriver.py     --version-id ver8130ed2e     # standalone
+python engine/flowchart/flowchart_engine.py --version-id ver8130ed2e --component Uart
+```
+
+### The 25 sites that bypass `model_io`
+
+`os.path.join(model_dir, …)` reads scattered across `parser.py`, `model_deriver.py`,
+`views/flowcharts.py`, `views/behaviour_diagram.py`. Each is routed through `model_io` (or the
+repository) individually — no bulk rewrite, because a couple read *derived* files that will not
+exist at all.
+
+## 4. Schema changes
+
+One additive migration (`0004`), nothing existing altered:
+
+```
+knowledge_base        version_id, payload JSONB          Phase 2 → Phase 3 hand-off
+incremental_plans     version_id, payload JSONB          the plan the views + engine read
+```
+
+Two tables, both whole-object hand-offs never queried per field — same reasoning as
+`parse_snapshots` (doc 09, C2). **No cache table** — see §5.3.
+
+**`tu_includes` already exists in the schema and nothing writes it** — the same
+declared-but-unwritten shape as `pipeline_status` and `versions.report`. This work starts writing
+it, so the flowchart engine can query the header→TU map on its `(version_id, tu_path)` index
+instead of loading a blob.
+
+## 5. The flowchart engine
+
+The engine is a separate program with a file-based CLI. Its inputs all load in **one block**
+(`flowchart_engine.py` ≈ lines 543–570), which is what makes this tractable.
+
+| CLI arg today | Becomes |
+|---|---|
+| `--interface-json <functions_*.json>` | query `entity_versions` + `content_blobs` by `version_id` (+ `--component`) |
+| `--metaData-json <metadata.json>` | `versions.base_path` / `versions.project_name` |
+| `--knowledge-json <knowledge_base.json>` | `knowledge_base` table |
+| `--tu-includes <tu_includes.json>` | `tu_includes` table |
+| `--cache-dir .flowchart_cache` | **removed** — §5.3 |
+
+`EngineConfig` swaps those five path fields for `version_id` + `component`.
+
+### 5.3 The LLM cache is deleted, not moved
+
+An earlier draft of this doc proposed an `llm_response_cache` table and a one-time importer for
+the existing entries. **That was wrong**, and
+[04 §13](04-incremental-changes-implementation.md#13-caches-in-the-database-post-migration-doc-09-c12)
+already says why: the disk `EntityCache` and the Postgres reuse index answer the *same* question
+with near-identical keys.
+
+```
+EntityCache (disk)     sha256( entity source + sorted(callee hashes) + cacheVersion )
+reuse index (Postgres) sha256( source_hash   + sorted(dep source-hashes) )
+```
+
+The reuse index stores a **pointer** to the version whose stored output already has the text (D3 —
+content is never duplicated). Once the model is in the database, that pointer is enough: the
+description is fetched from that version's `content_blobs`. So the disk cache has nothing left to
+contribute; C12 is **removing a duplicate mechanism**, not relocating one.
+
+Three consequences:
+
+- **Nothing to import.** The reuse index is already populated and already used
+  (`carry_forward_from_index`), so no LLM spend is lost by deleting the disk cache. The question of
+  migrating those entries simply dissolves.
+- **`llm.cacheVersion` becomes obsolete.** Its only job is invalidating the disk cache. Folding it
+  into the reuse fingerprint was **deliberately rejected** (§3 / D3, "content-only"): an approved
+  document is reused regardless of which model or prompt produced it. Removing the disk cache
+  removes the setting.
+- **Batched access is mandatory** (doc 09 B5a — already implemented as `get_many`/`put_many`). A
+  per-entity index lookup is ~20k connection acquisitions on a 20k-function project.
+
+#### Correction — the first two consequences are wrong (found implementing step 10)
+
+**The cache was relocated to Postgres, not removed.** The reasoning above holds only for the
+*incremental* path. `carry_forward_from_index` is called from `incremental/engine.py` and nowhere
+else — `generate_full` never calls it, and `llm_enrichment` consults `EntityCache` directly
+without ever touching the reuse index. So on a **full generation** the disk cache is the only
+thing standing between the run and a complete re-describe.
+
+At roughly one gateway call every three seconds that is ~14 minutes on the sample project and
+about **17 hours** on a 20k-function one. "No LLM spend is lost" was true of the path the
+paragraph had in mind and false of the one that needed it most.
+
+`llm.cacheVersion` survives for the same reason, and is now part of the table's key, so bumping it
+invalidates by construction and leaves the old rows unreferenced instead of needing a delete.
+
+What landed: table `llm_description_cache` (migration `0005`), project-scoped, namespaced
+`llm_descriptions` / `aux_descriptions`. The whole scope loads in **one query** at construction and
+`get()` is a dict lookup; writes buffer and flush with `ON CONFLICT DO NOTHING`. With no database
+it degrades to an in-process memo — still dedupes within a run, which the disk version did for
+free and would have been easy to lose.
+
+Verified across processes: three descriptions cold, three rows persisted, then a **separate
+process** served all three with zero LLM calls.
+
+The `pkb_*.json` half of C12 was dropped exactly as written — see below.
+
+`.flowchart_cache/pkb_*.json` is an index rebuilt from `functions.json`. It holds nothing unique and
+is **dropped** — reading the model from the database makes it disappear on its own.
+
+`.mmdc_cache` / `.dot_cache` hold rendered PNGs, are not database material (D-14), and belong with
+the deferred `output/` work.
+
+### Why the per-group filter gets *cheaper*
+
+Today `flowcharts.py` writes a filtered `functions_<group>.json` so the engine sees one group.
+The schema already has the index this needs:
+
+```python
+Index("ix_ev_version_component", "version_id", "component")
+```
+
+So `--component Uart` becomes an indexed query returning only that component's rows, instead of
+loading the whole model and filtering in Python.
+
+### What this costs
+
+The engine stops being runnable without a database (D10-4). That removes a debugging path used as
+recently as this week — accepted, with the SQLite backend as the replacement.
+
+## 6. Incremental feature
+
+The incremental flow splits cleanly across the scope line, which is why it needs little change:
+
+| Step | Reads | Status |
+|---|---|---|
+| classify / impact BFS | hashes + model | already DB (doc 09) |
+| baseline parse skeleton | `parse_snapshots` | already DB (C2) |
+| plan written for the views | `incremental_plan.json` | **→ `incremental_plans` table** |
+| restrict the engine to changed fids | `functions_incremental.json` | **→ engine reads the plan (D10-5)** |
+| carry forward baseline flowcharts | baseline `output/` | unchanged — `output/` is out of scope |
+| splice fresh flowcharts into carried JSONs | `output/` | unchanged |
+
+Plan fields in use today, all of which move into the table unchanged: `impactFids`,
+`impactedGlobals`, `impactedFiles`, `flowchartFiles`, `flowchartFids`, `crossVersionFlowcharts`,
+`baselineVersionDir`, `merge`, `drop`.
+
+`ANALYZER_BASELINE_FUNCKEYS` (an engine→phase env hand-off pointing at `func_keys.json`)
+disappears: that file is already in `parse_snapshots`, so the phase reads it by version id.
+
+## 7. Configuration: no environment variables
+
+### Backend selection
+
+```jsonc
+// engine/config/config.local.json  (gitignored)
+"db": { "url": "sqlite:///engine/config/analyzer-dev.db" }              // dev machine
+"db": { "url": "postgresql+psycopg://analyzer:secret@10.0.0.9:5432/analyzer" }
+// the existing field form keeps working:
+"db": { "driver": "postgresql+psycopg", "host": "…", "port": 5432, "user": "…",
+        "password": "…", "database": "analyzer" }
+```
+
+Precedence: `db.url` → `db.driver`+fields → error. `db` is a **machine-level** setting read from
+`config.local.json` by every process independently, so nothing has to be propagated to a
+subprocess — and credentials never enter a per-project workspace file or a command line where
+`ps`/Task Manager would show them.
+
+### Replacements
+
+| Env var today | Replacement |
+|---|---|
+| `DATABASE_URL` ×6 | `db.url` |
+| `ANALYZER_CONFIG` ×3 | `--config <path>`, forwarded to every phase |
+| `ANALYZER_DATA_ROOT` ×3 | `--data-root <path>` |
+| `ANALYZER_NO_DB` ×3 | `--no-db` |
+| `ANALYZER_BASELINE_FUNCKEYS` ×4 | gone — read from `parse_snapshots` |
+| `ANALYZER_VERSION_ID` | `--version-id` |
+| `API_DB_BACKEND`, `DATABASE_CONNECT_TIMEOUT` | `db.*` keys |
+| `LOG_LEVEL` | already `--verbose`/`--quiet`; forwarded as a flag |
+| `LLM_TRACE_PROMPTS`, `FLOWCHART_TRACE`, `LLM_PROMPT_DUMP`, `LLM_FAKE_RESPONSES` | debug flags on `run.py`, forwarded |
+| `LLM_API_KEY` | `llm.apiKey` (key already exists) |
+| `LIBCLANG_PATH` | new `clang.libclangPath` key |
+
+### The four that must stay, and why
+
+These are not our configuration — they are how the OS or an external program is addressed. Their
+**values come from config**; only the delivery is an env var.
+
+| | Why it cannot move |
+|---|---|
+| `PYTHONIOENCODING` | read by the Python interpreter at startup, before any code runs |
+| `PUPPETEER_EXECUTABLE_PATH`, `CHROME_PATH` | read by puppeteer / mmdc, third-party programs |
+| `PATH`, `APPDATA` | the operating system's |
+| `PYTEST_CURRENT_TEST` | set by pytest |
+
+## 8. Hazards found during analysis
+
+Each of these was missed by the first two drafts of this plan and is now a work item.
+
+| # | Hazard | Handling |
+|---|---|---|
+| H1 | **`entities` and `content_blobs` both do read-then-insert on shared tables.** `content_blobs` is keyed on a global `content_hash`, and every entity with an empty payload hashes identically — so concurrent jobs collide near-certainly, not rarely | use the existing dialect-aware `_insert_ignore` (ON CONFLICT DO NOTHING) in both; move it to `core/` so `model_store` can reach it |
+| H2 | Whole-model writes in one transaction; per-phase writes multiply that | chunk at the `_MAX_IN_PARAMS` bound `pg_stores` already uses; one transaction per phase persist, so a phase dying mid-write leaves the previous state |
+| H3 | `--use-model` means "reuse existing `model/` files"; re-export stages `adir/model` | both become "reuse the stored model for this version" — needs the version id |
+| H4 | `--clean` deletes the `model`/`output` dirs — misleading once the model is in the database | also delete the version's rows, or rename the flag |
+| H5 | Three test files `skipif(not HAS_MODEL)` against `<repo>/model` — they would **skip permanently and silently**, losing the real-model round-trip coverage | fixture that materializes a model from the database |
+| H6 | `verify_model_parity` compares database against files — it becomes meaningless with no files, exactly when it is most wanted | **resolved:** keep the file writer behind a debug-only `--dump-model-files <dir>` so the check works forever. Never used by a job; §10 |
+| H7 | Memory: a DB read holds query rows *and* assembled dicts at peak, so it may be **worse** than `json.load` | measured at step 8, not argued. If it lands badly the fix is the per-target context service (doc 09, C7) |
+
+## 9. Work order
+
+Steps 1–7 leave current behaviour intact — the file path stays default and nothing is deleted.
+**Stop at step 8 for sign-off** before flipping the default or removing code.
+
+Progress as of **2026-08-17** (branch `db-migration`): steps **1-6 done**, each verified on
+SQLite with all gates green. In database mode the model dir is down from 14 files to **5** —
+`clang_include_paths`, `entity_files`, `func_keys`, `metadata`, `override_pairs`.
+
+| Step | Work | Reversible |
+|---|---|---|
+| ✅ 1 | SQLite backend + `db.url`; verify end-to-end on the dev machine | done |
+| 2 | `ModelRepository`; `model_io` delegates; files still default | yes (flag) |
+| ✅ 3 | `--version-id` threaded to all four phases, applied before `paths()` is snapshotted | done |
+| ✅ 4 | H1 + H2: conflict-tolerant inserts, chunking, per-phase transactions | done |
+| ✅ 5 | convert the 25 raw path sites | done |
+| ✅ 6 | `knowledge_base`, `incremental_plans`, `tu_includes` tables + writers | done |
+| ✅ 7 | flowchart engine → DB inputs (D10-4, D10-5); `clang_include_paths` derived; config → temp file | done |
+| ✅ 8 | H3–H6: `--use-model`, re-export, `--clean`, test fixtures, parity replacement · **then both modes run on the office project and the documents are diffed** | done |
+| ✅ 9 | flip the default to the database | done — `--model-store files` reverts |
+| ✅ 10 | **C12** — the disk LLM cache moves to `llm_description_cache` (0005); `pkb_*.json` dropped. After the model is in the database (04 §13.4): every cache key derives from model content | **no** |
+| ✅ 11a | `metadata` / `entity_files` / `func_keys` / `override_pairs` → `parse_snapshots`; model dir down to 1 file | done |
+| ✅ 11b | no silent fallback; `ANALYZER_NO_DB`, `--prune-model-files`, `--model-from-db` removed; both e2e gates moved onto a database | done |
+
+### Step 9 as landed
+
+`--model-store` defaults to `db` on both orchestrators, so **the API needed no change**: a UI job
+gets the database because the engine's default is the database, not because `pipeline_runner`
+asks for it. `--model-store files` still reverts a single run.
+
+A default has to hold on machines the flag never had to: `core.run_context.effective_model_store`
+resolves `db` once, in the orchestrator, and degrades to files **with the reason on stderr** when
+
+  * nothing configured a database,
+  * there is no version id, or
+  * there is no `versions` row — the API reserves that row at job start and `PgStore` never
+    creates one, so every per-version insert would otherwise fail on the foreign key. This is
+    what a plain CLI run against an unreserved version hits, and it must not be fatal.
+
+Resolved in the orchestrator and passed *down*, never re-derived per phase: a phase that answers
+differently from its orchestrator gives you half a model in each store.
+
+Verified as a subprocess with `pipeline_runner`'s exact argument shape and no `--model-store`
+anywhere: 490 `entity_versions` rows, `knowledge_base` populated, and none of the eight
+`model/*.json` written. The unreserved-version run exited 0 with the warning.
+
+### Step 11a as landed
+
+The four artifacts a database-mode run still wrote to `model/` were already duplicated in
+`parse_snapshots`; only the live write went to disk. They now route through the model repository
+into `parse_snapshots` directly, so **Phase 1's output IS the snapshot** rather than a file the
+snapshot goes back and reads.
+
+`persist_parse_snapshot_data` could not serve this — it clears every row for the version before
+inserting, so four sequential per-name calls would have left one row, not four. Hence
+`persist_parse_snapshot_file` / `load_parse_snapshot_file`, plus a `replace=False` mode so
+`snapshot_parse_model` merges its model-derived artifacts in rather than deleting what Phase 1
+just stored.
+
+**`clang_include_paths.json` stays a file, deliberately.** It holds absolute include directories
+under *this machine's* checkout, so a stored copy would hand another node paths that do not exist
+there — worse than not storing it. It is also read only within the run that wrote it, never from
+a baseline version, so it has none of the cross-node value the other four had. Putting it in
+`parse_snapshots` would additionally be a trap: `_load_baseline_parse` loads that whole dict for a
+baseline, so a future reader could pick up another machine's paths without noticing.
+
+Result: **the model directory holds one file** where it held fifteen before this doc began.
+
+### Step 11b as landed
+
+**The fallback became a failure.** A run that cannot reach the database raises `DatabaseRequired`
+instead of using files, naming which of the three conditions it hit and how to fix it. The step-9
+fallback was right while files were a working backing; they are not any more, so falling back
+produces a version that *looks* generated and is absent from every table the API reads.
+`--model-store files` survives as a deliberate opt-out — what is gone is reaching files by accident.
+
+**Prerequisite discovered here, worth recording.** Both end-to-end gates
+(`verify_incremental`, `verify_incremental_parity`) ran with `ANALYZER_NO_DB=1` against the file
+store. Since step 9 that tested a path production does not take — the project's two best checks
+were green on dead code. They now build a throwaway SQLite database, create the schema, and
+reserve the `versions` rows the API owns.
+
+That move found a live bug on its first run: `_is_absent` treats an empty artifact as missing,
+which is right before anything is written and wrong after. `globalVariables` is legitimately `{}`
+on a project that declares no globals, so **Phase 2 failed outright on every such project** in
+database mode. The file path never had the ambiguity — an empty file is still a file.
+`SampleCppProject` has 14 globals, which is why neither the unit suite nor any manual run had
+surfaced it. `DbRepository` now asks `entity_versions` whether a model was persisted at all before
+calling an empty artifact missing.
+
+**Removed:** `ANALYZER_NO_DB` (existed only for those gates, and selected product behaviour from
+an environment variable — D10-3); `--prune-model-files` and `--model-from-db`, both scaffolding for
+the period when files and the database were simultaneously live.
+
+**Not removed:** `FileRepository`. `clang_include_paths` is still a file by design, and it is the
+fallback that serves it.
+
+> **Superseded on 2026-08-23** (branch `integration/poc-4-db`). `FileRepository` IS removed, along
+> with `--model-store`, `--dump-model-files`, `FileStore` and `tools/verify_model_parity.py` - the
+> database is the only backing. `clang_include_paths` did not need the fallback to survive: it was
+> never written through the repository, the parser writes it directly as a process-boundary file.
+> An artifact with no name registered now RAISES instead of quietly becoming a file, which is how
+> `address_taken` spent the poc-4 merge in a directory nothing reads.
+
+### Narrowed parse — landed, and on by default
+
+Parse is ~65% of a non-LLM run and scales with source volume, so this was the largest saving
+still on the table. On `SampleCppProject` Phase 1 drops **13.07s → 1.56s** with the document
+identical to a full run.
+
+**The plan changed during verification, which is why it was worth doing first.** The intent was
+to let the partial parse land in the real version and rely on `pipeline_status`. `engine.py`
+already said the narrowed path *"deliberately passes no version id"* because its output is a
+PARTIAL model — and it is right: `--use-model --from-phase 4` re-export reads the version's
+model, so a partial persisted there would export a document holding only the changed files. The
+partial now runs under an explicit `--model-store files`; only the MERGED result is published,
+through the repository.
+
+> **Still true, enforced differently since 2026-08-23.** `--model-store` no longer exists. The
+> partial runs with `--model-scratch`, which installs a `ScratchRepository` (JSON in the run's
+> model dir) and - the part that matters - passes the phase **no version id at all**, so it has
+> nothing to write rows against even if the code tried. Recorded as **D-19** in PROJECT_CONTEXT.md.
+> Revisited for speed and left alone: it is ~10 small JSON files for the changed TUs, and a
+> Postgres round trip per artifact would be slower than the local disk write it replaced.
+
+Fixed: the merged skeleton publishes via `DbRepository`; `--verify-parse` reads the right backing
+(it was comparing two stale file copies and reporting a meaningless match); the baseline func-key
+map moved from the `ANALYZER_BASELINE_FUNCKEYS` environment variable to `--baseline-version-id`
+read from `parse_snapshots` (D10-3); and `parser.py` imports `core.model_store` first, since its
+subprocess `sys.path` lacks the repo root.
+
+**Two bugs the new gate found that no unit test could:**
+
+1. Step 11a gave `tu_includes` its own table, so `read_parse_snapshot` stopped returning it and
+   the availability check refused *every* narrowed parse. A one-step-old regression.
+2. `parse_fingerprint` hashed absolute `-I` paths. Every commit checks out to its own directory,
+   so the fingerprint differed on every run and the safety gate tripped **100% of the time** —
+   narrowed parse had never once executed since checkouts became commit-keyed. It now folds the
+   checkout root out, which also makes the value comparable across nodes.
+
+Both were invisible because falling back to a full parse is the *safe* branch: nothing failed,
+runs were simply as slow as before.
+
+`tools/verify_narrowed_parse.py` compares narrowed against full entity by entity, asserts the
+cross-file call edge by name, and **fails if the narrowed path fell back** — it passed vacuously
+on its first run by doing exactly that.
+
+Default on; `--no-narrowed-parse` forces a full parse. The safety fallbacks are untouched.
+
+### Still open after step 11
+* **`.mmdc_cache` / `.dot_cache`** and `versions/<ver>/output/**` — deferred with the `output/`
+  work. These are the remaining cross-node gaps: a rendered PNG on node A is invisible to node B,
+  exactly as the LLM cache was before step 10. All three conditions
+above then have to become hard errors, which is a real behaviour change for CLI use — decide it
+deliberately rather than discovering it.
+
+## 10. Verification
+
+Every step ends with all four gates green, and steps that change behaviour additionally require
+**both modes producing identical documents**:
+
+| Gate | Catches |
+|---|---|
+| `pytest tests/unit tests/api --skip-pipeline` | unit regressions |
+| `tools/verify_incremental.py` | baseline resolution + reuse — **this is the gate that caught the wiring bugs the unit suite missed** |
+| `tools/verify_model_parity.py` | fields silently dropped by the database |
+| `tools/verify_incremental_parity.py --fast` | a diagram the incremental path fails to carry forward |
+
+Lesson carried from doc 09's regressions: the unit suite repeatedly proved a *function* worked
+while missing that it was *connected*. Any step that spans a module or process boundary also gets
+a test asserting the wiring, not only the behaviour.
+
+### Keeping parity checkable after the files are gone (H6)
+
+The model **writer** survives behind a debug-only flag, so `verify_model_parity` keeps working
+forever:
+
+```bash
+python engine/run.py … --dump-model-files <dir>      # debug/verification only
+python tools/verify_model_parity.py <ver> --model-dir <dir>
+```
+
+Never used by a job, never a fallback, and not a second code path through the pipeline — it writes
+the same dicts the database round-trip returns. It exists because this is the check that caught the
+dropped global `description`, and the cost of keeping it is one flag.
+
+## 10b. Corrections found by reviewing the work (2026-08-17)
+
+| Finding | Fix |
+|---|---|
+| `_try_narrowed_parse` referenced `_stored` without ever assigning it — a **NameError on every call, in file mode too**. Shipped in C2 and described in that commit as applied; only half the edit landed | assignment restored (store-first, then files). `tests/unit/test_narrowed_parse_guards.py` now CALLS the function — 4 of its 5 tests fail against the broken version |
+| Narrowed parse merges through model_dir **files**, so in database mode it would read empty dicts and write an **empty** skeleton — a wrong model, silently | refuses in database mode and falls back to a full parse, which is what the function already promises for anything unsafe. Converting the merge is follow-on work |
+| Dead `_load_model_json_from_file` in `docx_exporter`, introduced with a comment claiming tests used it. Nothing did | removed |
+| `insert` became an unused import in `pg_stores` when `_insert_ignore` moved to `core/db_util` | removed |
+
+Why the first two survived: `--narrowed-parse` is opt-in, the API never sets it, and **neither
+gate exercises it**. A code path no gate touches is a code path where a claim of "done" is
+unverified — the same lesson as the diagram regressions, in a corner nobody runs.
+
+## 11. Open items
+
+- [ ] H7 — measure peak RSS in DB mode on the office project; decide whether C7 becomes a
+      prerequisite rather than a follow-on
+- [ ] `JOB_MAX_CONCURRENCY` raise is **independent of this work** and still pending its
+      measurement (doc 09, D2b) — H1 is a prerequisite for it either way
+- [ ] Whether `output/` conversion (deferred here) also moves the flowchart engine's *writes*, or
+      keeps them as files under a temp dir

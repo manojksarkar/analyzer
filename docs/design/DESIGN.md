@@ -64,7 +64,7 @@ run.py
 
 ---
 
-## Config ([engine/config/config.json](../../engine/config/config.json))
+## Config ([engine/config/config.defaults.json](../../engine/config/config.defaults.json))
 
 | Key | Default | Description |
 |-----|---------|-------------|

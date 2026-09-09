@@ -34,9 +34,19 @@ from core.paths import paths as _paths
 
 
 def default_workspaces_root() -> str:
-    """`<project_root>/workspaces` — the per-project workspaces root (created by the API at
-    onboarding / job time; the engine reads project + version metadata from api/db/data)."""
-    return os.path.join(_paths().project_root, "workspaces")
+    """`<data_root>/workspaces` — the per-project workspaces root (created by the API at
+    onboarding / job time; the engine reads project + version metadata from api/db/data).
+
+    Anchored on the DATA root, not the code root. Workspaces are generated data — checkouts,
+    per-version artifacts, the reuse index — so they belong wherever model/ output/ logs/ go.
+    Anchoring them on the code root meant `ANALYZER_DATA_ROOT` did not apply to them, so a
+    run isolated to a temp dir (`tools/verify_incremental.py`, any test) still created
+    directories inside the repo and left them there.
+
+    Unchanged for production: data_root defaults to the project root, so this is the same
+    path unless something has deliberately relocated the data.
+    """
+    return os.path.join(_paths().data_root, "workspaces")
 
 
 def _read_json(path: str, default: Any) -> Any:
@@ -48,7 +58,10 @@ def _read_json(path: str, default: Any) -> Any:
 
 def _write_json(path: str, data: Any) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
+    # PID-unique: two processes writing the SAME path would otherwise share one .tmp —
+    # each truncating it while the other is mid-write, so os.replace can publish a
+    # half-written file. Fine while jobs ran one at a time; a real hazard at concurrency > 1.
+    tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
     os.replace(tmp, path)  # atomic
@@ -94,18 +107,16 @@ class Workspace:
 
 
 class VersionStore:
-    """Version lifecycle: create per-commit version dirs (capturing model/output/documents)
-    and write per-version manifests. The version REGISTRY is api/db/data/versions.json (the
-    API's DB) — read via incremental.project_db; this store no longer keeps its own."""
+    """The per-commit directory: where a commit's git checkout lives.
+
+    It used to write the version's config and manifest alongside the checkout as JSON. Both
+    are rows now (`versions.resolved_config`, `versions.manifest`), and a second copy on disk
+    was one more thing that could disagree with them. What is left is the directory itself,
+    which is not a record of anything — it is where the source code is.
+    """
 
     def __init__(self, workspace: Workspace):
         self.ws = workspace
-
-    def get(self, version_id: str) -> Optional[Dict[str, Any]]:
-        return _read_json(os.path.join(self.version_dir(version_id), "manifest.json"), None)
-
-    def exists(self, version_id: str) -> bool:
-        return os.path.isdir(self.version_dir(version_id))
 
     def version_dir(self, version_id: str) -> str:
         """versionId == commit[:16]; the version dir IS the per-commit dir (which also
@@ -120,89 +131,9 @@ class VersionStore:
         os.makedirs(d, exist_ok=True)
         return d
 
-    def capture_artifacts(self, version_id: str, *, model_dir: str, output_dir: str) -> List[str]:
-        """Copy the analyzer's model/ + output/ into the version, and collect every
-        .docx into documents/. Returns the list of captured document filenames."""
-        d = self.version_dir(version_id)
-        if os.path.isdir(model_dir):
-            shutil.copytree(model_dir, os.path.join(d, "model"), dirs_exist_ok=True)
-        if os.path.isdir(output_dir):
-            shutil.copytree(output_dir, os.path.join(d, "output"), dirs_exist_ok=True)
-        docs_dir = os.path.join(d, "documents")
-        os.makedirs(docs_dir, exist_ok=True)
-        captured: List[str] = []
-        for root, _, files in os.walk(os.path.join(d, "output")):
-            for f in files:
-                if f.lower().endswith(".docx"):
-                    shutil.copyfile(os.path.join(root, f), os.path.join(docs_dir, f))
-                    captured.append(f)
-        return sorted(captured)
-
-    def write_config(self, version_id: str, config: Dict[str, Any]) -> None:
-        _write_json(os.path.join(self.version_dir(version_id), "config.json"), config)
-
-    def write_manifest(self, version_id: str, manifest: Dict[str, Any]) -> None:
-        # Per-version record in the commit dir (the filesystem source of truth). The API's
-        # _complete projects this into api/db/data/versions.json for the DB/UI.
-        _write_json(os.path.join(self.version_dir(version_id), "manifest.json"), manifest)
 
 
-class HashStore:
-    """Per-version entity-hash snapshot: {entityKey -> token-sha256} (doc 04 §4)."""
-
-    def __init__(self, version_store: VersionStore):
-        self.vs = version_store
-
-    def _path(self, version_id: str) -> str:
-        return os.path.join(self.vs.version_dir(version_id), "hashes.json")
-
-    def write(self, version_id: str, hashes: Dict[str, str]) -> None:
-        _write_json(self._path(version_id), hashes)
-
-    def read(self, version_id: str) -> Dict[str, str]:
-        return _read_json(self._path(version_id), {})
 
 
-class EdgeStore:
-    """Per-version slim usage index: {typeUsers, macroUsers} (doc 04 §4)."""
-
-    def __init__(self, version_store: VersionStore):
-        self.vs = version_store
-
-    def _path(self, version_id: str) -> str:
-        return os.path.join(self.vs.version_dir(version_id), "edges.json")
-
-    def write(self, version_id: str, edges: Dict[str, Any]) -> None:
-        _write_json(self._path(version_id), edges)
-
-    def read(self, version_id: str) -> Dict[str, Any]:
-        return _read_json(self._path(version_id), {"typeUsers": {}, "macroUsers": {}})
 
 
-class ReuseIndex:
-    """Cross-version content-addressed pointer index (doc 04 §3, D3):
-    {fingerprint -> {versionId, entityKey}}. Output content is never duplicated —
-    the index only records *where* a fingerprint's output already lives."""
-
-    def __init__(self, workspace: Workspace):
-        self.ws = workspace
-        self._path = os.path.join(self.ws.cache_dir, "index.json")
-        self._index: Dict[str, Dict[str, str]] = _read_json(self._path, {})
-
-    def get(self, fingerprint: str) -> Optional[Dict[str, str]]:
-        return self._index.get(fingerprint)
-
-    def put(self, fingerprint: str, version_id: str, entity_key: str, *, overwrite: bool = False) -> bool:
-        """Record a pointer. By default the first version that produced a fingerprint
-        keeps it (a later identical fingerprint reuses, doesn't re-point). Returns
-        True if a new entry was added."""
-        if not overwrite and fingerprint in self._index:
-            return False
-        self._index[fingerprint] = {"versionId": version_id, "entityKey": entity_key}
-        return True
-
-    def save(self) -> None:
-        _write_json(self._path, self._index)
-
-    def __len__(self) -> int:
-        return len(self._index)

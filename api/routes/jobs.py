@@ -14,7 +14,7 @@ from ..db.session import get_db
 from ..db.in_memory import InMemoryDatabase
 from ..middleware.auth import get_current_user, require_project_admin, require_project_member
 from ..models.domain import User, AnalysisJob, AnalysisPhase
-from ..services.errors import not_found, conflict
+from ..services.errors import not_found, conflict, bad_request
 from ..services import pipeline_runner
 from ..schemas import (
     StartJobResponse, JobResponse, CurrentJobResponse,
@@ -46,7 +46,7 @@ class StartJobRequest(BaseModel):
     data_dict_id: Optional[str] = None         # resolved to workspaces/<pid>/datadict/<id>.csv
     # M4.4 opt-in: in an incremental run, re-parse only the affected TUs and merge into the
     # baseline parser snapshot instead of a full Phase-1 parse (pays off on large repos).
-    narrowed_parse: bool = False
+    narrowed_parse: bool = True         # opt-OUT: send false to force a full re-parse
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ def _job_dict(job: AnalysisJob) -> dict:
         "scope": getattr(job, "scope", None),
         "no_llm": getattr(job, "no_llm", False),
         "data_dict_id": getattr(job, "data_dict_id", None),
-        "narrowed_parse": getattr(job, "narrowed_parse", False),
+        "narrowed_parse": getattr(job, "narrowed_parse", True),
         "started_at": job.started_at.isoformat(),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         "error_message": job.error_message,
@@ -106,15 +106,22 @@ def start_job(
     if not project:
         raise not_found("Project", project_id)
     require_project_admin(project_id, current_user, db)
+    # Version identity (D-3): the version is REQUIRED and UNIQUE within the project.
+    # No auto-generated name, no silent "-1" rename — a duplicate is rejected. Checked
+    # before the active-job guard so a malformed request fails as 400, deterministically.
+    version_name = (body.version_tag or "").strip()
+    if not version_name:
+        raise bad_request("A version name is required.")
+    if db.versions.get_by_tag(project_id, version_name):
+        raise conflict("VERSION_EXISTS",
+                       f"Version '{version_name}' already exists in this project.")
     # Prevent duplicate active jobs
     existing = db.jobs.get_current(project_id)
     if existing and existing.status in ("queued", "running", "paused"):
         raise conflict("JOB_ALREADY_RUNNING", "An analysis job is already active for this project.")
-    # Resolve version_id if tag provided
-    version_id = None
-    if body.version_tag:
-        ver = db.versions.get_by_tag(project_id, body.version_tag)
-        version_id = ver.id if ver else None
+    # Version identity (D-3 / PG-3): claim the real `ver…` id NOW so it is the engine's version
+    # identity (`--version`) for the whole run.
+    version_id = f"ver{uuid.uuid4().hex[:8]}"
     # The branch comes from the chosen commit (falls back to the project default).
     commit = db.commits.get(project_id, body.commit_sha)
     branch = commit.branch if commit else (project.default_branch or "main")
@@ -139,12 +146,27 @@ def start_job(
             AnalysisPhase(4, "Export DOCX",  "pending", None),
         ],
         started_at=now, completed_at=None, error_message=None,
-        branch=branch, version_tag=(body.version_tag or None),
+        branch=branch, version_tag=version_name,
         mode=(body.mode or "auto"),
         scope=body.scope, no_llm=bool(body.no_llm), data_dict_id=body.data_dict_id,
         narrowed_parse=bool(body.narrowed_parse),
     )
-    db.jobs.create(job)
+    # Reserve the version row (status 'draft') BEFORE inserting the job: analysis_jobs.version_id
+    # is a FK to versions.id, so the job may only reference a version that already exists. The
+    # engine writes its per-version rows under this same id, _make_version finalizes it at
+    # completion, and _mark_failed deletes the draft on failure — so a failed run leaves no orphan.
+    pipeline_runner._reserve_version(db, job, project)
+    try:
+        db.jobs.create(job)
+    except Exception:
+        # Roll back the just-reserved draft so a failed job insert doesn't strand the version name.
+        _v = db.versions.get(version_id)
+        if _v is not None and getattr(_v, "status", None) == "draft":
+            try:
+                db.versions.delete(version_id)
+            except Exception:                              # best-effort cleanup
+                pass
+        raise
     pipeline_runner.start(db, job.id)
     return {"job_id": job.id, "status": job.status}
 

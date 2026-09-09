@@ -67,11 +67,42 @@ class TestAffectedUnits:
         assert _affected_units(set(), self.FUNCS, self.FID2U) == set()
 
 
+@pytest.fixture(autouse=True)
+def _restore_output_root():
+    """set_output_dir is process-global, so a test that points it at a tmp dir would leak
+    into every test that runs after it — an order-dependent failure that only appears when
+    the suite is re-ordered or run in parallel. Restore it."""
+    # NB: `import core.paths as cp` yields the re-exported paths() FUNCTION, not the module
+    # (core/__init__ re-exports every public symbol), so reach the module explicitly.
+    import importlib
+    cp = importlib.import_module("core.paths")
+    before_out, before_model = cp._OVERRIDE_OUTPUT_DIR, cp._OVERRIDE_MODEL_DIR
+    yield
+    cp._OVERRIDE_OUTPUT_DIR = before_out
+    cp._OVERRIDE_MODEL_DIR = before_model
+    cp._CACHED = None
+
+
 class TestApplyIncrementalUnitPlan:
     def _setup(self, tmp_path, plan):
         model_dir = tmp_path / "model"; model_dir.mkdir()
         out_dir = tmp_path / "output" / "unit_diagrams"; out_dir.mkdir(parents=True)
         (model_dir / "incremental_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        # Declare this fake tree's OUTPUT root. Carry-forward locates the baseline by the
+        # slot a diagram occupies within the run's output tree, so that root has to be real;
+        # it used to be inferred from model_dir's parent, which only worked while output and
+        # model sat side by side (they no longer do — a run renders into versions/<ver>/).
+        from core.paths import set_output_dir, set_model_dir
+        set_output_dir(str(tmp_path / "output"))
+        # And the MODEL root: since doc 10 step 6 the view resolves incremental_plan.json
+        # through core.model_io (a per-version database row in db mode, the file otherwise)
+        # rather than joining the model_dir argument itself. The fake tree has to declare both
+        # roots for the repository to find the plan it just wrote.
+        set_model_dir(str(model_dir))
+        # There is no default repository any more. ScratchRepository is the file-backed one —
+        # it reads the incremental_plan.json this fixture wrote into model_dir.
+        from core import model_repo
+        model_repo.set_repository(model_repo.ScratchRepository())
         return str(model_dir), str(out_dir)
 
     def test_no_plan_returns_none(self, tmp_path):

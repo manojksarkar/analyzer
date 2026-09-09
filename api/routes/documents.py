@@ -16,6 +16,8 @@ from ..middleware.auth import get_current_user, require_project_admin, require_p
 from ..models.domain import User, DocumentAssignment
 from ..services.errors import not_found, forbidden
 from ..services import doc_render
+from ..services.model_reader import ModelReader
+from ..services.output_reader import OutputReader
 from ..schemas import (
     DocStatsResponse, DocumentListResponse, RenderResponse,
     DocumentDetailResponse, DocumentResponse, AssigneesResponse,
@@ -288,7 +290,7 @@ def render_document(
 
     # Render THIS version's artifacts from its commit dir (workspaces/<pid>/<commit[:16]>/
     # output), not the shared latest run.
-    out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+    out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
     group_dir = doc_render.output_group_dir(doc.group, out_root)
     if group_dir is not None:
         # Imported projects (created by tools/import-output-project, no repo_url) render
@@ -300,8 +302,19 @@ def render_document(
             commit_model = out_root.parent / "model"
             if commit_model.is_dir():
                 model_root = commit_model
+        # PG-7a: serve the model for THIS version from Postgres when it's there, falling back to
+        # the disk dir resolved above (so behaviour is unchanged without a SQL backend).
+        reader = ModelReader(db, version.id if version else None,
+                             model_root or (doc_render._REPO_ROOT / "model"))
+        # C0: the VIEW outputs (interface tables / flowcharts / behaviour rows) also come
+        # from Postgres when present. They have been stored since PG-5a, but the rendered
+        # document still read them off local disk — so the main product surface depended on
+        # the machine that produced it. snap_dir is the version's own output tree, used as
+        # the fallback.
+        out_reader = OutputReader(db, version.id if version else None, out_root.parent)
         return {"document": doc_render.build_render(
-            doc, project, version, group_dir, project_id, model_root=model_root)}
+            doc, project, version, group_dir, project_id, model_root=model_root,
+            model_reader=reader, output_reader=out_reader)}
 
     sections = db.documents.list_sections(doc_id)
     return {"document": _render_doc_dict(doc, sections, project, version)}
@@ -321,7 +334,7 @@ def document_asset(
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
     version = db.versions.get(doc.version_id) if doc.version_id else None
-    out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+    out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
     target = doc_render.resolve_asset(doc.group, asset_path, out_root)
     if target is None:
         raise not_found("Asset", asset_path)
@@ -387,7 +400,7 @@ def download_export_all(
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for doc in docs:
             version = db.versions.get(doc.version_id) if doc.version_id else None
-            out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+            out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
             docx = doc_render.find_docx(doc.group, out_root)
             if docx is not None:
                 zf.write(docx, arcname=f"{doc.name}.docx")
@@ -426,7 +439,7 @@ def download_document(
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
     version = db.versions.get(doc.version_id) if doc.version_id else None
-    out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+    out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
     docx = doc_render.find_docx(doc.group, out_root)
     if docx is not None:
         return FileResponse(
@@ -640,7 +653,7 @@ def export_document(
     if not doc or doc.project_id != project_id:
         raise not_found("Document", doc_id)
     version = db.versions.get(doc.version_id) if doc.version_id else None
-    out_root = doc_render.commit_output_root(project_id, version.commit_sha) if version else None
+    out_root = doc_render.commit_output_root(project_id, version.commit_sha, version.id) if version else None
     docx = doc_render.find_docx(doc.group, out_root)
     if docx is not None:
         return FileResponse(

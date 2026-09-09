@@ -4,7 +4,43 @@
 > Optimize it for findability and completeness, not polish — no prose warm-up, no formatting for human readers.
 > A section outline is fine purely as an agent-navigation aid. Humans read the docs under `docs/` instead.
 
-> **WORK STATUS / QUEUE — 2026-07-20 (read this first if picking up in a new chat).**
+> **⭐ WORK STATUS — 2026-08-14 · branch `db-with-increment-changes` (READ THIS FIRST in a new chat).**
+> - **The PostgreSQL migration is COMPLETE and validated on the office box.** Postgres holds the model,
+>   view outputs, reuse index, run metadata, resolved config and all app data. `JsonDatabase` is deleted;
+>   the API is Postgres-only. The commit dir now holds ONLY the git checkout + `manifest.json` + `report.txt`
+>   + `parse/`. Full detail: the dated entry below (2026-08-13) and §6.
+> - **NEXT WORK IS PLANNED, NOT STARTED → [docs/production-redesign/10-db-native-pipeline.md](docs/production-redesign/10-db-native-pipeline.md)**
+>   (2026-08-17). Removes `model/*.json` from the pipeline itself: all four phases **and** the
+>   flowchart engine read/write their model from the database; SQLite becomes a supported backend so
+>   the gates run on a machine with no Postgres; no environment variable remains a source of our
+>   configuration. That doc is the source of truth for what to do next — 10 steps, gates after each,
+>   with a **sign-off stop at step 8** before anything is deleted.
+> - Doc 09 is **largely done** — see [09-post-migration-consolidation-plan.md](docs/production-redesign/09-post-migration-consolidation-plan.md)
+>   for the remainder (concurrency raise pending its RSS measurement; C4/C7 context service; IN-4/IN-5).
+> - **B0 DONE (2026-08-14):** the `job_max_concurrency` **default is now 1**
+>   ([settings.py:47](api/services/settings.py#L47)). `<repo>/output` is gone too — runs render into
+>   `versions/<ver…>/output`. **`<repo>/model` is the last shared dir** and the only remaining reason
+>   concurrency must stay at 1; it goes with **C11**, not with a per-job folder.
+>   ⚠ **Multi-node:** the semaphore is per API **process**, so N replicas give N × the limit — a global
+>   cap needs a DB-backed lease (**B0c**, unfiled).
+> - **Decided:** target concurrency **5–6 jobs** ⇒ adds **B5** (connection budget — engine subprocesses take
+>   SQLAlchemy's default 15-connection pool each, so 6 jobs + API ≈ 100 vs `max_connections=100`; **solution is
+>   designed and written up in doc 09 §B5** — `NullPool` for the engine, sized pool for the API) and **B6**
+>   (LLM rate limits per process × 6).
+> - **Deferred by decision:** group **A** (removing the Python→Python subprocesses). Measured at ~5–20s per
+>   multi-minute run — a debuggability/simplicity win, not speed, and it does not address concurrency. **A0**
+>   (capture subprocess `stderr`) is pulled out and still scheduled — 1h, no risk, kills the
+>   "exited with code 1, no reason" bug class.
+> - **⚠ Known gap — narrowed parse (M4.4/M4.6) has ZERO automated coverage**, is off by default and not
+>   UI-reachable, but the **user requires it for large codebases** and its fingerprint gate was re-sourced to
+>   the DB during the cutover. Validate before enabling (doc 09 **D1**) — same commit narrowed vs full, assert
+>   identical model (what `--verify-parse` does at runtime).
+> - **Gates to run after any change:** `pytest tests/unit tests/api` · `python tools/verify_incremental.py`
+>   (DB-less two-version incremental) · `python tools/verify_pg_readers.py` (proves data is really IN Postgres —
+>   every reader falls back to disk, so a green run alone proves nothing). API paths (sections, re-export,
+>   document render) are NOT covered by the gates — they need a real two-commit run.
+>
+> **WORK STATUS / QUEUE — 2026-07-20 (SWE.3 content work; still open, separate track).**
 > - **DONE + removed from the active batch lists:** 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7,
 >   flowcharts-in-DOCX, orphan-header handling, 3.14, 3.15, 3.18, macro ingestion (2026-08-07).
 >   **Remaining open:** function hide/unhide (Phase-3 JSON), 3.8, 3.9, 3.10, 3.11, 3.12,
@@ -34,7 +70,7 @@
 >   def→if). Test: `tests/unit/test_define_conditional.py` (libclang-guarded skip).
 > - **2026-07-21 — e2e test suite resurrected + snapshots regenerated (DONE, test-only):** the
 >   pipeline-backed e2e suite had been **dead since PR #19** (`2a1064f`), which renamed the fixture
->   group `Sample`→`My Sample` (component `Core`→`Sample Core`) in `engine/config/config.json` but
+>   group `Sample`→`My Sample` (component `Core`→`Sample Core`) in `engine/config/config.defaults.json` but
 >   never updated the tests. Pipeline output now lives under `output/My-Sample/` (space→hyphen);
 >   view/model keys are `Sample-Core|Core` (unit name still `Core`), diagram node `Sample-Core_Core`,
 >   subgraph label `"Sample Core"`, interface ids `IF_LAYER1_*`. Fixed the harness group
@@ -71,7 +107,7 @@
 >   `dependencies` (previously only transitive/manual → a fresh `npm ci` would miss viz-js and break the
 >   renderer); lockfile synced offline. New **`tools/doctor.py`** prerequisite checker: probes each dep
 >   **local→global in the pipeline's real resolution order** (python+pkgs, node, `@viz-js/viz`, puppeteer,
->   the Chromium puppeteer launches, `mmdc`, libclang via `LIBCLANG_PATH`→`config.json`→pip-bundled),
+>   the Chromium puppeteer launches, `mmdc`, libclang via `LIBCLANG_PATH`→`config.defaults.json`→pip-bundled),
 >   reports which location satisfied each, exits non-zero on missing REQUIRED. `run.py` calls
 >   `doctor.preflight(need_flowchart, need_mermaid)` before `plan_runs` — **view-gated** (parse-only runs
 >   aren't blocked by a missing browser/mmdc; flowchart views require viz+chromium, mermaid views require
@@ -273,6 +309,1090 @@
 > in this sandbox, not by the rebase); direct `plan_runs(doc_type="both",
 > data_dictionary_layer=[...])` call confirmed `--data-dictionary-layer` reaches Phase 1's parser
 > args alongside the SWE.2 whole-model phase pair.)
+> Updated: 2026-09-07 (**One run may now span several layers** — branch
+> `fix/cross-layer-name-collisions`, **UNCOMMITTED** on top of `a03fddd`. The identity commit
+> made two layers' same-named groups and components distinct; this makes a single run able to
+> select across them. Two separate defects:
+>
+> **1. Only the FIRST selected layer got include paths — the real bug.** `run.py` derived one
+> `_selected_layer` (from `selected_layer_arg`, else the first resolved group, else the first
+> component's layer) and filtered BOTH the include-path walk and the `compile_commands` merge to
+> it. A run naming groups in two layers therefore parsed both layers' source — `parser.py` has
+> unioned the layers of repeated `--selected-group` for a while — but handed clang the include
+> set of one. The other layer's `#include`s failed, its definitions never entered the model, and
+> nothing in the log connected the gap to the scope: the log simply printed one `Layer1: … -> 18
+> total` line and no second line. Now `_selected_layers` is an ordered, de-duplicated LIST built
+> from every named layer / every resolved group's layer / every selected component's layer, and
+> both filters test membership. The report prints one line per layer, which is also how you check
+> it worked.
+>
+> **2. `--selected-component` refused a cross-layer bundle.** `All --selected-component names
+> must be in the same layer` existed because bare component names could not tell two layers'
+> `Math` apart; with qualified ids there is nothing left to protect against, so the check is
+> gone. `plan_runs` derives the full layer SET for the bundle (it took
+> `selected_components[0]`'s layer), `_build_model_phases` emits one `--selected-layer` per
+> entry (it emitted one flag), and `parser.py`'s `--selected-layer` is repeatable and unions the
+> layers (it took the last). The Phase-3/4 model filters in `run_views._filter_model_to_components`
+> and `docx_exporter` union every selected component's layer too — filtering to the first
+> component's layer would have dropped the other layer's components straight back out.
+>
+> `--selected-group`, `--selected-layer` and `--selected-component` stay mutually exclusive;
+> what changed is that each of them may now name things in more than one layer.
+>
+> Verified on SampleCppProject: `--selected-component Layer1.Math --selected-component
+> Layer2.Gpio --selected-component Layer2.Sample-Core` exits 0, reports include paths for
+> **both** layers (Layer1 18, Layer2 20), and writes one document whose sections are
+> `2 Math | 3 Gpio | 4 Sample Core` with interface IDs from `IF_LAYER1_*` **and** `IF_LAYER2_*`.
+> Three groups across both layers likewise report both layers. Tests:
+> `tests/unit/test_scope_multiple.py::TestOneRunMaySpanLayers` (7). `pytest tests/unit tests/api
+> --skip-pipeline` and `pytest tests/e2e` both green.
+>
+> **Still one layer at a time:** per-layer inputs (`layer_source`, macros, the data dictionary)
+> resolve per layer as before — that was already correct and needed no change, since each layer
+> keeps its own `-D` set and dictionary within the same run.
+>
+> **Four follow-on fixes found while verifying this, each with its own regression test:**
+> 1. **The flowchart view stopped scoping to a layer at all.** `views/flowcharts._resolve_layer_name`
+>    compared `group_name` against the config's BARE group names, so the day group ids gained
+>    their prefix `Layer1.Support` matched nothing and every run fell through to "all layers'
+>    include dirs, global-only macros" — more headers than the layer should see and none of its
+>    own `-D`. Silent; no test caught it because extra `-I` is harmless and the Sample fixture's
+>    flowcharts do not depend on the per-layer defines. Now `_resolve_layer_names(...) -> list`
+>    reads the prefix, resolves a component BUNDLE from its own component ids (whose
+>    `group_name` is a virtual join naming no group), and `_macro_args_for_layers` emits global
+>    then each covered layer — **warning** when two selected layers define one macro
+>    differently, since one command line cannot honour both. `_analyzerAllowedComponents`
+>    arrive CASEFOLDED, which made the first attempt resolve a two-layer bundle to one layer.
+> 2. **`--component-per-docx` now combines with `--selected-component`** and
+>    `per_component_docx_args` returns it for EVERY scope. A component scope was the one shape
+>    that came back bundled while project/layer/group all split per component. This also removes
+>    the multi-layer macro ambiguity in practice: each component is its own Phase-3 invocation,
+>    so no invocation spans layers. `tools/parity/compare_with_poc4.py` still withholds the flag
+>    from both sides (poc-4 refuses it) — its behaviour was already right, only its comment stale.
+> 3. **A `--selected-component` absent from the stored model is refused**
+>    (`run_views._assert_components_in_model`). Phase 1 parses whole LAYERS, so re-rendering a
+>    component the original run did not name is supported — but one from a layer that was NOT
+>    parsed used to finish with exit 0 and an empty document. Explicit names only; a group scope
+>    derives its components from config where one may legitimately have no source.
+> 4. **`.flowcharts_clang_args.txt` moved to the run's own output dir** (`clang_args_file()`).
+>    It was one path per VERSION, so per-component runs overwrote it and the file on disk showed
+>    only the last component's flags — misleading exactly when it is opened to check which
+>    layer's `-I`/`-D` a component got.
+>
+> 5. **The layer prefix was reaching the DOCX.** `Layer1.Math` is how the MODEL keys a
+>    component; it is development plumbing and has no place in a deliverable. It leaked in two
+>    spots — Source/Destination cells read `Layer1.App/Main, Layer1.Cross/Hub`
+>    (`interface_tables`, both the function and the global path), and the cover printed the
+>    layer twice as `Layer1 Layer1.Math` (the layer is already its own word there). New
+>    `_unit_label()` renders `Component/Unit` for display; the cover uses `display_name()`.
+>    Guarded by `tests/e2e/test_docx.py::test_no_layer_qualified_id_reaches_the_document`,
+>    which scans **every** paragraph and cell of every generated document rather than those two
+>    places, so a new leak anywhere fails it — verified against the pre-fix output. Audited
+>    SWE.3 **and** SWE.4: 0 leaks in all four documents.
+> 6. **`tools/check_unit_names.py`** — read-only, answers whether a tree has UNIT-key
+>    collisions. A unit key is `<componentId>|<basename>` with no directory, so
+>    `Ftl/Core/Table.cpp` and `Ftl/Cache/Table.cpp` merge into one `Ftl|Table` unit carrying
+>    both files' functions under the first file's name. `--path <checkout>` answers it before
+>    any parse (no DB); `--project-id P [--version-id V]` reads `model_units` after one.
+>    Filters `--layer/--component/--unit` take a bare name or a qualified id. Exit 1 on
+>    collisions. This is how to decide whether unit keys need qualifying too — measure the real
+>    tree rather than assume. SampleCppProject: 0 across 101 units.
+>
+> **Unrelated bug fixed on the way:** `generate_incremental` did not forward `create_version` to
+> `generate_full`, so `--create-version` failed on the no-baseline path — the FIRST version, the
+> only time the flag is needed. It exited 2 telling the caller to "add --create-version", which
+> they had. Pre-existing on `develop`.
+>
+> **Verified through `analyzer.py` against Postgres**, not just unit tests: onboard refuses a
+> broken config before writing anything; `--scope "group:My Sample"` is ambiguous and exits 2;
+> the twin groups each generate; `component:Layer1.Math,Layer2.Gpio,Layer2.Sample-Core` yields
+> one document per component with both layers' include paths; `reexport --from-phase 2` re-derives
+> the model byte-identically (28 components / 97 units, twins intact); `--from-phase 3` renders
+> any component in a parsed layer and refuses one outside; `--from-phase 4` refuses when the view
+> JSON is absent. All six `analyzer.py verify` gates pass — `parity` failed once on a native
+> `0xC0000409` crash AFTER the DOCX was written and passed clean on re-run, matching the
+> already-recorded flake; it is not proven fixed.)
+
+> Updated: 2026-09-06 (**Group and component identity is LAYER-QUALIFIED** — branch
+> `fix/cross-layer-name-collisions` off `develop`, uncommitted. Two layers may hold a group or a
+> component with the same name — `FTL/Cache` and `HIL/Cache` are two different components, and a
+> real client layout. They used to silently merge, because every id was the bare config name and
+> everything downstream flattens across layers. A group id is now `Layer1.Support` and a component
+> id `Layer1.Cache`; `interfaceId` already worked this way (`IF_LAYER1_SUPPORT_MATH_01`), so this
+> is the same fact moved into the model keys.
+>
+> **What merged before** (each pinned in `tests/unit/test_name_collisions.py`):
+> 1. `_resolve_layer_paths` keys groups by name across EVERY layer with a plain assignment, so the
+>    second layer's `Support` replaced the first's — and the lost group's components then matched no
+>    file in `_build_file_component_map`, failed `is_project_file`, and **never entered the parse
+>    scope at all**. The document came out short, with no error.
+> 2. `utils.init_component_mapping` APPENDS path lists on a name clash, so one `Cache` owned files
+>    from both layers, `get_component_layer_name` returned only the first, and half those files were
+>    parsed with the other layer's `-D` set and data dictionary — the exact blending the per-layer
+>    data dictionary (2026-08-18) exists to prevent.
+> 3. `unit_key` is `<component>|<unit>`, so `Cache|Buf` from two layers was ONE unit carrying both
+>    files' functions. Function/global ids extend that key, so they collided too.
+> 4. Output dirs and document names are keyed by group, so two layers' `Support` wrote to
+>    `output/Support/` and one overwrote the other.
+>
+> **The shape.** `core.config` gains `LAYER_SEP = "."`, `make_qualified_id(layer, name)`,
+> `split_qualified_id`, `qualified_layer` and `display_name`, re-exported through `utils`. Key
+> ARITY is unchanged — `split(KEY_SEP)[0]` still yields the component — because only the component
+> STRING grew a prefix; nothing that parses keys had to learn a new shape, and `model_store`'s
+> `count("|")` heuristics still hold. The prefix is applied **always** when the config has `layers`,
+> not only when a name is actually duplicated, so one project's keys look like every other's and
+> adding a second layer never silently rewrites the first's. A legacy `layer`/`modulesGroups` config
+> has no layer to qualify with and keeps bare ids.
+>
+> `make_qualified_id` does NOT fold spaces: normalization already happens at
+> `safe_filename` / `_resolve_component_from_rel` / the output-dir naming, and repeating it here
+> would rename `My Sample` in the DOCX headings, which keep the configured spelling.
+>
+> **Display is separate from identity.** `display_name(id)` strips the prefix, and every place a
+> name is READ now calls it: DOCX component headings and the Scope bullet list, the Mermaid
+> component labels, the unit-diagram subgraph label and external-unit boxes
+> (`views/unit_diagrams.py`), the SWE.4 cover, scope and component headings, and
+> `api/services/doc_render.build_intro_section` (whose docstring promises the UI matches the DOCX).
+> `interfaceId` takes `display_name(resolve_group(...))` for its group code — `_id_seg` over the
+> qualified form would fold the layer's letters into the GROUP segment, while `layer_code` already
+> carries the layer separately. Everything that KEYS stays qualified, diagram filenames included —
+> that is what keeps two layers' same-named components in separate files.
+>
+> **Selection.** New `resolve_group_id(groups, requested)` / `resolve_component_id(...)` return
+> `(resolved, candidates)`. A qualified id resolves outright; a bare name resolves while only one
+> layer has it; when two layers have it there is no right answer, so `run.py` exits 2 and
+> `plan_runs` raises with both candidates and the fix (`--selected-group Layer1.Support`, or
+> `--selected-layer`). `get_group_layer_name` / `get_component_layer_name` read the prefix instead of
+> searching, and their bare-name fallback now returns a layer only on a UNIQUE match — first-match
+> was what sent a run at the wrong layer's macros.
+>
+> **`validate_layer_names` narrowed accordingly.** Cross-layer duplicate group/component names are
+> no longer reported — they are legal. What remains is what qualifying cannot fix: the same name
+> twice INSIDE one layer (identical prefix, so the paths still merge), one path claimed by two
+> components or nested inside another's (`_build_file_component_map` uses `setdefault` and walks
+> directories recursively), two layer names that collapse to one identifier, and a name containing
+> `LAYER_SEP` (ids split on the first separator, so it could not be taken apart again). Still wired
+> at all three front doors, each exiting before anything is written or parsed:
+> [run.py](engine/run.py) before the first `get_flat_groups`, `tools/new_project.py`
+> (= `analyzer.py onboard --config`) inside its "Nothing was created." guard, and
+> `api/services/pipeline_runner._write_project_config`, which also runs `_duplicate_wizard_names`
+> for the same-scope duplicates the wizard's list→dict conversion swallows before `layers` exists.
+>
+> **Incidental fix:** `_GROUP_MAP` was keyed by the RAW config name while
+> `_resolve_component_from_rel` returned the space-normalized one, so `resolve_group()` answered `""`
+> for every component whose name contains a space — `Sample Core` among them, which is why its
+> interface IDs carried no group segment. Now keyed by the id that is actually returned.
+> `make_function_key`'s no-component fallback took the path's FIRST SEGMENT, which is the layer
+> directory; it resolves the component properly now.
+>
+> **Every stored key changed** (`Core|Util` → `Layer1.Core|Util`). Snapshots were regenerated; a
+> version stored before this change cannot serve as an incremental baseline for a run after it —
+> the entity keys will not match, so it falls back to a full generation. One-time, by design.
+>
+> Verified end to end, not just by unit test: a config giving BOTH SampleCppProject layers a
+> `Support` group with `Math` and `Core` components ran the full four-phase pipeline and produced
+> `output/Layer1.Support/` and `output/Layer2.Support/` — two documents, where one used to overwrite
+> the other — with `components.json` holding four entries (`Layer1.Core`, `Layer1.Math`,
+> `Layer2.Core`, `Layer2.Math`) and both DOCX files showing the bare `2 Core` / `3 Math` headings.
+> Tests: `tests/unit/test_name_collisions.py` rewritten (39), e2e constants and snapshots moved to
+> qualified ids (`tests/e2e_paths.py`, `tests/e2e/*`). `pytest tests/unit tests/api --skip-pipeline`
+> and `pytest tests/e2e` both green.
+>
+> **Pre-existing bug fixed on the way:** the e2e `test_specs` fixture read
+> `output/My-Sample/test_specs.json`, a path a group-scoped run has never written (it writes one dir
+> per component), so every SWE.4 e2e test errored at setup. It now merges per component exactly as
+> the `interface_tables` fixture does.)
+
+> Updated: 2026-09-06 (**a flush deleted the artifacts it was not handed; the audit's model
+> checks did not know about hash-only rows** - branch `version7`.
+>
+> **`flush()` could drop `hashes`, `units`, `components` and `summaries`.** It calls
+> `clear_version` and then `persist_model`, so any coupled artifact absent from the flush is
+> DELETED. It completes a partial write from what is already stored - but the guard deciding
+> whether to load that named only four of the eight coupled artifacts (functions,
+> globalVariables, dataDictionary, edges). **Phase 2 rewrites exactly those four**, so the load
+> was skipped and the other four persisted as `{}`. For `hashes` that is not cosmetic:
+> `persist_functions` reads `source_hash` from it, so every function lands with a NULL hash and
+> change detection is dead for the NEXT run - while THIS run's document looks perfectly
+> correct. Now guarded on the whole `_PERSIST_KW` set. Seen as 4321 functions with no
+> source_hash after a fresh generate. Tests: `test_model_repo_flush_completes.py` (4);
+> restoring the four-name guard fails two of them.
+>
+> **Hash-only entity_versions rows are BY DESIGN and the audit was failing them.**
+> `persist_bare_entities` writes a row carrying only a `source_hash` for a hashed entity that
+> is not part of the model - a file-scope macro, or a function outside the generated scope - so
+> `classify` still sees its hash next run; `_entity_kind` gives a 3-pipe key `kind='function'`,
+> and `load_functions` skips them ("hash-only entity, not a real function"). Auditing them for
+> a file / component / unit / payload produced **2818 spurious failures on a healthy project**
+> and buried the one finding that mattered. `check_model_shape` now audits only rows WITH a
+> payload, reports the split as D0, and D6 checks `interface_id` instead of the field the
+> filter already guarantees.
+>
+> **New B4/B4b/B5.** B2 counted rows with no hash without saying which population they were in,
+> and the two are easy to confuse. B4 separates "real function with a payload and no hash" (a
+> lost `hashes` artifact) from a hash-only row; B5 then asks whether the hashed keys and the
+> payload keys describe the same functions on `component|unit|qualifiedName` - overlap means one
+> function stored twice under two parameter-type spellings (a keying bug), no overlap means the
+> hash-only rows are genuinely other entities (a lost artifact). Different fixes, and the report
+> now says which.)
+
+> Updated: 2026-09-05c (**`tools/audit_project.py` - a read-only audit of what a project
+> stored and every invariant the incremental design relies on** - branch `version7`.
+>
+> **Why a new tool.** `check_db.py` checks the rows are STRUCTURALLY sound - no orphans, no
+> dangling blobs, no missing snapshots. Every defect found this week passed all of that. They
+> were failures of CORRECTNESS: change detection that could not detect change, a baseline that
+> was not an ancestor, a stored blob that was not the hash it claimed, a changed function whose
+> flowchart never followed. This automates the measuring that found them.
+>
+> **Sections.** A version chain (terminal status; a baseline AT the target commit; orphaned and
+> missing baselines) - B change detection (the sha256("") empty-token hash as a count AND a
+> percentage; missing hashes; suspicious hash clusters) - C incremental correctness (a function
+> whose source_hash moved must have a different DOT; a DOT and its PNG must move together) -
+> D model completeness (file/component/unit/visibility/direction/content_hash present) -
+> E storage integrity (every blob re-hashed and compared to its content_hash; NULs; dangling
+> payload pointers) - F include map (headers per SOURCE file, headers excluded) - G output
+> (stored output files, documents on disk, a graph with no image).
+>
+> **Reads the stored copy, not disk.** Flowchart DOTs come from `version_output_files`, which
+> is what the API serves; PNGs come from disk, which is what the DOCX embedded. Comparing the
+> two is check C3 and is how the split-origin defect was found in the first place.
+>
+> **An empty check is not a pass.** Every finding prints what it EXAMINED, because a diagnostic
+> that reported success twice while examining an empty set cost two real runs on a
+> 2817-function project. A clean report says so explicitly rather than staying silent.
+>
+> **The report is for pasting back.** ASCII-only (a Windows console's cp1252 mangles anything
+> else), each finding carries WHY it matters and NEEDED TO FIX naming the follow-up tool, and
+> it contains no source code, no doc comments and no LLM-generated text - names, paths, hashes
+> and counts only, so a client codebase can be audited and the result shared.
+>
+> **Verified against two fixtures**, not just run: a `broken` project carrying one instance of
+> each real defect (same-commit baseline, empty-token hash, changed-but-stale flowchart,
+> DOT/PNG disagreement, tampered blob, thin include map) and a `clean` one carrying none.
+> Broken exits 1 with all six found; clean exits 0. The clean control matters - it caught a
+> mistake in the FIXTURE, where alpha's DOT moved while its PNG was held constant.)
+
+> Updated: 2026-09-05b (**phase summaries named model JSON files that are not written; the
+> SWE.4 cover page read "Software Project"** — branch `version7`.
+>
+> **The logs.** Phase 1 and Phase 2 printed `model/functions.json (2818)`,
+> `model/knowledge_base.json (...)`, `model/globalVariables.json (231)` and nine more like
+> them. Those files have not existed since the file backing was removed: `repository()` has
+> **no default any more** (model_repo.py:437 — a default is what used to make a misconfigured
+> run look successful), every artifact is registered in `DB_BACKED`, and `DbRepository.write`
+> never touches disk. The write went to Postgres and the line named a path nobody wrote. Cost
+> a reader real time asking whether the DB migration had been reverted.
+>
+> Each line now names the ARTIFACT and asks where it went — `model_io.artifact_location(name)`
+> -> `repository().describe(name)`. Accurate in every mode, including the narrowed parse's
+> scratch pass, which really does write files:
+> ```
+>   functions (2818) -> database (at flush)
+>   knowledge_base (functions=2744, ...) -> database
+>   metadata -> database (parse_snapshots)
+> ```
+> `artifact_location` never raises — a summary line must not be able to fail a run.
+>
+> **The bug the wording was hiding.** `swe4_exporter.py` opened `MODEL_DIR/metadata.json`
+> **directly**, behind an `os.path.isfile` guard. `metadata` is `DB_BACKED_PARSE` and lands in
+> `parse_snapshots`, so the guard was simply false on every database run and `project_name`
+> kept its `"Software Project"` default — **every SWE.4 cover page carried the wrong project
+> name**, silently, because a missing file read as "no name available". Now
+> `docx_common.load_model_json("metadata")`, which is what `docx_exporter.py:1241` (SWE.3) has
+> always done. This is the same Phase-4 bypass the port fixed for `docx_common` on 2026-09-01b;
+> this instance was missed.
+>
+> **Checked, not assumed:** every other file read in the SWE.4 code is an OUTPUT artifact
+> (`test_specs.py` writes its own json, `test_steps.py` reads the flowchart dir,
+> `ut_export.py` reads test_specs and writes ut_export) — those are real files by design and
+> are correct. `docx_common.load_model_json` already went through the gateway.
+>
+> Tests: `tests/unit/test_model_artifact_location.py` (6) — the label says database and never
+> a filename, buffered vs immediate vs parse_snapshots are distinguished, no repository does
+> not raise, scratch mode reports the real path, and both exporters resolve metadata through
+> the gateway. Suite 1450 green.)
+
+> Updated: 2026-09-05 (**a NUL character in one description killed Phase 2 after the whole LLM
+> run had been paid for** — branch `version7`.
+>
+> **Symptom.** A fresh onboard + generate reached the end of Phase 2, logged
+> `llm_enrichment: done in 1018.54s - 231 described`, wrote the model files, and then died in
+> `flush_model` -> `persist_functions` -> `_insert_blobs`:
+> ```
+> psycopg.errors.UntranslatableCharacter: unsupported Unicode escape sequence
+> DETAIL:  \u0000 cannot be converted to text.
+> CONTEXT: JSON data, line 1: ...d RPM task log entry and wrapped head index\u0000...
+> ```
+> 17 minutes and 3.7M tokens spent, nothing stored, exit 1. The `llm_description_cache` write had
+> already failed the same way a moment earlier and was swallowed ("continuing without it").
+>
+> **Cause.** PostgreSQL has no representation for a NUL in `text` OR in `jsonb`, so the driver
+> raises rather than truncating. Python strings and JSON files hold one happily, so a NUL that
+> enters in a doc comment, in a `returnExpr` sliced out of source, or in an LLM response crosses
+> the entire pipeline unnoticed — `model/functions.json` was written fine — and only the final
+> INSERT rejects it. Nothing upstream is wrong; the model on disk is still valid JSON.
+>
+> **Fix.** `db_util.scrub_nulls` removes NULs recursively (strings, list items, dict keys and
+> values) and both bulk helpers — `insert_ignore` and `insert_chunked` — run every row through
+> it, so no writer has to remember. A value needing no change is returned as the SAME object, so
+> the common path costs one `in` test per string and allocates nothing.
+>
+> **`_content_hash` scrubs BEFORE hashing** (`model_store.py`). Hashing the raw payload while
+> storing the scrubbed one would key a content-addressed blob on bytes the row does not contain,
+> and the same function would hash differently depending on whether its NUL had been removed yet
+> — so the reuse index would never match it again.
+>
+> **Counted, not silent.** `db_util.scrub_stats` accumulates the repairs and `PgRepository.flush`
+> logs them, because `model/*.json` still holds the character: without the line, a diff between
+> the JSON and the rows would look like corruption.
+>
+> Tests: `tests/unit/test_db_util_scrub_nulls.py` (12) — removal, nesting, dict keys, the
+> identity-preserving fast path, the counter, that only the NUL goes (tabs/newlines/non-ASCII
+> stay), and both hash properties. Neutering the scrub fails 7 of them. Full suite 1444 green.)
+
+> Updated: 2026-09-02 (**`compile_commands.json` ingest — INCLUDE PATHS ONLY, first cut** — branch
+> `poc-4`, uncommitted.
+>
+> **Why.** Until now the `-I` set was *guessed*: `run.py` walks every dir under every configured layer
+> into `model/clang_include_paths.json` (§4d) and macros come from a hand-authored CSV/JSON
+> (`core/macro_input.py`). The client build emits **four** compilation databases — one per **core**
+> (FCore / HCore / CMCore / NCore) — each carrying 50–100+ `-I` per TU and 9–12 `-D`, which is the
+> build's own ground truth. Nothing in the repo read them before this change.
+>
+> **Scope — deliberately includes only.** [engine/core/compile_commands.py](engine/core/compile_commands.py)
+> extracts `-I` / `-isystem` / `-iquote` (joined `-I../foo` and separate `-I ../foo` forms) and drops
+> everything else: `-D`, `-o`, `-c`, `-MMD`, `-W*`, `-O*`, `--target`, `-mcpu`, `-mfpu`, response files
+> (`@./WARNING_GUIDE/warnings_for_release.txt`). Macros are NOT taken yet — see "queued" below.
+>
+> **NEW TOP-LEVEL `cores` SECTION — this is the schema change to know about.** A core owns the three
+> inputs that describe one build: `dataDictionary`, `macros`, `compileCommands`. Layers then name the
+> cores they are built from:
+> ```
+> "cores":  {"Core1": {"dataDictionary": "…csv", "macros": "…json", "compileCommands": "…json"}},
+> "layers": {"Layer1": {"path": "Layer1", "cores": ["Core1"], "groups": {…}}}
+> ```
+> `compileCommands` is a path string, or an object when it needs `rootPrefix`.
+>
+> **Why the inputs moved off the layer.** They were never layer properties — a *core* is one build with
+> one macro set and one dictionary; a layer is the parse scope it feeds. Keeping them on the layer meant
+> two cores in one layer had nowhere to put their differing `-D` sets.
+>
+> **Nothing outside `core.config` learned about cores.** `layer_source(cfg, layer, key)` now resolves
+> **through the layer's core**, falling back to a layer-level `dataDictionary`/`macros` key — so
+> pre-`cores` configs and the `--macros-layer` / `--data-dictionary-layer` flags keep working, and the only
+> two consumers (`parser.py:315` and `:390`, via `layer_sources`) are **untouched**.
+>
+> **One core per layer today** (`config.MAX_CORES_PER_LAYER = 1`; user decision — multicore later).
+> `cores` is nonetheless stored as a **LIST**, so lifting the limit is a resolution change, not a config
+> migration. `validate_cores()` runs at startup: unknown core name → exit 1, **second core → exit 1** with
+> "not supported yet", never a silent merge — macros still resolve per LAYER, so core 2's `-D` flags would
+> otherwise leak into core 1's files (`_CONFIG_CMCORE` defined while compiling an NCore TU). The
+> include-path loader already merges several cores per layer, so that half is done.
+>
+> **The path problem, and how it is solved.** Every path in a database is rooted on the BUILD machine
+> (`directory` = `D:\workspace\…\01_SRC\02_HIL\01_BUILD\SAVONA\DS5`), so resolving `-I../../../../04_FIL/…`
+> against it yields a `D:/…` path that does not exist locally. `derive_root_prefix` recovers the mapping
+> instead of requiring it: for each dir it strips leading components until the remainder exists under the
+> project root, keeps the **deepest** surviving remainder (a long tail matching by accident is far less
+> likely than a short one), each dir votes for the prefix it implies, and the modal prefix wins. Ties break
+> on longer-prefix-then-lexicographic so a rerun reaches the same conclusion. `rootPrefix` in config skips
+> derivation entirely. **Derivation stats the filesystem**, so `format_report` logs what it concluded —
+> prefix, vote share, `unmapped` (never had the prefix), `not on disk` (mapped cleanly, absent) — and
+> **warns below 75 % agreement** (multi-root build or partial checkout). Never applied silently.
+>
+> **⚠ Dedupe bug, found and fixed 2026-09-03 — read this before touching the merge.** The walk yields
+> NATIVE paths (`C:\…\Layer1\Math`, from `os.walk`); the loader normalizes to forward slashes
+> (`C:/…/Layer1/Math`). A raw string compare therefore matched **nothing**, so every compile_commands dir
+> was re-appended as a duplicate — Layer1 got 32 `-I` flags instead of 18. Harmless to clang, but the
+> counts were wrong and the arg list was double length. Both sides are now compared through
+> `os.path.normcase(os.path.normpath(...))`. The earlier "adds 0 new dirs" claim had been measured in a
+> scratch script that normalized, not through `run.py` — measure through the real path.
+>
+> **Per-layer provenance is now logged**, because the merge was otherwise invisible — a run could not show
+> whether the database had been read at all, or whether it contributed anything the walk missed:
+> ```
+>   Layer1: 17 from project walk | 15 from compile_commands (+1 new) -> 18 total
+>   Layer2: 17 from project walk | 16 from compile_commands (+0 new) -> 17 total
+> ```
+>
+> **`SampleCppProject/ExternalLib/` — the fixture that makes the merge provable.** It sits OUTSIDE every
+> layer root, so the walk (which only descends `layers.*.path`) structurally cannot reach it; only a core's
+> database can contribute it. `Layer1/Math/Utils.cpp` includes `ExtCrc.h` from it, so the include resolves
+> **only** because of the compile_commands `-I`. Verified A/B at the libclang level: with the dir →
+> no diagnostics; walk-only → `'ExtCrc.h' file not found`. The header declares one macro and one typedef
+> that nothing uses, and `ExternalLib` is in no group, so `is_project_file` rejects it and the MODEL IS
+> UNCHANGED. Do not "tidy" this directory into a layer — that destroys what it demonstrates.
+>
+> **Wiring.** [run.py](engine/run.py) merges the result into `_layer_inc` right before
+> `clang_include_paths.json` is written, so **Phase 1 and Phase 3 pick it up unchanged** — no parser or
+> flowchart-engine edit. Walked dirs stay FIRST and compile_commands dirs are appended: append-only can
+> add search paths but can never re-order resolution for a tree that already parses. Honours
+> `--selected-layer`.
+>
+> **`posixpath`, not `os.path`.** A database written on Windows must resolve identically wherever the
+> analyzer runs; `os.path.normpath` would flip separators back on a Windows host. Both separator styles
+> appear in ONE real entry (`-I../../../../04_FIL/…` beside `-I..\..\05_CTRL\01.SFR\MMAP`).
+>
+> **Examples.** No real client database is in the repo. Two checked-in examples stand in —
+> `engine/config/compile_commands.core{1,2}.example.json` (24 + 71 entries) — with include paths pointing
+> into the real `SampleCppProject` tree so they actually resolve, build-machine `directory` values, both
+> separator styles, the full armclang flag soup, and deliberately one third-party absolute include + one
+> stale dir per core so the `unmapped` / `not on disk` report lines are exercised on real input.
+> **Generic `Core1`/`Core2` naming, not the client's FCore/HCore/CMCore/NCore** — the shipped defaults
+> point at a fixture, so real core names belong in the client's own config.
+> **They ARE wired** (Core1 → Layer1, Core2 → Layer2) — verified safe: every dir they name is already
+> collected by the layer walk, so enabling them adds **0 new dirs**, `clang_include_paths.json` is
+> unchanged and the Sample snapshots cannot move. Swap in real databases to make them do work.
+> The `data_dictionary.*` and `macros.*` examples were renamed `layer1/layer2` → `core1/core2` to match,
+> and are now referenced rather than shipped unused. ⚠ `workspaces/` and `logs/` are gitignored and still
+> hold the old `*.layer1.example.*` names in past run configs — re-running an old workspace config would
+> not find them.
+>
+> **Tests.** `tests/unit/test_compile_commands.py` — 28, including a guard that reads the REAL
+> `cores`/`layers.*.cores` wiring out of `config.defaults.json` (so dropping the block fails a test, not
+> just a run) and asserts the examples still resolve against `SampleCppProject`.
+>
+> **Queued, NOT done** (each needs its own decision):
+> (1) **`-D` merge** — build defines must **supplement** `macros.json`, never replace it: a database cannot
+> see header-defined macros. Precedence is free — `clang_args_for` already emits global-then-layer and
+> Clang honours the LAST `-D`, so appending build defines after the macros.json ones IS the override.
+> **This one matters most**: `_CONFIG_ASIC` / `_NAND_DENSITY=512` / `__CONTROLLER_TARGET__=37` gate `#if`
+> regions, so a missing `-D` preprocesses whole functions out and SWE.3 simply never lists them — silent
+> loss, no warning.
+> (2) **Header arg inheritance** — only `.cpp` are TUs; headers need a nearest-sibling-TU rule.
+> (3) **armclang flag allowlist** — `--target=arm-arm-none-eabi`, `-mcpu=cortex-m7`, `-mfpu=none`,
+> `-fshort-enums`. Must be measured, not guessed: dropping them changes builtin macros (`__ARM_ARCH`).
+> ⚠ `config.defaults.json` currently sets `--target=arm-none-eabi`, which **contradicts the real build's**
+> `arm-arm-none-eabi`.
+> (4) **Duplicate-TU policy** — the same `.cpp` compiles under several variants (bootloader vs main,
+> different `F2L_CONFIG_GROUP_*`).)
+
+> Updated: 2026-09-01b (**SWE.4 ported onto the DB-native pipeline; explicit `PUBLIC` was being
+> ignored** — branch `feat/swe4-port`.
+>
+> **SWE.4 port.** `feat/swe4-v1` predates the Postgres cutover (it still carried `api/db/json_db.py`)
+> and `feat/swe4-ut-export` sits on top of it — the UT export is a SEPARATE branch, easy to miss.
+> Ported by copying the new files and 3-way-applying the deltas, NOT by merging: 22 new + 22 modified.
+> `parser.py`, `flowcharts.py`, `run.py`, `group_planner.py` merged clean. Five conflicts, each keeping
+> both sides: `flowchart_engine.py` (`NodeType` + `serialize_cfg`), `run_views.py` (`__none__` guard +
+> `doc_type`), `docx_exporter.py` (accepted the extraction into the new `docx_common.py`),
+> `tests/conftest.py` (**kept develop's DB-native e2e**, took only ut-export's `--doc-type all`; its own
+> version reverted e2e to a direct `engine/run.py` call and would have dropped DB coverage), `README.md`.
+> `engine/config/config.json` had to be hand-translated — develop renamed it `config.defaults.json`.
+>
+> **Two fixes the port needed, neither of them ported code.**
+> (1) `docx_common.load_model_json` opened `model/<name>.json` DIRECTLY — the Phase-4 bypass doc 10
+> step 5 removed. Left alone, SWE.4's exporter reads disk on a DB-backed run. Now `read_model_file`.
+> (2) `--doc-type` existed all through the engine (`run.py` → `group_planner` → exporter registry) but
+> was NOT exposed by `analyzer.py generate`, so the DB front door could never ask for SWE.4. Threaded
+> through `analyzer.py` → `incremental/generate.py` → `incremental/engine.py` (only the `--from-phase 2`
+> resume needs it; the `--to-phase 1` parses do not).
+>
+> **NO database work was required.** `test_specs.json` / `ut_export.json` ride `version_output_files`,
+> which is extension-driven (`persist_output_files`, `.json` included) — not view-specific. `documents
+> .process` is a free-text String, so SWE.4 needs no column. **Do not add a typed `view_test_specs`
+> table**: `view_interface_tables` and `view_behaviour_rows` are already declared in `schema.py` and
+> written by NOTHING — superseded by `version_output_files`, and they read as permanently-empty tables.
+>
+> **`_fn_is_private` ignored an explicit `PUBLIC`** (`model_deriver.py`, pre-existing on develop, NOT
+> from the port). Explicit `PRIVATE` short-circuits to private and `addressTakenByUnits` short-circuits
+> to public, but a `PUBLIC`-marked function fell through to the cross-file-caller rule — so a marked
+> entry point with no by-name caller (ISR, registered callback, API called from outside the tree) was
+> buried as private, given a `PIF_` id and DROPPED from the document. `_detect_visibility` had read it
+> correctly; line 444 then overwrote it. Fixed by making `PUBLIC` authoritative, symmetric with
+> `PRIVATE`. **Impact: 27 functions private→public (87→60 / 45→72) and 28 interface-ids renumber**, so
+> **`tests/snapshots/Sample/*.json` must be regenerated** (not done — needs a full pipeline run).
+> Verified on `Layer1/Poly/OpsTable` (the purpose-built fixture): `opsAdd`/`opsSub` public via the
+> address-taken table, `opsDispatch`/`opsSeedValue` public via the annotation, and `opsSeed` — called
+> from a file-scope initializer, not address-taken — correctly STAYS private.
+>
+> **Traceability gap (open, not a bug):** an address-take records only `addressTakenByUnits` (the
+> registering UNIT), never the pointer variable. Nothing links `opsAdd` to `g_opsTable`. The forward
+> direction (`g_opsTable[index]` → which entry) is genuinely unknowable; the backward one is not — the
+> initializer cursor is in hand when the address-take is detected.
+>
+> **Verified:** one `--doc-type all` run emits SWE.3 + SWE.4 + `ut_export.json` (9 cases from 4 specs,
+> 1 dynamic behaviour spec), status complete, 0 errors; `pytest tests/unit tests/api` green incl. 129
+> SWE.4/UT tests. **Dynamic behaviour specs need BOTH ends of the interaction in the model** — the
+> sample has exactly one (`Signal|acquireAndNormalize` ← `Cross|Hub|hubCompute`), so a scope holding
+> only one side yields 0; that is correct, not a defect.)
+
+> Updated: 2026-09-01 (**`llm_call_stats` timing columns were dead everywhere; `alembic upgrade head`
+> cannot build a fresh DB (KNOWN, deliberately NOT fixed)** — found by running a real local Postgres,
+> which the API tests' in-memory SQLite hides.
+>
+> **Fixed:** `schema.py` never received migration 0008's four columns — `llm_call_stats` declared only
+> `{version_id, phase, kind, outcome, n}` while 0008 adds `latency_seconds`, `throttle_seconds`,
+> `prompt_tokens`, `completion_tokens`. Both directions were dead: the WRITE in
+> `llm_core/callstats.py::flush` renders only the 5 declared columns, so `sa.insert()` **silently
+> discarded** the four values (proven — the insert reached Postgres and failed only on the FK), and
+> the READ in `load_timing_for_version` guards on `hasattr(cols, "latency_seconds")` → `{}`. So LLM
+> latency/token telemetry never persisted **anywhere, including boxes where the DB columns exist**,
+> and `except Exception: pass` in `flush` hid it. The four columns are now declared (0008's types +
+> `server_default="0"`); verified round-tripping through real Postgres.
+>
+> **KNOWN LIMITATION — do not run `alembic upgrade head` on an empty database.** It fails at 0002 with
+> `DuplicateTable: relation "parse_snapshots" already exists`. Cause: `0001_initial` calls
+> `metadata.create_all()`, and `metadata` is the schema as of TODAY — so on a fresh DB it creates all
+> 36 tables including everything 0002–0008 add. A baseline that references "now" cannot be replayed,
+> because replay happens at one moment and history did not. Deployed DBs never hit it (they walked the
+> chain as each revision landed) and the API tests never run alembic at all.
+> **Not fixed by decision (2026-09-01):** pre-production, no data worth preserving, and the migration
+> discipline is already not followed — `job_functions` and `version_output_files` are in `schema.py`
+> with **no creating migration**, so what a database contains depends on WHEN it was built, not on the
+> chain. Half-maintained migrations give false confidence. **To create a database, use
+> `python analyzer.py setup` (`tools/db_setup.py`) / `metadata.create_all()`, not the alembic chain.**
+> Revisit when there is production data to preserve; at that point `create_all` on a fresh prod DB
+> becomes the correctly-frozen 0001.
+>
+> **Local dev Postgres (no Docker, no admin):** portable PG 16.10 at `C:\Users\User\pgsql` — start with
+> `bin\pg_ctl -D <root>\data -l <root>\server.log -o "-p 5432" start`, stop with `... stop`. Not a
+> service; does not survive a reboot. pgAdmin 4 is bundled at `pgAdmin 4\runtime\pgAdmin4.exe`.
+> `engine/config/config.local.json` (gitignored) carries the `db` block — it must exist even though it
+> equals the compose default, because `core.db.is_database_configured()` deliberately does not count
+> that fallback, so without it `run.py` silently skips Postgres.)
+
+> Updated: 2026-08-25b (**the flowchart engine was rendering the WHOLE version for every
+> component** — branch `integration/poc-4-db`. Reported as "it processes 2817 functions where the
+> old JSON build processed 15", and it is the most serious defect the migration left behind.
+>
+> **Root cause.** With `--version-id` the engine loads the model from the database and ignores
+> `--interface-json` entirely. The scope used to travel inside that file: `views/flowcharts.py`
+> wrote a pre-filtered `functions_<group>[_units_X].json` and passed its path. That write is
+> guarded by `os.path.isfile(model/functions.json)` — a file that does not exist in database
+> mode — so it never happens, and nothing replaced it. `_load_inputs_from_db` had a `component`
+> filter but the view never passed `--component`, and no unit filter existed at all.
+>
+> Measured on SampleCppProject before the fix: `App/flowcharts` and `Math/flowcharts` each held
+> 35 PNGs covering BOTH units — 70 renders where 35 were wanted, every component's directory
+> holding the whole project. After: App 19 (Main only), Math 16 (Utils only), and the engine logs
+> `loaded 9 function(s) ... component=app`.
+>
+> **Fix:** `--component` is repeatable and `--unit` is new on the engine; both filter the loaded
+> model, case-folded. `flowcharts.py` passes the run's components and selected units whenever it
+> passes `--version-id`. The engine's "loaded N function(s)" line was promoted from debug to info
+> so the count is visible without turning logging up — it is the number that makes this class of
+> bug obvious.
+>
+> **A correction to the earlier entry:** the "70 -> 35 with --unit Utils" measurement recorded on
+> 2026-08-25 was wrong. It was not narrowing — it was the App component's Phase 3 CRASHING on the
+> unresolvable unit, before the strict/tolerant split fixed that. Unit narrowing genuinely reached
+> the flowchart engine for the first time here.
+>
+> **Parity with poc-4, checked rather than assumed.** The question that matters is whether the
+> database filter picks the same functions poc-4's file filter picked — same behaviour, only the
+> storage changed. The selection logic now lives in one place, `flowchart_engine._apply_scope()`,
+> lifted out of `_load_inputs_from_db` so it can be exercised without a database.
+> `tests/unit/test_flowchart_scope_matches_poc4.py` carries poc-4's `_in_scope` verbatim from
+> `origin/poc-4:engine/views/flowcharts.py` and runs both over the same keys across 9 scope
+> combinations, including the cases that decide the edges: a component typed in a different case,
+> a signature with extra `|` separators, a key with no separator, and empty halves. Zero
+> divergence. Two source-text grep tests were retired in favour of it — matching an expression in
+> a file proves nothing once the expression moves; only one structural test remains, that the
+> loader still *routes through* the filter, since a filter nobody calls is the original bug.
+>
+> Verified on the live loader too, against `verdev1` (281 functions, 26 components, 92 units):
+> every scoped load returns exactly one component or one unit, lowercase spelling matches, and
+> **the 26 per-component loads sum to exactly 281** — the scope partitions the version precisely,
+> losing and duplicating nothing.
+>
+> **Also fixed here, both found by the suite and both artefacts of the integration merge
+> `8fca95b`, not of poc-4:** `engine/config/config.defaults.json` carried `llm.rateLimitSeconds`
+> TWICE (`3.0` then `3`) — both sides of the merge contributed one and both were kept. JSON takes
+> the last, so the effective value was and remains `3`; the duplicate is simply gone. And
+> `tests/e2e/test_flowcharts.py` parsed that file with a strict `json.load`, which cannot read the
+> JSONC the project writes — it now uses `core.config._strip_json_comments` like every other
+> reader. That parse error aborted COLLECTION of the whole e2e directory, which is why earlier
+> runs reported a clean suite without ever executing those tests.
+>
+> 1364 passed, non-e2e, plus the three gates green. The e2e directory now collects and shows 131
+> failures, all of them a Phase 1 parse failing in this environment: identical, 31-for-31, with
+> these changes stashed, so they pre-date this work and are untouched by it — they are a separate
+> thing to chase, not a regression.
+>
+> **`--scope` and `--unit` combine, and the wording when they conflict.** Asked whether
+> `--scope "component:App" --unit Utils` still considers the component: it does — `cmd_reexport`
+> passes `scope_to_args(scope)` AND `--selected-unit` both, and they AND, exactly as poc-4's
+> `_in_scope` ANDed them. Verified on `verdev1`: App 9, Math 7, `unit=Utils` 7,
+> `component=Math + unit=Utils` 7, `component=App + unit=Utils` **0**.
+>
+> That last combination exposed a bad message. `_resolve_units` already separates *unknown* from
+> *elsewhere* internally, then printed `unknown --selected-unit 'Utils'` for both. Utils is not
+> unknown — it is in Math. The two failures need different fixes (a typo is fixed in the name, an
+> out-of-scope unit in `--scope`), so they now read differently: the out-of-scope error names the
+> component the unit IS in and suggests the `--scope` that reaches it, while a genuine typo keeps
+> its spelling suggestion. New `_unit_home()` does the lookup. Four tests pin both halves,
+> including that narrowing the one wording did not swallow the other.
+>
+> **The model lost 8 fields between Phase 1 and Phase 2 — the worst defect of the migration.**
+> Reported from a poc-4 vs integration/poc-4-db document comparison run on Manoj's machine
+> (reviewed at 87452f0): every interface-table row read VOID where the signature belonged.
+> Comparing the two `model_functions.json` dumps: `parameters` 112->0, `returnExpr` 122->0,
+> `className` 4->0, `addressTakenByUnits` 2->0, `readsGlobalIds` 12->0, `writesGlobalIds` 11->0,
+> and both transitive sets 35/31->0.
+>
+> **TWO independent root causes, neither of them the storage layer.** A persist->load probe with
+> a complete record showed the store drops only three fields, so it could not explain `returnExpr`
+> or the globals; instrumenting the live `persist_functions` showed Phase 1 never produced them.
+>
+>   1. `parse_calls_and_globals()` did ONE walk, not two. poc-4 ran `parse_calls` then
+>      `parse_global_access`; those were merged into one parse for speed, and the merged function
+>      calls `visit_calls` and NOT `visit_global_access`. The old `parse_global_access` was left
+>      in the file uncalled — which is how it hid, the code looked present. That visitor is the
+>      sole producer of `readsGlobalIds`/`writesGlobalIds` and, on `RETURN_STMT`, of
+>      `function_return_expr`: six of the eight fields, plus every direction collapsing to
+>      "Out: accesses no globals". Nothing failed; the run reported success.
+>   2. `_FN_PAYLOAD_FIELDS` listed `parameters`, but Phase 1 emits `params` (parser.py:2072) and
+>      Phase 2 is what renames it (model_deriver.py:449,1180). The allow-list dropped the only
+>      spelling that exists at hand-off time, so Phase 2 found neither and computed []. `className`
+>      and `addressTakenByUnits` have no column and no edge, so the payload was their only route
+>      and they were not listed either.
+>
+> After both fixes all 140 functions agree with poc-4 on all 18 fields VALUE for value, not merely
+> in presence. All 63 differing DOCX blocks trace to cause 2. Flowchart counts are back to poc-4's
+> 22/12/11 per component (from 139/139/139) — that half was already fixed in d1a09df, before the
+> review ran.
+>
+> **A sibling found by looking:** there are exactly two payload allow-lists and both had the same
+> hole — `_GLOBAL_PAYLOAD_FIELDS` omitted `className`, so a class-scoped global lost its scope.
+> Latent (the sample has none), fixed, and a test now pins the count of allow-lists so a third
+> arrives with its own coverage.
+>
+> **Still open, and #1 of them matters most:** `tests/conftest.py:92` drives
+> `run.py <proj> --clean --selected-group` with no `--version-id`, which DB-only mode now
+> requires — Phase 1 dies with "no model repository is installed for this run". That is the true
+> cause of all 131 e2e failures, which I had earlier called pre-existing environmental noise: true
+> but beside the point, since they share one fixable cause. Until it is fixed nothing in CI can
+> catch a regression of this class, which is exactly how eight fields went missing. Also open:
+> `tools/verify_model_parity.py` is gone (it compared file- vs DB-backed models, which cannot
+> exist now — the replacement worth building compares a version's model against the parse it came
+> from); doc 10 §10 still promises `--dump-model-files` and `--model-store files`, neither of
+> which exists; `tools/parity/capture_baseline.py:52` points at the renamed
+> `engine/config/config.json`; and `llm.descriptions`/`behaviourNames` ship `true` here where
+> poc-4 shipped `false` — consistent with "--no-llm must never be default".
+>
+> **All three now closed.**
+>
+> **The e2e suite runs again (was 131 failures, now 0).** `tests/conftest.py` drove
+> `run.py <proj> --clean --selected-group` with no version, which DB-only mode requires. It now
+> drives the supported CLI — `analyzer.py onboard` then `analyzer.py generate --scope
+> "group:My Sample"` — against a scratch git repo made from SampleCppProject, because a version
+> is identified by a commit. Two consequences of deliberate product changes had to be absorbed,
+> both recorded in `tests/e2e_paths.py`: output lands under `workspaces/<pid>/versions/<vid>/
+> output/<Component>/` rather than `PROJECT_ROOT/output/<Group>/`, and documents are per
+> COMPONENT (`--component-per-docx` is the default for every non-component scope), so
+> `test_docx.py` reads the group's three documents through one Document-shaped facade and the
+> tests themselves are unchanged. Phase 1/2 write no files at all, so conftest materialises the
+> model with `dump_model_to_dir` for the model-shape tests. One snapshot was re-baselined
+> through `--update-snapshots`, NOT hand-edited: Core came back byte-identical, and Lib/Util
+> differ only in which side of the module box a consumer sits on — same edges, same interface
+> ids — which follows from the document unit changing from group to component. A trap worth
+> knowing: `tests/` and `tests/api/` are both packages, so putting `tests/` on `sys.path`
+> shadows the repo's real `api` — import `tests.e2e_paths`, with the REPO ROOT on the path.
+> 1511 tests, 133 of them e2e.
+>
+> **`verify db-sync` is now the model-parity gate** rather than a dialect check. It asserted
+> only `load_hashes() == what went in`; a field dropped on the way in changes no hash, which is
+> why it passed all through the eight-field loss, and its fixture named almost none of the
+> fields anyway. Its `f1` now carries every field a parsed function can have — both `params` and
+> `parameters` — and `_field_diffs` compares them value for value after the round-trip.
+> Confirmed by re-breaking the allow-list: it reports `f1.params: sent [...], got '<MISSING>'`
+> and fails. This is the replacement for the deleted `tools/verify_model_parity.py`, which
+> compared file- against DB-backed models and cannot come back in that form.
+>
+> **LLM defaults confirmed ON** by the user and now commented in `config.defaults.json` as a
+> decision rather than an inherited value.
+>
+> **A poc-4 vs database DOCUMENT comparison, run scenario by scenario.** A `poc-4` worktree
+> (`c15ee42`) and this branch, the same SampleCppProject-as-a-git-repo, the same config written
+> in each branch's own spelling — every view on, LLM off, `--project-name` pinned on both sides
+> because poc-4 defaults it to the checkout dir basename while the database side uses the
+> project's display name. Each side's `output/` is collected whole (DOCX text and tables, .mmd,
+> .json, PNG names) with timestamps, absolute paths and shas scrubbed, then compared.
+>
+> **All seven scenarios MATCH**, up to and including `project`: 777 artifacts, 26 documents,
+> every block equal.
+>
+> **What that sweep does NOT cover — behaviour diagrams.** The config turns `behaviourDiagram`
+> on and the view runs, but SampleCppProject produces ZERO diagrams from it: every component's
+> `_behaviour_pngs.json` comes out as `{"_docxRows": {}}` on BOTH branches. So the sweep
+> exercised the view's invocation and not its output, and "every view on" must not be read as
+> "every view verified". The gate is the default `skip_within_unit` filter mode, which needs the
+> target's FORWARD call chain to span more than one unit as well as an external caller; a
+> purpose-built three-component fixture (Alpha -> Beta -> Gamma, cross-unit call edges confirmed
+> present in the model) still produced zero on both branches, so the real gate is narrower than
+> that and is not yet pinned down. Anything about behaviour-diagram embedding in the DOCX is
+> therefore UNVERIFIED by this work, in either direction.
+>
+> **That gap immediately cost something.** Reported from a real project: the
+> behaviour_diagrams directory holds .mmd and .png files, `_behaviour_pngs.json` reads
+> `{"_docxRows": {}}`, and the document's Dynamic Behaviour section is empty. Reproduced with a
+> two-component fixture (Alpha calls into Beta; Beta must hold TWO units, because the default
+> `skip_within_unit` selector counts only units inside the target's OWN component — that is why
+> the first two fixture attempts produced nothing).
+>
+> **Root cause: the view and the generator disagreed about what "external" means.** The
+> generator decides which diagrams to write, and an external caller is one in a DIFFERENT
+> COMPONENT (`selector.get_external_callers_with_component`: `caller_component !=
+> current_component`). The view then paired the returned .mmd files with callers POSITIONALLY —
+> `if idx >= len(external_callers): break` — having recomputed the list as "outside the selected
+> components" whenever a scope was set. Those two definitions diverge the moment ONE DOCUMENT
+> SPANS SEVERAL COMPONENTS (`--scope "component:Alpha,Beta"`, or any group-level document): a
+> caller in a sibling component is external to the generator and internal to the view, so
+> `external_callers` came out empty, the loop broke at idx 0, and the row was never recorded —
+> after the files had already been written. The view now uses the generator's rule, and only
+> that rule.
+>
+> **poc-4 has the identical defect** — same fixture, `--selected-group Both` without
+> `--component-per-docx`, same `{"_docxRows": {}}` beside a written .mmd. Not something the
+> migration introduced; it surfaces here because a multi-component document is more reachable
+> (`per_component_docx_args` returns `[]` for a component scope, so `component:A,B` is one
+> document). Fixed on this branch only.
+>
+> **A SECOND, unrelated cause of the same symptom — and this one is ours, not poc-4's.**
+> Reported again from the real project: 8 diagram files on disk, 0 rows, after
+> `generate` (interrupted at phase 3) then `reexport --unit completion`.
+> `_behaviour_pngs.json` is the only thing the exporter reads, and the view rewrote it
+> UNCONDITIONALLY at the end of every run. Right for a full run, which regenerated
+> everything the component has; wrong under `--selected-unit`, where the view only looked at
+> the named units. On every component that does not hold that unit the filter leaves zero
+> functions, so the manifest written by the earlier full run is overwritten with `{}` — while
+> every `.mmd`/`.png` stays on disk, which is precisely why it reads as an exporter bug.
+>
+> **poc-4 cannot hit this: its behaviour view has NO unit filter at all** (`--selected-unit`
+> there narrows flowcharts only), so behaviour diagrams are always regenerated in full and the
+> unconditional write is always correct. The filter came from `87452f0` — my own commit, the
+> one that made `--unit` narrow every image view. In that same commit `unit_diagrams` got the
+> guard it needed ("A full run wipes and regenerates. NOT when narrowed to a unit") and
+> `behaviour_diagram` got the filter without the matching guard. Same commit, same reasoning
+> applied to one sibling and not the other.
+>
+> A narrowed run now merges: the named units are fully recomputed so their old entries are
+> dropped first (otherwise a unit whose diagram has since gone keeps a row pointing at a file
+> nobody writes), everything else is preserved, and a full run still replaces. Reproduced end
+> to end before fixing and verified after, including that re-exporting the diagram's own unit
+> still yields exactly one row rather than two.
+>
+> The testing lesson is specific: my earlier verification of `reexport --unit` passed because I
+> re-exported the unit that HAD the diagram — the single case that regenerates its own row and
+> so hides the wipe.
+>
+> **Then the narrowing moved off the function list entirely.** `--unit` exists to re-check one
+> unit's images against an already-generated model, and it could not do that for behaviour
+> diagrams while it narrowed WHICH FUNCTIONS GET A ROW. Deciding whether a function needs a
+> diagram is free — the selector returns nothing for almost every function, measured at ~0.01s
+> across 2817, and 8 of 2817 qualify on the reported project; the cost is mmdc, seconds per PNG.
+> So every function is evaluated and every row recorded, and only the RENDER is skipped for units
+> the caller did not name, reusing whatever PNG is on disk. The manifest is complete by
+> construction, `--unit` still skips the expensive work, and a narrowed run now HEALS a manifest
+> an earlier one emptied — 0.14s against 5.6s for the full render. The merge became dead code and
+> went; the orphan check is keyed on the .mmd files a run recorded rather than on whether a PNG
+> exists, because a row whose image `--unit` skipped is still a row.)
+
+> Updated: 2026-08-29 (**a missing baseline `address_taken` snapshot silently made
+> pointer-table functions private** — reported against `integration/poc-4-db`, and confirmed
+> independently before touching anything.
+>
+> A function reached ONLY through a file-scope table (`static const fp_t t[] = { fx, fy };`) has
+> no named caller, so `calledByIds` is empty and `_fn_is_private` keeps it public through
+> `addressTakenByUnits` ALONE. `_merge_address_taken` is file-aware and correct: it carries a
+> baseline record forward when the target's file was not re-parsed. `_apply_address_taken` was
+> not — it popped the field whenever the merged records held nothing for a function, so a
+> MISSING baseline artifact was indistinguishable from a deliberate removal, and the field was
+> wiped from functions in files nobody had touched.
+>
+> Not hypothetical: `address_taken` was registered in `DB_BACKED_PARSE` only in 421f4e5, so any
+> version generated in database mode before that wrote it to a file nothing reads and has no such
+> parse snapshot. Chain an incremental run off one and every table-published function flips to
+> private with a `PIF_*` id, leaving the interface tables, the unit and behaviour diagrams, and
+> the document.
+>
+> Reproduced A/B on SampleCppProject's `Layer1/Poly/OpsTable.cpp` fixture: A (intact baseline)
+> kept `opsAdd`/`opsSub` public; B (same run, `fpv1`'s `address_taken` snapshot deleted first)
+> flipped both to `private` + `PIF_*` with `addressTakenByUnits` gone. After the fix
+> **B == A == baseline** on visibility, interface id AND `addressTakenByUnits`.
+>
+> The clear is now restricted to functions whose defining file was actually re-parsed, where the
+> fresh records ARE authoritative — deletion semantics verified separately by removing `opsSub`
+> from the table in a re-parsed file, which correctly sends it private while `opsAdd` stays. A
+> baseline that has no `address_taken` records while its own functions carry
+> `addressTakenByUnits` now logs a warning, because inheriting that silently is the whole
+> failure mode.
+>
+> Workaround for an already-poisoned version: re-run with `--full`, or point `--base-version` at
+> a version whose snapshot actually contains `address_taken.json`. Check with
+> `select name from parse_snapshots where version_id = '<baseline>'`.) The harness is kept as `tools/parity/compare_with_poc4.py` — point it at a
+> detached poc-4 worktree with `--poc4`, and junction node_modules into that worktree so both
+> sides render mermaid identically.
+>
+> Three things must be equalised or every scenario "differs" for no reason, and all three are
+> written into the tool's docstring: the CONFIG (each branch spells it differently — poc-4 reads
+> `engine/config/config.json`, this branch takes `--config`), `--project-name` (poc-4 defaults it
+> to the checkout directory's basename, this branch to the project's display name), and the rule
+> that `--component-per-docx` cannot be combined with `--selected-component` — `run.py` refuses,
+> and `per_component_docx_args` returns `[]` for a component scope. Getting that last one wrong
+> is what failed both component scenarios on the first sweep; it was the harness, not the product.
+>
+> A poc-4 Phase 2 crash on the first sweep did NOT reproduce and was contention with a pytest run
+> started alongside it — worth recording because it looked like a real failure for a while.
+>
+> That first scenario found ONE defect, and it is a real one: **the database returned the model
+> in no particular order.** Of 84 artifacts and three documents, one block differed — `utilBlend`'s Requirements
+> cell, listing the functions it calls, had `utilClamp` before `utilHalve` where poc-4 had them
+> the other way round. Util.cpp calls `utilHalve` twice and then `utilClamp`, so poc-4 was
+> right, and it got that for free by reading `functions.json`, which carries the parser's order.
+> Neither database read asked for an order: `_entity_rows` had no ORDER BY (now file, then line,
+> then `entity_key`, with `coalesce` rather than NULLS LAST so SQLite and Postgres agree on the
+> unlocated entities), and the call/global-access and type/macro edge reads had none (now
+> `edge_id`, which is insertion order, which is the order the parser found the calls). Views
+> iterate the model without re-sorting, so it reached the documents — and it would have drifted
+> between two runs on the same data, which is worse than differing from poc-4 consistently.
+>
+> A third `model_edges` query is deliberately unordered: it accumulates into sets that are
+> `sorted()` before use. It says so in an `# order-independent:` comment, and the guard test in
+> `tests/unit/test_model_order_is_deterministic.py` accepts that justification rather than its
+> absence — opting out is a claim you have to write down. That guard is what found the third
+> query in the first place, after I had already fixed the two I knew about.
+>
+> **The sweep then found the rest of the same family.** `load_units` read `model_units` with no
+> ORDER BY, so the unit sections of `interface_tables.json` came out shuffled; poc-4 writes
+> units.json in PATH order (the order the parser walks the files) and `model_units` has a `path`
+> column, so that is now reproduced exactly, with `unit_key` as tiebreak. The entity join that
+> fills `functionIds`/`globalVariableIds` was unordered too — now file, then line, like
+> `_entity_rows`.
+>
+> **One difference was NOT ours, and saying so mattered.** `Iface/flowcharts/Flowcharts.json`
+> differed in 2 of 25 flowcharts, and only in the order of `style=invis` push-down edges — the
+> DOT is line-identical when sorted. `dot_builder.py` builds `back_sources` as a SET and iterates
+> it raw, and lines 140/156 are byte-identical on both branches, so the order changes per PROCESS
+> (string hashing is randomised per run) rather than per branch: two poc-4 runs disagree with each
+> other the same way. Demonstrated with PYTHONHASHSEED 1..6 flipping `{'N6','N7'}`. Pre-existing,
+> shared, not caused by the migration — fixed here anyway with `sorted()`, because a flowchart
+> JSON that changes every run is worthless for diffing and for reuse hashing. To get an exact
+> comparison the same one-line sort was applied to the poc-4 WORKTREE COPY, local only and
+> labelled as such; patching the reference to make it agree is normally how a real defect gets
+> hidden, and it was justified here only because the difference had already been proven to be
+> process-level set iteration and nothing semantic.)
+
+> Updated: 2026-08-25 (**re-derive without re-parsing; unit narrowing made to work** — branch
+> `integration/poc-4-db`.
+>
+> **`reexport --from-phase 2`** re-runs derive -> views -> export from the stored parse skeleton.
+> Phase 1 is never re-run: parsing is the expensive part and it is already rows. `--use-model` is
+> now passed only for phases 3 and 4 — it means "skip phases 1 AND 2", so passing it with
+> `--from-phase 2` would have skipped the very phase being asked for. Verified by deleting a
+> version's `model_units` rows and watching them come back with
+> `Phase 1: Parse C++ source - skipped (--from-phase 2)` in the log.
+>
+> **`--unit` now narrows every image view, not just flowcharts.** Its purpose is checking one
+> unit's generated images, and unit diagrams and behaviour diagrams ignored it — so the flag
+> saved the flowchart time and then drew every other unit's diagrams anyway. Both views honour
+> `_analyzerSelectedUnits` now, with the same short-name matching, and a narrowed run does NOT
+> wipe other units' diagrams (they are still valid, and the caller asked to re-check one).
+>
+> **The bug that made it unusable:** documents are produced per component, so Phase 3 runs once
+> per component. `--selected-unit Utils` reached the App invocation as well as the Math one and
+> killed the whole run with `unknown --selected-unit 'Utils'` — AFTER Math's diagrams had been
+> rendered. A unit that is elsewhere is not an unknown unit. `_resolve_units` now takes
+> `strict`: run.py validates once against the whole run's scope (strict, unchanged - a unit
+> outside it still errors, and the two tests that guard this still pass untouched), while the
+> per-component view invocation narrows to nothing and says which component it skipped.
+>
+> Three cases now: in scope -> rendered; in another component of the same run -> skipped with a
+> message, run continues; nowhere or outside the requested scope -> hard error listing the real
+> units. All three verified end to end.
+>
+> 1334 passed, 10 skipped; verify incremental / flowchart-reuse / parity green.)
+
+> Updated: 2026-08-24e (**re-export left the database holding the OLD render** — branch
+> `integration/poc-4-db`. Chasing "is per-phase execution correct?" properly turned up a real
+> defect in the new `reexport`.
+>
+> **The verdict on phases:** each phase writes its own model rows correctly and independently —
+> verified by clearing a version and rebuilding it a phase at a time (entity_versions 0 -> 60 and
+> edges 0 -> 18 at phase 1, units 0 -> 2 at phase 2, unchanged through 3 and 4, all exit 0). What
+> a phase does NOT do is everything the ORCHESTRATOR does around it: `versions.base_path`,
+> `version_output_files`, the manifest, the report, fingerprints and the reuse index. So invoking
+> phases by hand is right for iterating and wrong for producing a version — the model rows would
+> be correct while base_path stayed stale, the stored render stayed old, and the next run found
+> nothing to reuse.
+>
+> **The defect:** `reexport` ran run.py and stopped. It re-rendered `output/` on the local disk
+> and left `version_output_files` holding the PREVIOUS render, so the document served from the
+> database — or from any other node — silently stayed stale. The API's re-export path has always
+> called `_capture_reexport_output`; the CLI's did not. It now calls `store.capture_output` and
+> says what it stored. Proved it replaces rather than merges: wipe output/, re-export one
+> component -> 1 stored file; full re-export -> 2.
+>
+> This is the same class as the manifest disk fallback and the label cache that silently stored
+> nothing — a write that succeeds locally while the durable copy stays behind. Counting rows was
+> not enough to see it; the count was identical because the previous render was still on disk.
+>
+> 1334 passed, 10 skipped; verify incremental + parity green.)
+
+> Updated: 2026-08-24d (**generate reads branch and commit from the database** — branch
+> `integration/poc-4-db`. Five things a real run through the new CLI turned up.
+>
+> **The version identity was being typed twice.** `onboard` records the project's branch and the
+> version's commit; `generate` then asked for both again. `--branch` also defaulted to "main",
+> so a project on `br_trunk` died at the clone with `fatal: Remote branch main not found` — from
+> a flag the caller never typed. Both are optional now and resolved from `projects.default_branch`
+> and `versions.commit_sha`; `generate --project-id X --version-id v1` is the whole command.
+> Reproduced the failure first, then fixed it, then re-ran it.
+>
+> **A GitError reached the terminal as a traceback.** Now a message that names the branch and
+> says to pass --branch or re-onboard.
+>
+> **new_project's "Ready. Next:" still printed `cd engine; python -m incremental.generate ...`** —
+> the one message whose entire job is to say what to run next was naming an entry point that now
+> only prints a redirect.
+>
+> **Per-phase database behaviour verified**, not assumed: cleared a version's rows and rebuilt it
+> one phase at a time. entity_versions 0 -> 60 and model_edges 0 -> 18 at phase 1, model_units
+> 0 -> 2 at phase 2, unchanged through phases 3 and 4 (they only read). All four exited 0.
+>
+> **Non-git local paths do not work, for any run.** Confirmed empirically: a plain directory fails
+> at `fatal: Could not read from remote repository`. A commit is not optional anywhere — the
+> version's directory is named `<commit[:16]>`, the checkout is `git clone --branch` plus
+> `git checkout <sha>`, and baseline selection compares commits. Analysed only, no change made.)
+
+> Updated: 2026-08-24c (**phase-level flexibility confirmed intact and exposed** — branch
+> `integration/poc-4-db`. Two questions checked by running, not reading.
+>
+> **Was any of Manoj's unit work lost in the merge?** No. Diffed every engine file against
+> origin/poc-4: the only unit-related lines poc-4 has that this branch does not are the four in
+> run.py's pre-check that were deliberately REWRITTEN to read units through the repository
+> instead of opening `model/units.json`, a file that stopped existing when the model became rows.
+> The SWE.4 work Manoj may be thinking of is on `feat/swe4-v1`, which is 22 commits ahead of
+> poc-4 and NOT merged into it — it adds `software_unit_test_specification_*.docx`, a different
+> deliverable, scoped per component exactly as SWE.3 is.
+>
+> **Does per-phase scoping still work with the model in the database?** Yes, fully. Verified end
+> to end: parse the whole project once (3 components, 3 documents), then re-render
+> `component:Math` alone (1 document), `group:Support` alone (2), and phase 4 by itself rebuilding
+> the DOCX from phase 3's `interface_tables.json` in 1.77s. Phases 3-4 read the model from
+> Postgres instead of `model/*.json`; nothing else about the flexibility changed.
+>
+> What was missing was only the CLI surface: `reexport` hard-coded the version's stored scope.
+> `--scope` now overrides it, which is the whole point of running the later phases alone — the
+> model covers a layer and you re-render one component of it for the cost of the views. Scoping
+> DOWN is free; scoping up beyond what the model holds is not possible and never was.
+>
+> 1334 passed, 10 skipped; verify incremental + parity green.)
+
+> Updated: 2026-08-24b (**`--unit` reaches the pipeline; re-export stopped changing the document
+> set** — branch `integration/poc-4-db`. Two findings from checking what Manoj's `--selected-unit`
+> actually does.
+>
+> **What it does:** narrows the per-function FLOWCHART work in Phase 3 and nothing else. Measured
+> A/B on the sample project — 70 flowchart PNGs without it, 35 with `--unit Utils`, exactly the
+> other unit's suppressed. The model, interface tables, unit diagrams and the DOCX set are all
+> untouched, so it is a speed aid for iterating on one unit, NOT a scope. `--scope unit:X` does
+> not exist and cannot without a unit filter in the DOCX exporter, which has none — the smallest
+> document unit is a component.
+>
+> **What was missing:** it was only reachable from `run.py`, never from a generate run — the
+> orchestrators did not thread it. Now threaded through `generate_full` and `generate_incremental`
+> to the one invocation that reaches Phase 3 (the `--to-phase 1` parses have no views to narrow),
+> and exposed as `analyzer.py generate --unit` / `reexport --unit`.
+>
+> **A defect in the new `reexport`:** it did not pass the version's scope, so a project-scoped
+> version came back as a single `Support.docx` where `generate` had produced `App.docx` and
+> `Math.docx`. Re-export now reads the scope from the version's stored manifest and rebuilds the
+> same document set. Caught by comparing output, not by reading code.
+>
+> 1334 passed, 10 skipped; verify incremental / narrowed-parse / flowchart-reuse / parity green.)
+
+> Updated: 2026-08-24 (**one CLI: `analyzer.py`** — branch `integration/poc-4-db`. There were four
+> front doors (`tools/new_project.py`, `python -m incremental.generate`, `python -m
+> incremental.engine`, `engine/run.py`) and knowing which one a job wanted was folklore. Worse,
+> two of them produced a version — `generate` for the first, `engine` for the rest — and picking
+> wrong either wasted an hour re-parsing or failed outright. **That choice is gone**: `analyzer.py
+> generate` always asks for incremental, and `generate_incremental` already resolves a baseline
+> and delegates to `generate_full` when there is no usable one, so the data decides. `--full`
+> forces the long way.
+>
+> Twelve commands, all with `--help`: setup, onboard, generate, reexport, status, check, report,
+> doctor, check-llm, check-datadict, llm-stats, verify. Every one is a thin wrapper — the CLI
+> decides nothing about how a version is produced, it parses arguments and calls the same
+> functions the API calls. `verify` runs the gates by name (`verify --list`), cheapest first,
+> stopping at the first failure unless `--keep-going`.
+>
+> The old entry points now PRINT A POINTER and exit 2 rather than quietly working: two ways to do
+> one thing is the confusion being removed, so leaving them functional would have defeated it.
+> `engine/run.py` keeps its CLI because it is what the orchestrator spawns per phase — it is not a
+> front door, and `reexport` is the supported way to drive phases 3-4 by hand. Every user-facing
+> message that named an old command (`core/db.py`, `run_context.py`, `report.py`, `store.py`,
+> `api/main.py`) now names the new one.
+>
+> Two fixes fell out of the audit: `check_db` and `dump_db` wrote `check_db_report.txt` /
+> `db_dump.txt` into the working directory on EVERY run — for commands whose whole job is to show
+> you something, that is litter; `--out` is now opt-in and both print to stdout. `tools/
+> diag_dialect.py` deleted (a one-off from a SQLAlchemy dialect incident, long since resolved).
+>
+> docs/CLI_COMMANDS.md rewritten from scratch around the one command, and audited mechanically in
+> both directions: every flag the CLI accepts appears in it, and every flag it shows exists.
+> Verified by running the whole walkthrough on a local-path repo — setup, onboard, generate (chose
+> FULL by itself), commit a change, generate again (chose INCREMENTAL by itself), reexport, status,
+> check, report — plus all six gates through `analyzer.py verify`. 1334 passed, 10 skipped.)
+
+> Updated: 2026-08-23 (**poc-4 merged onto the DB architecture; the file backing removed** — branch
+> `integration/poc-4-db`. Manoj's 34 commits (typedef/data ranges, per-layer data dictionary and macros,
+> class scope in interface names, `address_taken`, unit-diagram edge layout, call-name flowchart labels,
+> strict CLI validation, `--selected-unit`, LLM stage timing, clangArgs, the behaviour-diagram rewrite) on
+> top of the Postgres migration. 17 files conflicted; resolved by intent, never by side. Four SILENT
+> breaks the merge produced: `_KNOWN_FLAGS` did not list the eight database flags, so every DB run would
+> have died at argv parse; `address_taken` was unregistered in the repository and fell through to a file
+> nothing reads; `_looks_like_fallback` was deleted by the label rewrite while the label cache still
+> imported it INSIDE a try, so the cache silently stored nothing; two `--clean` blocks survived, ours
+> before the path guard, so a typo'd path still deleted `model/` and `output/`. The parser fingerprint
+> needed BOTH sides — his per-layer include/macro args (or a macro change slips the gate) and our
+> `base_path` fold (or the fingerprint changes every commit and narrowed parse never runs).
+> **`--project-name` now carries the job's version tag**, reversing D-3: re-exporting v1 and v2 gives
+> "v1.0" and "v2.1" rather than both naming the project. Migration **0008** adds `job_functions.class_name`
+> (its absence failed every API insert with "Unconsumed column names") and latency/throttle/token columns
+> on `llm_call_stats`. LLM accounting unified: Manoj's per-attempt measurement feeds BOTH
+> `logs/llm_stats_*.json` and the database, and the run report now says where the wall clock went —
+> throttle vs model, which a call count cannot distinguish. **File backing deleted**: `FileRepository`,
+> `--model-store`, `--dump-model-files`, `FileStore`, `HashStore`/`EdgeStore`/file `ReuseIndex`, the
+> commit-dir `manifest.json`, and the C11a dual-write hook. `make_store` now REFUSES without a database
+> rather than silently returning a DB-less store nothing reads. `tools/verify_model_parity.py` went with
+> it — it compared the DB against `model/*.json`, and with nothing writing those it could only compare
+> against stale leftovers or a dump of the database itself. `verify_db_sync` survives, rewritten to build
+> its own small model: what it proves is the DIALECT, which three rows exercise as well as three hundred.
+> ONE file-writing path is deliberate — `ScratchRepository`, reached by `--model-scratch`, for the
+> narrowed parse's partial pass, which carries no version id so it cannot write rows by accident.
+> Gates: pytest 1334 passed / 10 skipped, verify_incremental, verify_narrowed_parse,
+> verify_flowchart_reuse, verify_incremental_parity --fast, verify_db_sync, verify_db_rebuild —
+> all green.
+>
+> **The rest of the JSON went with it.** `FileStore` (a second ArtifactStore writing
+> versions/<ver>/ as JSON, reachable only with no database - `make_store` now REFUSES instead);
+> `HashStore`/`EdgeStore`, which every run still CONSTRUCTED and never used once their readers
+> moved to the store; `VersionStore`'s `config.json` and `manifest.json` written beside the git
+> checkout; `functions_incremental.json` in the file-level flowchart branch; and four
+> `ArtifactStore` file defaults that PgStore overrides and no subclass could reach any more -
+> now `@abstractmethod`, so a future store cannot inherit a JSON writer by accident. The
+> manifest DISK FALLBACK in `_read_engine_manifest` went too, and it had been merging the file
+> OVER the database, so a version with both took the stale copy.
+>
+> **Deliberately still files, each for a reason that is not legacy:** the run's `output/`;
+> `logs/llm_stats_*.json` and the metrics jsonl; the per-run `config.json`, `macros.json` and
+> `clang_include_paths.json`, which cross a PROCESS BOUNDARY (the phases are separate processes
+> handed `--config`; the source of truth is the project row and the file is only the delivery);
+> and `ScratchRepository`.
+>
+> **D-19 (decision): the narrowed parse's partial output stays OUT of the database.** Doc 10
+> records that the migration tried to land it in the real version and backed out during
+> verification: `--use-model --from-phase 4` re-export reads the version's model, so a partial
+> persisted there exports a document holding only the changed files. That decision is now
+> enforced structurally rather than by a flag value - the partial phase runs with
+> `--model-scratch` and is handed NO version id, so it has nothing to write rows against. Moving
+> it into the database would also be slower, not faster: it is ~10 small JSON files for the
+> changed TUs only, and a Postgres round trip per artifact would replace a few milliseconds of
+> local disk. Parse is no longer where incremental time goes - LLM calls x `rateLimitSeconds`
+> is, which is why the report now separates model time from throttle time.)
 
 > Updated: 2026-08-22b (**behaviour diagram package replaced + LLM path rewired** — branch
 > `fix/behaviour-diagram`. All 7 modules under `engine/behaviour_diagram/` swapped for an external version;
@@ -774,8 +1894,8 @@
 > `_SOME_FUNCTION(GG *)` and is dropped by the **pre-existing** cross-TU dedupe on mangled name
 > (`get_function_key`, `parser.py:554`) — a fixture artifact (two files defining one symbol would not link),
 > not a regression.
-> **Sample lists (client schema, committed):** `engine/config/macros.layer1.example.json` (cu `fcore`) and
-> `macros.layer2.example.json` (cu `hil`) — two files, the real per-target setup, covering every macro type:
+> **Sample lists (client schema, committed):** `engine/config/macros.core1.example.json` (cu `fcore`) and
+> `macros.core2.example.json` (cu `hil`) — two files, the real per-target setup, covering every macro type:
 > int/hex/shift/suffixed/big/negative/**zero**, value-less, unresolved (single + multi dep), string literal
 > with spaces, empty string, float, identifier value, function-like (skipped), `ne` (skipped). They share
 > `BUFFER_SIZE` at different values, which is the deferred cross-list collision case.
@@ -830,6 +1950,152 @@
 > (also pinned `MODULE_BASE_PATH` in `test_define_conditional.py`'s fixture — `parser` is a module-level
 > singleton and the first importer was binding it). Full suite 658 passed / 3 skipped. Details in
 > [§9 `get_range` resolution order](#get_range-resolution-order-2026-08-03).)
+> Updated: 2026-08-14 (`db-with-increment-changes`: **doc 09 Phase 0/1 + B5a + C1 + B1(output) landed.**
+> Gates green throughout: `pytest tests/unit tests/api --skip-pipeline` **652 passed**, `verify_incremental` green.
+> **B0** — `job_max_concurrency` **default 2 → 1** ([settings.py:47](api/services/settings.py#L47)); the old default
+> corrupted output on any box that hadn't read doc 09. ⚠ the semaphore is per API **process**, so N replicas give
+> N × the limit — a global cap needs a DB lease (unfiled, **B0c**).
+> **A0** — new `engine/core/subprocess_util.py`: stderr **streamed through** (the API tails it for SSE progress, so
+> buffering would freeze the UI) with a bounded 50-line tail logged on failure; cp1252-safe echo. Wired into
+> `PhaseRunner`, the flowchart-engine spawn (the site that hid a `LibclangError` for a session), and both renderers in
+> `utils.py` — which were capturing stderr and **discarding** it. API side: the non-zero-exit path already did this; the
+> real gaps were the **timeout path** (dropped the tail) and `_mark_failed` (DB only, no module logger).
+> **D2a** — new `engine/core/run_metrics.py`: one JSON line per phase to `logs/metrics_<date>.jsonl` with elapsed +
+> **peak RSS of the process tree**. LLM call counts already existed in `llm_core/tokens.py` and now land there too.
+> Suppressed under pytest — the at-exit hook was writing fake providers (`test-model`, `gpt-4`) into the real file
+> (32 records/run); `PYTEST_CURRENT_TEST` alone is not enough, pytest clears it before at-exit, so it also checks
+> `sys.modules`.
+> **B5a** — `PgReuseIndex.get_many`/`put_many` (chunked `ANY(…)`), threaded through `ArtifactStore`/`FileStore`/
+> `PgStore`/`StoreReuseIndex` + both hot loops. `get` opened a connection **per entity** and the seeding loop ran it for
+> every fingerprinted entity — ~20k acquisitions on a 20k-function project. Free against a pool, ruinous under B5b's
+> `NullPool` (~200s/run added). **Measured 50 → 1**, results identical; 5 tests, verified to fail against the old path.
+> **B5a is now a prerequisite for B5b.**
+> **C1** — `persist_run_outcome`/`load_run_outcome` put decision/baseline/regenerated/reused on the `versions` row
+> (mirrors `write_run_metadata`); `PgStore.write_manifest` writes both, API reads **DB-first with file fallback**.
+> `PhaseRunner` writes `versions.pipeline_status` per phase (keyed by `phase.script`, not the display name) via a raw-SQL
+> `core.db.set_pipeline_status` — raw SQL because `engine/core/` is the bottom layer and the schema sits two layers up.
+> Best-effort: no version id (CLI) or no DB (the DB-less gate) are silent no-ops.
+> **B1 (output half)** — runs render **straight into `versions/<ver…>/output`** via new `run.py --output-root`;
+> `<repo>/output` is gone and the capture copy step with it. Deliberately **not** `ANALYZER_DATA_ROOT`, which also moves
+> `logs_dir`+`cache_dir` — that would give every run a private `.flowchart_cache` (0% hit rate, silently undoing M-A/M-B).
+> A **flag, not an env var**, per user preference: no phase subprocess needs the value (`group_planner` already hands each
+> phase an absolute `--output-dir`; `docx_exporter.OUTPUT_DIR` is only a fallback), and a config key would put a
+> machine-specific path into `versions.resolved_config` — the mistake C3 exists to undo. `capture_output` gained a
+> `_same_dir` guard against copying a directory onto itself.
+> **Repo hygiene** — the two tracked `api/models/__pycache__/*.pyc` are untracked (`.gitignore` had `__pycache__/`, but
+> ignore rules don't apply to tracked files; they came from the `git add -f api/models/` in §18). They had already broken
+> a `git stash pop` mid-session.
+> **Docs** — doc 09 marks B0/A0/D2a/B5a/C1/B1(output) done, splits B5→B5a/B5b and D2→D2a/D2b, promotes D2 above B4, adds
+> **M1/M2** (unbounded flowchart TU cache — full-body ASTs, never cleared, grows with file count not change size; the
+> first thing to exhaust a container) and **C12** (consolidate the disk caches; design in
+> [04 §13](docs/production-redesign/04-incremental-changes-implementation.md#13-caches-in-the-database-post-migration-doc-09-c12)).
+> **Key C12 finding:** the disk `EntityCache` and the DB reuse index answer the same question with near-identical keys —
+> C12 removes a duplicate mechanism, not just a directory.
+> **Corrected when C12 landed (doc 10 step 10):** that holds only on the *incremental* path.
+> `carry_forward_from_index` is called from `incremental/engine.py` and nowhere else — `generate_full` never calls it,
+> and `llm_enrichment` uses `EntityCache` directly without consulting the reuse index. On a **full** generation the
+> cache is the only thing preventing a complete re-describe (~17 h on a 20k-function project at one gateway call per
+> 3 s). So the LLM cache was **relocated to Postgres**, not deleted; only `pkb_*.json` was dropped.
+> **C11a (dual-write) — landed, NOT yet validated against a real Postgres.** New
+> `PhaseRunner.run(..., on_phase_done=)` hook: `engine/core/` is the bottom layer and cannot import the
+> store, so it defines the hook and `run.py` supplies the callback (new `--version-id` / `--project-id`
+> flags, again flags not env vars). The model is persisted **at each phase boundary** instead of once at
+> the end; `PgStore.write_model` already wraps `persist_model_from_dir` in `engine.begin()` and that
+> function already `clear_version`s first — so it is one transaction and idempotent, and **C6 (phase
+> atomicity) falls out for free**. Persisted only after `parser.py`/`model_deriver.py` (phases 3-4 only
+> read), and **never after a narrowed partial parse** — that model is incomplete until `parse_merge`.
+> Files remain authoritative; nothing reads from the DB yet (that is C11b).
+> Oracle built FIRST: new **`tools/verify_model_parity.py`** compares a version's DB model against the
+> on-disk model, tolerating DB-only fields (`isVisible`) and edge-list ORDER, and hunting fields the
+> payload allow-lists (`_FN_PAYLOAD_FIELDS`) silently drop — the failure mode that would otherwise only
+> surface as a wrong document. 7 tests prove it detects each difference class and stays quiet on order.
+> +5 tests on the hook (fires per success, NOT after a failed phase, a raising hook cannot fail the run).
+> **⚠ Remaining for C11a: run `verify_model_parity.py` after each phase on the office box** — there is no
+> Postgres on the dev machine, so the dual-write path itself is unexercised (the DB-less gate proves only
+> that it correctly no-ops). **Do not start C11b until that is clean.**
+> **Next:** validate C11a on the office box, then C11b (reads from Postgres).)
+
+> Updated: 2026-08-13 (`db-with-increment-changes`: **PG-7b cutover COMPLETE — Postgres is the source of
+> truth.** Validated on the office box first (two different commits: non-zero changed files, `regenerated ≥ 1`,
+> compare shows the change; `tools/verify_pg_readers.py` — new — reports per version whether view outputs,
+> model, run metadata and resolved_config are genuinely IN Postgres, since every reader falls back to disk and
+> a working run otherwise proves nothing). Then the deletions, each gated by the suite + `verify_incremental`:
+> **(1)** `_sync_model_to_db` dropped — the engine already persists via `PgStore.write_model`, and both were
+> gated on the same condition. **(2)** the **commit-dir model/output dual-write** (`vstore.capture_artifacts`)
+> dropped — the commit dir is now just the git checkout + manifest/report; artifacts live in
+> `versions/<ver…>/` + Postgres. Readers repointed first: engine baseline/cross-version reuse via a new
+> `_artifact_dir_for` (this ordering mattered — deleting first would have silently broken flowchart reuse),
+> `_make_sections`, the re-export flow (which had conflated *checkout* and *artifacts* in one `cdir`), and
+> ModelReader's disk fallback. **(3)** the reuse index moved into the store (`StoreReuseIndex`) — it was still
+> entirely `cache/index.json`, so the `reuse_index` table built in PG-4 had never been exercised. **(4)** run
+> metadata moved onto the `versions` row: the engine writes it via a new `store.write_run_metadata`
+> (`model_store.persist_run_metadata` → base_path/project_name/parse_fingerprint), the API stopped reading
+> `metadata.json`, and the narrowed-parse gate now takes the baseline fingerprint from
+> `store.read_run_metadata`. **(5)** `JsonDatabase` deleted (D-7) after moving `tools/import-output-project`
+> onto `SqlDatabase`; backend = Postgres whenever configured, else `InMemoryDatabase` as a **test seam only**
+> (startup now says loudly that an unconfigured server persists nothing, rather than looking healthy).
+> **Kept as files by design:** PNG/DOCX binaries (D-14), the git checkouts, and `model/metadata.json` — now
+> only an *in-run* intermediate between the parser and the store, with no cross-run consumer. **Kept as
+> test-only seams:** `InMemoryDatabase`, `FileStore`, and `project_db`'s read-only JSON lookup (what
+> `verify_incremental` feeds from a temp dir — the API never uses it). **Bugs found and fixed during this
+> work:** the version FK-ordering 500 on job start; a **self-baseline** regression (the reserved row became its
+> own baseline → 0 changed files → nothing regenerated, which is why a real code change never showed in
+> Compare); run metadata silently NULLing when the commit-dir model went away; and a pre-existing crash where a
+> string `behaviorDescription` reached the UI as `descriptionList` and killed the document view. **Known gap:**
+> narrowed parse has **no automated coverage** and its gate was re-sourced here — off by default and not
+> UI-reachable, but required for large codebases, so validate before enabling.)
+
+> Updated: 2026-08-10 (`db-with-increment-changes`: **storage cutover, reader half — PG-5a/5b/7a.** The API no
+> longer depends on disk snapshots for the model or the Phase-3 views; disk remains as a fallback until the
+> dual-writes are removed (PG-7b). Three increments, each additive + gated:
+> **PG-5a** — new **`version_output_files`** table (composite PK `version_id`+`rel_path`, text `content`,
+> `group_name`); `model_store.persist_output_files` walks the run's `output/` and stores every TEXT file
+> (interface tables, flowchart + unit-diagram `.mmd`, behaviour rows), skipping binaries (PNG/DOCX stay files,
+> D-14); `PgStore.capture_output` overrides the base disk capture to also persist, best-effort.
+> **PG-5b** — new **`api/services/output_reader.py::OutputReader(db, version_id, snap_dir)`**: reads view text
+> files **Postgres-first** (queries `version_output_files` through `db._engine`, self-contained — no engine
+> import) with disk fallback. `compare_engine._groups/_itf` now take a reader; `compute_compare` +
+> `compute_document_sections_diff` build one per version; the gate flipped from "snapshot dir exists" to "the
+> reader yields groups", so a version whose views live only in PG compares correctly.
+> **PG-7a** — new **`api/services/model_reader.py::ModelReader(db, version_id, model_dir)`**: serves
+> functions/units/globals/dataDictionary from Postgres via the engine's `incremental.model_store` loaders
+> (delegation, not a second manifest-of-pointers implementation; API→`incremental.*` imports already exist in
+> `services/git_cli.py` + `pipeline_runner.py`), disk fallback. Wired through a new optional
+> `build_render(..., model_reader=)` kwarg (omitted → disk exactly as before) from the documents render route
+> and `compare_render._version_render`. **Fixed a staleness bug**: repo-backed projects passed
+> `model_root=None`, so `build_render` read the **shared repo `model/` dir** (whatever the LAST run left) — an
+> older version's document could render against a newer version's model; reads are now keyed by `version_id`.
+> **Field parity**: the DB carries `entity_versions.is_visible` (default True) as `isVisible` while the
+> renderers filter on `hidden` — ModelReader translates `isVisible=False → hidden=True` (behaviour-identical
+> today, since the on-disk model carries neither field); `metadata` has no DB equivalent and stays disk-only.
+> Tests: `tests/api/test_output_reader.py`, `tests/api/test_model_reader.py`, `tests/unit/test_output_files_store.py`.
+> Suite green (183) + `verify_incremental` gate green. **Remaining → PG-7b (destructive, after office
+> validation):** drop `_sync_model_to_db`, the model/output dual-writes, the commit-dir layout, `api/db/data`,
+> `JsonDatabase`; migrate the `functions` route + `compare_render`'s remaining disk asset paths.
+> **Ops note:** the new table is additive — re-run `tools/db_setup.py` (idempotent `create_all`) to create it.)
+
+> Updated: 2026-08-09 (`db-with-increment-changes`: **config redesign — three sources, three roles** (see §6).
+> Problem: `config.json` + `config.local.json` overlapped (both could hold any key), and per-version analysis
+> config had no home. Fix, two commits: **(1)** renamed the base `engine/config/config.json` →
+> **`config.defaults.json`** (pure rename, every BASE reference updated — loader, `core/paths.py`,
+> `flowchart_engine` libclang/llm probes, `pipeline_runner` base_path, `run.py --config`, `doctor.py`, two e2e
+> tests, `test_utils` fixtures; the per-project **workspace** `config.json` under `workspaces/<pid>/` is a
+> different file, left untouched). Now the name pairs self-document: `config.defaults.json` (tracked defaults)
+> vs `config.local.json` (gitignored **secrets** — `db` + `llm` creds, the one file an operator edits).
+> **(2)** wired the long-dormant **`versions.resolved_config`** JSONB column: `Version.resolved_config`
+> (`Optional[dict]`, auto-mapped by the field-generic `to_row`/`from_row`; json_db round-trips it too).
+> `pipeline_runner._write_project_config` now returns `(workspace_path, analysis_cfg)` and splits two configs
+> **by design** — `analysis_cfg` = `config.defaults.json` + project `build_config` + `layers` (+ `no_llm`),
+> **non-secret**, deep-copied *before* any secret overlay → stored per version via `_store_resolved_config` on
+> the row reserved at job start; the materialized workspace `config.json` the engine reads = `analysis_cfg`
+> with `config.local.json`'s `llm` secrets overlaid but the **`db` section stripped** (engine reaches PG via
+> `DATABASE_URL`, so the password is never written to a workspace file). `_make_version` carries
+> `resolved_config` through finalize (the repo's `_put` replaces the whole row). The engine never writes the
+> `versions` row (store.py owns only model artifacts under the FK), so the API is the sole writer — nothing
+> clobbers it mid-run. `load_config` now **deep**-merges (nested keys, not shallow), so `config.local.json` can
+> override just `llm.baseUrl` / one `customHeaders` entry. Tests: `tests/api/test_project_config.py` (secret
+> split), `test_utils` nested-merge case; full api+unit suite green (166), `verify_incremental` gate green.
+> Deferred: the `versions.config` per-version schema was already present as `resolved_config` — no migration.)
 
 > Updated: 2026-07-23 (**docs restructure + agent role-skills.** Introduced `.claude/skills/` role skills:
 > `docs-maintainer` (owns **all** docs repo-wide — audience/register/naming/outline conventions + the doc-gen
@@ -1059,24 +2325,34 @@ analyzer/                     (repo root — cwd of the pipeline; model/ output/
     flowchart/                Real C++ → Mermaid CFG flowchart engine
     behaviour_diagram/        Sequence/behaviour diagram generator package (SequenceDiagramGenerator)
     config/
-      config.json             Main config (JSONC: // and /* */ comments allowed)
+      config.defaults.json    Base defaults (JSONC: // and /* */ comments allowed)
+      config.local.json       Secrets (gitignored): db + llm creds; deep-merged over defaults
       config.local.json       Local overrides (gitignored)
       abbreviations.txt       Abbreviation expansions for LLM prompts
       data_dictionary.csv     Sample data-dictionary CSV (--data-dictionary <path>)
-      data_dictionary.layer1.example.csv  Per-layer sample (layers.Layer1.dataDictionary)
-      data_dictionary.layer2.example.csv  Second sample — shares BufferSize_t at a
-                                          different range (the per-layer case). Both
-                                          shipped UNREFERENCED, like the macro examples.
+      config.defaults.json.example  ANNOTATED twin of config.defaults.json: same data,
+                                          every key explained. Not loaded by anything;
+                                          a test asserts the two parse to identical data.
+      data_dictionary.core1.example.csv  Core1's sample (cores.Core1.dataDictionary)
+      data_dictionary.core2.example.csv  Core2's — shares BufferSize_t at a different
+                                          range (the per-scope case). Both now WIRED
+                                          via the `cores` section.
       macros.csv              Sample macros CSV (--macros <path>)
-      macros.layer1.example.json   Sample toolchain macro list, client schema (cu "fcore")
-      macros.layer2.example.json   Second sample list (cu "hil") — the per-layer / two-file case
+      macros.core1.example.json   Core1's toolchain macro list, client schema (cu "fcore")
+      macros.core2.example.json   Core2's list (cu "hil") — the two-file case
+      compile_commands.core1.example.json  Core1's compilation database (24 entries),
+                                          include paths pointing into SampleCppProject
+      compile_commands.core2.example.json  Core2's (71 entries). Build-machine
+                                          `directory` values, both separator styles,
+                                          armclang flag soup. See §4g.
       puppeteer-config.json   Optional headless-chrome args for mmdc
     few_shot_examples/        Few-shot pools (descriptions / behaviour_names / globals)
     assets/                   DOCX cover assets (bottom_arc.png, copyright.png)
   api/                        FastAPI backend — kept at repo root, imports `api.*` (see §19/§21)
   web-app/                    React web client (Vite + TS + Tailwind; see §24)
   SampleCppProject/           Fixture C++ tree — Layer1 + Layer2/Platform (see §15)
-  tools/                      Dev-only tooling — mock-api (mock backend), create-sample-project, import-output-project
+  tools/                      Dev-only tooling — mock-api (mock backend), create-sample-project, import-output-project,
+                              dump_docx.py (flatten a generated .docx to diffable text: headings/tables/`[image … sha=…]`)
   tests/  docs/
   model/                      Phase 1+2 output (JSON) — at repo root (cwd)
     clang_include_paths.json  Written by run.py before Phase 1; {LayerName:[abs_dirs]}
@@ -1175,7 +2451,7 @@ reusable helpers in `engine/llm_core/`.
 
 | Phase | Delivered | Key files |
 |---|---|---|
-| **P1 — Foundation** | TokenCounter (tiktoken + char fallback), ContextBudget with `TASK_RATIOS`, `LlmClient.call()` multi-message API, config additions (`maxContextTokens`, `enrichment.*`, `fewShotExamplesDir`, `cacheVersion`) | `llm_core/token_counter.py`, `llm_core/budget.py`, `llm_core/client.py`, `core/config.py`, `engine/config/config.json` |
+| **P1 — Foundation** | TokenCounter (tiktoken + char fallback), ContextBudget with `TASK_RATIOS`, `LlmClient.call()` multi-message API, config additions (`maxContextTokens`, `enrichment.*`, `fewShotExamplesDir`, `cacheVersion`) | `llm_core/token_counter.py`, `llm_core/budget.py`, `llm_core/client.py`, `core/config.py`, `engine/config/config.defaults.json` |
 | **P2 — Context quality** | Degradation ladder (`ContextBuilder`), scoped `RepoMap` (neighborhood → file → module → project tiers), `get_rich_description()` with callees / callers / types / globals / siblings / repo-map, `get_rich_global_description()` for variables | `llm_core/context_builder.py`, `llm_core/repo_map.py`, `llm_enrichment.py` |
 | **P3 — Two-pass + few-shot** | Two-pass descriptions (Pass 1 bottom-up, Pass 2 refines with caller context), `FewShotPool` with keyword-overlap ranking, seed example directories (`few_shot_examples/{descriptions,labels,globals,behaviour_names}`) | `llm_core/few_shot.py`, `llm_enrichment.py`, `few_shot_examples/` |
 | **P4 — Cache + structured output** | `EntityCache` with composite hash keys (source + sorted callee hashes + version), `extract_and_validate()` (strip fences → extract JSON → repair → validate keys), `parse_label_response()` for flowchart batches | `llm_core/cache.py`, `llm_core/structured_output.py` |
@@ -1306,7 +2582,7 @@ the fix above.
 ### 2. `llm.summarize` config flag
 
 `run.py` now respects a new optional `llm.summarize` boolean in
-`config.json`. When `false`, it sets `no_llm_summarize = True` before calling
+`config.defaults.json`. When `false`, it sets `no_llm_summarize = True` before calling
 `plan_runs`, suppressing Phase 2 hierarchy summarization. This mirrors what
 `--no-llm-summarize` does on the CLI, but can be committed in `config.local.json`
 for a permanent local preference.
@@ -1350,19 +2626,21 @@ renamed to "component". Specific impacts:
 
 ### New `layers` config schema
 
-`config.json` now uses a two-level `layers` structure instead of the flat
+`config.defaults.json` now uses a two-level `layers` structure instead of the flat
 `modulesGroups`. Format:
 
 ```jsonc
 "layers": {
   "Layer1": {
     "path": "Layer1",          // relative to <project_path>
-    // Per-layer INPUTS live in the layer block, beside path/groups — so no layer
-    // name is repeated in a by-layer map where a typo would match nothing. Both
-    // optional; both are paths, never inline content. Shipped as "" (= absent) so
-    // the keys are discoverable without changing the default run. See §17.
-    "dataDictionary": "engine/config/data_dictionary.layer1.example.csv",
-    "macros":         "engine/config/macros.layer1.example.json",
+    // Build INPUTS moved to the top-level `cores` section (2026-09-02): a core
+    // owns one macro set + one data dictionary + one compile_commands.json, and a
+    // layer names the cores it is built from. `layer_source()` resolves through
+    // the layer's core, falling back to a layer-level "dataDictionary"/"macros"
+    // key so pre-`cores` configs and --macros-layer still work unchanged.
+    // At most ONE core per layer today (config.MAX_CORES_PER_LAYER); a second
+    // exits 1 rather than merging two different -D sets. See §4g.
+    "cores": ["Core1"],
     "groups": {
       "Sample": {              // group name (for --selected-group)
         "Core": "Sample/Core", // component → path (relative to layer path)
@@ -1430,6 +2708,11 @@ path and writes the results to `model/clang_include_paths.json` as
 `{layerName: [dir1, dir2, ...]}`. Phase 1 (`parser.py`) reads this file and
 adds a `-I` flag for each directory so all layer headers are resolvable.
 
+Since 2026-09-02 that walk can be **supplemented by the build's own
+`compile_commands.json`** — see `core/compile_commands.py` and the dated entry
+above. Walked dirs stay first; compile_commands dirs are appended per layer.
+Inert unless a layer declares a `compileCommands` block.
+
 ### `SampleCppProject` restructure
 
 The test fixture was reorganised from a flat `SampleCppProject/` into:
@@ -1449,7 +2732,7 @@ SampleCppProject/
                    Timer, Uart  (each with 3-5 sub-files)
 ```
 
-`config.json` defines two layers pointing at these directories. The old
+`config.defaults.json` defines two layers pointing at these directories. The old
 `test_cpp_project/` fixture is **no longer used** (replaced by
 `SampleCppProject/`).
 
@@ -1459,7 +2742,7 @@ SampleCppProject/
 
 ### Layer-scoped Phase 1 parsing
 
-Previously, Phase 1 always parsed every file across all configured layers regardless of `--selected-group`. Since there is no cross-layer communication (only cross-group/cross-component within the same layer), this was wasted work.
+Previously, Phase 1 always parsed every file across all configured layers regardless of `--selected-group`. Since there is no cross-layer communication (only cross-group/cross-component within the same layer), this was wasted work. A selection naming several layers narrows to the UNION of them (2026-09-07), not to the first.
 
 **What changed:**
 
@@ -1493,14 +2776,14 @@ This is equivalent to running `--selected-group G` once per group in the layer, 
 
 ### New CLI flags
 
-**`--selected-component <name>`** (repeatable) — generate one DOCX covering the named component(s). Repeat the flag for each component; all must be in the same layer. Phase 1+2 parse that layer only. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx`. Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`.
+**`--selected-component <name>`** (repeatable) — generate a DOCX for the named component(s). Repeat the flag for each component. **They may sit in DIFFERENT layers** (2026-09-07); Phase 1+2 parse the union of their layers, each with its own include paths and `-D` set. Names are layer-qualified ids (`Layer1.Math`); a bare name is accepted while only one layer defines it. **Add `--component-per-docx` for one document per component** (`output/<C>/software_detailed_design_<C>.docx`) — that is what `analyzer.py --scope "component:…"` now passes. Without it they are bundled into one: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx`. Mutually exclusive with `--selected-group` and `--selected-layer`.
 
 ```bash
 python engine/run.py --selected-component Gpio SampleCppProject
 python engine/run.py --selected-component "Sample Core" --selected-component Lib SampleCppProject
 ```
 
-**`--component-per-docx`** — modifier flag (no value). When combined with `--selected-group`, `--selected-layer`, or no selection, splits output into **one DOCX per component** instead of one per group. Cannot be combined with `--selected-component`.
+**`--component-per-docx`** — modifier flag (no value). Splits output into **one DOCX per component** instead of one per group. Combines with every selection, `--selected-component` included (2026-09-07) — a component scope used to be the one shape that came back bundled while every other scope split.
 
 ```bash
 python engine/run.py --selected-group "My Sample" --component-per-docx SampleCppProject
@@ -1537,7 +2820,7 @@ Display contexts (DOCX section headings, log labels) keep the original name with
 
 ### `plan_runs` dispatch shapes (updated)
 
-`--component-per-docx` adds a new branching mode inside the existing per-group loop. When set, `plan_runs` iterates each group's components and emits one `RunPlan` per component (using `--selected-component`) instead of one per group.
+`--component-per-docx` adds a new branching mode inside the existing per-group loop. When set, `plan_runs` iterates each group's components and emits one `RunPlan` per component (using `--selected-component`) instead of one per group. Since 2026-09-07 it does the same inside the `--selected-component` branch: the named components are split into one view+export plan each, sharing the single model build.
 
 | `--component-per-docx` | CLI selection | Plans emitted |
 |---|---|---|
@@ -1572,15 +2855,17 @@ python engine/run.py [options] <project_path>
 
 | Flag | Effect |
 |---|---|
+| `--clean` | Delete `model/` and `output/` before starting. Runs **after** `<project_path>` is validated (since 2026-08-11) — it used to run first, so `--clean <typo'd path>` wiped both dirs and then aborted. In database mode it also warns that the stored model **survives** — the directories are no longer where the model is. |
+| `--model-scratch` | The model of THIS invocation is scratch, not a version's: it goes to JSON in the run's model dir and carries no version id. One caller - the narrowed parse's partial pass, whose output covers only the changed translation units and is valid only after `parse_merge`. Not a storage choice; no flag points a real run at it. |
+| `--version-id <id>` / `--project-id <id>` | The run identity every phase needs once the model is rows rather than files. Applied **before** `paths()` is snapshotted. |
 | `--help` / `-h` | Print the option list (the `run.py` module docstring) and exit 0. Handled at the top of the file, before `configure_logging`/`chdir`/config load, so it works even with a broken config and writes no log file. |
-| `--clean` | Delete `model/` and `output/` before starting. Runs **after** `<project_path>` is validated (since 2026-08-11) — it used to run first, so `--clean <typo'd path>` wiped both dirs and then aborted. |
 | `--config <path>` | Use this config file instead of `engine/config/config.json` — a per-project/per-version config (carries the project's `layers`). Resolved+validated, then exported as `ANALYZER_CONFIG` **before** the import-time config load in `utils`, so every phase subprocess (env inherited) honors it. `config.local.json` is **not** merged on top (used as-is, for reproducibility); a set-but-missing path fails loud. Foundation for incremental per-project runs (§23, M1.1). |
 | `--use-model` (alias `--skip-model`) | Skip Phases 1+2; verify required model files exist; run Phases 3+4 only |
 | `--no-llm-summarize` | Skip Phase 2 LLM hierarchy summarization (faster, lower quality). Summarization is **on by default**. Can also be set via `llm.summarize: false` in config (see §4c). |
 | `--llm-summarize` | Accepted for back-compat; no-op (already default) |
 | `--selected-group <name>` | Export only the named group. Phase 1+2 parse only that group's layer. Case-insensitive. Mutually exclusive with `--selected-layer` and `--selected-component`. |
 | `--selected-layer <name>` | Parse only the named layer (Phase 1+2) and generate DOCX for every group in it (Phase 3+4 per group). Mutually exclusive with `--selected-group` and `--selected-component`. |
-| `--selected-component <name>` | Export a DOCX for the named component only. Repeatable — use once per component to bundle multiple into one DOCX. All named components must be in the same layer. Output: `output/<C1_C2>/software_detailed_design_<C1_C2>.docx` (`_` between names, `-` replaces spaces). Mutually exclusive with `--selected-group`, `--selected-layer`, and `--component-per-docx`. |
+| `--selected-component <name>` | Export a DOCX for the named component. Repeatable; they may span layers, and the parse scope is the union of their layers. With `--component-per-docx`: one document each, `output/<C>/`. Without it: bundled, `output/<C1_C2>/software_detailed_design_<C1_C2>.docx` (`_` between names, `-` replaces spaces). Mutually exclusive with `--selected-group` and `--selected-layer`. |
 | `--component-per-docx` | Modifier: split group/layer runs into one DOCX per component instead of one per group. Compatible with `--selected-group`, `--selected-layer`, or no selection. Cannot be combined with `--selected-component`. See §4f. |
 | `--from-phase N` | Resume from phase N (1=Parse, 2=Derive, 3=Views, 4=Export). Lets you continue after a Phase 4 crash without re-parsing |
 | `--data-dictionary <path>` | CSV file merged into `model/dataDictionary.json` at end of Phase 1. **Project-wide**: its entries answer for every layer. External entries win on conflict. See `engine/config/data_dictionary.csv` for format. **CLI-only — no config key by design** (§17). |
@@ -1657,10 +2942,10 @@ The banner also re-renders inside `flowchart_engine.py::run()` when Phase 3
 | `layers` present | no flag | all layers | DOCX per group (all groups) |
 | `layers` present | `--selected-group <G>` | G's layer only | DOCX for G only |
 | `layers` present | `--selected-layer <L>` | L only | DOCX per group in L |
-| `layers` present | `--selected-component C [--selected-component C2 …]` | C's layer only (all named components must be same layer) | 1 DOCX for C[_C2…] |
+| `layers` present | `--selected-component C [--selected-component C2 …]` | the union of the named components' layers | 1 DOCX for C[_C2…], or one EACH with `--component-per-docx` |
 | `layers` present | any of above + `--component-per-docx` | same as without flag | 1 DOCX **per component** instead of per group |
 
-`--selected-group`, `--selected-layer`, and `--selected-component` are mutually exclusive; combining any two exits with code 1. `--component-per-docx` cannot be combined with `--selected-component` (already at component granularity).
+`--selected-group`, `--selected-layer`, and `--selected-component` are mutually exclusive; combining any two exits with code 1. `--component-per-docx` combines with all three (2026-09-07): with `--selected-component` it splits the named components into one document each instead of bundling them.
 
 Phase 4 (`docx_exporter.py`) receives the group's `interface_tables.json`
 and DOCX path as positional args plus `--selected-group <G>` (group path) or
@@ -1673,13 +2958,42 @@ apply the same-layer model filter (see §4d).
 
 ---
 
-## 6. Config — `engine/config/config.json`
+## 6. Config — `engine/config/config.defaults.json`
 
 JSONC: `//`, `/* */`, and trailing commas are tolerated by
-`core.config._strip_json_comments` + `_strip_trailing_commas`. A sibling
-`config.local.json` is merged on top if present.
+`core.config._strip_json_comments` + `_strip_trailing_commas`.
 
-### Current schema
+### Where each setting lives (three sources, three roles)
+
+Config is split by **role**, not scattered — each source has one job:
+
+| Source | Role | Holds | Tracked | Scope |
+|---|---|---|---|---|
+| `engine/config/config.defaults.json` | built-in **defaults** | the schema below (views/clang/llm-non-secret/layers/docx) | yes | shared |
+| `engine/config/config.local.json` | **secrets / infra** | `db` connection + `llm` credentials (baseUrl, customHeaders/token) | **gitignored** | per machine |
+| `versions.resolved_config` (Postgres) | **per-version** analysis config | defaults + project `build_config` + `layers` (+ `no_llm`) — **non-secret** | in DB | per version |
+
+Resolution:
+- **`load_config(engine_dir)`** deep-merges `config.defaults.json` then `config.local.json`
+  (`core.config._deep_merge` — nested dicts merge per key, scalars/lists replace; so
+  `config.local.json` can override just `llm.baseUrl` or one `llm.customHeaders` entry without
+  restating the block). Used by standalone `python engine/run.py` and by the CLI/db tools.
+- **`ANALYZER_CONFIG=<file>`** (set by `run.py --config`) loads that one file *instead* — no merge.
+  This is how a per-project/per-version config is injected into the analyzer and every phase
+  subprocess (they inherit the env var).
+- **API-driven jobs**: `pipeline_runner._write_project_config` builds the per-version **non-secret**
+  analysis config (`config.defaults.json` + `build_config` + `layers`), stores it in
+  `versions.resolved_config` (via `_store_resolved_config`, on the version row reserved at job
+  start), and **materializes** the workspace `config.json` the engine runs with = that config with
+  `config.local.json`'s secrets overlaid (llm creds), **`db` section stripped** (the engine reaches
+  Postgres via `DATABASE_URL`, so the password is never written to a workspace file). The engine
+  reads the workspace file via `ANALYZER_CONFIG`. `_make_version` carries `resolved_config` through
+  finalize (the repo's `_put` replaces the whole row).
+
+**Secrets never enter `config.defaults.json` (tracked) or `versions.resolved_config` (per-version).**
+Copy `config.local.json.example` → `config.local.json` and fill in `db` + `llm` credentials.
+
+### Current schema (`config.defaults.json` — non-secret defaults)
 
 ```jsonc
 {
@@ -1707,6 +3021,7 @@ JSONC: `//`, `/* */`, and trailing commas are tolerated by
     "descriptions":      false,           // enable LLM function descriptions (Phase 2)
     "behaviourNames":    false,           // enable LLM behaviour input/output names
     "summarize":         false,           // false = suppress Phase 2 hierarchy summarization
+    // SECRETS below → put in config.local.json (gitignored), NOT here. baseUrl also if private.
     "apiKey":            "",              // openai bearer; prefer env LLM_API_KEY
     "rateLimitSeconds":  3.0,             // pause after every OpenAI call (>=0; 0 = off; ollama ignores)
     "maxConcurrency":    1,               // CC-1 (production-redesign/07): requests in flight at once;
@@ -1788,8 +3103,16 @@ Custom-header values can be overridden via `X_DEP_TICKET`, `USER_TYPE`,
 ### Config rules
 
 - Group names and component names: **CapitalCamelCase or snake_case**, both are tolerated.
-- Each folder path should appear in exactly one component; the parser merges all
-  layers/groups into one big folder set so cross-layer calls are still discoverable.
+- **Two layers MAY use the same group or component name** — `FTL/Cache` and `HIL/Cache` are
+  two different components. Ids are layer-qualified (`Layer1.Cache`), so they no longer
+  collide; see the 2026-09-06 entry. Group and component names must be unique **within their
+  own layer**, each folder path must appear in exactly one component (nesting one
+  component's path inside another's counts as a clash), and no name may contain `.` (the id
+  separator). Enforced by `core.config.validate_layer_names`; `run.py` exits 2.
+  A component MAY share a name with a group (`Access`, `Signal`, `Diag` do).
+- **A bare group/component name is still accepted on the CLI** while only one layer has it.
+  When two do, `run.py` exits 2 naming both candidates rather than picking one —
+  `--selected-group Layer1.Support`, or `--selected-layer`, says which.
 - `selectedGroup` is **not** a config key — group selection is CLI-only.
 - Layer `"path"` is relative to `<project_path>`. Component paths inside a group
   are relative to the layer's path and are prepended by `get_flat_groups()`.
@@ -1844,7 +3167,28 @@ in `engine/utils.py` or one of the phase scripts.
 - `get_component_layer_name(cfg, component_name)` → the layer name that owns `component_name` (searches all layers/groups), or `None`. Comparison is space-normalized (both sides `.replace(" ", "-")`) so normalized identifiers match raw config keys. Used by `run.py` and `group_planner` to derive the layer from `--selected-component`.
 - `get_layer_flat_groups(cfg, layer_name)` → flat groups for a single named layer only (layer paths resolved). Used by `parser.py` to restrict `_COMPONENT_FOLDERS` when a layer is selected.
 - `_resolve_layer_paths(layers_cfg)` — internal helper that prepends
-  `layer.path` to each component path inside the layer's groups.
+  `layer.path` to each component path inside the layer's groups. Keys BOTH levels by
+  layer-qualified id (`Layer1.Support` → `Layer1.Math`), so two layers reusing a name are
+  two entries, not one overwriting the other.
+- **Layer-qualified identity** (dated entry 2026-09-06): `LAYER_SEP = "."`,
+  `make_qualified_id(layer, name)`, `split_qualified_id(id)`, `qualified_layer(id)`,
+  `display_name(id)`. All re-exported through `utils`. The id is what KEYS everything
+  (component, unit, function, global, output dir, diagram filename); `display_name` is what
+  the document SHOWS. Applied always when the config has `layers`, never for a legacy
+  `layer`/`modulesGroups` config. Key arity is unchanged — only the component string gained
+  a prefix.
+- `resolve_group_id(groups, requested)` / `resolve_component_id(components, requested)` →
+  `(resolved_or_None, candidates)`. Accepts the qualified id, or a bare name while exactly
+  one layer has it; two candidates means AMBIGUOUS and the caller must refuse
+  (`ambiguous_group_message` writes the message). Used by `run.py`, `group_planner` and
+  `run_views`.
+- `validate_layer_names(cfg)` → one message per name problem in `layers`, `[]` when clean.
+  **Cross-layer duplicate names are NOT reported** — they are legal. Reported: the same name
+  twice inside ONE layer, a path claimed by two components or nested inside another's, two
+  layer names that collapse to one identifier, and a name containing `LAYER_SEP`. `run.py`
+  exits 2 on any message before Phase 1; `tools/new_project.py` and
+  `api/services/pipeline_runner` refuse before writing anything. Comparison uses
+  `name_ident(name)` (`strip().replace(" ", "-").casefold()`).
 - `default_clang_macro_defs()` — returns the `-D` macro list shared by
   Phase 1 and the flowchart engine's per-function re-parser.
 
@@ -1947,7 +3291,7 @@ engine/llm_core/
   context_builder.py     ContextBuilder — callee/caller/types degradation ladder — version3
   repo_map.py            RepoMap — scoped repo signature view (4 tiers)          — version3
   few_shot.py            FewShotPool — keyword-ranked example selection          — version3
-  cache.py               EntityCache — composite-hash disk cache                 — version3
+  cache.py               EntityCache — composite-hash cache, `llm_description_cache` table (doc 10 step 10)
   structured_output.py   extract_and_validate + parse_label_response             — version3
   review.py              self_review + ensemble_generate                        — version3
 ```
@@ -2174,18 +3518,33 @@ Ranking: keyword overlap (callee names, param types, tags). Budget-aware
 greedy fill. Returns `""` if the directory is missing or empty — that is the
 supported off-path, not an error.
 
-### `llm_core.cache.EntityCache` (version3)
+### `llm_core.cache.EntityCache` (doc 10 step 10 — now database-backed)
 
-Per-entity disk cache with composite hash keys. Stored at
-`.flowchart_cache/llm_descriptions/` (or whatever `cache_dir` the caller
-passes).
+Per-entity cache with composite hash keys, stored in the **`llm_description_cache`
+table** (migration `0005`). It was one JSON file per entity under
+`.flowchart_cache/`; on the container deployment that dies with the container and
+is invisible to other nodes, giving N nodes a ~1/N hit rate.
 
 ```python
-EntityCache(cache_dir, cache_version)
-  .get(entity_id, content_hash) -> Optional[dict]
-  .put(entity_id, content_hash, value, metadata=None)
-  .stats() -> "N hits, M misses, X% hit rate"
+EntityCache(project_id, namespace, cache_version)   # namespace: llm_descriptions | aux_descriptions
+  .get(entity_id, content_hash) -> Optional[str]
+  .put(entity_id, content_hash, value, metadata=None)   # buffered
+  .flush()                                              # call at the end of a pass
+  .stats() -> "N hits, M misses, W writes, X% hit rate [db|in-memory only]"
 ```
+
+**Scoped per project, not per version** — the hit that matters is the next version
+finding a description an earlier one paid for. The whole scope loads in **one
+query** at construction and `get()` is a dict lookup; per-entity SELECTs would be
+~20k round trips on a 20k-function project. Writes buffer and flush with
+`ON CONFLICT DO NOTHING`.
+
+`cache_version` is part of the unique key, so bumping `llm.cacheVersion`
+invalidates by construction and leaves old rows unreferenced.
+
+With no database it degrades to an **in-process memo** — still dedupes within a
+run (several call sites ask for the same struct during one export), just does not
+survive it. `put()` never raises; a cache failure costs LLM calls, never output.
 
 Cache key = `sha256(entity_source + sorted_callee_hashes + str(cache_version))[:16]`.
 
@@ -2686,6 +4045,16 @@ Groups all functions and globals by file path. Produces:
   and `includedHeaders` (read from local `#include` directives).
 - `model/components.json` — one entry per component containing its unit keys
   and `headerFiles` list. (Was `model/modules.json` in older versions.)
+
+The unit key is `<componentId>|<basename without extension>`, where the component id carries
+its layer (`Layer1.Core|Util`) — that is what keeps two layers' same-named components apart.
+It carries **no directory**, so a
+`.cpp` and its `.h` are one unit by design — and two files with the same stem in DIFFERENT
+directories of one component fold into one unit too, carrying both files' functions and globals
+but only the first's `path`/`fileName`. That is logged as a WARNING naming both files (compared
+on the extension-stripped path, so the `.cpp`/`.h` pair is not flagged) and **not repaired**: the
+key is the model's public identity, embedded in function/global IDs, snapshots and DB rows.
+Dated entry 2026-09-04.
 
 ### `_build_interface_index` / `_enrich_interfaces`
 
@@ -3315,7 +4684,7 @@ propagates automatically into the flowchart engine subprocess.
 
 At the top of `run()`, [engine/flowchart/flowchart_engine.py](engine/flowchart/flowchart_engine.py)
 calls `_load_analyzer_llm_config()` which walks `cwd` and one parent for
-`engine/config/config.json`, loads it with `utils.load_config`, then resolves it
+`engine/config/config.defaults.json`, loads it with `utils.load_config`, then resolves it
 strictly with `utils.load_llm_config` (raising `LlmConfigError` with the
 specific failing field on any invalid input). The resolved llm_cfg is
 displayed via `format_llm_config_banner()` before any real work begins, so
@@ -3584,7 +4953,7 @@ for a manual incremental-UI demo, onboard the analyzer repo's own URL (a shallow
 branch clone) rather than maintaining a separate sample repo.
 
 The old `test_cpp_project/` fixture is superseded. Current fixture (matches
-`config.json` `layers`):
+`config.defaults.json` `layers`):
 
 ```
 SampleCppProject/
@@ -3621,12 +4990,35 @@ SampleCppProject/
       Storage/ Eeprom/ Flash/ StorCache/ — Storage components
       Timer/ TmrHw/ TmrMgr/            — Timer components
       Uart/ Uart{Buf,Clock,Debug,Dma,Error,Fifo,Flow,Init,Irq,Mode,...}/ — UART
+    Sample/                            — the CROSS-LAYER TWIN of Layer1/Sample (2026-09-06)
+      Core/   Core.cpp/.h              — group "My Sample", component "Sample Core"
+      Lib/    Lib.cpp/.h               — group "My Sample", component "Lib"
 ```
 
-`config.json`'s `layers` maps these to:
-- **Layer1**: groups `Sample` (Core/Lib/Util), `Full` (Iface/Cross), `Support`
-  (Math/App/Outer), `Access`, `Diag`
-- **Layer2**: group `Platform` (all 15 platform components)
+**The `Layer2/Sample` twin is deliberate and must not be "tidied".** It reuses Layer1's
+group name (`My Sample`), component names (`Sample Core`, `Lib`), unit names (`Core`,
+`Lib`), function names (`coreAdd`, `coreSetResult`, `libAdd`, `libNormalize`, …), global
+names (`g_result`, `g_count`, `g_libTotal`, `g_libCalls`) and even its `Mode`/`Status`
+enum names. It is the fixture for layer-qualified identity: with bare names all of those
+collapsed into one component, one unit key and one set of function keys. The BODIES are
+different on purpose (saturating/byte-oriented rather than arithmetic) so a generated
+document shows at a glance which layer it describes. It is self-contained — it does NOT
+include Layer1's `Types/`, because a cross-layer include would undo the separation the
+fixture exists to demonstrate.
+
+Consequence: **`--selected-group "My Sample"` is now AMBIGUOUS** and exits 2. The e2e
+suite scopes to `Layer1.My Sample` (`tests/e2e_paths.GROUP`), which is also its coverage
+of qualified selection.
+
+`config.defaults.json`'s `layers` maps these to:
+- **Layer1**: groups `My Sample` (Sample Core/Lib/Util), `Full` (Iface/Cross), `Support`
+  (Math/App/Outer), `Access`, `Signal`, `Diag`
+- **Layer2**: groups `My Sample` (Sample Core/Lib — the twin) and `Platform` (all 15
+  platform components)
+
+Group and component IDS are layer-qualified, so the two `My Sample` groups are
+`Layer1.My Sample` and `Layer2.My Sample`, and the two `Sample Core` components are
+`Layer1.Sample-Core` and `Layer2.Sample-Core`. See the 2026-09-06 entry.
 
 ### Key docs
 
@@ -3999,7 +5391,7 @@ implementation.
 ### Configs with `core` / `support` / `tests` vs current group names
 
 Earlier docs referenced `InterfaceTables`, `Flowcharts`, `BehaviourDiagram`,
-… as group names, then `core`, `support`, `tests`. The current `config.json`
+… as group names, then `core`, `support`, `tests`. The current `config.defaults.json`
 uses `Sample`, `Full`, `Support`, `Access`, `Diag`, `Platform` (matching the
 `SampleCppProject` fixture). When validating CLI behaviour, always check
 which config is active before quoting group names.
@@ -4266,7 +5658,7 @@ have 2 phases, others 4). To give the UI a stable progress bar:
 ### Config editing: surgical JSONC splice
 
 `POST /api/v1/config` updates only the `modulesGroups` key inside
-`engine/config/config.json` while preserving every comment and every other
+`engine/config/config.defaults.json` while preserving every comment and every other
 key in the file. The implementation (`_find_modules_groups_key_pos`)
 is a small JSONC-aware state machine that tracks strings, line
 comments, block comments, and brace nesting depth — a regex or a
@@ -4389,6 +5781,61 @@ Goal: **hours → minutes** for small changes (skip the rate-limited LLM work fo
     extent, **keyed by identity including the defining file/location** (so same-named macros/types in
     different files are distinct).
   - **One hash per entity** now; **per-artifact hashing is deferred**.
+  - **Path matching folds case on EVERY platform** (`incremental/affected._norm`,
+    `parse_merge._norm`). It used to fold only when `os.name == "nt"`, which cannot be right
+    for a project parsed on one platform and regenerated on another: libclang reports a path
+    as written, so a Windows parse records `01_SRC/x.cpp` where git says `01_src/x.cpp` —
+    matched on Windows, not matched on Linux, and the file then read as unchanged with its
+    entities keeping the baseline's hashes. These values are only ever set-membership keys
+    ("is this file affected / should it be dropped"); everything stored keeps its ORIGINAL
+    casing. So folding everywhere can only consider one file too many, which costs a
+    re-parse — the sound direction (D7) — where matching too few is a stale document. The
+    one real cost is a repo holding two paths differing only by case (separate TUs on
+    Linux): `affected.case_collisions` finds them and the parser logs them, so the
+    over-approximation is never silent.
+    *Not done:* canonicalising STORED paths to git's spelling. That changes model data and
+    would make existing baselines mismatch — deliberately deferred; the fold above delivers
+    the cross-platform correctness without touching stored data.
+  - **A cross-version splice must land BOTH halves — the DOT and every PNG.** Measured on a
+    real project (v5 baseline, v7 correct, v8 a second incremental off v5): one function's
+    stored graph came from v5 while its picture came from v7, and the function beside it got
+    both from v5. Two independent defects in `views/flowcharts.py`, each silent:
+    (a) `_merge_incremental_flowcharts` read `fresh` straight from `out_dir`, but
+    `_carry_forward_flowcharts` has already copied every BASELINE json there — for a unit
+    whose changed functions were *all* diverted to cross-version reuse the engine writes
+    nothing, so baseline entries posed as engine output and won the `fresh > x-ver >
+    baseline` precedence. A cross-version DOT could never take effect. Now intersected with
+    `fresh_pairs`, which is exactly what the engine was handed.
+    (b) the image copy handled one filename, `<stem>_<qn>.png`. A flowchart too tall for one
+    image is written `_part_1_of_N.png` … and no plain `.png` exists, so nothing was copied
+    and the carried baseline images stayed — a big flowchart kept the old picture while a
+    small one beside it updated, same unit, same run. `_splice_function_pngs` now takes every
+    part and clears the carried ones first, so a shrunken part count leaves no orphan page.
+  - **A version AT the target commit is never the auto baseline.** Git calls a commit its own
+    ancestor, so a prior version at the target sits at distance 0 — nearer than any real
+    ancestor — and won `nearest_ancestor` every time. The run then found **zero changed files**,
+    re-parsed nothing, and wrote a verbatim copy of that version (same model, same hashes, same
+    flowcharts), logged only as `0 affected TU(s) — reused the baseline skeleton`. Regenerating a
+    commit is asked for precisely when the existing version at it is wrong, so the copy reproduced
+    the defect. `baseline._auto_candidates` now excludes them and the skip is reported in
+    `warnings`; an explicit `--base-version-id` at the target is still honoured, with a warning
+    saying the result will be a copy. `generate_incremental` already excluded the run's OWN
+    version id for this reason — that only covered a version reserved at its own commit, not a
+    *different* version id sitting at the same commit.
+  - **Never hash an empty token list.** `clang_tokenize` returns *no tokens* for some perfectly
+    valid cursors — a declaration produced by a macro expansion is the common trigger — with **no
+    error and a correct-looking extent**. `hash_cursor` used to hash `[]`, so every such entity got
+    `sha256("")`: one constant shared by all of them, classified **unchanged in every comparison
+    forever**, flowchart and LLM description carried forward from the first version, nothing logged.
+    Measured on one firmware project: **2069 of 2818 functions (73%)**, which silently disabled
+    incremental change detection for most of the codebase. `hash_cursor` now falls back to the
+    extent's **raw source text** (whitespace-split, so reformatting still is not a change), then to
+    **name + position** if the file cannot be read — the latter regenerates whenever the entity
+    moves, which is the sound direction (D7) rather than pinning it to "unchanged". Counts are
+    exposed as `hash_cursor.fallbacks` and logged at end of parse.
+    *Recovery:* baselines parsed before this fix hold the constant for those entities, so the first
+    run after it reclassifies them all as changed — a one-time large regeneration, and the correct
+    repair. `tools/why_unchanged.py` reports how many a stored version is carrying.
   - Classification: unchanged / changed / new / deleted; **move/rename = delete(old key) + add(new key)**.
   - *Why hash globals/macros/types separately:* changing a global/macro/type does **not** change a
     *using* function's tokens (a function still just writes `MAX` after `#define MAX` changes value), so
@@ -4558,7 +6005,7 @@ workspaces/<projectId>/
     exports `ANALYZER_CONFIG` **before** importing `utils` (which loads config at import time), so this process
     and every phase subprocess (env inherited) honor it. `core/config.py load_config()` reads `ANALYZER_CONFIG`
     first: if set it loads that file **as-is** (JSONC) — **no `config.local.json` merge**, for reproducibility —
-    and **fails loud** (`FileNotFoundError`) on a set-but-missing path; unset → existing `config.json`+local
+    and **fails loud** (`FileNotFoundError`) on a set-but-missing path; unset → existing `config.defaults.json`+local
     behavior. Tests: `tests/unit/test_core_config.py::TestLoadConfigAnalyzerConfigOverride` (5).
   - **M1.2a entity hashing — ✅ done.** New `engine/incremental/hashing.py` (token-based full SHA-256;
     formatting-insensitive, comment-inclusive — folds in the preceding doc comment; visibility macros expand

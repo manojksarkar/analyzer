@@ -51,17 +51,60 @@ class RunPlan:
 
 
 def _resolve_group_name(groups: Dict[str, Any], requested: Optional[str]) -> Optional[str]:
-    if not requested:
-        return None
-    if not isinstance(groups, dict) or not groups:
-        return None
-    if requested in groups:
-        return requested
-    req_key = requested.casefold()
-    for k in groups.keys():
-        if isinstance(k, str) and k.casefold() == req_key:
-            return k
-    return None
+    """The layer-qualified group id `requested` names, or None if no group matches.
+
+    Raises ValueError when the name matches groups in MORE than one layer. Two
+    layers sharing a group name is legal, so the request genuinely has two answers;
+    generating the first would hand back one layer's document under a name meant for
+    the other, which is exactly the silent-wrong-output this refuses to produce.
+    """
+    from .config import resolve_group_id, ambiguous_group_message
+    resolved, candidates = resolve_group_id(groups, requested)
+    if resolved is None and len(candidates) > 1:
+        raise ValueError(ambiguous_group_message(requested, candidates))
+    return resolved
+
+
+def _components_by_name(groups: Dict[str, Any]) -> Dict[str, str]:
+    """{lookup name -> the qualified group id that owns it}.
+
+    Keyed under BOTH the qualified component id and its bare display name, because
+    this only ever feeds the "did you mean --scope component:?" hint and the caller
+    typed whichever spelling they had in mind. The qualified id is registered second
+    so it wins when a bare name is ambiguous across layers - the hint then names one
+    real group instead of a made-up one.
+    """
+    from .config import display_name, name_ident
+    out = {}
+    for gname, comps in (groups or {}).items():
+        if isinstance(comps, dict):
+            for cname in comps:
+                if isinstance(cname, str):
+                    out.setdefault(name_ident(display_name(cname)), gname)
+                    out[name_ident(cname)] = gname
+    return out
+
+
+def _unknown_group_message(names, groups_cfg: Dict[str, Any], group_names) -> str:
+    """Explain an unresolved scope name — and say what it IS, when we can tell.
+
+    "Valid groups: Access, Diag, …" is accurate and unhelpful when the name the caller used is a
+    real COMPONENT sitting inside one of those groups. Naming the right flag turns a dead end
+    into a fix.
+    """
+    from .config import name_ident
+    comp_owner = _components_by_name(groups_cfg)
+    as_components = [n for n in names if name_ident(n) in comp_owner]
+    unknown = [n for n in names if name_ident(n) not in comp_owner]
+    lines = [f"Unknown group(s) in the scope: {', '.join(names)}."]
+    if as_components:
+        pairs = ", ".join(f"{n} (in group {comp_owner[name_ident(n)]})" for n in as_components)
+        lines.append(f"  {pairs} — these are COMPONENTS, not groups.")
+        lines.append(f"  Use:  --scope \"component:{','.join(as_components)}\"")
+    if unknown:
+        lines.append(f"  Not found at all: {', '.join(unknown)}")
+    lines.append(f"  Valid groups: {', '.join(group_names) if group_names else '(none)'}")
+    return "\n".join(lines)
 
 
 def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
@@ -73,6 +116,7 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
                         selected_layer: Optional[str] = None,
                         project_name: Optional[str] = None,
                         only_files: Optional[str] = None,
+                        baseline_version_id: Optional[str] = None,
                         include_emulator: bool = False) -> List[Phase]:
     deriver_args = [] if no_llm_summarize else ["--llm-summarize"]
     parser_args = [project_path]
@@ -84,14 +128,32 @@ def _build_model_phases(project_path: str, *, no_llm_summarize: bool,
         parser_args += ["--macros", macros_path]
     for _layer, _path in (macros_layer or []):
         parser_args += ["--macros-layer", _layer, _path]
-    if selected_group:
-        parser_args += ["--selected-group", selected_group]
-    elif selected_layer:
-        parser_args += ["--selected-layer", selected_layer]
+    # One flag per group: a scope may name several (--scope group:App,Math), and the parser
+    # unions their layers. Group and layer selection stay mutually exclusive, as before —
+    # the `elif selected_layer` below depends on this staying an if/elif chain.
+    _groups = ([selected_group] if isinstance(selected_group, str)
+               else list(selected_group or []))
+    _layers = ([selected_layer] if isinstance(selected_layer, str)
+               else list(selected_layer or []))
+    if _groups:
+        for _g in _groups:
+            parser_args += ["--selected-group", _g]
+    elif _layers:
+        # One flag per layer, for the same reason as groups: a component bundle may
+        # span layers, and naming one leaves the others' source out of the parse.
+        for _l in _layers:
+            parser_args += ["--selected-layer", _l]
     if project_name:
         parser_args += ["--project-name", project_name]
     if only_files:  # narrowed parse (M4.4): parser parses only the listed TUs
         parser_args += ["--only-files", only_files]
+    if baseline_version_id:
+        # The baseline's func-key map, so a call from a re-parsed file into one we did NOT
+        # re-parse still resolves to an edge. Passed as a version id and read from
+        # `parse_snapshots`; it used to be a path to func_keys.json handed over in the
+        # ANALYZER_BASELINE_FUNCKEYS environment variable, which is both a file that no longer
+        # exists and an environment variable deciding run behaviour (D10-3).
+        parser_args += ["--baseline-version-id", baseline_version_id]
     if include_emulator:  # opt out of the default *emul* file exclusion (3.1)
         parser_args += ["--include-emulator"]
     return [
@@ -105,7 +167,18 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
                         filter_mode: Optional[str] = None,
                         extra_view_args: Optional[List[str]] = None,
                         docx_args: Optional[List[str]] = None,
-                        selected_units: Optional[List[str]] = None) -> List[Phase]:
+                        selected_units: Optional[List[str]] = None,
+                        doc_type: str = "swe3",
+                        swe4_args: Optional[List[str]] = None) -> List[Phase]:
+    """Build the Phase-3 (views) + Phase-4 (export) phases for a run.
+
+    `doc_type` (swe3|swe4|all) selects the Phase-3 view-set (passed to
+    run_views.py) and the Phase-4 exporter(s), dispatched via EXPORTER_REGISTRY
+    so one export sub-run is emitted per concrete doc type. `docx_args` are the
+    SWE.3 exporter's args (unchanged); `swe4_args` are the SWE.4 exporter's.
+    """
+    from views.registry import EXPORTER_REGISTRY, DOC_TYPE_SWE3, DOC_TYPE_SWE4, concrete_doc_types
+
     views_args: List[str] = []
     if output_dir:
         views_args += ["--output-dir", output_dir]
@@ -115,12 +188,19 @@ def _view_export_phases(*, output_dir: Optional[str] = None,
         views_args += ["--filter-mode", filter_mode]
     for _unit in (selected_units or []):
         views_args += ["--selected-unit", _unit]
+    views_args += ["--doc-type", doc_type]
     if extra_view_args:
         views_args += extra_view_args
-    return [
-        Phase("Phase 3: Generate views", "run_views.py", views_args),
-        Phase("Phase 4: Export to DOCX", "docx_exporter.py", list(docx_args or [])),
-    ]
+
+    exporter_args = {
+        DOC_TYPE_SWE3: list(docx_args or []),
+        DOC_TYPE_SWE4: list(swe4_args or []),
+    }
+    phases: List[Phase] = [Phase("Phase 3: Generate views", "run_views.py", views_args)]
+    for dt in concrete_doc_types(doc_type):
+        phases.append(Phase(f"Phase 4: Export {dt.upper()} DOCX",
+                            EXPORTER_REGISTRY[dt], list(exporter_args.get(dt, []))))
+    return phases
 
 
 def _swe2_doc_phases(*, output_dir: Optional[str] = None) -> List[Phase]:
@@ -160,6 +240,7 @@ def plan_runs(
     project_name: Optional[str] = None,
     output_name: Optional[str] = None,
     only_files: Optional[str] = None,
+    baseline_version_id: Optional[str] = None,
     include_emulator: bool = False,
     selected_units: Optional[List[str]] = None,
     doc_type: str = DOC_TYPE_SWE3,
@@ -169,6 +250,10 @@ def plan_runs(
     Each RunPlan maps to one PhaseRunner.run(...) call. Returning a *list*
     (not a single plan) lets us emit one plan per group while keeping the
     runner itself dead-simple.
+
+    `doc_type` (swe3|swe4|all) is a dimension threaded to every view+export
+    step: it selects the Phase-3 view-set and the Phase-4 exporter(s). Default
+    swe3 keeps the pipeline byte-for-byte identical to before.
 
     Raises ValueError if selected_group/selected_layer doesn't exist in config.
     """
@@ -180,30 +265,51 @@ def plan_runs(
     generate_swe3 = doc_type in (DOC_TYPE_SWE3, DOC_TYPE_BOTH)
     generate_swe2 = doc_type in (DOC_TYPE_SWE2, DOC_TYPE_BOTH)
 
-    resolved_selected = _resolve_group_name(groups_cfg, selected_group)
+    # `selected_group` may be a single name or a LIST (--scope group:App,Math). Resolving only
+    # the first silently generated one group and dropped the rest — the run succeeded and the
+    # document simply had less in it.
+    _requested_groups = ([g for g in selected_group if g]
+                         if isinstance(selected_group, (list, tuple)) else
+                         ([selected_group] if selected_group else []))
+    _resolved_groups, _unknown_groups = [], []
+    for _g in _requested_groups:
+        _r = _resolve_group_name(groups_cfg, _g)
+        if _r:
+            if _r not in _resolved_groups:
+                _resolved_groups.append(_r)
+        elif not _g.startswith("_single_file_"):
+            _unknown_groups.append(_g)
+    # A name that resolves to nothing is a typo, and generating the subset that DID resolve
+    # would hand back a document quietly missing a group the caller asked for.
+    if _unknown_groups and _resolved_groups:
+        raise ValueError(_unknown_group_message(_unknown_groups, groups_cfg, group_names))
+    selected_group = _requested_groups[0] if _requested_groups else None
+    resolved_selected = _resolved_groups[0] if _resolved_groups else None
     if selected_group and not resolved_selected:
         # Allow single-file mode without layer entry
         if selected_group.startswith("_single_file_"):
             resolved_selected = selected_group
         else:
-            raise ValueError(
-                f"Unknown --selected-group {selected_group!r}. "
-                f"Valid groups: {', '.join(group_names) if group_names else '(none)'}"
-            )
+            raise ValueError(_unknown_group_message(_requested_groups, groups_cfg, group_names))
 
-    # Validate --selected-layer and derive target groups for that layer.
-    if selected_layer:
-        layer_cfg = (cfg.get("layers") or {}).get(selected_layer)
+    # Validate --selected-layer and derive target groups. Like groups, this accepts a LIST
+    # (--scope layer:A,B): taking one and ignoring the rest is a silent partial generation.
+    _requested_layers = ([l for l in selected_layer if l]
+                         if isinstance(selected_layer, (list, tuple)) else
+                         ([selected_layer] if selected_layer else []))
+    selected_layer = _requested_layers[0] if _requested_layers else None
+    layer_group_names = set()
+    for _l in _requested_layers:
+        layer_cfg = (cfg.get("layers") or {}).get(_l)
         if layer_cfg is None:
             valid_layers = sorted((cfg.get("layers") or {}).keys())
             raise ValueError(
-                f"Unknown --selected-layer {selected_layer!r}. "
+                f"Unknown --selected-layer {_l!r}. "
                 f"Valid layers: {', '.join(valid_layers) if valid_layers else '(none)'}"
             )
-        layer_group_names = set((layer_cfg.get("groups") or {}).keys())
-        layer_target_groups = [g for g in group_names if g in layer_group_names]
-    else:
-        layer_target_groups = []
+        layer_group_names |= set((layer_cfg.get("groups") or {}).keys())
+    layer_target_groups = ([g for g in group_names if g in layer_group_names]
+                           if _requested_layers else [])
 
     plans: List[RunPlan] = []
 
@@ -212,7 +318,10 @@ def plan_runs(
     # ------------------------------------------------------------------
     if selected_components:
         from .config import get_component_layer_name
-        derived_layer = get_component_layer_name(cfg, selected_components[0])
+        # EVERY layer the bundle touches, not just the first component's - the bundle
+        # may legitimately span layers now that component ids carry theirs.
+        derived_layer = list(dict.fromkeys(
+            l for l in (get_component_layer_name(cfg, c) for c in selected_components) if l))
         virtual_name = "_".join(selected_components)
 
         if not use_model:
@@ -227,12 +336,12 @@ def plan_runs(
                 macros_layer=macros_layer,
                 selected_layer=None if generate_swe2 else derived_layer,
                 project_name=project_name,
-                only_files=only_files,
+                only_files=only_files, baseline_version_id=baseline_version_id,
                 include_emulator=include_emulator,
             )
             if from_phase <= 2:
                 label = ("Build model (all layers)" if generate_swe2 else
-                          f"Build model (layer of {', '.join(selected_components)})")
+                          f"Build model (layer(s) of {', '.join(selected_components)})")
                 plans.append(RunPlan(
                     label=label,
                     phases=build_phases,
@@ -242,26 +351,45 @@ def plan_runs(
         local_from = max(1, from_phase - 2) if from_phase >= PHASE_VIEWS else 1
 
         if generate_swe3:
-            out_key = output_name.replace(" ", "-") if output_name else virtual_name
-            comp_out = os.path.join(p.output_dir, out_key)
-            comp_sel_args: List[str] = []
-            for c in selected_components:
-                comp_sel_args += ["--selected-component", c]
-            view_phases = _view_export_phases(
-                output_dir=comp_out,
-                filter_mode=filter_mode,
-                extra_view_args=comp_sel_args,
-                docx_args=[
-                    os.path.join(comp_out, "interface_tables.json"),
-                    os.path.join(comp_out, f"software_detailed_design_{out_key}.docx"),
-                ] + comp_sel_args,
-                selected_units=selected_units,
-            )
-            plans.append(RunPlan(
-                label=f"Components: {', '.join(selected_components)}",
-                phases=view_phases,
-                runner_from_phase=local_from,
-            ))
+            # `--component-per-docx` splits the selection into one document PER component
+            # instead of one bundling them all. Every other scope already behaves that way
+            # (`per_component_docx_args` passes the flag for project/layer/group), and the
+            # flag used to be REFUSED alongside --selected-component, which is why naming
+            # components was the one scope that came back bundled.
+            #
+            # The model build above is shared either way — only the view+export step is
+            # repeated, which is what makes the split nearly free.
+            bundles = ([[c] for c in selected_components] if component_per_docx
+                       else [list(selected_components)])
+            for bundle in bundles:
+                # `output_name` names ONE output; per-docx produces several, so the
+                # component's own name has to key them or they would overwrite each other.
+                out_key = (output_name.replace(" ", "-")
+                           if output_name and not component_per_docx else "_".join(bundle))
+                comp_out = os.path.join(p.output_dir, out_key)
+                comp_sel_args: List[str] = []
+                for c in bundle:
+                    comp_sel_args += ["--selected-component", c]
+                view_phases = _view_export_phases(
+                    output_dir=comp_out,
+                    filter_mode=filter_mode,
+                    extra_view_args=comp_sel_args,
+                    docx_args=[
+                        os.path.join(comp_out, "interface_tables.json"),
+                        os.path.join(comp_out, f"software_detailed_design_{out_key}.docx"),
+                    ] + comp_sel_args,
+                    selected_units=selected_units,
+                    doc_type=doc_type,
+                    swe4_args=[
+                        os.path.join(comp_out, "test_specs.json"),
+                        os.path.join(comp_out, f"software_unit_test_specification_{out_key}.docx"),
+                    ] + comp_sel_args,
+                )
+                plans.append(RunPlan(
+                    label=f"Components: {', '.join(bundle)}",
+                    phases=view_phases,
+                    runner_from_phase=local_from,
+                ))
 
         if generate_swe2:
             plans.append(RunPlan(
@@ -279,7 +407,8 @@ def plan_runs(
         if generate_swe3:
             if use_model:
                 # Skip phases 1+2; runner indices 1,2 map to phases 3,4
-                phases = _view_export_phases(filter_mode=filter_mode, selected_units=selected_units)
+                phases = _view_export_phases(filter_mode=filter_mode, doc_type=doc_type,
+                                             selected_units=selected_units)
                 translated = max(1, from_phase - 2)
                 plans.append(RunPlan(label="single run (use-model)",
                                      phases=phases,
@@ -291,8 +420,10 @@ def plan_runs(
                                              macros_path=macros_path,
                                              macros_layer=macros_layer,
                                              project_name=project_name, only_files=only_files,
+                                             baseline_version_id=baseline_version_id,
                                              include_emulator=include_emulator) \
-                         + _view_export_phases(filter_mode=filter_mode, selected_units=selected_units)
+                         + _view_export_phases(filter_mode=filter_mode, doc_type=doc_type,
+                                               selected_units=selected_units)
                 plans.append(RunPlan(label="single run",
                                      phases=phases,
                                      runner_from_phase=from_phase))
@@ -305,6 +436,7 @@ def plan_runs(
                                                     macros_path=macros_path,
                                                     macros_layer=macros_layer,
                                                     project_name=project_name, only_files=only_files,
+                                                    baseline_version_id=baseline_version_id,
                                                     include_emulator=include_emulator)
                 if from_phase <= 2:
                     plans.append(RunPlan(label="Build model (all layers)",
@@ -322,16 +454,17 @@ def plan_runs(
     # ------------------------------------------------------------------
     if selected_layer:
         target_groups = layer_target_groups
-    elif resolved_selected:
-        target_groups = [resolved_selected]
+    elif _resolved_groups:
+        target_groups = list(_resolved_groups)      # every named group, not just the first
     else:
         target_groups = group_names
 
     if not use_model:
         # SWE.2 always needs the full model, so widen the parse scope when it's
         # requested even though --selected-group/--selected-layer narrowed SWE.3.
-        build_selected_group = None if generate_swe2 else resolved_selected
-        build_selected_layer = None if generate_swe2 else selected_layer
+        build_selected_group = None if generate_swe2 else (_resolved_groups or resolved_selected)
+        # every requested layer, not just the first
+        build_selected_layer = None if generate_swe2 else (_requested_layers or selected_layer)
         # Build-model plan covers phases 1+2 only.
         build_phases = _build_model_phases(project_path, no_llm_summarize=no_llm_summarize,
                                             data_dictionary_path=data_dictionary_path,
@@ -341,14 +474,19 @@ def plan_runs(
                                             selected_group=build_selected_group,
                                             selected_layer=build_selected_layer,
                                             project_name=project_name, only_files=only_files,
+                                         baseline_version_id=baseline_version_id,
                                             include_emulator=include_emulator)
         # If the user wants to start at phase >= 3, the build step is skipped
         # entirely (use existing model on disk).
         if from_phase <= 2:
             if build_selected_group:
-                label = f"Build model (layer of {build_selected_group})"
+                _label_groups = (build_selected_group if isinstance(build_selected_group, list)
+                                  else [build_selected_group])
+                label = f"Build model (layer(s) of {', '.join(_label_groups)})"
             elif build_selected_layer:
-                label = f"Build model ({build_selected_layer})"
+                _label_layers = (build_selected_layer if isinstance(build_selected_layer, list)
+                                  else [build_selected_layer])
+                label = f"Build model ({', '.join(_label_layers)})"
             else:
                 label = "Build model (all layers)"
             plans.append(RunPlan(label=label,
@@ -372,6 +510,7 @@ def plan_runs(
                 selected_group=g,
                 filter_mode=filter_mode,
                 selected_units=selected_units,
+                doc_type=doc_type,
             )
             # Embed allowed components into the phase args to pass via CLI
             for phase in view_phases:
@@ -393,7 +532,12 @@ def plan_runs(
                         os.path.join(comp_out, "interface_tables.json"),
                         os.path.join(comp_out, f"software_detailed_design_{comp}.docx"),
                     ] + comp_sel_args,
-                selected_units=selected_units,
+                    selected_units=selected_units,
+                    doc_type=doc_type,
+                    swe4_args=[
+                        os.path.join(comp_out, "test_specs.json"),
+                        os.path.join(comp_out, f"software_unit_test_specification_{comp}.docx"),
+                    ] + comp_sel_args,
                 )
                 plans.append(RunPlan(label=f"Component: {comp}",
                                      phases=view_phases,
@@ -412,6 +556,12 @@ def plan_runs(
                     "--selected-group", g,
                 ],
                 selected_units=selected_units,
+                doc_type=doc_type,
+                swe4_args=[
+                    os.path.join(group_out, "test_specs.json"),
+                    os.path.join(group_out, f"software_unit_test_specification_{out_key}.docx"),
+                    "--selected-group", g,
+                ],
             )
             plans.append(RunPlan(label=f"Group: {g}",
                                  phases=view_phases,

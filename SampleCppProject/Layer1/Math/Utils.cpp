@@ -1,4 +1,7 @@
 #include "Utils.h"
+/* Resolvable ONLY via the -I that Core1's compile_commands.json contributes:
+   ExternalLib/ sits outside every layer root, so the directory walk misses it. */
+#include "ExtCrc.h"
 
 PRIVATE int g_utilsCounter = 0;
 

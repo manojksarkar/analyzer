@@ -88,7 +88,7 @@ Four phases. **Each is a separate Python subprocess**; they communicate through 
 
 ## 5. Config
 
-- One `config.json` ([config/config.json](engine/config/config.json)): `clang`, `views` (per-view enables),
+- Base `config.defaults.json` ([config/config.defaults.json](engine/config/config.defaults.json)): `clang`, `views` (per-view enables),
   `layers.<Layer>.groups.<Group>.<Component>`, `llm`, `docx.*`. Read via `app_config()` in
   [core/config.py](engine/core/config.py); `ANALYZER_CONFIG=<path>` overrides the file.
 - `DEFAULT_VISIBILITY_MACROS` (`PUBLIC`/`PRIVATE`/`PROTECTED`/`__OVLYINIT`) are always injected as `-D…=`

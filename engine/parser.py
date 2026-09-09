@@ -37,7 +37,15 @@ from core.logging_setup import get_logger
 # early INFO lines would be emitted with no handler attached and silently dropped.
 _log = get_logger("parser")
 
+# Apply (and strip) --model-root before paths() is snapshotted or argv[1] is read as the
+# project path — an unconsumed flag would be mistaken for a positional (doc 09, C11b).
+from core.run_context import apply_cli_run_context as _apply_run_context
+sys.argv = _apply_run_context(sys.argv)
+
 _p = _paths()
+# Captured now: a module-level `for _p in _mod_paths:` below rebinds _p to a string,
+# so anything reading _p.<attr> after that point would fail at import.
+MODEL_DIR = _p.model_dir
 SCRIPT_DIR = _p.src_dir
 PROJECT_ROOT = _p.project_root
 if len(sys.argv) < 2:
@@ -51,10 +59,13 @@ _data_dict_path: str | None = None
 _data_dict_layer_args: list = []  # (layer, path) from --data-dictionary-layer, repeatable
 _macros_path: str | None = None
 _macros_layer_args: list = []   # (layer, path) pairs from --macros-layer, repeatable
-_selected_group: str | None = None
+_selected_group: str | None = None      # first one, kept for existing reads
+_selected_groups: list = []             # ALL of them: --selected-group is repeatable
+_selected_layers: list = []
 _selected_layer: str | None = None
 _project_name_override: str | None = None
 _only_files_path: str | None = None  # narrowed parse (M4.3): parse only the listed TUs
+_baseline_version_id: str | None = None  # narrowed parse: version holding the func-key map
 _include_emulator: bool = False  # opt out of the default *emul* file exclusion (3.1)
 _i = 2
 while _i < len(sys.argv):
@@ -67,6 +78,9 @@ while _i < len(sys.argv):
     elif sys.argv[_i] == "--only-files" and _i + 1 < len(sys.argv):
         _only_files_path = sys.argv[_i + 1]
         _i += 2
+    elif sys.argv[_i] == "--baseline-version-id" and _i + 1 < len(sys.argv):
+        _baseline_version_id = sys.argv[_i + 1]
+        _i += 2
     elif sys.argv[_i] == "--macros" and _i + 1 < len(sys.argv):
         _macros_path = sys.argv[_i + 1]
         _i += 2
@@ -74,10 +88,16 @@ while _i < len(sys.argv):
         _macros_layer_args.append((sys.argv[_i + 1], sys.argv[_i + 2]))
         _i += 3
     elif sys.argv[_i] == "--selected-group" and _i + 1 < len(sys.argv):
-        _selected_group = sys.argv[_i + 1]
+        # Repeatable: a scope may name several groups (--scope group:App,Math), and taking
+        # only the last would silently parse the wrong subset.
+        _selected_groups.append(sys.argv[_i + 1])
+        _selected_group = _selected_groups[0]
         _i += 2
     elif sys.argv[_i] == "--selected-layer" and _i + 1 < len(sys.argv):
-        _selected_layer = sys.argv[_i + 1]
+        # Repeatable, like --selected-group: a run may span layers. Taking only the
+        # last parsed one layer and left the others' source unseen.
+        _selected_layers.append(sys.argv[_i + 1])
+        _selected_layer = _selected_layers[0]
         _i += 2
     elif sys.argv[_i] == "--project-name" and _i + 1 < len(sys.argv):
         _project_name_override = sys.argv[_i + 1]
@@ -120,11 +140,27 @@ if _llvm and os.path.isfile(_llvm):
     cindex.Config.set_library_file(_llvm)
 
 from core.config import get_flat_groups as _get_flat_groups, get_group_layer_name as _get_group_layer_name, get_layer_flat_groups as _get_layer_flat_groups, get_component_layer_name as _get_component_layer_name
-if _selected_layer:
-    _components_groups = _get_layer_flat_groups(_config, _selected_layer)
-elif _selected_group:
-    _layer_name = _get_group_layer_name(_config, _selected_group)
-    _components_groups = _get_layer_flat_groups(_config, _layer_name) if _layer_name else _get_flat_groups(_config)
+if _selected_layers:
+    # UNION of every named layer, not just the first.
+    _components_groups = {}
+    for _l in _selected_layers:
+        _components_groups.update(_get_layer_flat_groups(_config, _l) or {})
+elif _selected_groups:
+    # The UNION of the selected groups' layers. Parsing is layer-scoped (a group's callees can
+    # live anywhere in its layer), and two groups may sit in DIFFERENT layers — resolving only
+    # the first would parse one layer and silently leave the other group's source unseen, so
+    # its functions would be missing from the model and from the document.
+    _components_groups = {}
+    _seen_layers = set()
+    for _g in _selected_groups:
+        _layer_name = _get_group_layer_name(_config, _g)
+        if _layer_name and _layer_name in _seen_layers:
+            continue
+        if _layer_name:
+            _seen_layers.add(_layer_name)
+            _components_groups.update(_get_layer_flat_groups(_config, _layer_name) or {})
+        else:
+            _components_groups.update(_get_flat_groups(_config) or {})
 else:
     _components_groups = _get_flat_groups(_config)
 _components_cfg = _config.get("components") or _config.get("modules") or {}
@@ -223,7 +259,7 @@ _EXCLUDE_NAME_PATTERNS: list = [] if _include_emulator else [
 
 # Read layer include paths written by run.py before Phase 1 started.
 _layer_include_paths: dict = {}
-_clang_paths_file = os.path.join(PROJECT_ROOT, "model", "clang_include_paths.json")
+_clang_paths_file = os.path.join(MODEL_DIR, "clang_include_paths.json")
 if os.path.isfile(_clang_paths_file):
     try:
         with open(_clang_paths_file, "r", encoding="utf-8") as _f:
@@ -318,10 +354,29 @@ if _macro_sources:
         _macro_defs = _merge_macro_defs(_macro_defs, _defs)
     _MACRO_ARGS_BY_SCOPE = _scoped_macro_args(_macro_defs)
 
-_macros_json = os.path.join(PROJECT_ROOT, "model", "clang_macros.json")
+# MODEL_DIR, not <repo>/model. Two things were wrong with the hardcode, and the
+# quieter one was the worse:
+#
+#   * Phase 3 READS this file from the run's model dir (views/flowcharts.py, via
+#     model_dir_abs), so writing it to the repo root meant the flowchart engine never
+#     found it and built every CFG WITHOUT the -D defines Phase 1 parsed with. Silent:
+#     a version's model dir held only clang_include_paths.json and nothing complained.
+#   * <repo>/model is not tracked by git, and this write does not create it, so a fresh
+#     clone died here at import with FileNotFoundError. Existing working copies still
+#     had an empty model/ left over from file mode, which is why nobody hit it.
+#
+# run.py:582 removed the identical hardcode for clang_include_paths.json, for the
+# third reason: it is shared state, and two concurrent jobs with different layer
+# configs overwrite each other's defines. This one was left behind.
+#
+# MODEL_DIR is safe to use here: --model-root is applied at the top of this module
+# (apply_cli_run_context) BEFORE paths() is snapshotted, which is why the sibling read
+# of clang_include_paths.json a hundred lines up already works.
+_macros_json = os.path.join(MODEL_DIR, "clang_macros.json")
 if _MACRO_ARGS_BY_SCOPE or os.path.isfile(_macros_json):
     # Written even when empty: otherwise a previous run's file survives and
     # Phase 3 keeps defining macros this parse did not use.
+    os.makedirs(MODEL_DIR, exist_ok=True)
     with open(_macros_json, "w", encoding="utf-8") as _mf:
         json.dump(_MACRO_ARGS_BY_SCOPE, _mf, indent=2)
 
@@ -522,7 +577,16 @@ def _make_overridden_lookup():
         out = []
         for i in range(int(num.value)):
             oc = arr[i]
-            oc._tu = c._tu  # keep the TU alive for the borrowed cursor
+            # Keep the TU alive for the borrowed cursor. REQUIRED: the array comes from the
+            # C API and its cursors do not own their TU, so without this they dangle once
+            # the owning TU is collected.
+            #
+            # Audited for retention (doc 09, M2): this does NOT pin TUs for the run. The
+            # cursors are transient — the caller immediately converts each to a string key
+            # (`get_function_key`) and `_override_pairs` stores only those strings, so the
+            # TU is released with the cursor. Phase 1 likewise holds one TU at a time
+            # (`tu` is rebound per file) and stores only hashes, never cursors.
+            oc._tu = c._tu
             out.append(oc)
         f_disp(arr)
         return out
@@ -596,6 +660,20 @@ component_functions = defaultdict(list)
 function_to_component = {}
 global_access_reads = defaultdict(set)   # func_key -> set of var_id
 global_access_writes = defaultdict(set)  # func_key -> set of var_id
+# func_key -> set of (base variable, its struct type, field) that the body READS.
+# SWE.4 needs it to tell which of a mocked callee's write-backs actually matter: a
+# stub can fill in any field of the struct it is handed, but only the fields this
+# function goes on to read can change its behaviour, and only those belong in Input.
+# Reads only -- a field the function assigns to is an output, not test setup.
+field_access_reads = defaultdict(set)
+# func_key -> set of pointer/reference PARAMETER names the body writes through,
+# either by dereference (`*out = x`) or by field (`w->id = x`). Both mean the same
+# thing to SWE.4: this out-parameter is an output. The wiki asserts the whole
+# parameter ("one entry per out-parameter written"), not individual fields, so no
+# per-field breakdown is kept. Without this the only evidence would be the
+# parameter's TYPE, which wrongly asserted "Successfully updated" for pointers a
+# function merely reads or calls through.
+param_writes = defaultdict(set)
 # First non-trivial return expression per function (for behaviour output naming)
 function_return_expr = {}
 
@@ -1648,22 +1726,39 @@ _ASSIGN_OPS = {"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="
 
 
 def _is_assign_op(cursor):
+    """(is_write, is_compound) for a BINARY_OPERATOR.
+
+    The operator is located as the first token past the end of the LHS child, NOT
+    as `tokens[1]`. A multi-token LHS is the common case in real code and the fixed
+    index silently missed every one of them:
+
+        g_count  = 5;   tokens [g_count, =, 5]     -> tokens[1] == "="   detected
+        w->id    = id;  tokens [w, ->, id, =, id]  -> tokens[1] == "->"  MISSED
+        g_a[i]   = 5;   tokens [g_a, [, i, ], =, 5]                      MISSED
+
+    A missed assignment is not merely lost: the walker then descends with
+    `is_write=False`, so the target is recorded as a READ. That corrupts
+    `writesGlobalIds` and the In/Out `direction` derived from it.
+    """
     if cursor.kind != cindex.CursorKind.BINARY_OPERATOR:
         return False, False
     try:
-        tokens = list(cursor.get_tokens())
-        # Tokens: [LHS, op, RHS] or [LHS, +, =, RHS] for +=
-        if len(tokens) >= 2:
-            op = tokens[1].spelling
-            if op == "=":
-                return True, False  # pure write
-            if op in _ASSIGN_OPS:
-                return True, True   # compound = both
-            # Tokenized as separate: + and = -> +=
-            if len(tokens) >= 3:
-                combined = tokens[1].spelling + tokens[2].spelling
-                if combined in _ASSIGN_OPS:
-                    return True, True
+        children = list(cursor.get_children())
+        if len(children) < 2:
+            return False, False
+        lhs_end = children[0].extent.end.offset
+        op_tokens = [t.spelling for t in cursor.get_tokens()
+                     if t.extent.start.offset >= lhs_end]
+        if not op_tokens:
+            return False, False
+        op = op_tokens[0]
+        if op == "=":
+            return True, False      # pure write
+        if op in _ASSIGN_OPS:
+            return True, True       # compound = both read and write
+        # Tokenized apart, e.g. `+` `=` -> `+=`
+        if len(op_tokens) >= 2 and (op + op_tokens[1]) in _ASSIGN_OPS:
+            return True, True
     except Exception:
         pass
     return False, False
@@ -1679,6 +1774,34 @@ def _is_inc_dec_op(cursor):
     except Exception:
         pass
     return False
+
+
+def _member_base(cursor):
+    """(variable name, struct type) a MEMBER_REF_EXPR is reached through.
+
+    Returns ("", "") when the base is not a plain variable — a call result
+    (`getSlot()->f`) has no name the test can set up, so it is not an input.
+    The type is stripped of `*`, `&` and `const` so `MapEntry *` matches the
+    `MapEntry` the data dictionary is keyed by.
+    """
+    children = list(cursor.get_children())
+    if not children:
+        return ("", "")
+    base = children[0]
+    # Unwrap the UNEXPOSED_EXPR / paren / cast layers clang puts over the reference.
+    while base.kind != cindex.CursorKind.DECL_REF_EXPR:
+        kids = list(base.get_children())
+        if not kids:
+            return ("", "")
+        base = kids[0]
+    ref = base.referenced
+    if not ref or ref.kind not in (cindex.CursorKind.VAR_DECL,
+                                   cindex.CursorKind.PARM_DECL):
+        return ("", "")
+    t = (ref.type.spelling if ref.type else "") or ""
+    for token in ("const", "volatile", "struct", "*", "&"):
+        t = t.replace(token, " ")
+    return (ref.spelling or "", " ".join(t.split()))
 
 
 def visit_global_access(cursor, current_key=None, is_write=False, is_compound=False):
@@ -1731,8 +1854,34 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
                     function_return_expr[current_key] = expr
             except Exception:
                 pass
+    elif kind == cindex.CursorKind.MEMBER_REF_EXPR and current_key:
+        # `e.lba` / `p->ppn`. `op.apply()` is also a MEMBER_REF_EXPR, so only a
+        # FIELD_DECL referent counts -- a method is not data the test can set up.
+        # A compound assign (`s->n += 1`) reads the field as well as writing it.
+        ref = cursor.referenced
+        if ref and ref.kind == cindex.CursorKind.FIELD_DECL \
+                and (not is_write or is_compound):
+            field = cursor.spelling or ""
+            base_var, base_type = _member_base(cursor)
+            if field and base_var and base_type:
+                field_access_reads[current_key].add((base_var, base_type, field))
+        # Keep walking: the base may itself contain reads (`a[i].f`, `g_t.f`), and a
+        # write must reach the base so the global behind `g_t.f = x` is recorded.
+        for child in cursor.get_children():
+            visit_global_access(child, current_key, is_write, is_compound)
+        return
     elif kind == cindex.CursorKind.DECL_REF_EXPR and current_key:
         ref = cursor.referenced
+        if is_write and ref and ref.kind == cindex.CursorKind.PARM_DECL:
+            # Reached with is_write=True through `*out = x` (the UNARY_OPERATOR
+            # deref falls through to the generic recursion, which preserves the
+            # flag) or through `w->id = x` (the MEMBER_REF_EXPR branch above
+            # recurses into its base with the flag still set).
+            # Only a pointer/reference parameter counts: assigning to a by-value
+            # parameter (`a = a - b`) writes a local copy the caller never sees.
+            ptype = (ref.type.spelling if ref.type else "") or ""
+            if ref.spelling and ("*" in ptype or "&" in ptype):
+                param_writes[current_key].add(ref.spelling)
         if ref and ref.kind == cindex.CursorKind.VAR_DECL:
             par = ref.semantic_parent
             if par and par.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE):
@@ -1920,23 +2069,27 @@ def _record_tu_diagnostics(tu, rel: str) -> int:
     return len(errors)
 
 
-# Phase 1 previously parsed every TU three times — once each in parse_file,
-# parse_calls, parse_global_access — with byte-identical args/options every time.
-# That tripled the dominant cost of Phase 1 (the libclang parse itself, not the
-# Python AST walk) for zero benefit. The three passes MUST stay separate full
-# loops over source_files (main(), below): parse_calls resolves callees against
-# the completely-populated `functions` dict (see visit_calls's `called_key not in
+# Phase 1 previously parsed every TU up to three times — once each for
+# definitions, calls, and global access — with byte-identical args/options
+# every time. That multiplied the dominant cost of Phase 1 (the libclang parse
+# itself, not the Python AST walk) for zero benefit. parse_calls and
+# parse_global_access don't depend on each other (separate registries, separate
+# visited-key sets) and are combined below into one pass, parse_calls_and_globals.
+# That pass MUST still stay a separate full loop over source_files from
+# parse_file's (main(), below): visit_calls resolves callees against the
+# completely-populated `functions` dict (see visit_calls's `called_key not in
 # functions` check) and visit_definitions dedups header-defined functions across
-# TUs via `_visited_function_keys` — both require every file's definitions pass to
-# have finished before any file's calls pass starts. So instead of merging the
-# loops, each file's TU is parsed once and cached for reuse by all three passes.
+# TUs via `_visited_function_keys` — both require every file's definitions pass
+# to have finished before any file's calls pass starts. So instead of merging
+# the two loops, each file's TU is parsed once here and cached for reuse by
+# both passes.
 _tu_cache: dict = {}
 _TU_PARSE_FAILED = object()
 
 
 def _get_tu(path):
-    """Parse `path` once; subsequent calls (from the calls/global-access passes)
-    reuse the cached TranslationUnit instead of re-invoking libclang."""
+    """Parse `path` once; the calls/global-access pass reuses the cached
+    TranslationUnit instead of re-invoking libclang."""
     cached = _tu_cache.get(path)
     if cached is _TU_PARSE_FAILED:
         raise cindex.TranslationUnitLoadError(f"cached failure: {path}")
@@ -1977,22 +2130,32 @@ def parse_file(path):
     _log.debug("TU %s: ok, %d def(s), %d clang error(s)", rel, n_defs, n_err)
 
 
-def parse_calls(path):
-    try:
-        tu = _get_tu(path)
-        visit_calls(tu.cursor)
-    except cindex.TranslationUnitLoadError:
-        pass
+def parse_calls_and_globals(path):
+    """Second (and final) parse of a TU: call edges + global read/write access.
 
+    Why this is a separate parse from parse_file(): both visitors resolve against the
+    *complete* definition registries — `visit_calls` drops an edge whose callee is not
+    yet in `functions`, and `visit_global_access` only records a var already in
+    `globals_data`. Those registries are only complete once parse_file() has run over
+    every file, so these visitors cannot move into the first pass without silently
+    losing cross-file call edges.
 
-def parse_global_access(path):
-    """Collect global read/write per function for direction (In/Out)."""
+    They do NOT depend on each other, though (separate registries, separate visited-key
+    sets), so they share ONE parse instead of taking one each — removing a third full
+    parse of every translation unit. Parsing dominates Phase 1 (~12s of 13s on the
+    19-file sample), so this is a ~1/3 cut that scales with the codebase.
+    """
     try:
         # Reuses the same cached TU parse_file already produced (same clang_args_for
         # args as every other pass), so this pass sees the same defines/include dirs
         # as the definition pass — a layer-gated #ifdef can't make the two walks
         # disagree about which globals a function touches.
         tu = _get_tu(path)
+        visit_calls(tu.cursor)
+        # BOTH visitors, on the one parse. Collapsing the two passes into this function
+        # dropped this call, and with it every global read/write in the model: direction
+        # became "Out: accesses no globals" for everything, and returnExpr -- captured by
+        # this same visitor on RETURN_STMT -- went with it.
         visit_global_access(tu.cursor)
     except cindex.TranslationUnitLoadError:
         pass
@@ -2169,6 +2332,17 @@ def build_metadata():
             functions_dict[fid]["readsGlobalIds"] = read_vids
         if write_vids:
             functions_dict[fid]["writesGlobalIds"] = write_vids
+
+        # Struct fields this function reads, for the SWE.4 mock write-back inputs.
+        fields_read = field_access_reads.get(func_key, set())
+        if fields_read:
+            functions_dict[fid]["readsFields"] = [
+                {"var": v, "structType": t, "field": f}
+                for v, t, f in sorted(fields_read)
+            ]
+        written_params = param_writes.get(func_key, set())
+        if written_params:
+            functions_dict[fid]["writesParams"] = sorted(written_params)
 
         # Direction: Get=Out, Set=In, both=In. No direct global access -> In.
         if write_raw:
@@ -2665,7 +2839,7 @@ def main():
     _log.info("Phase 1 (parser) starting")
     _log.info("  project name    : %s", PROJECT_NAME)
     _log.info("  base path       : %s", MODULE_BASE_PATH)
-    _log.info("  selected layer  : %s", _selected_layer or "(all)")
+    _log.info("  selected layer  : %s", ", ".join(_selected_layers) or "(all)")
     _log.info("  selected group  : %s", _selected_group or "(all)")
     _log.info("  component map   : %d file(s)", len(_FILE_COMPONENT_MAP))
     _log.info("  exclude patterns: %s", ", ".join(_EXCLUDE_NAME_PATTERNS) or "(none)")
@@ -2681,16 +2855,31 @@ def main():
         source_files = _restrict_to_only_files(source_files)
         plog.info(f"narrowed parse: {len(source_files)} affected TU(s) (--only-files)")
         # M4.4: load the baseline's func-key map so cross-TU calls (to functions defined in
-        # files we did NOT re-parse) still produce call edges.
-        _bfk = os.environ.get("ANALYZER_BASELINE_FUNCKEYS")
-        if _bfk and os.path.isfile(_bfk):
+        # files we did NOT re-parse) still produce call edges. Without it, a call from a
+        # re-parsed file into an un-parsed one resolves to nothing and the edge vanishes —
+        # the document then shows a function as calling less than it does.
+        #
+        # Read from `parse_snapshots` by version id. It was a path to func_keys.json passed in
+        # the ANALYZER_BASELINE_FUNCKEYS environment variable, which stopped being a file when
+        # the model moved to the database, and was an environment variable deciding run
+        # behaviour besides (D10-3).
+        if _baseline_version_id:
             try:
-                with open(_bfk, "r", encoding="utf-8") as _f:
-                    _baseline_func_keys.update(json.load(_f))
+                # Import core.model_store FIRST: it puts the repo root on sys.path for
+                # `api.db.postgres`. Importing that directly here raised ModuleNotFoundError —
+                # parser.py runs as a subprocess whose sys.path has engine/ but not the root.
+                from core.model_store import load_parse_snapshot_file as _load_snap
+                from core.db import get_engine as _get_engine
+                with _get_engine().connect() as _cx:
+                    _fk = _load_snap(_cx, _baseline_version_id, "func_keys.json") or {}
+                _baseline_func_keys.update(_fk)
                 plog.info(f"narrowed parse: loaded {len(_baseline_func_keys)} baseline func-keys "
-                          f"for cross-TU call resolution")
-            except (OSError, ValueError):
-                pass
+                          f"from version {_baseline_version_id} for cross-TU call resolution")
+            except Exception as _exc:
+                # Degrade to no map: edges into un-parsed files are lost, which the caller's
+                # --verify-parse gate would catch. Never fail the parse over it.
+                plog.warning(f"narrowed parse: could not load baseline func-keys "
+                             f"({type(_exc).__name__}: {_exc}) — cross-TU edges may be missing")
     total = len(source_files)
 
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
@@ -2700,24 +2889,21 @@ def main():
         parse_file(path)
     p1.done()
 
-    p2 = ProgressReporter("parser:calls", total=total, logger=plog)
-    p2.start(f"collecting calls ({total} files)")
+    # One parse serves both call edges and global access (see parse_calls_and_globals).
+    p2 = ProgressReporter("parser:calls+globals", total=total, logger=plog)
+    p2.start(f"collecting calls + global access ({total} files)")
     for path in source_files:
         p2.step()
-        parse_calls(path)
+        parse_calls_and_globals(path)
     p2.done()
-
-    p3 = ProgressReporter("parser:globals", total=total, logger=plog)
-    p3.start(f"collecting global access ({total} files)")
-    for path in source_files:
-        p3.step()
-        parse_global_access(path)
-    p3.done()
-    _tu_cache.clear()  # all 3 passes are done with these TUs; free them before build_metadata
+    _tu_cache.clear()  # both passes are done with these TUs; free them before build_metadata
 
     metadata = build_metadata()
-    model_dir = os.path.join(PROJECT_ROOT, "model")
-    os.makedirs(model_dir, exist_ok=True)
+    # ensure_model_dir() resolves via paths(), so it follows --model-root. The old
+    # PROJECT_ROOT hardcode created an empty <repo>/model on every run even when the real
+    # model was written elsewhere (the writes below already go through write_model_file).
+    from core.model_io import ensure_model_dir
+    ensure_model_dir()
 
     base_path = metadata["basePath"]
     meta_header = {
@@ -2733,16 +2919,24 @@ def main():
         _toolchain = cindex.conf.get_filename() or ""
     except Exception:
         _toolchain = ""
-    # Every arg any TU could be parsed with, not just the global set: the per-layer
-    # include dirs and defines moved out of CLANG_ARGS into clang_args_for, and a
-    # fingerprint that ignored them would let an include-path or macro change slip
-    # past the narrowed-parse gate. Sorted so it does not depend on layer order.
+    # WHAT goes in and WHAT comes out are two separate corrections, and the fingerprint is
+    # wrong without either one.
+    #
+    # WHAT GOES IN — every arg any TU could be parsed with, not just the global set: the
+    # per-layer include dirs and defines moved out of CLANG_ARGS into clang_args_for, and a
+    # fingerprint that ignored them would let an include-path or macro change slip past the
+    # narrowed-parse gate. Sorted so it does not depend on layer order.
+    #
+    # WHAT COMES OUT — base_path folds the commit-keyed checkout root out of the -I paths.
+    # Without it the fingerprint changes on EVERY commit, so the gate refuses every time and
+    # a narrowed parse never runs at all.
     _fp_args = list(CLANG_ARGS)
     for _lname in sorted(_LAYER_INCLUDE_ARGS):
         _fp_args += _LAYER_INCLUDE_ARGS[_lname]
     for _scope in sorted(_MACRO_ARGS_BY_SCOPE):
         _fp_args += _MACRO_ARGS_BY_SCOPE[_scope]
-    meta_header["parseFingerprint"] = parse_fingerprint(_fp_args, std="", toolchain=str(_toolchain))
+    meta_header["parseFingerprint"] = parse_fingerprint(
+        _fp_args, std="", toolchain=str(_toolchain), base_path=base_path)
     from core.model_io import (write_model_file, METADATA, FUNCTIONS, GLOBALS, DATA_DICTIONARY,
                                HASHES, EDGES, TU_INCLUDES, ENTITY_FILES, FUNC_KEYS, OVERRIDE_PAIRS,
                                ADDRESS_TAKEN)
@@ -2821,22 +3015,60 @@ def main():
     n_types = len(data_dictionary)
     # Through the logger rather than print() so these survive in logs/run_<date>.log
     # instead of scrolling past on the console.
-    _log.info("  model/metadata.json")
-    _log.info("  model/functions.json (%d)", n_funcs)
-    _log.info("  model/globalVariables.json (%d)", n_vars)
+    #
+    # Named by ARTIFACT and asked where it went, not printed as `model/<name>.json`. That
+    # file has not existed since the file backing was removed, so the old wording sent a
+    # reader looking on disk for something the run had put in Postgres.
+    from core.model_io import artifact_location as _where
+    _log.info("  metadata -> %s", _where("metadata"))
+    _log.info("  functions (%d) -> %s", n_funcs, _where("functions"))
+    _log.info("  globalVariables (%d) -> %s", n_vars, _where("globalVariables"))
     kinds = {}
     for t in data_dictionary.values():
         k = t.get("kind", "?")
         kinds[k] = kinds.get(k, 0) + 1
     plural = lambda k: "classes" if k == "class" else k + "s"
     parts = [f"{v} {plural(k)}" for k, v in sorted(kinds.items())]
-    _log.info("  model/dataDictionary.json (%d types: %s)", n_types, ", ".join(parts))
-    _log.info("  model/hashes.json (%d entities)", len(entity_hashes))
-    _log.info("  model/edges.json (%d types used, %d macros used)",
-              len(edges["typeUsers"]), len(edges["macroUsers"]))
+    _log.info("  dataDictionary (%d types: %s) -> %s", n_types, ", ".join(parts),
+              _where("dataDictionary"))
+    _log.info("  hashes (%d entities) -> %s", len(entity_hashes), _where("hashes"))
+    _log.info("  edges (%d types used, %d macros used) -> %s",
+              len(edges["typeUsers"]), len(edges["macroUsers"]), _where("edges"))
     _n_inc = sum(len(v) for v in tu_includes.values())
-    _log.info("  model/tu_includes.json (%d TUs, %d in-repo include edges)",
-              len(tu_includes), _n_inc)
+    _log.info("  tu_includes (%d TUs, %d in-repo include edges) -> %s",
+              len(tu_includes), _n_inc, _where("tu_includes"))
+
+    # Path matching folds case on every platform (incremental/affected._norm), which is what
+    # lets a baseline parsed on Windows be compared on Linux. The one place that costs
+    # something is a repo holding two files whose paths differ only by case: on Linux those
+    # are separate translation units and the fold treats them as one. Rare enough to be
+    # worth naming rather than absorbing silently.
+    try:
+        from incremental.affected import case_collisions
+        _paths = set(tu_includes) | {h for hs in tu_includes.values() for h in (hs or [])}
+        _clash = case_collisions(_paths)
+        if _clash:
+            _log.warning("  %d path(s) in this repo differ only by CASE. Change detection "
+                         "folds case, so each such group is matched as one file — on Linux "
+                         "they are separate translation units:", len(_clash))
+            for _k, _spellings in list(_clash.items())[:5]:
+                _log.warning("      %s", " | ".join(_spellings))
+    except Exception:                       # never fail a parse over a diagnostic
+        pass
+
+    # Change detection is only as good as the hashes. libclang returns no tokens for
+    # some valid cursors (a macro-produced declaration, notably) and hash_cursor then
+    # hashes the extent's raw text instead. That is a correct hash, but the count is
+    # worth seeing: it was silently `sha256("")` for every one of them before, which
+    # pinned those entities to "unchanged" forever.
+    _fb = getattr(hash_cursor, "fallbacks", {}) or {}
+    if _fb.get("extent_text"):
+        _log.info("  %d entity hash(es) came from the extent's source text (libclang "
+                  "returned no tokens)", _fb["extent_text"])
+    if _fb.get("identity"):
+        _log.warning("  %d entity hash(es) could not be read from source at all and fall "
+                     "back to name+position — those entities re-generate whenever they "
+                     "move, which is the safe direction but not free", _fb["identity"])
 
     _log_parse_summary(n_funcs)
 
@@ -2853,3 +3085,10 @@ if __name__ == "__main__":
         # silent success would be far worse than having no traceback.
         _log.critical("Phase 1 crashed - traceback follows", exc_info=True)
         raise
+    # DB mode: land this phase's buffered model writes (doc 10, step 3). Database writes are
+    # buffered so the pieces persist together in one transaction, so without this the phase
+    # exits and the buffer is lost — the next phase then finds no model at all. Deliberately
+    # after main() RETURNS, never in a finally and never inside the try: a phase that failed
+    # must not publish a half-built model.
+    from core.run_context import flush_model
+    flush_model()

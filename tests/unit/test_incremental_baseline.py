@@ -86,3 +86,51 @@ class TestOverride:
         r = select_baseline(repo["dir"], versions, repo["C3"], override_version_id="v3")
         assert r["chosenBaseVersionId"] == "v2"  # auto (v3 not complete)
         assert any("not complete" in w for w in r["warnings"])
+
+
+class TestVersionAtTargetCommitIsNotABaseline:
+    """A version already at the target commit must not be chosen automatically.
+
+    Git calls a commit its own ancestor, so such a version sits at distance 0 -- nearer
+    than any real ancestor -- and used to win. The run then saw zero changed files,
+    re-parsed nothing, and emitted a verbatim copy of that version: same model, same
+    hashes, same flowcharts. Regenerating a commit is asked for precisely when the
+    existing version at it is wrong, so copying it forward reproduces the defect.
+    """
+
+    def _versions(self, repo, extra):
+        return [extra] + repo["versions"]
+
+    def test_same_commit_version_is_skipped_for_a_real_ancestor(self, repo):
+        vs = self._versions(repo, {"versionId": "v3", "commit": repo["C3"],
+                                   "status": "complete"})
+        r = select_baseline(repo["dir"], vs, repo["C3"])
+        assert r["chosenBaseVersionId"] == "v2", "v3 is at C3 itself and must not win"
+        assert r["changedFiles"], "a real baseline must leave files to re-parse"
+
+    def test_the_skip_is_reported(self, repo):
+        vs = self._versions(repo, {"versionId": "v3", "commit": repo["C3"],
+                                   "status": "complete"})
+        r = select_baseline(repo["dir"], vs, repo["C3"])
+        assert any("v3" in w and "target commit" in w for w in r["warnings"])
+
+    def test_only_candidate_at_target_falls_back_to_full(self, repo):
+        # Nothing else is an ancestor, so there is no usable baseline at all.
+        vs = [{"versionId": "vX", "commit": repo["F1"], "status": "complete"}]
+        r = select_baseline(repo["dir"], vs, repo["F1"])
+        assert r["decision"] == "full"
+        assert r["chosenBaseVersionId"] is None
+
+    def test_explicit_override_at_target_is_honoured_but_warns(self, repo):
+        vs = self._versions(repo, {"versionId": "v3", "commit": repo["C3"],
+                                   "status": "complete"})
+        r = select_baseline(repo["dir"], vs, repo["C3"], override_version_id="v3")
+        assert r["chosenBaseVersionId"] == "v3", "an explicit choice is still obeyed"
+        assert r["changedFiles"] == 0
+        assert any("AT the target commit" in w for w in r["warnings"])
+
+    def test_unrelated_topology_is_unaffected(self, repo):
+        # No version sits at the target: selection must behave exactly as before.
+        r = select_baseline(repo["dir"], repo["versions"], repo["C3"])
+        assert r["chosenBaseVersionId"] == "v2"
+        assert not any("target commit" in w for w in r["warnings"])

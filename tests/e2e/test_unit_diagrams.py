@@ -23,14 +23,33 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-UNIT_DIAGRAMS_DIR = os.path.join(PROJECT_ROOT, "output", "My-Sample", "unit_diagrams")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+from tests.e2e_paths import COMPONENTS, output_for   # noqa: E402
+# Diagrams land under each component now, not under one group directory.
+UNIT_DIAGRAM_DIRS = [_os.path.join(output_for(c), "unit_diagrams") for c in COMPONENTS]
+UNIT_DIAGRAMS_DIR = next((d for d in UNIT_DIAGRAM_DIRS if _os.path.isdir(d)),
+                        UNIT_DIAGRAM_DIRS[0])
+
+
+def _mmd_path(safe):
+    """Where that unit's diagram is, across the component directories.
+
+    One directory per component now, where a group-scoped run once had a single one
+    for the whole group -- so looking in only the first sees only its units. Returns
+    the first match, or the first candidate path so failure messages stay readable.
+    """
+    cands = [_os.path.join(d, safe + ".mmd") for d in UNIT_DIAGRAM_DIRS]
+    return next((c for c in cands if _os.path.isfile(c)), cands[0])
 
 # short unit name  →  safe_filename (== the main-unit node id)
-#   unit_key "Sample Core|Core" → safe_filename → "Sample-Core_Core"
+#   unit_key "Layer1.Sample Core|Core" → safe_filename → "Layer1.Sample-Core_Core"
+# The layer rides along because it is part of the component id: two layers may each
+# have a `Core`, and the node id has to tell them apart.
 UNITS = {
-    "Core": "Sample-Core_Core",
-    "Lib":  "Lib_Lib",
-    "Util": "Util_Util",
+    "Core": "Layer1.Sample-Core_Core",
+    "Lib":  "Layer1.Lib_Lib",
+    "Util": "Layer1.Util_Util",
 }
 
 # subgraph label = the unit's component display name (config group component)
@@ -42,15 +61,18 @@ SUBGRAPH_LABELS = {
 
 # Partner nodes that MUST appear in each unit's diagram (its interface consumers).
 EXPECTED_PARTNERS = {
-    "Core": {"App_Main", "Cross_Hub"},
-    "Lib":  {"Sample-Core_Core", "App_Main", "Cross_Hub"},
-    "Util": {"Sample-Core_Core", "Lib_Lib", "App_Main", "Cross_Hub"},
+    "Core": {"Layer1.App_Main", "Layer1.Cross_Hub"},
+    "Lib":  {"Layer1.Sample-Core_Core", "Layer1.App_Main", "Layer1.Cross_Hub"},
+    "Util": {"Layer1.Sample-Core_Core", "Layer1.Lib_Lib",
+             "Layer1.App_Main", "Layer1.Cross_Hub"},
 }
 
 # Partner nodes that MUST NOT appear (units that do not consume the main unit).
 ABSENT_PARTNERS = {
-    "Core": {"Lib_Lib", "Util_Util"},   # Lib/Util never call Core
-    "Lib":  {"Util_Util"},              # Util does not call Lib's interface here
+    # Lib/Util never call Core
+    "Core": {"Layer1.Lib_Lib", "Layer1.Util_Util"},
+    # Util does not call Lib's interface here
+    "Lib":  {"Layer1.Util_Util"},
     "Util": set(),
 }
 
@@ -68,7 +90,7 @@ def mmd_files(run_pipeline):
     result = {}
     missing = []
     for name, safe in UNITS.items():
-        path = os.path.join(UNIT_DIAGRAMS_DIR, f"{safe}.mmd")
+        path = _mmd_path(safe)
         if os.path.isfile(path):
             with open(path, encoding="utf-8") as f:
                 result[name] = f.read()
@@ -87,7 +109,7 @@ def test_expected_mmd_files_exist(run_pipeline):
     missing = [
         f"{safe}.mmd"
         for name, safe in UNITS.items()
-        if not os.path.isfile(os.path.join(UNIT_DIAGRAMS_DIR, f"{safe}.mmd"))
+        if not os.path.isfile(_mmd_path(safe))
     ]
     assert not missing, f"Missing unit diagram files: {missing}"
 

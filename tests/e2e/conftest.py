@@ -5,13 +5,16 @@ import sys
 
 import pytest
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from tests.e2e_paths import (                             # noqa: E402
+    PROJECT_ROOT, OUTPUT_DIR, COMPONENTS, output_for,
+)
 SNAPSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "snapshots")
 
 
 def _load_cfg():
-    """Load config.json via the project's own utility (strips comments/trailing commas)."""
+    """Load config.defaults.json via the project's own utility (strips comments/trailing commas)."""
     sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
     from utils import load_config
     return load_config(os.path.join(PROJECT_ROOT, "engine"))
@@ -60,33 +63,80 @@ def llm_summarize_off():
 
 
 @pytest.fixture(scope="session")
+def function_test_specs_on():
+    """Skip the requesting test when views.functionTestSpecs is disabled.
+
+    With it off the SWE.4 view emits no per-function specs, so spec-content
+    assertions have nothing to assert against.
+    """
+    if not _load_cfg().get("views", {}).get("functionTestSpecs", False):
+        pytest.skip("views.functionTestSpecs is off — no per-function specs emitted")
+
+
+@pytest.fixture(scope="session")
 def update_snapshots(request):
     return request.config.getoption("--update-snapshots")
 
 
 @pytest.fixture(scope="session")
 def interface_tables(run_pipeline):
-    # New layout: output/<group>/interface_tables.json; fall back to flat output/
-    path = os.path.join(OUTPUT_DIR, "My-Sample", "interface_tables.json")
-    if not os.path.isfile(path):
-        path = os.path.join(OUTPUT_DIR, "interface_tables.json")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    """Every component's interface tables, merged into the one dict tests expect.
+
+    A group-scoped run writes output/<Component>/interface_tables.json once per
+    component; the keys inside are already component-qualified ("Layer1.Lib|Lib"), so the
+    merge cannot collide and the result is what the single group-level file used
+    to hold.
+    """
+    merged = {}
+    for c in COMPONENTS:
+        path = os.path.join(output_for(c), "interface_tables.json")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                part = json.load(f) or {}
+            # "unitNames" is a map keyed by unit, present in EVERY file -- a plain
+            # update() would keep only the last component's names.
+            merged.setdefault("unitNames", {}).update(part.pop("unitNames", None) or {})
+            merged.update(part)
+    if not merged:
+        raise AssertionError("no interface_tables.json under " + OUTPUT_DIR)
+    return merged
+
+
+@pytest.fixture(scope="session")
+def test_specs(run_pipeline):
+    """Merged the same way `interface_tables` is, and for the same reason.
+
+    This read `output/My-Sample/test_specs.json`, a path a group-scoped run has
+    never written - it writes one directory per COMPONENT - so the fixture errored
+    and took every SWE.4 test with it. Keys are component-qualified, so merging
+    cannot collide.
+    """
+    merged = {}
+    for c in COMPONENTS:
+        path = os.path.join(output_for(c), "test_specs.json")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                part = json.load(f) or {}
+            merged.setdefault("unitNames", {}).update(part.pop("unitNames", None) or {})
+            merged.update(part)
+    if not merged:
+        raise AssertionError("no test_specs.json under " + OUTPUT_DIR)
+    return merged
 
 
 @pytest.fixture(scope="session")
 def core_entries(interface_tables):
-    return interface_tables.get("Sample-Core|Core", {}).get("entries", [])
+    return interface_tables.get("Layer1.Sample-Core|Core", {}).get("entries", [])
 
 
 @pytest.fixture(scope="session")
 def lib_entries(interface_tables):
-    return interface_tables.get("Lib|Lib", {}).get("entries", [])
+    return interface_tables.get("Layer1.Lib|Lib", {}).get("entries", [])
 
 
 @pytest.fixture(scope="session")
 def util_entries(interface_tables):
-    return interface_tables.get("Util|Util", {}).get("entries", [])
+    return interface_tables.get("Layer1.Util|Util", {}).get("entries", [])
 
 
 @pytest.fixture(scope="session")

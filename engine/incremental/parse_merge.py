@@ -20,17 +20,22 @@ Pure (plain dicts) so it is unit-testable; the engine supplies the two models + 
 """
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, Iterable, List, Set
 
 from incremental.virtual_dispatch import spread_virtual_families
 
 
 def _norm(p: str) -> str:
-    """Normalize a repo-relative path for set membership: forward slashes, and case-folded
-    on case-insensitive filesystems (Windows) so git-diff paths and entity_files line up."""
-    p = (p or "").replace("\\", "/").strip("/")
-    return p.lower() if os.name == "nt" else p
+    """Normalize a repo-relative path for set membership: forward slashes, case-folded.
+
+    Folds on every platform, not only Windows -- see `affected._norm` for why. The drop set
+    here is matched against `entity_files`, whose spellings come from libclang, against a
+    `changed` list whose spellings come from git. A baseline parsed on one platform and
+    merged on another would otherwise fail to drop the entity, leaving the baseline's copy
+    in place with its old hash and no error. Over-matching costs a re-parse; under-matching
+    is a stale document.
+    """
+    return (p or "").replace("\\", "/").strip("/").lower()
 
 
 def _file_of(key: str, entity_files: Dict[str, str]) -> str:
@@ -66,6 +71,21 @@ def _merge_keyed(baseline: Dict[str, Any], fresh: Dict[str, Any],
     for k, v in (fresh or {}).items():
         f = _file_of(k, entity_files)
         if f in drop or not f:
+            out[k] = v
+    return out
+
+
+def _merge_func_keys(baseline: Dict[str, str], fresh: Dict[str, str],
+                     entity_files: Dict[str, str], drop: Set[str]) -> Dict[str, str]:
+    """Merge {mangled-func-key -> fid} by the file of the VALUE.
+
+    `_merge_keyed` cannot serve here: it resolves a file from the entry's KEY, and these keys are
+    mangled C++ names, not entity keys. Using it silently kept every baseline entry and discarded
+    every fresh one, because no mangled name is ever found in `entity_files`.
+    """
+    out = {k: v for k, v in (baseline or {}).items() if _file_of(v, entity_files) not in drop}
+    for k, v in (fresh or {}).items():
+        if _file_of(v, entity_files) in drop:
             out[k] = v
     return out
 
@@ -132,8 +152,28 @@ def _merge_address_taken(baseline_recs, fresh_recs, entity_files, drop) -> List[
     return out
 
 
-def _apply_address_taken(functions: Dict[str, dict], records: List[list]) -> None:
-    """Re-attach addressTakenByUnits to the merged functions from the merged records."""
+def _apply_address_taken(functions: Dict[str, dict], records: List[list],
+                         entity_files: Dict[str, str], drop: Set[str]) -> None:
+    """Re-attach addressTakenByUnits to the merged functions from the merged records.
+
+    Clearing is restricted to functions whose DEFINING FILE was re-parsed. For those the
+    fresh records are authoritative, so a registration deleted from a re-parsed table must
+    disappear -- that is the deletion semantics this has to keep.
+
+    For every other function this run has no evidence either way, and popping the field was
+    destructive: `_merge_address_taken` can only carry a baseline record forward if the
+    baseline HAS one, so a missing baseline `address_taken` artifact looked exactly like a
+    deliberate removal. The field was then wiped from functions in files nobody touched,
+    even though the baseline's own functions.json still carried it.
+
+    That is not hypothetical. `address_taken` was only registered in DB_BACKED_PARSE in
+    421f4e5; any version generated in database mode before that wrote the artifact to a
+    file nothing reads, so its parse snapshot has none. Chaining an incremental run off
+    such a version silently flipped every function published only through a file-scope
+    pointer table to private -- `_fn_is_private` keeps those public via this field alone,
+    since no CALL_EXPR names them -- and they vanished from the interface tables, the unit
+    and behaviour diagrams, and the document.
+    """
     by_fid: Dict[str, Set[str]] = {}
     for rec in records or []:
         if len(rec) >= 2 and rec[0] in functions and rec[1]:
@@ -142,8 +182,9 @@ def _apply_address_taken(functions: Dict[str, dict], records: List[list]) -> Non
         units = by_fid.get(fid)
         if units:
             f["addressTakenByUnits"] = sorted(units)
-        else:
+        elif _file_of(fid, entity_files) in drop:
             f.pop("addressTakenByUnits", None)
+        # else: file not re-parsed, no evidence -- keep what the baseline carried.
 
 
 def _recompute_call_edges(functions: Dict[str, dict], override_pairs: List[list]) -> None:
@@ -208,7 +249,24 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
 
     address_taken = _merge_address_taken(baseline.get("address_taken"), fresh.get("address_taken"),
                                          entity_files, drop)
-    _apply_address_taken(functions, address_taken)
+    # A baseline with no address_taken records, whose own functions nonetheless carry
+    # addressTakenByUnits, is the poisoned shape: the artifact was never captured (it was
+    # registered in DB_BACKED_PARSE only in 421f4e5), so nothing can be carried forward
+    # from it and only the file-scoped guard above keeps those registrations alive. Say so
+    # -- silently inheriting it is how every pointer-table entry flipped private.
+    if not (baseline.get("address_taken") or []):
+        _stale = sorted(fid for fid, f in (baseline.get("functions") or {}).items()
+                        if f.get("addressTakenByUnits"))
+        if _stale:
+            from utils import log as _log
+            _log("baseline has no address_taken snapshot, but %d of its function(s) are "
+                 "published by a pointer table. Their registrations are preserved from the "
+                 "baseline model, not re-derived -- regenerate the baseline with --full if a "
+                 "table changed there. Affected: %s%s"
+                 % (len(_stale), ", ".join(_stale[:3]),
+                    "" if len(_stale) <= 3 else " ..."),
+                 component="incremental", err=True)
+    _apply_address_taken(functions, address_taken, entity_files, drop)
 
     _recompute_call_edges(functions, override_pairs)
 
@@ -222,6 +280,18 @@ def merge_model(baseline: Dict[str, Any], fresh: Dict[str, Any], drop_files: Ite
         "tu_includes": dict(sorted(tu_includes.items())),
         "entity_files": merged_entity_files,
         "override_pairs": override_pairs,
+        # The baseline's {mangled-func-key -> fid} map, merged by the fid's FILE.
+        #
+        # It was not merged or republished at all, so a narrowed parse produced a version whose
+        # stored snapshot had no func_keys. The map is what lets a call from a re-parsed file
+        # into an UN-parsed one resolve to an edge, so the NEXT narrowed parse against that
+        # version silently lost cross-TU call edges — the document then shows a function calling
+        # less than it does, with nothing logged. One narrowed parse from a full baseline worked,
+        # which is why the gate did not catch it: the damage needs two in a row.
+        "func_keys": _merge_func_keys(baseline.get("func_keys") or {},
+                                      fresh.get("func_keys") or {}, merged_entity_files, drop),
+        # Function-pointer table registrations, replayed because a narrowed parse may not
+        # re-parse the file holding the table. Same reasoning as func_keys above.
         "address_taken": address_taken,
     }
 

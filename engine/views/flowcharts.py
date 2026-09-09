@@ -10,6 +10,35 @@ import sys
 from .registry import register
 from core.macro_input import args_for_scope, normalize_scoped_args
 from utils import KEY_SEP, log, safe_filename, os_type, render_dot_cached
+from core.subprocess_util import log_stderr_tail, run_streaming
+
+
+def _project_root() -> str:
+    """The CODE root, for resolving tools and assets.
+
+    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc`,
+    `engine/config/render_dot.mjs` and the shared `.mmdc_cache`, all of which live at the
+    code root — while model_dir is DATA whose location moves (per-version dirs, an isolated
+    test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
+    needed a "walk up one extra level" special case, and why relocating model/ would have
+    silently pointed the renderer at a directory with no render script in it: the render
+    simply returns False and the flowchart never appears.
+    """
+    from core.paths import paths
+    return paths().project_root
+
+
+def _output_root() -> str:
+    """The root of THIS run's rendered output tree (versions/<ver>/output since B1).
+
+    Separate from `_project_root()` on purpose: one answers "where is the code/tooling", the
+    other "where does this run write". They were the same directory before output moved,
+    which is why a single `project_root` served both — and why conflating them now would
+    break carry-forward without any error.
+    """
+    from core.paths import paths
+    return paths().output_dir
+
 
 
 # PNG slicing thresholds: split a flowchart PNG across Word pages when it is too tall to
@@ -31,8 +60,11 @@ def _baseline_flowchart_dir(plan, model_dir_abs, out_dir):
     if not base_ver_dir:
         return None
 
-    project_root = os.path.dirname(model_dir_abs)
-    rel = os.path.relpath(out_dir, os.path.join(project_root, "output"))
+    # Anchored on the run's OUTPUT root, not the code root: since B1 a run renders into
+    # versions/<ver>/output, so "<code root>/output" is no longer an ancestor of out_dir and
+    # relpath would yield a ../.. path resolving to nothing — silently disabling flowchart
+    # carry-forward while the report still counts the entries it MEANT to carry.
+    rel = os.path.relpath(out_dir, _output_root())
     cand = os.path.join(base_ver_dir, "output", rel)
     return cand if os.path.isdir(cand) else None
 
@@ -60,6 +92,50 @@ def _carry_forward_flowcharts(base_fc, out_dir):
         "flowcharts"
     )
     return carried
+
+
+def _splice_function_pngs(src_fc_dir, out_dir, stem, qn) -> int:
+    """Replace one function's carried images with the source version's. Returns the count.
+
+    A flowchart too tall for a single image is written as `<stem>_<qn>_part_1_of_N.png`
+    ... `_part_N_of_N.png`, and then `<stem>_<qn>.png` does not exist at all. Copying only
+    that one name spliced nothing for those functions -- silently, since the carried
+    baseline images were already in place and a missing source file is not an error. The
+    result was a big flowchart keeping the previous version's picture while a small one
+    beside it updated, in the same unit, on the same run.
+
+    Carried images are removed first: a part count that SHRANK (3 pages down to 2) would
+    otherwise leave `_part_3_of_3.png` behind for the document to find.
+    """
+    if not (src_fc_dir and os.path.isdir(src_fc_dir) and os.path.isdir(out_dir)):
+        return 0
+    prefix = f"{stem}_{safe_filename(qn)}"
+
+    def mine(f):
+        # Exact name or a part of it -- never a longer function name that starts the same.
+        return f.endswith(".png") and (f == prefix + ".png"
+                                       or f.startswith(prefix + "_part_"))
+
+    # Read the source list BEFORE deleting anything. If src and out resolve to the same
+    # directory -- a reuse index pointing a function at its own version -- deleting first
+    # would remove the images and then find nothing to copy back, losing them outright.
+    # Same directory means the images are already the ones wanted, so there is nothing to do.
+    src_names = [f for f in os.listdir(src_fc_dir) if mine(f)]
+    if os.path.normcase(os.path.abspath(src_fc_dir)) == os.path.normcase(os.path.abspath(out_dir)):
+        return len(src_names)
+
+    for f in os.listdir(out_dir):
+        if mine(f):
+            try:
+                os.remove(os.path.join(out_dir, f))
+            except OSError:
+                pass
+    copied = 0
+    for f in os.listdir(src_fc_dir):
+        if mine(f):
+            shutil.copyfile(os.path.join(src_fc_dir, f), os.path.join(out_dir, f))
+            copied += 1
+    return copied
 
 
 def _prune_orphan_flowcharts(out_dir, valid_stems):
@@ -163,20 +239,33 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
     None (no plan) or a dict consumed by run() to merge + decide which PNGs to render.
     """
 
-    plan_path = os.path.join(model_dir_abs, "incremental_plan.json")
-
-    if not os.path.isfile(plan_path):
-        return functions_arg_path, None
-
+    # Through the gateway (doc 10, step 6): a per-version row in database mode, the file
+    # otherwise. Absent means "regenerate everything".
+    from core.model_io import read_model_file, INCREMENTAL_PLAN, FUNCTIONS
     try:
-        with open(plan_path, "r", encoding="utf-8") as f:
-            plan = json.load(f)
-
-        with open(functions_arg_path, "r", encoding="utf-8") as f:
-            funcs = json.load(f)
-
-    except (OSError, json.JSONDecodeError):
+        plan = read_model_file(INCREMENTAL_PLAN, required=False, default=None)
+    except Exception:
+        plan = None
+    if not plan:
         return functions_arg_path, None
+
+    # The functions model, through the gateway. This used to open `functions_arg_path`
+    # directly — a path that in database mode points at a `model/functions.json` nobody
+    # writes any more. The open failed, this returned `inc = None`, and EVERY run
+    # regenerated every flowchart from scratch: the single largest cost in Phase 3, with no
+    # error and no log line to show reuse had been skipped.
+    try:
+        funcs = read_model_file(FUNCTIONS, required=False, default=None)
+    except Exception:
+        funcs = None
+    if not funcs:
+        try:
+            with open(functions_arg_path, "r", encoding="utf-8") as f:
+                funcs = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            log("incremental: no functions model available - full flowchart regen",
+                "flowcharts")
+            return functions_arg_path, None
 
     base_fc = _baseline_flowchart_dir(plan, model_dir_abs, out_dir)
 
@@ -236,13 +325,36 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
 
             xver_by_unit.setdefault(stem, {})[qn] = entry
 
-            png = f"{stem}_{safe_filename(qn)}.png"
-            srcpng = os.path.join(src_fc_dir, png) if src_fc_dir else ""
-
-            if srcpng and os.path.isfile(srcpng):
-                shutil.copyfile(srcpng, os.path.join(out_dir, png))
+            _splice_function_pngs(src_fc_dir, out_dir, stem, qn)
 
         restricted = {fid: funcs[fid] for fid in sel}
+        # The engine restricts ITSELF from the stored plan, so the `sel.append(fid)`
+        # fallback above is only real if the plan learns about it. It did not, and the
+        # consequence is silent and wrong:
+        #
+        #   plan.flowchartFids = direct_fns - crossVersionFlowcharts, so a changed function
+        #   whose fingerprint was seen in an earlier version is excluded here. If that
+        #   version turns out to have NO flowchart for it, this view adds it back to `sel`
+        #   -- but the engine still reads flowchartFids, sees an empty list, renders
+        #   nothing, and the splice below falls through fresh -> x-ver -> BASELINE. The
+        #   document then carries the previous version's diagram for code that changed.
+        #
+        # Reproduced: a for-loop added to Math|Utils::add, incremental. The first such run
+        # renders correctly; a later run off the same baseline finds the fingerprint in the
+        # index, finds no flowchart at the source, and silently keeps the old picture.
+        #
+        # So publish the corrected set. One source of truth, and the engine restricts to
+        # exactly what this view decided.
+        if set(sel) != set(fids):
+            try:
+                from core.model_io import write_model_file
+                write_model_file(INCREMENTAL_PLAN, {**plan, "flowchartFids": sorted(set(sel))})
+                log("incremental: %d function(s) had no usable cross-version flowchart; "
+                    "added them back to the plan so the engine regenerates them"
+                    % (len(set(sel) - set(fids))), "flowcharts")
+            except Exception as exc:                       # never fail the run over this
+                log("incremental: could not republish the plan (%s); flowcharts for "
+                    "changed functions may be stale" % exc, "flowcharts", err=True)
         fresh_pairs = {
             (_stem(fid), funcs[fid].get("qualifiedName"))
             for fid in sel
@@ -264,8 +376,15 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
             for u in changed_units
         }
 
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(restricted, f, indent=2)
+        # Nothing consumes this any more. Given --version-id the engine reads its functions
+        # from the database and restricts itself from the stored plan; the file was only ever
+        # for the file path, and writing it produced version dirs full of unexplained
+        # leftovers that nothing opened.
+        from core.run_context import version_id as _vid
+        if not _vid():
+            os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(restricted, f, indent=2)
 
         log(
             f"incremental: flowcharts (function-level) restricted to {len(restricted)} changed "
@@ -309,8 +428,12 @@ def _apply_incremental_plan(functions_arg_path, model_dir_abs, out_dir):
         if (info.get("location") or {}).get("file") in impacted
     }
 
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(restricted, f, indent=2)
+    # Same as the function-level branch above: with a version id the engine reads its
+    # functions from the database and this file is opened by nothing.
+    from core.run_context import version_id as _vid2
+    if not _vid2():
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(restricted, f, indent=2)
 
     log(
         f"incremental: flowcharts (file-level) restricted to {len(restricted)} function(s) "
@@ -350,10 +473,28 @@ def _merge_incremental_flowcharts(inc, out_dir):
 
     spliced = 0
 
+    # Which (unit, function) pairs the engine was actually asked to regenerate. Anything
+    # else found in out_dir is a CARRIED BASELINE entry, not engine output -- see below.
+    _fresh_pairs = inc.get("fresh_pairs")
+
     for unit in sorted(inc.get("changed_units") or []):
         out_json = os.path.join(out_dir, unit + ".json")
 
+        # `fresh` must mean "the engine regenerated this", and reading the file alone does
+        # not establish that. _carry_forward_flowcharts copies EVERY baseline JSON into
+        # out_dir first, and the engine overwrites only the units it regenerated something
+        # in. For a unit whose changed functions were all diverted to cross-version reuse
+        # the engine writes nothing, so out_json is still the baseline copy -- and every
+        # name in it then won the `fresh > x-ver > baseline` precedence below as though it
+        # were newly generated. The cross-version DOT could never take effect: its PNG was
+        # spliced in while its graph was overridden by the baseline's, so the stored
+        # flowchart and the picture in the document came from different versions.
+        #
+        # fresh_pairs is exactly the set the engine was handed, so intersect with it.
         fresh = _by_name(out_json)  # engine output: changed only
+        if _fresh_pairs is not None:
+            _names = {qn for (u, qn) in _fresh_pairs if u == unit}
+            fresh = {n: e for n, e in fresh.items() if n in _names}
 
         baseline = (
             _by_name(os.path.join(base_fc, unit + ".json"))
@@ -702,43 +843,148 @@ def _maybe_slice_tall_png(png_path: str) -> int:
 
     return n_parts
 
+def _resolve_layer_names(config, group_name, allowed_components=None) -> list:
+    """Every layer this Phase-3 run covers, in order. Empty means "could not tell".
+
+    Three shapes reach here and all of them must resolve, because the answer
+    decides which `-I` dirs and which `-D` set the flowchart subprocess is given:
+
+    * a GROUP id - layer-qualified since 2026-09-06 (`Layer1.Support`).
+      `get_group_layer_name` reads the prefix, and still resolves a bare legacy
+      name while only one layer has it.
+    * a COMPONENT BUNDLE (`--selected-component`) - `group_name` is then a virtual
+      join of the component ids (`Layer1.Math_Layer2.Gpio`), which names no group
+      at all. The layers come from the components themselves, and since 2026-09-07
+      a bundle may legitimately span more than one.
+    * neither - an unscoped run; the caller falls back to everything.
+
+    This used to compare `group_name` against the config's BARE group names, so
+    the day group ids gained their layer prefix it stopped matching anything:
+    every run fell through to "all layers' dirs, global-only macros" - more
+    headers than the layer should see, and none of its own -D flags. Silent, and
+    exactly the blending the per-layer inputs exist to prevent.
+    """
+    from core.config import get_group_layer_name, get_component_layer_name, qualified_layer
+
+    # `_analyzerAllowedComponents` reaches this module CASEFOLDED (they are compared
+    # against model keys that way), so the layer half of `layer2.gpio` will not match
+    # the configured `Layer2` by identity. Map it back before looking anything up -
+    # without this the component loop found nothing, fell through to the group lookup,
+    # and a two-layer bundle silently resolved to one layer.
+    by_fold = {str(l).casefold(): l for l in ((config or {}).get("layers") or {})}
+
+    out: list = []
+    # Components first: a bundle's own ids are the precise answer, and its
+    # `group_name` is a virtual name that no group lookup can resolve.
+    for comp in (allowed_components or []):
+        layer = by_fold.get(str(qualified_layer(comp) or "").casefold())
+        if not layer:
+            layer = get_component_layer_name(config, comp)
+        if layer and layer not in out:
+            out.append(layer)
+    if out:
+        return out
+
+    layer = get_group_layer_name(config, group_name) if group_name else None
+    return [layer] if layer else []
+
+
 def _resolve_layer_name(config, group_name):
-    """Return the layer that owns group_name (case-insensitive), or None."""
-    if not group_name:
-        return None
-
-    for layer_name, layer in ((config or {}).get("layers") or {}).items():
-        groups = layer.get("groups") or {}
-        if group_name.lower() in [g.lower() for g in groups]:
-            return layer_name
-
-    return None
+    """The single layer owning `group_name`, or None. Kept for callers that want
+    one answer; `_resolve_layer_names` is the general form."""
+    names = _resolve_layer_names(config, group_name)
+    return names[0] if len(names) == 1 else None
 
 
-def _resolve_layer_dirs(config, group_name, layer_paths):
+def _resolve_layer_dirs(config, group_name, layer_paths, allowed_components=None):
     """
-    Return the include dirs for the layer that owns group_name.
+    Include dirs for every layer this run covers.
 
-    When group_name is set, only the dirs from its layer are returned so the
-    flowchart engine does not see headers from unrelated layers. Falls back to
-    all dirs across all layers when no group is selected or the group is not
-    found in the config.
+    Only those layers' dirs are returned, so the flowchart engine does not see
+    headers from unrelated layers. Falls back to all dirs across all layers when
+    the run's layers cannot be determined at all.
     """
-    layer_name = _resolve_layer_name(config, group_name)
+    layer_names = _resolve_layer_names(config, group_name, allowed_components)
 
-    if layer_name:
-        return layer_paths.get(layer_name) or []
-
-    all_dirs: list = []
+    dirs_out: list = []
     seen: set = set()
-
-    for dirs in layer_paths.values():
-        for d in dirs:
+    for layer_name in (layer_names or list(layer_paths)):
+        for d in layer_paths.get(layer_name) or []:
             if d not in seen:
                 seen.add(d)
-                all_dirs.append(d)
+                dirs_out.append(d)
 
-    return all_dirs
+    return dirs_out
+
+
+def _macro_args_for_layers(scoped, layer_names) -> list:
+    """Global `-D` flags first, then each covered layer's, in order.
+
+    Clang honours the LAST -D for a repeated name, so a layer's value overrides
+    the global one by position - that is `args_for_scope`'s contract and this
+    keeps it. With more than one layer the same rule decides between them, which
+    cannot be right for both: one flowchart subprocess gets one command line. A
+    cross-layer selection that disagrees on a macro is warned about rather than
+    silently resolved, since the alternative is a diagram built with the wrong
+    branch taken.
+    """
+    from core.macro_input import GLOBAL_SCOPE
+
+    args = list(scoped.get(GLOBAL_SCOPE) or [])
+    layers = [l for l in (layer_names or []) if l and l != GLOBAL_SCOPE]
+
+    if len(layers) > 1:
+        seen_name_layer: dict = {}
+        clashes: list = []
+        for layer in layers:
+            for arg in scoped.get(layer) or []:
+                name = str(arg).lstrip("-D").split("=", 1)[0]
+                prev = seen_name_layer.get(name)
+                if prev and prev[1] != arg:
+                    clashes.append(f"{name} ({prev[0]}={prev[1]!r} vs {layer}={arg!r})")
+                seen_name_layer[name] = (layer, arg)
+        if clashes:
+            log("flowchart macros: %d macro(s) defined differently by the selected "
+                "layers; the LAST wins for every function in this run: %s"
+                % (len(clashes), "; ".join(sorted(clashes)[:5])),
+                component="flowcharts", err=True)
+
+    for layer in layers:
+        args.extend(scoped.get(layer) or [])
+    return args
+
+
+def clang_args_file(output_dir_abs: str) -> str:
+    """Where this run's clang response file goes: next to ITS OWN output.
+
+    The flags are handed to `flowchart_engine.py` as `@file` because a real project's
+    -I/-D list blows the Windows 8192-char command-line limit. The file doubles as the
+    record of what a component was actually compiled with.
+
+    It used to live in the shared model dir — one path per VERSION. With one document
+    per component (`--component-per-docx`) every invocation then overwrote the last, so
+    the file left on disk showed only the final component's flags. That is misleading
+    exactly when someone opens it to check which layer's -I and -D a component got.
+    """
+    return os.path.join(output_dir_abs, ".flowcharts_clang_args.txt")
+
+def _needs_flowchart_images(config) -> bool:
+    """`views.flowcharts` -- draw the flowchart images, or not.
+
+    The control-flow graph itself is NOT gated here, because whether it is needed
+    is not a preference: SWE.3 draws it and SWE.4 transcribes it into Test Steps,
+    so the requirement is DERIVED from what the run emits (see
+    `_spec_scope_function_ids`). A user who asked for function test specs and set
+    `flowcharts: false` would otherwise have requested a document that cannot be
+    built -- every Test Steps cell would read "no control-flow graph".
+
+    What IS a preference is the drawing, and that is where the time goes --
+    measured on the 45-function sample, the CFG took 15s and the PNGs 89 minutes.
+    This absorbed the old `views.flowchartImages`, which had no other reader.
+
+    Defaults to True so a config without the key keeps rendering.
+    """
+    return (config or {}).get("views", {}).get("flowcharts", True) is not False
 
 
 def _resolve_script(project_root: str, script_path: str) -> str:
@@ -771,27 +1017,68 @@ def _resolve_script(project_root: str, script_path: str) -> str:
     )
 
 
+def _spec_scope_function_ids(config, model_dir_abs):
+    """Function ids to build CFGs for, from the SWE.4 spec kinds enabled, else None.
+
+    Test Steps have exactly one source -- the control-flow graph -- so which specs a
+    run emits decides which flowcharts it needs. Asking the user to keep
+    `views.flowcharts` in step with that by hand only creates a way to get an
+    unbuildable document, so the requirement is DERIVED:
+
+      functionTestSpecs on   -> every function in scope needs one (None: no narrowing)
+      only dynamicBehaviour  -> just the interactions' targets + spliced callees
+      neither                -> nothing to build (an empty set, not None)
+
+    None and an empty set mean different things: None leaves the existing component
+    /unit scope rules alone, an empty set actively builds nothing.
+
+    Reads the model files directly rather than the in-memory model because the
+    flowchart view is handed `model_dir` and works from the on-disk JSON. A missing
+    or unreadable file falls back to None -- narrowing is an optimisation, and
+    getting it wrong must never silently drop a spec's Test Steps.
+    """
+    views = (config or {}).get("views", {}) or {}
+    function_specs = views.get("functionTestSpecs", True)
+    dynamic_specs = views.get("dynamicBehaviourSpecs", True)
+    if function_specs:
+        return None              # the widest need; no narrowing to do
+    if not dynamic_specs:
+        return set()             # no specs at all -> no flowchart earns its cost
+    try:
+        import json as _json
+        loaded = {}
+        for name in ("units", "functions", "components"):
+            with open(os.path.join(model_dir_abs, f"{name}.json"), "r",
+                      encoding="utf-8") as f:
+                loaded[name] = _json.load(f) or {}
+    except (OSError, ValueError):
+        return None
+    from .dynamic_specs import needed_function_ids
+    allowed = {c.lower() for c in ((config or {}).get("_analyzerAllowedComponents") or [])}
+    fids = needed_function_ids(
+        loaded["units"], loaded["functions"], loaded["components"], allowed,
+        ((config or {}).get("views", {}) or {}).get("sequenceDiagrams", {})
+        .get("filterMode", "skip_within_unit"))
+    log("spec scope: %d function(s) need a flowchart (of %d in the model)"
+        % (len(fids), len(loaded["functions"])), component="flowcharts")
+    return fids
+
+
 @register("flowcharts")
 def run(model, output_dir, model_dir, config):
-    views_cfg = config.get("views", {})
-    val = views_cfg.get("flowcharts")
-
-    if val is None or val is False:
-        # Not enabled
-        return
+    # No `views.flowcharts` gate here: `run_views` owns that decision and is the
+    # only caller. It already honours the config for SWE.3 *and* forces the views a
+    # doc type declares in DOC_TYPE_VIEWS -- SWE.4 needs the CFG for Test Steps and
+    # the per-return Expected entries. Re-checking the config here silently undid
+    # that forcing, so `--doc-type swe4` with `views.flowcharts: false` exported a
+    # document whose Test Steps column read "Not available" for every function,
+    # warned only by a log line (the view returned in 0.00s).
 
     # Be robust to callers passing relative output_dir/model_dir.
     output_dir_abs = os.path.abspath(output_dir)
     model_dir_abs = os.path.abspath(model_dir)
 
-    # When model_dir is a layer subdir (model/Layer1/), dirname gives model/
-    # not the analyzer root. Walk up one extra level in that case.
-    _parent = os.path.dirname(model_dir_abs)
-    project_root = (
-        os.path.dirname(_parent)
-        if os.path.basename(_parent) == "model"
-        else _parent
-    )
+    project_root = _project_root()
 
     # Out dir fixed in code: output/flowcharts under the view output dir
     out_dir = os.path.join(output_dir_abs, "flowcharts")
@@ -855,7 +1142,8 @@ def run(model, output_dir, model_dir, config):
             for p in _resolve_layer_dirs(
                 config,
                 group_name,
-                layer_paths
+                layer_paths,
+                allowed_components,
             ):
                 arg = f"-I{p}"
 
@@ -879,9 +1167,9 @@ def run(model, output_dir, model_dir, config):
             # pre-scope shape and loads as global. Global defines first, then
             # this group's layer — the order Phase 1 parsed with, and the one
             # Clang needs (it honours the last -D for a name).
-            for arg in args_for_scope(
+            for arg in _macro_args_for_layers(
                 normalize_scoped_args(stored_macros),
-                _resolve_layer_name(config, group_name),
+                _resolve_layer_names(config, group_name, allowed_components),
             ):
                 if arg and arg not in clang_args:
                     clang_args.append(arg)
@@ -923,7 +1211,13 @@ def run(model, output_dir, model_dir, config):
     # pass only those functions to the generator.
     functions_arg_path = functions_path
 
-    if (allowed_components or allowed_units) and os.path.isfile(functions_path):
+    # Build CFGs for exactly what the enabled SWE.4 spec kinds transcribe. Selection
+    # reads the call graph and no CFG, so it can be answered here even though the
+    # flowchart pass runs before testSpecs.
+    spec_scope_fids = _spec_scope_function_ids(config, model_dir_abs)
+
+    if (allowed_components or allowed_units or spec_scope_fids is not None) \
+            and os.path.isfile(functions_path):
         try:
             with open(functions_path, "r", encoding="utf-8") as f:
                 all_funcs = json.load(f)
@@ -939,6 +1233,8 @@ def run(model, output_dir, model_dir, config):
                         unit = parts[1].lower() if len(parts) > 1 else ""
                         if unit not in allowed_units:
                             return False
+                    if spec_scope_fids is not None and fid not in spec_scope_fids:
+                        return False
                     return True
 
                 filtered = {fid: info for fid, info in all_funcs.items()
@@ -955,6 +1251,8 @@ def run(model, output_dir, model_dir, config):
                     # distinct file, so a narrowed run never overwrites the
                     # group's full function list
                     filename_key = f"{filename_key}_units_{'_'.join(sorted(allowed_units))}"
+                if spec_scope_fids is not None:
+                    filename_key = f"{filename_key}_specscope"
 
                 group_functions_path = os.path.join(
                     model_dir_abs,
@@ -1017,18 +1315,45 @@ def run(model, output_dir, model_dir, config):
         llm_model,
         "--llm-num-ctx",
         llm_num_ctx,
+        "--llm-cache-version",
+        str(int(llm_cfg.get("cacheVersion", 1) or 1)),
     ]
 
-    if os.path.isfile(kb_path):
-        cmd.extend(["--knowledge-json", kb_path])
+    # doc 10 step 7 — in database mode the engine reads its own inputs: the model from
+    # entity_versions, base_path/project_name from the versions row, the knowledge base and the
+    # header->TU map from their tables, and the restricted function list from the stored
+    # incremental plan. So none of the four file arguments is passed, and no filtered
+    # functions_<group>.json / functions_incremental.json is written at all.
+    #
+    # The plan is read by the ENGINE rather than passed as ids: at 20k functions the list cannot
+    # fit on a command line, which is the whole reason for D10-5.
+    from core.run_context import version_id as _run_version
+    if _run_version():
+        cmd.extend(["--version-id", _run_version()])
+        # The SCOPE has to travel with it. The engine loads the model from the database
+        # and ignores --interface-json entirely, so the pre-filtered
+        # functions_<group>_units_X.json written above never reaches it — and that file
+        # is only written when model/functions.json exists, which in database mode it
+        # does not. Without these flags every component's run rendered the WHOLE
+        # version: 70 flowcharts across two components where 35 were wanted, and on a
+        # real project 2817 functions where 15 were.
+        for _c in sorted(allowed_components or []):
+            cmd.extend(["--component", _c])
+        for _u in sorted(allowed_units or []):
+            cmd.extend(["--unit", _u])
+        if inc is not None:
+            cmd.append("--restrict-from-plan")
+    else:
+        if os.path.isfile(kb_path):
+            cmd.extend(["--knowledge-json", kb_path])
 
-    # tu_includes.json (Phase 1): lets the engine resolve a function defined in a
-    # header that does not parse standalone by retrying inside a .cpp that
-    # includes it. Written to the run's model dir, so it follows layer scoping.
-    tu_includes_path = os.path.join(model_dir_abs, "tu_includes.json")
+        # tu_includes.json (Phase 1): lets the engine resolve a function defined in a
+        # header that does not parse standalone by retrying inside a .cpp that
+        # includes it. Written to the run's model dir, so it follows layer scoping.
+        tu_includes_path = os.path.join(model_dir_abs, "tu_includes.json")
 
-    if os.path.isfile(tu_includes_path):
-        cmd.extend(["--tu-includes", tu_includes_path])
+        if os.path.isfile(tu_includes_path):
+            cmd.extend(["--tu-includes", tu_includes_path])
 
     # M-D: when the analyzer disables LLM (--no-llm sets llm.descriptions=False),
     # tell the flowchart engine to skip the LLM too (fallback node labels)
@@ -1043,7 +1368,7 @@ def run(model, output_dir, model_dir, config):
     non_empty_clang_args = [str(a) for a in clang_args if a]
 
     if non_empty_clang_args:
-        args_file = os.path.join(model_dir_abs, ".flowcharts_clang_args.txt")
+        args_file = clang_args_file(output_dir_abs)
 
         with open(args_file, "w", encoding="utf-8") as f:
             for a in non_empty_clang_args:
@@ -1057,19 +1382,16 @@ def run(model, output_dir, model_dir, config):
     )
 
     try:
-        if os_type == "Windows":
-            r = subprocess.run(
-                cmd,
-                cwd=project_root,
-                check=False,
-                shell=True,
-            )
-        else:
-            r = subprocess.run(
-                cmd,
-                cwd=project_root,
-                check=False,
-            )
+        # Stream the engine's stderr through (so its per-function progress still
+        # reaches the console and the API's log tail) while keeping the tail, so a
+        # crash reports its cause instead of a bare exit code. This is the exact
+        # site where a LibclangError stayed invisible for a whole debugging
+        # session (PROJECT_CONTEXT §16 Risk 5); doc 09, A0.
+        returncode, stderr_tail, _ = run_streaming(
+            cmd,
+            cwd=project_root,
+            shell=(os_type == "Windows"),
+        )
 
     except subprocess.TimeoutExpired:
         log("generator timed out", component="flowcharts", err=True)
@@ -1079,9 +1401,10 @@ def run(model, output_dir, model_dir, config):
         log("generator failed: %s" % e, component="flowcharts", err=True)
         return
 
-    if r.returncode != 0:
+    if returncode != 0:
+        log_stderr_tail("flowchart engine", stderr_tail)
         log(
-            "generator exited with code %s" % r.returncode,
+            "generator exited with code %s" % returncode,
             component="flowcharts",
             err=True,
         )
@@ -1166,6 +1489,19 @@ def run(model, output_dir, model_dir, config):
 
         except (json.JSONDecodeError, OSError):
             pass
+
+    if not _needs_flowchart_images(config):
+        # The per-unit JSON (DOT script + serialized CFG) is already written above;
+        # Test Steps and the per-return Expected entries come from that. Only the
+        # images are skipped, and no document in this run embeds them.
+        # `items` is scanned off the output directory, so it counts flowcharts left
+        # by EARLIER runs too -- saying "built" claimed this run made all of them.
+        # A narrowed run (spec-kind scope, --selected-unit) can build 0 and still
+        # find dozens on disk; the engine's own "N file(s) written" line above is
+        # what this run produced.
+        log("%d flowchart(s) on disk; PNG render skipped "
+            "(views.flowcharts is false)" % len(items), component="flowcharts")
+        return
 
     from core.progress import ProgressReporter
     from core.logging_setup import get_logger

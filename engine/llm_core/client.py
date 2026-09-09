@@ -35,6 +35,8 @@ In that mode the client treats the explicit `url` as the full endpoint URL
 use_openai_format.
 """
 
+import hashlib
+import json
 import logging
 import os
 import sys
@@ -42,11 +44,12 @@ import threading
 import time
 from collections import deque
 from contextlib import contextmanager
-from typing import Dict, Iterator, Optional
+from typing import Dict, Iterator, List, Optional
 
 import requests
 
 from .headers import build_openai_headers, resolve_api_key
+from . import callstats
 from .think import strip_think_section
 from . import tokens as token_counter
 
@@ -124,12 +127,89 @@ def _trace_response(ordinal: int, response: Optional[str]) -> None:
     _safe_write(body)
 
 
+def _dump_dir() -> Optional[str]:
+    """Target directory for the prompt-parity corpus (`LLM_PROMPT_DUMP`), or None."""
+    return os.environ.get("LLM_PROMPT_DUMP", "").strip() or None
+
+
+def _dump_prompt(provider: str, model: str, parts: List[Dict], **params) -> None:
+    """Record an outgoing prompt for the L2 parity harness (docs/production-redesign/07 §2).
+
+    LLM output is non-deterministic, so accuracy cannot be verified by diffing
+    responses — we verify that the *input* never changed. This is the single
+    capture point: every call site in the codebase reaches the model through
+    ``LlmClient``, so hooking here is complete by construction (hooking the
+    individual builders is not — 12 call sites bypass ``_call_llm``).
+
+    Content-addressed on purpose: the filename is the digest of exactly what we
+    send, so the corpus is a *set* and comparison is independent of ordering and
+    of which process produced it (phases run as separate subprocesses, each with
+    its own trace counter). ``calls.jsonl`` keeps the per-call tally so a dropped
+    or duplicated call is still detectable.
+
+    Never raises: a dump failure must not abort a run.
+    """
+    directory = _dump_dir()
+    if not directory:
+        return
+    try:
+        payload = {"provider": provider, "model": model, "params": params, "parts": parts}
+        blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2)
+        digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, f"{digest}.json")
+        if not os.path.exists(path):
+            # Atomic: concurrent phases may legitimately produce the same digest.
+            tmp = f"{path}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(blob)
+            os.replace(tmp, path)
+        with open(os.path.join(directory, "calls.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"digest": digest, "pid": os.getpid()}) + "\n")
+    except Exception:                                    # pragma: no cover - never fail a run
+        pass
+
+
+def _fake_enabled() -> bool:
+    """True when `LLM_FAKE_RESPONSES` asks for deterministic stand-in replies."""
+    return os.environ.get("LLM_FAKE_RESPONSES", "").strip().lower() not in ("", "0", "false", "no")
+
+
+def _fake_response(*parts: str) -> str:
+    """Deterministic stand-in for a model reply (`LLM_FAKE_RESPONSES=1`).
+
+    Lets the L2 prompt-parity baseline be captured on a host with **no gateway**:
+    every call site still builds and dumps its prompt, and because the reply is
+    stable and non-empty, prompts that embed upstream output (e.g. the flowchart
+    context packet's "Purpose:" line) stay representative instead of collapsing
+    to empty strings — which is what happens if the calls simply fail.
+
+    Deterministic on purpose: the same prompt always yields the same reply, so a
+    before/after capture differs **only** where prompt construction changed.
+
+    Not a substitute for a real run: replies that callers expect to be JSON will
+    fail to parse, so those branches take their empty path — identically in the
+    before and after captures, which keeps the comparison valid.
+    """
+    digest = hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()[:12]
+    return f"FAKE_LLM_RESPONSE[{digest}]"
+
+
 # Process-wide serialisation for OpenAI calls at the legacy max_concurrency=1
 # default. Class-level so every instance of LlmClient with provider="openai"
 # shares it — even if multiple clients are constructed by different phases.
 _OPENAI_LOCK = threading.Lock()
-# Default pause after each OpenAI call. Overridable per-client via
+
+# Default pause after every OpenAI-shaped call, in seconds. 3.0 matches the corporate/on-prem
+# API gateway, which allows roughly one request per 3s. Overridable per client via
 # `rate_limit_seconds` (config key `llm.rateLimitSeconds`).
+#
+# Configurable because the two deployments have opposite needs (doc 09, B6): the on-prem
+# **gateway** enforces that global limit, while an on-prem **hosted model** has no limit at all
+# and 3s per call would waste most of the run. 0 disables the pause entirely.
+#
+# NOTE this is a PER-PROCESS throttle. N concurrent jobs are N independent throttles, so the
+# provider sees N x the rate; that is the open half of B6 and is not solved by this setting.
 _OPENAI_RATE_LIMIT_SEC = 3.0
 
 
@@ -198,7 +278,7 @@ class LlmClient:
         temperature: float = 0.1,
         num_ctx: int = 8192,
         max_retries: int = 1,
-        rate_limit_seconds: float = _OPENAI_RATE_LIMIT_SEC,
+        rate_limit_seconds: Optional[float] = _OPENAI_RATE_LIMIT_SEC,
         max_concurrency: int = 1,
         requests_per_second: Optional[float] = None,
         # Legacy-compat args
@@ -217,9 +297,11 @@ class LlmClient:
         self._temperature = float(temperature)
         self._num_ctx = int(num_ctx)
         self._max_retries = max(0, int(max_retries))
-        # Seconds to pause after every OpenAI call (see _OPENAI_RATE_LIMIT_SEC).
-        # 0 disables the throttle. Never applied on the Ollama path.
-        self._rate_limit = max(0.0, float(rate_limit_seconds))
+        # Seconds to pause after every OpenAI call (see _OPENAI_RATE_LIMIT_SEC). 0 disables
+        # the throttle. Never applied on the Ollama path. None means "use the default" — some
+        # callers pass it explicitly rather than omitting the argument.
+        self._rate_limit = max(0.0, float(_OPENAI_RATE_LIMIT_SEC if rate_limit_seconds is None
+                                          else rate_limit_seconds))
         self._api_key = api_key
         self._custom_headers = dict(custom_headers or {})
 
@@ -273,6 +355,27 @@ class LlmClient:
     # Per-attempt measurement
     # ------------------------------------------------------------------
 
+    # Thread-local so two concurrent generate() calls cannot pour their attempts into one
+    # another's bucket. The OpenAI path is serialised by _OPENAI_LOCK, the Ollama path is not.
+    _CALL_COST = threading.local()
+
+    @classmethod
+    def _cost_bucket(cls) -> Dict:
+        b = getattr(cls._CALL_COST, "b", None)
+        if b is None:
+            b = cls._CALL_COST.b = {"latency_seconds": 0.0, "throttle_seconds": 0.0,
+                                    "prompt_tokens": 0, "completion_tokens": 0}
+        return b
+
+    @classmethod
+    def _drain_cost(cls) -> Dict:
+        """Take what this call cost and zero the bucket for the next one."""
+        b = cls._cost_bucket()
+        out = dict(b)
+        b.update({"latency_seconds": 0.0, "throttle_seconds": 0.0,
+                  "prompt_tokens": 0, "completion_tokens": 0})
+        return out
+
     @contextmanager
     def _attempt(self, provider: str) -> Iterator[Dict]:
         """Time one HTTP attempt and record it — success, empty, or exception.
@@ -288,12 +391,20 @@ class LlmClient:
             yield m
         finally:
             elapsed = time.perf_counter() - t0
+            latency = max(0.0, elapsed - m["throttle"])
             token_counter.record(
                 provider, self._model, m["prompt"], m["completion"],
-                latency=max(0.0, elapsed - m["throttle"]),
+                latency=latency,
                 throttle=m["throttle"],
                 outcome=m["outcome"],
             )
+            # ...and into the per-call bucket, so the same measurement reaches the database
+            # row that generate() writes. One measurement, two sinks.
+            b = self._cost_bucket()
+            b["latency_seconds"] += latency
+            b["throttle_seconds"] += m["throttle"]
+            b["prompt_tokens"] += int(m["prompt"] or 0)
+            b["completion_tokens"] += int(m["completion"] or 0)
 
     def _throttle(self, m: Dict) -> None:
         """Sleep the configured gateway pause, recording how long it took."""
@@ -327,13 +438,26 @@ class LlmClient:
         """
         return self._num_ctx
 
-    def generate(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+    def generate(self, system_prompt: str, user_prompt: str,
+                 *, kind: str = "other") -> Optional[str]:
         """Call the LLM and return the (think-stripped) response text.
 
         Returns None on persistent failure (after retries) or empty response.
+
+        `kind` labels the call for the run's LLM accounting — description, label, summary,
+        behaviour. Every call site reaches the model through here, so this is the one place that
+        can count them; the report then says how many calls a run made and how many produced
+        nothing, which is the number that distinguishes "the LLM is expensive" from "the LLM is
+        not answering".
         """
         trace_ord = _trace_request(self._provider, self._model, system_prompt, user_prompt) \
             if _trace_enabled() else 0
+        _dump_prompt(self._provider, self._model,
+                     [{"role": "system", "content": system_prompt},
+                      {"role": "user", "content": user_prompt}],
+                     num_ctx=self._num_ctx, temperature=getattr(self, "_temperature", None))
+        if _fake_enabled():          # deterministic baseline capture; prompt already dumped
+            return _fake_response(system_prompt, user_prompt)
         last_exc: Optional[BaseException] = None
         # max_retries=1 means: 1 initial attempt + 1 retry = 2 total tries.
         total_attempts = self._max_retries + 1
@@ -346,6 +470,7 @@ class LlmClient:
                 if raw:
                     cleaned = strip_think_section(raw)
                     if cleaned:
+                        callstats.record(kind, callstats.OK, **self._drain_cost())
                         if trace_ord:
                             _trace_response(trace_ord, cleaned)
                         return cleaned
@@ -360,6 +485,11 @@ class LlmClient:
                     "LLM (%s/%s) returned empty response after %d attempt(s)",
                     self._provider, self._model, total_attempts,
                 )
+                # Counted once per CALL, not per attempt: the caller asked one question and got
+                # no answer, and that is what the report has to say. Retries are visible in the
+                # log, and counting them here would make a healthy run with one flaky retry look
+                # like a broken one.
+                callstats.record(kind, callstats.EMPTY, **self._drain_cost())
                 if trace_ord:
                     _trace_response(trace_ord, "")
                 return None
@@ -395,11 +525,14 @@ class LlmClient:
                 "LLM (%s/%s) failed after %d attempt(s): %s",
                 self._provider, self._model, total_attempts, last_exc,
             )
+        callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY,
+                         **self._drain_cost())
         if trace_ord:
             _trace_response(trace_ord, f"<failed: {last_exc}>" if last_exc else "<empty>")
         return None
 
-    def call(self, messages: list, *, temperature: Optional[float] = None) -> Optional[str]:
+    def call(self, messages: list, *, temperature: Optional[float] = None,
+             kind: str = "other") -> Optional[str]:
         """Send a multi-message conversation to the LLM.
 
         This is the lower-level interface that ``generate()`` delegates to.
@@ -423,6 +556,10 @@ class LlmClient:
         temp = temperature if temperature is not None else self._temperature
         trace_ord = _trace_messages(self._provider, self._model, messages) \
             if _trace_enabled() else 0
+        _dump_prompt(self._provider, self._model, list(messages),
+                     num_ctx=self._num_ctx, temperature=temp)
+        if _fake_enabled():          # deterministic baseline capture; prompt already dumped
+            return _fake_response(*(str(m.get("content", "")) for m in messages))
         last_exc: Optional[BaseException] = None
         total_attempts = self._max_retries + 1
         for attempt in range(1, total_attempts + 1):
@@ -434,6 +571,7 @@ class LlmClient:
                 if raw:
                     cleaned = strip_think_section(raw)
                     if cleaned:
+                        callstats.record(kind, callstats.OK, **self._drain_cost())
                         if trace_ord:
                             _trace_response(trace_ord, cleaned)
                         return cleaned
@@ -447,6 +585,7 @@ class LlmClient:
                     "LLM (%s/%s) call() empty response after %d attempt(s)",
                     self._provider, self._model, total_attempts,
                 )
+                callstats.record(kind, callstats.EMPTY, **self._drain_cost())
                 if trace_ord:
                     _trace_response(trace_ord, "")
                 return None
@@ -481,6 +620,8 @@ class LlmClient:
                 "LLM (%s/%s) call() failed after %d attempt(s): %s",
                 self._provider, self._model, total_attempts, last_exc,
             )
+        callstats.record(kind, callstats.ERROR if last_exc is not None else callstats.EMPTY,
+                         **self._drain_cost())
         if trace_ord:
             _trace_response(trace_ord, f"<failed: {last_exc}>" if last_exc else "<empty>")
         return None

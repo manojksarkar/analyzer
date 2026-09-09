@@ -15,6 +15,7 @@ structural contract is that the content is a non-empty, valid Mermaid diagram.
 """
 import json
 import os
+import sys
 import re
 
 import pytest
@@ -40,14 +41,23 @@ def is_valid_mermaid(text: str) -> bool:
     return bool(_MERMAID_HEADERS.search(_strip_fences(text)))
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-FC_DIR = os.path.join(PROJECT_ROOT, "output", "flowcharts")
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+from tests.e2e_paths import COMPONENTS, output_for   # noqa: E402
+# One flowcharts directory per component, where a group-scoped run once had one.
+FC_DIRS = [_os.path.join(output_for(c), "flowcharts") for c in COMPONENTS]
+FC_DIR = next((d for d in FC_DIRS if _os.path.isdir(d)), FC_DIRS[0])
 
 # Skip entire module when flowcharts are disabled in config
-_cfg_path = os.path.join(PROJECT_ROOT, "engine", "config", "config.json")
+_cfg_path = os.path.join(PROJECT_ROOT, "engine", "config", "config.defaults.json")
 if os.path.isfile(_cfg_path):
     import json as _json
+    # The defaults file is JSONC -- comments and trailing commas. Parse it the
+    # way the engine does, not with a strict loader.
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "engine"))
+    from core.config import _strip_json_comments, _strip_trailing_commas
     with open(_cfg_path, encoding="utf-8") as _f:
-        _cfg = _json.load(_f)
+        _cfg = _json.loads(_strip_trailing_commas(_strip_json_comments(_f.read())))
     if not _cfg.get("views", {}).get("flowcharts"):
         pytest.skip("flowcharts disabled in config", allow_module_level=True)
 

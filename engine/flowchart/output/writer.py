@@ -12,10 +12,17 @@ Output JSON schema (per file):
   {
     "functionKey": "src|qos_event_manager|pos::QosEventManager::_RateLimit|...",
     "name": "pos::QosEventManager::_RateLimit",
-    "flowchart": "flowchart TD\n    ..."
+    "flowchart": "flowchart TD\n    ...",
+    "cfg": {"entry": "n0", "exits": ["n7"],
+            "nodes": [{"id", "type", "label", "rawCode", "line", "endLine"}],
+            "edges": [{"source", "target", "label"}]}
   },
   ...
 ]
+
+"flowchart" is the rendering; "cfg" is the graph it was rendered from, kept for
+consumers that need the structure (SWE.4 transcribes it into Test Steps). It is
+omitted when the CFG could not be built.
 """
 
 import json
@@ -102,6 +109,8 @@ def _serialize_file_result(file_result: FileResult) -> List[Dict]:
             "name": fc.qualified_name,
             "flowchart": fc.mermaid_script,
         }
+        if fc.cfg:
+            entry["cfg"] = fc.cfg
         if fc.error:
             entry["error"] = fc.error
         result.append(entry)

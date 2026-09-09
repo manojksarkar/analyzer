@@ -13,14 +13,15 @@ class EngineConfig:
     std: str = "c++14"
     clang_args: List[str] = field(default_factory=list)
 
+    # llm.cacheVersion — part of the label cache key, so bumping it invalidates cached
+    # node labels exactly as it does cached descriptions.
+    llm_cache_version: int = 1
     llm_url: str = "http://localhost:11434/api/generate"
     llm_model: str = "gpt-oss"
 
     # Optional: generate flowchart only for this function key
     function_key: Optional[str] = None
 
-    use_cache: bool = True
-    cache_dir: str = ".flowchart_cache"
 
     # Statement segment thresholds per ACTION node.
     # Reduced to 3 statements so that important function calls are unlikely
@@ -36,6 +37,31 @@ class EngineConfig:
     # standalone (its macros/types come from an include the .cpp pulls in
     # first): the engine retries cursor resolution inside a TU that includes it.
     tu_includes_json_path: Optional[str] = None
+
+    # --- database-native inputs (doc 10, step 7) --------------------------------------------
+    # When `version_id` is set the engine reads its inputs from Postgres/SQLite instead of the
+    # four paths above: the model from entity_versions (+ content_blobs), base_path/project_name
+    # from the `versions` row, the knowledge base and the header->TU map from their own tables.
+    #
+    # `component` narrows the model to one component using the existing
+    # ix_ev_version_component index — CHEAPER than today, where the caller writes a filtered
+    # functions_<group>.json and the engine loads and filters the whole model in Python.
+    #
+    # `restrict_from_plan` makes the engine read `flowchartFids` from `incremental_plans` and
+    # regenerate only those. That list cannot be passed on a command line at 20k functions, so
+    # reading the plan is the only shape that avoids a file (D10-5).
+    #
+    # `units` narrows further, to the named units within those components. Both are
+    # applied to the model the engine loads from the database. Before they were passed,
+    # a version-id run loaded EVERY function in the version: the pre-filtered
+    # functions_<group>.json the caller used to write is skipped in database mode
+    # (there is no model/functions.json to filter), and nothing replaced it. Every
+    # component's output directory ended up holding the whole project's flowcharts.
+    version_id: Optional[str] = None
+    component: Optional[str] = None            # kept: one component, the original shape
+    components: tuple = ()                     # several, when a group covers more than one
+    units: tuple = ()
+    restrict_from_plan: bool = False
 
     # LLM call settings
     llm_timeout: int = 120

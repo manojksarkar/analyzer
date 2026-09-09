@@ -145,6 +145,18 @@ class LabelGenerator:
     # Public API
     # ------------------------------------------------------------------
 
+    @property
+    def fallback_node_ids(self) -> Set[str]:
+        """Node ids that got a rule-based label on the LAST label_cfg() call.
+
+        Read by the label cache, which must never store a fallback: caching one would make a
+        transient LLM outage permanent — every later run hits the cache, never retries, and the
+        only symptom is flowcharts that quietly stayed mechanical forever. This set is
+        authoritative (the generator records what it did) where the old caller-side heuristic
+        guessed from the label text.
+        """
+        return frozenset(self._fallback_ids)
+
     def label_cfg(self, cfg: ControlFlowGraph,
                   func_entry: FunctionEntry,
                   source_code: str,
@@ -307,7 +319,7 @@ class LabelGenerator:
         )
 
         with token_counter.stage("flowchart.simplify"):
-            raw = self._client.generate(self._SIMPLIFY_SYSTEM, prompt)
+            raw = self._client.generate(self._SIMPLIFY_SYSTEM, prompt, kind="cfg-simplify")
         if not raw:
             logger.debug("CFG simplification: no LLM response for '%s'",
                          func_entry.qualified_name)
@@ -572,7 +584,7 @@ class LabelGenerator:
 
             # ── Call LLM ──────────────────────────────────────────────
             with token_counter.stage("flowchart.labels"):
-                raw = self._client.generate(SYSTEM_PROMPT, prompt)
+                raw = self._client.generate(SYSTEM_PROMPT, prompt, kind="flowchart-label")
 
             if raw is None:
                 no_response_attempts += 1
@@ -706,7 +718,7 @@ class LabelGenerator:
             return label_map
 
         with token_counter.stage("flowchart.coherence"):
-            raw = self._client.generate(self._COHERENCE_SYSTEM, prompt)
+            raw = self._client.generate(self._COHERENCE_SYSTEM, prompt, kind="flowchart-coherence")
         if not raw:
             logger.debug("Coherence pass: no LLM response for '%s'",
                          func_entry.qualified_name)

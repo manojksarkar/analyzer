@@ -1,0 +1,34 @@
+# PostgreSQL for the analyzer (docs/production-redesign/07).
+#
+# The pipeline requires a database (D-16: no file-backed fallback), so this is the
+# one command a developer needs before running anything:
+#
+#     docker compose up -d
+#
+# Image is pgvector/pgvector so the `vector` extension is available when similarity
+# reuse lands; the extension itself is NOT created until then.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: analyzer-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: analyzer
+      POSTGRES_PASSWORD: analyzer
+      POSTGRES_DB: analyzer
+      # UTF-8 end-to-end: source comments contain non-ASCII (e.g. Korean) and this
+      # codebase has a documented cp1252 history (PROJECT_CONTEXT s18).
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - analyzer-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Compose waits for this before dependents start; also what CI polls.
+      test: ["CMD-SHELL", "pg_isready -U analyzer -d analyzer"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  analyzer-pgdata:

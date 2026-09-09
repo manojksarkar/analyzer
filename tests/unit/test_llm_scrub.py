@@ -81,9 +81,13 @@ class _FakeClient:
         self.last_system = None
         self.last_prompt = None
 
-    def generate(self, system, prompt):
+    def generate(self, system, prompt, *, kind="other"):
+        # `kind` labels the call for the run's LLM accounting (llm_core.callstats), which
+        # reports how many calls produced nothing. The double has to accept it or every
+        # description call raises TypeError.
         self.last_system = system
         self.last_prompt = prompt
+        self.last_kind = kind
         return self.reply
 
 

@@ -91,3 +91,53 @@ class TestCarryForwardGlobals:
     def test_missing_entries_skipped(self):
         assert carry_forward_globals({"x"}, {}, {"x": {"description": "d"}}) == 0
         assert carry_forward_globals({"x"}, {"x": {"description": ""}}, {}) == 0
+
+
+class TestTerminalManifestReachesTheStore:
+    """The orchestrators must write the manifest to the STORE, not only to the file store.
+
+    This is the wiring, and it is what actually broke. `persist_run_outcome` was implemented
+    and unit-tested, but nothing called it: every orchestrator wrote its manifest through
+    `vstore` (the file VersionStore, keyed by COMMIT) while only `store` (the artifact store,
+    keyed by the real VERSION id) reaches Postgres. So versions.pipeline_status was never
+    closed out, `pg_stores.list_versions` refused every finished version as a baseline, and
+    every run silently fell back to a FULL generation with 0% reuse.
+
+    Testing the function passed. Testing the wiring is what catches it, so these assert on
+    the source: both terminal paths and both failure paths must reach `store.write_manifest`.
+    """
+
+    def _source(self, name):
+        import os
+        here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(here, "engine", "incremental", name), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_generate_full_writes_the_manifest_to_the_store(self):
+        src = self._source("generate.py")
+        assert "store.write_manifest(version_id, manifest)" in src, \
+            "generate_full must persist its terminal manifest to the store (-> Postgres)"
+
+    def test_generate_incremental_writes_the_manifest_to_the_store(self):
+        src = self._source("engine.py")
+        assert "store.write_manifest(version_id, manifest)" in src, \
+            "generate_incremental must persist its terminal manifest to the store"
+
+    def test_failure_paths_close_the_lifecycle_too(self):
+        """A failed run left mid-phase would also be permanently baseline-ineligible."""
+        for name in ("generate.py", "engine.py"):
+            src = self._source(name)
+            assert "store.write_manifest(version_id, m)" in src, \
+                f"{name}: the failure path must close the pipeline lifecycle"
+
+    def test_every_vstore_manifest_write_has_a_store_counterpart(self):
+        """Counts, so a NEW manifest write added later cannot quietly skip the store."""
+        for name in ("generate.py", "engine.py"):
+            src = self._source(name)
+            v = src.count("vstore.write_manifest(")
+            st = src.count("store.write_manifest(") - v      # 'vstore.' contains 'store.'
+            # the early 'running' manifest is deliberately file-only (it must not clobber
+            # the finer-grained phase status), so the store gets one fewer write
+            assert st >= v - 1, (
+                f"{name}: {v} vstore manifest write(s) but only {st} store write(s) - "
+                f"a terminal manifest is not reaching Postgres")

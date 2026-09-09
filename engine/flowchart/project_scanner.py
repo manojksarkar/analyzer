@@ -908,7 +908,7 @@ class HierarchySummarizer:
         )
 
         with token_counter.stage("pkb.function_summaries"):
-            raw = self._client.generate(self._FUNC_SYSTEM, user_prompt)
+            raw = self._client.generate(self._FUNC_SYSTEM, user_prompt, kind="scan-function")
         if not raw:
             return {}
         return self._parse_json_dict(raw)
@@ -986,7 +986,7 @@ class HierarchySummarizer:
         )
 
         with token_counter.stage("pkb.function_phases"):
-            raw = self._client.generate(self._PHASE_SYSTEM, prompt)
+            raw = self._client.generate(self._PHASE_SYSTEM, prompt, kind="scan-phase")
         if not raw:
             return []
 
@@ -1070,7 +1070,7 @@ class HierarchySummarizer:
             + "\n\nSummarize the responsibility of this file in 2-3 sentences."
         )
         with token_counter.stage("pkb.file_summaries"):
-            raw = self._client.generate(self._FILE_SYSTEM, prompt)
+            raw = self._client.generate(self._FILE_SYSTEM, prompt, kind="scan-file")
         return raw.strip()[:600] if raw else ""
 
     # ------------------------------------------------------------------
@@ -1123,7 +1123,7 @@ class HierarchySummarizer:
             + "\n\nSummarize the purpose of this component in 2-3 sentences."
         )
         with token_counter.stage("pkb.component_summaries"):
-            raw = self._client.generate(self._COMPONENT_SYSTEM, prompt)
+            raw = self._client.generate(self._COMPONENT_SYSTEM, prompt, kind="scan-component")
         return raw.strip()[:600] if raw else ""
 
     # ------------------------------------------------------------------
@@ -1147,7 +1147,7 @@ class HierarchySummarizer:
                         "Summarize what this project does in 2-3 sentences."
                     )
                     with token_counter.stage("pkb.project_summary"):
-                        raw = self._client.generate(self._PROJECT_SYSTEM, prompt)
+                        raw = self._client.generate(self._PROJECT_SYSTEM, prompt, kind="scan-project")
                     if raw and raw.strip():
                         self._k.project_summary = raw.strip()[:600]
                         logger.info("  Project summary generated from README")
@@ -1171,7 +1171,7 @@ class HierarchySummarizer:
             + "\n\nSummarize the overall purpose of this project in 2-3 sentences."
         )
         with token_counter.stage("pkb.project_summary"):
-            raw = self._client.generate(self._PROJECT_SYSTEM, prompt)
+            raw = self._client.generate(self._PROJECT_SYSTEM, prompt, kind="scan-project")
         if raw and raw.strip():
             self._k.project_summary = raw.strip()[:600]
             logger.info("  Project summary generated from component descriptions")

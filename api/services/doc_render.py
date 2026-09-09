@@ -36,15 +36,25 @@ _INCLUDE_GUARD_RE = _re.compile(r"^_*[A-Z][A-Z0-9_]*(?:_H|_HPP)_*$")
 
 # ── output dir lookup (path-traversal safe) ──────────────────────────────────
 
-def commit_output_root(project_id: Optional[str], commit_sha: Optional[str]) -> Optional[Path]:
-    """A specific version's output dir: ``workspaces/<pid>/<commit[:16]>/output`` (the
-    commit-addressed layout). None when project/commit is missing or the dir is absent. Pass
+def commit_output_root(project_id: Optional[str], commit_sha: Optional[str],
+                       version_id: Optional[str] = None) -> Optional[Path]:
+    """A specific version's output dir. Prefers the version-keyed layout
+    ``workspaces/<pid>/versions/<ver…>/output`` (08 step 3); falls back to the commit-addressed
+    ``workspaces/<pid>/<commit[:16]>/output`` for pre-migration snapshots. None when absent. Pass
     the result to output_group_dir/resolve_asset/find_docx so a VERSION renders, not the
     latest shared run."""
-    if not (project_id and commit_sha):
+    if not project_id:
         return None
-    d = _REPO_ROOT / "workspaces" / project_id / commit_sha[:16] / "output"
-    return d if d.is_dir() else None
+    ws = _REPO_ROOT / "workspaces" / project_id
+    if version_id:
+        d = ws / "versions" / version_id / "output"
+        if d.is_dir():
+            return d
+    if commit_sha:
+        d = ws / commit_sha[:16] / "output"
+        if d.is_dir():
+            return d
+    return None
 
 
 def output_group_dir(group: Optional[str], output_root: Optional[Path] = None) -> Optional[Path]:
@@ -169,6 +179,21 @@ def _strip_jsonc(text: str) -> str:
 
 
 # ── model / config loaders ────────────────────────────────────────────────────
+
+def _as_description_list(value: Any) -> list:
+    """Coerce a behaviour row's ``behaviorDescription`` to the LIST the API contract promises.
+
+    The engine emits one entry per call, but an entry can be a plain string (a single-line
+    description) rather than a list. ``value or []`` passed a non-empty string straight through,
+    so the UI called ``.map()`` on a string and the whole document view crashed with
+    "data.descriptionList.map is not a function". Normalising here — the API/UI boundary — keeps
+    every consumer (document render, compare render, DOCX) on one shape."""
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple)):
+        return [v for v in value if v is not None]
+    return []
+
 
 def _load_model_json(model_dir: Path, name: str) -> dict:
     p = model_dir / f"{name}.json"
@@ -330,6 +355,70 @@ def _build_unit_header_rows(
 
 # ── flowchart / behavior-diagram loaders ─────────────────────────────────────
 
+def _view_json(output_reader, group_dir: Path, rel_name: str):
+    """One view artifact as parsed JSON — Postgres FIRST, then disk (doc 09, C0).
+
+    `version_output_files` has held every view file since PG-5a, but the rendered document —
+    the main product surface — still read them off local disk, so the document depended on the
+    machine that produced it. `rel_path` is relative to the OUTPUT root, so the group name is
+    prepended: the reader keys rows as "<group>/interface_tables.json".
+
+    Returns None when neither source has it, so callers keep their existing empty handling.
+    """
+    if output_reader is not None:
+        txt = output_reader.read_text(f"{group_dir.name}/{rel_name}")
+        if txt is not None:
+            try:
+                return json.loads(txt)
+            except ValueError:
+                pass                       # malformed in the DB -> fall through to disk
+    p = group_dir / rel_name
+    if p.is_file():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def _load_flowcharts(flowcharts_dir: Path, output_reader=None, group_dir: Path = None) -> dict:
+    """{unit_prefix: {func_name: flowchart_str}} — Postgres first, then disk (doc 09, C0).
+
+    Unlike the other two view artifacts this is a DIRECTORY of per-unit files, so there is no
+    single path to ask for: the units are discovered from the reader's file list, then read
+    individually. Falls back to the directory scan when the store has none for this group.
+    """
+    if output_reader is not None and group_dir is not None:
+        prefix = f"{group_dir.name}/flowcharts/"
+        try:
+            names = [r for r in output_reader._pg_files() if r.startswith(prefix)
+                     and r.endswith(".json") and not r.endswith("_summary.json")]
+        except Exception:
+            names = []
+        if names:
+            result: dict = {}
+            for rel in names:
+                stem = rel.rsplit("/", 1)[-1][:-len(".json")]
+                txt = output_reader.read_text(rel)
+                if not txt:
+                    continue
+                try:
+                    arr = json.loads(txt)
+                except ValueError:
+                    continue
+                if not isinstance(arr, list):
+                    continue
+                result[stem] = {}
+                for item in arr:
+                    name = (item.get("name") or "").strip()
+                    flowchart = (item.get("flowchart") or "").strip()
+                    if name and flowchart:
+                        result[stem][name] = flowchart
+            if result:
+                return result
+    return _load_flowcharts_from_dir(flowcharts_dir)
+
+
 def _load_flowcharts_from_dir(flowcharts_dir: Path) -> dict:
     """Return {unit_prefix: {func_name: mermaid_str}}."""
     result: dict = {}
@@ -416,8 +505,11 @@ def _flowchart_entries(group_dir: Path, base_stems: list[str], mermaid: str,
     return entries
 
 
-def _load_behavior_diagrams(group_dir: Path) -> dict:
+def _load_behavior_diagrams(group_dir: Path, output_reader=None) -> dict:
     """Return the _docxRows dict from behaviour_diagrams/_behaviour_pngs.json."""
+    doc = _view_json(output_reader, group_dir, "behaviour_diagrams/_behaviour_pngs.json")
+    if doc is not None:
+        return doc.get("_docxRows", {}) if isinstance(doc, dict) else {}
     p = group_dir / "behaviour_diagrams" / "_behaviour_pngs.json"
     if not p.exists():
         return {}
@@ -535,8 +627,12 @@ def build_intro_section(config: dict, abbreviations: dict,
     scope_body = intro_cfg.get("scopeBody", "")
     scope_items: list[str] = intro_cfg.get("scopeItems") or []
 
+    # display_name(): component ids are layer-qualified (`Layer1.Core`), and this bullet
+    # list has to read exactly like the DOCX Scope section, which shows the bare name.
+    # Identity stays qualified everywhere it is a key — including meta.components below.
+    from core.config import display_name
     sorted_comps = sorted(components)
-    comp_bullets = "\n".join(f"• {c.replace('-', ' ')}" for c in sorted_comps)
+    comp_bullets = "\n".join(f"• {display_name(c).replace('-', ' ')}" for c in sorted_comps)
     scope_text = scope_intro
     if comp_bullets:
         scope_text += "\n" + comp_bullets
@@ -572,23 +668,26 @@ def intro_section_from_config(components: list[str], project_name: str) -> dict:
 
 def build_render(doc, project, version, group_dir: Path, project_id: str,
                  *, model_root: Optional[Path] = None,
-                 asset_base: Optional[str] = None) -> dict:
+                 asset_base: Optional[str] = None,
+                 model_reader: Optional[Any] = None,
+                 output_reader: Optional[Any] = None) -> dict:
     """Build a rich {cover, toc, sections, meta} payload mirroring the DOCX structure.
 
     ``model_root`` overrides where model/*.json is read from (defaults to the live
     ``model/`` dir); ``asset_base`` overrides the URL prefix used for diagram assets
     (defaults to the live document-asset route). Both let the compare engine build
     a render from a per-version snapshot instead of the live working tree.
+
+    ``model_reader`` (PG-7a) is a ``services.model_reader.ModelReader`` that serves the model
+    from Postgres for THIS version, falling back to ``model_root``/the live dir. When omitted the
+    model is read from disk exactly as before.
     """
     group = doc.group
     if asset_base is None:
         asset_base = f"projects/{project_id}/documents/{doc.id}/assets"
 
     # Load interface data
-    itf: dict = {}
-    itf_path = group_dir / "interface_tables.json"
-    if itf_path.exists():
-        itf = json.loads(itf_path.read_text(encoding="utf-8"))
+    itf: dict = _view_json(output_reader, group_dir, "interface_tables.json") or {}
     unit_names: dict[str, str] = itf.get("unitNames", {}) or {}
 
     # Group unit keys by component
@@ -596,13 +695,16 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
     for uk in unit_names:
         comps.setdefault(uk.split(KEY_SEP, 1)[0], []).append(uk)
 
-    # Load model files
+    # Load model files — via the version-scoped reader (Postgres-first) when supplied,
+    # else straight from disk as before.
     model_dir = model_root or (_REPO_ROOT / "model")
-    units_data = _load_model_json(model_dir, "units")
-    dd_data = _load_model_json(model_dir, "dataDictionary")
-    globals_data = _load_model_json(model_dir, "globalVariables")
-    functions_data = _load_model_json(model_dir, "functions")
-    meta_data = _load_model_json(model_dir, "metadata")
+    _load = model_reader.load if model_reader is not None else (
+        lambda name: _load_model_json(model_dir, name))
+    units_data = _load("units")
+    dd_data = _load("dataDictionary")
+    globals_data = _load("globalVariables")
+    functions_data = _load("functions")
+    meta_data = _load("metadata")
     project_name = meta_data.get("projectName") or project.name
 
     # Load config + abbreviations
@@ -611,8 +713,8 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
 
     # Load flowcharts + behavior diagrams
     flowcharts_dir = group_dir / "flowcharts"
-    flowcharts_map = _load_flowcharts_from_dir(flowcharts_dir)
-    behavior_rows = _load_behavior_diagrams(group_dir)
+    flowcharts_map = _load_flowcharts(flowcharts_dir, output_reader, group_dir)
+    behavior_rows = _load_behavior_diagrams(group_dir, output_reader)
 
     # Hidden functions
     hidden_fids: set = {fid for fid, f in functions_data.items() if f.get("hidden", False)}
@@ -924,7 +1026,7 @@ def build_render(doc, project, version, group_dir: Path, project_id: str,
                     f"{comp}-dyn-{dyn_idx}", f"{n}.2.{dyn_idx}", subheader, 3,
                     type="behavior_table", content=None,
                     behavior_table={
-                        "description_list": row.get("behaviorDescription") or [],
+                        "description_list": _as_description_list(row.get("behaviorDescription")),
                         "risk": "Medium",
                         "capacity": "Common",
                         "input_name": input_label,

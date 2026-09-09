@@ -44,6 +44,61 @@ app = FastAPI(
     redoc_url=None,
 )
 
+
+def _ensure_default_admin(db) -> None:
+    """Guarantee a login exists: create ``admin@aspice.dev`` / ``admin`` when that user is absent,
+    so a brand-new database (e.g. a freshly created remote Postgres) is never left with no way to
+    sign in. Idempotent — a no-op once the user exists. Change the password after first login."""
+    import datetime
+    import sys
+    try:
+        if db.users.get_by_email("admin@aspice.dev"):
+            return
+        from .models.domain import User
+        from .middleware.auth import hash_password
+        db.users.create(User(
+            id="admin", email="admin@aspice.dev", name="Administrator", initials="AD",
+            avatar_url=None, hashed_password=hash_password("admin"),
+            created_at=datetime.datetime.now(datetime.timezone.utc)))
+        print("[api] created default admin — sign in: admin@aspice.dev / admin", file=sys.stderr)
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"[api] could not ensure default admin: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+
+@app.on_event("startup")
+async def _db_startup_check() -> None:
+    """When the SQL backend is active, log which database the API is bound to (password
+    redacted) and whether it's reachable — so a missing/wrong DATABASE_URL surfaces HERE, not
+    as a cryptic 500 on the first request. Does not abort startup (the DB may come up shortly)."""
+    import os
+    import sys
+    from .db.session import _db
+    engine = getattr(_db, "_engine", None)
+    if engine is None:
+        # D-16: Postgres is the only real backend. In-memory is a test/dev seam that persists
+        # NOTHING — say so loudly rather than letting a misconfigured server look healthy.
+        print("[api] *** NO DATABASE CONFIGURED — running the in-memory TEST backend. ***\n"
+              "      Seed data only; every project, version and document is lost on restart.\n"
+              "      Set DATABASE_URL, or add a `db` section to engine/config/config.local.json,\n"
+              "      then run `python analyzer.py setup`.", file=sys.stderr)
+        return
+    sys.path.insert(0, str(Path(__file__).parent.parent / "engine"))
+    from core.db import _redact
+    from sqlalchemy import text
+    dsn = str(engine.url)
+    src = "DATABASE_URL env" if os.environ.get("DATABASE_URL", "").strip() else "config db section / default"
+    print(f"[api] SQL backend — database: {_redact(dsn)}  (source: {src})", file=sys.stderr)
+    try:
+        with engine.connect() as cx:
+            cx.execute(text("SELECT 1"))
+        print("[api] database reachable ✓", file=sys.stderr)
+        _ensure_default_admin(_db)          # never leave a fresh DB with no way to sign in
+    except Exception as exc:                                  # noqa: BLE001
+        print(f"[api] *** DATABASE UNREACHABLE *** {type(exc).__name__}: {exc}\n"
+              f"      The API is bound to {_redact(dsn)} (source: {src}). If that is 'localhost'\n"
+              f"      but you meant a remote server, set DATABASE_URL before starting uvicorn, or\n"
+              f"      add a `db` section to engine/config/config.local.json.", file=sys.stderr)
+
 # ---------------------------------------------------------------------------
 # Self-hosted API docs — Swagger UI / ReDoc assets are served from api/static/
 # instead of a public CDN, so /docs and /redoc work on networks (e.g. office

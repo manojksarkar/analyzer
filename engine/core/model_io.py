@@ -50,6 +50,11 @@ EDGES = "edges"
 # transitive include closure (M4.0). Captured every parse; the narrowed-parse engine
 # (M4) intersects it with the git diff to find affected TUs. Not in ALL_MODEL_NAMES.
 TU_INCLUDES = "tu_includes"
+# INCREMENTAL_PLAN = what the incremental engine tells Phases 2/3 to regenerate
+# (impactFids / flowchartFids / baselineVersionDir / …). Written by the engine, read by
+# model_deriver and the flowchart + unit-diagram views. Not in ALL_MODEL_NAMES: absent
+# simply means "regenerate everything".
+INCREMENTAL_PLAN = "incremental_plan"
 # ENTITY_FILES = {entityKey -> repo-relative defining file} for every hashed entity
 # (function/global/type/macro) — lets the narrowed-parse merge (M4.3) resolve each
 # entity's file (types/hashes have no inline location). Not in ALL_MODEL_NAMES.
@@ -89,8 +94,10 @@ def model_file_path(name: str) -> str:
 
 
 def model_files_present(*names: str) -> List[str]:
-    """Return the list of canonical names whose files are MISSING on disk."""
-    return [n for n in names if not os.path.isfile(model_file_path(n))]
+    """The canonical names that are MISSING — via the active repository, so this answers
+    "is it in the database?" in DB mode and "is the file there?" in file mode."""
+    from core.model_repo import repository
+    return repository().missing(*names)
 
 
 def ensure_model_dir() -> str:
@@ -113,22 +120,19 @@ class ModelFileMissing(FileNotFoundError):
 
 
 def read_model_file(name: str, *, required: bool = True, default: Any = None) -> Any:
-    """Read a single model file. Raises ModelFileMissing if required and absent.
+    """Read one model artifact. Raises ModelFileMissing if required and absent.
+
+    Goes through the active `core.model_repo` repository, so the same call reads a file or the
+    database depending on what the run installed (doc 10, step 2). The signature is unchanged
+    on purpose — that is what lets the storage move without touching the phases.
 
     Args:
         name:     canonical name (use the constants from this module)
-        required: if False, returns `default` when the file is missing
-        default:  value to return when not required and file is absent
+        required: if False, returns `default` when the artifact is missing
+        default:  value to return when not required and absent
     """
-    path = model_file_path(name)
-    if not os.path.isfile(path):
-        if required:
-            raise ModelFileMissing(
-                f"{path} not found. Run the upstream phase first."
-            )
-        return default
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    from core.model_repo import repository
+    return repository().read(name, required=required, default=default)
 
 
 def load_model(
@@ -160,31 +164,30 @@ def write_model_file(
     indent: int = 2,
     ensure_ascii: bool = True,
 ) -> str:
-    """Write a model file as JSON. Returns the path written.
+    """Write one model artifact through the active repository. Returns the path, or "" when the
+    write went to the database (doc 10, step 2).
 
-    By default this is a plain in-place write (matches existing behaviour).
-    Pass `atomic=True` to write to a tempfile in the same directory and
-    rename into place — safer if a crash mid-write would corrupt the file.
+    A database write is BUFFERED and lands at the phase boundary, because the model is not a
+    per-file store — see `core.model_repo`. Callers that use the return value as a path are the
+    step-5 work; none of them do so today.
     """
-    ensure_model_dir()
-    path = model_file_path(name)
-    if not atomic:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=indent, ensure_ascii=ensure_ascii)
-        return path
+    from core.model_repo import repository
+    repository().write(name, data)
+    return ""
 
-    # Atomic path: write to a sibling temp file then os.replace().
-    dirpath = os.path.dirname(path) or "."
-    fd, tmp = tempfile.mkstemp(prefix=f".{name}.", suffix=".json.tmp", dir=dirpath)
+
+def artifact_location(name: str) -> str:
+    """Where a write of `name` lands, as a short phrase for a log line.
+
+    Phase summaries named `model/<name>.json` whatever the run actually did. That file has
+    not existed since the file backing was removed, so the line pointed a reader at a path
+    nobody wrote — which is exactly the confusion it should have prevented. Never raises:
+    a summary line must not be able to fail a run.
+    """
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=indent, ensure_ascii=ensure_ascii)
-        os.replace(tmp, path)
+        from core.model_repo import repository
+        return repository().describe(name)
     except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-    return path
+        return "?"
+
 

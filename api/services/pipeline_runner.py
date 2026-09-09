@@ -23,7 +23,9 @@ Public surface used by routes/jobs.py:
 """
 from __future__ import annotations
 
+import copy
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -37,9 +39,13 @@ from typing import Any, Optional, Set
 
 from ..models.domain import Version, Document
 from . import git_cli
+from . import doc_render
+from .model_reader import ModelReader
 from .settings import get_settings
 
 UTC = timezone.utc
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Per-job state (thread-safe via _LOCK)
@@ -162,13 +168,164 @@ def _cleanup_state(job_id: str) -> None:
         # Keep logs so SSE can drain remaining lines after completion
 
 
+def _reserve_version(db: Any, job: Any, project: Any) -> None:
+    """Create the version row (status 'draft') for a job. Called at **job creation** (jobs route,
+    before the job INSERT — ``analysis_jobs.version_id`` is a FK to ``versions.id``) and again at
+    run start as an **idempotent safety net** (so the engine — writing to Postgres via PgStore —
+    can insert its per-version rows under the ``versions`` FK *during* the run, PG-3/08).
+    ``_make_version`` finalizes it at completion; ``_mark_failed`` deletes it on failure so the
+    name is free to retry. No-op if there's no reserved id or the row already exists."""
+    vid = getattr(job, "version_id", None)
+    if not vid or db.versions.get(vid):
+        return
+    db.versions.create(Version(
+        id=vid, project_id=job.project_id,
+        tag=(getattr(job, "version_tag", None) or "").strip(),
+        commit_sha=job.commit_sha, branch=job.branch,
+        description="Generating…", status="draft", docs_count=0,
+        created_by=(project.created_by if project else "system"), created_at=_now()))
+
+
+def _materialise_data_dictionary(db: Any, job: Any) -> Optional[Path]:
+    """Put the uploaded data dictionary where the engine expects it, and persist it.
+
+    The engine resolves it as `workspaces/<pid>/datadict/<id>.csv` — and nothing ever created
+    that file. `POST /uploads` kept the bytes in a module-level `_UPLOADS` dict and returned an
+    id; the wizard stored the id in `build_config`; the runner then checked for a file that was
+    never written, found nothing, and silently omitted `--data-dictionary`. The CSV therefore
+    never reached the parser, never merged into `dataDictionary`, and never appeared in the
+    database. No error at any step.
+
+    Two destinations, because they answer different questions:
+      * the FILE is what `parser.py` reads (it takes a path);
+      * `data_dictionaries` + `data_dictionary_entries` make it survive an API restart and be
+        visible from another node — the in-memory dict does neither.
+
+    Returns the path, or None when the job has no dictionary or the content cannot be found.
+    """
+    ddid = getattr(job, "data_dict_id", None)
+    if not ddid:
+        return None
+    dd_path = (get_settings().repo_root / "workspaces" / job.project_id
+               / "datadict" / f"{ddid}.csv")
+    if dd_path.is_file():
+        return dd_path                       # already materialised by an earlier run
+
+    data = _upload_bytes(ddid) or _stored_dictionary_bytes(db, job.project_id, ddid)
+    if not data:
+        _append_log(job.id, f"WARNING: data dictionary {ddid} has no content on this node — "
+                            f"the run will proceed WITHOUT it")
+        return None
+
+    try:
+        dd_path.parent.mkdir(parents=True, exist_ok=True)
+        dd_path.write_bytes(data)
+    except OSError as exc:
+        _append_log(job.id, f"WARNING: could not write the data dictionary: {exc}")
+        return None
+    _persist_dictionary(db, job.project_id, ddid, data)
+    _append_log(job.id, f"Data dictionary {ddid} ready ({len(data)} bytes).")
+    return dd_path
+
+
+def _upload_bytes(upload_id: str) -> Optional[bytes]:
+    """The uploaded bytes, if this process still holds them (they are in memory only)."""
+    try:
+        from ..routes.repositories import _UPLOADS
+        rec = _UPLOADS.get(upload_id) or {}
+        return rec.get("data")
+    except Exception:
+        return None
+
+
+def _stored_dictionary_bytes(db: Any, project_id: str, ddid: str) -> Optional[bytes]:
+    """Rebuild the CSV from `data_dictionary_entries` — the copy that survives a restart."""
+    try:
+        import sqlalchemy as sa
+        from ..db.postgres import schema as s
+        eng = getattr(db, "_engine", None)
+        if eng is None:
+            return None
+        with eng.connect() as cx:
+            rows = cx.execute(
+                sa.select(s.data_dictionary_entries.c.payload)
+                .where(s.data_dictionary_entries.c.data_dictionary_id == ddid)
+                .order_by(s.data_dictionary_entries.c.id)).all()
+        if not rows:
+            return None
+        lines = [r[0].get("_raw", "") for r in rows if isinstance(r[0], dict)]
+        if not any(lines):
+            return None
+        return ("\n".join(lines) + "\n").encode("utf-8")
+    except Exception:
+        return None
+
+
+def _persist_dictionary(db: Any, project_id: str, ddid: str, data: bytes) -> None:
+    """Store the CSV so a restart or another node can still find it. Best-effort."""
+    try:
+        import sqlalchemy as sa
+        from ..db.postgres import schema as s
+        eng = getattr(db, "_engine", None)
+        if eng is None:
+            return
+        text = data.decode("utf-8", errors="replace")
+        rows = [{"data_dictionary_id": ddid, "payload": {"_raw": ln}}
+                for ln in text.splitlines()]
+        with eng.begin() as cx:
+            if not cx.execute(sa.select(s.data_dictionaries.c.id)
+                              .where(s.data_dictionaries.c.id == ddid)).first():
+                cx.execute(sa.insert(s.data_dictionaries), {
+                    "id": ddid, "project_id": project_id, "name": f"{ddid}.csv",
+                    "uploaded_at": _now()})
+            cx.execute(sa.delete(s.data_dictionary_entries)
+                       .where(s.data_dictionary_entries.c.data_dictionary_id == ddid))
+            if rows:
+                cx.execute(sa.insert(s.data_dictionary_entries), rows)
+    except Exception as exc:
+        _log.warning("could not persist the data dictionary %s: %s", ddid, exc)
+
+
+def _store_resolved_config(db: Any, job: Any, cfg: dict) -> None:
+    """Persist the per-version NON-SECRET analysis config onto the reserved version row
+    (versions.resolved_config). Best-effort: a storage hiccup must not fail the run — the
+    config is also materialized to the workspace file the engine actually reads."""
+    vid = getattr(job, "version_id", None)
+    if not vid:
+        return
+    try:
+        v = db.versions.get(vid)
+        if v is not None:
+            v.resolved_config = cfg
+            db.versions.update(v)
+    except Exception as exc:                         # best-effort: don't fail the run on this
+        # But say so. This column is the record of what settings a version was built with, and
+        # losing it without a trace makes a later "why does this version look like that?"
+        # unanswerable — the workspace config.json is per PROJECT and shared, so it has already
+        # moved on by the time anyone asks.
+        _append_log(getattr(job, "id", ""), f"WARNING: could not store resolved_config: {exc}")
+
+
 def _mark_failed(db: Any, job_id: str, message: str) -> None:
+    # Also to the server log (doc 09, A0). The job record alone is not enough: it is
+    # only visible to someone who thinks to query that job, it is lost if the DB write
+    # itself is what failed, and an operator tailing the API sees nothing at all.
+    _log.error("job %s failed: %s", job_id, message)
     job = db.jobs.get(job_id)
     if job and job.status not in ("cancelled", "complete", "failed"):
         job.status = "failed"
         job.error_message = message[:4000]
         job.completed_at = _now()
         db.jobs.update(job)
+        # drop the reserved (still-draft) version so its name is free for a retry
+        vid = getattr(job, "version_id", None)
+        if vid:
+            v = db.versions.get(vid)
+            if v is not None and getattr(v, "status", None) == "draft":
+                try:
+                    db.versions.delete(vid)
+                except Exception:               # best-effort cleanup
+                    pass
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +383,7 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     job.status = "running"
     job.current_activity = "Preparing workspace…"
     db.jobs.update(job)
+    _reserve_version(db, job, project)     # version row must exist before the engine (PgStore FK)
     _append_log(job_id, "Starting analysis pipeline…")
 
     root = get_settings().repo_root
@@ -243,11 +401,12 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
     # 2. Write per-project config
     workspace_dir = root / "workspaces" / job.project_id
     try:
-        config_path = _write_project_config(project, workspace_dir,
-                                            no_llm=bool(getattr(job, "no_llm", False)))
+        config_path, analysis_cfg = _write_project_config(
+            project, workspace_dir, no_llm=bool(getattr(job, "no_llm", False)))
     except Exception as exc:
         _mark_failed(db, job_id, f"Config generation failed: {exc}")
         return
+    _store_resolved_config(db, job, analysis_cfg)   # per-version config → versions.resolved_config
     _append_log(job_id, f"Config written to {config_path.name}")
 
     if _is_cancelled(db, job_id):
@@ -273,21 +432,28 @@ def _inner_run_locked(db: Any, job_id: str, project: Any) -> None:
            "--project-id", job.project_id, "--branch", job.branch,
            "--commit", job.commit_sha, "--scope", _scope_to_cli(scope),
            "--config", str(config_path)]
+    if getattr(job, "version_id", None):
+        # Run under the real `ver…` id reserved at job start (08), so the engine's identity,
+        # reuse index and DB records all match the API/DB — no more commit[:16] namespace.
+        cmd += ["--version-id", job.version_id]
     if mode != "full" and getattr(job, "reference_version_id", None):
-        # The engine's version namespace is commit[:16], not the API's 'ver…' ids —
-        # translate; fall back to the raw id so a deleted base still warns "not found".
-        _raw_ref = job.reference_version_id
-        _ref_commit = _resolve_ref_commit(db, _raw_ref)
-        cmd += ["--base-version-id", _ref_commit[:16] if _ref_commit else _raw_ref]
+        # list_versions returns real ver ids now, so the baseline override IS the real id.
+        cmd += ["--base-version-id", job.reference_version_id]
     if getattr(job, "data_dict_id", None):
+        # Materialise it FIRST — the engine resolves the id to a file, and nothing else
+        # creates that file.
+        _materialise_data_dictionary(db, job)
         cmd += ["--data-dict-id", job.data_dict_id]
     if getattr(job, "no_llm", False):
         cmd.append("--no-llm")
-    if mode != "full" and getattr(job, "narrowed_parse", False):
-        cmd.append("--narrowed-parse")
+    # Narrowed parse is ON by default in the engine, so a job opts OUT rather than in. It only
+    # applies to an incremental run (a full generation has no baseline to merge against), and it
+    # falls back to a full parse by itself whenever it cannot prove the merge safe.
+    if mode != "full" and getattr(job, "narrowed_parse", True) is False:
+        cmd.append("--no-narrowed-parse")
     _append_log(job_id, f"Generating ({'full' if mode == 'full' else 'auto'}) via {script}…")
 
-    ok = _execute_subprocess(db, job_id, cmd, phase_start=1)
+    ok = _execute_subprocess(db, job_id, cmd, phase_start=1, extra_env=_engine_db_env(db))
     if ok:
         _complete(db, job_id)
 
@@ -425,7 +591,7 @@ def _strip_jsonc(text: str) -> str:
 
 
 def _load_base_config(base_path: Path) -> dict:
-    """Parse the base config/config.json as JSONC (comments + trailing commas allowed).
+    """Parse the base config/config.defaults.json as JSONC (comments + trailing commas allowed).
     Returns {} on any read/parse failure, matching the prior json.load fallback."""
     try:
         with open(base_path, "r", encoding="utf-8") as f:
@@ -434,22 +600,45 @@ def _load_base_config(base_path: Path) -> dict:
         return {}
 
 
-def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> Path:
-    """Write a per-project config.json by merging the base config with project settings."""
-    base_path = get_settings().repo_root / "engine" / "config" / "config.json"
+def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = False) -> tuple[Path, dict]:
+    """Materialize the workspace config.json the engine runs with, and return it alongside the
+    NON-SECRET analysis config that is stored per version (versions.resolved_config).
+
+    Two configs come out of here, by design:
+
+      * ``analysis_cfg`` — config.defaults.json + this project's build_config + layers (+ no_llm).
+        No secrets. This is the reproducible, self-describing per-version config → resolved_config.
+      * the workspace file — ``analysis_cfg`` overlaid with engine/config/config.local.json's
+        secrets (llm baseUrl/credentials, any machine-specific override) so the engine can reach
+        the LLM. The ``db`` section is deliberately NOT written to this on-disk file: the engine
+        talks to Postgres via the DATABASE_URL env, so the DB password has no business in it.
+    """
+    from core.config import _deep_merge
+    base_path = get_settings().repo_root / "engine" / "config" / "config.defaults.json"
     cfg = _load_base_config(base_path)
 
-    # Apply explicit section overrides from build_config
+    # Apply explicit section overrides from build_config (per-project, from onboarding)
     bc = project.build_config or {}
     for key in ("clang", "llm", "views", "docx"):
         if key in bc and isinstance(bc[key], dict):
             cfg.setdefault(key, {})
             cfg[key].update(bc[key])
 
-    # Convert architecture_layers to the layers schema
+    # Convert architecture_layers to the layers schema. Names have to be unambiguous
+    # BEFORE the engine sees them: the wizard hands over lists, the config is dicts keyed
+    # by name, and every collision - a name reused in one scope, or a group/component name
+    # reused across layers - used to resolve itself by silently dropping or merging one
+    # side. The result was a document quietly missing a group, or one component holding two
+    # layers' files and parsed with a single layer's -D set. Fail the job instead.
     layers = _convert_layers(project.architecture_layers or [])
     if layers:
         cfg["layers"] = layers
+    from core.config import validate_layer_names
+    name_problems = (_duplicate_wizard_names(project.architecture_layers or [])
+                     + validate_layer_names({"layers": layers}))
+    if name_problems:
+        raise ValueError("ambiguous architecture layer names - "
+                         + "; ".join(name_problems))
 
     # Preprocessor definitions -> a macro file the engine reads via clang.macrosFile.
     # The wizard stores them as JSON (manual list or an upload reference); without
@@ -466,11 +655,28 @@ def _write_project_config(project: Any, workspace_dir: Path, *, no_llm: bool = F
         cfg["llm"]["descriptions"] = False
         cfg["llm"]["behaviourNames"] = False
 
+    # Snapshot the non-secret analysis config BEFORE overlaying secrets — this is what gets
+    # persisted per version. deepcopy so the secret overlay below can't leak back into it.
+    analysis_cfg = copy.deepcopy(cfg)
+
+    # Overlay secrets from config.local.json (gitignored) into the RUNTIME file only: llm creds/URL
+    # (and any machine-specific override) reach the engine, but never enter resolved_config. Drop
+    # `db` so the DB password is not written to a workspace file. Deep-merged per nested key, so a
+    # partial `llm` block (e.g. just customHeaders) overrides without restating the whole block.
+    local_path = base_path.parent / "config.local.json"
+    if local_path.is_file():
+        try:
+            local = _load_base_config(local_path)
+            local.pop("db", None)
+            _deep_merge(cfg, local)
+        except Exception:                            # best-effort: run with the non-secret config
+            pass
+
     workspace_dir.mkdir(parents=True, exist_ok=True)
     out_path = workspace_dir / "config.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
-    return out_path
+    return out_path, analysis_cfg
 
 
 def _materialize_macros(defs: Any, workspace_dir: Path) -> Optional[Path]:
@@ -553,6 +759,62 @@ def _convert_layers(arch_layers: list) -> dict:
     return result
 
 
+def _duplicate_wizard_names(arch_layers: list) -> list:
+    """Names the list -> dict conversion in _convert_layers would silently swallow.
+
+    `architecture_layers` arrives as LISTS, and _convert_layers writes each entry
+    into a dict keyed by name: two layers, two groups in one layer, or two
+    components in one group sharing a name means the second one REPLACES the
+    first, and the wizard's selection is lost with no error anywhere.
+
+    Only same-scope duplicates are reported here, because those are the ones that
+    disappear before `layers` exists. Cross-layer collisions survive the
+    conversion and are reported by core.config.validate_layer_names instead.
+    """
+    from core.config import name_ident
+
+    problems: list = []
+    seen_layers: dict = {}
+    for layer in arch_layers or []:
+        if not isinstance(layer, dict):
+            continue
+        lname = str(layer.get("name") or "").strip()
+        if not lname:
+            continue
+        if name_ident(lname) in seen_layers:
+            problems.append(f"two layers are named {lname!r}")
+            continue
+        seen_layers[name_ident(lname)] = lname
+
+        seen_groups: dict = {}
+        for g in (layer.get("groups") or []):
+            if isinstance(g, str):
+                gname, comps = g.strip(), []
+            elif isinstance(g, dict):
+                gname, comps = str(g.get("name") or "").strip(), (g.get("components") or [])
+            else:
+                continue
+            if not gname:
+                continue
+            if name_ident(gname) in seen_groups:
+                problems.append(f"layer {lname!r} has two groups named {gname!r}")
+                continue
+            seen_groups[name_ident(gname)] = gname
+
+            seen_comps: dict = {}
+            for c in comps:
+                cname = c.strip() if isinstance(c, str) else (
+                    str(c.get("name") or "").strip() if isinstance(c, dict) else "")
+                if not cname:
+                    continue
+                if name_ident(cname) in seen_comps:
+                    problems.append(
+                        f"group {lname}/{gname} has two components named {cname!r}")
+                    continue
+                seen_comps[name_ident(cname)] = cname
+    return problems
+
+
 def _norm_rel(path: str) -> str:
     """Normalize a repo-relative path: backslashes -> '/', drop leading './' and
     surrounding slashes."""
@@ -612,9 +874,26 @@ def _build_cmd(
     to_phase: Optional[int] = None,
     use_model: bool = False,
     arch_layers: list = (),
+    model_root=None,
+    output_root=None,
+    version_id=None,
 ) -> list[str]:
     cmd = [sys.executable, str(get_settings().repo_root / "engine" / "run.py")]
     cmd += ["--config", str(config_path)]
+    # Run against THIS version's own model/ and output/ instead of the shared <repo>/model
+    # and <repo>/output (doc 09, B1 + C11b). Without these the caller has to stage the
+    # version's trees into the repo root first — which means rmtree-ing a directory another
+    # concurrent job may be using.
+    if model_root is not None:
+        cmd += ["--model-root", str(model_root)]
+    if output_root is not None:
+        cmd += ["--output-root", str(output_root)]
+    # Where the model lives, and which version's (doc 10, step 8). Re-export runs
+    # `--use-model --from-phase 4`, which now asks the REPOSITORY whether the model exists —
+    # so a version whose model is in the database must say so, or Phase 4 looks for files that
+    # were never written and the job fails with "model is missing".
+    if version_id:
+        cmd += ["--version-id", version_id]
     if use_model:
         cmd.append("--use-model")
     if from_phase > 1:
@@ -645,6 +924,9 @@ def _build_cmd(
                    / "datadict" / f"{ddid}.csv")
         if dd_path.is_file():
             cmd += ["--data-dictionary", str(dd_path)]
+    # The DOCX project name is the job's VERSION TAG, not the project name. This reverses the
+    # earlier D-3 decision deliberately: re-exporting v1 and v2 now yields documents titled
+    # "v1.0" and "v2.1" rather than both carrying the project name.
     if getattr(job, "version_tag", None):
         cmd += ["--project-name", job.version_tag]
     # Extra include paths from architecture_layers.lib_paths (--include-path-layer <layer> <abs_dir>)
@@ -723,17 +1005,45 @@ def preview_baseline(db: Any, project_id: str, commit: str,
 # Subprocess execution + output tailing
 # ---------------------------------------------------------------------------
 
+def _engine_db_env(db: Any) -> dict:
+    """DATABASE_URL for the engine subprocess when the API is on the SQL backend, so the
+    engine reads its project/version/baseline metadata from the same DB (project_db and
+    the incremental baseline read gate on DATABASE_URL). Empty otherwise, so file-based
+    dev is unchanged. Resolves the DSN via core.db so it matches the default when unset."""
+    if getattr(db, "_engine", None) is None:
+        return {}
+    try:
+        import sys
+        eng_dir = os.path.join(str(get_settings().repo_root), "engine")
+        if eng_dir not in sys.path:
+            sys.path.insert(0, eng_dir)
+        from core.db import database_url
+        return {"DATABASE_URL": database_url()}
+    except Exception:
+        return {}
+
+
 def _execute_subprocess(
     db: Any,
     job_id: str,
     cmd: list[str],
     phase_start: int = 1,
+    extra_env: Optional[dict] = None,
 ) -> bool:
     """Run cmd, tail its output, update job progress. Returns True on success."""
     cfg = get_settings()
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     if cfg.libclang_path:
         env["LIBCLANG_PATH"] = cfg.libclang_path
+    # Tag this run's metrics records (doc 09, D2a). Concurrent jobs append to one
+    # metrics file, so without an id their phase timings and peak-RSS numbers cannot
+    # be told apart — which is the whole point of measuring before raising B4.
+    env["ANALYZER_JOB_ID"] = job_id
+    _job = db.jobs.get(job_id)
+    _vid = getattr(_job, "version_id", None) if _job else None
+    if _vid:
+        env["ANALYZER_VERSION_ID"] = str(_vid)
+    env.update(extra_env or {})
 
     try:
         proc = subprocess.Popen(
@@ -798,6 +1108,12 @@ def _execute_subprocess(
                 current_phase = new_phase
                 phase_start_time = _now()
 
+            # The ACTIVITY label follows the marker regardless of direction, so a later
+            # component's Phase 3 is not still announced as "Exporting".
+            _marker = _marker_phase(line)
+            if _marker:
+                _set_activity(db, job_id, _ACTIVITY[_marker])
+
             # Update activity detail from log content (strip log prefix)
             detail = _strip_log_prefix(line)
             if detail and len(detail) > 10:
@@ -815,8 +1131,12 @@ def _execute_subprocess(
             proc.wait()
 
     if _timed_out:
-        _append_log(job_id,f"Job failed after timing out {_timeout}s")
-        _mark_failed(db, job_id, f"Subprocess timed out after {_timeout}s.")
+        # Carry the tail here too (doc 09, A0). A timeout is precisely when you need
+        # to know what the run was doing when it stalled — the non-zero-exit path
+        # below already did this; this one silently dropped it.
+        tail = "\n".join(recent_lines[-20:])
+        _append_log(job_id, f"Job failed after timing out after {_timeout}s")
+        _mark_failed(db, job_id, f"Subprocess timed out after {_timeout}s.\n{tail}")
         return False
 
     with _LOCK:
@@ -828,7 +1148,7 @@ def _execute_subprocess(
 
     if rc != 0:
         tail = "\n".join(recent_lines[-20:])
-        _append_log(job_id,f"Job failed with code{rc}")
+        _append_log(job_id, f"Job failed with code {rc}")
         _mark_failed(db, job_id, f"run.py exited with code {rc}.\n{tail}")
         return False
 
@@ -844,14 +1164,31 @@ def _execute_subprocess(
     return True
 
 
-def _detect_phase(line: str, current_phase: int) -> int:
-    """Detect a phase start marker in a log line. Only advances forward."""
+def _marker_phase(line: str) -> int:
+    """The phase a `=== Phase N: ... ===` marker names, or 0 when the line is not a marker."""
     if "===" not in line:
-        return current_phase
-    for n in range(current_phase + 1, 5):
+        return 0
+    for n in range(1, 5):
         if _PHASE_MARKERS[n] in line:
             return n
-    return current_phase
+    return 0
+
+
+def _detect_phase(line: str, current_phase: int) -> int:
+    """Detect a phase start marker. Advances forward only — see `_marker_phase` for why.
+
+    A run is one PLAN PER COMPONENT (`--component-per-docx`), and every plan emits its own
+    Phase 3 and Phase 4 markers. The phase list shown in the UI is per RUN, not per plan, so
+    letting it walk backwards would flip completed phases back to running on every component.
+
+    The cost of that is a wrong LABEL: once plan 1 reaches Phase 4, plan 2's Phase-3 work —
+    flowcharts, the most expensive thing in the pipeline — is reported as "Exporting". A run
+    spending four minutes per component on flowchart LLM labels looked like four minutes of
+    DOCX export. `_execute_subprocess` now takes the activity text from `_marker_phase`, which
+    does not care about direction, so the label follows the real work.
+    """
+    n = _marker_phase(line)
+    return n if n > current_phase else current_phase
 
 
 def _strip_log_prefix(line: str) -> str:
@@ -882,6 +1219,14 @@ def _transition_phase(db: Any, job_id: str, old_phase: int, new_phase: int,
     _append_log(job_id, f"→ Phase {new_phase}: {_ACTIVITY.get(new_phase, '')}")
 
 
+def _set_activity(db: Any, job_id: str, activity: str) -> None:
+    """Set the headline activity. Separate from `_update_activity`, which sets the DETAIL line."""
+    job = db.jobs.get(job_id)
+    if job and job.current_activity != activity:
+        job.current_activity = activity
+        db.jobs.update(job)
+
+
 def _update_activity(db: Any, job_id: str, detail: str) -> None:
     job = db.jobs.get(job_id)
     if job:
@@ -905,19 +1250,65 @@ def _is_cancelled(db: Any, job_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def _commit_dir(project_id: str, commit_sha: str) -> Path:
-    """The per-commit version dir workspaces/<pid>/<commit[:16]> — the git checkout PLUS the
-    model/ output/ manifest the incremental engine writes for that commit (== version)."""
+    """The per-commit dir workspaces/<pid>/<commit[:16]> — the git checkout, plus the manifest
+    the incremental engine writes for that commit."""
     return get_settings().repo_root / "workspaces" / project_id / (commit_sha or "")[:16]
 
 
-def _read_engine_manifest(project_id: str, commit_sha: str) -> dict:
-    """Read the engine's manifest.json from the commit dir (decision / baselineVersionId /
-    regenerated / reused / documents). Returns {} when absent."""
-    p = _commit_dir(project_id, commit_sha) / "manifest.json"
-    try:
-        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
-    except (OSError, ValueError):
-        return {}
+def _version_dir(project_id: str, version_id: Optional[str]) -> Optional[Path]:
+    """workspaces/<pid>/versions/<ver…> — where the run captures its artifacts (08 step 3)."""
+    if not version_id:
+        return None
+    return get_settings().repo_root / "workspaces" / project_id / "versions" / version_id
+
+
+def _version_model_dir(project_id: str, commit_sha: str, version_id: Optional[str]) -> Optional[Path]:
+    """The dir holding a version's model/*.json — the DISK fallback for ModelReader when the model
+    isn't in Postgres. Prefers versions/<ver…>/model (what FileStore.write_model writes), falling
+    back to the commit dir for versions produced under the older layout. None when neither exists."""
+    vdir = _version_dir(project_id, version_id)
+    if vdir is not None and (vdir / "model").is_dir():
+        return vdir / "model"
+    d = _commit_dir(project_id, commit_sha) / "model"
+    return d if d.is_dir() else None
+
+
+def _read_engine_manifest(project_id: str, commit_sha: str,
+                          version_id: Optional[str] = None) -> dict:
+    """The engine's run accounting — decision / baselineVersionId / regenerated / reused.
+
+    From the `versions` row (doc 09, C1), so it is readable from any node rather than only the
+    one that ran the job.
+
+    There was a disk fallback here for versions written before that, reading the commit-dir
+    manifest.json. Nothing writes that file any more, and the merge had the file OVERRIDE the
+    database — so on a version that somehow had both, the stale copy won. Gone with the rest
+    of the JSON persistence.
+    """
+    from_db: dict = {}
+    if version_id:
+        try:
+            from incremental.model_store import load_run_outcome
+            from core.db import get_engine
+            with get_engine().connect() as cx:
+                from_db = load_run_outcome(cx, version_id) or {}
+        except Exception:                       # no DB / not migrated -> the file below
+            from_db = {}
+
+    return dict(from_db)
+
+
+# _read_run_metadata was removed: the engine now writes the run's identity metadata straight onto
+# the version row (store.write_run_metadata -> versions.base_path/project_name/parse_fingerprint),
+# so the API no longer hunts for model/metadata.json on disk. _make_version just carries the
+# columns through finalize.
+
+
+# _sync_model_to_db was removed in the PG-7b cutover: it re-persisted the completed run's
+# model/ dir into Postgres from the API side, but the engine already writes the model to the DB
+# during the run (`PgStore.write_model`, engine.py/generate.py). Both were gated on the same
+# condition — `_engine_db_env` only hands the engine a DATABASE_URL when the API is on the SQL
+# backend — so the API-side sync was always a redundant second write of data already stored.
 
 
 def _complete(db: Any, job_id: str) -> None:
@@ -929,14 +1320,20 @@ def _complete(db: Any, job_id: str) -> None:
     project = db.projects.get(job.project_id)
     # The engine wrote model/output + manifest INTO the commit dir and seeded the reuse index
     # itself — read the manifest for the incremental accounting; no separate capture/seed.
-    manifest = _read_engine_manifest(job.project_id, job.commit_sha)
+    manifest = _read_engine_manifest(job.project_id, job.commit_sha,
+                                     getattr(job, "version_id", None))
 
     version = _make_version(db, project, job, now, manifest)
     docs = _make_documents(db, project, version, now)
-    _make_sections(db, docs, now, _commit_dir(job.project_id, job.commit_sha) / "output")
+    # Section seeding reads this version's rendered output — the version-keyed dir when the run
+    # captured one, else the legacy commit dir (doc_render.commit_output_root resolves both).
+    _out_root = doc_render.commit_output_root(job.project_id, job.commit_sha, version.id)
+    _make_sections(db, docs, now, _out_root or (_commit_dir(job.project_id, job.commit_sha) / "output"))
     version.docs_count = len(docs)
     db.versions.update(version)
 
+    # The engine already persisted the model to Postgres during the run (PgStore.write_model), so
+    # this reads it straight back (falling back to the run's model/ dir when there is no DB).
     _load_and_register_functions(db, job, version.id)
 
     job.status = "complete"
@@ -1036,15 +1433,16 @@ def _make_sections(db: Any, docs: list, now: datetime, output_dir: Path) -> None
 
 def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict = None) -> Version:
     manifest = manifest or {}
-    existing = db.versions.list_for_project(project.id) if project else []
-    taken = {v.tag for v in existing}
-    tag = (getattr(job, "version_tag", None) or "").strip() or f"v0.{len(existing) + 1}.0"
-    base, i = tag, 1
-    while tag in taken:
-        tag = f"{base}-{i}"
-        i += 1
+    # Version identity (D-3): use the caller-supplied version verbatim. It was validated
+    # required + unique at job start (400/409), so there is no fallback name and no
+    # silent "-1" rename here.
+    tag = (getattr(job, "version_tag", None) or "").strip()
+    # Use the id reserved at job start (PG-3) so the row matches the identity the engine ran
+    # under; fall back to a fresh id only for callers that didn't reserve one.
+    vid = getattr(job, "version_id", None) or f"ver{uuid.uuid4().hex[:8]}"
+    reserved = db.versions.get(vid) if getattr(job, "version_id", None) else None
     version = Version(
-        id=f"ver{uuid.uuid4().hex[:8]}",
+        id=vid,
         project_id=project.id,
         tag=tag,
         commit_sha=job.commit_sha,
@@ -1053,15 +1451,28 @@ def _make_version(db: Any, project: Any, job: Any, now: datetime, manifest: dict
         status="in_review",
         docs_count=0,
         created_by=(project.created_by if project else "system"),
-        created_at=now,
-        # Incremental accounting comes from the engine's manifest (baselineVersionId is the
-        # baseline commit[:16]; resolvable by compare as a commit-sha prefix).
+        created_at=(reserved.created_at if reserved else now),
+        # Incremental accounting comes from the engine's manifest (baselineVersionId is now the
+        # baseline's real ver id — 08 step 2b).
         baseline_version_id=manifest.get("baselineVersionId"),
         decision=manifest.get("decision") or getattr(job, "decision", None),
         regenerated=manifest.get("regenerated"),
         reused=manifest.get("reused"),
+        # Carry the per-version config stored at job start through finalize — _put replaces the
+        # whole row, so rebuilding the Version without it would null versions.resolved_config.
+        resolved_config=(reserved.resolved_config if reserved else None),
+        # Run metadata (was model/metadata.json) is written straight onto the version row by the
+        # engine via store.write_run_metadata, so carry it through finalize — _put replaces the
+        # whole row and would otherwise null the columns the engine just filled.
+        base_path=(reserved.base_path if reserved else None),
+        project_name=(reserved.project_name if reserved else None),
+        parse_fingerprint=(reserved.parse_fingerprint if reserved else None),
     )
-    db.versions.create(version)
+    # Finalize the row reserved at job start; create it if this flow didn't reserve one.
+    if reserved is not None:
+        db.versions.update(version)
+    else:
+        db.versions.create(version)
     return version
 
 
@@ -1095,7 +1506,7 @@ def _make_documents(db: Any, project: Any, version: Version, now: datetime) -> l
         db.documents.update(doc)
         docs.append(doc)
 
-    out_root = commit_output_root(version.project_id, version.commit_sha)
+    out_root = commit_output_root(version.project_id, version.commit_sha, version.id)
     if out_root is None:
         return docs
 
@@ -1148,40 +1559,33 @@ def _resolve_ref_commit(db: Any, version_id: Optional[str]) -> Optional[str]:
     return v.commit_sha if v else None
 
 
-def _baseline_fn_keys(project_id: str, reference_commit: str) -> Optional[Set[str]]:
-    """Return the set of function dict-keys from the baseline commit's model, or None."""
-    path = _commit_dir(project_id, reference_commit) / "model" / "functions.json"
-    if not path.exists():
-        return None
-    try:
-        with path.open(encoding="utf-8") as f:
-            raw = json.load(f)
-        return set(raw.keys()) if isinstance(raw, dict) else None
-    except Exception:
-        return None
+def _baseline_fn_keys(db: Any, project_id: str, reference_commit: Optional[str],
+                      reference_version_id: Optional[str] = None) -> Optional[Set[str]]:
+    """The set of function dict-keys from the baseline's model — Postgres-first (by version id),
+    falling back to the baseline's model/functions.json on disk. None when neither has it."""
+    model_dir = _version_model_dir(project_id, reference_commit or "", reference_version_id)
+    raw = ModelReader(db, reference_version_id, model_dir).load("functions")
+    return set(raw.keys()) if isinstance(raw, dict) and raw else None
 
 
 def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
-    """Read model/functions.json and register functions in the DB under the job's id."""
+    """Register this version's functions in the DB under the job's id.
+
+    The model is read Postgres-first for `version_id` (the run persisted it via PgStore /
+    PgStore.write_model during the run), falling back to this version's model/functions.json."""
     from ..models.domain import Function
 
-    path = _commit_dir(job.project_id, job.commit_sha) / "model" / "functions.json"
-    if not path.exists():
-        return
-    try:
-        with path.open(encoding="utf-8") as f:
-            raw = json.load(f)
-    except Exception:
-        return
-    if not isinstance(raw, dict):
+    model_dir = _version_model_dir(job.project_id, job.commit_sha, version_id)
+    raw = ModelReader(db, version_id, model_dir).load("functions")
+    if not isinstance(raw, dict) or not raw:
         return
 
     ref_keys: Optional[Set[str]] = None
     if getattr(job, "reference_version_id", None):
-        # reference_version_id is an API Version.id; _baseline_fn_keys/_commit_dir
-        # expect a commit sha. Translate (fall back to raw → resolves to None, as before).
-        ref_commit = _resolve_ref_commit(db, job.reference_version_id) or job.reference_version_id
-        ref_keys = _baseline_fn_keys(job.project_id, ref_commit)
+        # reference_version_id is an API Version.id; the disk fallback keys by commit sha, so
+        # translate for it while the DB path uses the version id directly.
+        ref_commit = _resolve_ref_commit(db, job.reference_version_id)
+        ref_keys = _baseline_fn_keys(db, job.project_id, ref_commit, job.reference_version_id)
 
     functions: list[Function] = []
     for fn_key, fn_data in raw.items():
@@ -1217,6 +1621,34 @@ def _load_and_register_functions(db: Any, job: Any, version_id: str) -> None:
 # Re-export
 # ---------------------------------------------------------------------------
 
+def _capture_reexport_output(db: Any, job: Any, adir) -> None:
+    """Persist a re-export's freshly rendered output back into the store.
+
+    Generation reaches this through the incremental orchestrator's `store.capture_output`;
+    re-export bypasses that orchestrator entirely, so without this the run rewrites files and
+    nothing else. That is invisible while documents render from disk, and wrong the moment
+    they render from Postgres (C0) — the stored views stay at the previous render and the
+    re-export looks like it did nothing.
+
+    Best-effort: the .docx has already been produced on disk at this point, so a store hiccup
+    must not fail an otherwise successful job.
+    """
+    version_id = getattr(job, "version_id", None)
+    if not version_id:
+        return                       # legacy commit-keyed run: nothing version-scoped to update
+    try:
+        import sys as _sys
+        engine_dir = str(get_settings().repo_root / "engine")
+        if engine_dir not in _sys.path:
+            _sys.path.insert(0, engine_dir)
+        from incremental.store import make_store          # type: ignore[import]
+        store = make_store(job.project_id,
+                           workspaces_root=str(get_settings().repo_root / "workspaces"))
+        store.capture_output(version_id, str(adir / "output"))
+    except Exception as exc:                              # pragma: no cover - never fail here
+        _log.warning("re-export: could not persist rendered output for %s: %s", version_id, exc)
+
+
 def _do_reexport(db: Any, job_id: str) -> None:
     job = db.jobs.get(job_id)
     if not job:
@@ -1226,8 +1658,14 @@ def _do_reexport(db: Any, job_id: str) -> None:
         return
 
     root = get_settings().repo_root
-    cdir = _commit_dir(job.project_id, job.commit_sha)   # the version dir (model/output live here)
-    if not (cdir / "model").is_dir():
+    cdir = _commit_dir(job.project_id, job.commit_sha)   # the git CHECKOUT (run.py's project dir)
+    # This version's ARTIFACTS (model/output) — the version-keyed dir when the run captured one,
+    # else the legacy commit dir. Kept distinct from the checkout above: run.py parses source from
+    # the checkout, while model/output are per-version.
+    adir = _version_dir(job.project_id, getattr(job, "version_id", None))
+    if adir is None or not (adir / "model").is_dir():
+        adir = cdir
+    if not (adir / "model").is_dir():
         _mark_failed(db, job_id, "Version model not found — generate this version first.")
         return
 
@@ -1235,23 +1673,31 @@ def _do_reexport(db: Any, job_id: str) -> None:
     config_path = workspace_dir / "config.json"
     if not config_path.is_file():
         try:
-            config_path = _write_project_config(project, workspace_dir)
+            config_path, _ = _write_project_config(project, workspace_dir)
         except Exception as exc:
             _mark_failed(db, job_id, f"Config generation failed: {exc}")
             return
 
-    # Re-export = run.py Phase 4 (--use-model). run.py reads model/output from the repo root,
-    # so stage THIS version's commit-dir model+output there first, then capture the
-    # re-rendered output back into the commit dir.
-    for sub in ("model", "output"):
-        src, dst = cdir / sub, root / sub
-        if src.is_dir():
-            shutil.rmtree(dst, ignore_errors=True)
-            shutil.copytree(src, dst)
-
+    # Re-export = run.py Phase 4 (--use-model), run IN PLACE against this version's own
+    # model/ and output/.
+    #
+    # It used to stage them into the SHARED <repo>/model and <repo>/output, rmtree-ing those
+    # first — the exact concurrency hazard B1 removed from the generation path, still alive
+    # here: two jobs re-exporting at once would wipe each other's staged trees mid-run, and a
+    # re-export would wipe a *generation* that was using the shared dirs. Running in place
+    # also drops two full copies of the model and output per re-export.
     arch_layers = project.architecture_layers or []
-    cmd = _build_cmd(job, cdir, config_path, from_phase=4, use_model=True, arch_layers=arch_layers)
+    # The model is rows, so Phase 4 needs the version id to find it. This used to ASK whether
+    # the model was persisted and pass the id only if so, because a version generated before
+    # the DB-native work had files instead. There is no file model any more: a version whose
+    # rows are missing cannot be re-exported at all, and saying so beats re-exporting nothing.
+    cmd = _build_cmd(job, cdir, config_path, from_phase=4, use_model=True,
+                     arch_layers=arch_layers,
+                     model_root=adir / "model", output_root=adir / "output",
+                     version_id=getattr(job, "version_id", None))
     if _execute_subprocess(db, job_id, cmd, phase_start=4):
-        out = root / "output"
-        if out.is_dir():
-            shutil.copytree(out, cdir / "output", dirs_exist_ok=True)
+        # Re-persist the re-rendered views (C0). The document render now reads interface
+        # tables / flowcharts / behaviour rows from Postgres when they are there, so a
+        # re-export that only rewrote FILES would leave the stored copies stale and appear to
+        # have had no effect. capture_output also re-collects the .docx into documents/.
+        _capture_reexport_output(db, job, adir)

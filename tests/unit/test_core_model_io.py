@@ -1,4 +1,10 @@
-"""Unit tests for src/core/model_io.py — path helpers, read, write, load."""
+"""Unit tests for engine/core/model_io.py — path helpers, read, write, load.
+
+model_io is a gateway: every read and write goes through whatever repository the run
+installed. These tests install the ScratchRepository — JSON in the run's model dir, the
+backing the narrowed parse's partial pass uses — because it is the one that round-trips
+without a database, and what is under test here is the gateway, not the storage.
+"""
 import json
 import os
 import sys
@@ -15,6 +21,24 @@ from core.model_io import (
     ALL_MODEL_NAMES, FUNCTIONS, DATA_DICTIONARY, ModelFileMissing,
     model_file_path, model_files_present, read_model_file, load_model, write_model_file,
 )
+
+
+@pytest.fixture(autouse=True)
+def _scratch_repository(tmp_path):
+    """There is no default repository any more — a run installs one for its version.
+
+    The model dir is pointed at tmp_path for the duration. Without that a write that forgets
+    to patch `paths` lands in the REPO's model/ directory, and the tests that opportunistically
+    read a real model from there start failing on the garbage this one left behind.
+    """
+    from core import model_repo
+    from core.paths import set_model_dir, paths
+    before = paths().model_dir
+    set_model_dir(str(tmp_path / "model"))
+    model_repo.set_repository(model_repo.ScratchRepository())
+    yield
+    model_repo.set_repository(None)
+    set_model_dir(before)
 
 
 def _fake_paths(tmp_path):

@@ -142,6 +142,37 @@ def test_a_unit_outside_the_component_scope_is_rejected():
         run_views._resolve_units(MODEL, ["Dispatch"], IN_GROUP)
 
 
+def test_out_of_scope_is_not_reported_as_unknown(capsys):
+    """`--unit Dispatch --scope "component:Lib"` is the combination that reads wrong.
+
+    Dispatch is not unknown -- it is in Other. Calling it unknown sends the caller
+    looking for a typo in a name they can see in their own source, when the fix is
+    in --scope. The two failures need different fixes, so they need different words.
+    """
+    with pytest.raises(SystemExit):
+        run_views._resolve_units(MODEL, ["Dispatch"], IN_GROUP)
+    out = capsys.readouterr().out
+    assert "unknown" not in out.lower()
+    assert "not in this run's scope" in out
+    assert "It is in Other" in out
+    assert '--scope "component:Other"' in out
+
+
+def test_a_real_typo_still_reads_as_a_typo(capsys):
+    """The other half: narrowing the out-of-scope wording must not swallow this one."""
+    with pytest.raises(SystemExit):
+        run_views._resolve_units(MODEL, ["Dispatc"], IN_GROUP)
+    out = capsys.readouterr().out
+    assert "unknown --selected-unit" in out
+
+
+def test_unit_home_finds_every_component_a_name_lives_in():
+    model = {UNITS: {"A|Shared": {}, "B|Shared": {}, "C|Solo": {}}}
+    assert run_views._unit_home(model, "Shared") == ["A", "B"]
+    assert run_views._unit_home(model, "shared") == ["A", "B"]
+    assert run_views._unit_home(model, "Nope") == []
+
+
 def test_the_listing_names_only_units_the_run_visits(capsys):
     with pytest.raises(SystemExit):
         run_views._resolve_units(MODEL, ["Bogus"], IN_GROUP)

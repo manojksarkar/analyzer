@@ -5,9 +5,17 @@ import sys
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group, short_name
+from utils import (load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP,
+                   resolve_group, short_name, display_name)
 from core.config import get_component_layer_name
 from core.paths import paths as _paths
+from core.run_context import apply_cli_run_context
+
+# Apply (and strip) --model-root BEFORE paths() is snapshotted: MODEL_DIR below is a
+# module constant, and line ~51 uses it to find incremental_plan.json. Applied later
+# (e.g. in main()) it would be stale, the plan would not be found, and Phase 2 would
+# silently re-enrich everything instead of only the impact set — reuse lost, no error.
+sys.argv = apply_cli_run_context(sys.argv)
 
 _p = _paths()
 SCRIPT_DIR = _p.src_dir
@@ -49,14 +57,14 @@ def _read_incremental_plan() -> dict | None:
     Phase 2 with {impactFids, impactedGlobals, impactedFiles, baselineVersionDir}.
     When present, Phase 2 restricts LLM enrichment to the impact set and carries the
     rest forward. Absent -> full enrichment (unchanged behaviour)."""
-    p = os.path.join(MODEL_DIR, "incremental_plan.json")
-    if not os.path.isfile(p):
-        return None
+    # Through the gateway (doc 10, step 6): the plan is a per-version row in database mode and
+    # model/incremental_plan.json otherwise. Absent still means "regenerate everything".
+    from core.model_io import read_model_file, INCREMENTAL_PLAN
     try:
-        with open(p, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
+        plan = read_model_file(INCREMENTAL_PLAN, required=False, default=None)
+    except Exception:
         return None
+    return plan or None
 
 
 def _file_path(data: dict, base_path: str) -> str:
@@ -244,6 +252,32 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
             rel = fp.replace("\\", "/")
         unit_by_file[fp] = make_unit_key(rel)
 
+    # A unit key is `component|<basename without extension>` - it carries no directory.
+    # Two files with the same stem in DIFFERENT directories of one component therefore
+    # collapse to one key, and the merge below folds them into a SINGLE unit: it carries
+    # both files' functions and globals, but `path`/`fileName` of whichever came first.
+    # That is a wrong unit, silently. The .cpp/.h pair of one unit shares a stem on
+    # purpose, so compare the path without its extension - more than one of those under
+    # one key is the real collision.
+    # Reported, not repaired - the key is the model's public identity (function and global
+    # ids embed it, as do stored snapshots), so renaming it here would break every consumer.
+    _paths_by_unit: dict = {}
+    for fp, uk in unit_by_file.items():
+        try:
+            rel = os.path.relpath(fp, base_path).replace("\\", "/")
+        except ValueError:
+            rel = fp.replace("\\", "/")
+        _paths_by_unit.setdefault(uk, set()).add(path_from_unit_rel(rel))
+    _colliding = sorted(k for k, v in _paths_by_unit.items() if len(v) > 1)
+    if _colliding:
+        from core.logging_setup import get_logger as _gl
+        _log_units = _gl("model_deriver")
+        for uk in _colliding:
+            _log_units.warning(
+                "unit key %r is claimed by %d files in different directories (%s) - they "
+                "are merged into one unit; rename one file or split the component",
+                uk, len(_paths_by_unit[uk]), ", ".join(sorted(_paths_by_unit[uk])))
+
     units_data = {}
     for fp in sorted(all_files):
         base = os.path.basename(fp)
@@ -333,7 +367,15 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
 
     components_data = {
         m: {
-            "units":       [u for u in units_data if u.split(KEY_SEP)[0] == m],
+            # sorted, like headerFiles above. Unsorted, this list inherited the order the
+            # parser happened to walk the directory — an accident of the filesystem, so it
+            # could already differ between machines for the same commit. The component
+            # container diagram draws one box per unit IN LIST ORDER, so a non-deterministic
+            # list means the same commit renders a different picture. It also has to match
+            # what the database returns (`load_components` orders by unit_key): a stored model
+            # and a file model must be indistinguishable, or the mode-vs-mode parity check
+            # reports differences that mean nothing.
+            "units":       sorted(u for u in units_data if u.split(KEY_SEP)[0] == m),
             "headerFiles": component_header_files.get(m, []),
         }
         for m in component_names
@@ -341,8 +383,9 @@ def _build_units_components(base_path: str, functions_data: dict, global_variabl
 
     write_model_file(UNITS, units_data)
     write_model_file(COMPONENTS, components_data)
-    print(f"  model/units.json ({len(units_data)})")
-    print(f"  model/components.json ({len(components_data)})")
+    from core.model_io import artifact_location as _where
+    print(f"  units ({len(units_data)}) -> {_where('units')}")
+    print(f"  components ({len(components_data)}) -> {_where('components')}")
     return units_data, unit_by_file
 
 
@@ -362,6 +405,12 @@ def _fn_is_private(f: dict, functions_data: dict, base_path: str) -> bool:
     # { fn1, … };`) is reachable through that table even though no CALL_EXPR names it, so
     # the cross-file-caller rule below would wrongly bury it. Ranked BELOW the explicit
     # PRIVATE annotation: a source-level marking stays authoritative.
+    # An explicit PUBLIC annotation is authoritative, exactly as PRIVATE is above. Without
+    # this, a marked entry point with no by-name caller -- an ISR, a registered callback, an
+    # API called only from outside the parsed tree -- falls through to the cross-file-caller
+    # rule and is buried as private, dropping it from the interface table and the document.
+    if (f.get("visibility") or "").lower() == "public":
+        return False
     if f.get("addressTakenByUnits"):
         return False
     return not _has_external_caller(f, functions_data, base_path)
@@ -422,7 +471,10 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         unit_key = make_unit_key(rel) if rel else KEY_SEP
         key_parts = unit_key.split(KEY_SEP)
         unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
-        group_code = _id_seg(resolve_group(key_parts[0]))
+        # display_name(): the group id is layer-qualified now, and _id_seg over
+        # "Layer1.My Sample" would fold the layer's letters into the GROUP code -
+        # while layer_code already carries the layer as its own segment.
+        group_code = _id_seg(display_name(resolve_group(key_parts[0])))
         layer_name = get_component_layer_name(config, key_parts[0]) if config else None
         layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
         idx_code = f"{idx_by_id.get(fid, 0):02d}"
@@ -446,7 +498,10 @@ def _enrich_interfaces(base_path: str, project_name: str, functions_data: dict, 
         unit_key = make_unit_key(rel) if rel else KEY_SEP
         key_parts = unit_key.split(KEY_SEP)
         unit_name_code = _id_seg(key_parts[1]) if len(key_parts) > 1 else _id_seg(key_parts[0])
-        group_code = _id_seg(resolve_group(key_parts[0]))
+        # display_name(): the group id is layer-qualified now, and _id_seg over
+        # "Layer1.My Sample" would fold the layer's letters into the GROUP code -
+        # while layer_code already carries the layer as its own segment.
+        group_code = _id_seg(display_name(resolve_group(key_parts[0])))
         layer_name = get_component_layer_name(config, key_parts[0]) if config else None
         layer_code = _id_seg_layer(layer_name) if layer_name else _id_seg(project_name)
         idx_code = f"{idx_by_id.get(vid, 0):02d}"
@@ -475,15 +530,24 @@ def _enrich_from_llm(base_path: str, functions_data: dict, global_variables_data
     # Try to load existing knowledge_base.json for richer context.
     # On first run it won't exist — the rich path still works (just without
     # repo map and sibling context), and the knowledge base is generated after.
+    # Read through the gateway. This opened model/knowledge_base.json directly, and step 6 moved
+    # the knowledge base into its own TABLE — so in database mode the file was never there,
+    # `knowledge` was always None, and every description was generated WITHOUT the repo map and
+    # sibling context the rich path is built around. Silent: the miss is logged as "expected on
+    # first run" and the whole block is wrapped in `except: pass`. Not slower, just worse prose,
+    # which is the hardest kind of regression to notice.
     knowledge = None
     try:
-        from flowchart.pkb.knowledge import load_knowledge
-        from core.paths import paths
-        import os
-        kb_path = os.path.join(paths().model_dir, "knowledge_base.json")
-        knowledge = load_knowledge(kb_path)
+        from core.model_io import read_model_file, KNOWLEDGE_BASE
+        from flowchart.pkb.knowledge import load_knowledge_data
+        knowledge = load_knowledge_data(read_model_file(KNOWLEDGE_BASE, required=False,
+                                                        default=None))
     except Exception:
         pass
+    if knowledge is None:
+        from core.logging_setup import get_logger as _gl
+        _gl("model_deriver").info("no knowledge base available — descriptions will be generated without repo-map "
+                  "and sibling context (expected on the FIRST run of a project only)")
 
     # Rich enrichment path — budget-aware with degradation ladder
     desc = enrich_functions_rich(functions_data, base_path, config, knowledge=knowledge)
@@ -1029,11 +1093,12 @@ def _generate_knowledge_base(
     }
     from core.model_io import write_model_file, KNOWLEDGE_BASE
     write_model_file(KNOWLEDGE_BASE, kb, ensure_ascii=False)
+    from core.model_io import artifact_location as _where
     print(
-        f"  model/knowledge_base.json (functions={len(functions_kb)}, "
+        f"  knowledge_base (functions={len(functions_kb)}, "
         f"enums={len(enums_kb)}, macros={len(macros_kb)}, "
         f"typedefs={len(typedefs_kb)}, structs={len(structs_kb)}, "
-        f"globals={len(globals_kb)})"
+        f"globals={len(globals_kb)}) -> {_where('knowledge_base')}"
     )
 
 
@@ -1091,7 +1156,8 @@ def main():
         print("Running LLM summarization (phases + hierarchy)...")
         summaries = _run_hierarchy_summarizer(base_path, project_name, functions_data, config, plan=_plan)
         _write(SUMMARIES, summaries, ensure_ascii=False)
-        print("  model/summaries.json")
+        from core.model_io import artifact_location as _where
+        print(f"  summaries -> {_where('summaries')}")
 
     _enrich_from_llm(base_path, functions_data, global_variables_data, config, only_globals=only_globals)
 
@@ -1177,8 +1243,9 @@ def main():
     from core.model_io import write_model_file as _write, FUNCTIONS, GLOBALS
     _write(FUNCTIONS, functions_data)
     _write(GLOBALS, global_variables_data)
-    print(f"  model/functions.json ({len(functions_data)})")
-    print(f"  model/globalVariables.json ({len(global_variables_data)})")
+    from core.model_io import artifact_location as _where
+    print(f"  functions ({len(functions_data)}) -> {_where('functions')}")
+    print(f"  globalVariables ({len(global_variables_data)}) -> {_where('globalVariables')}")
 
     # Always generate knowledge_base.json (Flowchart engine reads this)
     _generate_knowledge_base(base_path, project_name, functions_data, global_variables_data, data_dict, summaries)
@@ -1186,3 +1253,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # DB mode: land this phase's buffered model writes (doc 10, step 3). Database writes are
+    # buffered so the pieces persist together in one transaction, so without this the phase
+    # exits and the buffer is lost — the next phase then finds no model at all. Deliberately
+    # AFTER main() returns, never in a finally: a phase that failed must not publish a
+    # half-built model. No-op in file mode and when nothing is pending.
+    from core.run_context import flush_model
+    flush_model()

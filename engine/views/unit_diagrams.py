@@ -6,7 +6,36 @@ import subprocess
 import sys
 
 from .registry import register
-from utils import KEY_SEP, log, mmdc_path, safe_filename, os_type, render_mermaid_cached
+from utils import (KEY_SEP, display_name, log, mmdc_path, safe_filename, os_type,
+                   render_mermaid_cached)
+
+
+def _project_root() -> str:
+    """The CODE root, for resolving tools and assets.
+
+    Deliberately NOT derived from model_dir. These views need `node_modules/.bin/mmdc`,
+    `engine/config/render_dot.mjs` and the shared `.mmdc_cache`, all of which live at the
+    code root — while model_dir is DATA whose location moves (per-version dirs, an isolated
+    test root). The old `dirname(model_dir)` coupled the two, which is why flowcharts.py
+    needed a "walk up one extra level" special case, and why relocating model/ would have
+    silently pointed the renderer at a directory with no render script in it: the render
+    simply returns False and the flowchart never appears.
+    """
+    from core.paths import paths
+    return paths().project_root
+
+
+def _output_root() -> str:
+    """The root of THIS run's rendered output tree (versions/<ver>/output since B1).
+
+    Separate from `_project_root()` on purpose: one answers "where is the code/tooling", the
+    other "where does this run write". They were the same directory before output moved,
+    which is why a single `project_root` served both — and why conflating them now would
+    break carry-forward without any error.
+    """
+    from core.paths import paths
+    return paths().output_dir
+
 
 
 def _affected_units(impact_fids, functions_data, fid_to_unit):
@@ -27,20 +56,25 @@ def _apply_incremental_unit_plan(model_dir, out_dir, functions_data, fid_to_unit
     forward the baseline version's unit diagrams (.mmd + .png), drop orphans (renamed/
     deleted units), and return the SET of unit_keys to regenerate. None -> no plan (caller
     does a full wipe + regenerate)."""
-    plan_path = os.path.join(os.path.abspath(model_dir), "incremental_plan.json")
-    if not os.path.isfile(plan_path):
-        return None
+    # Through the gateway (doc 10, step 6). Absent means "no plan" -> the caller does a full
+    # wipe + regenerate, unchanged.
+    from core.model_io import read_model_file, INCREMENTAL_PLAN
     try:
-        with open(plan_path, "r", encoding="utf-8") as f:
-            plan = json.load(f)
-    except (OSError, json.JSONDecodeError):
+        plan = read_model_file(INCREMENTAL_PLAN, required=False, default=None)
+    except Exception:
+        return None
+    if not plan:
         return None
 
     # 1. carry forward the baseline version's unit diagrams (engine cleaned output/).
     base_ver_dir = plan.get("baselineVersionDir")
     if base_ver_dir:
-        project_root = os.path.dirname(os.path.abspath(model_dir))
-        rel = os.path.relpath(out_dir, os.path.join(project_root, "output"))
+        # Where this diagram sits WITHIN the run's output tree, so the same relative slot
+        # can be found inside the baseline version. Anchored on the run's actual output
+        # root, not the code root: since B1 a run renders into versions/<ver>/output, so
+        # "<code root>/output" is not an ancestor of out_dir any more and relpath would
+        # produce a ../.. path that resolves to nothing — silently disabling carry-forward.
+        rel = os.path.relpath(out_dir, _output_root())
         base_ud = os.path.join(base_ver_dir, "output", rel)
         if os.path.isdir(base_ud):
             carried = 0
@@ -212,7 +246,13 @@ def _build_unit_diagram(
         base_pid = base_pid if base_pid is not None else node_id
         for uk in units_data:
             if _unit_part_id(uk) == base_pid:
-                raw = unit_names.get(uk, uk) if base_pid == this_id else uk.replace(KEY_SEP, "/").replace("-", " ")
+                # An EXTERNAL unit falls back to its key as a label. Drop the layer
+                # prefix from the component half - the box is read, not looked up.
+                if base_pid == this_id:
+                    raw = unit_names.get(uk, uk)
+                else:
+                    _c, _, _u = uk.partition(KEY_SEP)
+                    raw = f"{display_name(_c)}/{_u}".replace("-", " ") if _u else display_name(_c)
                 box_label = (raw or "?").replace("]", "'").replace("[", "'")
                 if base_pid == this_id:
                     extra = "<br/>".join([f"{pad} " for _ in range(n_extra_lines)])
@@ -237,7 +277,11 @@ config:
         lines.append("  " + _node_line(pid).strip())
 
     # Internal module (yellow box)
-    mod_label = (this_component or "Internal").replace("-", " ").replace('"', "'").replace("]", "'").replace("[", "'")
+    # display_name(): `this_component` is the layer-qualified id (it keys the node ids
+    # and the filenames, which is what keeps two layers' same-named components apart);
+    # the box people read shows the bare component name.
+    _label_src = display_name(this_component) if this_component else "Internal"
+    mod_label = _label_src.replace("-", " ").replace('"', "'").replace("]", "'").replace("[", "'")
     lines.append(f'  subgraph internal_mod["{mod_label}"]')
     lines.append("    direction TB")
     lines.append("    style internal_mod fill:#ffffcc,stroke:#d4d400,stroke-width:2px")
@@ -306,7 +350,7 @@ def run(model, output_dir, model_dir, config):
 
     render_png = True
     # Project root must not be derived from output_dir: with --all-groups output is output/<group>/.
-    project_root = os.path.dirname(os.path.abspath(model_dir))
+    project_root = _project_root()
     mmdc = mmdc_path(project_root)
     puppeteer = os.path.join(project_root, "engine", "config", "puppeteer-config.json")
     if not os.path.isabs(puppeteer):
@@ -318,16 +362,27 @@ def run(model, output_dir, model_dir, config):
     cpp_units = [uk for uk, u in units_data.items() if (u.get("fileName") or "").endswith(".cpp")]
     if allowed_components:
         cpp_units = [uk for uk in cpp_units if KEY_SEP in uk and uk.split(KEY_SEP, 1)[0].lower() in allowed_components]
+    # --selected-unit. Unit keys are "Component|Unit" and the flag carries the short
+    # name, matching how the flowchart view reads it. Checking images for one unit is
+    # the whole point of the flag, and a unit DIAGRAM is one of those images.
+    allowed_units = [u.lower() for u in (config.get("_analyzerSelectedUnits") or [])]
+    if allowed_units:
+        cpp_units = [uk for uk in cpp_units
+                     if KEY_SEP in uk and uk.split(KEY_SEP, 1)[1].lower() in allowed_units]
 
     # Incremental (M3.10): carry forward baseline diagrams + render only AFFECTED units.
     # No plan -> full: wipe and regenerate every unit (original behaviour).
     affected = _apply_incremental_unit_plan(model_dir, out_dir, functions_data, fid_to_unit, cpp_units)
     if affected is None:
-        for f in os.listdir(out_dir):
-            try:
-                os.unlink(os.path.join(out_dir, f))
-            except OSError:
-                pass
+        # A full run wipes and regenerates. NOT when narrowed to a unit: the other
+        # units' diagrams are still valid, and deleting them would leave the output
+        # dir holding one unit when the caller only asked to re-check one.
+        if not allowed_units:
+            for f in os.listdir(out_dir):
+                try:
+                    os.unlink(os.path.join(out_dir, f))
+                except OSError:
+                    pass
         units_to_render = sorted(cpp_units)
     else:
         units_to_render = sorted(uk for uk in cpp_units if uk in affected)

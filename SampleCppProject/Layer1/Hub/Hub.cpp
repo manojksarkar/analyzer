@@ -7,6 +7,7 @@
 #include "Sample/Core/Core.h"
 #include "Sample/Lib/Lib.h"
 #include "Sample/Util/Util.h"
+#include "Signal/SignalDriver.h"
 
 PRIVATE static int hubValidate(int x) {
     return x >= 0 ? x : 0;
@@ -45,10 +46,16 @@ PUBLIC int hubCompute(int a, int b) {
     int uc = utilChain(a);
     int ub = utilBlend(a, b, 40);
 
+    // Signal — the cross-component call that gives SignalDriver an external caller.
+    // acquireAndNormalize then reaches SignalProcessor in the sibling unit Signal,
+    // so its chain spans two units of the Signal component and it qualifies for a
+    // behaviour diagram / Dynamic Behaviour test spec.
+    int sig = acquireAndNormalize(a);
+
     int total = h + ps + e + static_cast<int>(st) + static_cast<int>(c)
               + ca + cp + co + cpl + cnb + cwc + cer
               + la + lm + ln + ll
-              + ua + uc + ub;
+              + ua + uc + ub + sig;
 	total = total*10;
     return total;
 }
