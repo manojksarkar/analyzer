@@ -85,14 +85,59 @@ where an entry has several values, they are separated by commas on the same line
 
 ### Test Steps
 
-- A numbered transcription of the function's flowchart — one step per node, in flow order.
-- A decision sub-numbers its two legs: `2.a) True: …` / `2.b) False: …`, nesting deeper for nested decisions.
-- Plain English, naming the variables involved. A mocked callee reads *"expect mock function `name`"*.
-- **Every function name appears** — the function under test, every mock, and every inlined helper. A helper
-  is named where it is called, not described in the abstract.
-- Every `return` in the function is its own step, so Expected Results can point at it.
-- Ends where the function exits. There is no closing "verify the result" step — checking the outcome is what
-  Expected Results is for.
+A numbered transcription of the function's flowchart, in flow order — sentences describing the run, not
+copied source. Derived deterministically from the statement and the callee signatures: no LLM, so two runs on
+unchanged input read identically.
+
+**Shape and numbering**
+
+- **One step per flowchart node**, not per source line. Consecutive plain statements group into one node (up
+  to 5 statements or 10 lines); anything that alters control flow always gets its own.
+- Legs sub-number `2.a) True: …` / `2.b) False: …`, levels alternating numeric and alphabetic —
+  `2`, `2.a`, `2.a.3`, `2.a.3.b`.
+- A leg holding one step is written inline after its label; a longer leg puts the label on its own line and
+  numbers its steps beneath it.
+- Every `return` is its own step, so Expected Results can point at it. The transcription ends where the
+  function exits — no closing "verify the result" step.
+
+**Wording — a callee that runs for real**
+
+| Source | Step |
+|---|---|
+| `int status = 0;` | Set `status` to 0. |
+| `gErrCount++;` | Increment `gErrCount` by one. |
+| `*ppnOut = e.ppn;` | Set `ppnOut` to `e.ppn`. |
+| `int clipped = utilClip(v, -max, max);` | Call function `utilClip()` with `v`, `-max`, `max`, storing the result in `clipped`. |
+| `break;` | Exit the loop. — or *Exit the switch.* when it leaves a `switch` |
+
+`utilClip` is a same-unit helper, so it genuinely executes (see [Precondition](#precondition)): it is named
+and described, but there is no stub to set.
+
+**Wording — a callee that is mocked**
+
+The tester never makes that call. The step says what they *do* control, chosen by what the returned value is
+used for.
+
+| Source | Step |
+|---|---|
+| `int sum = libAdd(a, b);` | Update `sum` by mocking function `libAdd()`. |
+| `int sum = libAdd(a, b);`<br>`int product = libMultiply(sum, c);` | Update `sum`, `product` by mocking function `libAdd()`, `libMultiply()`. |
+| `int r = Foo(a, &b);` | Update `r`, `b` by mocking function `Foo()`. |
+| `return libAdd(x, y);` | Expect return value from the return of mock function `libAdd()` with `x`, `y` inputs. |
+| `if (FilReadPage(i, &e) != 0)` | Derive value to return of mock function `FilReadPage()` with `i`, setting `e` and check it is not equal to 0. |
+| `FilReadPage(i, &e);` | Mock function `FilReadPage()` with `i`, setting `e`. |
+| `HilNotify(ERR_RANGE);` | Mock function `HilNotify()` with `ERR_RANGE`. |
+
+- **`with` is inputs, `setting` is outputs**, and the side is read off the **callee's signature**, never the
+  call text: `&e` is a slot the stub fills, not a value the tester supplies. `const T*` and function-pointer
+  parameters are inputs. A `T*` the callee only reads is still misread as an output — the same weakness the
+  spec's own out-parameter rule has.
+- **Several mocks in one step pair by position**, so the two lists stay in source order and must be the same
+  length. If one of them names no variable, each mock takes its own clause instead:
+  *Update `sum` by mocking function `libAdd()`; mock function `HilNotify()` with `ERR`.*
+- **A check mirrors the source condition exactly**, never a friendlier inversion — `!= 0` reads *"is not equal
+  to 0"*, so its `True` leg is the one the code takes when the call fails.
+- **Every function name appears**: the function under test, every mock, every inlined helper.
 
 ### Expected Results
 
@@ -174,7 +219,7 @@ int FtlLookup(uint32_t lba, uint8_t mode, uint32_t* ppnOut)
 
 | Eval. Equipment Name | Precondition | Input | Test Steps | Expected Results | Test Platform |
 |---|---|---|---|---|---|
-| Emulator | 1) Mock functions: `FilReadPage()`, `HilNotify()`<br>2) Parameters: `uint32_t lba`, `uint8_t mode`, `uint32_t* ppnOut`<br>3) Globals: `uint16_t gEntryCount`, `uint32_t gLastLba`, `uint8_t gErrCount` | 1) `uint32_t lba[0-4294967295]`<br>2) `uint8_t mode[0-255]`<br>3) `uint16_t gEntryCount[0-65535]`<br>4) `uint8_t gErrCount[0-255]`<br>5) `int FilReadPage()[-2147483648-2147483647]`<br>6) `uint32_t e.lba[0-4294967295]`<br>7) `uint32_t e.ppn[0-4294967295]` | 1) Issue function `FtlLookup` with inputs `lba`, `mode` and output buffer `ppnOut`.<br>2) Call `isValidLba` with `lba` and check whether it returns true.<br>&nbsp;&nbsp;2.a) True: continue to step 3.<br>&nbsp;&nbsp;2.b) False: increase `gErrCount` by one; expect mock function `HilNotify` with the range-error code; return -1.<br>3) Repeat for each index `i` from 0 while `i` is less than `gEntryCount`.<br>&nbsp;&nbsp;3.a) Expect mock function `FilReadPage` with input `i` and entry buffer `e`.<br>&nbsp;&nbsp;3.b) Check whether `FilReadPage` returned zero.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.b.1) True: continue to step 3.c.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.b.2) False: increase `gErrCount` by one; return -2.<br>&nbsp;&nbsp;3.c) Check whether the entry's `lba` is equal to `lba`.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.c.1) True: select on `mode`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.c.1.a) `MODE_READ`: set `ppnOut` to the entry's `ppn`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.c.1.b) `MODE_TRIM`: set `ppnOut` to `PPN_INVALID`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.c.1.c) Any other mode: return -3.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.c.1.d) Set `gLastLba` to `lba`; return 0.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.c.2) False: continue with the next index.<br>4) Return -4.<br>5) Exit. | 1) Successfully called mock functions `FilReadPage()`, `HilNotify()`<br>2) Successfully returned `-1` in step 2.b<br>3) Successfully returned `-2` in step 3.b.2<br>4) Successfully returned `-3` in step 3.c.1.c<br>5) Successfully returned `0` in step 3.c.1.d<br>6) Successfully returned `-4` in step 4<br>7) Successfully updated `uint32_t* ppnOut` in range `[0-4294967295]` in steps 3.c.1.a, 3.c.1.b<br>8) Successfully updated `uint32_t gLastLba` in range `[0-4294967295]` in step 3.c.1.d<br>9) Successfully updated `uint8_t gErrCount` in range `[0-255]` in steps 2.b, 3.b.2 | VectorCAST |
+| Emulator | 1) Mock functions: `FilReadPage()`, `HilNotify()`<br>2) Parameters: `uint32_t lba`, `uint8_t mode`, `uint32_t* ppnOut`<br>3) Globals: `uint16_t gEntryCount`, `uint32_t gLastLba`, `uint8_t gErrCount` | 1) `uint32_t lba[0-4294967295]`<br>2) `uint8_t mode[0-255]`<br>3) `uint16_t gEntryCount[0-65535]`<br>4) `uint8_t gErrCount[0-255]`<br>5) `int FilReadPage()[-2147483648-2147483647]`<br>6) `uint32_t e.lba[0-4294967295]`<br>7) `uint32_t e.ppn[0-4294967295]` | 1) Issue function `FtlLookup` with inputs `lba`, `mode` and output buffer `ppnOut`.<br>2) Call `isValidLba` with `lba` and check whether it returns true.<br>&nbsp;&nbsp;2.a) True: continue to step 3.<br>&nbsp;&nbsp;2.b) False: increment `gErrCount` by one; mock function `HilNotify()` with `ERR_RANGE`; return -1.<br>3) Repeat for each index `i` from 0 while `i` is less than `gEntryCount`.<br>&nbsp;&nbsp;3.a) Derive value to return of mock function `FilReadPage()` with `i`, setting `e` and check it is not equal to 0.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.a.1) True: increment `gErrCount` by one; return -2.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.a.2) False: continue to step 3.b.<br>&nbsp;&nbsp;3.b) Check whether the entry's `lba` is equal to `lba`.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.b.1) True: select on `mode`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.b.1.a) `MODE_READ`: set `ppnOut` to `e.ppn`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.b.1.b) `MODE_TRIM`: set `ppnOut` to `PPN_INVALID`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.b.1.c) Any other mode: return -3.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.b.1.d) Set `gLastLba` to `lba`; return 0.<br>&nbsp;&nbsp;&nbsp;&nbsp;3.b.2) False: continue with the next index.<br>4) Return -4.<br>5) Exit. | 1) Successfully called mock functions `FilReadPage()`, `HilNotify()`<br>2) Successfully returned `-1` in step 2.b<br>3) Successfully returned `-2` in step 3.a.1<br>4) Successfully returned `-3` in step 3.b.1.c<br>5) Successfully returned `0` in step 3.b.1.d<br>6) Successfully returned `-4` in step 4<br>7) Successfully updated `uint32_t* ppnOut` in range `[0-4294967295]` in steps 3.b.1.a, 3.b.1.b<br>8) Successfully updated `uint32_t gLastLba` in range `[0-4294967295]` in step 3.b.1.d<br>9) Successfully updated `uint8_t gErrCount` in range `[0-255]` in steps 2.b, 3.a.1 | VectorCAST |
 
 Note what is **not** in the Precondition: `isValidLba`. It is a private helper of the same unit, so it runs
 inline and its branch shows up in the test steps as an ordinary decision rather than as a mock.
@@ -296,7 +341,7 @@ Headings, where the component has `U` units: `2.N.<U+1> Dynamic Behaviour`, then
 
 | Eval. Equipment Name | Precondition | Input | Test Steps | Expected Results | Test Platform |
 |---|---|---|---|---|---|
-| Emulator | 1) Mock functions: `FilReadPage()`<br>2) Parameters: `uint32_t lba`, `uint32_t* ppnOut`<br>3) Globals: `uint16_t gEntryCount`, `uint32_t gCacheHits` | 1) `uint32_t lba[0-4294967295]`<br>2) `uint16_t gEntryCount[0-65535]`<br>3) `int FilReadPage()[-2147483648-2147483647]`<br>4) `uint32_t e.lba[0-4294967295]`<br>5) `uint32_t e.ppn[0-4294967295]` | 1) `HilCore` calls `FtlMap.FtlResolve` with `lba` and output buffer `ppnOut`.<br>2) Call `isValidLba` with `lba` and check whether it returns true.<br>&nbsp;&nbsp;2.a) True: continue to step 3.<br>&nbsp;&nbsp;2.b) False: `FtlMap` returns -1 to `HilCore`.<br>3) `FtlMap` calls `FtlCache.FtlCacheGet` with `lba` and `ppnOut`, and checks whether it returns true.<br>&nbsp;&nbsp;3.a) True: `FtlCache` has written the cached `ppn` into `ppnOut`; `FtlMap` returns 0 to `HilCore`.<br>&nbsp;&nbsp;3.b) False: continue to step 4.<br>4) Repeat for each index `i` from 0 while `i` is less than `gEntryCount`.<br>&nbsp;&nbsp;4.a) Expect mock function `FilReadPage` with input `i` and entry buffer `e`.<br>&nbsp;&nbsp;4.b) Check whether `FilReadPage` returned zero.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.b.1) True: continue to step 4.c.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.b.2) False: `FtlMap` returns -2 to `HilCore`.<br>&nbsp;&nbsp;4.c) Check whether the entry's `lba` is equal to `lba`.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.c.1) True: set `ppnOut` to the entry's `ppn`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4.c.1.a) `FtlMap` calls `FtlCache.FtlCacheStore` with `lba` and the entry's `ppn`; `gCacheHits` increases by one.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4.c.1.b) `FtlMap` returns 0 to `HilCore`.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.c.2) False: continue with the next index.<br>5) `FtlMap` returns -3 to `HilCore`.<br>6) Exit. | 1) Successfully called mock functions `FilReadPage()`<br>2) Successfully called `FtlCache.FtlCacheGet` in step 3<br>3) Successfully called `FtlCache.FtlCacheStore` in step 4.c.1.a<br>4) Successfully returned `-1` in step 2.b<br>5) Successfully returned `0` in step 3.a<br>6) Successfully returned `-2` in step 4.b.2<br>7) Successfully returned `0` in step 4.c.1.b<br>8) Successfully returned `-3` in step 5<br>9) Successfully updated `uint32_t* ppnOut` in range `[0-4294967295]` in steps 3.a, 4.c.1<br>10) Successfully updated `uint32_t gCacheHits` in range `[0-4294967295]` in step 4.c.1.a | VectorCAST |
+| Emulator | 1) Mock functions: `FilReadPage()`<br>2) Parameters: `uint32_t lba`, `uint32_t* ppnOut`<br>3) Globals: `uint16_t gEntryCount`, `uint32_t gCacheHits` | 1) `uint32_t lba[0-4294967295]`<br>2) `uint16_t gEntryCount[0-65535]`<br>3) `int FilReadPage()[-2147483648-2147483647]`<br>4) `uint32_t e.lba[0-4294967295]`<br>5) `uint32_t e.ppn[0-4294967295]` | 1) `HilCore` calls `FtlMap.FtlResolve` with `lba` and output buffer `ppnOut`.<br>2) Call `isValidLba` with `lba` and check whether it returns true.<br>&nbsp;&nbsp;2.a) True: continue to step 3.<br>&nbsp;&nbsp;2.b) False: `FtlMap` returns -1 to `HilCore`.<br>3) `FtlMap` calls `FtlCache.FtlCacheGet` with `lba` and `ppnOut`, and checks whether it returns true.<br>&nbsp;&nbsp;3.a) True: `FtlCache` has written the cached `ppn` into `ppnOut`; `FtlMap` returns 0 to `HilCore`.<br>&nbsp;&nbsp;3.b) False: continue to step 4.<br>4) Repeat for each index `i` from 0 while `i` is less than `gEntryCount`.<br>&nbsp;&nbsp;4.a) Derive value to return of mock function `FilReadPage()` with `i`, setting `e` and check it is not equal to 0.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.a.1) True: `FtlMap` returns -2 to `HilCore`.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.a.2) False: continue to step 4.b.<br>&nbsp;&nbsp;4.b) Check whether the entry's `lba` is equal to `lba`.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.b.1) True: set `ppnOut` to `e.ppn`.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4.b.1.a) `FtlMap` calls `FtlCache.FtlCacheStore` with `lba` and the entry's `ppn`; `gCacheHits` is incremented by one.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4.b.1.b) `FtlMap` returns 0 to `HilCore`.<br>&nbsp;&nbsp;&nbsp;&nbsp;4.b.2) False: continue with the next index.<br>5) `FtlMap` returns -3 to `HilCore`.<br>6) Exit. | 1) Successfully called mock functions `FilReadPage()`<br>2) Successfully called `FtlCache.FtlCacheGet` in step 3<br>3) Successfully called `FtlCache.FtlCacheStore` in step 4.b.1.a<br>4) Successfully returned `-1` in step 2.b<br>5) Successfully returned `0` in step 3.a<br>6) Successfully returned `-2` in step 4.a.1<br>7) Successfully returned `0` in step 4.b.1.b<br>8) Successfully returned `-3` in step 5<br>9) Successfully updated `uint32_t* ppnOut` in range `[0-4294967295]` in steps 3.a, 4.b.1<br>10) Successfully updated `uint32_t gCacheHits` in range `[0-4294967295]` in step 4.b.1.a | VectorCAST |
 
 Two things a function spec could not have produced. `FtlCacheGet` and `FtlCacheStore` are **not** in the
 Precondition — they are `FTL`'s own, in another unit, and here they run. And `gCacheHits` belongs to
@@ -306,22 +351,16 @@ Table B is the function spec's, with the Test Case ID left open.
 
 ### Status
 
-**Implemented.** `engine/views/dynamic_specs.py` derives the specs, `views/test_steps.py::attach_dynamic`
-splices the callee flow, and the SWE.4 exporter writes the sub-section. Selection is delegated to the
-behaviour-diagram selector, so a spec exists exactly where SWE.3 draws a diagram.
-
-Two limits worth knowing:
+**Implemented.** Selection is delegated to the behaviour-diagram selector, so a spec exists exactly where
+SWE.3 draws a diagram. Two limits:
 
 - **A branch head is attributed but not descended into.** `if (FtlCacheGet(...))` names the call and the
-  units, but the callee's own flow is not spliced under it — a decision numbers its legs off the same
-  prefix the spliced steps would use. Only plain steps splice today.
+  units, but the callee's own flow is not spliced beneath it. Only plain steps splice today.
 - **Callees are matched by short name.** Two executing callees sharing one short name are both left
   un-spliced rather than risk splicing the wrong body.
 
-Config: `views.dynamicBehaviourSpecs` emits this section, `views.functionTestSpecs` the per-function specs.
-They are independent, and neither depends on `views.flowcharts` — that draws the flowchart images only.
-Control-flow graphs are built for whatever the enabled spec kinds transcribe, so Test Steps cannot be
-switched off by accident.
+Two things still open: the **Test Case ID** scheme (`_DYN` is provisional), and reconciling the longer
+version of this section on the client's own wiki page.
 
-The client's own wiki page carries a longer version of this section still to be reconciled with the rules
-above. The Test Case ID suffix (`_DYN`) is provisional, pending the scheme decision.
+Config: `views.dynamicBehaviourSpecs` emits this section, `views.functionTestSpecs` the per-function specs.
+They are independent, and neither depends on `views.flowcharts`, which only draws the flowchart images.
