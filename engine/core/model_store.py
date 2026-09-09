@@ -57,6 +57,18 @@ _FN_PAYLOAD_FIELDS = (
     # is read from the database. Found by verify_model_parity on the first SQLite run; the
     # office Postgres run reported OK only because that project has no such entry.
     "syntheticFromVarDecl",
+    # Two SWE.4 parser facts, neither with a column. They arrived with the SWE.4 port
+    # (3355930, 2026-09-01), which carried the views, the exporter and these parser facts
+    # onto the DB-native pipeline but never touched this file -- so the parser has computed
+    # both on every run since, and this tuple has dropped both at the database boundary.
+    # Each is guarded by an early return in the view, so losing it REMOVES document content
+    # rather than widening it:
+    #   `writesParams` is what proves a pointer parameter is an OUTPUT. Without it
+    #     `_out_parameter_entries` sees an empty set and asserts NO out-parameter at all.
+    #   `readsFields` names the fields a mocked callee writes back that this function reads.
+    #     Without it `_mock_writeback_entries` returns [] and those Input rows disappear.
+    # Invisible in the sample until `utilSplit` added the group's only pointer parameter.
+    "readsFields", "writesParams",
 )
 # `description` is LLM-generated (llm.enrichment.variableEnrichment) and renders in the DOCX
 # unit-header table, so losing it costs real document content — yet it was absent here, so
