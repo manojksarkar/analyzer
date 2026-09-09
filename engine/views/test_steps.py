@@ -292,6 +292,10 @@ _CALL_STMT_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*\(.*\)\s*;?\s*$", re.S)
 
 _BRANCH_TYPES = ("DECISION", "LOOP_HEAD", "SWITCH_HEAD")
 
+# `goto exit;`. Group 1 is the label, which leads the wording: a tester reads
+# `goto exit` in the code and looks for "exit" in the steps.
+_GOTO_RE = re.compile(r"^\s*goto\b\s*(\w*)", re.I)
+
 # A statement opening with one of these is control flow, not something to
 # describe: the CFG has already given it its own node type. Without the guard
 # `for (int i = 0; ...)` is read as a call and described "Call function for()".
@@ -494,6 +498,18 @@ def _plain_text(node, ntype, label, called):
     return _sentence("; ".join(described))
 
 
+def _label_prefix(node):
+    """`done: ` when this node is the target of a goto.
+
+    A label takes no node of its own -- the CFG points the name at the labelled
+    statement -- so naming it here is what lets a jump be followed in both
+    directions. Absent on a CFG stored before the field existed, which simply
+    leaves the destination unlabelled.
+    """
+    name = (node.get("gotoLabel") or "").strip()
+    return f"{name}: " if name else ""
+
+
 def _node_text(node, spec, mock_names, is_entry, ctx=None, splice=None, home_unit=""):
     ntype = node.get("type", "")
     label = node.get("label") or node.get("rawCode") or ""
@@ -503,7 +519,8 @@ def _node_text(node, spec, mock_names, is_entry, ctx=None, splice=None, home_uni
         return _entry_text(spec)
     if ntype == "BREAK":
         # The CFG labels every break "Exit loop"; inside a switch that is wrong.
-        return "Exit the switch." if ctx == "switch" else "Exit the loop."
+        return _label_prefix(node) + ("Exit the switch." if ctx == "switch"
+                                      else "Exit the loop.")
 
     called = _mocks_called(node, mock_names)
     base = _plain_text(node, ntype, label, called)
@@ -531,8 +548,8 @@ def _node_text(node, spec, mock_names, is_entry, ctx=None, splice=None, home_uni
             kind, condition = "plain", ""
         parts.append(_mock_sentence(raw, called, mock_sigs, kind, condition))
     if not parts:
-        return base
-    prefix = "; ".join(parts)
+        return _label_prefix(node) + base
+    prefix = _label_prefix(node) + "; ".join(parts)
     if not base:
         return _sentence(prefix)
     # Source order decides whether the MOCK clause or the node's own wording
@@ -604,6 +621,12 @@ class _Walker:
         self.entry = cfg.get("entry")
         self.steps = []      # flat, each {number, text, nodeId, type}
         self.returns = []    # {step, text} -- one per RETURN, for Expected Results
+        # nodeId -> the step number it was first emitted as, plus the steps whose
+        # wording has to name another step (a goto's target, a leg's
+        # continuation). Both are resolved after the walk, because a jump points
+        # forward. Shared with the per-leg sub-walkers via the __dict__ copy.
+        self.number_by_node = {}
+        self.jumps = []
         # name -> [step numbers that assign it], for the written globals and
         # out-parameters Expected Results asserts.
         exp = (spec or {}).get("expected") or {}
@@ -614,9 +637,21 @@ class _Walker:
     # -- emitting ----------------------------------------------------------
     def _add(self, prefix, idx, node, text):
         number = _number(prefix + [idx])
-        self.steps.append({"number": number, "text": text,
-                           "nodeId": node.get("id", ""), "type": node.get("type", "")})
+        step = {"number": number, "text": text,
+                "nodeId": node.get("id", ""), "type": node.get("type", "")}
+        self.steps.append(step)
+        self.number_by_node.setdefault(node.get("id", ""), number)
         raw = node.get("rawCode") or ""
+        goto = _GOTO_RE.match(raw)
+        if goto:
+            # The flowchart engine has no GOTO node type: a goto is an ACTION
+            # whose single edge is the deferred jump to the label. That edge is
+            # the target, and it almost always points forward -- so the step is
+            # recorded here and worded once the whole function is numbered.
+            targets = [t for t, _ in self.succ.get(node.get("id", ""), [])]
+            if targets:
+                self.jumps.append({"step": step, "target": targets[0],
+                                   "label": goto.group(1), "kind": "goto", "old": text})
         for name in self.written_names:
             if name and _writes(raw, name):
                 self.write_steps.setdefault(name, []).append(number)
@@ -635,6 +670,37 @@ class _Walker:
             self.returns.append({"step": number, "expression": expr,
                                  "source": source, "text": text})
         return number
+
+    def resolve_jumps(self):
+        """Word each jump now that every step has a number.
+
+        Only possible after the whole walk: a `goto` almost always points
+        forward, and a leg's continuation is numbered by the parent block after
+        the leg has been emitted. A target that was never emitted leaves the step
+        exactly as it was written.
+        """
+        pos = {id(st): i for i, st in enumerate(self.steps)}
+        for j in self.jumps:
+            number = self.number_by_node.get(j["target"])
+            if not number:
+                continue
+            if j["kind"] == "goto":
+                # "Go to step 3" printed directly above step 3 reads like a
+                # mistake: nothing is skipped, so say so with an honest verb.
+                i = pos.get(id(j["step"]))
+                adjacent = (i is not None and i + 1 < len(self.steps)
+                            and self.steps[i + 1].get("nodeId") == j["target"])
+                verb = "Continue to" if adjacent else "Go to"
+                where = f"{j['label']} label in step {number}" if j.get("label") \
+                    else f"step {number}"
+                new = f"{verb} {where}."
+            else:
+                new = f"continue to step {number}."
+            step, old = j["step"], j.get("old") or ""
+            # Replace rather than assign: a single-step leg folds the step's text
+            # in after its own label ("True: ..."), which has to survive.
+            step["text"] = step["text"].replace(old, new) \
+                if old and old in step["text"] else new
 
     def _branch_targets(self, nid, join):
         """Outgoing edges that actually open a nested block (the join itself is
@@ -738,8 +804,13 @@ class _Walker:
         number = _number(prefix + [leg_i])
         if len(sub.steps) == 1:
             only = sub.steps[0]
-            self.steps.append({"number": number, "text": f"{leg_label}: {only['text']}",
-                               "nodeId": only["nodeId"], "type": only["type"]})
+            # Folded in place, not copied: a jump recorded against this step holds
+            # a reference to the dict, and the node keeps the number it now shows.
+            only["number"] = number
+            only["text"] = f"{leg_label}: {only['text']}"
+            self.steps.append(only)
+            if only["nodeId"]:
+                self.number_by_node[only["nodeId"]] = number
             # the lone step was folded into the leg label, so any write it
             # recorded now belongs to the leg's number
             for name, nums in self.write_steps.items():
@@ -750,8 +821,12 @@ class _Walker:
             self.returns.extend(sub.returns)
             return
         if not sub.steps:
-            self.steps.append({"number": number,
-                               "text": f"{leg_label}: continue.", "nodeId": "", "type": ""})
+            step = {"number": number, "text": f"{leg_label}: continue.",
+                    "nodeId": "", "type": ""}
+            self.steps.append(step)
+            # The block resumes at the join; say which step that is.
+            self.jumps.append({"step": step, "target": join, "kind": "leg",
+                               "old": "continue."})
             return
         self.steps.append({"number": number, "text": f"{leg_label}:",
                            "nodeId": "", "type": "LEG"})
@@ -777,6 +852,7 @@ def build_steps(cfg, spec, mock_names=(), splice=None, home_unit=""):
     names = [m[:-2] if m.endswith("()") else m for m in (mock_names or ())]
     w = _Walker(cfg, spec, names, splice, home_unit)
     w.walk(cfg["entry"], None, [])
+    w.resolve_jumps()
     return w.steps, w.returns, w.write_steps
 
 

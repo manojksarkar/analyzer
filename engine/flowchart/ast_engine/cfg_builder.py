@@ -675,6 +675,10 @@ class CFGBuilder:
 
         if entry is not None:
             self._labels[label_name] = entry
+            # Carry the name onto the node itself. The label is not a node, so
+            # this is the only place it survives serialization.
+            if entry in self._nodes:
+                self._nodes[entry].goto_label = label_name
         else:
             # Sub-statement produced no entry — create passthrough node
             node = self._new_node(NodeType.ACTION, f"{label_name}:",
