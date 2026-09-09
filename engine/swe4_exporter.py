@@ -71,7 +71,7 @@ def _input_text(inp: dict) -> str:
 
 
 def _steps_suffix(entry: dict) -> str:
-    """` in step 2.1` / ` in steps 2.1, 3.4` — which step(s) wrote this output.
+    """` in step 2.a` / ` in steps 2.a, 3.b.1` — which step(s) wrote this output.
     Empty when the CFG could not attribute it to a step."""
     nums = entry.get("steps") or ([entry["step"]] if entry.get("step") else [])
     if not nums:
