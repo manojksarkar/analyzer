@@ -49,6 +49,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Gpio.o"
     ]
@@ -103,6 +107,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioAlt.o"
     ]
@@ -157,6 +165,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioCfg.o"
     ]
@@ -211,6 +223,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioDebounce.o"
     ]
@@ -265,6 +281,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioGroup.o"
     ]
@@ -319,6 +339,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioInput.o"
     ]
@@ -373,6 +397,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioIrq.o"
     ]
@@ -427,6 +455,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioMux.o"
     ]
@@ -481,6 +513,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioOutput.o"
     ]
@@ -535,6 +571,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioPin.o"
     ]
@@ -589,6 +629,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\GpioPort.o"
     ]
@@ -643,6 +687,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Spi.o"
     ]
@@ -697,6 +745,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\SpiCfg.o"
     ]
@@ -751,6 +803,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\SpiDev.o"
     ]
@@ -805,6 +861,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\I2c.o"
     ]
@@ -859,6 +919,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\I2cMaster.o"
     ]
@@ -913,6 +977,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\I2cScan.o"
     ]
@@ -967,6 +1035,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Uart.o"
     ]
@@ -1021,6 +1093,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartBuf.o"
     ]
@@ -1075,6 +1151,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartClock.o"
     ]
@@ -1129,6 +1209,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartDebug.o"
     ]
@@ -1183,6 +1267,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartDma.o"
     ]
@@ -1237,6 +1325,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartError.o"
     ]
@@ -1291,6 +1383,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartFifo.o"
     ]
@@ -1345,6 +1441,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartFlow.o"
     ]
@@ -1399,6 +1499,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartInit.o"
     ]
@@ -1453,6 +1557,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartIrq.o"
     ]
@@ -1507,6 +1615,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartMode.o"
     ]
@@ -1561,6 +1673,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartParity.o"
     ]
@@ -1615,6 +1731,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartReset.o"
     ]
@@ -1669,6 +1789,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartRx.o"
     ]
@@ -1723,6 +1847,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartStop.o"
     ]
@@ -1777,6 +1905,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\UartTx.o"
     ]
@@ -1831,6 +1963,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Timer.o"
     ]
@@ -1885,6 +2021,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\TmrHw.o"
     ]
@@ -1939,6 +2079,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\TmrMgr.o"
     ]
@@ -1993,6 +2137,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\CfgParse.o"
     ]
@@ -2047,6 +2195,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\CfgStore.o"
     ]
@@ -2101,6 +2253,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Config.o"
     ]
@@ -2155,6 +2311,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\LogBuf.o"
     ]
@@ -2209,6 +2369,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\LogFmt.o"
     ]
@@ -2263,6 +2427,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Logger.o"
     ]
@@ -2317,6 +2485,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Eeprom.o"
     ]
@@ -2371,6 +2543,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Flash.o"
     ]
@@ -2425,6 +2601,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\StorCache.o"
     ]
@@ -2479,6 +2659,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Storage.o"
     ]
@@ -2533,6 +2717,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Cache.o"
     ]
@@ -2587,6 +2775,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\CachePol.o"
     ]
@@ -2641,6 +2833,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\LruCache.o"
     ]
@@ -2695,6 +2891,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\NetBuf.o"
     ]
@@ -2749,6 +2949,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Network.o"
     ]
@@ -2803,6 +3007,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Socket.o"
     ]
@@ -2857,6 +3065,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\TcpClient.o"
     ]
@@ -2911,6 +3123,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\ProtoCrc.o"
     ]
@@ -2965,6 +3181,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\ProtoFrame.o"
     ]
@@ -3019,6 +3239,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\ProtoHdlr.o"
     ]
@@ -3073,6 +3297,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Protocol.o"
     ]
@@ -3127,6 +3355,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\EvbQueue.o"
     ]
@@ -3181,6 +3413,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Event.o"
     ]
@@ -3235,6 +3471,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\EventBus.o"
     ]
@@ -3289,6 +3529,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Sched.o"
     ]
@@ -3343,6 +3587,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\SchedCfg.o"
     ]
@@ -3397,6 +3645,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Task.o"
     ]
@@ -3451,6 +3703,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\TaskQueue.o"
     ]
@@ -3505,6 +3761,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\DispBuf.o"
     ]
@@ -3559,6 +3819,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\DispFont.o"
     ]
@@ -3613,6 +3877,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Display.o"
     ]
@@ -3667,6 +3935,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\FrameBuf.o"
     ]
@@ -3721,6 +3993,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\Adc.o"
     ]
@@ -3775,6 +4051,10 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\AdcCal.o"
     ]
@@ -3829,8 +4109,128 @@
       "-I../../../../Layer2/Platform/Scheduler",
       "-I../../../../Layer2/Platform/Display",
       "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
       "-o",
       "ASIC_CM_OBJECT\\AdcFilter.o"
+    ]
+  },
+  {
+    "directory": "D:\\workspace\\BA190_0\\01_SRC\\03_CM\\01_BUILD\\SAVONA\\DS5_CORE2",
+    "file": "../../../../Layer2/Sample/Core/Core.cpp",
+    "arguments": [
+      "armclang",
+      "-Werror",
+      "@./WARNING_GUIDE/warnings_for_release.txt",
+      "-Wno-bitfield-enum-conversion",
+      "-Wno-missing-braces",
+      "-Wno-enum-compare",
+      "-Wno-implicit-int-conversion",
+      "-Wno-shorten-64-to-32",
+      "-Wno-sign-conversion",
+      "-Wno-cast-qual",
+      "-xc++",
+      "-std=c++14",
+      "--target=arm-arm-none-eabi",
+      "-mcpu=cortex-m7",
+      "-mfpu=none",
+      "-mfloat-abi=soft",
+      "-fshort-enums",
+      "-mno-unaligned-access",
+      "-fno-rtti",
+      "-fno-exceptions",
+      "-pedantic",
+      "-Oz",
+      "-c",
+      "-MMD",
+      "-D_CONFIG_CMCORE",
+      "-D__CONTROLLER_TARGET__=37",
+      "-D_V8_TLC_512Gb_4P",
+      "-D_CONFIG_EMBEDDED",
+      "-I../../../../Layer2/Platform/Gpio",
+      "-I../../../../Layer2/Platform/Spi",
+      "-I../../../../Layer2/Platform/I2c",
+      "-I../../../../Layer2/Platform/Uart",
+      "-I../../../../Layer2/Platform/Timer",
+      "-I../../../../Layer2/Platform/Config",
+      "-I../../../../Layer2/Platform/Logger",
+      "-I..\\..\\..\\..\\Layer2\\Platform",
+      "-I../../../../Layer1/Legacy/Retired",
+      "-ID:/ThirdParty/CMSIS/Core/Include",
+      "-I../../../../Layer2/Platform/Storage",
+      "-I../../../../Layer2/Platform/Cache",
+      "-I../../../../Layer2/Platform/Network",
+      "-I../../../../Layer2/Platform/Protocol",
+      "-I../../../../Layer2/Platform/EventBus",
+      "-I../../../../Layer2/Platform/Scheduler",
+      "-I../../../../Layer2/Platform/Display",
+      "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
+      "-o",
+      "ASIC_CM_OBJECT\\Core.o"
+    ]
+  },
+  {
+    "directory": "D:\\workspace\\BA190_0\\01_SRC\\03_CM\\01_BUILD\\SAVONA\\DS5_CORE2",
+    "file": "../../../../Layer2/Sample/Lib/Lib.cpp",
+    "arguments": [
+      "armclang",
+      "-Werror",
+      "@./WARNING_GUIDE/warnings_for_release.txt",
+      "-Wno-bitfield-enum-conversion",
+      "-Wno-missing-braces",
+      "-Wno-enum-compare",
+      "-Wno-implicit-int-conversion",
+      "-Wno-shorten-64-to-32",
+      "-Wno-sign-conversion",
+      "-Wno-cast-qual",
+      "-xc++",
+      "-std=c++14",
+      "--target=arm-arm-none-eabi",
+      "-mcpu=cortex-m7",
+      "-mfpu=none",
+      "-mfloat-abi=soft",
+      "-fshort-enums",
+      "-mno-unaligned-access",
+      "-fno-rtti",
+      "-fno-exceptions",
+      "-pedantic",
+      "-Oz",
+      "-c",
+      "-MMD",
+      "-D_CONFIG_CMCORE",
+      "-D__CONTROLLER_TARGET__=37",
+      "-D_V8_TLC_512Gb_4P",
+      "-D_CONFIG_EMBEDDED",
+      "-I../../../../Layer2/Platform/Gpio",
+      "-I../../../../Layer2/Platform/Spi",
+      "-I../../../../Layer2/Platform/I2c",
+      "-I../../../../Layer2/Platform/Uart",
+      "-I../../../../Layer2/Platform/Timer",
+      "-I../../../../Layer2/Platform/Config",
+      "-I../../../../Layer2/Platform/Logger",
+      "-I..\\..\\..\\..\\Layer2\\Platform",
+      "-I../../../../Layer1/Legacy/Retired",
+      "-ID:/ThirdParty/CMSIS/Core/Include",
+      "-I../../../../Layer2/Platform/Storage",
+      "-I../../../../Layer2/Platform/Cache",
+      "-I../../../../Layer2/Platform/Network",
+      "-I../../../../Layer2/Platform/Protocol",
+      "-I../../../../Layer2/Platform/EventBus",
+      "-I../../../../Layer2/Platform/Scheduler",
+      "-I../../../../Layer2/Platform/Display",
+      "-I../../../../Layer2/Platform/Adc",
+      "-I../../../../Layer2",
+      "-I../../../../Layer2/Sample",
+      "-I../../../../Layer2/Sample/Core",
+      "-I../../../../Layer2/Sample/Lib",
+      "-o",
+      "ASIC_CM_OBJECT\\Lib.o"
     ]
   }
 ]

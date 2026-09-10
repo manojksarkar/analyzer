@@ -4,7 +4,8 @@
     "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
     "clangArgs": [
       "--target=arm-none-eabi"
-    ]
+    ],
+    "includePathsFromProjectWalk": false
   },
   "views": {
     "interfaceTables": true,

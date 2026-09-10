@@ -84,6 +84,12 @@ Options:
                        automatic. There is no project-wide form: an include dir
                        always belongs to a layer. Example:
                          --include-path-layer Layer1 C:/ThirdParty/boost/include
+  --include-path-walk  Also walk every directory under each layer's path into the
+  --no-include-path-walk
+                       -I set. Off by default: a core's compile_commands.json is
+                       the build's own record of the include set, so the walk only
+                       guesses at it. Turn it on for a tree with no compilation
+                       database. Overrides config `clang.includePathsFromProjectWalk`.
   --verbose            Enable DEBUG logs (cache hits, budgets, few-shot picks)
   --quiet              Only log WARNINGs and above
   --trace-prompts      Print full LLM prompts (system + user) to stdout.
@@ -191,6 +197,7 @@ _KNOWN_FLAGS = (
     "--data-dictionary", "--data-dictionary-layer",
     "--project-name", "--output-name",
     "--macros", "--macros-layer", "--include-path-layer",
+    "--include-path-walk", "--no-include-path-walk",
     "--only-files", "--include-emulator", "--doc-type",
     "--quiet", "--verbose", "--trace-prompts",
     # The run-identity flags the database path needs. This list is an ALLOWLIST — anything
@@ -231,6 +238,7 @@ baseline_version_id_arg = None   # narrowed parse: the version whose func-key ma
                                  # calls into files this run did not re-parse
 include_emulator_arg    = False  # opt out of the default *emul* file exclusion (3.1)
 include_path_layer_args = []   # list of (layer_name, abs_dir) tuples
+include_path_walk_arg   = None   # tri-state: None = follow config, True/False = CLI override
 doc_type_arg            = "swe3"  # which document(s) to emit: swe3|swe4|all (default swe3)
 raw_args                = []
 
@@ -327,6 +335,10 @@ while i < len(sys.argv):
         baseline_version_id_arg = sys.argv[i]
     elif a == "--include-emulator":
         include_emulator_arg = True
+    elif a == "--include-path-walk":
+        include_path_walk_arg = True
+    elif a == "--no-include-path-walk":
+        include_path_walk_arg = False
     elif a == "--doc-type":
         i += 1
         if i >= len(sys.argv):
@@ -672,25 +684,35 @@ elif _layers_for_components:
 else:
     _selected_layers = []
 _layer_inc: dict = {}
-for _lname, _layer in (cfg.get("layers") or {}).items():
-    if _selected_layers and _lname not in _selected_layers:
-        continue
-    if not isinstance(_layer, dict):
-        continue
-    _layer_rel = _layer.get("path") or _lname
-    _layer_abs = os.path.join(resolved, _layer_rel)
-    if not os.path.isdir(_layer_abs):
-        continue
-    _dirs: list = []
-    for _dirpath, _dirnames, _ in os.walk(_layer_abs):
-        _dirnames[:] = [d for d in _dirnames if not d.startswith(".")]
-        _dirs.append(_dirpath)
-    _layer_inc[_lname] = _dirs
+# Walking every layer dir into the -I set only ever GUESSED at what the compiler
+# was given; the build's own compile_commands.json records it. Default off, so a
+# project that declares its databases gets the real set and nothing more. Turn it
+# back on (config or --include-path-walk) for a tree with no database, where a
+# guess beats no include dirs at all.
+if include_path_walk_arg is not None:
+    _walk_includes = include_path_walk_arg
+else:
+    _walk_includes = bool((cfg.get("clang") or {}).get("includePathsFromProjectWalk", False))
+if _walk_includes:
+    for _lname, _layer in (cfg.get("layers") or {}).items():
+        if _selected_layers and _lname not in _selected_layers:
+            continue
+        if not isinstance(_layer, dict):
+            continue
+        _layer_rel = _layer.get("path") or _lname
+        _layer_abs = os.path.join(resolved, _layer_rel)
+        if not os.path.isdir(_layer_abs):
+            continue
+        _dirs: list = []
+        for _dirpath, _dirnames, _ in os.walk(_layer_abs):
+            _dirnames[:] = [d for d in _dirnames if not d.startswith(".")]
+            _dirs.append(_dirpath)
+        _layer_inc[_lname] = _dirs
 
-# Merge include dirs from the build's own compile_commands.json (one per core).
-# The walk above can only guess the -I set; the build recorded the real one. Walked
-# dirs stay FIRST so this can only add search paths, never re-order resolution for
-# a tree that already parsed. No layer declares the block -> nothing happens.
+# Include dirs from the build's own compile_commands.json (one per core) - the
+# primary source since the walk became opt-in. Any walked dirs stay FIRST so this
+# can only add search paths, never re-order resolution for a tree that already
+# parsed. No layer declares the block -> nothing happens.
 from core import compile_commands as _cc
 from core.config import validate_cores as _validate_cores
 for _err in _validate_cores(cfg):
@@ -761,13 +783,28 @@ for _lname in sorted(_layer_inc):
     _from_cc = _cc_counts.get(_lname, 0)
     _added = _cc_added.get(_lname, 0)
     _extra = len(_layer_inc[_lname]) - _walk - _added      # --include-path-layer
-    _parts = [f"{_walk} from project walk"]
+    _parts = [f"{_walk} from project walk"] if _walk_includes else ["project walk disabled"]
     if _lname in _cc_counts:
         _parts.append(f"{_from_cc} from compile_commands (+{_added} new)")
     if _extra:
         _parts.append(f"{_extra} from --include-path-layer")
     log(f"  {_lname}: {' | '.join(_parts)} -> {len(_layer_inc[_lname])} total",
         component="run")
+# A layer with no -I at all parses every `#include` against nothing but the
+# includer's own directory, and the damage surfaces far away as missing types.
+# Say it here, where the cause is still visible. Not fatal: a self-contained
+# layer can legitimately need no search path.
+for _lname, _layer in (cfg.get("layers") or {}).items():
+    if _selected_layers and _lname not in _selected_layers:
+        continue
+    if _layer_inc.get(_lname) or not isinstance(_layer, dict):
+        continue
+    if not os.path.isdir(os.path.join(resolved, _layer.get("path") or _lname)):
+        continue          # layer not checked out here - nothing to include either way
+    _hint = ("declare its core's compileCommands, or re-enable the walk with "
+             "--include-path-walk") if not _walk_includes else \
+            "check its layer path and compileCommands"
+    log(f"  WARNING: {_lname} has NO include dirs - {_hint}", component="run")
 
 # Prerequisite preflight: fail fast (before a long run) if a REQUIRED external
 # dependency for THIS run's enabled views is missing — a clear message beats a

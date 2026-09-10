@@ -313,3 +313,64 @@ class TestFilterMode:
 
         assert result.returncode == 1
         assert "--filter-mode requires a mode argument" in output
+
+
+class TestIncludePathWalk:
+    """Where a layer's -I dirs come from.
+
+    The walk under each layer path only ever guessed at the include set; a core's
+    `compile_commands.json` is the build's own record of it, so the walk is off by
+    default (`clang.includePathsFromProjectWalk`) and these flags override it.
+    Driven through a real run because the resolution lives in run.py's argv scan,
+    not in an importable helper — `--only-files <empty>` keeps Phase 1 to seconds.
+    """
+
+    @staticmethod
+    def _collect(tmp_path, *extra, env=None):
+        # --model-root/--output-root are not optional here: without them the run
+        # writes the repo's shared model/ and output/, and an --only-files run
+        # parses nothing, so it would leave every other test an EMPTY model.
+        empty = tmp_path / "no_tus.txt"
+        empty.write_text("", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, _RUN_PY, SAMPLE_PROJECT, "--to-phase", "1",
+             "--model-scratch", "--only-files", str(empty),
+             "--model-root", str(tmp_path / "model"),
+             "--output-root", str(tmp_path / "output"), *extra],
+            cwd=PROJECT_ROOT, capture_output=True, text=True,
+            env=dict(os.environ, **(env or {})),
+        )
+        return _output(result)
+
+    def test_the_walk_is_off_by_default(self, tmp_path):
+        text = self._collect(tmp_path)
+
+        assert "project walk disabled" in text
+        assert "from project walk" not in text
+        assert "from compile_commands" in text
+
+    def test_include_path_walk_turns_it_back_on(self, tmp_path):
+        text = self._collect(tmp_path, "--include-path-walk")
+
+        assert "from project walk" in text
+        assert "project walk disabled" not in text
+
+    def test_a_layer_left_with_no_include_dirs_is_warned_about(self, tmp_path):
+        """No database and no walk means every `#include` resolves against nothing.
+
+        Said at the point of cause: the damage otherwise surfaces phases later as
+        a missing type, with nothing pointing back at the include set.
+        """
+        import json
+
+        with open(os.path.join(PROJECT_ROOT, "engine", "config", "config.defaults.json"),
+                  encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        cfg["layers"]["Layer1"]["cores"] = []
+        cfg_path = tmp_path / "no_core_config.json"
+        cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+
+        text = self._collect(tmp_path, "--selected-layer", "Layer1",
+                             env={"ANALYZER_CONFIG": str(cfg_path)})
+
+        assert "Layer1 has NO include dirs" in text

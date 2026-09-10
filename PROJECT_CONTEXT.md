@@ -208,6 +208,54 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-10 (**the project-directory walk is no longer an include-path source by default**
+> — branch `fix/swe4-review-v1`, **UNCOMMITTED**.
+>
+> **What changed.** `run.py` built each layer's `-I` set by walking every directory under
+> `layers.<L>.path`, then appended whatever the core's `compile_commands.json` added (§4d, the
+> 2026-09-02 entry). The walk was only ever a GUESS: it hands clang dirs the build never passed and
+> misses every dir outside the layer roots. It is now **opt-in** — `clang.includePathsFromProjectWalk`,
+> shipped **false**, with `--include-path-walk` / `--no-include-path-walk` overriding it per run (both
+> in `_KNOWN_FLAGS`; the CLI wins over config). Walk off, a layer's dirs come from its core's database
+> plus `--include-path-layer`, and nothing else.
+>
+> **The example databases had to grow first, or the fixture would have lost dirs.** Measured through
+> the real loader before touching anything: Layer1 walk 17 vs database 15, Layer2 walk 20 vs 16. The
+> gap was the intermediate dirs no TU names in a `-I` — `Layer1`, `Layer1/Outer`, `Layer1/Sample`,
+> `Layer2`, `Layer2/Sample`, `Layer2/Sample/Core`, `Layer2/Sample/Lib`. They were added to **every**
+> entry of `engine/config/compile_commands.core{1,2}.example.json` (all entries there carry an
+> identical include set, as a real per-core build does), together with the 4 TUs the examples never
+> listed (`Layer1/Types/{Types,PointRect}.cpp`, `Layer2/Sample/Core/Core.cpp`,
+> `Layer2/Sample/Lib/Lib.cpp` — a build compiles every file, and the databases are now the only
+> include source). Layer1 is 18 dirs (the 18th is `ExternalLib`, which the walk structurally cannot
+> reach), Layer2 is 20.
+>
+> **Verified A/B:** the same run with and without `--include-path-walk` writes a set-identical
+> `clang_include_paths.json` per layer, so the Sample parse and its snapshots cannot move. Order is
+> safe too — no header basename repeats inside either layer, so the old walk-first/database-second
+> order cannot have decided any resolution.
+>
+> **New warning at collection time.** A layer left with ZERO include dirs (no database and no walk)
+> is now logged as `WARNING: <Layer> has NO include dirs`, with the fix named. Not fatal — a
+> self-contained layer can legitimately need no search path — but the damage otherwise surfaces
+> phases later as a missing type with nothing pointing back at the include set. Layers whose path is
+> not on disk are skipped (Layer3).
+>
+> ⚠ **Trap, hit while testing this — read before writing another CLI test.**
+> `engine/run.py <proj> --only-files <list>` writes the SHARED repo `model/` unless `--model-root` is
+> passed; `--model-scratch` installs the model REPOSITORY and does **not** redirect the directory. A
+> narrowed run that parses nothing therefore leaves every `model/*.json` as `{}`, and the tests that
+> read it skip on a MISSING model, not an EMPTY one — so `test_model_store.py` and
+> `test_incremental_db_parity.py` fail with "test degenerate" instead of skipping. The new CLI tests
+> pass `--model-root`/`--output-root` into `tmp_path` for exactly this reason.
+>
+> **Tests.** `tests/unit/test_compile_commands.py` +2: the shipped default is asserted false against
+> the real `config.defaults.json` (and that `run.py` still reads the key), and a parity guard asserts
+> the examples cover **every** dir the walk would find — trimming an `-I` out of them fails there
+> instead of silently dropping a header. `tests/unit/test_cli.py` +3 (`TestIncludePathWalk`): walk off
+> by default, `--include-path-walk` turns it back on, and the zero-dirs warning fires for a layer
+> stripped of its cores via `ANALYZER_CONFIG`.)
+
 > Updated: 2026-09-07 (**One run may now span several layers** — branch
 > `fix/cross-layer-name-collisions`, **UNCOMMITTED** on top of `a03fddd`. The identity commit
 > made two layers' same-named groups and components distinct; this makes a single run able to
