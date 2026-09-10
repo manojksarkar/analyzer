@@ -27,7 +27,15 @@
     // adopted, since the target changes builtin macros such as __ARM_ARCH.
     // The PUBLIC/PRIVATE/PROTECTED/__OVLYINIT shims are NOT listed here - they
     // are injected unconditionally by core.config.default_clang_macro_defs().
-    "clangArgs": ["--target=arm-none-eabi"]
+    "clangArgs": ["--target=arm-none-eabi"],
+    // Walk every directory under each layer's path into that layer's -I set?
+    // OFF: a core's compile_commands.json records the include set the compiler
+    // was actually given, and the walk can only guess at it - it both misses
+    // dirs outside the layer roots and adds dirs the build never passed. Turn
+    // it on for a tree with no compilation database, where a guess beats no
+    // include dirs at all. Per-run override: --include-path-walk /
+    // --no-include-path-walk. A layer left with zero dirs is warned about.
+    "includePathsFromProjectWalk": false
   },
 
   // -------------------------------------------------------------------------

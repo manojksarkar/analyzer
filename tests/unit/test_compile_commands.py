@@ -353,3 +353,52 @@ def test_report_is_quiet_when_the_prefix_is_solid():
     report = cc.LoadReport(core="FCore", layer="Layer1", entries=10, raw_dirs=10, kept_dirs=10,
                            root_prefix=cc.RootPrefix(prefix=SRC_ROOT, votes=10, total=10))
     assert "WARNING" not in "\n".join(cc.format_report(report))
+
+
+# ---------------------------------------------------------------------------
+# The databases are now the ONLY source of include paths
+# ---------------------------------------------------------------------------
+
+def test_the_shipped_default_leaves_the_project_walk_off():
+    """`clang.includePathsFromProjectWalk` ships false, and run.py reads that key.
+
+    The walk guessed the -I set; a core's database records it. Flipping the
+    default back on would silently restore the guess for every project, so the
+    shipped value is asserted against the real file rather than a fixture.
+    """
+    from engine.core.config import app_config
+
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assert (app_config().get("clang") or {}).get("includePathsFromProjectWalk") is False
+
+    run_py = open(os.path.join(repo, "engine", "run.py"), encoding="utf-8").read()
+    assert "includePathsFromProjectWalk" in run_py, "run.py no longer reads the key"
+
+
+def test_the_examples_cover_every_dir_the_project_walk_would_find():
+    """No layer dir is LOST now that the walk is off by default.
+
+    With `includePathsFromProjectWalk` false the examples are all Layer1/Layer2
+    get, so a dir the walk used to contribute and the databases do not is a
+    header that stops resolving — invisible until a type goes missing much later
+    in the pipeline. Trimming an `-I` out of the examples must fail here.
+    """
+    from engine.core.config import app_config
+
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sample = os.path.join(repo, "SampleCppProject")
+    cfg = app_config()
+    by_layer, _ = cc.load_sources(cc.sources_from_layers(cfg, repo), sample)
+
+    def key(path):
+        return os.path.normcase(os.path.normpath(path))
+
+    for layer, spec in (cfg.get("layers") or {}).items():
+        layer_dir = os.path.join(sample, spec.get("path") or layer)
+        if not os.path.isdir(layer_dir):
+            continue                      # not part of the fixture (Layer3)
+        walked = {key(d) for d, _, _ in os.walk(layer_dir)}
+        from_db = {key(d) for d in by_layer.get(layer, [])}
+        assert not walked - from_db, (
+            f"{layer}: compile_commands.*.example.json is missing "
+            f"{sorted(os.path.basename(d) for d in walked - from_db)}")

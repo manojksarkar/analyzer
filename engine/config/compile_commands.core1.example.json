@@ -51,6 +51,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Core.o"
     ]
@@ -107,6 +110,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Lib.o"
     ]
@@ -163,6 +169,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Util.o"
     ]
@@ -219,6 +228,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Utils.o"
     ]
@@ -275,6 +287,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Flowcharts.o"
     ]
@@ -331,6 +346,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Main.o"
     ]
@@ -387,6 +405,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\AccessVisibility.o"
     ]
@@ -443,6 +464,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\ArmGuarded.o"
     ]
@@ -499,6 +523,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\ArmIntrinsics.o"
     ]
@@ -555,6 +582,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\ForwardVoidDecl.o"
     ]
@@ -611,6 +641,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\MultilineOvlyinit.o"
     ]
@@ -667,6 +700,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\PreprocIfFunction.o"
     ]
@@ -723,6 +759,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\PreprocIfFunctionThen.o"
     ]
@@ -779,6 +818,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\VoidAsVar.o"
     ]
@@ -835,6 +877,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\VoidIsVoid.o"
     ]
@@ -891,6 +936,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\ReadWrite.o"
     ]
@@ -947,6 +995,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Hub.o"
     ]
@@ -1003,6 +1054,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Signal.o"
     ]
@@ -1059,6 +1113,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\SignalDriver.o"
     ]
@@ -1115,6 +1172,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\SignalEmul.o"
     ]
@@ -1171,6 +1231,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Dispatch.o"
     ]
@@ -1227,6 +1290,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\OpsClient.o"
     ]
@@ -1283,6 +1349,9 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\OpsTable.o"
     ]
@@ -1339,8 +1408,129 @@
       "-I../../../../Layer1/Poly",
       "-I../../../../Layer1/Outer/Inner",
       "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
       "-o",
       "ASIC_CM_OBJECT\\Helper.o"
+    ]
+  },
+  {
+    "directory": "D:\\workspace\\BA190_0\\01_SRC\\02_HIL\\01_BUILD\\SAVONA\\DS5_CORE1",
+    "file": "../../../../Layer1/Types/Types.cpp",
+    "arguments": [
+      "armclang",
+      "-Werror",
+      "@./WARNING_GUIDE/warnings_for_release.txt",
+      "-Wno-bitfield-enum-conversion",
+      "-Wno-missing-braces",
+      "-Wno-enum-compare",
+      "-Wno-implicit-int-conversion",
+      "-Wno-shorten-64-to-32",
+      "-Wno-sign-conversion",
+      "-Wno-cast-qual",
+      "-xc++",
+      "-std=c++14",
+      "--target=arm-arm-none-eabi",
+      "-mcpu=cortex-m7",
+      "-mfpu=none",
+      "-mfloat-abi=soft",
+      "-fshort-enums",
+      "-mno-unaligned-access",
+      "-fno-rtti",
+      "-fno-exceptions",
+      "-pedantic",
+      "-Oz",
+      "-c",
+      "-MMD",
+      "-DCONFIG_NAMU_BOOTLOADER_MAKE",
+      "-DF2L_CONFIG_GROUP_SAVONA_V8_TLC_512Gb_4P",
+      "-DNCORE_NAMESPACE_NAME=HADES",
+      "-D__CONTROLLER_TARGET__=37",
+      "-D_NAND_DENSITY=512",
+      "-D_CONFIG_ASIC",
+      "-D_CONFIG_EMBEDDED",
+      "-I../../../../Layer1/Sample/Core",
+      "-I../../../../Layer1/Sample/Lib",
+      "-I../../../../Layer1/Sample/Util",
+      "-I../../../../Layer1/Math",
+      "-I../../../../Layer1/Flow",
+      "-I../../../../Layer1/App",
+      "-I..\\..\\..\\..\\Layer1\\Types",
+      "-I../../../../Layer1/Legacy/Retired",
+      "-ID:/ThirdParty/CMSIS/Core/Include",
+      "-I../../../../Layer1/Access",
+      "-I../../../../Layer1/Diag",
+      "-I../../../../Layer1/Direction",
+      "-I../../../../Layer1/Hub",
+      "-I../../../../Layer1/Signal",
+      "-I../../../../Layer1/Poly",
+      "-I../../../../Layer1/Outer/Inner",
+      "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
+      "-o",
+      "ASIC_CM_OBJECT\\Types.o"
+    ]
+  },
+  {
+    "directory": "D:\\workspace\\BA190_0\\01_SRC\\02_HIL\\01_BUILD\\SAVONA\\DS5_CORE1",
+    "file": "../../../../Layer1/Types/PointRect.cpp",
+    "arguments": [
+      "armclang",
+      "-Werror",
+      "@./WARNING_GUIDE/warnings_for_release.txt",
+      "-Wno-bitfield-enum-conversion",
+      "-Wno-missing-braces",
+      "-Wno-enum-compare",
+      "-Wno-implicit-int-conversion",
+      "-Wno-shorten-64-to-32",
+      "-Wno-sign-conversion",
+      "-Wno-cast-qual",
+      "-xc++",
+      "-std=c++14",
+      "--target=arm-arm-none-eabi",
+      "-mcpu=cortex-m7",
+      "-mfpu=none",
+      "-mfloat-abi=soft",
+      "-fshort-enums",
+      "-mno-unaligned-access",
+      "-fno-rtti",
+      "-fno-exceptions",
+      "-pedantic",
+      "-Oz",
+      "-c",
+      "-MMD",
+      "-DCONFIG_NAMU_BOOTLOADER_MAKE",
+      "-DF2L_CONFIG_GROUP_SAVONA_V8_TLC_512Gb_4P",
+      "-DNCORE_NAMESPACE_NAME=HADES",
+      "-D__CONTROLLER_TARGET__=37",
+      "-D_NAND_DENSITY=512",
+      "-D_CONFIG_ASIC",
+      "-D_CONFIG_EMBEDDED",
+      "-I../../../../Layer1/Sample/Core",
+      "-I../../../../Layer1/Sample/Lib",
+      "-I../../../../Layer1/Sample/Util",
+      "-I../../../../Layer1/Math",
+      "-I../../../../Layer1/Flow",
+      "-I../../../../Layer1/App",
+      "-I..\\..\\..\\..\\Layer1\\Types",
+      "-I../../../../Layer1/Legacy/Retired",
+      "-ID:/ThirdParty/CMSIS/Core/Include",
+      "-I../../../../Layer1/Access",
+      "-I../../../../Layer1/Diag",
+      "-I../../../../Layer1/Direction",
+      "-I../../../../Layer1/Hub",
+      "-I../../../../Layer1/Signal",
+      "-I../../../../Layer1/Poly",
+      "-I../../../../Layer1/Outer/Inner",
+      "-I../../../../ExternalLib",
+      "-I../../../../Layer1",
+      "-I../../../../Layer1/Sample",
+      "-I../../../../Layer1/Outer",
+      "-o",
+      "ASIC_CM_OBJECT\\PointRect.o"
     ]
   }
 ]
