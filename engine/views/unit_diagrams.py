@@ -4,8 +4,10 @@ import os
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .registry import register
+from core.config import render_max_concurrency
 from utils import (KEY_SEP, display_name, log, mmdc_path, safe_filename, os_type,
                    render_mermaid_cached)
 
@@ -392,6 +394,7 @@ def run(model, output_dir, model_dir, config):
     total = len(units_to_render)
     progress = ProgressReporter("unitDiagrams", total=total, logger=get_logger("unitDiagrams"))
     progress.start()
+    to_render = []  # (mermaid, png_path) pending render, built up sequentially below
     for i, unit_key in enumerate(units_to_render, 1):
         progress.step(label=unit_key)
         unit_info = units_data[unit_key]
@@ -412,7 +415,23 @@ def run(model, output_dir, model_dir, config):
             f.write(mermaid)
         if render_png:
             png_path = os.path.join(out_dir, f"{safe}.png")
-            # M-A: content-addressed cache -> unchanged unit diagrams skip mmdc.
+            to_render.append((mermaid, png_path))
+
+    # CC-4: each render is an mmdc subprocess call (M-A's content-addressed cache
+    # skips it entirely on a hit); fan the misses out across a thread pool.
+    # render.maxConcurrency defaults to 1 -> sequential, same as before CC-4.
+    max_workers = render_max_concurrency(config)
+    if max_workers <= 1:
+        for mermaid, png_path in to_render:
             render_mermaid_cached(project_root, mermaid, png_path, scale=2, timeout=60)
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [
+                pool.submit(render_mermaid_cached, project_root, mermaid, png_path, scale=2, timeout=60)
+                for mermaid, png_path in to_render
+            ]
+            for future in as_completed(futures):
+                future.result()
+
     _suffix = " regenerated (rest carried)" if affected is not None else ""
     progress.done(summary=f"output/unit_diagrams/ ({total} units{_suffix})")

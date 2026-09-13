@@ -27,7 +27,13 @@
     // adopted, since the target changes builtin macros such as __ARM_ARCH.
     // The PUBLIC/PRIVATE/PROTECTED/__OVLYINIT shims are NOT listed here - they
     // are injected unconditionally by core.config.default_clang_macro_defs().
-    "clangArgs": ["--target=arm-none-eabi"]
+    "clangArgs": ["--target=arm-none-eabi"],
+    // Phase 1 parse fan-out (CC-4): worker-process count for the libclang parse
+    // of source_files. Default 1 preserves today's fully-sequential parse_file()/
+    // parse_calls_and_globals() loops in parser.main(). Env CLANG_MAX_WORKERS
+    // overrides. See core.config.parse_max_workers() and
+    // docs/production-redesign/07-llm-concurrency-scaling.md §6.1.
+    "maxWorkers": 1
   },
 
   // -------------------------------------------------------------------------
@@ -51,6 +57,15 @@
       "review": { "author": "", "reviewer": "" },
       "environment": { "flags": [], "probepoint": [], "usercode": [] }
     }
+  },
+
+  // Phase 3 diagram rendering (CC-4): flowchart PNGs (render_dot_cached) and unit
+  // diagram PNGs (render_mermaid_cached) each shell out to a real subprocess (Node
+  // + headless Chromium), so a thread pool parallelizes genuine wall-clock work.
+  // maxConcurrency default 1 preserves today's fully-serial rendering; env
+  // RENDER_MAX_CONCURRENCY overrides.
+  "render": {
+    "maxConcurrency": 1
   },
 
   // -------------------------------------------------------------------------

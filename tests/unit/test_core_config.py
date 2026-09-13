@@ -301,6 +301,60 @@ class TestValidateCores:
         assert "not supported yet" in errors[0]
 
 
+class TestRenderMaxConcurrency:
+    """render.maxConcurrency (CC-4) — worker count for Phase 3 diagram rendering."""
+
+    def test_defaults_to_one(self):
+        from core.config import render_max_concurrency
+        assert render_max_concurrency({}) == 1
+
+    def test_reads_config_value(self):
+        from core.config import render_max_concurrency
+        assert render_max_concurrency({"render": {"maxConcurrency": 6}}) == 6
+
+    def test_below_one_raises(self):
+        from core.config import render_max_concurrency
+        with pytest.raises(ValueError, match="maxConcurrency"):
+            render_max_concurrency({"render": {"maxConcurrency": 0}})
+
+    def test_non_numeric_raises(self):
+        from core.config import render_max_concurrency
+        with pytest.raises(ValueError, match="maxConcurrency"):
+            render_max_concurrency({"render": {"maxConcurrency": "lots"}})
+
+    def test_env_var_overrides_config(self, monkeypatch):
+        from core.config import render_max_concurrency
+        monkeypatch.setenv("RENDER_MAX_CONCURRENCY", "4")
+        assert render_max_concurrency({"render": {"maxConcurrency": 1}}) == 4
+
+
+class TestParseMaxWorkers:
+    """clang.maxWorkers (CC-4 §6.1) — worker-process count for Phase 1 parse fan-out."""
+
+    def test_defaults_to_one(self):
+        from core.config import parse_max_workers
+        assert parse_max_workers({}) == 1
+
+    def test_reads_config_value(self):
+        from core.config import parse_max_workers
+        assert parse_max_workers({"clang": {"maxWorkers": 6}}) == 6
+
+    def test_below_one_raises(self):
+        from core.config import parse_max_workers
+        with pytest.raises(ValueError, match="maxWorkers"):
+            parse_max_workers({"clang": {"maxWorkers": 0}})
+
+    def test_non_numeric_raises(self):
+        from core.config import parse_max_workers
+        with pytest.raises(ValueError, match="maxWorkers"):
+            parse_max_workers({"clang": {"maxWorkers": "lots"}})
+
+    def test_env_var_overrides_config(self, monkeypatch):
+        from core.config import parse_max_workers
+        monkeypatch.setenv("CLANG_MAX_WORKERS", "4")
+        assert parse_max_workers({"clang": {"maxWorkers": 1}}) == 4
+
+
 def test_the_annotated_example_matches_the_shipped_defaults():
     """config.defaults.json.example is documentation ONLY if it stays in sync.
 

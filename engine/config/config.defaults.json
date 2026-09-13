@@ -4,7 +4,8 @@
     "clangIncludePath": "C:\\Program Files\\LLVM\\lib\\clang\\17\\include",
     "clangArgs": [
       "--target=arm-none-eabi"
-    ]
+    ],
+    "maxWorkers": 1
   },
   "views": {
     "interfaceTables": true,
@@ -25,6 +26,9 @@
         "usercode": []
       }
     }
+  },
+  "render": {
+    "maxConcurrency": 1
   },
   "cores": {
     "Core1": {

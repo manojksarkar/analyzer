@@ -208,6 +208,134 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-11c (**CC-4 §6.1 — Phase 1 libclang parse fan-out implemented**, per
+> `docs/production-redesign/07-llm-concurrency-scaling.md` §6.1, superseding the "NOT implemented"
+> note below (kept for the design context). New `clang.maxWorkers` (`core.config.parse_max_workers`,
+> env `CLANG_MAX_WORKERS`, default 1 = strict sequential no-op — the two loops in `parser.main()`
+> are the untouched original code at the default). At `maxWorkers > 1`, `parser.py`'s pass 1
+> (`parse_file` loop) and pass 2 (`parse_calls_and_globals` loop) each fan out through a
+> `ProcessPoolExecutor` over **contiguous shards** of `source_files` (`_shard_files`); each worker is
+> a genuinely separate OS process that re-imports `parser.py` from scratch — multiprocessing's spawn
+> bootstrap forwards the parent's `sys.argv`, verified empirically, so every worker rebuilds
+> `CLANG_ARGS`/`MODULE_BASE_PATH`/`_FILE_COMPONENT_MAP`/its own `cindex.Index` identically without
+> needing any config passed in. A worker returns a plain-data diff; the main process merges diffs in
+> shard-index order (== `source_files` order, since shards are contiguous), calling
+> `_merge_pass1_diff`/`_merge_pass2_diff`.
+> - **The hard part, done via event-log-and-replay rather than hand-derived merge rules:**
+>   `data_dictionary`/`entity_hashes`(types) writes (`_dd_store`, `_apply_builtin_range`,
+>   `_apply_type_hash`) read CURRENT dict state (a same-layer collision, "a definition wins over a
+>   forward decl") that one shard alone cannot see — two shards each defining the "same" bare
+>   qualified name under DIFFERENT layers neither locally detects a collision. Fix: these three
+>   functions now ALSO append their call args to an ordered log (`_dd_events`, `_type_hash_events`);
+>   the merge REPLAYS the log through the SAME functions, in shard order, against the real
+>   cross-shard state — reusing the existing collision logic instead of re-deriving it.
+>   `functions`/`component_functions`/`function_to_component`/`_override_pairs` (the real-function-
+>   definition path) use explicit first-claim-wins gating on `_visited_function_keys`, mirroring
+>   sequential dedup exactly.
+> - **A second collision, found only by stress-testing against SampleCppProject's two-layer fixture
+>   (Layer2 deliberately near-duplicates Layer1) — NOT anticipated by the original design and
+>   initially shipped broken:** `get_function_key()` returns `cursor.mangled_name`, and Itanium
+>   mangling is NAME+SIGNATURE only, file-independent — confirmed directly, Layer1's and Layer2's
+>   `int libAdd(int,int)` both mangle to `_Z6libAddii`. Sequential code's single, process-wide
+>   `_visited_call_keys`/`_visited_global_access_keys`/`_visited_usage_keys` make this safe (the
+>   first TU to define a colliding key is the only one ever walked with a real `current_key`; every
+>   later TU's same-key definition walks with `current_key` still unset, so its calls/global-accesses
+>   are silently dropped, never misattributed). A worker process's copies of those three sets start
+>   fresh, so two DIFFERENT workers could each "win" the same colliding key for their own different
+>   physical function, and naively unioning `call_graph`/`reverse_call_graph`/`global_access_reads`/
+>   `global_access_writes`/`field_access_reads`/`param_writes`/`function_return_expr`/`type_users`/
+>   `function_tokens` merged Layer2's twin's real calls and global reads/writes onto Layer1's
+>   surviving model entity (e.g. `Layer1.Sample-Core|Core|coreHelper` gained a phantom call to
+>   `Layer2.Lib|Lib|libSaturate`). Fixed by applying the SAME first-claim-wins gating used for
+>   `functions`, keyed off each registry's own `_visited_*_keys` set, to every one of these —
+>   a losing shard's contribution for an already-claimed key is discarded, not merged, exactly
+>   mirroring what the losing TU's walk produces sequentially (nothing).
+> - **Verified (not assumed):** ran `engine/parser.py` directly against `SampleCppProject`
+>   (`--model-scratch`, this sandbox's libclang works standalone even without sqlalchemy) and diffed
+>   every `model/*.json` file against a sequential (`maxWorkers=1`) baseline, three ways — Layer1-only
+>   at 4 workers, both layers at 8 workers, both layers at 2 workers (the collision above reproduces
+>   at 2 workers too). After the fix: `functions.json`, `edges.json`, `dataDictionary.json`,
+>   `globalVariables.json`, `hashes.json`, `tu_includes.json`, `override_pairs.json`,
+>   `address_taken.json`, `func_keys.json`, `metadata.json` (excl. `generatedAt`) are byte-identical
+>   across all three configurations — this is the core SWE.3/SWE.4 model.
+> - **Owed / known gaps:**
+>   (1) `entity_files.json` (incremental-engine bookkeeping, M4.3, not part of the core model) still
+>   picks up 2 extra `qn@Layer1`-style keys in the both-layers/multi-worker run that the sequential
+>   baseline doesn't have, even though `dataDictionary.json` itself matches exactly — root cause not
+>   fully isolated (the collision-key entries have no matching `data_dictionary` counterpart in
+>   either run, so it is not a naive replay-vs-live-call difference); narrow and additive (extra
+>   tracking entries, not wrong/missing data), left for whoever picks up `engine-flowchart`'s
+>   incremental-engine territory.
+>   (2) Pass 2 does NOT reuse pass 1's `_get_tu` TU cache: each worker process's cache dies with the
+>   process, and a fresh `ProcessPoolExecutor` round for pass 2 has no guaranteed affinity back to the
+>   worker that parsed a given file in pass 1 — so at `maxWorkers > 1` every file is parsed twice
+>   (once per pass) instead of CC-4a's once. Still a net win (2 parses spread over N processes beats 1
+>   parse on 1 process once N is large enough) but not the max available speedup; a persistent,
+>   shard-pinned worker pool would recover CC-4a's win on top of this — not implemented.
+>   (3) `tests/unit`/`tests/e2e` full-suite re-verification (this sandbox has no sqlalchemy, so
+>   `tests/conftest.py`'s session-scoped pipeline fixture can't run) is still owed on a machine that
+>   can run the whole suite, same caveat as CC-4 Phase 3 below.
+>   (4) The synthetic-from-vardecl `functions` path (address-taken registration tables like
+>   `static const fp_t table[] = {fn1, fn2}`) has NO `_visited_function_keys`-style dedup guard in
+>   sequential code either — every including TU re-triggers an unconditional
+>   `component_functions[comp].append(fk)` — so the ORIGINAL sequential code can already double-count
+>   this rare pattern across multiple TUs; the fan-out's merge collapses it to at most one append per
+>   shard that sees the key, which does not reproduce that pre-existing multiplicity. Not verified
+>   against a fixture that actually exercises it (`SampleCppProject`'s 4 address-taken registrations
+>   didn't trigger this path in the runs above).
+
+> Updated: 2026-09-11 (**CC-4 Phase 3 rendering fan-out landed; Phase 1 fan-out scoped but
+> deliberately NOT implemented [superseded — see 2026-09-11c above]**, per
+> `docs/production-redesign/07-llm-concurrency-scaling.md` §6.
+> CC-4 has two independent halves with very different risk profiles — user chose to land the safe
+> one now and scope, not implement, the risky one:
+> - **Phase 3 (done):** `views/flowcharts.py`'s PNG render loop (`render_dot_cached`, one Node +
+>   headless-Chromium subprocess per flowchart) and `views/unit_diagrams.py`'s PNG render loop
+>   (`render_mermaid_cached`, one `mmdc` subprocess per unit) now fan out through a
+>   `ThreadPoolExecutor` sized from new `render.maxConcurrency` (`core.config.render_max_concurrency`,
+>   env `RENDER_MAX_CONCURRENCY`, default 1). Threads, not processes: each render is a real
+>   subprocess call, so there is no GIL concern, and staying in-process keeps `ProgressReporter`
+>   (already lock-safe, confirmed) and ordinary file I/O in play with no IPC needed. Default 1 is a
+>   strict no-op — same sequential order and log lines as before CC-4, verified by code inspection
+>   (the `max_workers<=1` branch is the literal old loop body, unchanged) since the sandbox this was
+>   built in has no sqlalchemy installed and cannot run the full pipeline e2e suite; unit tests
+>   (`tests/unit/test_core_config.py::TestRenderMaxConcurrency`) and a targeted `--skip-pipeline`
+>   run were used instead — full e2e/snapshot re-verification is still owed on a machine that can
+>   run the whole suite.
+> - **Windows cache-write race found and fixed while implementing this** (measured, not assumed —
+>   a stress test hammering `render_dot_cached` from 40 threads on one cache key): both
+>   `render_dot_cached`/`render_mermaid_cached`'s populate-cache tmp file was PID-unique only (see
+>   `stores._write_json`'s convention), which guards a race between separate *processes* but not
+>   between *threads* sharing one PID — CC-4 is exactly the case that now calls these from many
+>   threads of one process. Fixed with a shared `utils._populate_render_cache()` helper: tmp name
+>   now includes `threading.get_ident()` too, AND skips the copy+replace entirely if another
+>   racer already populated the cache key (safe because the content-addressed key guarantees
+>   byte-identical content), AND removes its own orphaned tmp file if `os.replace()` still fails.
+>   That last case is real on Windows even with the skip-check: `os.replace()`/`MoveFileEx` is not
+>   atomic against a second concurrent replace of the *same destination* the way POSIX `rename()`
+>   is — two threads finishing at nearly the same instant can both attempt the replace and one gets
+>   `OSError` (WinError 5); before this fix the `except OSError: pass` swallowed it and left a
+>   litter `.tmp` file in `.dot_cache`/`.mmdc_cache` forever. Never corrupted output (the loser's
+>   content is byte-identical to the winner's), just leaked tmp files — but leaked ones would
+>   accumulate every run under real concurrency. Verified with a throwaway stress script (not
+>   committed): 40 threads racing one cache key, before-fix run left ~14 orphaned `.tmp` files,
+>   after-fix run left zero, across 5 repeated runs.
+> - **Phase 1 (NOT implemented, scoped in the plan doc's §6):** libclang parsing fan-out was judged
+>   too high-risk to rush in the same session — `engine/parser.py`'s pass 1 (`visit_definitions` +
+>   friends) mutates ~15 module-level registries (`functions`, `globals_data`, `call_graph`,
+>   `reverse_call_graph`, `component_functions`, `function_to_component`, `_visited_function_keys`,
+>   `_address_taken_in_body`, `_address_taken_at_file_scope`, `_override_pairs`, the `_diag_*`
+>   counters/lists, plus type/macro/usage/TU-include tracking from `visit_type_definitions`/
+>   `_collect_macro_defs`/`visit_usage`/`_capture_tu_includes`) built from `cindex.Cursor` objects
+>   that cannot cross a process boundary. A correct `ProcessPoolExecutor` fan-out needs every one of
+>   those to become a per-worker-local accumulator, returned as plain data and merged into the main
+>   process's registries in strict `source_files` order (reproducing today's first-definition-wins
+>   dedup exactly) — real design work with a high blast radius (a wrong merge order silently drops
+>   or misattributes model data) for a milestone the plan itself already measured as a *smaller* win
+>   than CC-1–CC-3 (Phase 1 is ~3.12s on the 184-file sample after CC-4a; it only matters at much
+>   larger codebase scale). Left as "not started" in the milestone tracker with this fuller design
+>   note; still needs a CC-1/CC-2-grade dedicated pass, same conclusion CC-4a's note already flagged.)
+
 > Updated: 2026-09-09 (**CC-2 landed — call sites actually parallelized**, per
 > `docs/production-redesign/07-llm-concurrency-scaling.md` §3. Every sequential `for` loop CC-1's
 > semaphore was built for now runs through a `ThreadPoolExecutor` sized from `llm.maxConcurrency`:

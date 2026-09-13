@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import json
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from collections import defaultdict
 
@@ -462,6 +463,20 @@ def layer_for_rel_file(rel_file: str) -> "str | None":
 # Cross-layer key collisions, reported once per name at the end of Phase 1.
 _dd_collisions: dict = {}
 
+# CC-4 §6.1: every call to _dd_store / _register_builtin_range, in call order.
+# A worker process (see _snapshot_pass1_diff) ships this log instead of its own
+# local data_dictionary/entity_hashes/entity_files/_type_keys snapshot, because
+# both functions' write rules read CURRENT dict state (a same-layer collision,
+# an existing non-primitive entry) that one shard alone cannot see -- two
+# different shards each defining the "same" bare qn under DIFFERENT layers
+# neither locally observes a collision, so a plain dict merge would silently
+# drop one layer's entry instead of creating the qn@layer split _dd_store would
+# have produced sequentially. The main process REPLAYS this log, in
+# source_files order, by calling the exact same functions again -- reusing
+# their existing logic instead of re-deriving it, so the result is provably
+# what a sequential run would have produced.
+_dd_events: list = []
+
 
 def _dd_store(qn: str, entry: dict, layer: "str | None", loc: dict) -> str:
     """Write a data-dictionary entry, keeping a colliding OTHER layer's entry alive.
@@ -478,6 +493,7 @@ def _dd_store(qn: str, entry: dict, layer: "str | None", loc: dict) -> str:
 
     Returns the key actually written.
     """
+    _dd_events.append(("store", qn, entry, layer, loc))
     entry["layer"] = layer
     existing = data_dictionary.get(qn)
     if existing is None or existing.get("layer") == layer:
@@ -1128,12 +1144,40 @@ def _register_builtin_range(ctype) -> None:
     rng = _range_from_clang_type(canon)
     if rng == "NA":
         return
+    _apply_builtin_range(name, rng)
+
+
+def _apply_builtin_range(name: str, rng: str) -> None:
+    """The plain-data core of _register_builtin_range, split out so CC-4 §6.1's
+    merge can replay it from a logged (name, rng) pair -- a clang Type/Cursor
+    does not survive a trip across a process boundary, but the two strings it
+    reduces to do. See _dd_events for why this must be replayed, not merged."""
+    _dd_events.append(("builtin_range", name, rng))
     existing = data_dictionary.get(name)
     if existing is not None and existing.get("kind") != "primitive":
         return  # never shadow a project type that happens to share the name
     # layer None: a builtin's width is a property of the target, not of a layer, so
     # every layer may answer from it. This is the "global" tier of the lookup.
     data_dictionary[name] = {"kind": "primitive", "range": rng, "layer": None}
+
+
+_type_hash_events: list = []
+
+
+def _apply_type_hash(qn: str, digest: str, is_definition: bool, kind: str) -> None:
+    """entity_hashes[qn] for a struct/class/enum/typedef -- same event-log-and-
+    replay treatment as _dd_store, for the same reason: "a definition wins over
+    a forward decl" (kind in {"struct", "enum"}) and "first seen wins, always"
+    (kind == "typedef") both read CURRENT entity_hashes state, which a lone
+    worker shard cannot see for a type whose decl and definition land in
+    different shards. hash_cursor() needs the live cindex.Cursor, so the digest
+    is computed by the caller (in-process) and only the resulting STRING is
+    logged/replayed here."""
+    _type_hash_events.append((qn, digest, is_definition, kind))
+    if kind == "typedef":
+        entity_hashes.setdefault(qn, digest)
+    elif is_definition or qn not in entity_hashes:
+        entity_hashes[qn] = digest
 
 
 def _typedef_underlying(cursor) -> str:
@@ -1268,8 +1312,9 @@ def visit_type_definitions(cursor):
             # defining one type share a hash (last definition wins), so a narrowed
             # parse can miss a change in the loser. Tracked as backlog SH-5.
             # Incremental (M1.2): type hash keyed by qn; a definition wins over a forward decl.
-            if cursor.is_definition() or qn not in entity_hashes:
-                entity_hashes[qn] = hash_cursor(cursor, comment=struct_entry.get("comment", ""))
+            _apply_type_hash(
+                qn, hash_cursor(cursor, comment=struct_entry.get("comment", "")),
+                cursor.is_definition(), "struct")
             _type_keys.add(qn)  # M1.2b: known project type (edges.json filter target)
             entity_files[qn] = rel_file  # M4.3: defining file for the narrowed-parse merge
             # Also add typedef entry when this struct participates in a 'typedef struct { ... } Name;' pattern.
@@ -1306,8 +1351,9 @@ def visit_type_definitions(cursor):
             enum_dict["comment"] = cmt
         _dd_store(qn, enum_dict, _layer, loc)
         # Incremental (M1.2): enum hash keyed by qn; a definition wins over a forward decl.
-        if cursor.is_definition() or qn not in entity_hashes:
-            entity_hashes[qn] = hash_cursor(cursor, comment=enum_dict.get("comment", ""))
+        _apply_type_hash(
+            qn, hash_cursor(cursor, comment=enum_dict.get("comment", "")),
+            cursor.is_definition(), "enum")
         _type_keys.add(qn)  # M1.2b
         entity_files[qn] = rel_file  # M4.3
 
@@ -1346,7 +1392,9 @@ def visit_type_definitions(cursor):
                 data_dictionary[key] = typedef_dict
             # Incremental (M1.2): typedef hash keyed by qn; don't clobber a struct/enum
             # definition's hash that already owns this qn (e.g. typedef of a named enum).
-            entity_hashes.setdefault(qn, hash_cursor(cursor, comment=typedef_dict.get("comment", "")))
+            _apply_type_hash(
+                qn, hash_cursor(cursor, comment=typedef_dict.get("comment", "")),
+                False, "typedef")
             _type_keys.add(qn)  # M1.2b
             entity_files[qn] = rel_file  # M4.3
 
@@ -2161,6 +2209,380 @@ def parse_calls_and_globals(path):
         pass
 
 
+# ---------------------------------------------------------------------------
+# CC-4 §6.1 -- Phase 1 parse fan-out. Worker PROCESSES (ProcessPoolExecutor)
+# instead of one sequential `for path in source_files:` loop. Gated by
+# core.config.parse_max_workers() (`clang.maxWorkers`, default 1); at the
+# default this whole block is unused and main() runs the original sequential
+# loops unchanged.
+#
+# Why a worker doesn't need any config handed to it: this module's ENTIRE
+# top-level setup (CLANG_ARGS, MODULE_BASE_PATH, _FILE_COMPONENT_MAP,
+# _LAYER_INCLUDE_ARGS, the module-level `index = cindex.Index.create()`, ...)
+# runs from sys.argv at IMPORT time (see the top of this file). A
+# ProcessPoolExecutor worker is a genuinely separate OS process that
+# re-imports parser.py from scratch, and Python's multiprocessing spawn
+# bootstrap forwards the parent's sys.argv to it -- verified empirically for
+# this change (see PROJECT_CONTEXT.md's CC-4 §6.1 entry) -- so every worker
+# rebuilds the identical module state independently, including its own
+# `cindex.Index`. That is exactly the doc's "each worker gets its own
+# cindex.Index, parses its assigned file(s) itself" requirement, for free.
+#
+# Why contiguous shards, not one task per file: merging N shard diffs in
+# shard-index order is exactly source_files order when shards are contiguous
+# slices, with no per-file bookkeeping needed. See _shard_files.
+#
+# Why pass 2 (parse_calls_and_globals) re-parses instead of reusing pass 1's
+# cached TU: CC-4a's _get_tu cache lives in the WORKER PROCESS that populated
+# it, and nothing guarantees a fresh ProcessPoolExecutor round hands a shard
+# back to the process that parsed it before (round-robin task assignment is
+# not pinned). So at maxWorkers > 1, each file is parsed twice (once per
+# pass) instead of CC-4a's once -- a real, deliberate trade: 2 parses spread
+# over N processes still beats 1 parse on 1 process once N is large enough,
+# but it is NOT the maximum available speedup. A persistent, shard-pinned
+# worker pool would recover CC-4a's win on top of this; scoped as a follow-up
+# in PROJECT_CONTEXT.md's CC-4 §6.1 entry, not implemented here.
+#
+# A second collision, found by stress-testing this against SampleCppProject's
+# two-layer fixture (Layer2 is a deliberate near-duplicate of Layer1, per its
+# README) before this was believed safe: get_function_key() returns
+# cursor.mangled_name, which Itanium mangling derives from NAME + SIGNATURE
+# ONLY -- a plain (non-namespaced) free function is not disambiguated by
+# which FILE defines it. Two layers' identically-named-and-signatured "twin"
+# functions (confirmed directly: SampleCppProject/Layer1/Sample/Lib/Lib.cpp's
+# and Layer2/Sample/Lib/Lib.cpp's `int libAdd(int, int)` both mangle to
+# `_Z6libAddii`) collide on ONE internal func_key. Sequential code's single,
+# process-wide `_visited_call_keys` / `_visited_global_access_keys` /
+# `_visited_usage_keys` make this SAFE (if silently lossy for the loser): the
+# first TU to define the colliding key is the only one ever walked with a
+# real `current_key` -- every later TU's same-key definition is walked with
+# whatever `current_key` was already in scope (None, at the top of a TU),
+# so `elif kind == CALL_EXPR and current_key:`-style guards simply never fire
+# for it, and its calls/global-accesses are dropped, not attributed to the
+# wrong function.
+#
+# A worker process's `_visited_call_keys` etc. start fresh and empty, so TWO
+# DIFFERENT workers can each independently "win" the same colliding key for
+# their OWN (different!) physical function, each producing a fully-populated,
+# internally-consistent call_graph/global_access entry for it -- and naively
+# unioning those two shards' diffs would merge Layer2's twin's real calls and
+# global accesses onto Layer1's surviving model entity. Fixed the same way as
+# `functions`: every registry gated by one of these three key sets is merged
+# with the SAME first-claim-in-source_files-order gating, using that
+# registry's OWN visited-key set as the arbiter of which shard's contribution
+# for a given func_key is kept -- a losing shard's contribution for an
+# already-claimed key is DISCARDED, not merged, exactly mirroring what the
+# losing TU's walk would have produced sequentially (nothing).
+# ---------------------------------------------------------------------------
+
+def _shard_files(files: list, n: int) -> list:
+    """Split `files` into <= n CONTIGUOUS, source_files-order-preserving shards.
+
+    Contiguous (not round-robin) is what lets the merge step process shards in
+    shard-index order and have that be identical to source_files order.
+    """
+    if n <= 1 or len(files) <= 1:
+        return [list(files)]
+    n = min(n, len(files))
+    shards = []
+    base, extra = divmod(len(files), n)
+    start = 0
+    for i in range(n):
+        size = base + (1 if i < extra else 0)
+        if size:
+            shards.append(files[start:start + size])
+            start += size
+    return shards
+
+
+def _snapshot_pass1_diff() -> dict:
+    """Package this process's pass-1 registries as plain, picklable data for
+    the main process to merge. Registries that need ORDER-SENSITIVE merge
+    (first file in source_files order to define a function wins -- mirrors
+    `_visited_function_keys`) are sent as-is (`functions`,
+    `function_to_component`, `override_pairs`) and merged with explicit
+    first-claim gating in _merge_pass1_diff. data_dictionary / entity_hashes
+    for TYPES are sent as ORDERED EVENT LOGS (`dd_events`, `type_hash_events`)
+    rather than final dict state, because their write rules (a same-layer
+    collision, "a definition wins over a forward decl") read CURRENT dict
+    state that one shard alone cannot see -- see _dd_events's docstring.
+    Everything else here is idempotent content keyed by a physical file:line
+    (or, for `entity_files`, unconditionally overwritten with no guard at
+    all) -- any merge order reproduces the same result.
+    """
+    return {
+        "functions": dict(functions),
+        "visited_function_keys": set(_visited_function_keys),
+        "visited_usage_keys": set(_visited_usage_keys),
+        "function_to_component": dict(function_to_component),
+        "override_pairs": list(_override_pairs),
+        "address_taken_in_body": set(_address_taken_in_body),
+        "address_taken_at_file_scope": {k: set(v) for k, v in _address_taken_at_file_scope.items()},
+        "globals_data": dict(globals_data),
+        "dd_events": list(_dd_events),
+        "type_hash_events": list(_type_hash_events),
+        # Direct data_dictionary writes that bypass _dd_store: both key
+        # themselves as "typedef@<qn>:<relFile>:<line>", embedding THIS
+        # shard's own file+line, so they can never collide across shards
+        # (or even within one) -- safe as a plain dict, no event replay
+        # needed. See _maybe_add_typedef_for_struct and the equivalent
+        # already-disambiguated-against-an-enum branch in
+        # visit_type_definitions's TYPEDEF_DECL case.
+        "dd_unique": {k: v for k, v in data_dictionary.items() if k.startswith("typedef@")},
+        "entity_files": dict(entity_files),
+        "type_keys": set(_type_keys),
+        "type_users": {k: set(v) for k, v in type_users.items()},
+        "function_tokens": {k: set(v) for k, v in function_tokens.items()},
+        "tu_includes": dict(tu_includes),
+        "active_macro_lines": {k: set(v) for k, v in _active_macro_lines.items()},
+        "diag_counts": dict(_diag_counts),
+        "diag_drop_samples": {k: list(v) for k, v in _diag_drop_samples.items()},
+        "diag_tu_failures": list(_diag_tu_failures),
+        "diag_tu_errors": list(_diag_tu_errors),
+        "diag_tu_defs": dict(_diag_tu_defs),
+        "diag_decl_only": dict(_diag_decl_only),
+        "diag_unrecorded": list(_diag_unrecorded),
+    }
+
+
+def _merge_pass1_diff(diff: dict) -> None:
+    """Merge one shard's pass-1 diff into the main process's registries.
+
+    MUST be called for every shard in shard-index order (== source_files
+    order, since _shard_files produces contiguous slices) -- several of the
+    merges below (first-claim-wins, and the data_dictionary/entity_hashes
+    event replay) are only equivalent to a sequential run if applied in that
+    order.
+    """
+    won_this_shard = set()
+    for fk in diff["visited_function_keys"]:
+        if fk in _visited_function_keys:
+            continue  # an earlier shard's TU already defined this function
+        _visited_function_keys.add(fk)
+        won_this_shard.add(fk)
+        functions[fk] = diff["functions"][fk]
+        comp = diff["function_to_component"].get(fk)
+        if comp is not None and fk not in function_to_component:
+            function_to_component[fk] = comp
+            component_functions[comp].append(fk)
+    for fk, base_key in diff["override_pairs"]:
+        if fk in won_this_shard:
+            _override_pairs.append((fk, base_key))
+    # Synthetic-from-vardecl functions (address-taken registration tables,
+    # `_var_decl_should_record_as_function_not_global`): sequential code
+    # overwrites `functions[fk]` and appends to component_functions
+    # UNCONDITIONALLY on every including TU -- no _visited_function_keys-style
+    # dedup guard on this path at all. Content is idempotent (same
+    # cursor/location every time), so overwrite order is harmless; the
+    # duplicate-append multiplicity across DIFFERENT TUs/shards is NOT
+    # reproduced (collapsed to one append per shard that saw the key) -- a
+    # narrow, pre-existing-quirk-adjacent simplification. Flagged as owed in
+    # PROJECT_CONTEXT.md's CC-4 §6.1 entry.
+    for fk, entry in diff["functions"].items():
+        if fk in diff["visited_function_keys"]:
+            continue
+        functions[fk] = entry
+        comp = diff["function_to_component"].get(fk)
+        if comp is not None:
+            function_to_component[fk] = comp
+            component_functions[comp].append(fk)
+
+    globals_data.update(diff["globals_data"])
+    data_dictionary.update(diff["dd_unique"])
+    entity_files.update(diff["entity_files"])
+    _type_keys.update(diff["type_keys"])
+
+    # type_users / function_tokens are gated by _visited_usage_keys, which is
+    # susceptible to the SAME cross-shard func_key collision as `functions`
+    # (see the CC-4 §6.1 block comment above _shard_files) -- gate them the
+    # same way: only take a shard's contribution for a func_key it globally
+    # wins first claim to.
+    won_usage_this_shard = set()
+    for fk in diff["visited_usage_keys"]:
+        if fk in _visited_usage_keys:
+            continue
+        _visited_usage_keys.add(fk)
+        won_usage_this_shard.add(fk)
+    for qn, fks in diff["type_users"].items():
+        claimed = fks & won_usage_this_shard
+        if claimed:
+            type_users[qn] |= claimed
+    for fk, toks in diff["function_tokens"].items():
+        if fk in won_usage_this_shard:
+            function_tokens[fk] = toks
+
+    tu_includes.update(diff["tu_includes"])
+    _address_taken_in_body.update(diff["address_taken_in_body"])
+    for tgt, s in diff["address_taken_at_file_scope"].items():
+        _address_taken_at_file_scope[tgt] |= s
+    for k, s in diff["active_macro_lines"].items():
+        _active_macro_lines.setdefault(k, set())
+        _active_macro_lines[k] |= s
+
+    # data_dictionary / entity_hashes(types): replay through the SAME
+    # functions a sequential run would have called, so their
+    # current-state-dependent collision/precedence rules run once, correctly,
+    # against the (now cross-shard) merged state -- see _dd_events.
+    for event in diff["dd_events"]:
+        if event[0] == "store":
+            _, qn, entry, layer, loc = event
+            _dd_store(qn, entry, layer, loc)
+        else:  # "builtin_range"
+            _, name, rng = event
+            _apply_builtin_range(name, rng)
+    for qn, digest, is_definition, kind in diff["type_hash_events"]:
+        _apply_type_hash(qn, digest, is_definition, kind)
+
+    # Diagnostics -- concatenation order affects log readability only, never
+    # model output.
+    for reason, n in diff["diag_counts"].items():
+        _diag_counts[reason] += n
+    for reason, samples in diff["diag_drop_samples"].items():
+        bucket = _diag_drop_samples[reason]
+        for s in samples:
+            if len(bucket) >= _DIAG_SAMPLE_CAP:
+                break
+            bucket.append(s)
+    _diag_tu_failures.extend(diff["diag_tu_failures"])
+    _diag_tu_errors.extend(diff["diag_tu_errors"])
+    _diag_tu_defs.update(diff["diag_tu_defs"])
+    for fk, sample in diff["diag_decl_only"].items():
+        _diag_decl_only.setdefault(fk, sample)
+    _diag_unrecorded.extend(diff["diag_unrecorded"])
+
+
+def _snapshot_pass2_diff() -> dict:
+    return {
+        "call_graph": {k: list(v) for k, v in call_graph.items()},
+        "reverse_call_graph": {k: list(v) for k, v in reverse_call_graph.items()},
+        "global_access_reads": {k: set(v) for k, v in global_access_reads.items()},
+        "global_access_writes": {k: set(v) for k, v in global_access_writes.items()},
+        "field_access_reads": {k: set(v) for k, v in field_access_reads.items()},
+        "param_writes": {k: set(v) for k, v in param_writes.items()},
+        "function_return_expr": dict(function_return_expr),
+        "visited_call_keys": set(_visited_call_keys),
+        "visited_global_access_keys": set(_visited_global_access_keys),
+    }
+
+
+def _merge_pass2_diff(diff: dict) -> None:
+    """Merge one shard's pass-2 diff.
+
+    Every registry here is keyed by the CALLING function's func_key, and that
+    key is claimed under `_visited_call_keys` (call_graph, reverse_call_graph)
+    or `_visited_global_access_keys` (everything else) -- both susceptible to
+    the cross-shard func_key collision described in the CC-4 §6.1 block
+    comment above _shard_files (two layers' identically-signatured functions
+    can share one mangled-name func_key). MUST be called in shard-index order,
+    same as _merge_pass1_diff, so first-claim gating matches source_files
+    order.
+    """
+    won_calls_this_shard = set()
+    for fk in diff["visited_call_keys"]:
+        if fk in _visited_call_keys:
+            continue
+        _visited_call_keys.add(fk)
+        won_calls_this_shard.add(fk)
+    for caller, callees in diff["call_graph"].items():
+        if caller not in won_calls_this_shard:
+            continue
+        lst = call_graph[caller]
+        for callee in callees:
+            if callee not in lst:
+                lst.append(callee)
+    for callee, callers in diff["reverse_call_graph"].items():
+        lst = reverse_call_graph[callee]
+        for caller in callers:
+            # Keep this (callee, caller) edge only if THIS shard is the one
+            # that authoritatively walked `caller` -- reverse_call_graph is
+            # indexed by callee, but the claim is on the caller's func_key.
+            if caller in won_calls_this_shard and caller not in lst:
+                lst.append(caller)
+
+    won_ga_this_shard = set()
+    for fk in diff["visited_global_access_keys"]:
+        if fk in _visited_global_access_keys:
+            continue
+        _visited_global_access_keys.add(fk)
+        won_ga_this_shard.add(fk)
+    for fk, s in diff["global_access_reads"].items():
+        if fk in won_ga_this_shard:
+            global_access_reads[fk] |= s
+    for fk, s in diff["global_access_writes"].items():
+        if fk in won_ga_this_shard:
+            global_access_writes[fk] |= s
+    for fk, s in diff["field_access_reads"].items():
+        if fk in won_ga_this_shard:
+            field_access_reads[fk] |= s
+    for fk, s in diff["param_writes"].items():
+        if fk in won_ga_this_shard:
+            param_writes[fk] |= s
+    for fk, expr in diff["function_return_expr"].items():
+        if fk in won_ga_this_shard:
+            function_return_expr.setdefault(fk, expr)
+
+
+def _pass1_shard_worker(shard_files: list) -> dict:
+    """Runs in a worker PROCESS: parse_file() for every file in this shard,
+    against this process's own (freshly-imported, empty) module state, then
+    snapshot the result as a plain-data diff for the main process to merge."""
+    for path in shard_files:
+        parse_file(path)
+    return _snapshot_pass1_diff()
+
+
+def _pass2_shard_worker(shard_files: list, functions_snapshot: dict,
+                         globals_data_snapshot: dict, baseline_func_keys_snapshot: dict) -> dict:
+    """Runs in a worker PROCESS: install the main process's fully-merged
+    pass-1 `functions`/`globals_data` (visit_calls/visit_global_access read
+    these as module globals), then parse_calls_and_globals() for every file
+    in this shard."""
+    global functions, globals_data, _baseline_func_keys
+    functions = functions_snapshot
+    globals_data = globals_data_snapshot
+    _baseline_func_keys = baseline_func_keys_snapshot
+    for path in shard_files:
+        parse_calls_and_globals(path)
+    return _snapshot_pass2_diff()
+
+
+def run_pass1_fanned_out(source_files: list, n_workers: int, progress=None) -> None:
+    """Sharded, multi-process replacement for `for path in source_files:
+    parse_file(path)`. Same observable result (model/*.json), different
+    wall-clock shape -- see the CC-4 §6.1 block comment above."""
+    shards = _shard_files(source_files, n_workers)
+    with ProcessPoolExecutor(max_workers=len(shards)) as ex:
+        for shard, diff in zip(shards, ex.map(_pass1_shard_worker, shards)):
+            _merge_pass1_diff(diff)
+            if progress is not None:
+                # A whole shard's files land at once (one merge per completed
+                # shard, not one per file) -- the counter still ends at the
+                # right total, it just advances in bursts instead of a smooth
+                # per-file trickle.
+                for _ in shard:
+                    progress.step()
+
+
+def run_pass2_fanned_out(source_files: list, n_workers: int, progress=None) -> None:
+    """Sharded, multi-process replacement for `for path in source_files:
+    parse_calls_and_globals(path)`. Must run after run_pass1_fanned_out has
+    fully merged `functions`/`globals_data` in the main process."""
+    shards = _shard_files(source_files, n_workers)
+    functions_snapshot = dict(functions)
+    globals_data_snapshot = dict(globals_data)
+    baseline_snapshot = dict(_baseline_func_keys)
+    with ProcessPoolExecutor(max_workers=len(shards)) as ex:
+        futures = [
+            ex.submit(_pass2_shard_worker, shard, functions_snapshot, globals_data_snapshot, baseline_snapshot)
+            for shard in shards
+        ]
+        for shard, fut in zip(shards, futures):
+            _merge_pass2_diff(fut.result())
+            if progress is not None:
+                for _ in shard:
+                    progress.step()
+
+
 def build_metadata():
     base_path = os.path.abspath(MODULE_BASE_PATH)
     # In-body address-takes become ordinary call edges (`pFunc = &helper` => taker -> helper),
@@ -2882,19 +3304,32 @@ def main():
                              f"({type(_exc).__name__}: {_exc}) — cross-TU edges may be missing")
     total = len(source_files)
 
+    # CC-4 §6.1: worker-process fan-out for the libclang parse. Default 1 is a
+    # strict no-op -- the two loops below are byte-for-byte the original
+    # sequential code, untouched.
+    from core.config import parse_max_workers as _parse_max_workers
+    n_workers = _parse_max_workers(_config)
+
     p1 = ProgressReporter("parser:parse", total=total, logger=plog)
     p1.start(f"parsing {total} files")
-    for path in source_files:
-        p1.step()
-        parse_file(path)
+    if n_workers > 1 and total > 1:
+        plog.info(f"parse fan-out: {min(n_workers, total)} worker process(es) for {total} file(s)")
+        run_pass1_fanned_out(source_files, n_workers, progress=p1)
+    else:
+        for path in source_files:
+            p1.step()
+            parse_file(path)
     p1.done()
 
     # One parse serves both call edges and global access (see parse_calls_and_globals).
     p2 = ProgressReporter("parser:calls+globals", total=total, logger=plog)
     p2.start(f"collecting calls + global access ({total} files)")
-    for path in source_files:
-        p2.step()
-        parse_calls_and_globals(path)
+    if n_workers > 1 and total > 1:
+        run_pass2_fanned_out(source_files, n_workers, progress=p2)
+    else:
+        for path in source_files:
+            p2.step()
+            parse_calls_and_globals(path)
     p2.done()
     _tu_cache.clear()  # both passes are done with these TUs; free them before build_metadata
 

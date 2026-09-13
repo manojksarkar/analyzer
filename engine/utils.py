@@ -3,6 +3,7 @@ import contextlib
 import os
 import re
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 import platform
@@ -147,6 +148,43 @@ def _run_mmdc(project_root: str, mermaid: str, png_path: str, *,
             pass
 
 
+def _populate_render_cache(cache_dir: str, cache_png: str, png_path: str) -> None:
+    """Copy a freshly rendered `png_path` into the content-addressed cache at
+    `cache_png` (tmp + os.replace, best-effort — a failure here never fails the
+    render itself, `png_path` already has the result).
+
+    Thread-unique tmp name (CC-4): PID alone (see stores._write_json) only
+    guards a race between separate PROCESSES; render_dot_cached/
+    render_mermaid_cached are now also called concurrently from multiple
+    THREADS of the same process (views/flowcharts.py, unit_diagrams.py), which
+    share one PID, so the thread id is required too.
+
+    Skip-if-already-cached + clean-up-on-failure (found by stress-testing CC-4
+    on Windows, not assumed): the content-addressed key guarantees every racing
+    thread would write byte-identical content, so if another thread already
+    populated this key there is nothing to do. Without the upfront check, two
+    threads finishing at nearly the same moment both attempt
+    `os.replace(tmp, cache_png)` to the SAME destination — unlike POSIX rename,
+    Windows' MoveFileEx is not atomic against a second concurrent replace of the
+    same destination and can raise WinError 5 (access denied); the loser's tmp
+    file must be removed explicitly or it litters the cache directory forever
+    (the render itself is otherwise correct: the winner's content is
+    byte-identical, so no output is corrupted, just orphaned tmp files pile up).
+    """
+    import shutil
+    if os.path.isfile(cache_png):
+        return
+    tmp = f"{cache_png}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        shutil.copyfile(png_path, tmp)
+        os.replace(tmp, cache_png)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
 def render_mermaid_cached(project_root: str, mermaid: str, png_path: str, *,
                           scale=None, puppeteer: bool = True, timeout: int = 90) -> bool:
     """Render `mermaid` to png_path, reusing a content-addressed PNG cache so an identical
@@ -163,12 +201,10 @@ def render_mermaid_cached(project_root: str, mermaid: str, png_path: str, *,
         except OSError:
             pass                                       # fall through to a real render
     ok = _run_mmdc(project_root, mermaid, png_path, scale=scale, puppeteer=puppeteer, timeout=timeout)
-    if ok:                                             # populate the cache (best-effort, atomic)
+    if ok:
         try:
             os.makedirs(cache_dir, exist_ok=True)
-            tmp = f"{cache_png}.{os.getpid()}.tmp"   # PID-unique: see stores._write_json
-            shutil.copyfile(png_path, tmp)
-            os.replace(tmp, cache_png)
+            _populate_render_cache(cache_dir, cache_png, png_path)
         except OSError:
             pass
     return ok
@@ -249,12 +285,10 @@ def render_dot_cached(project_root: str, dot: str, png_path: str, *,
         except OSError:
             pass                                       # fall through to a real render
     ok = _run_dot_render(project_root, dot, png_path, scale=scale, timeout=timeout)
-    if ok:                                             # populate the cache (best-effort, atomic)
+    if ok:
         try:
             os.makedirs(cache_dir, exist_ok=True)
-            tmp = f"{cache_png}.{os.getpid()}.tmp"   # PID-unique: see stores._write_json
-            shutil.copyfile(png_path, tmp)
-            os.replace(tmp, cache_png)
+            _populate_render_cache(cache_dir, cache_png, png_path)
         except OSError:
             pass
     return ok

@@ -7,8 +7,11 @@ import shutil
 import subprocess
 import sys
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from .registry import register
 from core.macro_input import args_for_scope, normalize_scoped_args
+from core.config import render_max_concurrency
 from utils import KEY_SEP, log, safe_filename, os_type, render_dot_cached
 from core.subprocess_util import log_stderr_tail, run_streaming
 
@@ -1517,12 +1520,10 @@ def run(model, output_dir, model_dir, config):
 
     progress.start()
 
-    for i, (unit_name, func_name, flowchart) in enumerate(items, 1):
-        progress.step(label=f"{unit_name}/{func_name}")
-
+    def _render_one(item):
+        unit_name, func_name, flowchart = item
         png_name = f"{unit_name}_{safe_filename(func_name)}.png"
         png_path = os.path.abspath(os.path.join(out_dir, png_name))
-
         try:
             # M-A: content-addressed cache -> an identical flowchart (e.g. carried across
             # a revert / shared between versions) skips the render entirely. scale=2
@@ -1535,24 +1536,42 @@ def run(model, output_dir, model_dir, config):
                     # Split oversize flowcharts into per-page slices so Word
                     # doesn't clip them.
                     _maybe_slice_tall_png(png_path)
-
-            else:
-                failed += 1
-
-                log(
-                    "graphviz render failed for %s/%s" % (unit_name, func_name),
-                    component="flowcharts",
-                    err=True,
-                )
-
+                return unit_name, func_name, True, None
+            return unit_name, func_name, False, None
         except Exception as e:
-            failed += 1
+            return unit_name, func_name, False, e
 
+    def _record(unit_name, func_name, ok, err):
+        nonlocal failed
+        progress.step(label=f"{unit_name}/{func_name}")
+        if ok:
+            return
+        failed += 1
+        if err is not None:
             log(
-                "flowchart error for %s/%s: %s"
-                % (unit_name, func_name, e),
+                "flowchart error for %s/%s: %s" % (unit_name, func_name, err),
                 component="flowcharts",
                 err=True,
             )
+        else:
+            log(
+                "graphviz render failed for %s/%s" % (unit_name, func_name),
+                component="flowcharts",
+                err=True,
+            )
+
+    # CC-4: each render shells out to a real subprocess (Node + headless Chromium
+    # rendering the DOT), so a thread pool parallelizes genuine wall-clock work with
+    # no GIL concern. render.maxConcurrency defaults to 1 -> the branch below is a
+    # strict no-op (same sequential order/log shape as before CC-4) unless configured.
+    max_workers = render_max_concurrency(config)
+    if max_workers <= 1:
+        for item in items:
+            _record(*_render_one(item))
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(_render_one, item) for item in items]
+            for future in as_completed(futures):
+                _record(*future.result())
 
     progress.done(summary=("%d PNGs rendered%s" % (total, (" (%d failed)" % failed) if failed else "")) if total else None)

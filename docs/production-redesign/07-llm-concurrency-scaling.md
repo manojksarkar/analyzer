@@ -46,7 +46,7 @@ in effective wall-clock per LLM call.
 | **CC-2** | Parallelize call sites (wave-based) | Phase 2 descriptions/behaviour-names/summaries, Phase 3 flowchart labeling | **done** (2026-09-09) |
 | **CC-3** | Self-hosted inference tier, containerized | vLLM/TGI container(s), multi-replica K8s Deployment + HPA | not started |
 | **CC-4a** | De-duplicate Phase 1's redundant re-parse | `engine/parser.py` — parse each TU once, reuse across all 3 passes | **done** (2026-09-08) |
-| **CC-4** | Containerized CPU-bound fan-out | Phase 1 parsing, Phase 3 `mmdc` rendering — process pool or worker pods | not started |
+| **CC-4** | Containerized CPU-bound fan-out | Phase 1 parsing, Phase 3 rendering — process pool or worker pods | **Phase 3 done (2026-09-11); Phase 1 done (2026-09-11), 2 known gaps — see §6.1** |
 | **CC-5** | Orchestrator-level multi-container scale-out | Phase/shard-per-pod scatter-gather (K8s Jobs), replaces single-host subprocess model | not started |
 | **CC-6** | Call-volume reduction | Prompt batching, two-pass gating, cache-hit verification | not started |
 
@@ -336,44 +336,131 @@ Measured on `SampleCppProject` (184 files / 296 functions): Phase 1 wall time **
 
 ## 6. CC-4 — Containerized fan-out for CPU-bound phases
 
-Smaller win than CC-1–CC-3 but real at layer scale (184 files, dozens of units), and it's where
-"multiple container spawning" applies a second time, independent of the LLM tier:
+**Status: both halves done — Phase 3 (diagram rendering) 2026-09-11, Phase 1 (libclang parsing)
+2026-09-11.** The two halves had very different risk profiles: Phase 3 was a self-contained, bounded
+change (thread pool over an existing subprocess call, caches already atomic per the §2.2 audit modulo
+one thread-safety gap found and fixed while implementing it — see §6.2); Phase 1 needed redesigning
+how `parser.py`'s pass 1 AND pass 2 mutate ~20 module-level registries built from unpicklable
+`cindex.Cursor` objects, with a determinism contract genuinely at risk if the merge order was wrong
+— stress-testing against the two-layer sample fixture surfaced a real cross-layer data-leak bug
+before this landed (see §6.1). Full detail of both: `PROJECT_CONTEXT.md`'s `> Updated: 2026-09-11c`
+(Phase 1) and `> Updated: 2026-09-11` (Phase 3) entries.
 
-- **Phase 1 (libclang parsing) — NOT embarrassingly parallel as originally scoped here.**
-  Correcting the claim below (measured while implementing CC-4a, not assumed): `parser.py`'s three
-  passes share plenty of mutable module state across files, not none. Two concrete blockers a
-  `ProcessPoolExecutor(max_workers=os.cpu_count())` over the TU list must solve, not paper over:
-  - `visit_calls` resolves a call's callee against the **fully-populated** `functions` dict
-    (`called_key not in functions` at parser.py:1773) — it must see every file's definitions,
-    not just its own worker's, or cross-TU calls to a function defined in a file processed by a
-    different worker silently drop from the call graph.
-  - `visit_definitions` dedups a header-defined function seen through multiple TUs via a shared
-    `_visited_function_keys` set (parser.py:1462) — first file to visit it wins, deterministically,
-    because `source_files` is processed in a fixed order. Split across worker processes (separate
-    address spaces), every worker would independently "first-see" and re-record the same header
-    function, and the merge order into the main process's `functions` dict would decide the
-    winner — silently, unless the merge explicitly replays `source_files` order.
-  - Net: a worker can't just mutate `functions`/`call_graph`/`_visited_function_keys`/etc. in
-    place — each worker must return a per-file result (the CC-4a-cached TU makes this natural:
-    parse once per file, run the pass-1 visitors, return the diff), and the main process merges
-    all workers' results **in `source_files` order** before pass 2 (calls) starts, exactly
-    reproducing today's single-process semantics. This is real design work, not a drop-in
-    `ProcessPoolExecutor`; scope it properly before starting, in the same spirit as CC-1/CC-2's
-    detailed designs (§2, §3) rather than CC-4's one-paragraph sketch.
-  - At the container level: if Phase 1 is ever split out as its own K8s Job (see CC-5), it can fan
-    out as N pods each parsing a shard of the TU list, results merged before Phase 2 starts — same
-    merge-in-order requirement applies across pods, not just in-process workers.
-- **Phase 3 diagram rendering (`mmdc`):** each invocation spawns a headless-Chromium subprocess
-  (60 s timeout per diagram per `PROJECT_CONTEXT.md` §12) — CPU/memory-heavy and currently
-  sequential. Because it's a real subprocess (not a Python-GIL-bound call), a
-  `ProcessPoolExecutor` or even a plain worker-thread pool calling `subprocess.run` concurrently
-  both work; containerizing this as its own small worker Deployment (`aspice-mmdc-worker`, N
-  replicas, no GPU) isolates its memory/CPU footprint from the main analyzer process and lets it
-  scale independently of the LLM tier — relevant because `mmdc` load and LLM load don't move
-  together (a `--no-llm` timing run per `04-incremental-changes-implementation.md` §12 M-D would
-  still want fast diagram rendering).
-- Both are gated behind the CC-1/CC-2 thread-safety audit item on `.mmdc_cache/` write atomicity
-  (§2.2) — fix that first if it isn't already atomic.
+Smaller win than CC-1–CC-3 but real at layer scale (184 files, dozens of units), and it's where
+"multiple container spawning" applies a second time, independent of the LLM tier.
+
+### 6.1 Phase 1 — libclang parsing fan-out
+
+**Status: done (2026-09-11).** Implemented via `clang.maxWorkers` (`core.config.parse_max_workers`,
+env `CLANG_MAX_WORKERS`, default 1 = strict no-op) — a `ProcessPoolExecutor` over contiguous shards
+of `source_files` for both `parse_file` (pass 1) and `parse_calls_and_globals` (pass 2), each worker
+a real OS process re-importing `parser.py` (multiprocessing's spawn forwards `sys.argv`, so no config
+needs passing in). Order-sensitive registries (`data_dictionary`/`entity_hashes` via an event-log
+replay through the original `_dd_store`/`_apply_type_hash`; `functions` and everything gated by a
+`_visited_*_keys` set via first-claim gating) are merged in shard order. Verified byte-identical
+against a sequential run on `SampleCppProject` across three configurations (single-layer/4-workers,
+both-layers/8-workers, both-layers/2-workers) for every core model file. Full design, the mangled-
+name cross-layer collision bug this stress-testing found and fixed (two layers' identically-
+signatured functions share one internal func_key; a naive per-shard union merge leaked one layer's
+calls/global-accesses onto the other's surviving entity), and the remaining known gaps (an
+`entity_files.json` bookkeeping discrepancy in the multi-layer case; pass 2 not reusing pass 1's TU
+cache, so `maxWorkers > 1` re-parses each file twice instead of CC-4a's once; full `tests/e2e`
+re-verification still owed on a machine with sqlalchemy) are in `PROJECT_CONTEXT.md`'s
+`> Updated: 2026-09-11c` entry.
+
+The rest of this section is kept as the original design note — the shape it describes is what got
+built, including the risk this section itself first surfaced (**not embarrassingly parallel as
+originally scoped**): Correcting the claim that used to be
+here (measured while implementing CC-4a, not assumed): `parser.py`'s three passes share plenty of
+mutable module state across files, not none. A `ProcessPoolExecutor(max_workers=os.cpu_count())`
+over the TU list must solve two concrete blockers, not paper over them:
+
+- `visit_calls` resolves a call's callee against the **fully-populated** `functions` dict
+  (`called_key not in functions` at parser.py:1773) — it must see every file's definitions, not
+  just its own worker's, or cross-TU calls to a function defined in a file processed by a
+  different worker silently drop from the call graph.
+- `visit_definitions` dedups a header-defined function seen through multiple TUs via a shared
+  `_visited_function_keys` set (parser.py:1540ish) — first file to visit it wins, deterministically,
+  because `source_files` is processed in a fixed order. Split across worker processes (separate
+  address spaces), every worker would independently "first-see" and re-record the same header
+  function, and the merge order into the main process's `functions` dict would decide the winner —
+  silently, unless the merge explicitly replays `source_files` order.
+
+**The full set of module-level registries a worker must NOT mutate in place**, verified directly
+against `parser.py` (not just the two named above — every one of these is written during
+`visit_definitions`/`visit_type_definitions`/`visit_usage`/`_collect_macro_defs`/
+`_capture_tu_includes`, all of which run inside pass 1's per-file loop): `functions`,
+`globals_data`, `call_graph`, `reverse_call_graph`, `component_functions`, `function_to_component`,
+`entity_hashes`, `entity_files`, `_visited_function_keys`, `_visited_usage_keys`,
+`_address_taken_in_body`, `_address_taken_at_file_scope`, `_override_pairs`,
+`function_return_expr`, plus the `_diag_*` counters/lists/dicts used for the Phase 1 parse summary
+(`_diag_counts`, `_diag_drop_samples`, `_diag_tu_failures`, `_diag_tu_errors`, `_diag_tu_defs`,
+`_diag_decl_only`, `_diag_unrecorded`, `_diag_recorded_names`), and whatever `visit_type_definitions`/
+`_collect_macro_defs`/`_capture_tu_includes` accumulate for type registries, macro-branch tracking,
+and the incremental engine's `TU_INCLUDES`. None of these can be shared across process boundaries
+(they're populated from `cindex.Cursor` objects tied to one process's libclang `Index`), and several
+have the same "first file in `source_files` order wins" dedup semantics as `_visited_function_keys`.
+
+**The shape of a correct fix:**
+
+- Each worker gets its own `cindex.Index`, parses its assigned file(s) itself (the CC-4a `_get_tu`
+  cache is per-process anyway, so this doesn't lose CC-4a's win — it just means N processes each
+  pay the parse cost for their own shard instead of one process paying it for all files serially),
+  and runs the pass-1 visitors against **worker-local copies** of every registry above.
+- The worker returns a plain-data diff (dicts/lists/sets, not cursors) — not the registries
+  themselves, since two workers may both claim the same header-defined key and only one "wins".
+- The main process merges every worker's diff **strictly in `source_files` order**, applying the
+  exact same first-claim-wins rule `_visited_function_keys` (and friends) apply today, before pass 2
+  (`parse_calls_and_globals`, which needs the fully-merged `functions`/`globals_data`) starts.
+- This is real design work on par with CC-1/CC-2's detailed designs (§2, §3), not a drop-in
+  `ProcessPoolExecutor` — budget a dedicated pass for it, including byte-identical verification
+  against `SampleCppProject` before/after (the same bar CC-4a held itself to: diffed every
+  `model/*.json` file, not just spot-checked).
+- At the container level: if Phase 1 is ever split out as its own K8s Job (see CC-5), it can fan
+  out as N pods each parsing a shard of the TU list, results merged before Phase 2 starts — same
+  merge-in-order requirement applies across pods, not just in-process workers.
+
+### 6.2 Phase 3 — diagram rendering fan-out (done, 2026-09-11)
+
+Both diagram renderers already run through a content-addressed PNG cache with a tmp+`os.replace`
+write (§2.2's atomicity concern) — `utils.render_dot_cached()` (flowchart PNGs, Graphviz DOT via
+Node) and `utils.render_mermaid_cached()` (unit-diagram PNGs, `mmdc`). Each render is a real
+subprocess call (Node + headless Chromium), so parallelizing with a plain `ThreadPoolExecutor` gets
+genuine wall-clock benefit with no GIL concern and no IPC needed to share `ProgressReporter` or
+write results back.
+
+- `views/flowcharts.py`'s per-function PNG render loop and `views/unit_diagrams.py`'s per-unit PNG
+  render loop both now fan out through a `ThreadPoolExecutor(max_workers=render.maxConcurrency)`.
+  New config key `render.maxConcurrency` (int ≥ 1, default 1, env `RENDER_MAX_CONCURRENCY`) —
+  `core.config.render_max_concurrency()`. Default 1 is a strict no-op: the `max_workers<=1` branch
+  is the original sequential loop body, unchanged.
+- **A real thread-safety gap surfaced by stress-testing this (not assumed):** the cache-populate tmp
+  filename in both renderers was PID-unique only (`f"{cache_png}.{os.getpid()}.tmp"`, per
+  `stores._write_json`'s convention) — that guards a race between separate *processes*, which is
+  all that existed before CC-4, but CC-4 now calls these from multiple *threads* of one process,
+  which share a PID. Fixed via a shared `utils._populate_render_cache()` helper: the tmp name now
+  also includes `threading.get_ident()`, the copy+replace is skipped entirely if another racer
+  already populated the same cache key (safe — content-addressed key means byte-identical content),
+  and a failed `os.replace()` cleans up its own leftover tmp file. That last case is real on Windows
+  even with the skip-check: `os.replace()`/`MoveFileEx` is not atomic against a second *concurrent*
+  replace of the same destination the way POSIX `rename()` is, so two threads finishing at nearly
+  the same instant can both attempt the replace and one raises `OSError` (WinError 5) — before the
+  fix that was swallowed by the existing `except OSError: pass` and left an orphaned `.tmp` file in
+  `.dot_cache`/`.mmdc_cache` forever (never corrupted output, just leaked disk). Verified with a
+  40-thread stress test hammering one cache key: before the fix, ~14 orphaned `.tmp` files per run;
+  after, zero across 5 repeated runs.
+- Not parallelized: `docx_exporter.py`'s two `render_mermaid_cached()` calls per component
+  (Static Design's container + header-dependency diagrams). Lower cardinality (per-component, not
+  per-function/unit) and tightly interleaved with sequential `python-docx` `Document` writes in the
+  same loop — decoupling "render all diagrams" from "assemble the document in order" is possible but
+  a separate, more invasive change to `docx_exporter.py`'s per-component loop; left as a follow-up.
+- Verification: `tests/unit/test_core_config.py::TestRenderMaxConcurrency` covers the config
+  validation; the default-1 no-op claim was checked by code inspection (the sequential branch is the
+  literal unmodified original loop) plus a standalone concurrency stress test, not by re-running the
+  full e2e/snapshot suite — the sandbox this was built in has no `sqlalchemy` installed, so the
+  session-scoped pipeline fixture in `tests/conftest.py` can't run there. **Owed:** a full
+  `tests/unit` + `tests/e2e` (including `--update-snapshots` diffing) run at `render.maxConcurrency`
+  1 vs. >1 on a machine that can run the whole suite, mirroring CC-2's byte-identical verification.
 
 ---
 

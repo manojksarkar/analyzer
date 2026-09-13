@@ -552,9 +552,53 @@ def exporter_config() -> Dict[str, Any]:
     return app_config().get("export") or {}
 
 
+def render_max_concurrency(config: Dict[str, Any]) -> int:
+    """Worker count for Phase 3's CPU/subprocess-bound diagram rendering
+    (flowchart PNGs via render_dot_cached, unit/component diagrams via
+    render_mermaid_cached) — CC-4. Each render shells out to a real
+    subprocess (Node + headless Chromium), so a thread pool parallelizes
+    real wall-clock work without any GIL concern.
+
+    `render.maxConcurrency`, env `RENDER_MAX_CONCURRENCY` overrides. Default
+    1 preserves today's fully-serial rendering for anyone who doesn't opt in
+    — same no-op-at-default contract as llm.maxConcurrency (CC-1).
+    """
+    raw = os.environ.get("RENDER_MAX_CONCURRENCY")
+    if raw is None or raw == "":
+        raw = (config.get("render") or {}).get("maxConcurrency", 1)
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"render.maxConcurrency must be an integer (got {raw!r})")
+    if val < 1:
+        raise ValueError(f"render.maxConcurrency must be >= 1 (got {val})")
+    return val
+
+
 def clang_config() -> Dict[str, Any]:
     """Return the `clang` block from the merged config (or {} if absent)."""
     return app_config().get("clang") or {}
+
+
+def parse_max_workers(config: Dict[str, Any]) -> int:
+    """Worker-process count for Phase 1's libclang parse fan-out (CC-4 §6.1):
+    parser.py's `parse_file`/`parse_calls_and_globals` loops over `source_files`
+    shard across a `ProcessPoolExecutor` instead of running sequentially.
+
+    `clang.maxWorkers`, env `CLANG_MAX_WORKERS` overrides. Default 1 preserves
+    today's fully-sequential parse — same no-op-at-default contract as
+    `render.maxConcurrency` (CC-4 Phase 3) and `llm.maxConcurrency` (CC-1).
+    """
+    raw = os.environ.get("CLANG_MAX_WORKERS")
+    if raw is None or raw == "":
+        raw = (config.get("clang") or {}).get("maxWorkers", 1)
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"clang.maxWorkers must be an integer (got {raw!r})")
+    if val < 1:
+        raise ValueError(f"clang.maxWorkers must be >= 1 (got {val})")
+    return val
 
 
 def layers_config() -> Dict[str, Any]:
