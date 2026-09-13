@@ -1,0 +1,158 @@
+# ASPICE Analyzer - Kubernetes Deployment with Persistent JSON Backend
+# Usage: kubectl apply -f k8s-deployment.yaml
+
+---
+# Namespace (optional, but recommended for isolation)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aspice
+  labels:
+    name: aspice
+
+---
+# PersistentVolumeClaim for API data (JSON backend)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aspice-api-data
+  namespace: aspice
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""  # Use default storage class
+  resources:
+    requests:
+      storage: 5Gi  # Adjust as needed
+
+---
+# ConfigMap for environment variables
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aspice-api-config
+  namespace: aspice
+data:
+  API_DB_BACKEND: "json"  # Use persistent JSON backend
+  JOB_MAX_CONCURRENCY: "2"
+  SUBPROCESS_TIMEOUT: "0"  # No timeout (adjust if needed)
+
+---
+# Service - Load balancer for the API
+apiVersion: v1
+kind: Service
+metadata:
+  name: aspice-api
+  namespace: aspice
+  labels:
+    app: aspice-api
+spec:
+  type: ClusterIP  # Use LoadBalancer if you need external access
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    app: aspice-api
+
+---
+# Deployment - 3 replicas with zero-downtime rolling updates
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aspice-api
+  namespace: aspice
+  labels:
+    app: aspice-api
+spec:
+  replicas: 3  # 3 instances for HA
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1         # 1 extra pod during update
+      maxUnavailable: 0   # Keep all pods available (zero-downtime)
+  selector:
+    matchLabels:
+      app: aspice-api
+  template:
+    metadata:
+      labels:
+        app: aspice-api
+    spec:
+      # Image pull secret for private registry
+      imagePullSecrets:
+        - name: regcred  # Create this with: kubectl create secret docker-registry regcred ...
+
+      # Pod disruption budget - protects against voluntary evictions
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - aspice-api
+                topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: aspice-api
+          image: REGISTRY_URL/aspice-api:latest  # Replace REGISTRY_URL with your private registry
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+
+          # Environment variables from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: aspice-api-config
+
+          # Liveness probe - restart pod if app dies
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          # Readiness probe - remove from load balancer if not ready
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+
+          # Resource requests/limits
+          resources:
+            requests:
+              cpu: 100m        # Minimum CPU
+              memory: 256Mi    # Minimum memory
+            limits:
+              cpu: 500m        # Maximum CPU
+              memory: 1Gi      # Maximum memory
+
+          # Graceful shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]  # Allow 5 sec for in-flight requests to drain
+
+          # Volume mounts for persistent data
+          volumeMounts:
+            - name: api-data
+              mountPath: /app/api/db/data
+
+      # Volumes
+      volumes:
+        - name: api-data
+          persistentVolumeClaim:
+            claimName: aspice-api-data
