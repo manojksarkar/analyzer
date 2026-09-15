@@ -624,6 +624,7 @@ class LlmClient:
                 {"role": "system", "content": system or ""},
                 {"role": "user", "content": user},
             ],
+            "stream": False,
             "temperature": self._temperature,
             "max_tokens": 2048,
         }
@@ -666,6 +667,7 @@ class LlmClient:
         payload = {
             "model": self._model,
             "messages": messages,
+            "stream": False,
             "temperature": temperature,
             "max_tokens": 2048,
         }
