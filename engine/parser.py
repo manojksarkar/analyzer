@@ -1765,12 +1765,25 @@ def _is_assign_op(cursor):
 
 
 def _is_inc_dec_op(cursor):
+    """True for `++x` / `x++` / `--x` / `x--`.
+
+    Both ends are tested because the operator sits on the side the FORM puts it:
+
+        ++g   tokens [++, g]   -> tokens[0]
+        g++   tokens [g, ++]   -> tokens[-1]
+
+    Testing only tokens[0] matched the prefix form alone, so every POSTFIX bump of a
+    global was missed -- and a missed write is not merely lost: the walker descends with
+    is_write=False and records the target as a READ, which flips the In/Out direction of
+    any void function whose whole job is `g_counter++`. Same class of bug, and the same
+    fix, as the token-index one _is_assign_op documents.
+    """
     if cursor.kind != cindex.CursorKind.UNARY_OPERATOR:
         return False
     try:
-        tokens = list(cursor.get_tokens())
+        tokens = [t.spelling for t in cursor.get_tokens()]
         if tokens:
-            return tokens[0].spelling in ("++", "--")
+            return tokens[0] in ("++", "--") or tokens[-1] in ("++", "--")
     except Exception:
         pass
     return False
