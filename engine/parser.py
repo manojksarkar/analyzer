@@ -1523,14 +1523,86 @@ def _walk_address_taken(cursor, on_hit, in_callee=False):
         _walk_address_taken(child, on_hit, still_callee)
 
 
+def _is_class_static_var(cursor) -> bool:
+    """True for a `static` DATA MEMBER -- `static int s_count;` inside a class or struct.
+
+    A non-static member is a FIELD_DECL, a different cursor kind, so the class-parent test
+    alone identifies these: every VAR_DECL parented on a class IS a static data member.
+    Deliberately NOT a storage_class check -- see _keep_class_static_cursor.
+    """
+    if cursor.kind != cindex.CursorKind.VAR_DECL:
+        return False
+    parent = cursor.semantic_parent
+    return bool(parent and parent.kind in _CLASS_PARENT_KINDS)
+
+
+def _keep_class_static_cursor(cursor) -> bool:
+    """Which of a static member's cursors is the one to record.
+
+    `static int Foo::s_count` reaches us TWICE: the in-class declaration and the
+    out-of-line `int Foo::s_count = 0;`. Both must not be recorded -- globals_data is keyed
+    by file:line, but the model key is `component|unit|qualifiedName` with no line, so a
+    header/source pair sharing a stem collapses to ONE key and the second entry silently
+    overwrites the first (and when the stems differ it becomes two interface rows in two
+    units for one variable).
+
+    Keep the definition: it owns the storage, sits in the defining unit and carries the
+    initial value. When the TU has no definition -- an in-class initialised
+    `static const int N = 5;`, or a header seen from a TU that is not the defining one --
+    keep the declaration, or the variable would vanish entirely; the cross-TU pair that
+    creates is collapsed later by _collapse_class_static_declarations.
+
+    NOTE: never gate this on `storage_class == STATIC`. The DECLARATION reports STATIC and
+    the DEFINITION reports NONE, so that test keeps exactly the wrong cursor.
+    """
+    if cursor.is_definition():
+        return True
+    try:
+        return cursor.get_definition() is None
+    except Exception:
+        return True
+
+
+_ACCESS_TO_VISIBILITY = {"PUBLIC": "public", "PROTECTED": "protected", "PRIVATE": "private"}
+
+
+def _global_visibility(cursor) -> str:
+    """Visibility of a global: the source PRIVATE/PUBLIC/PROTECTED annotation, else -- for a
+    static data member only -- the C++ access specifier.
+
+    The annotation wins wherever it exists, so an explicitly marked declaration keeps saying
+    what it says and no file-scope global changes meaning. C++ access is a real visibility
+    fact the text scan cannot see (it matches the project's macros, not the `private:`
+    label): a private static member is unreachable from any other unit, so it must not be
+    published as an interface.
+    """
+    vis = _detect_visibility(cursor.location.file.name, cursor.location.line)
+    if vis != "default" or not _is_class_static_var(cursor):
+        return vis
+    try:
+        return _ACCESS_TO_VISIBILITY.get(cursor.access_specifier.name, "default")
+    except Exception:
+        return "default"
+
+
 def visit_definitions(cursor):
     is_function = cursor.kind in (cindex.CursorKind.FUNCTION_DECL, cindex.CursorKind.CXX_METHOD)
+    # A static data member is shared, program-lifetime storage under a class's name, and any
+    # unit holding the header can reach `Foo::s_count` -- the same thing that makes a
+    # file-scope global an interface. Clang parents it on the CLASS, so the
+    # TRANSLATION_UNIT/NAMESPACE test dropped it three ways at once: out of the variable
+    # list, out of the read/write sets behind the In/Out direction, and out of every SWE.4
+    # precondition. C++ `private` members are still recorded here -- the direction and the
+    # test specs need them; the interface TABLE is what filters them, on `visibility`.
     is_global_var = (
         cursor.kind == cindex.CursorKind.VAR_DECL
         and cursor.location.file
         and is_project_file(cursor.location.file.name)
         and cursor.semantic_parent
-        and cursor.semantic_parent.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE)
+        and (
+            cursor.semantic_parent.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE)
+            or (_is_class_static_var(cursor) and _keep_class_static_cursor(cursor))
+        )
     )
 
     if is_function and cursor.is_definition() and cursor.location.file and is_project_file(cursor.location.file.name):
@@ -1685,9 +1757,14 @@ def visit_definitions(cursor):
                 "className": get_class_scope(cursor),
                 "componentName": get_component_name(cursor.location.file.name),
                 "type": cursor.type.spelling if cursor.type else "",
-                "visibility": _detect_visibility(cursor.location.file.name, cursor.location.line),
+                "visibility": _global_visibility(cursor),
                 "_sourceHash": hash_cursor(cursor),
             }
+            if _is_class_static_var(cursor):
+                # Read by _collapse_class_static_declarations only; stripped from the model
+                # entry below, which is built field by field.
+                globals_data[var_id]["_classStatic"] = True
+                globals_data[var_id]["_isDefinition"] = bool(cursor.is_definition())
             if value_str:
                 globals_data[var_id]["value"] = value_str
 
@@ -1897,7 +1974,14 @@ def visit_global_access(cursor, current_key=None, is_write=False, is_compound=Fa
                 param_writes[current_key].add(ref.spelling)
         if ref and ref.kind == cindex.CursorKind.VAR_DECL:
             par = ref.semantic_parent
-            if par and par.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE):
+            # Same widening as the is_global_var gate, and it has to be the same or the
+            # variable is recorded while every read and write of it is dropped -- which
+            # leaves `Foo::s_count++` reading as "accesses no globals".
+            # `referenced` resolves to the DEFINITION when the TU has one and to the
+            # declaration otherwise, which is exactly the cursor _keep_class_static_cursor
+            # recorded, so var_id lines up without further canonicalisation here.
+            if par and (par.kind in (cindex.CursorKind.TRANSLATION_UNIT, cindex.CursorKind.NAMESPACE)
+                        or par.kind in _CLASS_PARENT_KINDS):
                 if ref.location.file and is_project_file(ref.location.file.name):
                     var_id = f"{ref.location.file.name}:{ref.location.line}"
                     if var_id in globals_data:
@@ -2108,6 +2192,49 @@ def parse_file(path):
     _log.debug("TU %s: ok, %d def(s), %d clang error(s)", rel, n_defs, n_err)
 
 
+def _collapse_class_static_declarations():
+    """One static data member, one entry -- across translation units.
+
+    `static int Foo::s_count` is declared in a header and defined in ONE .cpp. Every TU that
+    includes the header but is not the defining one records the DECLARATION (its own
+    file:line, since clang can see no definition there), while the defining TU records the
+    DEFINITION. Left alone that is one variable split into two model entries: two interface
+    rows when the two files' stems differ, a silent overwrite when they match, and either way
+    the reads and writes divided between the halves -- so a writer can land on the entry that
+    records no writes and come out `Out: accesses no globals`, the exact bug this task fixes.
+
+    So: when a definition was seen anywhere in the run, drop the declaration-only entries for
+    that qualified name and repoint the access sets at the definition. A member never defined
+    in the parsed scope (or an in-class initialised `static const int N = 5;`) has no
+    definition to collapse onto and keeps its declaration entry.
+    """
+    defs = {}
+    for vid in sorted(globals_data):
+        g = globals_data[vid]
+        if g.get("_classStatic") and g.get("_isDefinition"):
+            defs[g["qualifiedName"]] = vid
+    if not defs:
+        return
+    redirect = {}
+    for vid in sorted(globals_data):
+        g = globals_data[vid]
+        if not g.get("_classStatic") or g.get("_isDefinition"):
+            continue
+        target = defs.get(g["qualifiedName"])
+        if target and target != vid:
+            redirect[vid] = target
+    if not redirect:
+        return
+    for vid in redirect:
+        globals_data.pop(vid, None)
+    for access_map in (global_access_reads, global_access_writes):
+        for func_key, touched in list(access_map.items()):
+            if touched & redirect.keys():
+                access_map[func_key] = {redirect.get(v, v) for v in touched}
+    print(f"  class statics: collapsed {len(redirect)} declaration-only entr(y/ies) onto "
+          f"{len(set(redirect.values()))} definition(s)")
+
+
 def parse_calls_and_globals(path):
     """Second (and final) parse of a TU: call edges + global read/write access.
 
@@ -2203,6 +2330,8 @@ def build_metadata():
         ret_expr = function_return_expr.get(func_key)
         if ret_expr:
             functions_dict[fid]["returnExpr"] = ret_expr
+
+    _collapse_class_static_declarations()
 
     # Build globalVariables model entries and map raw var ids to model keys
     var_id_to_vid = {}
