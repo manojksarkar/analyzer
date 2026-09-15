@@ -1,7 +1,7 @@
 # Review & Update Spec — correcting LLM text in a generated document
 
 Update this doc first when changing review/update logic, then code + tests.
-Design: TBD · Branch: `review_update_v1`
+Design: [REVIEW_UPDATE_DESIGN](../design/REVIEW_UPDATE_DESIGN.md) · Branch: `review_update_v1`
 
 A reviewer reads the generated document in the UI. Where the LLM's wording is wrong, they correct
 it. The correction is saved, shows immediately in the UI, appears in the exported DOCX, and carries
@@ -463,4 +463,4 @@ or `.mmd` under `output/`.
 - [ ] Default for **N** in [REQ-ST-04](#req-st-04--history-is-bounded-and-configurable).
 - [ ] Whether orphaned overrides ([REQ-ID-03](#req-id-03--rename-and-delete-orphan-an-override-and-it-is-kept))
       need a cleanup command, or accumulate harmlessly.
-- [ ] Design document — none yet.
+- [x] Design document — [REVIEW_UPDATE_DESIGN](../design/REVIEW_UPDATE_DESIGN.md).
