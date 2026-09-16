@@ -208,6 +208,39 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-16 (**unit and struct descriptions move out of the DOCX exporter into Phase 2
+> and become stored data** - branch `review_update_v1`, step 1 of
+> [REVIEW_UPDATE_DESIGN](docs/design/REVIEW_UPDATE_DESIGN.md).
+>
+> **What was wrong.** Both were produced INSIDE the exporter and kept nowhere:
+> `get_unit_description(...)` at `docx_exporter.py:1074` while rendering the Component/Unit table,
+> and `get_struct_description(...)` at `:371`, the latter commented *"on the go, no store"*. Three
+> consequences: the **HTML view could not show either** (it does not run the exporter, so the cell
+> was absent from the product's main review surface); **every export re-paid** for the LLM calls,
+> with no reason two exports of one version would word them the same; and neither could be corrected
+> by a reviewer, because there was nothing to correct.
+>
+> **Where they went.** `model_deriver._enrich_unit_and_struct_descriptions`, after the function and
+> global descriptions — the unit description is generated FROM them, so it cannot run earlier. The
+> unit description is stored on the new `model_units.description` (migration
+> `0009_model_units_description`); the struct description needs no migration, because `persist_types`
+> already stores a type's whole payload minus `location`, so a `description` key added in Phase 2
+> lands by itself.
+>
+> **Keeping the wording.** The unit description was generated from the PUBLISHED interface entries,
+> so `_iface_items_for_unit` reproduces two rules that are not incidental: private entities are
+> excluded (`interface_tables.py:92` and `:162` skip them, so they never reached the prompt), and the
+> name is the class-qualified `scoped_name` that `interfaceName` carried, so two same-named methods
+> in one unit stay distinguishable. Both are pinned by tests; dropping the private filter fails one.
+>
+> **Best-effort, deliberately.** A description that cannot be generated is simply absent and the
+> exporter keeps its deterministic fallback — a missing sentence must not fail a phase that has
+> already paid for the parse and the enrichment. An existing description is never regenerated, which
+> also means a carried-forward or human-corrected one is not overwritten.
+>
+> Tests: `tests/unit/test_unit_struct_descriptions_stored.py` (14), including the persist/load
+> round-trip and a guard that no `get_*_description` call remains in the exporter. Suite 1478 green.)
+
 > Updated: 2026-09-06 (**a flush deleted the artifacts it was not handed; the audit's model
 > checks did not know about hash-only rows** - branch `version7`.
 >

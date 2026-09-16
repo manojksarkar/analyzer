@@ -329,6 +329,10 @@ model_units = Table(
     Column("path", String),
     Column("file_name", String),
     Column("included_headers", _JSONB),   # parser-specific (direct includes) - not derivable
+    # LLM-written, generated in Phase 2 (REQ-PRE-01). It used to be produced inside the
+    # DOCX exporter and discarded, so the HTML view could not show it and every export
+    # re-paid for the LLM call.
+    Column("description", Text),
     UniqueConstraint("version_id", "unit_key", name="pk_model_units"),
     # function/global/caller/callee lists DROPPED (D-13) — derived from entity_versions / model_edges
 )

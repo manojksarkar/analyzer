@@ -424,8 +424,14 @@ for them, possibly with different wording each time.
 
 They must move into Phase 2 and be stored before they can be edited.
 
+**Status: DONE.** `model_deriver._enrich_unit_and_struct_descriptions` generates both after the
+function and global descriptions the unit description is built from. The unit description is stored
+on `model_units.description` (migration `0009_model_units_description`); the struct description
+rides the type's payload, which `persist_types` already stores whole. The exporter reads both and
+keeps its deterministic fallback for versions generated before the move.
+
 **Verification:** both appear as stored model fields after Phase 2, and the exporter reads rather
-than generates them.
+than generates them — `tests/unit/test_unit_struct_descriptions_stored.py` (14).
 
 ### REQ-PRE-02 — View output moves into the database
 

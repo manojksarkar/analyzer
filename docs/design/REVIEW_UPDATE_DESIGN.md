@@ -401,7 +401,7 @@ Each step leaves the tree working and is independently useful.
 
 | # | step | why here |
 |---|---|---|
-| 1 | `REQ-PRE-01` — descriptions into Phase 2 | two of the seven slot kinds cannot exist until this lands |
+| 1 | ~~`REQ-PRE-01` — descriptions into Phase 2~~ **DONE** | two of the seven slot kinds cannot exist until this lands |
 | 2 | Schema + migration + `slot.py` | nothing else compiles without addressing |
 | 3 | `override_service` — write + re-derive, no cascade | the smallest end-to-end slice: edit → HTML → DOCX |
 | 4 | The export guard | closes the `--from-phase 4` hole; independently valuable |

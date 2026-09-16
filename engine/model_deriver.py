@@ -4,7 +4,7 @@ import re
 import sys
 import json
 
-from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group, short_name
+from utils import load_config, norm_path, make_unit_key, path_from_unit_rel, KEY_SEP, resolve_group, short_name, scoped_name
 from core.config import get_component_layer_name
 from core.paths import paths as _paths
 from core.run_context import apply_cli_run_context
@@ -913,6 +913,119 @@ def _run_hierarchy_summarizer(
     }
 
 
+def _iface_items_for_unit(unit_key: str, units_data: dict, functions_data: dict,
+                          global_variables_data: dict):
+    """(fn_items, gv_items) for one unit: [(display name, one-line description)].
+
+    Mirrors what `interface_tables` publishes, because the unit description used to be
+    generated in the DOCX exporter FROM those published entries. Two rules come from there
+    and are not incidental:
+
+      * PRIVATE entities are skipped -- the interface tables exclude them
+        (interface_tables.py:92 and :162), so they never reached the prompt.
+      * the name is the class-qualified `scoped_name`, which is what `interfaceName`
+        carries, so two same-named methods in one unit stay distinguishable.
+
+    Entries with no description contribute nothing; duplicates are dropped, order kept.
+    """
+    unit = units_data.get(unit_key) or {}
+    fn_items, gv_items = [], []
+
+    def _add(bucket, entry):
+        d = str(entry.get("description") or "").strip()
+        if not d or d in ("-", "N/A"):
+            return
+        name = scoped_name(entry.get("qualifiedName", ""), entry.get("className", ""))
+        bucket.append((str(name).strip(), " ".join(d.split())))
+
+    for fid in unit.get("functionIds") or []:
+        f = functions_data.get(fid)
+        if f and (f.get("visibility") or "").lower() != "private":
+            _add(fn_items, f)
+    for vid in unit.get("globalVariableIds") or []:
+        g = global_variables_data.get(vid)
+        if g and (g.get("visibility") or "").lower() != "private":
+            _add(gv_items, g)
+
+    def _dedup(items):
+        seen, out = set(), []
+        for n, d in items:
+            key = (n or "").strip().lower() + "|" + (d or "").strip().lower()
+            if key not in seen:
+                seen.add(key)
+                out.append((n, d))
+        return out
+
+    return _dedup(fn_items), _dedup(gv_items)
+
+
+def _enrich_unit_and_struct_descriptions(units_data: dict, functions_data: dict,
+                                         global_variables_data: dict, data_dict: dict,
+                                         config: dict) -> tuple:
+    """Generate and STORE the unit and struct descriptions. Returns (n_units, n_structs).
+
+    Both used to be produced inside the DOCX exporter and thrown away -- `get_unit_description`
+    at docx_exporter.py:1074 and `get_struct_description` at :371, the latter commented "on the
+    go, no store". Two consequences beyond their being uneditable: the HTML view could not show
+    them at all, because it does not run the exporter; and every export re-paid for the LLM
+    calls, with no guarantee two exports of one version read the same.
+
+    They belong here, after function and global descriptions are enriched, because the unit
+    description is generated FROM them.
+
+    Best-effort by design: a description that cannot be generated is simply absent, and the
+    exporter keeps its deterministic fallback. A missing sentence must not fail a phase that
+    has already paid for the parse and the enrichment.
+    """
+    try:
+        from llm_enrichment import (llm_provider_reachable, get_unit_description,
+                                    get_struct_description)
+        from docx_common import load_abbreviations
+    except ImportError:
+        return 0, 0
+    if not (config.get("llm", {}).get("descriptions", True) and llm_provider_reachable(config)):
+        return 0, 0
+
+    abbreviations = load_abbreviations(PROJECT_ROOT, config) or {}
+    n_units = n_structs = 0
+
+    for unit_key, unit in units_data.items():
+        if unit.get("description"):
+            continue                      # carried forward from a baseline -- do not re-pay
+        fn_items, gv_items = _iface_items_for_unit(
+            unit_key, units_data, functions_data, global_variables_data)
+        if not (fn_items or gv_items):
+            continue
+        display = unit.get("name") or unit_key.split(KEY_SEP)[-1]
+        try:
+            text = (get_unit_description(display, fn_items, gv_items, config,
+                                         abbreviations) or "").strip()
+        except Exception:
+            continue
+        if text and text not in ("-", "N/A"):
+            unit["description"] = text
+            n_units += 1
+
+    for entry in data_dict.values():
+        if not isinstance(entry, dict) or entry.get("kind") != "struct":
+            continue
+        if entry.get("description"):
+            continue
+        name = entry.get("name") or entry.get("qualifiedName") or ""
+        fields = entry.get("fields") or []
+        if not name:
+            continue
+        try:
+            text = (get_struct_description(name, fields, config, abbreviations) or "").strip()
+        except Exception:
+            continue
+        if text and text not in ("-", "N/A"):
+            entry["description"] = text
+            n_structs += 1
+
+    return n_units, n_structs
+
+
 def _generate_knowledge_base(
     base_path: str,
     project_name: str,
@@ -1212,15 +1325,28 @@ def main():
         g["direction"] = "In/Out"
         g["directionReason"] = "In/Out: global variables are bidirectional interfaces."
 
+    # Unit and struct descriptions (REQ-PRE-01). Generated HERE, not in the DOCX exporter,
+    # and stored -- the unit description is built FROM the function and global descriptions,
+    # so it has to come after they are enriched. Storing them is what lets the HTML view show
+    # them at all and stops every export re-paying for the same LLM calls.
+    _n_units, _n_structs = _enrich_unit_and_struct_descriptions(
+        units_data, functions_data, global_variables_data, data_dict, config)
+
     # Clean and persist
     for fentry in functions_data.values():
         fentry.pop("params", None)
-    from core.model_io import write_model_file as _write, FUNCTIONS, GLOBALS
+    from core.model_io import write_model_file as _write, FUNCTIONS, GLOBALS, UNITS, DATA_DICTIONARY as _DD
     _write(FUNCTIONS, functions_data)
     _write(GLOBALS, global_variables_data)
+    if _n_units:
+        _write(UNITS, units_data)          # units were written before the descriptions existed
+    if _n_structs:
+        _write(_DD, data_dict)
     from core.model_io import artifact_location as _where
     print(f"  functions ({len(functions_data)}) -> {_where('functions')}")
     print(f"  globalVariables ({len(global_variables_data)}) -> {_where('globalVariables')}")
+    if _n_units or _n_structs:
+        print(f"  descriptions: {_n_units} unit(s), {_n_structs} struct(s) -> {_where('units')}")
 
     # Always generate knowledge_base.json (Flowchart engine reads this)
     _generate_knowledge_base(base_path, project_name, functions_data, global_variables_data, data_dict, summaries)

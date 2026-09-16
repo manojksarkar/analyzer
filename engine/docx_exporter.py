@@ -368,19 +368,13 @@ def _build_unit_header_table(
                 info = ", ".join(parts) if parts else NA
 
             elif isinstance(enum_ent, dict) and enum_ent.get("kind") == "struct":
-                # typedef struct: description from name + fields (on the go, no store)
+                # typedef struct: the description is READ from the stored entry (REQ-PRE-01).
+                # It used to be generated here, during export, and kept nowhere -- so the HTML
+                # view could not show it and every export re-paid for the same LLM call. Phase 2
+                # generates and stores it now; the name-derived fallback below still covers a
+                # version generated before the move.
                 type_name = t.get("name") or underlying or _type_name
-                fields = enum_ent.get("fields") or []
-                info = _struct_info_from_name(type_name)  # fallback
-                if config:
-                    try:
-                        from llm_enrichment import get_struct_description, llm_provider_reachable
-                        if llm_provider_reachable(config) and config.get("llm", {}).get("descriptions", True):
-                            llm_desc = get_struct_description(type_name, fields, config, abbreviations or {})
-                            if llm_desc:
-                                info = llm_desc
-                    except ImportError:
-                        pass
+                info = (enum_ent.get("description") or "").strip() or _struct_info_from_name(type_name)
             else:
                 info = NA
         elif kind == "enum":
@@ -989,12 +983,17 @@ def _merge_vertical_cells(table, col: int, start_row: int, end_row: int) -> None
     top.merge(bottom)
 
 
-def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, config: dict, abbreviations: dict) -> None:
+def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, config: dict,
+                              abbreviations: dict, units_data: dict = None) -> None:
     """Add component-level table: Component | Unit | Description | Note.
 
-    Description is derived from per-unit `interface_tables.json` entries:
-    it aggregates available `description` fields from both functions and globals.
-    Note column is left as N/A for now.
+    The Description is READ from the unit's stored `description` (REQ-PRE-01). It used to be
+    generated here by calling the LLM during export and was stored nowhere, which meant the
+    HTML view could not show it -- it does not run this exporter -- and two exports of one
+    version could word it differently. Phase 2 generates and stores it now; this only renders.
+
+    The deterministic join below stays as the fallback for a version generated before the
+    move, or one where the LLM was unavailable.
     """
     if not unit_rows:
         return
@@ -1070,21 +1069,8 @@ def _add_component_unit_table(doc, component_name: str, unit_rows, font_small, c
         fn_items = _dedup_items(fn_items)
         gv_items = _dedup_items(gv_items)
 
-        description_text = NA
-        try:
-            from llm_enrichment import llm_provider_reachable, get_unit_description
-
-            if config.get("llm", {}).get("descriptions", True) and llm_provider_reachable(config):
-                description_text = get_unit_description(
-                    unit_name_display,
-                    fn_items,
-                    gv_items,
-                    config,
-                    abbreviations or {},
-                ).strip()
-        except Exception:
-            # Fall back to deterministic join if the LLM call fails.
-            description_text = NA
+        unit_key = row_data[0] if row_data else None
+        description_text = str(((units_data or {}).get(unit_key) or {}).get("description") or "").strip()
 
         if not description_text or description_text in ("-", NA):
             # Fallback: join all descriptions (not just 3), but cap length for DOCX readability.
@@ -1371,6 +1357,7 @@ def export_docx(json_path: str = None, docx_path: str = None, selected_group: st
             font_small,
             config=config,
             abbreviations=abbreviations,
+            units_data=units_data,
         )
 
         unit_diag_dir = os.path.join(artifacts_dir, "unit_diagrams")
