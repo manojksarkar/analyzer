@@ -604,10 +604,72 @@ One row per file rather than one blob per version: `functions.json` alone reache
 a large project, and a reader that only wants `hashes.json` should not pull it."""
 
 
+# ---------------------------------------------------------------------------
+# Review & Update — a reviewer's corrections to LLM-written text
+# (docs/spec/REVIEW_UPDATE_SPEC.md · docs/design/REVIEW_UPDATE_DESIGN.md)
+# ---------------------------------------------------------------------------
+text_overrides = Table(
+    "text_overrides", metadata,
+    # The CURRENT state of one slot. Read on every page render, so it is a single indexed
+    # lookup and never "the newest row in history" -- read cost must not grow with how often
+    # someone edited (REQ-ST-05).
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("slot_kind", String, nullable=False),        # review.slot.ALL_KINDS
+    Column("slot_key", String, nullable=False),         # review.slot.make() -- nothing else builds one
+    # BOTH texts. The original is what undo restores (REQ-API-04) and the "wrong" half of the
+    # training pair (REQ-TD-01); a correction without it teaches nothing. Captured once, on the
+    # first override, and never rewritten.
+    Column("llm_text", Text),
+    Column("human_text", Text, nullable=False),
+    # Set when the slot stops resolving -- a renamed or deleted entity. The row is KEPT
+    # (REQ-ID-03): it is the user's work, it is training data, and a rename may be reverted.
+    Column("is_orphaned", Boolean, nullable=False, default=False),
+    Column("updated_by", String),
+    _ts("updated_at", nullable=False),
+    # Provenance, so a correction can still be interpreted after a prompt change (REQ-TD-02).
+    Column("llm_model", String),
+    Column("llm_cache_version", Integer),
+    Column("llm_context", _JSONB),
+    UniqueConstraint("version_id", "slot_kind", "slot_key", name="pk_text_overrides"),
+    Index("ix_text_overrides_version_kind", "version_id", "slot_kind"),
+    # The export guard asks "is any override newer than the last derivation" (REQ-AP-04).
+    Index("ix_text_overrides_updated", "version_id", "updated_at"),
+)
+
+text_override_history = Table(
+    "text_override_history", metadata,
+    # Append-only, one row per human edit. Trimmed to the newest N per slot
+    # (llm.overrideHistoryDepth). `llm_text` deliberately lives on text_overrides and NOT here,
+    # which is what makes "the original is never evicted" structural rather than a rule someone
+    # has to remember (REQ-ST-04).
+    Column("history_id", _BIGID, primary_key=True, autoincrement=True),
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("slot_kind", String, nullable=False),
+    Column("slot_key", String, nullable=False),
+    Column("human_text", Text, nullable=False),
+    Column("updated_by", String),
+    _ts("updated_at", nullable=False),
+    Column("seq", Integer, nullable=False),             # monotonic per slot; drives the N-cap
+    Index("ix_override_history_slot", "version_id", "slot_kind", "slot_key", "seq"),
+)
+
+view_derivations = Table(
+    "view_derivations", metadata,
+    # When each view was last derived from the model. The export guard's other input: an
+    # override newer than the oldest derivation means the rendered views are stale, and
+    # `reexport --from-phase 4` would otherwise ship the previous text silently (REQ-AP-04).
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("view_name", String, nullable=False),        # views.registry.VIEW_REGISTRY key
+    Column("group_name", String, nullable=False, default=""),   # "" = the whole version
+    _ts("derived_at", nullable=False),
+    UniqueConstraint("version_id", "view_name", "group_name", name="pk_view_derivations"),
+)
+
 # retention/delete path and asserted in tests so a new per-version table can't be
 # added without a delete story.
 PER_VERSION_TABLES = frozenset({
     "entity_versions", "model_units", "model_components", "model_summaries",
     "model_edges", "tu_includes", "view_interface_tables", "view_behaviour_rows",
     "model_unit_diagrams", "model_flowcharts", "documents", "parse_snapshots", "knowledge_base", "incremental_plans",
+    "text_overrides", "text_override_history", "view_derivations",
 })
