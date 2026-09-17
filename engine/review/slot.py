@@ -34,7 +34,8 @@ written. `encode()` / `decode()` below give a URL-safe form for the cases that n
 from __future__ import annotations
 
 import base64
-from typing import Dict, Tuple
+import hashlib
+from typing import Dict, Iterable, Tuple
 
 # ---------------------------------------------------------------------------
 # kinds
@@ -165,6 +166,51 @@ def for_node(entity_key: str, node_id: str) -> str:
 def for_behaviour_row(function_id: str, external_unit_function: str) -> str:
     return make(BEHAVIOUR_DESCRIPTION, function_id=function_id,
                 external_unit_function=external_unit_function)
+
+
+# ---------------------------------------------------------------------------
+# flowchart shape — "is this still the same graph?"
+# ---------------------------------------------------------------------------
+def cfg_shape(node_ids: Iterable[str]) -> str:
+    """A hash of a flowchart's node-id list, stored with every `nodeLabel` override.
+
+    A node id is a POSITION (`n0, n1, n2…` by AST walk), not an identity, so "the source did not
+    change" does not mean "`n7` is still the same node". Identical source renumbers when the CFG
+    builder changes, and when `cfgSimplification` merges nodes past its 15-node threshold. An
+    override reused across that lands on a different node, silently. See REQ-ID-02.
+
+    `flowchart_engine._apply_cached_labels` already guards the label cache this way, storing the
+    node-id set and discarding the whole entry on a mismatch. Same rule, same reason.
+
+    Order-independent (the set is the fact, not the walk order) and over **every** node including
+    sentinels: a shape that is too sensitive costs a reviewer a re-apply, one that is not sensitive
+    enough ships the wrong sentence on the wrong box. Those are not comparable.
+    """
+    ids = sorted({str(n) for n in node_ids if str(n).strip()})
+    if not ids:
+        # NOT a hash of nothing. `hashing.py` returned sha256("") for a cursor it failed to
+        # tokenise, so thousands of unrelated functions shared one hash and compared equal --
+        # 73% of a document silently stopped regenerating. An empty node list here means the
+        # caller was handed a CFG it could not read, and the one thing it must not do is
+        # produce a value that matches another caller's failure.
+        raise SlotKeyError("cannot take the shape of a flowchart with no nodes")
+    return hashlib.sha256(SEP.join(ids).encode("utf-8")).hexdigest()
+
+
+def shape_of_cfg(cfg: object) -> str:
+    """`cfg_shape` for a CFG dict as it is stored — `{"nodes": [{"id": ...}, ...]}`."""
+    nodes = (cfg or {}).get("nodes") or [] if isinstance(cfg, dict) else []
+    return cfg_shape(n.get("id") for n in nodes if isinstance(n, dict))
+
+
+def shape_matches(stored: str, current: str) -> bool:
+    """Whether an override's stored shape still describes the current flowchart.
+
+    A missing stored shape is **not** a match. Rows written before `slot_shape` existed make no
+    claim about their graph, and "no claim" must not read as "verified" -- that is how a guard
+    becomes decoration.
+    """
+    return bool(stored) and bool(current) and stored == current
 
 
 # ---------------------------------------------------------------------------

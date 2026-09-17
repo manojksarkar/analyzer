@@ -85,6 +85,11 @@ One row per overridden slot. This is what readers consult, so it must be a singl
 | `updated_by`, `updated_at` | |
 | `llm_model`, `llm_cache_version` | provenance for `REQ-TD-02` |
 | `llm_context` | JSONB — what the LLM was shown (`REQ-TD-02`) |
+| `slot_shape` | `nodeLabel` only: a hash of the flowchart's node-id list when the override was made (`REQ-ID-02`). Null for every other kind |
+
+**Why `slot_shape` is its own column and not a key in `llm_context`:** the node list is not something
+the LLM was shown, and a column that means two different things depending on the kind is how the
+September interface-id collision started. One column, one fact.
 
 `UniqueConstraint(version_id, slot_kind, slot_key)` · `Index(version_id, slot_kind)`
 
@@ -120,8 +125,9 @@ Guard: `max(text_overrides.updated_at) > min(view_derivations.derived_at)` ⇒ s
 
 ### 2.4 Migration
 
-One Alembic revision under [alembic/](../../alembic/). Additive only — no existing table changes, so
-it is safe to apply ahead of the code.
+Additive only — new tables and a new nullable column, no existing column changed — so it is safe to
+apply ahead of the code. `0010_text_overrides` creates the three tables; `0011_slot_shape` adds
+`text_overrides.slot_shape`.
 
 ---
 
@@ -136,8 +142,16 @@ it is safe to apply ahead of the code.
 | `behaviourOutputName` | `entity_key` | same |
 | `structDescription` | `entity_key` (kind=`type`) | same |
 | `unitDescription` | `unit_key` | `model_units.unit_key` = `Component\|Unit` |
-| `behaviourDescription` | `<functionId>\|<externalUnitFunction>` | the `_docxRows` entry |
-| `nodeLabel` | `<entity_key>#<node_id>` | `cfg.nodes[].id` |
+| `behaviourDescription` | `<functionId>` ␁ `<externalUnitFunction>` | the `_docxRows` entry |
+| `nodeLabel` | `<entity_key>` ␁ `<node_id>` | `cfg.nodes[].id` |
+
+␁ is **SOH (0x01)**, not `#` or `|`. `entity_key` is itself `component|unit|name|paramTypes`, so a
+composite joined with `|` can only be split by counting pipes and hoping, and `#` can appear in a
+generated display name. 0x01 can occur in none of them, so parsing is exact.
+
+Deliberately **not** 0x1f, which `hashing.py` uses: Python counts 0x1c–0x1f as whitespace, so
+`"a\x1f".strip()` deletes it. A hash input is never trimmed; a slot key travels through request
+bodies, JSON and form fields, any of which may trim what they are handed.
 
 `version_id` is a column, not part of the key, so "the same slot across versions" is a simple query —
 which [§10](#10-carrying-overrides-into-the-next-version) needs.
@@ -163,6 +177,10 @@ apply_override(version_id, slot_kind, slot_key, human_text, user_id):
     read the current model value
     if no override exists yet:
         llm_text = the current model value             REQ-ST-03  (captured once)
+    if slot_kind is nodeLabel:
+        slot_shape = hash of this CFG's node-id list   REQ-ID-02  (refreshed every edit:
+                                                       it describes the graph the text was
+                                                       last written against, not the first)
     write human_text into the model
     upsert text_overrides
     append text_override_history, trim to N            REQ-ST-04
@@ -333,12 +351,19 @@ human-authored — needed for undo, for the UI's "overridden" flag, and for `REQ
 ```
 for each override on the baseline:
     if the slot still resolves in the new version
-       and (slot is not nodeLabel or the function's source_hash is unchanged):   REQ-VR-03
+       and (slot is not nodeLabel or (the function's source_hash is unchanged        REQ-VR-03
+                                      and slot_shape matches the new CFG)):          REQ-ID-02
         copy the row to the new version
+    else:
+        copy it marked orphaned — never drop it                                      REQ-ID-03
 ```
 
 A changed function does not carry its override: the human text describes code that no longer exists.
 Fresh LLM text is correct there (`REQ-VR-01`).
+
+The `slot_shape` half of the `nodeLabel` condition is what stops a correction landing on the wrong
+node when the source is byte-identical but the builder or `cfgSimplification` renumbered the graph
+(`REQ-ID-02`). Since every override on a flowchart stores the same shape, they pass or fail together.
 
 `--full` has no baseline, so nothing is carried and the overrides simply are not applied
 (`REQ-VR-03`) — **they are not deleted**. `--full` is the standing remedy for several problems and
@@ -459,10 +484,27 @@ cache_version, entity_id, content_hash`), so human text there would leak into ev
 contradicting `REQ-ST-02`. It would also destroy the LLM original and make model output
 indistinguishable from human text in the training data.
 
-**Positional node ids are sufficient.** They renumber when code changes — but an override only
-carries forward when `source_hash` is unchanged, and unchanged source produces an identical CFG. A
-content hash of the node text was considered and rejected as solving a problem the `source_hash` gate
-already closes, at the cost of a collision case (two identical statements in one function).
+**Positional node ids, gated on the node list.** `n0, n1, n2…` are positions, not identities. An
+earlier draft of this design said `source_hash` alone was enough because "unchanged source produces
+an identical CFG" — that is false, and the flowchart label cache already knew it: identical source
+renumbers when the CFG builder changes or when `cfgSimplification` merges nodes past the 15-node
+threshold. So each `nodeLabel` override stores the node-id list it was made against and is only
+reused when that still matches (`REQ-ID-02`).
+
+A content hash of the node *text* as the identifier was considered and rejected: it collides on two
+identical statements in one function, and it solves a different problem. `slot_shape` is not an
+identifier — the id stays `n7`. It is a validity gate answering "is this still the same graph?".
+
+**One slot per node, not one per flowchart.** Storing a whole flowchart's labels as one override was
+considered. It wins on exactly one point — atomic all-or-nothing reuse — which `slot_shape` gives
+without it. It loses on four: undo would revert corrections the reviewer made separately and wanted
+kept; the `REQ-TD-01` training pair degrades from one sentence to a blob that must be diffed to
+recover what changed; the `REQ-ST-04` cap would count N edits per *flowchart* rather than per label;
+and two reviewers correcting two nodes of one function would clobber each other through a
+read-modify-write. Per node keeps `human_text` a plain string for all seven kinds.
+
+The *invalidation* unit is still the whole flowchart — a PNG cannot be partly re-rendered — which is
+what [§5](#5-re-deriving-the-views) and [§7](#7-images) already do.
 
 **One level of caller cascade.** Transitive cascade is unbounded in a deep call graph — one edit
 could regenerate hundreds of functions, each an LLM call. One level is predictable; a later full

@@ -137,6 +137,73 @@ class TestRejection:
             slot.for_entity(slot.NODE_LABEL, ENTITY)
 
 
+class TestCfgShape:
+    """REQ-ID-02. A node id is a POSITION, so "the source did not change" does not mean "n7 is
+    still the same node". The shape is what turns that from an assumption into a check."""
+
+    def _cfg(self, *ids):
+        return {"nodes": [{"id": i, "label": "x"} for i in ids], "edges": []}
+
+    def test_the_same_graph_has_the_same_shape(self):
+        assert slot.shape_of_cfg(self._cfg("n0", "n1", "n2")) == \
+               slot.shape_of_cfg(self._cfg("n0", "n1", "n2"))
+
+    def test_walk_order_is_not_part_of_the_shape(self):
+        """The node SET is the fact. A different traversal order is not a different graph."""
+        assert slot.cfg_shape(["n2", "n0", "n1"]) == slot.cfg_shape(["n0", "n1", "n2"])
+
+    def test_an_inserted_node_changes_the_shape(self):
+        """The whole point: the builder split a compound condition, ids shifted by one, and the
+        source hash did not move. Without this the override lands on the wrong node."""
+        before = slot.shape_of_cfg(self._cfg("n0", "n1", "n2"))
+        after = slot.shape_of_cfg(self._cfg("n0", "n1", "n2", "n3"))
+        assert before != after
+
+    def test_a_renumbered_graph_of_the_same_size_changes_the_shape(self):
+        """Same node COUNT, different ids -- a count check would pass this and be wrong."""
+        assert slot.cfg_shape(["n0", "n1", "n2"]) != slot.cfg_shape(["n0", "n1", "n5"])
+
+    def test_an_empty_graph_has_no_shape(self):
+        """NOT sha256(""). hashing.py hashed an empty token list for cursors it could not read,
+        so thousands of unrelated functions shared one hash, compared equal, and 73% of a
+        document silently stopped regenerating. An empty node list is a failure to read the
+        CFG, and it must not produce a value that matches another caller's failure."""
+        with pytest.raises(slot.SlotKeyError):
+            slot.cfg_shape([])
+        with pytest.raises(slot.SlotKeyError):
+            slot.shape_of_cfg({"nodes": []})
+        with pytest.raises(slot.SlotKeyError):
+            slot.cfg_shape(["", "  "])
+
+    def test_two_failures_do_not_agree_with_each_other(self):
+        """The property the raise above buys, stated directly."""
+        import hashlib
+        empty_hash = hashlib.sha256(b"").hexdigest()
+        assert slot.cfg_shape(["n0"]) != empty_hash
+
+
+class TestShapeMatches:
+    def test_the_same_shape_matches(self):
+        s = slot.cfg_shape(["n0", "n1"])
+        assert slot.shape_matches(s, s)
+
+    def test_a_different_shape_does_not(self):
+        assert not slot.shape_matches(slot.cfg_shape(["n0"]), slot.cfg_shape(["n0", "n1"]))
+
+    def test_no_stored_shape_is_not_a_match(self):
+        """Rows written before slot_shape existed make no claim about their graph. "No claim"
+        must never read as "verified" -- that is how a guard becomes decoration."""
+        assert not slot.shape_matches(None, slot.cfg_shape(["n0"]))
+        assert not slot.shape_matches("", slot.cfg_shape(["n0"]))
+
+    def test_no_current_shape_is_not_a_match(self):
+        assert not slot.shape_matches(slot.cfg_shape(["n0"]), "")
+
+    def test_two_missing_shapes_do_not_match_each_other(self):
+        assert not slot.shape_matches("", "")
+        assert not slot.shape_matches(None, None)
+
+
 class TestUrlToken:
     def test_a_token_is_url_safe(self):
         token = slot.encode(slot.for_node(ENTITY, "n3"))

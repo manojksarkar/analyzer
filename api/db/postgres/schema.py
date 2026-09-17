@@ -630,6 +630,16 @@ text_overrides = Table(
     Column("llm_model", String),
     Column("llm_cache_version", Integer),
     Column("llm_context", _JSONB),
+    # nodeLabel only: a hash of the flowchart's node-id list at the moment the text was
+    # written (REQ-ID-02). Node ids are POSITIONS -- identical source renumbers when the CFG
+    # builder changes or when cfgSimplification merges nodes past its 15-node threshold, so
+    # `source_hash unchanged` alone would carry a correction onto a different node in silence.
+    # The flowchart label cache already stores the node-id set for exactly this reason
+    # (flowchart_engine._apply_cached_labels). Null for every other kind.
+    #
+    # Its own column, not a key inside llm_context: the node list is not what the LLM was
+    # shown, and one column meaning two things by kind is how the interface-id collision began.
+    Column("slot_shape", String),
     UniqueConstraint("version_id", "slot_kind", "slot_key", name="pk_text_overrides"),
     Index("ix_text_overrides_version_kind", "version_id", "slot_kind"),
     # The export guard asks "is any override newer than the last derivation" (REQ-AP-04).

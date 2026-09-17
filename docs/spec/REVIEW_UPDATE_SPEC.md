@@ -107,16 +107,31 @@ No new identifier scheme where one exists.
 
 **Verification:** a slot id resolves to the same slot across two generations of unchanged code.
 
-### REQ-ID-02 — Flowchart node ids are positional, and that is sufficient
+### REQ-ID-02 — A node override carries forward only if the node list is unchanged
 
-`cfg.nodes[].id` is `n0, n1, n2…`, assigned by walking the AST. It is therefore **deterministic for
-identical source**: unchanged source ⇒ same tokens ⇒ same AST ⇒ same `n3`.
+`cfg.nodes[].id` is `n0, n1, n2…`, assigned by walking the AST. It is a **position, not an identity**.
 
-Carry-forward of a node override is allowed **only when the function's `source_hash` is unchanged** —
-which is exactly when the ids are stable. A changed function regenerates its labels anyway.
+`source_hash` alone is not a sufficient gate. Identical source produces different node ids when the
+CFG builder changes (an analyzer upgrade), or when `cfgSimplification` mutates the graph — it merges
+nodes once a function has more than 15 labelable ones, so changing that setting, or a function
+crossing the threshold, renumbers everything after the first merge. The override then lands on a
+*different* node and nothing reports an error.
 
-**Verification:** parsing the same commit twice yields identical node ids; a node override does not
-carry forward when `source_hash` differs.
+So a `nodeLabel` override records the **node-id list of the flowchart it was made against**, and is
+applied to a later version only when the function's `source_hash` is unchanged **and** that list
+still matches. A mismatch orphans the override
+([REQ-ID-03](#req-id-03--rename-and-delete-orphan-an-override-and-it-is-kept)) instead of applying it.
+
+This is the rule the flowchart label cache already follows — `_apply_cached_labels` stores the
+node-id set with the labels and discards the whole entry unless it matches exactly, because *"a
+change to the BUILDER would shift ids while the source hash stayed the same — that would silently
+attach the wrong label to the wrong node"*.
+
+Every override on one flowchart carries the same list, so they carry forward or orphan as a group; a
+half-corrected picture is not reachable.
+
+**Verification:** with `source_hash` unchanged and one node added to the CFG, no node override is
+applied and each is flagged orphaned; with both unchanged, every one carries.
 
 ### REQ-ID-03 — Rename and delete orphan an override, and it is kept
 

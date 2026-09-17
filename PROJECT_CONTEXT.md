@@ -208,6 +208,49 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-17 (**review_update_v1 step 2 — slot storage + addressing; and REQ-ID-02's
+> justification was wrong**. Branch `review_update_v1`, commit `2d351c9` plus this change.
+> Spec [REVIEW_UPDATE_SPEC](docs/spec/REVIEW_UPDATE_SPEC.md) · design
+> [REVIEW_UPDATE_DESIGN](docs/design/REVIEW_UPDATE_DESIGN.md).
+>
+> **Three tables** (`api/db/postgres/schema.py`, alembic `0010_text_overrides`), all cascading from
+> `versions` and all registered in `PER_VERSION_TABLES`: `text_overrides` (CURRENT state of one
+> slot, one row — read on every HTML render, so a single indexed lookup, never "newest row in
+> history"; carries BOTH `llm_text` and `human_text`), `text_override_history` (append-only,
+> trimmed to newest N per slot; `llm_text` deliberately NOT here, which makes "the original is
+> never evicted" structural), `view_derivations` (when each view was last derived — input to the
+> export guard, because `reexport --from-phase 4` skips Phase 3 and would otherwise ship stale
+> text silently).
+>
+> **`engine/review/slot.py`** is the ONLY place a slot key is built or split. Composite keys join
+> on **0x01 (SOH)**, NOT the 0x1f `hashing.py` uses: Python counts 0x1c-0x1f as whitespace, so
+> `"a".strip()` deletes it, and a slot key (unlike a hash input) travels through request
+> bodies and form fields that trim. This was measured, not theorised — `make()` stripped each part
+> before checking it for the separator, so a part ending in 0x1f had it silently removed and a key
+> for a DIFFERENT slot came back; the test for it reported DID NOT RAISE.
+>
+> **REQ-ID-02 corrected (`0011_slot_shape`, `text_overrides.slot_shape`).** The design had said
+> positional node ids are safe because "an override only carries forward when `source_hash` is
+> unchanged, and unchanged source produces an identical CFG". **That is false**, and
+> `flowchart_engine._apply_cached_labels` already knew it: identical source renumbers when the CFG
+> builder changes (analyzer upgrade) or when `cfgSimplification` merges nodes past its 15-node
+> threshold (`engine/flowchart/llm/generator.py:159`). The correction would land on a different
+> node with no error — the September silent-wrong-attribution shape again. Each `nodeLabel`
+> override now stores `slot.cfg_shape(...)`, a hash of the flowchart's node-id list, and is reused
+> only when `source_hash` is unchanged AND the shape still matches; otherwise it orphans.
+> `cfg_shape([])` **raises** rather than returning `sha256("")` — that constant-for-every-failure
+> hash is exactly what stopped 73% of a document regenerating in September.
+>
+> Storing a whole flowchart's labels as ONE override was considered and rejected: it wins only on
+> atomic all-or-nothing reuse, which `slot_shape` gives anyway, and loses on undo granularity,
+> `REQ-TD-01` training pairs (blob-vs-blob needs a diff to recover what changed), the `REQ-ST-04`
+> N-cap counting per flowchart instead of per label, and two reviewers clobbering each other
+> through a read-modify-write. The *invalidation* unit is still the whole flowchart — a PNG cannot
+> be partly re-rendered.
+>
+> Build order: steps 1-2 done, **step 3 = `override_service`** next. 38 slot tests; unit suite
+> 1505 passed / 10 skipped before the shape tests landed.)
+
 > Updated: 2026-09-16 (**unit and struct descriptions move out of the DOCX exporter into Phase 2
 > and become stored data** - branch `review_update_v1`, step 1 of
 > [REVIEW_UPDATE_DESIGN](docs/design/REVIEW_UPDATE_DESIGN.md).
