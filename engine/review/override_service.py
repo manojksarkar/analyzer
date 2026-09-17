@@ -1,0 +1,336 @@
+"""Saving a reviewer's correction. One entry point, used by the API and by tests.
+
+    apply_override(conn, version_id, kind, key, human_text, models=...)
+
+Everything it does is inside the caller's transaction (`REQ-AP-02`). A half-applied override —
+the model moved, the view rows did not — is precisely the failure this feature exists to remove,
+so there is no partial success to recover from: either the whole edit lands or none of it does.
+
+## What it does, in order
+
+    reject empty text                        REQ-ST-06
+    resolve the slot -> a model field        resolver.py
+    read the current model text
+    capture llm_text, once, on first edit    REQ-ST-03
+    write human_text into the model
+    upsert text_overrides                    REQ-ST-05  (one row, direct lookup)
+    append history and trim to N             REQ-ST-04
+    re-derive the affected views             REQ-AP-01  (caller-supplied; see derive.py)
+    stamp view_derivations                   REQ-AP-04
+
+The cascade (§6) and image renders (§7) are steps 6 and 7 of the build order and are not here.
+Renders are deliberately *not* transactional anyway — they are slow, and idempotent if retried.
+
+## Five kinds, not seven
+
+`nodeLabel` and `behaviourDescription` are refused with `NotEditableHere`: their text lives only
+in Phase-3 view output, so an override written for them would be reverted by the next derivation
+(see `resolver`). `REQ-ID-02`'s `slot_shape` capture belongs in this function, right before the
+model write, and is deliberately absent until `nodeLabel` has a model home — code no caller can
+reach is code no test can check. `slot.cfg_shape()` and the column are ready for it.
+
+## llm_text is captured once and never rewritten
+
+On the second edit of a slot the model already holds the *human's* previous text, so reading it
+again would overwrite the LLM original with human prose. There would then be nothing to undo to
+(`REQ-API-04`) and the training pair would be human-vs-human (`REQ-TD-01`) — two texts that look
+like a correction and teach the opposite of one.
+
+## The model is written through the repository gateway
+
+Never `entity_versions` directly. `ModelAccess` buffers the artifacts it touched and writes back
+only those: persisting all four when one changed turns a one-field edit into a whole-model
+rewrite, and `model_repo`'s flush guard has already been the subject of one defect.
+"""
+from __future__ import annotations
+
+import datetime
+import os
+import sys
+from typing import Any, Callable, Dict, NamedTuple, Optional, Sequence
+
+from sqlalchemy import delete, func, insert, select, update
+
+from review import resolver, slot
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+from api.db.postgres import schema as s   # noqa: E402
+
+#: `llm.overrideHistoryDepth`. Newest N human edits per slot survive; the LLM original is not
+#: counted against it because it does not live in the history table at all (REQ-ST-04).
+DEFAULT_HISTORY_DEPTH = 10
+
+
+class OverrideError(Exception):
+    """The edit was refused. Carries a `status` the API maps straight onto HTTP."""
+    status = 400
+
+
+class EmptyText(OverrideError):
+    """REQ-ST-06. Blank is not a correction; it is a slot with nothing in it."""
+    status = 422
+
+
+class SlotUnknown(OverrideError):
+    """The key does not name anything in this version, or is not well-formed."""
+    status = 404
+
+
+class NotEditableHere(OverrideError):
+    """The kind has no model home yet — see `resolver.SlotHasNoModelHome`."""
+    status = 501
+
+
+class Applied(NamedTuple):
+    version_id: str
+    slot_kind: str
+    slot_key: str
+    llm_text: str
+    human_text: str
+    previous_text: str
+    location: resolver.Location
+    seq: int
+    first_edit: bool
+    artifacts_written: Sequence[str]
+    views_derived: Sequence[str]
+
+
+# ---------------------------------------------------------------------------
+# model access
+# ---------------------------------------------------------------------------
+class ModelAccess:
+    """The model artifacts an edit touches, and the write-back of just those.
+
+    Backed by `core.model_repo` in a real run. Tests pass `artifacts=` a plain dict, which is
+    also what makes every rule below testable without a database or a parsed project.
+    """
+
+    #: Loaded on demand. `description` may land in either of the first two.
+    ARTIFACTS = ("functions", "globalVariables", "units", "dataDictionary")
+
+    def __init__(self, artifacts: Optional[Dict[str, Any]] = None, repo: Any = None):
+        self._repo = repo
+        self._loaded: Dict[str, Any] = dict(artifacts or {})
+        self._explicit = artifacts is not None
+        self._dirty: set = set()
+
+    def _repository(self):
+        if self._repo is None:
+            from core import model_repo
+            self._repo = model_repo.repository()
+        return self._repo
+
+    def artifact(self, name: str) -> Dict[str, Any]:
+        if name not in self._loaded:
+            if self._explicit:
+                # An in-memory model is the whole model. Inventing an empty artifact here
+                # would turn "that function is not in this version" into "no functions exist",
+                # and the slot would resolve against nothing instead of reporting a 404.
+                return {}
+            self._loaded[name] = self._repository().read(name, required=False, default={}) or {}
+        return self._loaded[name]
+
+    def as_model(self) -> Dict[str, Any]:
+        """The artifact dict `resolver` works against."""
+        return {name: self.artifact(name) for name in self.ARTIFACTS}
+
+    def mark_dirty(self, name: str) -> None:
+        self._dirty.add(name)
+
+    def save(self) -> Sequence[str]:
+        """Write back only what changed. Returns the artifact names written."""
+        written = sorted(self._dirty)
+        if not self._explicit:
+            repo = self._repository()
+            for name in written:
+                repo.write(name, self._loaded[name])
+        self._dirty.clear()
+        return written
+
+
+# ---------------------------------------------------------------------------
+# the entry point
+# ---------------------------------------------------------------------------
+def apply_override(conn,
+                   version_id: str,
+                   slot_kind: str,
+                   slot_key: str,
+                   human_text: str,
+                   *,
+                   models: Optional[ModelAccess] = None,
+                   user_id: Optional[str] = None,
+                   now: Optional[datetime.datetime] = None,
+                   history_depth: Optional[int] = None,
+                   llm_model: Optional[str] = None,
+                   llm_cache_version: Optional[int] = None,
+                   derive: Optional[Callable[..., Sequence[str]]] = None) -> Applied:
+    """Save one correction. See the module docstring for the order of operations.
+
+    `conn` is an open SQLAlchemy connection inside a transaction the CALLER owns — this function
+    neither begins nor commits, so an API handler can wrap the edit and its response in one unit
+    and a test can roll the whole thing back.
+
+    `derive` is called after the rows are written and before the stamp, with the keyword
+    arguments `(version_id, slot_kind, location)`. It returns the view names it re-derived.
+    Injecting it keeps this module free of the view machinery, which needs an output directory
+    and a config that no unit test should have to build.
+    """
+    text = (human_text or "").strip()
+    if not text:
+        # REQ-ST-06, and checked before anything is read: an empty update that got as far as
+        # writing the model would have erased the LLM's text with nothing in its place.
+        raise EmptyText("%s: an override may not be empty or whitespace" % slot_kind)
+
+    if slot_kind not in slot.ALL_KINDS:
+        raise SlotUnknown("unknown slot kind %r" % slot_kind)
+
+    models = models if models is not None else ModelAccess()
+    model = models.as_model()
+
+    try:
+        location = resolver.locate(model, slot_kind, slot_key)
+    except resolver.SlotHasNoModelHome as exc:
+        raise NotEditableHere(str(exc)) from None
+    except (resolver.SlotNotFound, slot.SlotKeyError) as exc:
+        raise SlotUnknown(str(exc)) from None
+
+    current = resolver.read_text(model, slot_kind, slot_key)
+    stamp = now or datetime.datetime.now(datetime.timezone.utc)
+    depth = DEFAULT_HISTORY_DEPTH if history_depth is None else int(history_depth)
+    if depth < 1:
+        raise OverrideError("history depth must be at least 1; got %r" % history_depth)
+
+    existing = conn.execute(
+        select(s.text_overrides.c.llm_text, s.text_overrides.c.human_text)
+        .where(s.text_overrides.c.version_id == version_id,
+               s.text_overrides.c.slot_kind == slot_kind,
+               s.text_overrides.c.slot_key == slot_key)).first()
+
+    first_edit = existing is None
+    # Captured once. On a later edit the model holds the HUMAN's previous text, so reading it
+    # again would destroy the original and leave a human-vs-human "correction" (REQ-ST-03).
+    llm_text = current if first_edit else existing.llm_text
+    previous_text = current if first_edit else (existing.human_text or "")
+
+    # --- the model ---------------------------------------------------------
+    resolver.write_text(model, slot_kind, slot_key, text)
+    models.mark_dirty(location.artifact)
+    artifacts_written = models.save()
+
+    # --- the override row --------------------------------------------------
+    row = {"llm_text": llm_text, "human_text": text, "is_orphaned": False,
+           "updated_by": user_id, "updated_at": stamp}
+    if llm_model is not None:
+        row["llm_model"] = llm_model
+    if llm_cache_version is not None:
+        row["llm_cache_version"] = llm_cache_version
+
+    if first_edit:
+        conn.execute(insert(s.text_overrides).values(
+            version_id=version_id, slot_kind=slot_kind, slot_key=slot_key, **row))
+    else:
+        # llm_text is in the values deliberately: it is `existing.llm_text` here, so the write
+        # is a no-op on it. Leaving the column out would be equally correct today and would
+        # stop being correct the moment someone re-read `current` above.
+        conn.execute(update(s.text_overrides)
+                     .where(s.text_overrides.c.version_id == version_id,
+                            s.text_overrides.c.slot_kind == slot_kind,
+                            s.text_overrides.c.slot_key == slot_key)
+                     .values(**row))
+
+    seq = _append_history(conn, version_id, slot_kind, slot_key, text, user_id, stamp, depth)
+
+    # --- the views ---------------------------------------------------------
+    views = list(derive(version_id=version_id, slot_kind=slot_kind, location=location) or ()) \
+        if derive else []
+    _stamp_derivations(conn, version_id, views, stamp)
+
+    return Applied(version_id=version_id, slot_kind=slot_kind, slot_key=slot_key,
+                   llm_text=llm_text or "", human_text=text, previous_text=previous_text,
+                   location=location, seq=seq, first_edit=first_edit,
+                   artifacts_written=artifacts_written, views_derived=views)
+
+
+# ---------------------------------------------------------------------------
+# history
+# ---------------------------------------------------------------------------
+def _append_history(conn, version_id, slot_kind, slot_key, text, user_id, stamp, depth) -> int:
+    """Append this edit and drop everything older than the newest `depth` (REQ-ST-04).
+
+    `seq` is per slot and monotonic, so the trim is one indexed delete rather than "find the
+    oldest rows" — `ix_override_history_slot` is on `(version_id, slot_kind, slot_key, seq)`.
+    """
+    where = (s.text_override_history.c.version_id == version_id,
+             s.text_override_history.c.slot_kind == slot_kind,
+             s.text_override_history.c.slot_key == slot_key)
+    top = conn.execute(select(func.max(s.text_override_history.c.seq)).where(*where)).scalar()
+    seq = int(top or 0) + 1
+
+    conn.execute(insert(s.text_override_history).values(
+        version_id=version_id, slot_kind=slot_kind, slot_key=slot_key,
+        human_text=text, updated_by=user_id, updated_at=stamp, seq=seq))
+
+    cutoff = seq - depth
+    if cutoff > 0:
+        conn.execute(delete(s.text_override_history)
+                     .where(*where, s.text_override_history.c.seq <= cutoff))
+    return seq
+
+
+# ---------------------------------------------------------------------------
+# derivation stamps
+# ---------------------------------------------------------------------------
+def _stamp_derivations(conn, version_id, views, stamp) -> None:
+    """Record that these views were derived now — the export guard's input (REQ-AP-04).
+
+    A view is `name` or `(name, group)`. The guard compares the OLDEST derivation against the
+    newest override, so a view that was re-derived must have its row moved forward; leaving a
+    stale row would report the version as permanently stale.
+    """
+    for view in views or ():
+        name, group = view if isinstance(view, (tuple, list)) else (view, "")
+        where = (s.view_derivations.c.version_id == version_id,
+                 s.view_derivations.c.view_name == name,
+                 s.view_derivations.c.group_name == (group or ""))
+        touched = conn.execute(update(s.view_derivations).where(*where)
+                               .values(derived_at=stamp)).rowcount
+        if not touched:
+            conn.execute(insert(s.view_derivations).values(
+                version_id=version_id, view_name=name, group_name=(group or ""),
+                derived_at=stamp))
+
+
+# ---------------------------------------------------------------------------
+# reading back
+# ---------------------------------------------------------------------------
+def get_override(conn, version_id: str, slot_kind: str, slot_key: str):
+    """The current override row, or None. One indexed lookup (REQ-ST-05)."""
+    return conn.execute(
+        select(s.text_overrides)
+        .where(s.text_overrides.c.version_id == version_id,
+               s.text_overrides.c.slot_kind == slot_kind,
+               s.text_overrides.c.slot_key == slot_key)).first()
+
+
+def history_for(conn, version_id: str, slot_kind: str, slot_key: str):
+    """Every retained edit for one slot, oldest first."""
+    return conn.execute(
+        select(s.text_override_history)
+        .where(s.text_override_history.c.version_id == version_id,
+               s.text_override_history.c.slot_kind == slot_kind,
+               s.text_override_history.c.slot_key == slot_key)
+        .order_by(s.text_override_history.c.seq)).fetchall()
+
+
+def overrides_for_version(conn, version_id: str, slot_kind: Optional[str] = None):
+    """Every override in a version, for the HTML render and for carry-forward.
+
+    Fetched in one query rather than per slot: the page resolves thousands of slots, and a
+    lookup each would make render cost grow with the document (REQ-ST-05).
+    """
+    q = select(s.text_overrides).where(s.text_overrides.c.version_id == version_id)
+    if slot_kind:
+        q = q.where(s.text_overrides.c.slot_kind == slot_kind)
+    return conn.execute(q).fetchall()

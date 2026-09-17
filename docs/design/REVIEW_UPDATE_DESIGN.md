@@ -195,6 +195,10 @@ apply_override(version_id, slot_kind, slot_key, human_text, user_id):
 Everything through `COMMIT` is one transaction (`REQ-AP-02`) — a half-applied override, where the
 model moved and the views did not, is exactly the failure this feature exists to avoid.
 
+**Five kinds, not seven.** `nodeLabel` and `behaviourDescription` have no model field to resolve
+to — see [Open items](#open-items). `override_service` refuses them with `NotEditableHere` rather
+than writing somewhere the next derivation overwrites.
+
 Renders are enqueued **after** commit: a render is slow, must not hold a transaction, and is
 idempotent if retried.
 
@@ -521,6 +525,19 @@ drops.
 
 ## Open items
 
+- [ ] **`nodeLabel` and `behaviourDescription` have no model field** — found building step 3. Their
+      text lives only in Phase-3 view output (the flowchart JSON; `_behaviour_pngs.json`'s
+      `_docxRows[].behaviorDescription`), so "write the override into the model" has nothing to
+      write to, and writing it into the view output would be reverted by the next derivation —
+      the two-copies arrangement `REQ-AP-01` exists to remove. `override_service` refuses both
+      with `NotEditableHere` (501) rather than pretending. Two candidate fixes: give them model
+      fields the way `REQ-PRE-01` did for unit/struct descriptions, or have the two views apply
+      overrides at derivation time so the override table *is* the source. Blocks `REQ-ED-01` for
+      2 of 7 kinds, and blocks `REQ-ID-02`'s `slot_shape` from ever being written.
+- [ ] **`test_steps` is re-derived too narrowly.** `REQ-ED-03` makes a Test Step's wording a node
+      label, and `test_steps._splice_callee` nests a *cross-unit* callee's steps under the step
+      that calls it. So a `nodeLabel` edit in unit A changes unit B's Test Steps, and
+      [§5](#5-re-deriving-the-views)'s "the flowchart JSON for that unit" would leave B stale.
 - [ ] Default for `llm.overrideHistoryDepth`.
 - [ ] Whether orphaned overrides need a cleanup command.
 - [ ] Approval workflow — out of scope (`REQ-API-06`'s note); the schema leaves room for a state

@@ -208,6 +208,42 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-17b (**review_update_v1 step 3 — the override service**. `engine/review/`
+> gains `resolver.py`, `override_service.py`, `derive.py`.
+>
+> `apply_override(conn, version_id, kind, key, text, models=...)` is the single entry point:
+> reject empty (REQ-ST-06) → resolve the slot to a model field → capture `llm_text` ONCE on the
+> first edit (REQ-ST-03) → write the model through the repository gateway → upsert
+> `text_overrides` → append history and trim to N (REQ-ST-04) → re-derive views → stamp
+> `view_derivations` (REQ-AP-04). It neither begins nor commits: the CALLER owns the
+> transaction, so an API handler wraps the edit and its response in one unit (REQ-AP-02).
+> `ModelAccess` writes back ONLY the artifact that changed — handing `model_repo`'s flush all
+> four when one moved is how a one-field edit becomes a whole-model rewrite.
+>
+> **Found while building: two of the seven editable kinds have no model field.** `nodeLabel`
+> lives in the flowchart JSON and `behaviourDescription` in `_behaviour_pngs.json`
+> (`_docxRows[].behaviorDescription`) — both **Phase-3 view output**. "Write the override into
+> the model" has nothing to write to, and writing into the view output would be reverted by the
+> next derivation, which is the two-copies arrangement REQ-AP-01 exists to remove. Both are
+> refused with `NotEditableHere` (501) rather than silently no-opping. Two candidate fixes in
+> REVIEW_UPDATE_DESIGN Open items: give them model fields the way REQ-PRE-01 did for unit/struct
+> descriptions, or have `flowcharts` + `behaviour_diagram` apply overrides at derivation time so
+> the override table IS the source. **This also blocks `slot_shape` from ever being written**,
+> so the REQ-ID-02 capture is deliberately NOT in `apply_override` — code no caller can reach is
+> code no test can check.
+>
+> **Also found: `test_steps` re-derivation is too narrow.** REQ-ED-03 makes a Test Step's
+> wording a node label, and `test_steps._splice_callee` nests a CROSS-UNIT callee's steps under
+> the calling step — so a `nodeLabel` edit in unit A changes unit B's Test Steps, and design §5's
+> "the flowchart JSON for that unit" would leave B stale. Logged in Open items.
+>
+> Node labels are generated ~4 per LLM call in region-aware batches
+> (`flowchart/llm/generator.py`), so neither per-node nor per-flowchart matches generation; the
+> batch is an implementation detail, not an addressing unit.
+>
+> 34 service tests, each of the five silent-failure rules reverted to confirm a test fails.
+> Unit suite 1550 passed / 10 skipped. **Step 4 = the export guard** next.)
+
 > Updated: 2026-09-17 (**review_update_v1 step 2 — slot storage + addressing; and REQ-ID-02's
 > justification was wrong**. Branch `review_update_v1`, commit `2d351c9` plus this change.
 > Spec [REVIEW_UPDATE_SPEC](docs/spec/REVIEW_UPDATE_SPEC.md) · design
