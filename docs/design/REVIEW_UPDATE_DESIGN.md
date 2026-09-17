@@ -14,6 +14,7 @@ mechanism it hangs off, so a future change can find what it is touching.
 - [2. Schema](#2-schema)
 - [3. Slot addressing](#3-slot-addressing)
 - [4. Writing an override](#4-writing-an-override)
+  - [4.1 A whole flowchart in one call](#41-a-whole-flowchart-in-one-call)
 - [5. Re-deriving the views](#5-re-deriving-the-views)
 - [6. The cascade](#6-the-cascade)
 - [7. Images](#7-images)
@@ -21,6 +22,7 @@ mechanism it hangs off, so a future change can find what it is touching.
 - [9. The export guard](#9-the-export-guard)
 - [10. Carrying overrides into the next version](#10-carrying-overrides-into-the-next-version)
 - [11. API](#11-api)
+  - [11.1 The flowchart endpoint](#111-the-flowchart-endpoint)
 - [12. Prerequisites](#12-prerequisites)
 - [13. Build order](#13-build-order)
 - [14. Testing](#14-testing)
@@ -153,6 +155,14 @@ Deliberately **not** 0x1f, which `hashing.py` uses: Python counts 0x1c–0x1f as
 `"a\x1f".strip()` deletes it. A hash input is never trimmed; a slot key travels through request
 bodies, JSON and form fields, any of which may trim what they are handed.
 
+**The flowchart id is the function's `entity_key`** (`REQ-ID-04`) — the same string that is the first
+part of every node-label key inside it. A flowchart *is* one function's CFG: the picture is
+`<unit>_<function>.png` and the graph hangs off a per-function entry in the unit's flowchart JSON.
+One id read two ways, not two ids to keep in step.
+
+So `slot.parse(NODE_LABEL, key)["entity_key"]` is the flowchart the label belongs to, and no
+mapping table is needed to go either way.
+
 `version_id` is a column, not part of the key, so "the same slot across versions" is a simple query —
 which [§10](#10-carrying-overrides-into-the-next-version) needs.
 
@@ -198,6 +208,48 @@ model moved and the views did not, is exactly the failure this feature exists to
 **Five kinds, not seven.** `nodeLabel` and `behaviourDescription` have no model field to resolve
 to — see [Open items](#open-items). `override_service` refuses them with `NotEditableHere` rather
 than writing somewhere the next derivation overwrites.
+
+### 4.1 A whole flowchart in one call
+
+`apply_override` stays the per-slot primitive. `apply_flowchart_overrides` wraps it for `REQ-API-08`:
+
+```
+apply_flowchart_overrides(version_id, flowchart_id, labels, user_id):
+
+  labels is {node_id: text} -- only what the reviewer changed
+
+  VALIDATE EVERY LABEL FIRST, write nothing:
+      each text non-empty                              REQ-ST-06
+      each node_id present in this version's CFG       REQ-API-08 rule 2
+      -> any failure aborts the call, naming the node
+
+  read the CFG's node-id list ONCE -> slot_shape       REQ-ID-02
+
+  BEGIN
+    for each label:
+        apply_override(..., NODE_LABEL,
+                       slot.for_node(flowchart_id, node_id),
+                       derive=None)                    one row, own llm_text, own history
+    re-derive the flowchart ONCE                       REQ-API-08 rule 3
+    stamp view_derivations
+  COMMIT
+
+  enqueue ONE image render
+```
+
+Three properties fall out of this shape, and each is the reason for it:
+
+**Validate-then-write, not write-as-you-go.** Otherwise labels 1–3 are committed and label 4 fails,
+and the picture is redrawn from a half-applied edit.
+
+**`derive=None` on each inner call.** Twelve labels must not mean twelve derivations of the same
+JSON and twelve Graphviz runs of the same graph. The flowchart was always the unit of rebuilding —
+a PNG cannot be partly redrawn — so this is the API finally agreeing with the renderer. It is the
+main saving the change buys, beyond the request count.
+
+**One reading of the graph for the shape.** All of a flowchart's rows get the same `slot_shape`
+from a single read, so they cannot disagree about which graph they were written against, and
+`REQ-ID-02` carries them forward or orphans them as a group.
 
 Renders are enqueued **after** commit: a render is slow, must not hold a transaction, and is
 idempotent if retried.
@@ -275,7 +327,8 @@ labels.
 ### 7.1 Trigger
 
 A `nodeLabel` override rewrites `cfg.nodes[].label`, then re-derives the DOT from the CFG and
-re-renders. **The DOT is never edited directly** — it is generated syntax, and the SWE.4 Test Steps
+re-renders — **once per save, not once per label** ([§4.1](#41-a-whole-flowchart-in-one-call)).
+**The DOT is never edited directly** — it is generated syntax, and the SWE.4 Test Steps
 read the CFG, not the DOT. Editing the CFG keeps the picture and the test specification in step.
 
 A `behaviourDescription` override re-renders that behaviour diagram's mermaid → PNG.
@@ -385,12 +438,36 @@ New router `api/routes/text_overrides.py`, following the conventions in
 |---|---|---|
 | `GET` | `…/versions/{vid}/slots` | `REQ-API-01` — list with current text + `isOverridden`; filter by unit/component/kind, paginated |
 | `GET` | `…/versions/{vid}/slots/{kind}/{key}` | `REQ-API-02` |
-| `PUT` | `…/versions/{vid}/slots/{kind}/{key}` | `REQ-API-03` — one slot per call |
+| `PUT` | `…/versions/{vid}/slots/{kind}/{key}` | `REQ-API-03` — one slot per call, the six text kinds |
 | `DELETE` | `…/versions/{vid}/slots/{kind}/{key}` | `REQ-API-04` — undo, restores `llm_text`, keeps the record |
+| `GET` | `…/versions/{vid}/flowcharts/{fcId}/labels` | `REQ-API-02` — every node label of one flowchart |
+| `PUT` | `…/versions/{vid}/flowcharts/{fcId}/labels` | `REQ-API-08` — the changed labels of one flowchart |
 
 Pagination on the list is not optional: a version has roughly **57,000 slots**.
 
 `PUT` is last-write-wins (`REQ-API-07`) — no version token, no conflict response.
+
+### 11.1 The flowchart endpoint
+
+`{fcId}` is the function's `entity_key`, base64url-encoded via `slot.encode()` (`REQ-ID-04`). A raw
+`entity_key` contains `|`, `:`, `,`, `*` and spaces, so it does not go in a path segment unencoded.
+
+```http
+PUT …/versions/v3/flowcharts/{fcId}/labels
+{ "labels": { "n7": "Check write-protect flag", "n9": "Increment retry count" } }
+```
+
+**Only changed labels.** The whole flowchart is not submitted. A stale copy of an untouched label
+would overwrite a correction someone else made to *that* label seconds earlier, and the server
+cannot distinguish an unchanged label from a deliberate revert — `REQ-API-07`'s "last write wins"
+was agreed **per slot**, and sending only what changed is what keeps it meaning that.
+
+**All or nothing.** Every label is validated before any is written; one bad node fails the call and
+names itself in the response. This is `REQ-AP-02` at flowchart scope: the re-render must not run
+against a partial edit.
+
+Rejections, from `override_service`: `EmptyText` → 422, `SlotUnknown` → 404 (naming the node),
+`NotEditableHere` → 501 until the model-home item in [Open items](#open-items) is resolved.
 
 The response carries `renderPending` so the UI can show that an image is still being produced.
 
@@ -431,16 +508,22 @@ Each step leaves the tree working and is independently useful.
 | # | step | why here |
 |---|---|---|
 | 1 | ~~`REQ-PRE-01` — descriptions into Phase 2~~ **DONE** | two of the seven slot kinds cannot exist until this lands |
-| 2 | Schema + migration + `slot.py` | nothing else compiles without addressing |
-| 3 | `override_service` — write + re-derive, no cascade | the smallest end-to-end slice: edit → HTML → DOCX |
+| 2 | ~~Schema + migration + `slot.py`~~ **DONE** | nothing else compiles without addressing |
+| 3 | ~~`override_service` — write + re-derive, no cascade~~ **DONE, 5 of 7 kinds** | the smallest end-to-end slice: edit → HTML → DOCX |
+| 3b | **A model home for `nodeLabel` and `behaviourDescription`** | now blocking: it gates 2 of 7 kinds, the `REQ-ID-02` shape write, and the whole of `REQ-API-08` |
 | 4 | The export guard | closes the `--from-phase 4` hole; independently valuable |
-| 5 | API + undo | the UI can be built against it |
+| 5 | API + undo, incl. the flowchart endpoint ([§11.1](#111-the-flowchart-endpoint)) | the UI can be built against it |
 | 6 | Cascade | correctness improvement on a working feature |
 | 7 | Images | the slowest and most isolated part |
 | 8 | Carry-forward into the next version | needs a second version to test against |
 | 9 | `REQ-PRE-02` — read output from the database | large, independent; removes the last disk dependency |
 
 Steps 1 and 9 can be done by someone else in parallel — they touch different files from 2–8.
+
+**Step 3b was not in the original order.** It surfaced building step 3: `nodeLabel` and
+`behaviourDescription` have no model field, so there is nothing for an override to write to. It
+was a gap before `REQ-API-08`; it is a blocker now, because the flowchart endpoint is the one
+`REQ-API-08` describes and `nodeLabel` is the kind it carries.
 
 ---
 
@@ -498,6 +581,13 @@ reused when that still matches (`REQ-ID-02`).
 A content hash of the node *text* as the identifier was considered and rejected: it collides on two
 identical statements in one function, and it solves a different problem. `slot_shape` is not an
 identifier — the id stays `n7`. It is a validity gate answering "is this still the same graph?".
+
+**The API is per flowchart; the storage is per label.** These are different questions and they get
+different answers. A version holds ~42,000 node labels, so a call per label would make the
+flowchart the one screen whose save cost scales with how much the reviewer fixed — hence
+`REQ-API-08`. But the *record* stays one row per label, because undo, history, the training pair
+and the emptiness check all operate on one sentence. The rebuild is per flowchart too, which is
+not a compromise: a PNG cannot be partly redrawn, so that was always the unit.
 
 **One slot per node, not one per flowchart.** Storing a whole flowchart's labels as one override was
 considered. It wins on exactly one point — atomic all-or-nothing reuse — which `slot_shape` gives

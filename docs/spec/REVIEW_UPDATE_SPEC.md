@@ -128,7 +128,9 @@ change to the BUILDER would shift ids while the source hash stayed the same — 
 attach the wrong label to the wrong node"*.
 
 Every override on one flowchart carries the same list, so they carry forward or orphan as a group; a
-half-corrected picture is not reachable.
+half-corrected picture is not reachable. Since a flowchart is saved in one call
+([REQ-API-08](#req-api-08--a-flowchart-is-saved-in-one-call)), the list is read once per save and
+written to each label's row — one reading of the graph, so they cannot disagree.
 
 **Verification:** with `source_hash` unchanged and one node added to the CFG, no node override is
 applied and each is flagged orphaned; with both unchanged, every one carries.
@@ -143,6 +145,21 @@ user's work and it is training data, and a rename may be reverted. Cleanup is a 
 operation.
 
 **Verification:** renaming a function leaves its override present and flagged, not removed.
+
+### REQ-ID-04 — A flowchart is addressed by its function's id
+
+A flowchart **is** one function's control-flow graph: the picture is `<unit>_<function>.png` and
+the CFG hangs off a per-function entry in the unit's flowchart JSON. So the flowchart id is the
+function's `entity_key` — no new identifier, per [REQ-ID-01](#req-id-01--reuse-the-ids-that-already-exist).
+
+A node label's slot key stays `entity_key` + `node_id`, so the flowchart id is the first part of
+every label key it contains. One id, read two ways; not two ids to keep in step.
+
+Where a URL path segment is needed, the id is base64url-encoded — an `entity_key` contains `|`,
+`:`, `,`, `*` and spaces.
+
+**Verification:** every node label key in a flowchart yields that flowchart's id, and the id
+resolves to exactly one function.
 
 ---
 
@@ -177,7 +194,8 @@ The LLM's original and the human's replacement. Without the original there is no
 ### REQ-ST-04 — History is bounded and configurable
 
 Every edit is recorded. Beyond a configurable **N** human edits per slot, the oldest human edits are
-dropped.
+dropped. A **slot**, so for a flowchart that is per label, not per save — a call that changes one
+label of twelve appends one history row, not twelve.
 
 **The LLM original is never evicted** — it is not counted against N. Training needs the two *ends* of
 the pair (what the model wrote, what the human settled on); the intermediate wording tweaks are the
@@ -197,6 +215,30 @@ render.
 Applies to every slot kind, not just descriptions.
 
 **Verification:** an empty or whitespace-only update is rejected.
+
+---
+
+### REQ-ST-07 — A flowchart label is stored per label, whatever the API granularity
+
+One row per node label, each with its own LLM original, human text and history — even though a
+whole flowchart is submitted in one call ([REQ-API-08](#req-api-08--a-flowchart-is-saved-in-one-call)).
+
+Storing a flowchart's labels as one blob was considered and rejected. It wins on exactly one
+point, atomic all-or-nothing reuse across versions, which
+[REQ-ID-02](#req-id-02--a-node-override-carries-forward-only-if-the-node-list-is-unchanged)'s node
+list already provides. It loses on four:
+
+- **undo** would revert labels the reviewer corrected separately and wanted kept;
+- the [REQ-TD-01](#req-td-01--corrections-are-stored-as-pairs) training pair degrades from one
+  sentence against one sentence to a blob against a blob, which must be diffed to recover what
+  actually changed, and after several edits cannot be recovered at all;
+- [REQ-ST-04](#req-st-04--history-is-bounded-and-configurable)'s cap would count N edits per
+  *flowchart* rather than per label;
+- `human_text` stops being a plain string for one of the seven kinds, so
+  [REQ-ST-06](#req-st-06--no-editable-text-may-be-set-to-empty)'s emptiness check needs a
+  kind-specific structural variant.
+
+**Verification:** a five-label save leaves five rows, each carrying its own original.
 
 ---
 
@@ -369,11 +411,25 @@ With each slot's id, current text, and whether it is overridden.
 
 So the UI can confirm an update landed.
 
+A flowchart is also **read** by its id — every node label with its current text and its LLM
+original — so the editor can open with one request, matching the one request it saves with
+([REQ-API-08](#req-api-08--a-flowchart-is-saved-in-one-call)). Whether the UI marks the corrected
+ones is its own choice; the rendered *document* carries no marker
+([REQ-API-06](#req-api-06--corrected-text-is-not-highlighted)).
+
 **Verification:** after an update, the read returns the new text.
 
-### REQ-API-03 — Update one slot
+### REQ-API-03 — Update one slot, except a flowchart's labels
 
-One slot per call. A reviewer edits one piece of text at a time; there is no batch operation.
+One slot per call for the six text kinds. A reviewer edits one piece of text at a time.
+
+**Flowchart node labels are the exception: they are submitted per flowchart, not per label**
+([REQ-API-08](#req-api-08--a-flowchart-is-saved-in-one-call)). A version holds roughly 42,000 of
+them against ~2,000 other slots, so a call per label would make the flowchart the only screen in
+the product whose save cost scales with how much the reviewer fixed.
+
+This changes the **API** only. Storage stays one row per label
+([REQ-ST-07](#req-st-07--a-flowchart-label-is-stored-per-label-whatever-the-api-granularity)).
 
 **Verification:** an update to one slot leaves every other slot unchanged.
 
@@ -399,6 +455,29 @@ Two people editing the same slot: the later write is kept. No locking, no confli
 
 **Verification:** two updates in sequence leave the second.
 
+### REQ-API-08 — A flowchart is saved in one call
+
+Addressed by the flowchart's id ([REQ-ID-04](#req-id-04--a-flowchart-is-addressed-by-its-functions-id)),
+carrying a map of `node_id → text`.
+
+Three rules:
+
+1. **Only changed labels are sent.** Not the whole flowchart. If a reviewer's stale copy of an
+   untouched label were submitted, it would overwrite a correction someone else made to that label
+   seconds earlier — and the server cannot tell an unchanged label from a deliberate revert.
+   Sending only what changed is what keeps [REQ-API-07](#req-api-07--last-write-wins)'s "last write
+   wins" true **per slot**, which is the granularity it was agreed at.
+2. **All or nothing.** If any label in the request is rejected — empty text, or a node that no
+   longer exists — nothing is written and the response names the offending node. A save that half
+   succeeds leaves the flowchart in a state neither the reviewer nor the document expects, and the
+   re-render would run against a partial edit ([REQ-AP-02](#req-ap-02--saving-an-override-is-one-operation)).
+3. **One re-derivation and one re-render per call**, however many labels it carried. A picture
+   cannot be partly redrawn, so the flowchart was always the unit of rebuilding; this makes the
+   API agree with it.
+
+**Verification:** a five-label call writes five rows, re-renders once, and leaves every other
+label untouched; the same call with one bad node writes nothing.
+
 ---
 
 ## TD — Training data
@@ -410,6 +489,12 @@ later.
 
 What the LLM wrote **and** what the human replaced it with. A correction without its original teaches
 nothing — "right" with no "wrong" carries no signal.
+
+A reviewer may also type the LLM's original wording back. That is an ordinary edit and the row
+stays, with its history (undo is a separate, explicit operation —
+[REQ-API-04](#req-api-04--undo-restores-the-llm-original)). **A training export must skip pairs
+whose two texts are equal**: they are not corrections, and counting them as such would teach the
+model that its own output needed changing into itself.
 
 **Verification:** every override record yields both texts.
 

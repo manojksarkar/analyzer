@@ -208,6 +208,42 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-17c (**review_update_v1 — the flowchart API becomes flowchart-wise, not
+> label-wise** (user modification). Spec `REQ-API-08` + `REQ-ID-04` + `REQ-ST-07`; design §4.1 and
+> §11.1. **Docs only — no code changed, suite still 1550/10.**
+>
+> A version holds ~42,000 node labels against ~2,000 other slots, so one call per label would make
+> the flowchart the only screen whose save cost scales with how much the reviewer fixed. The UI now
+> saves a whole flowchart in one request. **Storage is unchanged: still one row per label**, each
+> with its own `llm_text`, history and `slot_shape` (`REQ-ST-07`). API granularity and storage
+> granularity are different questions with different answers.
+>
+> **Flowchart id = the function's `entity_key`** (`REQ-ID-04`). A flowchart IS one function's CFG —
+> the picture is `<unit>_<function>.png` and the graph hangs off a per-function entry in the unit
+> JSON — so it is the string already at the front of every node-label key. No mapping table, no
+> second id. base64url via `slot.encode()` in a URL path.
+>
+> Three decided rules (`REQ-API-08`): **only changed labels are sent** — a stale copy of an
+> untouched label would overwrite someone else's correction to it, and the server cannot tell
+> unchanged from deliberately reverted, so this is what keeps `REQ-API-07`'s last-write-wins
+> meaning *per slot*; **all or nothing** — validate every label before writing any, or the
+> re-render runs against a half-applied edit; **one re-derivation and one Graphviz run per call**
+> however many labels it carried, which is the real saving, not the request count.
+>
+> Also decided: a reviewer typing the LLM's original wording back is an ordinary edit and the row
+> stays (undo is separate, `REQ-API-04`) — but a **training export must skip pairs whose two texts
+> are equal** (`REQ-TD-01`), or the model learns its own output needed changing into itself.
+>
+> **Nothing already built was invalidated** — `slot.py`, `cfg_shape`, all three tables, both
+> migrations and `override_service.apply_override` are unaffected, because the change is at the API
+> layer and storage stayed per label. `apply_flowchart_overrides` will wrap `apply_override`, not
+> replace it. The shape capture gets *cleaner*: read the node list once per save and stamp every
+> row from it, so they cannot disagree.
+>
+> **New build-order step 3b, now blocking: a model home for `nodeLabel` and `behaviourDescription`.**
+> It already gated 2 of 7 kinds and the `slot_shape` write; it now gates the whole of `REQ-API-08`,
+> because the flowchart endpoint carries exactly the kind that has nowhere to write.)
+
 > Updated: 2026-09-17b (**review_update_v1 step 3 — the override service**. `engine/review/`
 > gains `resolver.py`, `override_service.py`, `derive.py`.
 >
