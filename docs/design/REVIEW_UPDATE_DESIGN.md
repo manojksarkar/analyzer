@@ -16,6 +16,9 @@ mechanism it hangs off, so a future change can find what it is touching.
 - [4. Writing an override](#4-writing-an-override)
   - [4.1 A whole flowchart in one call](#41-a-whole-flowchart-in-one-call)
 - [5. Re-deriving the views](#5-re-deriving-the-views)
+  - [5.1 Text that Phase 3 produces](#51-text-that-phase-3-produces)
+  - [5.2 Applying a correction without running Phase 3](#52-applying-a-correction-without-running-phase-3)
+  - [5.3 What stays broken, deliberately](#53-what-stays-broken-deliberately)
 - [6. The cascade](#6-the-cascade)
 - [7. Images](#7-images)
 - [8. Reading: HTML and DOCX](#8-reading-html-and-docx)
@@ -286,6 +289,118 @@ Each derivation stamps `view_derivations`.
 `version_output_files` row. If a future change adds a second writer, the invariant is gone and the
 two-copies bug class returns.
 
+### 5.1 Text that Phase 3 produces
+
+`REQ-AP-05`. Five kinds are model fields and follow §4: write the model, re-derive the view. The
+other two are made *during* Phase 3 and have no model field:
+
+| kind | where it is made | where it lands |
+|---|---|---|
+| `nodeLabel` | the flowchart engine subprocess | `cfg.nodes[].label` in the unit's flowchart JSON |
+| `behaviourDescription` | `MermaidBuilder` while building arrows | `_docxRows[].behaviorDescription` |
+
+For these, **the override table is the source and the correction is an input to Phase 3.** Not a
+patch applied to Phase 3's output — the next run would rebuild that output from the CFG, ask the
+LLM again, and drop the correction with no error.
+
+```
+                      text_overrides  (the only home for these two kinds)
+                             │
+                             ▼  handed in, like knowledge_base.json
+   source ──► flowchart engine ──► CFG with corrected labels ──► DOT ──► PNG
+                                                             └─► flowchart JSON
+```
+
+**One module owns the mapping**, `engine/review/phase3_overrides.py`:
+
+```python
+APPLIED_AT_DERIVE = {
+    NODE_LABEL:            Target("flowcharts",       "cfg.nodes[].label",  key=node_id),
+    BEHAVIOUR_DESCRIPTION: Target("behaviourDiagram", "_docxRows[].behaviorDescription", …),
+}
+```
+
+with a test asserting every kind in `slot.ALL_KINDS` is either model-backed (`resolver._HOMES`) or
+here — the same coverage shape as `derive.views_for`. A kind that is in neither would save fine and
+never appear, which is the failure mode this whole design is built against.
+
+**Why this does not disturb the pipeline.** A view still takes its inputs and writes its own
+output; it gains one more input. Phase boundaries are untouched — which matters, because Phase 3
+runs per group and is the phase that parallelises. The alternative considered, moving label
+generation into Phase 2 so labels become model data, was rejected for exactly this: it would take
+the largest LLM cost in the system (~42,000 labels, ~10,000 calls) out of the parallel phase and
+make it a serial, global one. See [§15](#15-decisions-and-their-reasons).
+
+**Two mechanisms already exist**, so this is assembly rather than invention:
+
+- Phase 3 already passes `knowledge_base.json` into the flowchart subprocess
+  (`views/flowcharts.py`), so the delivery route is established.
+- `flowchart_engine._apply_cached_labels` already pastes a `{node_id: label}` map onto a fresh CFG
+  **and rejects it unless the node-id set matches exactly** — the same guard as `slot_shape`. A
+  human correction is a second, higher-priority source into that path, and inherits the guard.
+
+### 5.2 Applying a correction without running Phase 3
+
+`REQ-AP-06`. A save must be instant, so it re-parses nothing:
+
+```
+read that flowchart's CFG from the stored JSON      already in version_output_files
+set cfg.nodes[n].label for each corrected node
+rebuild the DOT from the corrected CFG              pure function, no LLM
+re-render the PNG                                   Graphviz; redo tall-PNG slicing
+re-derive the component's SWE.4 specs               REQ-CS-04, no LLM
+write the flowchart JSON row back
+```
+
+No libclang, no LLM, no flowchart subprocess, and **no C++ source required** — which is what lets a
+correction be saved from a machine that does not have the tree checked out.
+
+**The DOT is regenerated, never patched.** Labels are line-wrapped and escaped on the way into the
+DOT, so a corrected label of a different length needs re-wrapping. Editing the DOT text would put
+those rules in a second place to drift from the first. Editing the CFG also keeps the picture and
+the SWE.4 Test Steps in step, since the Test Steps read the CFG.
+
+**Slicing must be redone.** A corrected label can change the picture's height, so a graph written
+as `_part_1_of_3` may become `_part_1_of_2` and the orphan `_part_3_of_3.png` must go —
+`_cleanup_stale_slice_parts` exists because this has been a defect once already.
+
+**A behaviour-description edit renders nothing.** `MermaidBuilder` labels each arrow
+`<callee>()` — the function's name — and appends the description to a separate list. The text is
+not in the picture, so only the `_behaviour_pngs.json` row changes. (An earlier draft of
+[§7](#7-images) said otherwise.)
+
+#### The second writer, and how it is kept honest
+
+§5 states that nothing but a `VIEW_REGISTRY` call writes a `version_output_files` row. The save path
+above breaks that: it updates one row without running a view, and it cannot run the view instead,
+because `persist_output_files` deletes every row for the version and rebuilds from a full
+`output_dir` walk — it has no single-row form, and a save has no output dir.
+
+Rather than leave the invariant quietly false, it is restated:
+
+> A `version_output_files` row is written by `persist_output_files` (after a view runs) or by
+> `review.rerender.write_flowchart_json` — **and by nothing else**. Both call one shared writer.
+
+Enforced by a test that greps `engine/` and `api/` for other writers, the same way
+`test_unit_struct_descriptions_stored` greps the exporter for LLM calls. An invariant nobody checks
+is a comment.
+
+### 5.3 What stays broken, deliberately
+
+`test_steps._load_cfgs` reads the **flowcharts view's output directory** and returns `{}` — "no
+steps", not an error — when it is absent:
+
+```python
+fc_dir = os.path.join(output_dir, "flowcharts")
+if not os.path.isdir(fc_dir):
+    return {}
+```
+
+A view reading another view's output, and silently emptying every Test Step if that view did not
+run. Real, and older than this feature. Moving CFGs into the model would have fixed it as a side
+effect; this design does not, and does not make it worse. Logged in [Open items](#open-items) as
+its own fix.
+
 ---
 
 ## 6. The cascade
@@ -307,7 +422,7 @@ Dependents of an edited **function description**:
 3. **Behaviour call descriptions** where it is caller or callee
 
 A **global description** regenerates only its unit's description. Every other slot kind cascades to
-nothing (`REQ-CS-03` through `REQ-CS-07`).
+nothing — `REQ-CS-01`'s table is the whole list. (An earlier draft of this line cited `REQ-CS-04`–`07`, which were never written; the cases were collapsed into that table.)
 
 Regeneration calls the same generators the pipeline uses — `get_description`, `get_unit_description`,
 `CallDescriptionGenerator` — so wording stays consistent with a normal run.
@@ -331,7 +446,11 @@ re-renders — **once per save, not once per label** ([§4.1](#41-a-whole-flowch
 **The DOT is never edited directly** — it is generated syntax, and the SWE.4 Test Steps
 read the CFG, not the DOT. Editing the CFG keeps the picture and the test specification in step.
 
-A `behaviourDescription` override re-renders that behaviour diagram's mermaid → PNG.
+A `behaviourDescription` override renders **nothing**. `MermaidBuilder` labels each arrow
+`<callee>()` — the function's name — and appends the description to a separate list that becomes
+`_docxRows[].behaviorDescription`. The text is not in the picture, so only that row changes. An
+earlier draft of this section said it re-renders the diagram; it does not, and queueing a render
+for it would be wasted work (`REQ-IM-01`).
 
 ### 7.2 Execution
 
@@ -582,6 +701,30 @@ A content hash of the node *text* as the identifier was considered and rejected:
 identical statements in one function, and it solves a different problem. `slot_shape` is not an
 identifier — the id stays `n7`. It is a validity gate answering "is this still the same graph?".
 
+**Phase 3's text is corrected at Phase 3, not moved into the model.** `nodeLabel` and
+`behaviourDescription` are made while the view is built, so they have no model field. The
+alternative was to give them one — move flowchart label generation into Phase 2 so labels become
+model data like descriptions. That was rejected, and not on effort:
+
+- **It would fight the threading plan.** Phase 3 runs once per group, so it is the phase that
+  parallelises. Flowchart labels are the largest LLM cost in the system — ~42,000 labels, ~10,000
+  calls. Moving them into Phase 2 takes the most expensive work out of the parallel phase and makes
+  it serial and global.
+- **Phase 3 cannot write the model instead.** It runs per group, so the model would hold whichever
+  groups happened to run — complete or partial depending on what was last generated.
+- **It would also cost scoping.** Phase 2 has no component scoping (`model_deriver.py` and
+  `parser.py` contain none); five Phase-3 views do. Generating one component's document would start
+  paying for every component's labels.
+
+What it would have bought — one uniform rule, and a fix for `test_steps` scraping the flowcharts
+view's output — is real. The first is recovered by `REQ-AP-05` stating a single rule that covers
+both cases (*a correction is applied where the text is produced*). The second is a separate,
+independent fix, logged in [Open items](#open-items).
+
+And for these two kinds the chosen design keeps **fewer** copies of the human text than the
+alternative would: under a model home the correction would sit in the model *and* in the override
+row, while here the override table is its only home and every rebuild re-applies it.
+
 **The API is per flowchart; the storage is per label.** These are different questions and they get
 different answers. A version holds ~42,000 node labels, so a call per label would make the
 flowchart the one screen whose save cost scales with how much the reviewer fixed — hence
@@ -615,19 +758,17 @@ drops.
 
 ## Open items
 
-- [ ] **`nodeLabel` and `behaviourDescription` have no model field** — found building step 3. Their
-      text lives only in Phase-3 view output (the flowchart JSON; `_behaviour_pngs.json`'s
-      `_docxRows[].behaviorDescription`), so "write the override into the model" has nothing to
-      write to, and writing it into the view output would be reverted by the next derivation —
-      the two-copies arrangement `REQ-AP-01` exists to remove. `override_service` refuses both
-      with `NotEditableHere` (501) rather than pretending. Two candidate fixes: give them model
-      fields the way `REQ-PRE-01` did for unit/struct descriptions, or have the two views apply
-      overrides at derivation time so the override table *is* the source. Blocks `REQ-ED-01` for
-      2 of 7 kinds, and blocks `REQ-ID-02`'s `slot_shape` from ever being written.
-- [ ] **`test_steps` is re-derived too narrowly.** `REQ-ED-03` makes a Test Step's wording a node
-      label, and `test_steps._splice_callee` nests a *cross-unit* callee's steps under the step
-      that calls it. So a `nodeLabel` edit in unit A changes unit B's Test Steps, and
-      [§5](#5-re-deriving-the-views)'s "the flowchart JSON for that unit" would leave B stale.
+- [x] ~~**`nodeLabel` and `behaviourDescription` have no model field**~~ — **resolved**: they keep no
+      model field; the override table is their source and the correction is an input to Phase 3
+      (`REQ-AP-05`, [§5.1](#51-text-that-phase-3-produces)). The rejected alternative and why is in
+      [§15](#15-decisions-and-their-reasons).
+- [ ] **`test_steps` reads another view's output** — `_load_cfgs` opens `output_dir/flowcharts/` and
+      returns `{}` when it is missing, so every Test Step silently empties if the flowcharts view
+      did not run. Predates this feature and is not made worse by it; needs its own fix, most likely
+      by passing the CFGs in rather than scraping the directory.
+- [x] ~~**`test_steps` is re-derived too narrowly**~~ — **resolved**: a node label edit re-derives
+      every SWE.4 spec in the component (`REQ-CS-04`). The spec view calls no LLM, so this is cheap
+      and correct by construction rather than dependent on a transitive traversal being right.
 - [ ] Default for `llm.overrideHistoryDepth`.
 - [ ] Whether orphaned overrides need a cleanup command.
 - [ ] Approval workflow — out of scope (`REQ-API-06`'s note); the schema leaves room for a state

@@ -208,6 +208,59 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-17d (**review_update_v1 - how the two non-model kinds are corrected**. Spec
+> `REQ-AP-05`, `REQ-AP-06`, `REQ-CS-04`, rewritten `REQ-AP-01` + `REQ-IM-01`; design 5.1-5.3, 7,
+> 15. **Docs only.** Resolves both open questions raised at step 3.
+>
+> **Rejected: giving `nodeLabel`/`behaviourDescription` a model home.** It would mean moving
+> flowchart label generation into Phase 2 - and Phase 3 is the phase that runs per group and can be
+> PARALLELISED, while labels are the largest LLM cost in the system (~42,000 labels, ~10,000 calls).
+> Moving them takes the most expensive work out of the parallel phase and makes it serial and
+> global. Phase 3 cannot write the model instead (it runs per group, so the model would hold
+> whichever groups last ran). It would also cost scoping: `model_deriver.py`/`parser.py` have NO
+> component scoping, five Phase-3 views do.
+>
+> **Chosen (`REQ-AP-05`): a correction is applied where the text is produced.** Phase-2 text
+> (descriptions, behaviour names) -> the model, as built. Phase-3 text (node labels, behaviour
+> descriptions) -> the override table is the source and the correction is an INPUT to Phase 3, never
+> a patch on its output. Regeneration is then idempotent. One rule covering both cases, so the
+> "five this way, two that way" split is gone. For these two kinds this also keeps FEWER copies of
+> the human text than a model home would (override table only, vs model + override row).
+>
+> Two mechanisms already exist: Phase 3 already hands `knowledge_base.json` to the flowchart
+> subprocess, and `_apply_cached_labels` already pastes a `{node_id: label}` map onto a fresh CFG
+> and rejects it unless the node-id set matches - the same guard as `slot_shape`.
+>
+> **`REQ-AP-06`: saving re-parses nothing.** The CFG is already in `version_output_files`, so a save
+> patches it, rebuilds the DOT, re-renders one PNG. No libclang, no LLM, no subprocess, no C++
+> source - a correction can be saved from a machine without the tree. The DOT is regenerated, never
+> patched: labels are wrapped/escaped on the way in, so patching text would put those rules in a
+> second place. Needs ~25 lines (`cfg_for_rendering`, dict -> the graph fields `build_dot` reads -
+> verified as only `nodes`/`edges`/`entry_node_id` + node `id`/`type`/`label`/`raw_code`, all of
+> which ARE stored). NOT a `deserialize_cfg`: `serialize_cfg` is lossy (`label or raw_code`, drops
+> `function_key`/`qualified_name`/`source_file`), so the test is DOT-equality -
+> `build_dot(cfg) == build_dot(cfg_for_rendering(serialize_cfg(cfg)))` - not a round trip.
+>
+> **`REQ-CS-04`: a node label edit re-derives the component SWE.4 specs.** `_splice_callee`
+> transcribes a cross-unit callee steps in place AND chains, so a label fixed in unit B changes
+> unit A document. Re-deriving all of a component specs is cheap (that view calls no LLM) and
+> correct by construction, versus a transitive traversal that must be right.
+>
+> **Corrected, from reading the code:** a `behaviourDescription` edit renders NOTHING.
+> `MermaidBuilder` labels arrows `<callee>()` - the function name - and appends the description to a
+> separate list. The design previously claimed it re-renders the diagram; it does not.
+>
+> **New invariant, restated honestly:** a `version_output_files` row is written by
+> `persist_output_files` (after a view) or by `review.rerender.write_flowchart_json`, and nothing
+> else - because `persist_output_files` deletes all rows for a version and rebuilds from a full
+> `output_dir` walk, so it has no single-row form and a save has no output dir. Enforced by a
+> source-grep test.
+>
+> **Still open, unchanged and pre-existing:** `test_steps._load_cfgs` reads the flowcharts VIEW
+> output directory and returns `{}` when absent, so every Test Step silently empties if that view
+> did not run. A model home would have fixed it as a side effect; this design does not and does not
+> worsen it. Its own fix, logged.)
+
 > Updated: 2026-09-17c (**review_update_v1 — the flowchart API becomes flowchart-wise, not
 > label-wise** (user modification). Spec `REQ-API-08` + `REQ-ID-04` + `REQ-ST-07`; design §4.1 and
 > §11.1. **Docs only — no code changed, suite still 1550/10.**

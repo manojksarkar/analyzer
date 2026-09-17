@@ -244,10 +244,20 @@ list already provides. It loses on four:
 
 ## AP — Making it appear
 
-### REQ-AP-01 — The model is the single source of truth
+### REQ-AP-01 — One source per piece of text, and the output is derived from it
 
-View outputs (interface tables, flowcharts, behaviour rows) are **derived** from the model and are
-never written to directly.
+View outputs (interface tables, flowcharts, behaviour rows) are **derived** and are never written
+to directly as a way of changing what the document says.
+
+Where the source is depends on which phase produced the text
+([REQ-AP-05](#req-ap-05--a-correction-is-applied-where-the-text-is-produced)):
+
+| text produced in | source of truth | a correction |
+|---|---|---|
+| Phase 2 — descriptions, behaviour names | the **model** | updates the model, then the view is re-derived |
+| Phase 3 — node labels, behaviour descriptions | the **override table** | is handed to Phase 3 as an input |
+
+Either way there is exactly one place the text comes from, and the document is rebuilt from it.
 
 This is the fix for a defect that exists today: `interface_tables.json` holds a **copy** of
 `description` (`interface_tables.py:155`), and the DOCX exporter reads the copy, not the model
@@ -286,6 +296,54 @@ the database does **not** fix this: it is still the row Phase 3 wrote last time.
 
 **Verification:** override, then `reexport --from-phase 4`; the DOCX carries the human text.
 
+### REQ-AP-05 — A correction is applied where the text is produced
+
+Two of the seven kinds are not model fields. A flowchart node label lives in `cfg.nodes[].label`
+and a behaviour description in `_docxRows[].behaviorDescription` — both **made during Phase 3**,
+while the view is being built. There is no model field for a correction to update.
+
+Writing the correction into the view's output file does not work: the next run of Phase 3 rebuilds
+that file from the CFG, asks the LLM for labels again, and the correction is gone with no error.
+That is the two-copies arrangement this section exists to prevent.
+
+So for text produced in Phase 3, **the correction is an input to Phase 3**, not a patch on its
+output. Whenever Phase 3 runs — full, incremental, any group — it is given the corrections for
+that version and produces corrected output the first time. Re-running is therefore idempotent: a
+correction cannot be lost by regenerating, however often it happens.
+
+This keeps the phases independent. A view still takes its inputs and writes its own output; it
+gains one more input. Nothing about phase boundaries changes, which matters because Phase 3 runs
+per group and is the phase that can be parallelised.
+
+Two facts make this cheap rather than novel. Phase 3 already hands `knowledge_base.json` to the
+flowchart subprocess, so the delivery route exists. And `_apply_cached_labels` already pastes a
+stored `{node_id: label}` map onto a freshly built CFG **and refuses unless the node-id set matches
+exactly** — the same guard as
+[REQ-ID-02](#req-id-02--a-node-override-carries-forward-only-if-the-node-list-is-unchanged).
+A human correction becomes a second, higher-priority source into that existing path.
+
+**Verification:** correct a label, regenerate the version from scratch, and the corrected wording
+is in the output with no second write and no LLM call for that label.
+
+### REQ-AP-06 — Saving is instant and re-parses nothing
+
+A save must not re-run the pipeline. The CFG is already stored, so applying a correction is:
+patch that flowchart's stored CFG, rebuild the DOT from it, re-render that one PNG. No libclang,
+no LLM, no flowchart engine subprocess, no C++ source needed.
+
+This is what lets a correction be saved from a machine that does not have the source tree, and
+what keeps a twelve-label save to one DOT build and one render
+([REQ-API-08](#req-api-08--a-flowchart-is-saved-in-one-call)).
+
+**The DOT is never edited directly.** It is generated syntax: labels are line-wrapped and escaped
+on the way in, and a corrected label of a different length needs re-wrapping. Patching the DOT text
+would mean writing those rules a second time, in a second place, for them to drift apart. The CFG
+is edited and the DOT regenerated from it — which also keeps the picture and the SWE.4 Test Steps
+in step, since the Test Steps read the CFG, not the DOT.
+
+**Verification:** a save completes with no parse and no LLM call, and the resulting DOT is
+byte-identical to the one a full regeneration produces for the same corrected CFG.
+
 ---
 
 ## CS — Cascading regeneration
@@ -321,6 +379,10 @@ small: editing a description does **not** invalidate the ~42,000 flowchart node 
 **Verification:** editing a function description changes its unit description and its direct
 callers' descriptions, and leaves node labels untouched.
 
+"Regenerates" here means *new LLM text*. It is separate from **re-derivation**, which rebuilds view
+output from text that already exists and never calls an LLM — see
+[REQ-CS-04](#req-cs-04--a-node-label-edit-re-derives-the-components-swe4-specs).
+
 ### REQ-CS-02 — Caller cascade is one level only
 
 Correcting A regenerates its direct callers. It does **not** continue transitively to their callers.
@@ -337,6 +399,31 @@ If a cascade would regenerate a slot that already has a human override, the over
 replaced.
 
 **Verification:** override B, then edit A; B keeps the human text.
+
+### REQ-CS-04 — A node label edit re-derives the component's SWE.4 specs
+
+A Dynamic Behaviour spec does not merely name a cross-unit callee — it **transcribes that callee's
+flowchart steps in place**, so the reader sees what actually runs (`test_steps._splice_callee`).
+It also chains: if the callee calls on into a third function, those steps are pulled in too, with a
+guard against cycles.
+
+So a node label corrected in unit B changes unit **A's** document, and re-deriving only B's
+flowchart leaves A reading the old wording — two documents from one project describing the same
+step differently, with nothing reporting a problem.
+
+Therefore a node label edit re-derives **every SWE.4 spec in the component**, not only the edited
+function's.
+
+Deliberately not "work out which units transcribe this one, transitively". That traversal is
+fiddly, easy to get subtly wrong, and buys nothing here: the SWE.4 spec view calls **no LLM** — it
+derives everything from the CFG — so re-deriving all of a component's specs is cheap and correct by
+construction rather than correct-if-the-traversal-is-right.
+
+Note this affects Dynamic Behaviour specs only. Ordinary per-function test steps transcribe
+nothing, so they were never at risk.
+
+**Verification:** correct a node label in unit B where unit A's Dynamic Behaviour transcribes it;
+A's Test Steps show the corrected wording without A being edited.
 
 ---
 
@@ -379,10 +466,20 @@ Overrides are **kept, not deleted** — they are simply not applied to that vers
 
 ### REQ-IM-01 — An edit re-renders the affected image
 
-Editing a flowchart node label re-renders that flowchart's PNG; editing a behaviour description
-re-renders that behaviour diagram. Rendering is asynchronous.
+Editing a flowchart node label re-renders that flowchart's PNG. Rendering is asynchronous.
 
-**Verification:** after the render completes, the PNG differs from the pre-edit one.
+**A behaviour description does not appear in any picture**, so editing one renders nothing.
+`MermaidBuilder` labels each arrow with `<callee>()` — the function's name — and appends the
+description to a separate list that ends up in `_behaviour_pngs.json`. Only that row changes.
+
+Re-rendering must redo the tall-flowchart slicing: a corrected label can change the picture's
+height, so a graph that was `_part_1_of_3` may become `_part_1_of_2`, and the leftover
+`_part_3_of_3.png` must be removed or the document will find it. This has been a defect once
+already.
+
+**Verification:** after the render completes, the PNG differs from the pre-edit one, and no
+orphan `_part_N_of_M.png` survives a change in part count; a behaviour-description edit queues no
+render at all.
 
 ### REQ-IM-02 — Export waits for pending renders
 
