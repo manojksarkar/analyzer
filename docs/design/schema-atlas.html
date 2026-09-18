@@ -12,9 +12,11 @@
 </head>
 <body>
 <title>ArtiFex Schema Atlas</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<!-- No webfont link on purpose. This copy must work with no network: a stylesheet is
+     render-blocking AND blocks the parser-inserted scripts after it, so a proxy that
+     blackholes fonts.googleapis.com (rather than refusing it outright) leaves the page
+     blank and mermaid unrun until the TCP timeout. The font stacks below fall back to
+     locally installed IBM Plex, then to the system UI faces. -->
 
 <style>
   :root {
