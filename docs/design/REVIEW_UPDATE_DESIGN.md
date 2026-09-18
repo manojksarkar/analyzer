@@ -424,8 +424,21 @@ Dependents of an edited **function description**:
 A **global description** regenerates only its unit's description. Every other slot kind cascades to
 nothing — `REQ-CS-01`'s table is the whole list. (An earlier draft of this line cited `REQ-CS-04`–`07`, which were never written; the cases were collapsed into that table.)
 
-Regeneration calls the same generators the pipeline uses — `get_description`, `get_unit_description`,
-`CallDescriptionGenerator` — so wording stays consistent with a normal run.
+**The dependents are RECORDED, not regenerated where the correction is saved** — a deviation from
+this section's first draft, for two reasons that were checked rather than assumed:
+
+* `get_description` needs the function's **source**, and the source is not in the model; it is in
+  the git checkout. The host saving a correction is not guaranteed to have one.
+* regenerating is an LLM call, and saving a sentence must not take minutes.
+
+Skipping it instead is not available either: the description cache is keyed on the callee's source
+plus its dependency hashes (`llm_core.cache.compute_hash`), and correcting a *description* changes
+neither — so the next run hits the cache and the caller keeps its stale wording for ever.
+
+So `cascade.dependents_of` computes the set (cheap, indexed, exact) and `cascade.enqueue` records it
+in `regeneration_queue`. A run with a checkout and an LLM consumes it, calling the same generators
+the pipeline uses — `get_description`, `get_unit_description`, `CallDescriptionGenerator` — so
+wording stays consistent with a normal run.
 
 **A dependent that already has its own override is skipped** (`REQ-CS-03`). The human's text is never
 replaced by a regeneration.
@@ -662,7 +675,8 @@ Each step leaves the tree working and is independently useful.
 | 3b | **A model home for `nodeLabel` and `behaviourDescription`** | now blocking: it gates 2 of 7 kinds, the `REQ-ID-02` shape write, and the whole of `REQ-API-08` |
 | 4 | ~~The export guard~~ **DONE** | closes the `--from-phase 4` hole; independently valuable |
 | 5 | ~~API + undo, incl. the flowchart endpoint ([§11.1](#111-the-flowchart-endpoint))~~ **DONE** | the UI can be built against it |
-| 6 | Cascade | correctness improvement on a working feature |
+| 6 | ~~Cascade~~ **DONE (recording half)** | correctness improvement on a working feature |
+| 6b | Consume the queue during a run | needs a checkout and an LLM, so it belongs to the pipeline |
 | 7 | Images | the slowest and most isolated part |
 | 8 | Carry-forward into the next version | needs a second version to test against |
 | 9 | `REQ-PRE-02` — read output from the database | large, independent; removes the last disk dependency |

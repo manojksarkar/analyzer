@@ -663,6 +663,36 @@ text_override_history = Table(
     Index("ix_override_history_slot", "version_id", "slot_kind", "slot_key", "seq"),
 )
 
+regeneration_queue = Table(
+    "regeneration_queue", metadata,
+    # Slots whose LLM text was built FROM text a human has since corrected, and which therefore
+    # need regenerating (REQ-CS-01). Recorded rather than regenerated on the spot for two
+    # reasons, both measured rather than assumed:
+    #
+    #   * `get_description` needs the function's SOURCE, and the source is not in the model --
+    #     it is in the git checkout. An API host is not guaranteed to have one.
+    #   * regenerating is an LLM call. A text correction must not take minutes.
+    #
+    # And it cannot simply be skipped: the description cache is keyed on the callee's SOURCE plus
+    # its dependency hashes (llm_core.cache.compute_hash), and correcting a DESCRIPTION changes
+    # neither. So the next run would hit the cache and the caller would keep its stale wording for
+    # ever. The queue is what makes the regeneration eventually happen.
+    Column("version_id", String, ForeignKey("versions.id", ondelete="CASCADE"), nullable=False),
+    Column("slot_kind", String, nullable=False),
+    Column("slot_key", String, nullable=False),
+    # Which correction caused this, so a reviewer can be told why their edit changed something
+    # they did not touch, and so a stale entry can be explained rather than guessed at.
+    Column("reason", String),
+    Column("source_slot_kind", String),
+    Column("source_slot_key", String),
+    Column("requested_by", String),
+    _ts("requested_at", nullable=False),
+    # One pending entry per slot: two corrections that both invalidate the same caller need it
+    # regenerated once, not twice.
+    UniqueConstraint("version_id", "slot_kind", "slot_key", name="pk_regeneration_queue"),
+    Index("ix_regeneration_queue_version", "version_id"),
+)
+
 view_derivations = Table(
     "view_derivations", metadata,
     # When each view was last derived from the model. The export guard's other input: an
@@ -681,5 +711,5 @@ PER_VERSION_TABLES = frozenset({
     "entity_versions", "model_units", "model_components", "model_summaries",
     "model_edges", "tu_includes", "view_interface_tables", "view_behaviour_rows",
     "model_unit_diagrams", "model_flowcharts", "documents", "parse_snapshots", "knowledge_base", "incremental_plans",
-    "text_overrides", "text_override_history", "view_derivations",
+    "text_overrides", "text_override_history", "view_derivations", "regeneration_queue",
 })

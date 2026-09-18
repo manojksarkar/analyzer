@@ -28,6 +28,7 @@ separate feature with its own surface.
 - [8. R5 — one slot's history](#8-r5--one-slots-history)
 - [9. R9 — export readiness](#9-r9--export-readiness)
 - [10. Errors and concurrency](#10-errors-and-concurrency)
+- [10a. R10 — the regeneration queue](#10a-r10--the-regeneration-queue)
 - [11. Not yet implemented](#11-not-yet-implemented)
 
 ---
@@ -80,6 +81,7 @@ escaping.
 | **R7** | GET | `/projects/{projectId}/versions/{versionId}/flowcharts/{flowchartToken}/labels` | Every node label of one flowchart |
 | **R8** | PUT | `/projects/{projectId}/versions/{versionId}/flowcharts/{flowchartToken}/labels` | Correct a flowchart, one call |
 | **R9** | GET | `/projects/{projectId}/versions/{versionId}/export-readiness` | Would exporting now ship stale text? |
+| **R10** | GET | `/projects/{projectId}/versions/{versionId}/regeneration-queue` | Slots needing regeneration because a correction invalidated them |
 
 All require project **membership** (`REQ-API-05`).
 
@@ -136,8 +138,16 @@ slot has no correction.
   "humanText": "Initialises the GPIO driver and clears pending interrupts.",
   "llmText": "Initializes the module.",
   "previousText": "Initializes the module.",
-  "firstEdit": true, "viewsDerived": ["interfaceTables"] }
+  "firstEdit": true, "viewsDerived": ["interfaceTables"],
+  "queuedForRegeneration": [
+    { "slotKind": "unitDescription", "slotKey": "Gpio|GpioDrv" },
+    { "slotKind": "description", "slotKey": "App|AppMain|App_Start|void" }
+  ] }
 ```
+
+`queuedForRegeneration` is what this correction **invalidated** — text that was generated FROM the
+text just replaced (`REQ-CS-01`). Show it: the reviewer is about to see wording change in places
+they did not touch, and an unannounced change reads as a bug.
 
 `llmText` is captured on the **first** edit and never rewritten (`REQ-ST-03`) — it is what undo
 restores and the "wrong" half of the training pair. `previousText` is what this call replaced.
@@ -273,6 +283,36 @@ flowchart is saved at once.
 
 ---
 
+## 10a. R10 — the regeneration queue
+
+`GET …/regeneration-queue`. Slots whose LLM text was built from wording a human has since
+corrected, and which therefore need regenerating (`REQ-CS-01`).
+
+They are **recorded, not regenerated** at save time, for reasons that were checked rather than
+assumed: `get_description` needs the function's **source**, which lives in the git checkout and not
+in the model, and regenerating is an LLM call — a saved sentence must not take minutes.
+
+Nor can it be skipped. The description cache is keyed on the callee's *source* plus its dependency
+hashes, and correcting a *description* changes neither, so the next run would hit the cache and the
+caller would keep its stale wording for ever.
+
+**200**
+```json
+{ "pending": [
+    { "slotKind": "description",
+      "slotKey": "App|AppMain|App_Start|void",
+      "reason": "its description was written with this function as context",
+      "causedBy": { "slotKind": "description", "slotKey": "Gpio|GpioDrv|Gpio_Init|void" },
+      "requestedAt": "2026-09-18T09:14:22Z" } ],
+  "total": 1 }
+```
+
+A slot a human has already corrected never appears here (`REQ-CS-03`) — their text is not
+regenerated over. The cascade is **one level** (`REQ-CS-02`): a caller's own callers are not
+invalidated, because a transitive cascade is unbounded in a deep call graph.
+
+---
+
 ## 11. Not yet implemented
 
 Honest gaps, so the UI does not plan around something that is not there.
@@ -281,8 +321,9 @@ Honest gaps, so the UI does not plan around something that is not there.
   queue, and `REQ-IM-02`'s "export waits for pending renders", are build-order step 7.
 - **Corrections do not carry into the next version yet** (`REQ-VR-01`, step 8). `slotShape` is
   written and its guard is tested, but nothing reads it across versions.
-- **No cascade** (`REQ-CS-01`, step 6): correcting a function description does not yet regenerate
-  its unit description or its callers'.
+- **Nothing consumes the regeneration queue yet.** R10 reports what needs regenerating and the
+  entries are recorded correctly; the run that rebuilds them, and clears each entry as it does, is
+  still to come. Until then a queued dependent keeps its old wording.
 - **No cleanup endpoint** for orphaned corrections — deliberately, pending a decision; see
   [REVIEW_UPDATE_DESIGN Open items](../design/REVIEW_UPDATE_DESIGN.md#open-items).
 

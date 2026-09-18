@@ -9,8 +9,8 @@ broken, and how to check** — it does not restate the feature. For that:
 - **Chronology and the reasoning behind each decision** → root `PROJECT_CONTEXT.md`, the
   `> Updated: 2026-09-16 …` through `2026-09-18` entries
 
-Branch: `review_update_v1` · base: `origin/develop` · state at writing: build-order steps 1–5 done,
-step 6 (cascade) next.
+Branch: `review_update_v1` · base: `origin/develop` · state at writing: build-order steps 1–6 done
+(6 is the recording half; consuming the queue is 6b), step 7 (images) next.
 
 ---
 
@@ -27,13 +27,14 @@ regeneration, and carries into the next version. Seven kinds of text are editabl
 
 ### 2.1 Alembic — check the head is still linear
 
-This branch adds **three** migrations on top of `0008`:
+This branch adds **four** migrations on top of `0008`:
 
 ```
 0008_class_name_and_llm_timing   (already on develop)
   └─ 0009_model_units_description   model_units.description
       └─ 0010_text_overrides        text_overrides, text_override_history, view_derivations
           └─ 0011_slot_shape        text_overrides.slot_shape
+              └─ 0012_regeneration_queue   regeneration_queue
 ```
 
 `develop` was at `0008` when this was written. **If `develop` has since added its own `0009`,

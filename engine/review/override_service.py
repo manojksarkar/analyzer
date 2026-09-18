@@ -95,6 +95,8 @@ class Applied(NamedTuple):
     first_edit: bool
     artifacts_written: Sequence[str]
     views_derived: Sequence[str]
+    #: Slots whose text was built from this one and now need regenerating (REQ-CS-01).
+    queued_for_regeneration: Sequence[Any] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +267,18 @@ def apply_override(conn,
 
     seq = _append_history(conn, version_id, slot_kind, slot_key, text, user_id, stamp, depth)
 
+    # --- the cascade -------------------------------------------------------
+    # Text generated FROM this text is now describing wording the human has rejected. The
+    # dependents are RECORDED, not regenerated here: regenerating needs the function's source
+    # (which is in the git checkout, not the model) and an LLM call, and a saved sentence must
+    # not take minutes. See cascade.py for why skipping it instead would leave them stale for
+    # ever -- the description cache would hit on the next run.
+    from review import cascade as _cascade
+    queued = _cascade.dependents_of(conn, version_id, slot_kind, slot_key,
+                                    artifact=location.artifact)
+    _cascade.enqueue(conn, version_id, queued, source_kind=slot_kind, source_key=slot_key,
+                     user_id=user_id, now=stamp)
+
     # --- the views ---------------------------------------------------------
     views = list(derive(version_id=version_id, slot_kind=slot_kind, location=location) or ()) \
         if derive else []
@@ -273,7 +287,8 @@ def apply_override(conn,
     return Applied(version_id=version_id, slot_kind=slot_kind, slot_key=slot_key,
                    llm_text=llm_text or "", human_text=text, previous_text=previous_text,
                    location=location, seq=seq, first_edit=first_edit,
-                   artifacts_written=artifacts_written, views_derived=views)
+                   artifacts_written=artifacts_written, views_derived=views,
+                   queued_for_regeneration=[(d.slot_kind, d.slot_key) for d in queued])
 
 
 # ---------------------------------------------------------------------------

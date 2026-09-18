@@ -408,8 +408,15 @@ small: editing a description does **not** invalidate the ~42,000 flowchart node 
 | behaviour description | nothing |
 | flowchart node label | nothing — the summary chain feeds *into* labels, not out |
 
-**Verification:** editing a function description changes its unit description and its direct
-callers' descriptions, and leaves node labels untouched.
+Regeneration is **deferred, not skipped**: the dependents are recorded when the correction is
+saved and rebuilt by a run that has the source and an LLM. Doing it in the request would need the
+git checkout, which the saving host may not have, and would make a saved sentence take minutes.
+Not recording them at all is not an option — the description cache is keyed on the callee's
+*source* plus its dependency hashes, and correcting a *description* changes neither, so a later run
+would hit the cache and the dependent would keep its stale wording for ever.
+
+**Verification:** editing a function description queues its unit description and its direct
+callers' descriptions for regeneration, and leaves node labels untouched.
 
 "Regenerates" here means *new LLM text*. It is separate from **re-derivation**, which rebuilds view
 output from text that already exists and never calls an LLM — see

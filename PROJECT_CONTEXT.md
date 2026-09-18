@@ -218,6 +218,48 @@
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
 
+> Updated: 2026-09-18e (**review_update_v1 step 6 - the cascade, recorded rather than run**.
+> `engine/review/cascade.py`, `regeneration_queue` (+ alembic `0012`), R10 on the API.
+>
+> Some LLM text is generated FROM other LLM text, so correcting one piece leaves what was built on
+> it describing wording the human rejected. Four chains exist; **chain 4 (node labels) starts from
+> the SOURCE**, never from a description, which is what bounds the whole thing - otherwise one
+> correction would invalidate ~42,000 node labels.
+>
+> **The design said regenerate; it records instead**, and the reasons were checked not assumed:
+> `get_description` needs the function's SOURCE, which is NOT in the model (`_FN_PAYLOAD_FIELDS`
+> has no body) - it is in the git checkout, which an API host may not have; and regenerating is an
+> LLM call, so a saved sentence would take minutes.
+>
+> **Skipping it was not an option either.** `llm_core.cache.compute_hash` keys a description on the
+> callee's SOURCE plus its dependency hashes. Correcting a DESCRIPTION changes neither, so the next
+> run hits the cache and the caller keeps its stale wording for ever. Without the queue the cascade
+> would simply never happen.
+>
+> `dependents_of()` = the unit's description + direct callers (one indexed lookup on
+> `ix_edges_reverse`, the index the schema already comments "who depends on X") + behaviour rows at
+> either end. One level only (`REQ-CS-02`). A dependent that already has its OWN override is
+> skipped (`REQ-CS-03`) - a human's text is never regenerated over. A global reaches only its unit.
+> Every other kind cascades to nothing.
+>
+> `enqueue` is idempotent per slot: two corrections invalidating the same caller need it rebuilt
+> once. `clear` takes a specific slot, never a whole version - an entry must survive until the
+> thing it names is actually rebuilt, or a half-finished run leaves the document stale with an
+> empty queue saying everything is fine.
+>
+> R3's response now carries `queuedForRegeneration` so the UI can tell the reviewer their edit
+> changed something they did not touch; R10 lists the queue with the correction that caused each
+> entry.
+>
+> Reverted three rules - transitive cascade, regenerating over an existing override, and enqueue
+> appending instead of moving forward - each fails its tests. 24 tests.
+>
+> **STILL OPEN (step 6b): nothing consumes the queue.** Entries are recorded correctly and
+> reported; the run that rebuilds them and clears each entry as it goes is not written. Until then
+> a queued dependent keeps its old wording.
+>
+> Unit + API suites: see the commit. Next: step 7, images as a background job.)
+
 > Updated: 2026-09-18d (**review_update_v1 - HTTP tests for the review API, and the two defects
 > they found**. `tests/api/test_review_overrides_api.py`, 31 tests across both API backends.
 >

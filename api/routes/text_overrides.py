@@ -217,7 +217,11 @@ def update_slot(
             raise _as_http(exc)
     return {"slotKind": out.slot_kind, "slotKey": out.slot_key, "humanText": out.human_text,
             "llmText": out.llm_text, "previousText": out.previous_text,
-            "firstEdit": out.first_edit, "viewsDerived": list(out.views_derived)}
+            "firstEdit": out.first_edit, "viewsDerived": list(out.views_derived),
+            # What this correction invalidated. Returned so the UI can say that an edit changed
+            # something the reviewer did not touch, rather than letting it appear unannounced.
+            "queuedForRegeneration": [{"slotKind": k, "slotKey": v}
+                                      for k, v in out.queued_for_regeneration]}
 
 
 @router.put("/projects/{project_id}/versions/{version_id}/flowcharts/{flowchart_token}/labels")
@@ -319,6 +323,32 @@ def slot_history(
     return {"history": [{"seq": r.seq, "humanText": r.human_text, "updatedBy": r.updated_by,
                          "updatedAt": r.updated_at.isoformat() if r.updated_at else None}
                         for r in rows]}
+
+
+@router.get("/projects/{project_id}/versions/{version_id}/regeneration-queue")
+def regeneration_queue(
+    project_id: str,
+    version_id: str,
+    current_user: User = Depends(get_current_user),
+    db: InMemoryDatabase = Depends(get_db),
+):
+    """`REQ-CS-01`. Slots whose text was built from wording a human has since corrected, and
+    which therefore need regenerating.
+
+    Recorded rather than regenerated when the correction was saved: regenerating needs the
+    function's source, which is in the git checkout and not in the model, and an LLM call. A run
+    with both consumes this.
+    """
+    require_project_member(project_id, current_user, db)
+    from review.cascade import pending
+    with _connection().connect() as cx:
+        rows = pending(cx, version_id)
+    return {"pending": [{"slotKind": r.slot_kind, "slotKey": r.slot_key, "reason": r.reason,
+                         "causedBy": {"slotKind": r.source_slot_kind,
+                                      "slotKey": r.source_slot_key},
+                         "requestedAt": r.requested_at.isoformat() if r.requested_at else None}
+                        for r in rows],
+            "total": len(rows)}
 
 
 # ---------------------------------------------------------------------------
