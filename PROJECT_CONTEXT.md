@@ -4,6 +4,16 @@
 > Optimize it for findability and completeness, not polish — no prose warm-up, no formatting for human readers.
 > A section outline is fine purely as an agent-navigation aid. Humans read the docs under `docs/` instead.
 
+> **⭐ IN FLIGHT — branch `review_update_v1` (Review & Update: correcting LLM text in a document).**
+> - **Merging this branch? Read [docs/design/REVIEW_UPDATE_HANDOVER.md](docs/design/REVIEW_UPDATE_HANDOVER.md) first.**
+>   Migration chain, the merge conflict surface file by file, and the invariants that break silently
+>   with the test that catches each.
+> - Contract: [docs/spec/REVIEW_UPDATE_SPEC.md](docs/spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids) ·
+>   how: [docs/design/REVIEW_UPDATE_DESIGN.md](docs/design/REVIEW_UPDATE_DESIGN.md) ·
+>   HTTP: [docs/production-redesign/05-incremental-api-spec.md](docs/production-redesign/05-incremental-api-spec.md) §10.
+> - Code lives in `engine/review/`. Build order + progress: DESIGN §13. Reasoning for every decision
+>   is in the dated entries below, 2026-09-16 → 2026-09-18.
+
 > **⭐ WORK STATUS — 2026-08-14 · branch `db-with-increment-changes` (READ THIS FIRST in a new chat).**
 > - **The PostgreSQL migration is COMPLETE and validated on the office box.** Postgres holds the model,
 >   view outputs, reuse index, run metadata, resolved config and all app data. `JsonDatabase` is deleted;
@@ -207,6 +217,44 @@
 >   `edgeRouting:ORTHOGONAL`) are not yet applied → **pending**.
 > - **Next (greenfield):** **3.10** dynamic-behaviour — under-specified / other team. (3.6 is now done on
 >   its branch — see above.)
+
+> Updated: 2026-09-18c (**review_update_v1 step 5 - the HTTP API and undo**.
+> `api/routes/text_overrides.py` (9 endpoints, registered in `api/main.py`), undo + the overlay
+> list in `override_service`, and **a new section 10 in
+> `docs/production-redesign/05-incremental-api-spec.md`** - the contract the UI is built against.
+>
+> **Undo (`REQ-API-04`) is an ordinary edit whose text happens to be the LLM original**, not a
+> separate state. So it reuses the same write path per kind, the row survives with both texts and
+> its history (which is what the requirement asks for), re-applying it during a Phase-3 run writes
+> the LLM's own words back (a no-op), and `REQ-TD-01`'s "skip pairs whose two texts are equal"
+> already excludes it from a training export. **409** when the slot was empty before the first
+> correction: `REQ-ST-06` forbids writing empty text, and deleting the row instead would destroy
+> the user's work and history to express "there was nothing here".
+>
+> **`GET .../overrides` is an OVERLAY, not a slot enumeration.** `REQ-API-01` asks for the
+> document's slots with their text and whether each is overridden; a version holds ~57,000, so
+> enumerating them would rebuild the document the UI already fetched from
+> `/components` + `/functions` + `/flowcharts`. The endpoint returns only the corrected ones and
+> the UI merges by `slotKey`. Page size capped at 1000.
+>
+> **Keys never travel in a path segment** - they contain `|`, `:`, `,`, `*`, spaces and the 0x01
+> separator. They go in the body or a query parameter. The flowchart routes are the exception and
+> use `slot.encode()`'s base64url token, whose alphabet needs no escaping. A test asserts no review
+> route has any path parameter other than project_id / version_id / flowchart_token.
+>
+> **The transaction is opened in the handler**, because `apply_override` deliberately neither
+> begins nor commits: the edit and its re-derivation land together or not at all (`REQ-AP-02`).
+> 503 when no database is configured - corrections live nowhere else, so the write is refused
+> rather than silently dropped.
+>
+> `tests/unit/test_review_api_contract.py` parses section 10's endpoint table and fails if a
+> documented route is not registered, plus a guard that the comparison is not vacuous if the
+> heading or table format changes. Path-parameter NAMES are normalised before comparing: the spec
+> says `{projectId}` throughout and FastAPI says `{project_id}`, a convention difference that
+> predates this work.
+>
+> Reverted undo-deletes-the-row and router-unregistered; each fails several tests.
+> **Unit + API suites 1861 passed / 10 skipped.** Next: step 6, the cascade.)
 
 > Updated: 2026-09-18b (**review_update_v1 step 4 - the export guard; plus a merge handover doc**.
 > `engine/review/export_guard.py`, a stamp in `incremental/store.py::capture_output`, a check in

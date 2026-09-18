@@ -26,7 +26,7 @@ from .routes import (
     auth_router, projects_router, commits_versions_router,
     jobs_router, documents_router, team_router,
     compare_router, functions_router, notifications_router,
-    repositories_router, users_router,
+    repositories_router, users_router, text_overrides_router,
 )
 
 # ---------------------------------------------------------------------------
@@ -167,6 +167,8 @@ app.include_router(functions_router,         prefix=PREFIX)
 app.include_router(notifications_router,     prefix=PREFIX)
 app.include_router(repositories_router,      prefix=PREFIX)
 app.include_router(users_router,             prefix=PREFIX)
+# Review & Update -- correcting LLM text in a generated document (spec 05 section 10)
+app.include_router(text_overrides_router,    prefix=PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

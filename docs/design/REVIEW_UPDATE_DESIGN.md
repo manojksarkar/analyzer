@@ -564,7 +564,22 @@ must never destroy a reviewer's work.
 
 ## 11. API
 
-New router `api/routes/text_overrides.py`, following the conventions in
+Built. The HTTP contract the UI is written against lives in
+[05-incremental-api-spec.md §10](../production-redesign/05-incremental-api-spec.md), and
+`tests/unit/test_review_api_contract.py` fails if a documented route is not served.
+
+**Undo is an ordinary edit whose text happens to be the LLM original** (`REQ-API-04`), not a
+separate state. The row survives with both texts and its history, re-applying it during a
+Phase-3 run writes the LLM's own words back (a no-op), and `REQ-TD-01`'s rule that a training
+export skips pairs whose texts are equal already excludes it. Refused with 409 when the slot
+was empty before the first correction, since `REQ-ST-06` forbids writing empty text and
+deleting the row instead would destroy the user's work to express "there was nothing here".
+
+**`GET .../overrides` is an overlay, not a slot enumeration.** `REQ-API-01` asks for the
+document's slots with their text; a version has ~57,000, so the endpoint returns only the
+corrected ones and the UI merges them by `slotKey` into the document it already fetched.
+
+Router `api/routes/text_overrides.py`, following the conventions in
 [api/routes/documents.py](../../api/routes/documents.py) — `Depends(get_current_user)`,
 `require_project_member` to read, `require_project_admin`/member to write (`REQ-API-05`).
 
@@ -646,7 +661,7 @@ Each step leaves the tree working and is independently useful.
 | 3 | ~~`override_service` — write + re-derive, no cascade~~ **DONE, 5 of 7 kinds** | the smallest end-to-end slice: edit → HTML → DOCX |
 | 3b | **A model home for `nodeLabel` and `behaviourDescription`** | now blocking: it gates 2 of 7 kinds, the `REQ-ID-02` shape write, and the whole of `REQ-API-08` |
 | 4 | ~~The export guard~~ **DONE** | closes the `--from-phase 4` hole; independently valuable |
-| 5 | API + undo, incl. the flowchart endpoint ([§11.1](#111-the-flowchart-endpoint)) | the UI can be built against it |
+| 5 | ~~API + undo, incl. the flowchart endpoint ([§11.1](#111-the-flowchart-endpoint))~~ **DONE** | the UI can be built against it |
 | 6 | Cascade | correctness improvement on a working feature |
 | 7 | Images | the slowest and most isolated part |
 | 8 | Carry-forward into the next version | needs a second version to test against |

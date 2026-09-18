@@ -8,8 +8,8 @@ broken, and how to check** — it does not restate the feature. For that:
 - **Chronology and the reasoning behind each decision** → root `PROJECT_CONTEXT.md`, the
   `> Updated: 2026-09-16 …` through `2026-09-18` entries
 
-Branch: `review_update_v1` · base: `origin/develop` · state at writing: build-order steps 1–4 done,
-step 5 (API + undo) next.
+Branch: `review_update_v1` · base: `origin/develop` · state at writing: build-order steps 1–5 done,
+step 6 (cascade) next.
 
 ---
 
@@ -87,6 +87,8 @@ Everything else is new files. These are the ones a merge can actually collide on
 | `engine/docx_exporter.py` | both LLM description calls **removed**; reads stored values | **medium** |
 | `engine/incremental/store.py` | `capture_output` also stamps `view_derivations` (the export guard's baseline) | low |
 | `analyzer.py` | `reexport` refuses a stale `--from-phase 4`; new `--force` | low |
+| `api/routes/__init__.py`, `api/main.py` | register `text_overrides_router` | low |
+| `docs/production-redesign/05-incremental-api-spec.md` | **new section 10** — the HTTP contract | low |
 
 The `flowcharts.py` and `behaviour_diagram.py` hooks are each ~3 lines at a named point, so a
 conflict there is usually resolved by re-inserting the call at the same place. **Where it goes
@@ -148,7 +150,15 @@ baseline, so the first correction to any version makes it permanently unexportab
 
 → `tests/unit/test_review_export_guard.py::TestTheStamp`.
 
-### 4.7 A behaviour row is addressed by two entity keys
+### 4.7 The API spec and the router must agree
+
+Section 10 of `05-incremental-api-spec.md` is what the UI is built against. A documented route
+that is not served becomes a bug report from someone else's sprint.
+
+→ `tests/unit/test_review_api_contract.py::TestTheDocumentedContractExists` parses the spec
+table and compares it with the registered routes.
+
+### 4.8 A behaviour row is addressed by two entity keys
 
 `(currentFunctionId, externalCallerId)` — **never** `externalUnitFunction`, which is a display
 label two different callers can share (`AddOperation::apply` and `MultiplyOperation::apply` both
@@ -192,16 +202,17 @@ python -m pytest tests/unit/test_review_*.py tests/unit/test_cfg_for_rendering.p
 
 ## 7. What is deliberately not done yet
 
-Build-order steps 5–9 in [REVIEW_UPDATE_DESIGN §13](REVIEW_UPDATE_DESIGN.md#13-build-order): the
-API and undo, the cascade, image rendering as a background job, carry-forward into the next
-version, and `REQ-PRE-02`.
+Build-order steps 6–9 in [REVIEW_UPDATE_DESIGN §13](REVIEW_UPDATE_DESIGN.md#13-build-order): the
+cascade, image rendering as a background job, carry-forward into the next version, and
+`REQ-PRE-02`.
 
 Two consequences worth knowing:
 
 - **`slot_shape` is written but never read yet.** The `REQ-ID-02` guard is complete and tested;
   its consumer is step 8 (carry-forward). Until then a correction does not carry between versions.
-- **There is no HTTP layer.** `override_service` is the entry point an API handler will call; it
-  neither begins nor commits a transaction, deliberately, so the handler can own it.
+- **Renders are synchronous.** A flowchart correction rebuilds its picture inside the request
+  when an output tree is present, and does nothing when it is not (the text is still stored and the
+  next run redraws). The background `render_jobs` queue is step 7.
 
 Open items, both pre-existing, are listed in
 [REVIEW_UPDATE_DESIGN Open items](REVIEW_UPDATE_DESIGN.md#open-items) — notably `test_steps`

@@ -525,6 +525,94 @@ def _stamp_derivations(conn, version_id, views, stamp) -> None:
 # ---------------------------------------------------------------------------
 # reading back
 # ---------------------------------------------------------------------------
+class NothingToUndo(OverrideError):
+    """No override on this slot, or its original cannot be restored."""
+    status = 409
+
+
+def undo_override(conn, version_id: str, slot_kind: str, slot_key: str, *,
+                  models: Optional[ModelAccess] = None,
+                  user_id: Optional[str] = None,
+                  now: Optional[datetime.datetime] = None,
+                  history_depth: Optional[int] = None,
+                  output_dir: Optional[str] = None,
+                  project_root: Optional[str] = None,
+                  derive: Optional[Callable[..., Sequence[str]]] = None):
+    """Put the LLM's original wording back (`REQ-API-04`).
+
+    **Undo is an ordinary edit whose text happens to be the original**, not a special state. So it
+    goes through the same write path, the row survives with both texts, and the history records
+    that the undo happened — which is what `REQ-API-04` asks for ("the override record survives").
+
+    That also makes the after-state self-consistent everywhere else: re-applying the override
+    during a Phase-3 run writes the LLM's own words back, which is a no-op, and `REQ-TD-01`'s rule
+    that a training export skips pairs whose two texts are equal already excludes it.
+
+    Refused when there is no original to restore. That happens when the slot was empty before the
+    first correction — a function with no description, say — and `REQ-ST-06` forbids writing empty
+    text. Deleting the row instead would destroy the user's work and the edit history to express
+    "there was nothing here", which is worth an explicit error rather than a silent guess.
+    """
+    row = get_override(conn, version_id, slot_kind, slot_key)
+    if row is None:
+        raise NothingToUndo("%s %r has no override in version %s"
+                            % (slot_kind, slot_key, version_id))
+    original = (row.llm_text or "").strip()
+    if not original:
+        raise NothingToUndo(
+            "%s %r has no LLM original to restore: the slot was empty before it was first "
+            "corrected, and an override may not be set to empty (REQ-ST-06). Delete it "
+            "explicitly if that is what you mean." % (slot_kind, slot_key))
+
+    common = dict(user_id=user_id, now=now, history_depth=history_depth, derive=derive)
+
+    if slot_kind == slot.NODE_LABEL:
+        parts = slot.parse(slot.NODE_LABEL, slot_key)
+        return apply_flowchart_overrides(
+            conn, version_id, parts["entity_key"], {parts["node_id"]: original},
+            output_dir=output_dir, project_root=project_root, **common)
+
+    if slot_kind == slot.BEHAVIOUR_DESCRIPTION:
+        from review import phase3_overrides as p3
+        parts = slot.parse(slot.BEHAVIOUR_DESCRIPTION, slot_key)
+        return apply_behaviour_override(
+            conn, version_id, parts["function_id"], parts["external_caller_id"],
+            p3.split_bullets(original), **common)
+
+    return apply_override(conn, version_id, slot_kind, slot_key, original,
+                          models=models, **common)
+
+
+def list_overrides(conn, version_id: str, *, slot_kind: Optional[str] = None,
+                   limit: int = 200, offset: int = 0):
+    """The corrections in a version, newest first — an **overlay**, not a slot enumeration.
+
+    `REQ-API-01` asks for the slots of a document with their text and whether each is overridden. A
+    version holds roughly 57,000 slots, so enumerating them here would rebuild the document the UI
+    has already fetched. It fetches this instead and merges by slot key: the overridden ones are
+    the few, the lookup is indexed (`ix_text_overrides_version_kind`), and a version nobody has
+    corrected returns an empty list without touching the model.
+    """
+    q = (select(s.text_overrides)
+         .where(s.text_overrides.c.version_id == version_id)
+         .order_by(s.text_overrides.c.updated_at.desc(), s.text_overrides.c.slot_key)
+         .limit(max(1, min(int(limit), 1000))).offset(max(0, int(offset))))
+    if slot_kind:
+        if slot_kind not in slot.ALL_KINDS:
+            raise SlotUnknown("unknown slot kind %r" % slot_kind)
+        q = q.where(s.text_overrides.c.slot_kind == slot_kind)
+    return conn.execute(q).fetchall()
+
+
+def count_overrides(conn, version_id: str, *, slot_kind: Optional[str] = None) -> int:
+    """How many corrections a version has, for the list's `total`."""
+    q = select(func.count()).select_from(s.text_overrides).where(
+        s.text_overrides.c.version_id == version_id)
+    if slot_kind:
+        q = q.where(s.text_overrides.c.slot_kind == slot_kind)
+    return int(conn.execute(q).scalar() or 0)
+
+
 def get_override(conn, version_id: str, slot_kind: str, slot_key: str):
     """The current override row, or None. One indexed lookup (REQ-ST-05)."""
     return conn.execute(
