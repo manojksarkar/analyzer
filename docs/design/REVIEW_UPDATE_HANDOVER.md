@@ -4,6 +4,7 @@ For whoever integrates this branch. It says **what changed, what it touches, wha
 broken, and how to check** — it does not restate the feature. For that:
 
 - **What and why** → [REVIEW_UPDATE_SPEC](../spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids)
+- **The HTTP contract** → [REVIEW_UPDATE_API_SPEC](../spec/REVIEW_UPDATE_API_SPEC.md)
 - **How** → [REVIEW_UPDATE_DESIGN](REVIEW_UPDATE_DESIGN.md)
 - **Chronology and the reasoning behind each decision** → root `PROJECT_CONTEXT.md`, the
   `> Updated: 2026-09-16 …` through `2026-09-18` entries
@@ -88,7 +89,7 @@ Everything else is new files. These are the ones a merge can actually collide on
 | `engine/incremental/store.py` | `capture_output` also stamps `view_derivations` (the export guard's baseline) | low |
 | `analyzer.py` | `reexport` refuses a stale `--from-phase 4`; new `--force` | low |
 | `api/routes/__init__.py`, `api/main.py` | register `text_overrides_router` | low |
-| `docs/production-redesign/05-incremental-api-spec.md` | **new section 10** — the HTTP contract | low |
+| `docs/spec/REVIEW_UPDATE_API_SPEC.md` | **new** — the HTTP contract the UI is built against | none |
 
 The `flowcharts.py` and `behaviour_diagram.py` hooks are each ~3 lines at a named point, so a
 conflict there is usually resolved by re-inserting the call at the same place. **Where it goes
@@ -152,7 +153,7 @@ baseline, so the first correction to any version makes it permanently unexportab
 
 ### 4.7 The API spec and the router must agree
 
-Section 10 of `05-incremental-api-spec.md` is what the UI is built against. A documented route
+`docs/spec/REVIEW_UPDATE_API_SPEC.md` §3 is what the UI is built against. A documented route
 that is not served becomes a bug report from someone else's sprint.
 
 → `tests/unit/test_review_api_contract.py::TestTheDocumentedContractExists` parses the spec

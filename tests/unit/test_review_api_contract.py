@@ -7,9 +7,9 @@ LLM's original. That is what makes "the override record survives" true without a
 and what makes the after-state consistent everywhere else: re-applying it during a Phase-3 run
 writes the LLM's own words back, which is a no-op.
 
-**The contract** is written down in `docs/production-redesign/05-incremental-api-spec.md` section
-10, and the UI is built against it. A documented route that does not exist is a bug report from
-someone else's sprint, so the two are compared directly.
+**The contract** is written down in `docs/spec/REVIEW_UPDATE_API_SPEC.md`, and the UI is built
+against it. A documented route that does not exist is a bug report from someone else's sprint,
+so the two are compared directly.
 """
 import datetime
 import json
@@ -186,11 +186,10 @@ class TestTheOverlayList:
 
 
 class TestTheDocumentedContractExists:
-    """The UI is built against section 10 of the API spec. A documented route that does not exist
+    """The UI is built against REVIEW_UPDATE_API_SPEC. A documented route that does not exist
     becomes a bug report from someone else's sprint."""
 
-    SPEC = os.path.join(PROJECT_ROOT, "docs", "production-redesign",
-                        "05-incremental-api-spec.md")
+    SPEC = os.path.join(PROJECT_ROOT, "docs", "spec", "REVIEW_UPDATE_API_SPEC.md")
 
     @staticmethod
     def _shape(path):
@@ -206,9 +205,9 @@ class TestTheDocumentedContractExists:
 
     def _documented(self):
         text = open(self.SPEC, encoding="utf-8").read()
-        section = text.split("## 10. Review & Update", 1)[1]
+        section = text.split("## 3. Endpoint index", 1)[1]
         rows = re.findall(r"^\| \*\*R\d\*\* \| (GET|PUT|DELETE) \| `([^`]+)` \|", section, re.M)
-        assert rows, "no R-numbered endpoints found in section 10"
+        assert rows, "no R-numbered endpoints found in the spec's endpoint index"
         return {(m, self._shape("/api/v1" + p)) for m, p in rows}
 
     def test_every_documented_endpoint_is_registered(self):
@@ -221,8 +220,8 @@ class TestTheDocumentedContractExists:
         assert len(self._documented()) == 9
 
     def test_the_comparison_is_not_vacuous(self):
-        """If the section heading or the table format changed, `_documented()` would silently
-        return nothing and the test above would pass against an empty set."""
+        """If the heading or the table format changed, `_documented()` would silently return
+        nothing and the test above would pass against an empty set."""
         assert len(self._registered()) > 9
 
 

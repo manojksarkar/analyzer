@@ -10,7 +10,7 @@
 >   with the test that catches each.
 > - Contract: [docs/spec/REVIEW_UPDATE_SPEC.md](docs/spec/REVIEW_UPDATE_SPEC.md) (`REQ-` ids) ·
 >   how: [docs/design/REVIEW_UPDATE_DESIGN.md](docs/design/REVIEW_UPDATE_DESIGN.md) ·
->   HTTP: [docs/production-redesign/05-incremental-api-spec.md](docs/production-redesign/05-incremental-api-spec.md) §10.
+>   HTTP: [docs/spec/REVIEW_UPDATE_API_SPEC.md](docs/spec/REVIEW_UPDATE_API_SPEC.md).
 > - Code lives in `engine/review/`. Build order + progress: DESIGN §13. Reasoning for every decision
 >   is in the dated entries below, 2026-09-16 → 2026-09-18.
 

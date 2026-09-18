@@ -565,7 +565,7 @@ must never destroy a reviewer's work.
 ## 11. API
 
 Built. The HTTP contract the UI is written against lives in
-[05-incremental-api-spec.md §10](../production-redesign/05-incremental-api-spec.md), and
+[REVIEW_UPDATE_API_SPEC](../spec/REVIEW_UPDATE_API_SPEC.md), and
 `tests/unit/test_review_api_contract.py` fails if a documented route is not served.
 
 **Undo is an ordinary edit whose text happens to be the LLM original** (`REQ-API-04`), not a
